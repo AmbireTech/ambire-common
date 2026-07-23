@@ -239,7 +239,8 @@ export class MainController extends EventEmitter implements IMainController {
     externalSignerControllers,
     uiManager,
     loadRailgunWasm,
-    pimlicoApiKey
+    pimlicoApiKey,
+    railgunSepoliaTestDisposableSignerPrivateKey
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -263,6 +264,11 @@ export class MainController extends EventEmitter implements IMainController {
     // Pimlico ERC-4337 bundler API key, used only for Railgun unshield/private-transfer
     // broadcasting (Sepolia MVP). Optional - that flow simply isn't available without it.
     pimlicoApiKey?: string
+    // TEMP DIAGNOSTIC (Railgun Sepolia MVP, see RailgunController) - private key of a
+    // disposable Sepolia-only test signer used to investigate EIP-7702 delegation
+    // behavior. Optional - falls back to a fresh `Wallet.createRandom()` signer per
+    // broadcast (the real intended behavior) when not provided.
+    railgunSepoliaTestDisposableSignerPrivateKey?: string
   }) {
     super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
@@ -438,6 +444,7 @@ export class MainController extends EventEmitter implements IMainController {
         }),
       sendUiMessage: this.ui.message.sendUiMessage,
       pimlicoApiKey,
+      railgunSepoliaTestDisposableSignerPrivateKey,
       eventEmitterRegistry
     })
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
