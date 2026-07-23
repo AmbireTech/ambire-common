@@ -330,7 +330,7 @@ export function toCallsUserRequest(
         calls = [{ to: txn.to, value: BigInt(txn.value), data: txn.data || '0x' }]
       }
 
-      let signature = txn.confirmations
+      const signature = txn.confirmations
         ? sortSigs(
             txn.confirmations.map((c) => c.signature as Hex),
             txn.safeTxHash,
