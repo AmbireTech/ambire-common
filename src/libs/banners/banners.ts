@@ -1,5 +1,5 @@
 import { FEE_COLLECTOR } from '@/consts/addresses'
-import { ENS_EXPIRY_WARN_WINDOW_IN_MS } from '@/services/ensDomains'
+import { ENS_EXPIRY_WARN_WINDOW_IN_MS } from '@/services/ensDomains/ensDomains'
 
 import { Account, AccountId } from '../../interfaces/account'
 import { Banner, BannerType } from '../../interfaces/banner'

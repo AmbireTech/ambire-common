@@ -15,8 +15,11 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+// Import directly from ensDomains.ts, not the barrel (./index.ts). With tslib 2,
+// `export *` re-exports become getter-only bindings that jest.spyOn cannot override,
+// so domains.test.ts must spy on this same direct-file module instance.
+import { NameExpiry, ReverseLookupResult } from '../../services/ensDomains/ensDomains'
 import { IVerificationController } from '../../interfaces/verification'
-import { NameExpiry, ReverseLookupResult } from '../../services/ensDomains'
 import {
   DEFAULT_RESOLVERS,
   getPrimaryName,

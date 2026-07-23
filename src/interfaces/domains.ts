@@ -1,4 +1,4 @@
-import { NameExpiry } from '../services/ensDomains'
+import { NameExpiry } from '../services/ensDomains/ensDomains'
 import { NameServiceId, ResolvedNames } from '../services/nameResolvers'
 import { ControllerInterface } from './controller'
 
