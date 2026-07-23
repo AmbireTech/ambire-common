@@ -307,13 +307,15 @@ export class MainController extends EventEmitter implements IMainController {
       eventEmitterRegistry,
       storage: this.storage,
       getNetworks: () => this.networks.allNetworks,
+      featureFlags: this.featureFlags,
       sendUiMessage: this.ui.message.sendUiMessage
     })
     this.verification = new VerificationController({
       eventEmitterRegistry,
       networks: this.networks,
       fetch: this.fetch,
-      velcroUrl
+      velcroUrl,
+      featureFlags: this.featureFlags
     })
     this.accounts = new AccountsController(
       this.storage,
@@ -493,7 +495,8 @@ export class MainController extends EventEmitter implements IMainController {
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       },
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      this.featureFlags
     )
     this.transferScanner = new TransfersScannerController({
       activity: this.activity,

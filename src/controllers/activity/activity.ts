@@ -12,6 +12,7 @@ import { IActivityController } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
@@ -285,6 +286,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #safe: ISafeController
 
+  #featureFlags?: IFeatureFlagsController
+
   #onContractsDeployed: (network: Network) => Promise<void>
 
   #callRelayer: Function
@@ -322,7 +325,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     portfolio: IPortfolioController,
     safe: ISafeController,
     onContractsDeployed: (network: Network) => Promise<void>,
-    eventEmitterRegistry?: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController,
+    featureFlags?: IFeatureFlagsController
   ) {
     super(eventEmitterRegistry)
     this.#storage = storage
@@ -334,6 +338,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.#networks = networks
     this.#portfolio = portfolio
     this.#safe = safe
+    this.#featureFlags = featureFlags
     this.#onContractsDeployed = onContractsDeployed
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -880,8 +885,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
         chainId
       )
       if (shouldLearnTokens) {
-        const scamFilter = new ScamFilter({ fetch: this.#fetch, network })
-        const tokensWithAPrice = await scamFilter.filterTokensWithoutAPrice(foundTokens)
+        const tokensWithAPrice =
+          this.#featureFlags?.isFeatureEnabled('tokenPrices') === false
+            ? foundTokens
+            : await new ScamFilter({ fetch: this.#fetch, network }).filterTokensWithoutAPrice(
+                foundTokens
+              )
         this.#portfolio.addTokensToBeLearned(tokensWithAPrice, chainId)
       }
       const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens)

@@ -351,7 +351,12 @@ export class PortfolioController
   }
 
   async updateExchangeList() {
-    if (this.exchangeState.isLoading || this.exchangeState.retryCount >= 5) return
+    if (
+      !this.#featureFlags.isFeatureEnabled('tokenPrices') ||
+      this.exchangeState.isLoading ||
+      this.exchangeState.retryCount >= 5
+    )
+      return
 
     this.exchangeState.isLoading = true
 
@@ -922,7 +927,12 @@ export class PortfolioController
       try {
         const provider = providers[network.chainId.toString()]
         if (!provider) return null
-        this.#portfolioLibs.set(key, new Portfolio(this.#fetch, provider, network, this.#velcroUrl))
+        this.#portfolioLibs.set(
+          key,
+          new Portfolio(this.#fetch, provider, network, this.#velcroUrl, undefined, () =>
+            this.#featureFlags.isFeatureEnabled('tokenPrices')
+          )
+        )
       } catch (e: any) {
         this.emitError({
           level: 'silent',
@@ -1491,7 +1501,8 @@ export class PortfolioController
           this.#fetch,
           state.result?.defiPositions.positionsByProvider || [],
           discoveryData?.data?.defi?.positions,
-          getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
+          getIsExternalApiDefiPositionsCallSuccessful(discoveryData),
+          this.#featureFlags.isFeatureEnabled('tokenPrices')
         )
       ])
 

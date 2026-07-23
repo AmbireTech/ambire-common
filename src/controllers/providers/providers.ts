@@ -1,6 +1,7 @@
 import { Contract } from 'ethers'
 
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Network } from '../../interfaces/network'
 import { IProvidersController, RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
@@ -30,6 +31,8 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
   #getNetworks: () => Network[]
 
   #sendUiMessage: (params: {}) => void
+
+  #featureFlags?: IFeatureFlagsController
 
   #providers: RPCProviders = {}
 
@@ -64,17 +67,20 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     storage,
     getNetworks,
     sendUiMessage,
-    eventEmitterRegistry
+    eventEmitterRegistry,
+    featureFlags
   }: {
     storage: IStorageController
     getNetworks: () => Network[]
     sendUiMessage: (params: {}) => void
     eventEmitterRegistry?: IEventEmitterRegistryController
+    featureFlags?: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
     this.#storage = storage
     this.#getNetworks = getNetworks
     this.#sendUiMessage = sendUiMessage
+    this.#featureFlags = featureFlags
 
     /**
      * Proxy over the providers map that:
@@ -468,7 +474,14 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     }
 
     try {
-      const portfolio = new Portfolio(fetch as any, provider, network)
+      const portfolio = new Portfolio(
+        fetch as any,
+        provider,
+        network,
+        undefined,
+        undefined,
+        () => this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false
+      )
 
       // create a wrapper function so that we could pass it correctly
       // to the required type for getAccountOpBalanceChanges.
@@ -522,7 +535,10 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
     const portfolio = new Portfolio(
       fetch as any,
       this.providers[network.chainId.toString()]!,
-      network
+      network,
+      undefined,
+      undefined,
+      () => this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false
     )
     const options: Partial<GetOptions> = {
       disableAutoDiscovery: true,

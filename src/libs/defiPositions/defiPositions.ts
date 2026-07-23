@@ -58,7 +58,8 @@ const getCustomProviderPositions = async (
   fetch: Function,
   previousPositions: PositionsByProvider[],
   debankNetworkPositionsByProvider: PositionsByProvider[] | undefined,
-  isDebankCallSuccessful: boolean
+  isDebankCallSuccessful: boolean,
+  shouldFetchTokenPrices: boolean = true
 ): Promise<{
   positionsByProvider: PositionsByProvider[]
   providerErrors: ProviderError[]
@@ -104,7 +105,7 @@ const getCustomProviderPositions = async (
       ])
     ).filter(Boolean) as PositionsByProvider[]
 
-    if (newPositions.length) {
+    if (newPositions.length && shouldFetchTokenPrices) {
       try {
         newPositions =
           (await updatePositionsByProviderAssetPrices(fetch, newPositions, network.platformId)) ||
