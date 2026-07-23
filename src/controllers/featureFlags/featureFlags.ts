@@ -50,6 +50,12 @@ export class FeatureFlagsController extends EventEmitter implements IFeatureFlag
     this.emitUpdate()
   }
 
+  async setFeatureFlags(flags: Partial<FeatureFlags>): Promise<void> {
+    this.#flags = { ...this.#flags, ...flags }
+    await this.#storage.set('flags', this.#flags)
+    this.emitUpdate()
+  }
+
   get flags() {
     return this.#flags
   }

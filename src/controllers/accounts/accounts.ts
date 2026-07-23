@@ -22,6 +22,7 @@ import {
 } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { dedicatedToOneSAPriv, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
@@ -46,6 +47,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   #keystore: IKeystoreController
 
   #callRelayer: Function
+
+  #featureFlags?: IFeatureFlagsController
 
   /**
    * Creating Ambire smart account identity is needed but not critical, user
@@ -96,7 +99,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     onAccountStateUpdate: () => void,
     relayerUrl: string,
     fetch: Fetch,
-    eventEmitterRegistry?: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController,
+    featureFlags?: IFeatureFlagsController
   ) {
     super(eventEmitterRegistry)
     this.#storage = storage
@@ -107,6 +111,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.#updateProviderIsWorking = updateProviderIsWorking
     this.#onAccountStateUpdate = onAccountStateUpdate
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#featureFlags = featureFlags
 
     this.#viewOnlyAccountGetIdentityInterval = new RecurringTimeout(
       this.setViewOnlyAccountIdentitiesIfNeeded.bind(this),
@@ -136,6 +141,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   }
 
   async #load() {
+    await this.#featureFlags?.initialLoadPromise
     await this.#networks.initialLoadPromise
     await this.#providers.initialLoadPromise
     const accounts = await this.#storage.get('accounts', [])
@@ -408,6 +414,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
   }
 
   async setViewOnlyAccountIdentitiesIfNeeded(): Promise<void> {
+    if (this.#featureFlags?.isFeatureEnabled('ambireSmartAccounts') === false) {
+      return this.#viewOnlyAccountGetIdentityInterval.stop()
+    }
+
     const viewOnlyAccountsNeedingIdentityFetch = this.accounts.filter(
       (a) => !this.#keystore.getAccountKeys(a).length && !a.identityFetchedAt && !a.safeCreation
     )
@@ -468,6 +478,10 @@ export class AccountsController extends EventEmitter implements IAccountsControl
    * with the identityCreatedAt timestamp. Handles retry mechanism for failed requests.
    */
   async createSmartAccountIdentitiesIfNeeded(): Promise<void> {
+    if (this.#featureFlags?.isFeatureEnabled('ambireSmartAccounts') === false) {
+      return this.#smartAccountIdentityCreateInterval.stop()
+    }
+
     const smartAccountsNeedingIdentityCreate = this.accounts.filter(
       (a) =>
         isAmbireV2Account(a.creation?.factoryAddr) &&

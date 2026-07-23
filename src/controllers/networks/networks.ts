@@ -8,6 +8,7 @@ import { networks as predefinedNetworks } from '../../consts/networks'
 import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import {
   AddNetworkRequestParams,
   ChainId,
@@ -50,6 +51,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
   #callRelayer: Function
 
+  #featureFlags?: IFeatureFlagsController
+
   #networks: { [key: string]: Network } = {}
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
@@ -88,7 +91,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
     relayerUrl,
     useTempProvider,
     onAddOrUpdateNetworks,
-    onReady
+    onReady,
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     defaultNetworksMode?: 'mainnet' | 'testnet'
@@ -104,6 +108,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     ) => Promise<void>
     onAddOrUpdateNetworks: (networks: Network[]) => void | Promise<void>
     onReady: () => Promise<void>
+    featureFlags?: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
     if (defaultNetworksMode) this.defaultNetworksMode = defaultNetworksMode
@@ -113,6 +118,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     this.#useTempProvider = useTempProvider
     this.#onAddOrUpdateNetworks = onAddOrUpdateNetworks
     this.#onReady = onReady
+    this.#featureFlags = featureFlags
 
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -201,6 +207,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
    * `synchronizeNetworks`.
    */
   async #load() {
+    await this.#featureFlags?.initialLoadPromise
+
     // Step 1. Get latest storage (networksInStorage) and validate/normalize
     const networksInStorage = await this.getNetworksInStorage()
 
@@ -255,6 +263,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
    */
   async synchronizeNetworks() {
     if (this.defaultNetworksMode === 'testnet') return
+    if (this.#featureFlags?.isFeatureEnabled('networkConfig') === false) return
 
     this.areNetworksFetchingFromRelayer = true
     this.emitUpdate()
@@ -311,6 +320,10 @@ export class NetworksController extends EventEmitter implements INetworksControl
     mergedNetworks: { [key: string]: Network }
     updatedNetworkChainIds: Network['chainId'][]
   }> {
+    if (this.#featureFlags?.isFeatureEnabled('networkConfig') === false) {
+      return { mergedNetworks: currentNetworks, updatedNetworkChainIds: [] }
+    }
+
     let relayerNetworks: RelayerNetworkConfigResponse = {}
     try {
       const res = await Promise.race([

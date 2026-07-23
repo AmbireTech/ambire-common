@@ -1050,21 +1050,30 @@ export class PortfolioController
     this.#setNetworkLoading(accountId, 'rewards', true)
     this.emitUpdate()
 
-    let res: any
-    try {
-      res = await this.#callRelayer(
-        `/v2/identity/${accountId}/portfolio-additional`,
-        'GET',
-        undefined,
-        undefined,
-        5000
-      )
-    } catch (e: any) {
-      console.error('relayer error for portfolio additional')
-      this.#setNetworkLoading(accountId, 'gasTank', false, e)
-      this.#setNetworkLoading(accountId, 'rewards', false, e)
-      this.emitUpdate()
-      return
+    let res: any = {
+      data: {
+        rewards: {},
+        rewardsProjectionDataV2: {},
+        frozenRewardSeason1: 0,
+        gasTank: { balance: [] }
+      }
+    }
+    if (this.#featureFlags.isFeatureEnabled('gasTank')) {
+      try {
+        res = await this.#callRelayer(
+          `/v2/identity/${accountId}/portfolio-additional`,
+          'GET',
+          undefined,
+          undefined,
+          5000
+        )
+      } catch (e: any) {
+        console.error('relayer error for portfolio additional')
+        this.#setNetworkLoading(accountId, 'gasTank', false, e)
+        this.#setNetworkLoading(accountId, 'rewards', false, e)
+        this.emitUpdate()
+        return
+      }
     }
 
     if (res.data.banner) {

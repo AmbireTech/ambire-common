@@ -5,6 +5,9 @@ export interface FeatureFlags {
   testnetMode: boolean
   tokenAndDefiAutoDiscovery: boolean
   apiForFunctionSelectors: boolean
+  gasTank: boolean
+  networkConfig: boolean
+  ambireSmartAccounts: boolean
   /**
    * Allow the user to opt out of erc4337 which will automatically
    * disable paying gas in different tokens & gas tank.
@@ -31,6 +34,9 @@ export const defaultFeatureFlags: FeatureFlags = {
   testnetMode: false,
   tokenAndDefiAutoDiscovery: true,
   apiForFunctionSelectors: true,
+  gasTank: true,
+  networkConfig: true,
+  ambireSmartAccounts: true,
   erc4337: true,
   keepEnsProfilesUpToDate: false,
   // @TODO: Introduce a setting and flip to false

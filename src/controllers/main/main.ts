@@ -299,7 +299,8 @@ export class MainController extends EventEmitter implements IMainController {
       },
       onReady: async () => {
         await this.providers.init({ networks: this.networks.allNetworks })
-      }
+      },
+      featureFlags: this.featureFlags
     })
 
     this.providers = new ProvidersController({
@@ -329,7 +330,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.#updateIsOffline.bind(this),
       relayerUrl,
       this.fetch,
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      this.featureFlags
     )
     this.autoLogin = new AutoLoginController(
       this.storage,
@@ -430,6 +432,7 @@ export class MainController extends EventEmitter implements IMainController {
       externalSignerControllers: this.#externalSignerControllers,
       relayerUrl,
       fetch: this.fetch,
+      featureFlags: this.featureFlags,
       /**
        * callback that gets triggered as a finalization step of adding new
        * accounts via the AccountPickerController.
@@ -717,6 +720,7 @@ export class MainController extends EventEmitter implements IMainController {
               externalSignerControllers: this.#externalSignerControllers,
               relayerUrl,
               fetch: this.fetch,
+              featureFlags: this.featureFlags,
               onAddAccountsSuccessCallback: async () => {}
             }),
           this.keystore,
