@@ -21,10 +21,18 @@ export abstract class BaseAccount {
 
   protected accountState: AccountOnchainState
 
-  constructor(account: Account, network: Network, accountState: AccountOnchainState) {
+  protected isErc4337Enabled: boolean
+
+  constructor(
+    account: Account,
+    network: Network,
+    accountState: AccountOnchainState,
+    isErc4337Enabled = true
+  ) {
     this.account = account
     this.network = network
     this.accountState = accountState
+    this.isErc4337Enabled = isErc4337Enabled
   }
 
   getAccount() {
@@ -121,6 +129,10 @@ export abstract class BaseAccount {
   }
 
   isSponsorable(): boolean {
+    return false
+  }
+
+  canUseErc4337(): boolean {
     return false
   }
 

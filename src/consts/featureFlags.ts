@@ -6,6 +6,13 @@ export interface FeatureFlags {
   tokenAndDefiAutoDiscovery: boolean
   apiForFunctionSelectors: boolean
   /**
+   * Allow the user to opt out of erc4337 which will automatically
+   * disable paying gas in different tokens & gas tank.
+   * For Ambire v2 accounts, it will also disalbe ETH payments (the user
+   * will need an EOA account just like using a Safe)
+   */
+  erc4337: boolean
+  /**
    * Off by default for privacy: passively bulk-resolving ENS/Namoshi for all
    * accounts links them together. When enabled, the wallet keeps every account's
    * ENS profile fresh in the background (the pre-privacy behaviour).
@@ -24,6 +31,7 @@ export const defaultFeatureFlags: FeatureFlags = {
   testnetMode: false,
   tokenAndDefiAutoDiscovery: true,
   apiForFunctionSelectors: true,
+  erc4337: true,
   keepEnsProfilesUpToDate: false,
   // @TODO: Introduce a setting and flip to false
   namoshiDomains: true,

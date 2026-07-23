@@ -82,14 +82,22 @@ export class Paymaster extends AbstractPaymaster {
 
   errorCallback: Function | undefined = undefined
 
+  #getIsErc4337Enabled: () => boolean
+
   // this is a temporary solution where the live relayer doesn't have
   // a chain id paymaster route open yet as it's not merged
   ambirePaymasterUrl: string | undefined
 
-  constructor(relayerUrl: string, fetch: Fetch, errorCallback: Function) {
+  constructor(
+    relayerUrl: string,
+    fetch: Fetch,
+    errorCallback: Function,
+    getIsErc4337Enabled: () => boolean = () => true
+  ) {
     super()
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.errorCallback = errorCallback
+    this.#getIsErc4337Enabled = getIsErc4337Enabled
   }
 
   async init(
@@ -103,6 +111,11 @@ export class Paymaster extends AbstractPaymaster {
     this.network = network
     this.provider = provider
     this.ambirePaymasterUrl = `/v2/paymaster/${this.network.chainId}/request`
+
+    if (!this.#getIsErc4337Enabled()) {
+      this.type = 'None'
+      return
+    }
 
     if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
       try {

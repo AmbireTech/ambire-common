@@ -9,6 +9,7 @@ import { IAddressBookController } from '../../interfaces/addressBook'
 import { IDappsController } from '../../interfaces/dapp'
 import { AddressState } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -94,6 +95,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   #storage: IStorageController
 
   #signAccountOpPreference: SignAccountOpPreferenceController
+
+  #featureFlags: IFeatureFlagsController
 
   #networks: INetworksController
 
@@ -203,6 +206,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     callRelayer: BindedRelayerCall,
     storage: IStorageController,
     signAccountOpPreference: SignAccountOpPreferenceController,
+    featureFlags: IFeatureFlagsController,
     humanizerInfo: HumanizerMeta,
     selectedAccount: ISelectedAccountController,
     networks: INetworksController,
@@ -225,6 +229,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#callRelayer = callRelayer
     this.#storage = storage
     this.#signAccountOpPreference = signAccountOpPreference
+    this.#featureFlags = featureFlags
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccount = selectedAccount
     this.#networks = networks
@@ -1144,6 +1149,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       networks: this.#networks,
       keystore: this.#keystore,
       portfolio: this.#portfolio,
+      featureFlags: this.#featureFlags,
       signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,

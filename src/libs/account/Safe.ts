@@ -64,11 +64,15 @@ export class Safe extends BaseAccount {
   }
 
   supportsBundlerEstimation() {
-    return true
+    return this.isErc4337Enabled
   }
 
   isSponsorable() {
     return false
+  }
+
+  canUseErc4337(): boolean {
+    return true
   }
 
   getAvailableFeeOptions(

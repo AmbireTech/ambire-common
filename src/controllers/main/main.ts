@@ -516,6 +516,7 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       storage: this.storage,
       signAccountOpPreference: this.signAccountOpPreference,
+      featureFlags: this.featureFlags,
       phishing: this.phishing,
       dapps: this.dapps,
       swapProvider: new SwapProviderParallelExecutor(
@@ -559,6 +560,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.callRelayer,
       this.storage,
       this.signAccountOpPreference,
+      this.featureFlags,
       humanizerInfo as HumanizerMeta,
       this.selectedAccount,
       this.networks,
@@ -624,6 +626,7 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       providers: this.providers,
       storage: this.storage,
+      featureFlags: this.featureFlags,
       signAccountOpPreference: this.signAccountOpPreference,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,
@@ -690,10 +693,15 @@ export class MainController extends EventEmitter implements IMainController {
         })
       })
     }
-    paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
-      if (this.requests.currentUserRequest?.kind !== 'calls') return
-      this.emitError(e)
-    })
+    paymasterFactory.init(
+      relayerUrl,
+      fetch,
+      (e: ErrorRef) => {
+        if (this.requests.currentUserRequest?.kind !== 'calls') return
+        this.emitError(e)
+      },
+      () => this.featureFlags.isFeatureEnabled('erc4337')
+    )
 
     this.keystore.onUpdate(() => {
       if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
