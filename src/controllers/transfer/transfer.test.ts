@@ -9,7 +9,6 @@ import { networks } from '../../consts/networks'
 import { TokenResult } from '../../libs/portfolio'
 import * as ensDomainsModule from '../../services/ensDomains'
 import { DomainsController } from '../domains/domains'
-import { TransferController } from './transfer'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
 const polygon = networks.find((x) => x.chainId === 137n)
