@@ -119,6 +119,20 @@ const fallbackCases: Array<{
       fullVisualization: [{ type: 'action', content: 'Swap', id: 1 }]
     } as IrCall,
     expected: [{ type: 'action', content: 'Swap' }]
+  },
+  {
+    // BUG regression: a Safe{WALLET} "reject" call is a 0-value, no-data self-call, so it lands
+    // in the same 'has-to:no-value:no-data' bucket as a plain empty call. A prior humanizer
+    // module (e.g. SafeModule) may have already set a specific fullVisualization for it (e.g.
+    // "Reject Tx with nonce X"), which must be preserved instead of being overwritten here
+    label: 'has-to:no-value:no-data — existing fullVisualization (e.g. Safe reject) preserved',
+    call: {
+      to: TO,
+      value: 0n,
+      data: '0x',
+      fullVisualization: [{ type: 'action', content: 'Reject Tx with nonce 5', id: 1 }]
+    } as IrCall,
+    expected: [{ type: 'action', content: 'Reject Tx with nonce 5' }]
   }
 ]
 
