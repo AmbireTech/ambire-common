@@ -26,6 +26,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
+import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import {
   ERRORS,
   RETRY_TO_INIT_ACCOUNT_OP_MSG,
@@ -147,6 +148,7 @@ import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
+import { withTimeout } from '../../utils/with-timeout'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { GasPriceController } from '../gasPrice/gasPrice'
@@ -2907,11 +2909,14 @@ export class SignAccountOpController
     const isExternalSignerInvolved =
       this.accountOp.gasFeePayment.paidByKeyType !== 'internal' ||
       this.accountOp.signingKeyType !== 'internal'
+    const isCollectingSafeSignature =
+      !!this.account.safeCreation && (this.accountOp.signed?.length || 0) < this.threshold
     const isImmediatelyWaitingForPaymaster =
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
       isUsingPaymaster &&
       !shouldSignDeployAuth &&
-      !this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)
+      !this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler) &&
+      !isCollectingSafeSignature
 
     if (isImmediatelyWaitingForPaymaster) this.status = { type: SigningStatus.WaitingForPaymaster }
 
@@ -3003,22 +3008,32 @@ export class SignAccountOpController
         if (!isQuickBroadcast) {
           if (!prevSignedSigs.length) {
             // propose the txn to Safe Global upon first entry
-            await propose(
-              safeTxn,
-              this.accountOp.chainId,
-              this.account.addr as Hex,
-              this.#accountOp.signingKeyAddr as Hex,
-              signature,
-              safeTxnHash
+            await withTimeout(
+              () =>
+                propose(
+                  safeTxn,
+                  this.accountOp.chainId,
+                  this.account.addr as Hex,
+                  this.#accountOp.signingKeyAddr as Hex,
+                  signature,
+                  safeTxnHash
+                ),
+              {
+                timeoutMs: SAFE_API_TIMEOUT_MS,
+                message: `Safe API: propose transaction timed out after ${SAFE_API_TIMEOUT_MS}ms`
+              }
             ).catch((e) => {
               this.hasSafeApiFailed = true
               console.log('Safe API: failed to propose txn', e)
             })
           } else {
             // add extra confirmations
-            await confirm(this.accountOp.chainId, signature, safeTxnHash).catch((e) => {
+            await withTimeout(() => confirm(this.accountOp.chainId, signature, safeTxnHash), {
+              timeoutMs: SAFE_API_TIMEOUT_MS,
+              message: `Safe API: confirm transaction timed out after ${SAFE_API_TIMEOUT_MS}ms`
+            }).catch((e) => {
               this.hasSafeApiFailed = true
-              console.log('Safe API: faield to confirm txn', e)
+              console.log('Safe API: failed to confirm txn', e)
             })
           }
 
