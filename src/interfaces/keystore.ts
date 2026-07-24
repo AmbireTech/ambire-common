@@ -250,6 +250,8 @@ export type ParsedQrAccount = {
   deviceModel?: string
   deviceId?: string
   hdPath?: string // For wallets that don't provide the hdPath on each account, but only a general one for the whole export (like Keystone)
+  // BC-UR crypto-hdkey children keypath pattern (e.g. "*/*" for BIP44, "*" for Ledger Legacy).
+  childrenPath?: string
   accounts: ParsedQrImportedAccount[]
 }
 
