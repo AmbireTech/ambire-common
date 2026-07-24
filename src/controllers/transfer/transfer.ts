@@ -291,7 +291,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     const isSameMode = this.isTopUp === nextIsTopUp
     const hasNoSearchParams = Object.keys(searchParams || {}).length === 0
 
-    const shouldKeepExistingForm = isFormInitialized && isSameMode && hasNoSearchParams
+    const shouldKeepExistingForm =
+      isFormInitialized && isSameMode && hasNoSearchParams && view.type !== 'side-panel'
 
     if (shouldKeepExistingForm) {
       if (!this.areDefaultsSet) {
@@ -1235,6 +1236,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     // Always reset the session id
     this.#currentTransferSessionId = null
 
+    // Popup keeps in-progress forms when closed; side panel should start fresh on reopen.
     if (this.hasPersistedState && !isNavigateOut && viewType === 'popup') return
 
     this.reset({ destroyAccountOp: true })

@@ -96,6 +96,7 @@ export type StorageProps = {
   lastDappsUpdateVersion: string | null
   isPinned: boolean
   isPrivacyModeEnabled: boolean
+  isSidePanelModeEnabled: boolean
   phishing: {
     version: number
     updatedAt: number

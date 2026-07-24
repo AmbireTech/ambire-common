@@ -606,9 +606,63 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.closeRequestWindow()
   }
 
+  // When the wallet runs in Chrome side-panel mode, action requests are rendered
+  // inside the panel itself instead of a separate request window. Prefer the
+  // persisted mode flag (survives brief view/port races) and fall back to an
+  // already-open side-panel view.
+  get #isSidePanelOpen() {
+    return this.#ui.views.some((view) => view.type === 'side-panel')
+  }
+
+  async #shouldHandleRequestsInSidePanel() {
+    if (this.#isSidePanelOpen) return true
+
+    try {
+      return !!(await this.#storage.get('isSidePanelModeEnabled', false))
+    } catch {
+      return false
+    }
+  }
+
+  // Drop a request-window chrome popup without dismissing the active request —
+  // used when side-panel mode should own the request UI instead.
+  async #discardRequestWindowShell() {
+    if (!this.requestWindow.windowProps) return
+
+    const winId = this.requestWindow.windowProps.id
+    this.requestWindow.windowProps = null
+    this.requestWindow.loaded = false
+    this.requestWindow.pendingMessage = null
+
+    try {
+      await this.#ui.window.remove(winId)
+    } catch (error) {
+      console.error('Failed to discard request window shell', error)
+    }
+  }
+
+  async #presentRequestInSidePanel(baseWindowId?: number) {
+    await this.#discardRequestWindowShell()
+
+    if (!this.#isSidePanelOpen) {
+      try {
+        await this.#ui.openSidePanel?.(baseWindowId)
+      } catch (error) {
+        console.error('Failed to open side panel for request', error)
+      }
+    }
+
+    await this.forceEmitUpdate()
+  }
+
   async openRequestWindow(params?: OpenRequestWindowParams) {
     const { skipFocus, baseWindowId } = params || {}
     await this.#awaitPendingPromises()
+
+    if (await this.#shouldHandleRequestsInSidePanel()) {
+      await this.#presentRequestInSidePanel(baseWindowId)
+      return
+    }
 
     if (this.requestWindow.windowProps) {
       if (!skipFocus) {
@@ -629,12 +683,25 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       try {
         await this.#ui.window.remove('popup')
+
+        // Side-panel mode / view can become available while we wait for overlay cleanup.
+        if (await this.#shouldHandleRequestsInSidePanel()) {
+          await this.#presentRequestInSidePanel(baseWindowId)
+          return
+        }
+
         this.requestWindow.openWindowPromise = this.#ui.window
           .open({ customSize, baseWindowId })
           .finally(() => {
             this.requestWindow.openWindowPromise = undefined
           })
         this.requestWindow.windowProps = await this.requestWindow.openWindowPromise
+
+        // If side-panel mode took over during window creation, discard the popup shell.
+        if (await this.#shouldHandleRequestsInSidePanel()) {
+          await this.#presentRequestInSidePanel(baseWindowId)
+          return
+        }
 
         this.emitUpdate()
       } catch (err) {
@@ -650,6 +717,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   async focusRequestWindow(params?: FocusWindowParams) {
     await this.#awaitPendingPromises()
+
+    if (await this.#shouldHandleRequestsInSidePanel()) {
+      await this.#presentRequestInSidePanel()
+      return
+    }
 
     if (
       !this.visibleUserRequests.length ||
@@ -701,6 +773,81 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#handleRequestWindowClose(this.requestWindow.windowProps.id)
   }
 
+  async #onActiveRequestDismissed() {
+    const requestIdsSnapshotAtClose = new Set(this.userRequests.map((r) => r.id))
+
+    this.requestWindow.windowProps = null
+    this.requestWindow.loaded = false
+    this.requestWindow.pendingMessage = null
+    await this.#setCurrentUserRequest(null)
+
+    const callsCount = this.visibleUserRequests.reduce((acc, request) => {
+      if (request.kind !== 'calls') return acc
+
+      return acc + (request.signAccountOp.accountOp.calls?.length || 0)
+    }, 0)
+
+    if (callsCount) {
+      await this.#ui.notification.create({
+        title: callsCount > 1 ? `${callsCount} transactions queued` : 'Transaction queued',
+        message: 'Queued pending transactions are available on your Dashboard.'
+      })
+    }
+
+    for (const r of this.userRequests) {
+      if (r.kind === 'walletAddEthereumChain') {
+        const chainId = r.meta.params[0].chainId
+
+        if (!chainId) continue
+
+        const network = this.#networks.networks.find((n) => n.chainId === BigInt(chainId))
+        if (network && !network.disabled) await this.resolveUserRequest(null, r.id)
+      }
+    }
+
+    const userRequestsToRejectOnWindowClose = this.userRequests.filter(
+      (r) => r.kind !== 'calls' && !r.meta.keepRequestAlive && requestIdsSnapshotAtClose.has(r.id)
+    )
+
+    await this.rejectUserRequests(
+      ethErrors.provider.userRejectedRequest().message,
+      userRequestsToRejectOnWindowClose.map((r) => r.id),
+      // If the user closes a window and non-calls user requests exist,
+      // the window will reopen with the next request.
+      // For example: if the user has both a sign message and sign account op request,
+      // closing the window will reject the sign message request but immediately
+      // reopen the window for the sign account op request.
+      { shouldOpenNextRequest: false }
+    )
+
+    this.userRequestsWaitingAccountSwitch = []
+    this.emitUpdate()
+  }
+
+  async dismissActiveRequest() {
+    await this.#awaitPendingPromises()
+    if (!this.currentUserRequest) return
+
+    try {
+      // In the side panel there is no window to close; apply the same queue semantics as
+      // closing the request window (keep calls queued, clear the active request).
+      if (this.#isSidePanelOpen) {
+        await this.#onActiveRequestDismissed()
+        return
+      }
+
+      if (this.requestWindow.windowProps) {
+        await this.closeRequestWindow()
+      }
+    } catch (err) {
+      this.emitError({
+        message: 'Failed to dismiss the active request. Please try again.',
+        level: 'major',
+        error: err as Error
+      })
+    }
+  }
+
   async #handleRequestWindowClose(winId: number) {
     if (
       winId === this.requestWindow.windowProps?.id ||
@@ -708,56 +855,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.currentUserRequest &&
         this.requestWindow.windowProps)
     ) {
-      // Snapshot IDs synchronously before any awaits so requests that arrive
-      // during async operations below are not incorrectly bulk-rejected.
-      const requestIdsSnapshotAtClose = new Set(this.userRequests.map((r) => r.id))
-
-      this.requestWindow.windowProps = null
-      this.requestWindow.loaded = false
-      this.requestWindow.pendingMessage = null
-      await this.#setCurrentUserRequest(null)
-
-      const callsCount = this.visibleUserRequests.reduce((acc, request) => {
-        if (request.kind !== 'calls') return acc
-
-        return acc + (request.signAccountOp.accountOp.calls?.length || 0)
-      }, 0)
-
-      if (callsCount) {
-        await this.#ui.notification.create({
-          title: callsCount > 1 ? `${callsCount} transactions queued` : 'Transaction queued',
-          message: 'Queued pending transactions are available on your Dashboard.'
-        })
-      }
-
-      for (const r of this.userRequests) {
-        if (r.kind === 'walletAddEthereumChain') {
-          const chainId = r.meta.params[0].chainId
-
-          if (!chainId) continue
-
-          const network = this.#networks.networks.find((n) => n.chainId === BigInt(chainId))
-          if (network && !network.disabled) await this.resolveUserRequest(null, r.id)
-        }
-      }
-
-      const userRequestsToRejectOnWindowClose = this.userRequests.filter(
-        (r) => r.kind !== 'calls' && !r.meta.keepRequestAlive && requestIdsSnapshotAtClose.has(r.id)
-      )
-
-      await this.rejectUserRequests(
-        ethErrors.provider.userRejectedRequest().message,
-        userRequestsToRejectOnWindowClose.map((r) => r.id),
-        // If the user closes a window and non-calls user requests exist,
-        // the window will reopen with the next request.
-        // For example: if the user has both a sign message and sign account op request,
-        // closing the window will reject the sign message request but immediately
-        // reopen the window for the sign account op request.
-        { shouldOpenNextRequest: false }
-      )
-
-      this.userRequestsWaitingAccountSwitch = []
-      this.emitUpdate()
+      await this.#onActiveRequestDismissed()
     }
   }
 
