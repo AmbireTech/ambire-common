@@ -8,7 +8,6 @@ import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { PositionCountOnDisabledNetworks } from '../defiPositions/types'
 import { HumanizerVisualization } from '../humanizer/interfaces'
-import { getSameNonceRequests } from '../safe/helpers'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
 
 export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
@@ -181,19 +180,33 @@ const getSafeBanner = ({
   network: Network
   selectedAccount: Account
 }): Banner => {
+  // count the requests for Safe accounts instead of the calls
+  const requestCount = requests.length
   return {
     id: `${selectedAccount.addr}-${network.chainId.toString()}`,
     type: 'info',
     category: 'pending-to-be-signed-acc-op',
-    title: `Pending transactions ${network.name ? `on ${network.name}` : ''}`,
-    text: `${requests.length} transactions are mutually exclusive (Same nonce). You can sign only one.`,
+    title: `${requestCount === 1 ? 'Pending transaction' : `${requestCount} Pending transactions`} on`,
+    meta: { chainId: network.chainId },
     actions: [
       {
         actionName: 'open-accountOp',
         meta: { requestId: requests[0]!.id },
         label: 'Open'
       }
-    ]
+    ],
+    dismissAction:
+      requestCount === 1
+        ? {
+            label: 'Reject',
+            actionName: 'reject-accountOp',
+            meta: {
+              err: 'User rejected the transaction request.',
+              requestId: requests[0]!.id,
+              shouldOpenNextAction: false
+            }
+          }
+        : undefined
   }
 }
 
@@ -213,21 +226,20 @@ export const getAccountOpBanners = ({
   const txnBanners: Banner[] = []
 
   Object.entries(callsUserRequestsByNetwork).forEach(([netId, requests]) => {
-    let remainingRequests: CallsUserRequest[] = []
-    if (!!selectedAccount.safeCreation && requests.length > 1) {
-      const sameNonceRequests = getSameNonceRequests(requests)
-      const network = networks.filter((n) => n.chainId.toString() === netId)[0]!
-      Object.keys(sameNonceRequests).forEach((nonce) => {
-        const grouped = sameNonceRequests[nonce]!
-        if (grouped.length === 1) {
-          remainingRequests = [...remainingRequests, ...grouped]
-          return
-        }
-        txnBanners.push(getSafeBanner({ requests: grouped, network, selectedAccount }))
-      })
-    } else remainingRequests = requests
+    // push all safe request for 1 network in a single banner
+    if (!!selectedAccount.safeCreation) {
+      const network = networks.find((n) => n.chainId.toString() === netId)!
+      txnBanners.push(
+        getSafeBanner({
+          requests,
+          network,
+          selectedAccount
+        })
+      )
+      return
+    }
 
-    remainingRequests.forEach((request) => {
+    requests.forEach((request) => {
       const network = networks.filter((n) => n.chainId.toString() === netId)[0]!
       const callCount = request.signAccountOp.accountOp.calls.length
 
@@ -236,9 +248,10 @@ export const getAccountOpBanners = ({
         type: 'info',
         category: 'pending-to-be-signed-acc-op',
         title: `${
-          callCount === 1 ? 'Transaction' : `${callCount} Transactions`
-        } waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
+          callCount === 1 ? 'Pending transaction' : `${callCount} Pending transactions`
+        } on`,
         text: '',
+        meta: { chainId: network.chainId },
         actions: [
           {
             actionName: 'open-accountOp',

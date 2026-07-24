@@ -332,6 +332,18 @@ const smartAccount: Account = {
   }
 }
 
+const safeAccount: Account = {
+  ...smartAccount,
+  creation: null,
+  safeCreation: {
+    factoryAddr: smartAccount.addr as Hex,
+    singleton: smartAccount.addr as Hex,
+    saltNonce: '0x00',
+    setupData: '0x',
+    version: '1.4.1'
+  }
+}
+
 const e2esmartAccount: Account = {
   addr: '0x4C71d299f23eFC660b3295D1f631724693aE22Ac',
   associatedKeys: ['0xa18fe725A4a0E25A02411Ab28073E4F35D32d8e2'],
@@ -865,6 +877,81 @@ describe('SignAccountOp Controller ', () => {
 
     return { controller, storageCtrl }
   }
+
+  const initSafeNonce = async (signed: string[] = []) => {
+    const feePaymentOptions = getDefaultFeeSelectionOptions().map((option) => ({
+      ...option,
+      paidBy: safeAccount.addr
+    }))
+    const accountOp = createAccountOp(safeAccount, 1n)
+    accountOp.op.nonce = 3n
+    accountOp.op.signed = signed
+
+    return init(
+      safeAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 25000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 25000n,
+          feePaymentOptions,
+          ambireAccountNonce: 3,
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      defaultFeeSelectionGasPrices
+    )
+  }
+
+  test('sets a custom Safe nonce and refreshes its EIP-712 data', async () => {
+    const { controller } = await initSafeNonce()
+    const initialSafeEip712Data = controller.safeEip712Data
+
+    controller.setSafeNonce(42n)
+
+    expect(controller.accountOp.nonce).toBe(42n)
+    expect(controller.safeEip712Data).not.toEqual(initialSafeEip712Data)
+
+    controller.update({ hasNewEstimation: true })
+    expect(controller.accountOp.nonce).toBe(42n)
+  })
+
+  test('does not change the nonce of a non-Safe or already-signed transaction', async () => {
+    const { controller: nonSafeController } = await initDefaultFeeSelection()
+    const { controller: signedSafeController } = await initSafeNonce([eoaSigner.keyPublicAddress])
+
+    nonSafeController.setSafeNonce(42n)
+    signedSafeController.setSafeNonce(42n)
+
+    expect(nonSafeController.accountOp.nonce).toBe(0n)
+    expect(signedSafeController.accountOp.nonce).toBe(3n)
+  })
+
+  test('rejects Safe nonces outside the uint256 range', async () => {
+    const { controller } = await initSafeNonce()
+
+    controller.setSafeNonce(-1n)
+    expect(controller.accountOp.nonce).toBe(3n)
+
+    controller.setSafeNonce(1n << 256n)
+    expect(controller.accountOp.nonce).toBe(3n)
+  })
+
+  test('does not change a Safe nonce while signing is in progress', async () => {
+    const { controller } = await initSafeNonce()
+    controller.updateStatus(SigningStatus.InProgress)
+
+    controller.setSafeNonce(42n)
+
+    expect(controller.accountOp.nonce).toBe(3n)
+  })
 
   test('defaults fee payment to the network-native token before gas tank or ERC-20', async () => {
     const { controller } = await initDefaultFeeSelection()
