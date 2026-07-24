@@ -4,7 +4,15 @@ const ERRORS = {
   eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
 }
 
-const WARNINGS: { [key: string]: Warning } = {
+const WARNINGS: Record<
+  | 'significantBalanceDecrease'
+  | 'unknownToken'
+  | 'possibleBalanceDecrease'
+  | 'feeTokenPriceUnavailable'
+  | 'v1Acc'
+  | 'safeDelegateCall',
+  Warning
+> = {
   significantBalanceDecrease: {
     id: 'significantBalanceDecrease',
     title: 'Significant Account Balance Decrease',
