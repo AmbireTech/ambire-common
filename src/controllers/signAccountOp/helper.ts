@@ -122,13 +122,7 @@ function getSafeDelegateCallWarning(accountOp: AccountOp): Warning | null {
     accountOp.safeTx.to
   )
 
-  // Suffix the id with the accountOp id (unique per account and per set of calls,
-  // see `generateUuid()` in signAccountOp.ts) so acknowledging this warning for one
-  // accountOp doesn't silently suppress it for a different account or a different
-  // delegatecall - a contract address suffix alone wouldn't cover the former case
-  return shouldWarn
-    ? { ...WARNINGS.safeDelegateCall, id: `safeDelegateCall-${accountOp.id}` }
-    : null
+  return shouldWarn ? WARNINGS.safeDelegateCall : null
 }
 
 const isUnderpriced = (msg: string): boolean => {

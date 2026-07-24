@@ -64,7 +64,7 @@ describe('getSafeDelegateCallWarning', () => {
     const warning = getSafeDelegateCallWarning(accOpWithSafeTx)
 
     expect(warning).toBeTruthy()
-    expect(warning?.id).toBe(`safeDelegateCall-${accOpWithSafeTx.id}`)
+    expect(warning?.id).toBe('safeDelegateCall')
   })
 
   test('does not warn when the Safe tx operation is a regular call (operation 0)', () => {
@@ -83,17 +83,4 @@ describe('getSafeDelegateCallWarning', () => {
     expect(getSafeDelegateCallWarning(accountOp)).toBeNull()
   })
 
-  test('produces a distinct id for a different accountOp delegating to the same contract, so dismissing one does not suppress the other', () => {
-    const safeTx = buildSafeTxFixture({
-      operation: 1,
-      to: '0x9999999999999999999999999999999999999999'
-    })
-    const accOpA: AccountOp = { ...accountOp, id: 'accOpA', safeTx }
-    const accOpB: AccountOp = { ...accountOp, id: 'accOpB', safeTx }
-
-    const warningA = getSafeDelegateCallWarning(accOpA)
-    const warningB = getSafeDelegateCallWarning(accOpB)
-
-    expect(warningA?.id).not.toBe(warningB?.id)
-  })
 })

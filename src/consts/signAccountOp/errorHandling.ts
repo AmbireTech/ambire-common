@@ -34,8 +34,7 @@ const WARNINGS: { [key: string]: Warning } = {
   safeDelegateCall: {
     id: 'safeDelegateCall',
     title: 'Delegate call to an unverified contract',
-    text: 'This Safe transaction delegates permissions to a contract not whitelisted by Safe. Proceed with caution.',
-    promptBefore: ['sign', 'one-click-sign']
+    text: 'This Safe transaction delegates permissions to a contract not whitelisted by Safe. Proceed with caution.'
   }
 }
 

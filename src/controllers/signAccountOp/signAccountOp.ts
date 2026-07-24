@@ -1339,9 +1339,6 @@ export class SignAccountOpController
     if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
     if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
 
-    const safeDelegateCallWarning = getSafeDelegateCallWarning(this.accountOp)
-    if (safeDelegateCallWarning) warnings.push(safeDelegateCallWarning)
-
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
     if (this.account.creation && !accountState?.isV2 && WARNINGS.v1Acc)
@@ -3937,6 +3934,15 @@ export class SignAccountOpController
 
     const dappVerificationBanner = this.#getDappVerificationBanner()
     if (dappVerificationBanner) banners.push(dappVerificationBanner)
+
+    const safeDelegateCallWarning = getSafeDelegateCallWarning(this.accountOp)
+    if (safeDelegateCallWarning) {
+      banners.push({
+        id: safeDelegateCallWarning.id,
+        type: 'warning',
+        text: safeDelegateCallWarning.text || safeDelegateCallWarning.title
+      })
+    }
 
     return banners
   }
