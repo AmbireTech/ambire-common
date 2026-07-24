@@ -25,7 +25,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
-import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
+import { MAX_SAFE_NONCE, SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import {
   ERRORS,
   RETRY_TO_INIT_ACCOUNT_OP_MSG,
@@ -235,6 +235,8 @@ export class SignAccountOpController
    * in requests/actions.
    */
   #accountOp: AccountOp
+
+  #customSafeNonce: bigint | null = null
 
   gasPrices?: GasSpeeds
 
@@ -532,6 +534,33 @@ export class SignAccountOpController
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
     }
     this.#updateSafeEip712Data()
+  }
+
+  #updateNonce(nonce: bigint) {
+    if (this.#customSafeNonce !== null) return
+    this.#updateAccountOp({ nonce })
+  }
+
+  setSafeNonce(nonce: bigint) {
+    if (!this.account.safeCreation) return
+    if (this.status?.type && noStateUpdateStatuses.includes(this.status.type)) return
+    if (this.accountOp.signed?.length || this.accountOp.safeTx?.confirmations?.length) return
+    if (nonce < 0n || nonce > MAX_SAFE_NONCE) return
+
+    this.#customSafeNonce = nonce
+    this.#updateAccountOp({
+      nonce,
+      safeTx: this.accountOp.safeTx
+        ? {
+            ...this.accountOp.safeTx,
+            nonce: nonce.toString()
+          }
+        : undefined,
+      signature: null,
+      txnId: undefined,
+      asUserOperation: undefined
+    })
+    this.emitUpdate()
   }
 
   #getSafeSigningData(accountState: AccountOnchainState) {
@@ -1376,9 +1405,7 @@ export class SignAccountOpController
     // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
     // that we should update the portfolio to get a correct simulation
     if (estimation && estimation.ambireEstimation && estimation.flags.hasNonceDiscrepancy) {
-      this.#updateAccountOp({
-        nonce: BigInt(estimation.ambireEstimation.ambireAccountNonce)
-      })
+      this.#updateNonce(BigInt(estimation.ambireEstimation.ambireAccountNonce))
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -1399,9 +1426,7 @@ export class SignAccountOpController
         this.accountOp.accountAddr,
         this.accountOp.chainId
       )
-      this.#updateAccountOp({
-        nonce: pendingAccountState.nonce
-      })
+      this.#updateNonce(pendingAccountState.nonce)
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -1529,9 +1554,7 @@ export class SignAccountOpController
 
         const estimation = this.estimation.estimation as FullEstimationSummary
         if (estimation.ambireEstimation && !isSpeedUpTransaction) {
-          this.#updateAccountOp({
-            nonce: BigInt(estimation.ambireEstimation.ambireAccountNonce)
-          })
+          this.#updateNonce(BigInt(estimation.ambireEstimation.ambireAccountNonce))
         }
       } else if (this.estimation.status === EstimationStatus.Error) {
         // No need to update gasPrices if the estimation failed
@@ -2899,10 +2922,9 @@ export class SignAccountOpController
         this.account.safeCreation &&
         (this.#accountOp.signed?.length || 0) < this.threshold
       ) {
-        // if the Safe txn is not already signed, fetch the latest nonce
-        // as we don't have a mechanism for fixing nonces for Safe accounts
-        // during the estimation phase itself
-        if (!this.accountOp.safeTx) {
+        // If the Safe txn is not already signed, fetch the latest nonce unless
+        // the user explicitly selected one for this transaction.
+        if (!this.accountOp.safeTx && this.#customSafeNonce === null) {
           const latestNonce = await getNonce(this.accountOp.accountAddr, this.provider).catch(
             (e) => {
               console.log('failed to retrieve the latest nonce for Safe')
@@ -2911,9 +2933,7 @@ export class SignAccountOpController
             }
           )
           if (latestNonce) {
-            this.#updateAccountOp({
-              nonce: latestNonce
-            })
+            this.#updateNonce(latestNonce)
           }
         }
 
@@ -3007,7 +3027,7 @@ export class SignAccountOpController
             this.accountOp,
             this.provider
           )
-          if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
+          if (nonce !== this.accountOp.nonce) this.#updateNonce(nonce)
 
           const signer = await this.#getDefaultSigner()
           this.#updateAccountOp({
@@ -3234,7 +3254,7 @@ export class SignAccountOpController
           this.accountOp,
           this.provider
         )
-        if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
+        if (nonce !== this.accountOp.nonce) this.#updateNonce(nonce)
 
         this.#updateAccountOp({
           signature: await this.#withHardwareWalletSigningRequest(
