@@ -1,7 +1,13 @@
 import { getDomain } from 'tldts'
 
 import { predefinedDapps } from '../../consts/dapps/dapps'
-import { ConnectionSource, Dapp, DefiLlamaProtocol } from '../../interfaces/dapp'
+import {
+  ConnectionSource,
+  Dapp,
+  DefiLlamaProtocol,
+  RawTrendingToken,
+  TrendingToken
+} from '../../interfaces/dapp'
 
 const getDappIdFromUrl = (url: string): string => {
   if (!url || url === 'internal') return 'internal'
@@ -154,6 +160,39 @@ function normalizeDappConnection(dapp: Dapp): Dapp {
   return { ...dapp, connectedSources, isConnected: connectedSources.length > 0 }
 }
 
+// Maps the raw cena trending response to the UI-ready shape kept in state.
+// Items without a usable id or price are dropped — they can't be keyed or displayed meaningfully.
+function normalizeTrendingTokens(raw: RawTrendingToken[]): TrendingToken[] {
+  return raw
+    .filter((token) => !!token?.id && typeof token.usd === 'number')
+    .map((token) => {
+      const platformId = token.asset_platform_id ?? null
+      const address =
+        token.contract_address ?? (platformId ? token.platforms?.[platformId] : undefined) ?? null
+      const decimals = (platformId ? token.decimals?.[platformId] : undefined) ?? null
+
+      return {
+        id: token.id,
+        name: token.name,
+        symbol: token.symbol,
+        icon: token.image?.large || token.image?.small || token.image?.thumb || '',
+        priceUSD: token.usd ?? 0,
+        priceChange24hUSD: typeof token.usd_24h_change === 'number' ? token.usd_24h_change : null,
+        marketCapRank: token.market_cap_rank ?? null,
+        description: token.description?.en ?? null,
+        address,
+        platformId,
+        decimals,
+        marketCapUSD: token.usd_market_cap ?? null,
+        totalVolumeUSD: token.usd_24h_vol ?? null,
+        fullyDilutedValuationUSD: token.usd_fully_diluted_valuation ?? null,
+        totalSupply: token.total_supply ?? null,
+        website: token.homepage?.find((url) => !!url) ?? null,
+        exchangeIds: (token.exchanges ?? []).filter((id): id is string => !!id)
+      }
+    })
+}
+
 export {
   getDappIdFromUrl,
   getDappIconFromUrl,
@@ -163,5 +202,6 @@ export {
   modifyDappPropsIfNeeded,
   getDappNameFromId,
   unifyDefiLlamaDappUrl,
-  normalizeDappConnection
+  normalizeDappConnection,
+  normalizeTrendingTokens
 }

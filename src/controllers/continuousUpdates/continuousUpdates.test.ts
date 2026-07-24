@@ -3,7 +3,12 @@ import { Account } from '@/interfaces/account'
 import { suppressConsole } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
-import { ACTIVITY_REFRESH_INTERVAL } from '../../consts/intervals'
+import {
+  ACTIVITY_REFRESH_INTERVAL,
+  TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
+  TRENDING_TOKENS_FAILED_UPDATE_INTERVAL,
+  TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
+} from '../../consts/intervals'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swapProviderParallelExecutor'
 import wait from '../../utils/wait'
@@ -106,6 +111,7 @@ const prepareTest = async () => {
     await wait(500)
   })
   mainCtrl.updateAccountsOpsStatuses = jest.fn().mockResolvedValue({ newestOpTimestamp: 0 })
+  mainCtrl.dapps.updateTrendingTokens = jest.fn().mockResolvedValue(undefined)
 
   return { mainCtrl }
 }
@@ -358,5 +364,60 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(mainCtrl.continuousUpdates!.fastAccountStateReFetchTimeout.fnExecutionsCount).toBe(
       initialFnExecutionsCount + 2
     )
+  })
+
+  test('backs off the trending interval on failure and recovers on success', async () => {
+    const { mainCtrl } = await prepareTest()
+    await waitForContinuousUpdatesCtrlReady(mainCtrl)
+
+    const interval = mainCtrl.continuousUpdates!.updateTrendingTokensInterval
+    // No view is open, so the interval runs at the inactive cadence.
+    expect(interval.currentTimeout).toBe(TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL)
+
+    // Next fetch fails → back off to the 1-minute failed-retry cadence.
+    ;(mainCtrl.dapps.updateTrendingTokens as jest.Mock).mockRejectedValueOnce(new Error('boom'))
+    await waitForFnToBeCalledAndExecuted(interval)
+    expect(interval.currentTimeout).toBe(TRENDING_TOKENS_FAILED_UPDATE_INTERVAL)
+
+    // The following fetch succeeds → recover the inactive cadence (still no view open).
+    await waitForFnToBeCalledAndExecuted(interval)
+    expect(interval.currentTimeout).toBe(TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL)
+  })
+
+  test('switches the trending interval to the active cadence while a view is open', async () => {
+    const { mainCtrl } = await prepareTest()
+    await waitForContinuousUpdatesCtrlReady(mainCtrl)
+
+    const interval = mainCtrl.continuousUpdates!.updateTrendingTokensInterval
+    expect(interval.currentTimeout).toBe(TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL)
+
+    jest.spyOn(interval, 'restart')
+    mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
+    await jest.advanceTimersByTimeAsync(0)
+    expect(interval.restart).toHaveBeenCalledWith({
+      timeout: TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
+      runImmediately: true
+    })
+    expect(interval.currentTimeout).toBe(TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL)
+
+    mainCtrl.ui.removeView('1')
+    await jest.advanceTimersByTimeAsync(0)
+    expect(interval.currentTimeout).toBe(TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL)
+  })
+
+  test('skips the trending fetch when the last update is still fresh', async () => {
+    const { mainCtrl } = await prepareTest()
+    await waitForContinuousUpdatesCtrlReady(mainCtrl)
+
+    const interval = mainCtrl.continuousUpdates!.updateTrendingTokensInterval
+    const updateSpy = mainCtrl.dapps.updateTrendingTokens as jest.Mock
+    // Pretend trending was just refreshed.
+    jest.spyOn(mainCtrl.dapps, 'trendingTokensUpdatedAt', 'get').mockReturnValue(Date.now())
+    updateSpy.mockClear()
+
+    // Becoming active triggers an immediate refresh, but the freshness guard skips the fetch.
+    mainCtrl.ui.addView({ id: '1', type: 'popup', currentRoute: 'dashboard', isReady: true })
+    await waitForFnToBeCalledAndExecuted(interval)
+    expect(updateSpy).not.toHaveBeenCalled()
   })
 })

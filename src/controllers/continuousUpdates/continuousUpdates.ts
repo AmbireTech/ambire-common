@@ -6,7 +6,10 @@ import {
   ACCOUNT_STATE_STAND_BY_INTERVAL,
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
-  INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+  INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
+  TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
+  TRENDING_TOKENS_FAILED_UPDATE_INTERVAL,
+  TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
 } from '../../consts/intervals'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -66,6 +69,12 @@ export class ContinuousUpdatesController extends EventEmitter {
   #safeGlobalTxnInterval: IRecurringTimeout
 
   #safeGlobalMessageInterval: IRecurringTimeout
+
+  #updateTrendingTokensInterval: IRecurringTimeout
+
+  get updateTrendingTokensInterval() {
+    return this.#updateTrendingTokensInterval
+  }
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void> | undefined
@@ -158,6 +167,35 @@ export class ContinuousUpdatesController extends EventEmitter {
       'resolveConfirmedSafeMessages'
     )
 
+    // Trending tokens poll frequently only while the extension is active and back off to a long
+    // cadence otherwise. On becoming active we refresh immediately, but the freshness guard in
+    // #updateTrendingTokens skips the fetch when the last update is still recent.
+    this.#updateTrendingTokensInterval = new RecurringTimeout(
+      this.#updateTrendingTokens.bind(this),
+      TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL,
+      this.emitError.bind(this),
+      'updateTrendingTokensInterval'
+    )
+
+    this.#main.ui.uiEvent.on('addView', () => {
+      const isAlreadyActive =
+        this.#updateTrendingTokensInterval.currentTimeout === TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL
+
+      if (this.#main.ui.views.length === 1 && !isAlreadyActive) {
+        this.#updateTrendingTokensInterval.restart({
+          timeout: TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
+          runImmediately: true
+        })
+      }
+    })
+    this.#main.ui.uiEvent.on('removeView', () => {
+      if (!this.#main.ui.views.length) {
+        this.#updateTrendingTokensInterval.restart({
+          timeout: TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
+        })
+      }
+    })
+
     this.#main.swapAndBridge.onUpdate(() => {
       if (this.#main.swapAndBridge.signAccountOpController?.broadcastStatus === 'SUCCESS') {
         this.#accountStateLatestInterval.restart()
@@ -218,6 +256,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     this.#accountStateLatestInterval.start()
     this.#safeGlobalTxnInterval.start()
     this.#safeGlobalMessageInterval.start()
+    this.#updateTrendingTokensInterval.start({ runImmediately: true })
   }
 
   async #updatePortfolio() {
@@ -227,6 +266,46 @@ export class ContinuousUpdatesController extends EventEmitter {
       maxDataAgeMs: 60 * 1000,
       maxDataAgeMsUnused: 60 * 60 * 1000
     })
+  }
+
+  async #updateTrendingTokens() {
+    await this.initialLoadPromise
+    await this.#main.dapps.initialLoadPromise
+
+    // Skip if the last successful update is still fresh — prevents redundant requests when the
+    // background reloads multiple times within a short period (e.g. service worker wake-ups) and
+    // makes "refresh on becoming active" a no-op unless the data is older than the current cadence.
+    const updatedAt = this.#main.dapps.trendingTokensUpdatedAt
+    const timeSinceLastUpdate = updatedAt ? Date.now() - updatedAt : null
+    if (
+      updatedAt &&
+      timeSinceLastUpdate !== null &&
+      timeSinceLastUpdate < this.#updateTrendingTokensInterval.currentTimeout
+    ) {
+      return
+    }
+
+    try {
+      await this.#main.dapps.updateTrendingTokens()
+
+      // Recover the normal cadence after a previously failed fetch bumped it down.
+      if (
+        this.#updateTrendingTokensInterval.currentTimeout === TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
+      ) {
+        this.#updateTrendingTokensInterval.updateTimeout({
+          timeout: this.#main.ui.views.length
+            ? TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL
+            : TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
+        })
+      }
+    } catch (err) {
+      // Back off to the fast failed-retry cadence, then rethrow so RecurringTimeout's onError
+      // handler reports it (with level 'silent', i.e. no user-facing toast).
+      this.#updateTrendingTokensInterval.updateTimeout({
+        timeout: TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
+      })
+      throw err
+    }
   }
 
   async #updateAccountsOpsStatuses() {
