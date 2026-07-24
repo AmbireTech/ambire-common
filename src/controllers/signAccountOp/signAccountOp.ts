@@ -229,6 +229,8 @@ export class SignAccountOpController
 
   hasSafeApiFailed: boolean = false
 
+  isRefetchingAccountState: boolean = false
+
   /**
    * Never modify this directly, use #updateAccountOp instead.
    * Otherwise the accountOp will be out of sync with the one stored
@@ -561,6 +563,17 @@ export class SignAccountOpController
       asUserOperation: undefined
     })
     this.emitUpdate()
+  }
+
+  async refetchAccountState() {
+    if (this.isRefetchingAccountState) return
+
+    this.isRefetchingAccountState = true
+    this.emitUpdate()
+
+    await this.#accounts.forceFetchPendingState(this.accountOp.accountAddr, this.accountOp.chainId)
+    this.isRefetchingAccountState = false
+    this.updateStatus()
   }
 
   #getSafeSigningData(accountState: AccountOnchainState) {
@@ -1320,7 +1333,8 @@ export class SignAccountOpController
       this.#accountOp.signed.length >= this.threshold
     ) {
       errors.push({
-        title: 'You need to broadcast pending transactions before this one.'
+        title: 'You need to broadcast pending transactions before this one.',
+        action: 'refetch-account-state'
       })
     }
 
