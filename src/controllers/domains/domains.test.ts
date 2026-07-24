@@ -4,11 +4,11 @@ import { expect, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
 import { networks } from '../../consts/networks'
+import { Network } from '../../interfaces/network'
 // Must match the direct-file import used in domains.ts (not the barrel) — jest.spyOn
 // can't intercept calls through a different module instance, and tslib 2's `export *`
 // getter-only bindings make the barrel un-spyable anyway.
 import * as ensDomainsModule from '../../services/ensDomains/ensDomains'
-import { Network } from '../../interfaces/network'
 import { NameResolver, NameServiceId } from '../../services/nameResolvers'
 import { getRpcProvider } from '../../services/provider'
 import {
@@ -285,6 +285,101 @@ describe('Domains', () => {
       expect(controller.domainToAddresses[name]?.address).toBe(resolvedAddress)
       expect(controller.resolveDomainsErrors[name]).toBeUndefined()
       expect(controller.verifiedDomainsStatus[name]).toBeUndefined()
+    } finally {
+      resolveENSDomainSpy.mockRestore()
+    }
+  })
+  it('stores the resolved name normalized while keying coordination state by the raw input', async () => {
+    const controller = new DomainsController({
+      providers: { ['1']: {} as any },
+      featureFlags: makeFeatureFlags(true),
+      getNetwork: allNetworksEnabled
+    })
+    const resolvedAddress = getAddress('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
+    const resolveENSDomainSpy = jest
+      .spyOn(ensDomainsModule, 'resolveENSDomain')
+      .mockResolvedValue({ address: resolvedAddress, avatar: null, expiry: null })
+
+    try {
+      await controller.resolveDomain({ domain: 'VITALIK.ETH' })
+
+      // The stored name is the resolver-normalized (ENSIP-15) form.
+      expect(controller.domains[resolvedAddress]!.names.ens).toBe('vitalik.eth')
+      // The resolver is queried with the normalized name.
+      expect(resolveENSDomainSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ domain: 'vitalik.eth' })
+      )
+      // Coordination state stays keyed by the raw input the UI dispatched (no UI-side normalizer).
+      expect(controller.domainToAddresses['VITALIK.ETH']?.address).toBe(resolvedAddress)
+      expect(controller.domainToAddresses['VITALIK.ETH']?.type).toBe('ens')
+    } finally {
+      resolveENSDomainSpy.mockRestore()
+    }
+  })
+  it('routes an uppercase Namoshi TLD (.BTC) to the Namoshi service (case-insensitive matching)', async () => {
+    const controller = new DomainsController({
+      providers: { ['1']: {} as any, ['4114']: {} as any },
+      featureFlags: makeFeatureFlags(true),
+      getNetwork: allNetworksEnabled
+    })
+    const resolvedAddress = getAddress('0x4f0b5579136f88135572010276c2a4a884729e7b')
+    const resolveENSDomainSpy = jest
+      .spyOn(ensDomainsModule, 'resolveENSDomain')
+      .mockResolvedValue({ address: resolvedAddress, avatar: null, expiry: null })
+
+    try {
+      // Without case-insensitive matching 'SATOSHI.BTC'.endsWith('.btc') is false and it would fall back to ENS.
+      await controller.resolveDomain({ domain: 'SATOSHI.BTC' })
+
+      expect(controller.domainToAddresses['SATOSHI.BTC']?.type).toBe('namoshi')
+      expect(controller.domainToAddresses['SATOSHI.BTC']?.address).toBe(resolvedAddress)
+      // Stored name is normalized for the owning service.
+      expect(controller.domains[resolvedAddress]!.names.namoshi).toBe('satoshi.btc')
+    } finally {
+      resolveENSDomainSpy.mockRestore()
+    }
+  })
+  it('marks an un-normalizable domain as failed without querying any resolver', async () => {
+    const controller = new DomainsController({
+      providers: { ['1']: {} as any },
+      featureFlags: makeFeatureFlags(true),
+      getNetwork: allNetworksEnabled
+    })
+    const resolveENSDomainSpy = jest.spyOn(ensDomainsModule, 'resolveENSDomain')
+
+    try {
+      await controller.resolveDomain({ domain: 'has space.eth' })
+
+      expect(resolveENSDomainSpy).not.toHaveBeenCalled()
+      expect(controller.domainToAddresses['has space.eth']).toBeUndefined()
+    } finally {
+      resolveENSDomainSpy.mockRestore()
+    }
+  })
+  it('keeps case-variant inputs as separate raw cache keys, each stored normalized', async () => {
+    const controller = new DomainsController({
+      providers: { ['1']: {} as any },
+      featureFlags: makeFeatureFlags(true),
+      getNetwork: allNetworksEnabled
+    })
+    const resolvedAddress = getAddress('0xf9D6794F16CDbdC5b4873AEdeF4dC69d8D5edcaD')
+    const resolveENSDomainSpy = jest
+      .spyOn(ensDomainsModule, 'resolveENSDomain')
+      .mockResolvedValue({ address: resolvedAddress, avatar: null, expiry: null })
+
+    try {
+      // 'Vitalik.eth' and 'vitalik.eth' are distinct raw keys, so each resolves independently. This is
+      // the accepted trade-off of keeping coordination keys raw (no UI-side normalizer to dedup them).
+      await Promise.all([
+        controller.resolveDomain({ domain: 'Vitalik.eth' }),
+        controller.resolveDomain({ domain: 'vitalik.eth' })
+      ])
+
+      expect(resolveENSDomainSpy).toHaveBeenCalledTimes(2)
+      expect(controller.domainToAddresses['Vitalik.eth']?.address).toBe(resolvedAddress)
+      expect(controller.domainToAddresses['vitalik.eth']?.address).toBe(resolvedAddress)
+      // Both variants store the same normalized name.
+      expect(controller.domains[resolvedAddress]!.names.ens).toBe('vitalik.eth')
     } finally {
       resolveENSDomainSpy.mockRestore()
     }
@@ -886,6 +981,7 @@ describe('Domains', () => {
       label: id,
       capabilities: { reverse: true, avatar: false, expiry: false },
       matches: () => false,
+      normalize: (domain: string) => domain,
       resolve: async () => null,
       reverse,
       getAvatar: async () => null,
