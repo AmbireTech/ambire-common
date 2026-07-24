@@ -194,7 +194,19 @@ const getSafeBanner = ({
         meta: { requestId: requests[0]!.id },
         label: 'Open'
       }
-    ]
+    ],
+    dismissAction:
+      requestCount === 1
+        ? {
+            label: 'Reject',
+            actionName: 'reject-accountOp',
+            meta: {
+              err: 'User rejected the transaction request.',
+              requestId: requests[0]!.id,
+              shouldOpenNextAction: false
+            }
+          }
+        : undefined
   }
 }
 
