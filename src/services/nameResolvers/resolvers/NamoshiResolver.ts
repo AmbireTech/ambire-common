@@ -19,6 +19,7 @@ export class NamoshiResolver extends EnsCompatibleResolver {
   }
 
   matches(domain: string): boolean {
-    return domain.endsWith('.btc') || domain.endsWith('.citrea')
+    const tld = domain.trim().toLowerCase()
+    return tld.endsWith('.btc') || tld.endsWith('.citrea')
   }
 }

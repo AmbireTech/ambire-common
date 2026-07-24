@@ -33,6 +33,30 @@ describe('matchNameResolver / getNameService', () => {
     // Fallback removed and no specific match -> nothing owns it.
     expect(matchNameResolver([namoshiResolver, gnsResolver], 'vitalik.eth')).toBeUndefined()
   })
+
+  it('routes case-insensitively, so an uppercase TLD reaches its service before normalization', () => {
+    expect(getNameService('SATOSHI.BTC')?.id).toBe('namoshi')
+    expect(getNameService('Nemo.Citrea')?.id).toBe('namoshi')
+    expect(getNameService('DONNOH.GWEI')?.id).toBe('gns')
+    expect(getNameService('  satoshi.btc  ')?.id).toBe('namoshi')
+  })
+})
+
+describe('resolver.normalize (per-service, ENSIP-15 for the ENS family)', () => {
+  it('lowercases and trims to the canonical form', () => {
+    expect(ensResolver.normalize('VITALIK.ETH')).toBe('vitalik.eth')
+    expect(namoshiResolver.normalize('  Satoshi.BTC ')).toBe('satoshi.btc')
+    expect(gnsResolver.normalize('Donnoh.GWEI')).toBe('donnoh.gwei')
+  })
+
+  it('applies UTS-46 mapping, not a plain toLowerCase (uppercase unicode folds to one form)', () => {
+    expect(ensResolver.normalize('BÜCHER.eth')).toBe(ensResolver.normalize('bücher.eth'))
+  })
+
+  it('returns null for an invalid name (disallowed character) instead of throwing', () => {
+    expect(ensResolver.normalize('has space.eth')).toBeNull()
+    expect(ensResolver.normalize('')).toBeNull()
+  })
 })
 
 describe('getPrimaryName', () => {
