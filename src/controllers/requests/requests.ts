@@ -1951,7 +1951,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
-      const requestId = `${meta.accountAddr}-${meta.chainId}${meta.safeTxnProps?.txnId ? `-${meta.safeTxnProps?.txnId}` : ''}`
+      const baseRequestId = `${meta.accountAddr}-${meta.chainId}${meta.safeTxnProps?.txnId ? `-${meta.safeTxnProps.txnId}` : ''}`
+      // add a unique id for safe requests as we want to make sure
+      // new requests do not replace already existing ones
+      const requestId = !!account.safeCreation
+        ? `${baseRequestId}-${generateUuid()}`
+        : baseRequestId
       await this.#signAccountOpPreference.initialLoadPromise
       callUserRequest = {
         id: requestId,
