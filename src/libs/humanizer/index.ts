@@ -44,6 +44,7 @@ import KyberSwap from './modules/KyberSwap'
 import legendsModule from './modules/Legends'
 import { LidoModule } from './modules/Lido'
 import { LifiModule } from './modules/Lifi'
+import MetaMorphoModule from './modules/MetaMorpho'
 import ModuleProxyFactoryModule from './modules/ModuleProxyFactory'
 import { openSeaModule } from './modules/OpenSea'
 import PancakeModule from './modules/Pancake'
@@ -89,6 +90,7 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   WALLETModule,
   SafeModule,
   Bundler3Module,
+  MetaMorphoModule,
   AllowanceModule,
   ModuleProxyFactoryModule,
   privilegeHumanizer,
