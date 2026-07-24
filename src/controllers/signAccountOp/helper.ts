@@ -1,7 +1,9 @@
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
 import { Price } from '../../interfaces/assets'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
+import { shouldDisplaySafeDelegateCallWarning } from '../../libs/humanizer/modules/Safe'
 import { TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
 import { AccountState } from '../../libs/portfolio/interfaces'
@@ -112,6 +114,17 @@ const getFeeTokenPriceUnavailableWarning = (
   return WARNINGS.feeTokenPriceUnavailable
 }
 
+function getSafeDelegateCallWarning(accountOp: AccountOp): Warning | null {
+  if (!accountOp.safeTx) return null
+
+  const shouldWarn = shouldDisplaySafeDelegateCallWarning(
+    BigInt(accountOp.safeTx.operation),
+    accountOp.safeTx.to
+  )
+
+  return shouldWarn ? WARNINGS.safeDelegateCall : null
+}
+
 const isUnderpriced = (msg: string): boolean => {
   return (
     msg.includes('underpriced') ||
@@ -124,6 +137,7 @@ const isUnderpriced = (msg: string): boolean => {
 export {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
+  getSafeDelegateCallWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
