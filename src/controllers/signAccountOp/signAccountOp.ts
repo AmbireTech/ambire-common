@@ -547,7 +547,7 @@ export class SignAccountOpController
 
   setSafeNonce(nonce: bigint) {
     if (!this.account.safeCreation) {
-      const message = 'Nonce could not be set as something unexpected happened'
+      const message = 'Nonce could not be set, Safe account data is missing'
       this.emitError({
         message,
         error: new Error(message),
