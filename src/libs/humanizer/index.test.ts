@@ -3012,7 +3012,7 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
-  test.only('keeps unknown SafeTx delegatecall calldata as a selector and warns with the target address', async () => {
+  test('keeps unknown SafeTx delegatecall calldata as a selector and warns with the target address', async () => {
     const safeProxy = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
     const recipeExecutor = '0xc91305DdE651c899EF8eE1D0C33E7dab1B5ABF0D'
     const safeTxMessage = {
