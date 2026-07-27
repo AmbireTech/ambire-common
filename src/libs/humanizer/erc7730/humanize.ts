@@ -23,8 +23,7 @@ import {
   IrCall,
   IrMessage
 } from '../interfaces'
-import { aaveHumanizer } from '../modules/Aave'
-import AllowanceModule, { getSetAllowanceResetText } from '../modules/Allowance'
+import { getSetAllowanceResetText } from '../modules/Allowance'
 import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
@@ -51,6 +50,8 @@ import {
   Erc7730VisibleRule
 } from './types'
 import { getSafeTxCallsFromMessage, isPlainObject, parseIntegerLiteral } from './utils'
+import { humanizerCallModules } from '../'
+import fallbackHumanizer from '../modules/FallbackHumanizer'
 
 type DescriptorFormatMatch = {
   formatKey: string
@@ -1221,7 +1222,10 @@ const getModuleFallbackVisualization = (
     chainId,
     calls: [call]
   } as AccountOp
-  const localFallbackModules: HumanizerCallModule[] = [aaveHumanizer, AllowanceModule]
+  // TODO: temporary fix to avoid conflicts in all humanizer modules. This can be refactored
+  // after main and v2 are synced with PR #2551
+  const localFallbackModules: HumanizerCallModule[] = humanizerCallModules
+
   let humanizedCall: IrCall | undefined
 
   localFallbackModules.some((module) => {
