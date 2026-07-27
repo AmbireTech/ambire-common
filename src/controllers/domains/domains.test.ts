@@ -4,10 +4,11 @@ import { expect, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
 import { networks } from '../../consts/networks'
+// Must match the direct-file import used in domains.ts (not the barrel) — jest.spyOn
+// can't intercept calls through a different module instance, and tslib 2's `export *`
+// getter-only bindings make the barrel un-spyable anyway.
+import * as ensDomainsModule from '../../services/ensDomains/ensDomains'
 import { Network } from '../../interfaces/network'
-// The resolvers call the ensDomains primitives through this barrel, so spying here intercepts what
-// the controller ultimately runs during a reverse lookup.
-import * as ensDomainsModule from '../../services/ensDomains'
 import { NameResolver, NameServiceId } from '../../services/nameResolvers'
 import { getRpcProvider } from '../../services/provider'
 import {

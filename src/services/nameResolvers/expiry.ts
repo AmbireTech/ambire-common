@@ -1,4 +1,4 @@
-import { ENS_EXPIRY_WARN_WINDOW_IN_MS, NameExpiry } from '@/services/ensDomains'
+import { ENS_EXPIRY_WARN_WINDOW_IN_MS, NameExpiry } from '@/services/ensDomains/ensDomains'
 
 // Within this window before the grace-period deadline, re-poll a name's expiry to catch a renewal.
 export const EXPIRY_CLOSE_TO_DEADLINE_POLL_IN_MS = 1 * 60 * 60 * 1000
