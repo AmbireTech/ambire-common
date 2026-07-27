@@ -3910,6 +3910,157 @@ describe('ERC-7730 descriptors', () => {
       ])
     ])
   })
+
+  // Real Base mainnet SafeTx multisend (4 calls: Safe self-setup x2, an ERC-20 approval and an
+  // unrecognized settlement call) captured to catch a regression where calls that no humanizer
+  // module could recognize were silently dropped instead of falling back to an address+selector row.
+  test('keeps all 4 calls of a real SafeTx multisend after humanization', async () => {
+    const safeAddress = '0x2c5d356f2244b942c72ddfccbfa2e61529dc9c8d'
+    const multiSend = '0x9641d764fc13c8b624c04430c7356c1c7c8102e2'
+    const usdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+    const spender = '0xc92e8bdf79f0507f65a392b0ab4667716bfe0110'
+    const settlementContract = '0xfdafc9d1902f4e0b84f65f49f244b32b31013b74'
+    const multiSendData =
+      '0x8d80ff0a00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000464002c5d356f2244b942c72ddfccbfa2e61529dc9c8d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000024f08a03230000000000000000000000002f55e8b20d0b9fefa187aa7d00b6cbe563605bf5002c5d356f2244b942c72ddfccbfa2e61529dc9c8d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000443365582cd72ffa789b6fae41254d0b5a13e6e1e92ed947ec6a251edf1cf0b6c02c257b4b000000000000000000000000fdafc9d1902f4e0b84f65f49f244b32b31013b7400833589fcd6edb6e08f4c7c32d4f71b54bda0291300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe0110ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00fdafc9d1902f4e0b84f65f49f244b32b31013b74000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002640d0d9800000000000000000000000000000000000000000000000000000000000000008000000000000000000000000052ed56da04309aca4c3fecc595298d80c2f16bac000000000000000000000000000000000000000000000000000000000000024000000000000000000000000000000000000000000000000000000000000000010000000000000000000000006cf1e9ca41f7611def408122793c358a3d11e5a50000000000000000000000000000000000000000000000000000019fa3b9fe0100000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000140000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda02913000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000002c5d356f2244b942c72ddfccbfa2e61529dc9c8d00000000000000000000000000000000000000000000000000000000000f55c80000000000000000000000000000000000000000000000000001a02678851ac10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000007080000000000000000000000000000000000000000000000000000000000000000d1735c8b769e3b06acd45b0c09c76b4961b8215a15d6eaeefa05593ab382156500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          verifyingContract: safeAddress,
+          chainId: 8453
+        },
+        message: {
+          to: multiSend,
+          value: '0',
+          data: multiSendData,
+          operation: 1,
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: ZeroAddress,
+          refundReceiver: ZeroAddress,
+          nonce: 0,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    const irMessage = humanizeMessage(safeTxMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                {
+                  intent: 'Safe',
+                  fields: [
+                    { path: 'operation', label: 'Operation type' },
+                    {
+                      path: 'data',
+                      label: 'Transaction',
+                      format: 'calldata',
+                      params: { calleePath: '#.to' }
+                    },
+                    { path: 'safeTxGas', label: 'Gas amount' },
+                    { path: 'gasPrice', label: 'Gas price' },
+                    { path: 'gasToken', label: 'Gas token', format: 'addressName' },
+                    { path: 'refundReceiver', label: 'Gas receiver', format: 'addressName' }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('Safe', [
+        {
+          label: 'Operation type',
+          value: [getText('1')]
+        },
+        {
+          label: 'Transactions',
+          value: [
+            getErc7730Visualization('Interacting', [
+              {
+                label: 'With',
+                value: [getAddressVisualization(safeAddress)]
+              }
+            ]),
+            getErc7730Visualization('Interacting', [
+              {
+                label: 'With',
+                value: [getAddressVisualization(safeAddress)]
+              }
+            ]),
+            getErc7730Visualization('Grant approval', [
+              {
+                label: 'For',
+                value: [getToken(usdc, ethers.MaxUint256)]
+              },
+              {
+                label: 'To',
+                value: [getAddressVisualization(spender)]
+              }
+            ]),
+            getErc7730Visualization('Interacting', [
+              {
+                label: 'With',
+                value: [getAddressVisualization(settlementContract)]
+              }
+            ])
+          ]
+        },
+        {
+          label: 'Gas amount',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas price',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas token',
+          value: [getAddressVisualization(ZeroAddress)]
+        },
+        {
+          label: 'Gas receiver',
+          value: [getAddressVisualization(ZeroAddress)]
+        }
+      ])
+    ])
+    // Regression guard: none of the 4 calls should be silently dropped, even the two
+    // whose call target (setFallbackHandler self-call / unrecognized settlement call)
+    // no humanizer module could decode.
+    const transactionsRow = (irMessage.fullVisualization?.[0] as any)?.rows?.find(
+      (row: any) => row.label === 'Transactions'
+    )
+    expect(transactionsRow?.value).toHaveLength(4)
+  })
 })
 
 // Non-strict / dirty-bytes ABI encoding: the 12 leading zero bytes that pad a 20-byte
