@@ -546,7 +546,7 @@ export class SignAccountOpController
   }
 
   setSafeNonce(nonce: bigint) {
-    if (!this.account.safeCreation || !this.accountOp.safeTx) {
+    if (!this.account.safeCreation) {
       const message = 'Nonce could not be set as something unexpected happened'
       this.emitError({
         message,
@@ -586,10 +586,12 @@ export class SignAccountOpController
     this.#customSafeNonce = nonce
     this.#updateAccountOp({
       nonce,
-      safeTx: {
-        ...this.accountOp.safeTx,
-        nonce: nonce.toString()
-      },
+      safeTx: this.accountOp.safeTx
+        ? {
+            ...this.accountOp.safeTx,
+            nonce: nonce.toString()
+          }
+        : undefined,
       signature: null,
       txnId: undefined,
       asUserOperation: undefined

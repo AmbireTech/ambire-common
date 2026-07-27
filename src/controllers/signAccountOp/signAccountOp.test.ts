@@ -213,45 +213,7 @@ const createAccountOp = (
     chainId,
     nonce: 0n, // does not matter when estimating
     calls: [{ to, value: BigInt(0), data }],
-    signature: null,
-    ...(account.safeCreation
-      ? {
-          safeTx: {
-            safe: account.addr,
-            to,
-            value: '0',
-            data,
-            operation: 0,
-            gasToken: '0x0000000000000000000000000000000000000000',
-            safeTxGas: '0',
-            baseGas: '0',
-            gasPrice: '0',
-            refundReceiver: '0x0000000000000000000000000000000000000000',
-            nonce: '0',
-            executionDate: null,
-            submissionDate: '',
-            modified: '',
-            blockNumber: null,
-            transactionHash: null,
-            safeTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
-            executor: null,
-            proposer: null,
-            proposedByDelegate: null,
-            isExecuted: false,
-            isSuccessful: null,
-            ethGasPrice: null,
-            maxFeePerGas: null,
-            maxPriorityFeePerGas: null,
-            gasUsed: null,
-            fee: null,
-            origin: '',
-            confirmationsRequired: 1,
-            confirmations: [],
-            trusted: true,
-            signatures: null
-          }
-        }
-      : {})
+    signature: null
   }
 
   return { op, nativeToCheck, feeTokens }
