@@ -53,16 +53,20 @@ const execTransactionAbi = parseAbi([
 ])
 const MAX_SAFE_SETUP_HOOK_DEPTH = 4
 
+export const shouldDisplaySafeDelegateCallWarning = (
+  operation: bigint | number,
+  to?: string
+): boolean =>
+  BigInt(operation) === 1n &&
+  (!to || !isAddress(to) || !allowedMulticallContracts.includes(getAddress(to)))
+
 export const getDelegateCallWarning = (
   operation: bigint | number,
   to?: string
 ): HumanizerWarning[] => {
   const warnings: HumanizerWarning[] = []
 
-  if (
-    BigInt(operation) === 1n &&
-    (!to || !isAddress(to) || !allowedMulticallContracts.includes(getAddress(to)))
-  )
+  if (shouldDisplaySafeDelegateCallWarning(operation, to))
     warnings.push(
       getWarning(
         'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',

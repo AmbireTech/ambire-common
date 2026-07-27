@@ -4,7 +4,15 @@ const ERRORS = {
   eoaInsufficientFunds: 'Insufficient funds to cover the fee.'
 }
 
-const WARNINGS: { [key: string]: Warning } = {
+const WARNINGS: Record<
+  | 'significantBalanceDecrease'
+  | 'unknownToken'
+  | 'possibleBalanceDecrease'
+  | 'feeTokenPriceUnavailable'
+  | 'v1Acc'
+  | 'safeDelegateCall',
+  Warning
+> = {
   significantBalanceDecrease: {
     id: 'significantBalanceDecrease',
     title: 'Significant Account Balance Decrease',
@@ -30,6 +38,11 @@ const WARNINGS: { [key: string]: Warning } = {
   v1Acc: {
     id: 'v1Acc',
     title: 'You can only broadcast transactions for Ambire v1 accounts from an EOA'
+  },
+  safeDelegateCall: {
+    id: 'safeDelegateCall',
+    title: 'Delegate call to an unverified contract',
+    text: 'This Safe transaction delegates permissions to a contract not whitelisted by Safe. Proceed with caution.'
   }
 }
 
