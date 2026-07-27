@@ -1739,5 +1739,39 @@ describe('DappsController', () => {
       expect(controller.trendingTokens).toEqual([])
       restore()
     })
+
+    // Integration test - the trending endpoint is NOT mocked here (unlike in the tests above), so
+    // a change in the response structure that the normalizer and the UI can't handle fails here
+    // instead of silently reaching users as an empty or broken trending list.
+    test('normalizes the response of the real trending tokens endpoint', async () => {
+      const { controller } = await prepareTest(seedStorage, async (url: string, ...args: any) => {
+        if (url === 'https://api.llama.fi/protocols')
+          return { ok: true, status: 200, json: async () => mockDapps }
+        if (url === 'https://api.llama.fi/v2/chains')
+          return { ok: true, status: 200, json: async () => mockChains }
+        return fetch(url, ...args)
+      })
+
+      await controller.updateTrendingTokens()
+
+      expect(controller.trendingTokens.length).toBeGreaterThan(0)
+
+      controller.trendingTokens.forEach((token) => {
+        expect(token.id.length).toBeGreaterThan(0)
+        expect(token.name.length).toBeGreaterThan(0)
+        expect(token.symbol.length).toBeGreaterThan(0)
+        expect(Number.isFinite(token.priceUSD)).toBe(true)
+      })
+
+      // The market data and the icon the trending list and the token-details screen render must
+      // arrive for the first (most trending) token at the very least.
+      const [topToken] = controller.trendingTokens
+      expect(topToken!.icon.startsWith('http')).toBe(true)
+      expect(topToken!.priceUSD).toBeGreaterThan(0)
+      expect(topToken!.priceChange24hUSD).not.toBeNull()
+      expect(topToken!.marketCapUSD).not.toBeNull()
+      expect(topToken!.totalVolumeUSD).not.toBeNull()
+      expect(topToken!.marketCapRank).not.toBeNull()
+    }, 40000)
   })
 })

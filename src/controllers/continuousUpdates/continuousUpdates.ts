@@ -24,6 +24,10 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 /* eslint-disable @typescript-eslint/no-floating-promises */
 
+/** How many consecutive failed trending tokens fetches are retried at the fast failed-retry
+cadence before falling back to the normal one, so a long API outage isn't retried every minute. */
+export const MAX_TRENDING_TOKENS_FAILED_RETRIES = 5
+
 export class ContinuousUpdatesController extends EventEmitter {
   #main: IMainController
 
@@ -75,6 +79,8 @@ export class ContinuousUpdatesController extends EventEmitter {
   get updateTrendingTokensInterval() {
     return this.#updateTrendingTokensInterval
   }
+
+  #trendingTokensFailedRetries = 0
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void> | undefined
@@ -287,25 +293,37 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     try {
       await this.#main.dapps.updateTrendingTokens()
+      this.#trendingTokensFailedRetries = 0
 
       // Recover the normal cadence after a previously failed fetch bumped it down.
       if (
         this.#updateTrendingTokensInterval.currentTimeout === TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
       ) {
         this.#updateTrendingTokensInterval.updateTimeout({
-          timeout: this.#main.ui.views.length
-            ? TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL
-            : TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
+          timeout: this.#getTrendingTokensNormalInterval()
         })
       }
     } catch (err) {
-      // Back off to the fast failed-retry cadence, then rethrow so RecurringTimeout's onError
-      // handler reports it (with level 'silent', i.e. no user-facing toast).
+      this.#trendingTokensFailedRetries += 1
+      const hasExhaustedRetries =
+        this.#trendingTokensFailedRetries >= MAX_TRENDING_TOKENS_FAILED_RETRIES
+
+      // Back off to the fast failed-retry cadence, but give up on it once the retries are
+      // exhausted (the API is likely down for a while), then rethrow so RecurringTimeout's
+      // onError handler reports it (with level 'silent', i.e. no user-facing toast).
       this.#updateTrendingTokensInterval.updateTimeout({
-        timeout: TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
+        timeout: hasExhaustedRetries
+          ? this.#getTrendingTokensNormalInterval()
+          : TRENDING_TOKENS_FAILED_UPDATE_INTERVAL
       })
       throw err
     }
+  }
+
+  #getTrendingTokensNormalInterval() {
+    return this.#main.ui.views.length
+      ? TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL
+      : TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
   }
 
   async #updateAccountsOpsStatuses() {

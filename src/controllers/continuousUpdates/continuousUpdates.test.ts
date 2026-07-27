@@ -14,6 +14,7 @@ import { SwapProviderParallelExecutor } from '../../services/swapIntegrators/swa
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { MainController } from '../main/main'
+import { MAX_TRENDING_TOKENS_FAILED_RETRIES } from './continuousUpdates'
 
 const accounts: Account[] = [
   {
@@ -384,6 +385,39 @@ describe('ContinuousUpdatesController intervals', () => {
     expect(interval.currentTimeout).toBe(TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL)
   })
 
+  test('gives up on the fast trending retry cadence after too many consecutive failures', async () => {
+    const { restore } = suppressConsole()
+    const { mainCtrl } = await prepareTest()
+    await waitForContinuousUpdatesCtrlReady(mainCtrl)
+
+    const interval = mainCtrl.continuousUpdates!.updateTrendingTokensInterval
+    const updateSpy = mainCtrl.dapps.updateTrendingTokens as jest.Mock
+    updateSpy.mockRejectedValue(new Error('boom'))
+    updateSpy.mockClear()
+
+    // Failures below the max keep the 1-minute failed-retry cadence.
+    for (let i = 0; i < MAX_TRENDING_TOKENS_FAILED_RETRIES - 1; i++) {
+      await waitForFnToBeCalledAndExecuted(interval)
+      expect(interval.currentTimeout).toBe(TRENDING_TOKENS_FAILED_UPDATE_INTERVAL)
+    }
+
+    // The last allowed retry fails too → stop hammering the API and fall back to the normal
+    // (inactive, as no view is open) cadence.
+    await waitForFnToBeCalledAndExecuted(interval)
+    expect(updateSpy).toHaveBeenCalledTimes(MAX_TRENDING_TOKENS_FAILED_RETRIES)
+    expect(interval.currentTimeout).toBe(TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL)
+
+    // A later success recovers the same normal cadence and resets the retry counter, so the fast
+    // cadence is used again on the next failure.
+    updateSpy.mockResolvedValueOnce(undefined)
+    await waitForFnToBeCalledAndExecuted(interval)
+    expect(interval.currentTimeout).toBe(TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL)
+    await waitForFnToBeCalledAndExecuted(interval)
+    expect(interval.currentTimeout).toBe(TRENDING_TOKENS_FAILED_UPDATE_INTERVAL)
+
+    restore()
+  })
+
   test('switches the trending interval to the active cadence while a view is open', async () => {
     const { mainCtrl } = await prepareTest()
     await waitForContinuousUpdatesCtrlReady(mainCtrl)
@@ -411,8 +445,11 @@ describe('ContinuousUpdatesController intervals', () => {
 
     const interval = mainCtrl.continuousUpdates!.updateTrendingTokensInterval
     const updateSpy = mainCtrl.dapps.updateTrendingTokens as jest.Mock
-    // Pretend trending was just refreshed.
-    jest.spyOn(mainCtrl.dapps, 'trendingTokensUpdatedAt', 'get').mockReturnValue(Date.now())
+    // Pretend trending was just refreshed. Resolved on every read, as the fake timers advance the
+    // clock by the whole interval while waiting for the scheduled run below.
+    jest
+      .spyOn(mainCtrl.dapps, 'trendingTokensUpdatedAt', 'get')
+      .mockImplementation(() => Date.now())
     updateSpy.mockClear()
 
     // Becoming active triggers an immediate refresh, but the freshness guard skips the fetch.
