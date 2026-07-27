@@ -213,7 +213,45 @@ const createAccountOp = (
     chainId,
     nonce: 0n, // does not matter when estimating
     calls: [{ to, value: BigInt(0), data }],
-    signature: null
+    signature: null,
+    ...(account.safeCreation
+      ? {
+          safeTx: {
+            safe: account.addr,
+            to,
+            value: '0',
+            data,
+            operation: 0,
+            gasToken: '0x0000000000000000000000000000000000000000',
+            safeTxGas: '0',
+            baseGas: '0',
+            gasPrice: '0',
+            refundReceiver: '0x0000000000000000000000000000000000000000',
+            nonce: '0',
+            executionDate: null,
+            submissionDate: '',
+            modified: '',
+            blockNumber: null,
+            transactionHash: null,
+            safeTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+            executor: null,
+            proposer: null,
+            proposedByDelegate: null,
+            isExecuted: false,
+            isSuccessful: null,
+            ethGasPrice: null,
+            maxFeePerGas: null,
+            maxPriorityFeePerGas: null,
+            gasUsed: null,
+            fee: null,
+            origin: '',
+            confirmationsRequired: 1,
+            confirmations: [],
+            trusted: true,
+            signatures: null
+          }
+        }
+      : {})
   }
 
   return { op, nativeToCheck, feeTokens }
@@ -699,7 +737,7 @@ const init = async (
     gasPrices: gasPricesOrMock
   })
 
-  return { controller, storageCtrl, signAccountOpPreference }
+  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl }
 }
 
 const initDappVerificationBannerTest = async (
@@ -849,7 +887,7 @@ describe('SignAccountOp Controller ', () => {
     feePaymentOptions = getDefaultFeeSelectionOptions(),
     options?: Parameters<typeof init>[6]
   ) => {
-    const { controller, storageCtrl } = await init(
+    const { controller, storageCtrl, accountsCtrl } = await init(
       smartAccount,
       createAccountOp(smartAccount, 1n),
       eoaSigner,
@@ -875,7 +913,7 @@ describe('SignAccountOp Controller ', () => {
 
     await wait(1)
 
-    return { controller, storageCtrl }
+    return { controller, storageCtrl, accountsCtrl }
   }
 
   const initSafeNonce = async (signed: string[] = []) => {
@@ -909,6 +947,84 @@ describe('SignAccountOp Controller ', () => {
       defaultFeeSelectionGasPrices
     )
   }
+
+  describe('refetchAccountState', () => {
+    test('refreshes the account state and clears the loading state', async () => {
+      const { controller, accountsCtrl } = await initDefaultFeeSelection()
+      const accountState =
+        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+          controller.accountOp.chainId.toString()
+        ]!
+      const forceFetchPendingStateSpy = jest
+        .spyOn(accountsCtrl, 'forceFetchPendingState')
+        .mockResolvedValue(accountState)
+
+      await expect(controller.refetchAccountState()).resolves.toBeUndefined()
+
+      expect(forceFetchPendingStateSpy).toHaveBeenCalledWith(
+        controller.accountOp.accountAddr,
+        controller.accountOp.chainId
+      )
+      expect(controller.isRefetchingAccountState).toBe(false)
+    })
+
+    test('ignores concurrent refresh attempts', async () => {
+      const { controller, accountsCtrl } = await initDefaultFeeSelection()
+      const accountState =
+        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+          controller.accountOp.chainId.toString()
+        ]!
+      const pendingRefresh = createDeferred<void>()
+      const forceFetchPendingStateSpy = jest
+        .spyOn(accountsCtrl, 'forceFetchPendingState')
+        .mockImplementation(async () => {
+          await pendingRefresh.promise
+          return accountState
+        })
+
+      const firstRefresh = controller.refetchAccountState()
+      await controller.refetchAccountState()
+
+      expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(1)
+      expect(controller.isRefetchingAccountState).toBe(true)
+
+      pendingRefresh.resolve()
+      await firstRefresh
+
+      expect(controller.isRefetchingAccountState).toBe(false)
+    })
+
+    test('emits fetch errors without rejecting and allows retrying', async () => {
+      const { restore } = suppressConsole()
+      const { controller, accountsCtrl } = await initDefaultFeeSelection()
+      const accountState =
+        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+          controller.accountOp.chainId.toString()
+        ]!
+      const fetchError = new Error('RPC timeout')
+      const forceFetchPendingStateSpy = jest
+        .spyOn(accountsCtrl, 'forceFetchPendingState')
+        .mockRejectedValueOnce(fetchError)
+        .mockResolvedValueOnce(accountState)
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await expect(controller.refetchAccountState()).resolves.toBeUndefined()
+
+      expect(onError).toHaveBeenCalledWith({
+        level: 'silent',
+        message: 'Unable to refresh your account information. Please try again.',
+        error: fetchError
+      })
+      expect(controller.isRefetchingAccountState).toBe(false)
+
+      await expect(controller.refetchAccountState()).resolves.toBeUndefined()
+
+      expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(2)
+      expect(controller.isRefetchingAccountState).toBe(false)
+      restore()
+    })
+  })
 
   test('sets a custom Safe nonce and refreshes its EIP-712 data', async () => {
     const { controller } = await initSafeNonce()

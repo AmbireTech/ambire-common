@@ -602,9 +602,22 @@ export class SignAccountOpController
     this.isRefetchingAccountState = true
     this.emitUpdate()
 
-    await this.#accounts.forceFetchPendingState(this.accountOp.accountAddr, this.accountOp.chainId)
-    this.isRefetchingAccountState = false
-    this.updateStatus()
+    try {
+      await this.#accounts.forceFetchPendingState(
+        this.accountOp.accountAddr,
+        this.accountOp.chainId
+      )
+      this.updateStatus()
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: 'Unable to refresh your account information. Please try again.',
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+    } finally {
+      this.isRefetchingAccountState = false
+      this.emitUpdate()
+    }
   }
 
   #getSafeSigningData(accountState: AccountOnchainState) {
