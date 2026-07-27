@@ -196,7 +196,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
   })
 }
 
-const Bundler3Module: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrCall[] => {
+const Bundler3Module: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall => {
   const matcher: { [sighash: string]: (call: IrCall) => IrCall | undefined } = {
     [toFunctionSelector(multicallAbi[0])]: (call) => {
       if (!call.to) return
@@ -214,15 +214,11 @@ const Bundler3Module: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]):
     }
   }
 
-  const newCalls = calls.map((call) => {
-    const match = matcher[call.data.slice(0, 10)]
-    if (call.fullVisualization || !match) return call
-    const newCall = match(call)
-    if (!newCall) return call
-    return newCall
-  })
-
-  return newCalls
+  const match = matcher[call.data.slice(0, 10)]
+  if (call.fullVisualization || !match) return call
+  const newCall = match(call)
+  if (!newCall) return call
+  return newCall
 }
 
 export default Bundler3Module

@@ -13,7 +13,7 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
   const { to, value, data, operation } = message.content.message
   const { accountAddr } = message
   const { verifyingContract } = message.content.domain
-  const humanizedCalls = genericErc20Humanizer({ accountAddr }, [{ to, value, data }])
+  const humanizedCall = genericErc20Humanizer({ accountAddr }, { to, value, data })
   const safeStandardHumanization = getSafeHumanization(
     verifyingContract ?? undefined,
     to,
@@ -32,8 +32,8 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
       ? [getBreak(), ...safeStandardHumanization.visuals]
       : [])
   )
-  if (humanizedCalls[0]?.fullVisualization) {
-    fullVisualization.push(...humanizedCalls[0].fullVisualization)
+  if (humanizedCall.fullVisualization) {
+    fullVisualization.push(...humanizedCall.fullVisualization)
   }
   const delegateCallWarnings = operation !== undefined ? getDelegateCallWarning(operation, to) : []
   if (delegateCallWarnings.length) {
