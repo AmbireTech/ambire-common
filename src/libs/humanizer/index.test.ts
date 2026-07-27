@@ -1466,6 +1466,96 @@ describe('ERC-7730 descriptors', () => {
       ]
     })
   })
+  test('humanizes approval and increase allowance calls nested in a multicall', async () => {
+    const token = '0x0bF0164D17469241B6E086dA4016DCc54FEAA334'
+    const spender = '0x0012b7C5D4310915bB2d58C0b14C72546D320C05'
+    const approvalAmount = 10n ** 18n
+    const allowanceIncrease = 10n ** 18n
+    const multicallInterface = new ethers.Interface([
+      'function multicall(bytes[] data)',
+      'function approve(address _spender, uint256 _value)',
+      'function increaseAllowance(address spender, uint256 addedValue)'
+    ])
+    const multicallAccountOp: AccountOp = {
+      ...accountOp,
+      accountAddr: '0x3E1B8F98Ed69C6A97A8540E1D7AeD33FdF4509aA',
+      calls: [
+        {
+          to: token,
+          value: 0n,
+          data: multicallInterface.encodeFunctionData('multicall', [
+            [
+              multicallInterface.encodeFunctionData('approve', [spender, approvalAmount]),
+              multicallInterface.encodeFunctionData('increaseAllowance', [
+                spender,
+                allowanceIncrease
+              ])
+            ]
+          ])
+        }
+      ]
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(multicallAccountOp)
+    const irCalls = humanizeAccountOp(multicallAccountOp, { erc7730Descriptors: descriptors })
+    const multicallVisualization = irCalls[0]?.fullVisualization?.[0]
+
+    expect(multicallVisualization).toMatchObject({ type: 'erc7730', title: 'Multicall' })
+    if (multicallVisualization?.type !== 'erc7730') {
+      throw new Error('Expected ERC-7730 multicall visualization')
+    }
+
+    expect(multicallVisualization.rows).toHaveLength(2)
+    expect(multicallVisualization.rows.map((row) => row.label)).toEqual(['', ''])
+    const approvalVisualization = multicallVisualization.rows[0]?.value[0]
+    const allowanceVisualization = multicallVisualization.rows[1]?.value[0]
+    if (approvalVisualization?.type !== 'erc7730' || allowanceVisualization?.type !== 'erc7730') {
+      throw new Error('Expected nested ERC-7730 visualizations')
+    }
+
+    expect([approvalVisualization.title, allowanceVisualization.title]).toEqual([
+      'Grant approval',
+      'Increase allowance'
+    ])
+    expect(approvalVisualization).toMatchObject({
+      type: 'erc7730',
+      rows: [
+        {
+          label: 'For',
+          value: [
+            {
+              type: 'token',
+              address: token.toLowerCase(),
+              value: approvalAmount
+            }
+          ]
+        },
+        {
+          label: 'To',
+          value: [{ type: 'address', address: spender.toLowerCase() }]
+        }
+      ]
+    })
+    expect(allowanceVisualization).toMatchObject({
+      type: 'erc7730',
+      rows: [
+        {
+          label: 'Of',
+          value: [{ type: 'address', address: spender.toLowerCase() }]
+        },
+        {
+          label: 'With',
+          value: [
+            {
+              type: 'token',
+              address: token.toLowerCase(),
+              value: allowanceIncrease
+            }
+          ]
+        }
+      ]
+    })
+  })
   test('humanizes Aave Base eMode categories', async () => {
     const aavePool = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5'
     const aaveInterface = new ethers.Interface(['function setUserEMode(uint8 categoryId)'])
