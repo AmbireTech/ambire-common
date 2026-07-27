@@ -191,23 +191,8 @@ const getTwapVisualization = (
   accountOp: AccountOp,
   staticInput: `0x${string}`
 ): HumanizerVisualization[] | null => {
-  let decoded: readonly [
-    string,
-    string,
-    string,
-    bigint,
-    bigint,
-    bigint,
-    bigint,
-    bigint,
-    bigint,
-    string
-  ]
-  try {
-    decoded = decodeAbiParameters(twapStaticInputAbiParams, staticInput) as typeof decoded
-  } catch {
-    return null
-  }
+  const decoded = decodeAbiParameters(twapStaticInputAbiParams, staticInput)
+
   const [sellToken, buyToken, receiver, partSellAmount, minPartLimit, t0, n, t] = decoded
   if (n <= 0n) return null
 
