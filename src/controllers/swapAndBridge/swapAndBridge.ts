@@ -1084,11 +1084,19 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const toTokensKey = this.#toTokenListKey
     const toTokenList = toTokensKey ? this.#toTokenList[toTokensKey] : undefined
+    // Addresses passed from outside Swap & Bridge (e.g. a trending token, which comes lowercased
+    // from CoinGecko) may be in a different case than the service provider's, so compare lowercased.
     const nextToToken = toTokenList
-      ? toTokenList.tokens.find((t) => t.address === toSelectedTokenAddr)
+      ? toTokenList.tokens.find(
+          (t) => t.address.toLowerCase() === toSelectedTokenAddr?.toLowerCase()
+        )
       : null
 
     if (nextToToken) this.toSelectedToken = { ...nextToToken }
+
+    // The requested token isn't in the (possibly not yet fetched) list. Let updateToTokenList
+    // select it once the list is there, instead of dropping the request silently.
+    const shouldSelectToTokenFromList = !nextToToken && !!toSelectedTokenAddr
 
     if (routePriority) {
       this.routePriority = routePriority
@@ -1105,9 +1113,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (emitUpdate) this.#emitUpdateIfNeeded()
 
     await Promise.all([
-      shouldUpdateToTokenList
+      shouldUpdateToTokenList || shouldSelectToTokenFromList
         ? // we put toSelectedTokenAddr so that "retry" btn functionality works
-          this.updateToTokenList(true, nextToToken?.address || toSelectedTokenAddr)
+          this.updateToTokenList(
+            shouldUpdateToTokenList,
+            nextToToken?.address || toSelectedTokenAddr
+          )
         : undefined,
       updateQuote
         ? this.updateQuote({
@@ -1343,13 +1354,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
     }
 
-    if (toTokenListKeyAtStart === this.#toTokenListKey && !this.toSelectedToken) {
-      if (addressToSelect) {
-        const token = toTokenList.tokens.find((t) => t.address === addressToSelect)
-        if (token) {
-          await this.updateForm({ toSelectedTokenAddr: token.address }, { emitUpdate: false })
-          this.#emitUpdateIfNeeded()
-        }
+    if (
+      toTokenListKeyAtStart === this.#toTokenListKey &&
+      !this.toSelectedToken &&
+      addressToSelect
+    ) {
+      // Compare lowercased, as the address may come from outside Swap & Bridge (e.g. a trending
+      // token) in a different case than the service provider's.
+      const token =
+        toTokenList.tokens.find((t) => t.address.toLowerCase() === addressToSelect.toLowerCase()) ||
+        (await this.#fetchAndCacheToTokenToSelect(addressToSelect))
+
+      if (token) {
+        await this.updateForm({ toSelectedTokenAddr: token.address }, { emitUpdate: false })
+        this.#emitUpdateIfNeeded()
       }
     }
 
@@ -1419,6 +1437,38 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!toTokenList) return 'INITIAL'
 
     return toTokenList.status
+  }
+
+  /**
+   * Fetches a single token that the service provider left out of its "to" token list and caches it,
+   * so a token preselected from outside Swap & Bridge (e.g. from the trending tokens list) can
+   * still be selected. Fails silently, because the selection is not user-initiated.
+   */
+  async #fetchAndCacheToTokenToSelect(address: string) {
+    if (!this.toChainId || !isAddress(address)) return null
+
+    const toTokenListKey = this.#toTokenListKey
+    const tokenList = toTokenListKey ? this.#toTokenList[toTokenListKey] : undefined
+
+    if (!tokenList) return null
+
+    try {
+      const token = await this.#serviceProviderAPI.getToken({ address, chainId: this.toChainId })
+
+      if (!token) return null
+
+      // Cache it the same way tokens added by address are cached
+      tokenList.apiTokens.push(token)
+      tokenList.tokens.push(token)
+
+      return token
+    } catch (error: any) {
+      const { message } = getHumanReadableSwapAndBridgeError(error)
+
+      this.emitError({ error, level: 'silent', message })
+
+      return null
+    }
   }
 
   async #addToTokenByAddress(address: string) {

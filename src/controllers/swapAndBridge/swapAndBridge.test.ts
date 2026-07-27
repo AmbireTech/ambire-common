@@ -448,6 +448,38 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController.reset()
     await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
   })
+  test('should select a preselected to token that the service provider returns in another case', async () => {
+    // Trending tokens carry lowercased CoinGecko addresses, while the service providers return
+    // checksummed ones.
+    const toTokenAddr = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToToken: { address: toTokenAddr.toLowerCase(), chainId: 8453n }
+    })
+
+    expect(swapAndBridgeController.toChainId).toEqual(8453)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should select a preselected to token that is missing from the service provider list', async () => {
+    const toTokenAddr = '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToToken: { address: toTokenAddr, chainId: 8453n }
+    })
+
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+    expect(swapAndBridgeController.toTokenShortList).toContainEqual(
+      expect.objectContaining({ address: toTokenAddr })
+    )
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
   test('should update toChainId', (done) => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
