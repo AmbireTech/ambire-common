@@ -311,6 +311,40 @@ describe('RequestsController ', () => {
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+    const safeTx = {
+      safe: accountAddr,
+      to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+      value: '1',
+      data: '0x',
+      operation: 0,
+      gasToken: '0x0000000000000000000000000000000000000000',
+      safeTxGas: '0',
+      baseGas: '0',
+      gasPrice: '0',
+      refundReceiver: '0x0000000000000000000000000000000000000000',
+      nonce: '119',
+      executionDate: null,
+      submissionDate: '',
+      modified: '',
+      blockNumber: null,
+      transactionHash: null,
+      safeTxHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
+      executor: null,
+      proposer: null,
+      proposedByDelegate: null,
+      isExecuted: false,
+      isSuccessful: null,
+      ethGasPrice: null,
+      maxFeePerGas: null,
+      maxPriorityFeePerGas: null,
+      gasUsed: null,
+      fee: null,
+      origin: '',
+      confirmationsRequired: 1,
+      confirmations: [],
+      trusted: true,
+      signatures: null
+    }
     const buildRequest = () =>
       controller.build({
         type: 'calls',
@@ -326,7 +360,8 @@ describe('RequestsController ', () => {
             ],
             meta: {
               accountAddr,
-              chainId
+              chainId,
+              safeTx
             }
           }
         }
