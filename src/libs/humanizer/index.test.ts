@@ -1556,6 +1556,55 @@ describe('ERC-7730 descriptors', () => {
       ]
     })
   })
+  test('humanizes known protocol calls nested in a multicall', async () => {
+    const nativeValue = ethers.parseEther('0.000097814288231747')
+    const multicallAccountOp: AccountOp = {
+      ...accountOp,
+      accountAddr: '0x7547079620B30DA0f76Ff762889a0F8Eed204ff7',
+      chainId: 8453n,
+      calls: [
+        {
+          to: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1',
+          value: nativeValue,
+          data: '0xac9650d800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001e00000000000000000000000000000000000000000000000000000000000000164883164560000000000000000000000004200000000000000000000000000000000000006000000000000000000000000cbb7c0000ab88b473b1f5afd9ef808440eed33bf00000000000000000000000000000000000000000000000000000000000001f4fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbf082fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbf65e000000000000000000000000000000000000000000000000000058f629e76d43000000000000000000000000000000000000000000000000000000000000013a00000000000000000000000000000000000000000000000000003a445ea91f0500000000000000000000000000000000000000000000000000000000000000d30000000000000000000000007547079620b30da0f76ff762889a0f8eed204ff7000000000000000000000000000000000000000000000000000000006a6700e500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000412210e8a00000000000000000000000000000000000000000000000000000000'
+        }
+      ]
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(multicallAccountOp)
+    const irCalls = humanizeAccountOp(multicallAccountOp, {
+      erc7730Descriptors: descriptors,
+      nativeAssetSymbol: 'ETH'
+    })
+    const multicallVisualization = irCalls[0]?.fullVisualization?.[0]
+
+    expect(descriptors[0]?.path).toBe('built-in/multicall')
+    expect(multicallVisualization).toMatchObject({ type: 'erc7730', title: 'Multicall' })
+    if (multicallVisualization?.type !== 'erc7730') {
+      throw new Error('Expected ERC-7730 multicall visualization')
+    }
+
+    const nestedVisualizations = multicallVisualization.rows
+      .flatMap((row) => row.value)
+      .filter((visualization) => visualization.type === 'erc7730')
+
+    expect(nestedVisualizations.map((visualization) => visualization.title)).toEqual([
+      'Add liquidity',
+      'Withdraw'
+    ])
+    expect(multicallVisualization.rows.at(-1)).toMatchObject({
+      label: 'Send',
+      value: [expect.objectContaining({ address: ZeroAddress, value: nativeValue })]
+    })
+    expect(irCalls[0]!.warnings).toEqual([
+      getWarning('This transaction will send ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
+    ])
+    const serializedVisualization = JSON.stringify(multicallVisualization, (_, value) =>
+      typeof value === 'bigint' ? value.toString() : value
+    )
+    expect(serializedVisualization).not.toContain('0x88316456')
+    expect(serializedVisualization).not.toContain('0x12210e8a')
+  })
   test('humanizes Aave Base eMode categories', async () => {
     const aavePool = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5'
     const aaveInterface = new ethers.Interface(['function setUserEMode(uint8 categoryId)'])
