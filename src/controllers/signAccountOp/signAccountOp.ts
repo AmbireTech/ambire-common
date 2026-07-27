@@ -9,6 +9,7 @@ import {
   toBeHex,
   ZeroAddress
 } from 'ethers'
+import { maxUint256 } from 'viem'
 
 import { isNative } from '@/libs/portfolio/helpers'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
@@ -25,7 +26,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
-import { MAX_SAFE_NONCE, SAFE_API_TIMEOUT_MS } from '../../consts/safe'
+import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import {
   ERRORS,
   RETRY_TO_INIT_ACCOUNT_OP_MSG,
@@ -544,20 +545,50 @@ export class SignAccountOpController
   }
 
   setSafeNonce(nonce: bigint) {
-    if (!this.account.safeCreation) return
-    if (this.status?.type && noStateUpdateStatuses.includes(this.status.type)) return
-    if (this.accountOp.signed?.length || this.accountOp.safeTx?.confirmations?.length) return
-    if (nonce < 0n || nonce > MAX_SAFE_NONCE) return
+    if (!this.account.safeCreation || !this.accountOp.safeTx) {
+      const message = 'Nonce could not be set as something unexpected happened'
+      this.emitError({
+        message,
+        error: new Error(message),
+        level: 'minor'
+      })
+      return
+    }
+    if (this.status?.type && noStateUpdateStatuses.includes(this.status.type)) {
+      const message = 'Nonce cannot be set as the transaction is in a signing state'
+      this.emitError({
+        message,
+        error: new Error(message),
+        level: 'minor'
+      })
+      return
+    }
+    if (this.accountOp.signed?.length || this.accountOp.safeTx?.confirmations?.length) {
+      const message = 'Nonce cannot be set as the transaction is already signed'
+      this.emitError({
+        message,
+        error: new Error(message),
+        level: 'minor'
+      })
+      return
+    }
+    if (nonce < 0n || nonce > maxUint256) {
+      const message = `Invalid nonce: ${nonce.toString()}`
+      this.emitError({
+        message,
+        error: new Error(message),
+        level: 'minor'
+      })
+      return
+    }
 
     this.#customSafeNonce = nonce
     this.#updateAccountOp({
       nonce,
-      safeTx: this.accountOp.safeTx
-        ? {
-            ...this.accountOp.safeTx,
-            nonce: nonce.toString()
-          }
-        : undefined,
+      safeTx: {
+        ...this.accountOp.safeTx,
+        nonce: nonce.toString()
+      },
       signature: null,
       txnId: undefined,
       asUserOperation: undefined

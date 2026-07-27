@@ -179,9 +179,12 @@ const getSafeBanner = ({
   requests: CallsUserRequest[]
   network: Network
   selectedAccount: Account
-}): Banner => {
+}): Banner | null => {
   // count the requests for Safe accounts instead of the calls
   const requestCount = requests.length
+  const firstReq = requests[0]
+  if (requestCount === 0 || !firstReq) return null
+
   return {
     id: `${selectedAccount.addr}-${network.chainId.toString()}`,
     type: 'info',
@@ -191,7 +194,7 @@ const getSafeBanner = ({
     actions: [
       {
         actionName: 'open-accountOp',
-        meta: { requestId: requests[0]!.id },
+        meta: { requestId: firstReq.id },
         label: 'Open'
       }
     ],
@@ -202,7 +205,7 @@ const getSafeBanner = ({
             actionName: 'reject-accountOp',
             meta: {
               err: 'User rejected the transaction request.',
-              requestId: requests[0]!.id,
+              requestId: firstReq.id,
               shouldOpenNextAction: false
             }
           }
@@ -228,14 +231,14 @@ export const getAccountOpBanners = ({
   Object.entries(callsUserRequestsByNetwork).forEach(([netId, requests]) => {
     // push all safe request for 1 network in a single banner
     if (!!selectedAccount.safeCreation) {
-      const network = networks.find((n) => n.chainId.toString() === netId)!
-      txnBanners.push(
-        getSafeBanner({
-          requests,
-          network,
-          selectedAccount
-        })
-      )
+      const network = networks.find((n) => n.chainId.toString() === netId)
+      if (!network) return
+      const safeBanner = getSafeBanner({
+        requests,
+        network,
+        selectedAccount
+      })
+      if (safeBanner) txnBanners.push(safeBanner)
       return
     }
 

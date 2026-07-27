@@ -41,5 +41,3 @@ export const allowedMulticallContracts = [
   '0xA1dabEF33b3B82c7814B6D82A79e50F4AC44102B',
   '0x8D29bE29923b68abfDD21e541b9374737B49cdAD'
 ]
-
-export const MAX_SAFE_NONCE = (1n << 256n) - 1n
