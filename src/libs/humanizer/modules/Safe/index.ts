@@ -8,7 +8,7 @@ import {
   zeroAddress
 } from 'viem'
 
-import { allowedMulticallContracts } from '../../../../consts/safe'
+import { allowedFallbackHandlers, allowedMulticallContracts } from '../../../../consts/safe'
 import { AccountOp } from '../../../accountOp/accountOp'
 import {
   HumanizerCallModule,
@@ -41,6 +41,10 @@ const swapOwnerAbi = parseAbi([
 const enableModuleAbi = parseAbi(['function enableModule(address module)'])
 const disableModuleAbi = parseAbi(['function disableModule(address prevModule, address module)'])
 const setGuardAbi = parseAbi(['function setGuard(address guard)'])
+const setFallbackHandlerAbi = parseAbi(['function setFallbackHandler(address handler)'])
+const setDomainVerifierAbi = parseAbi([
+  'function setDomainVerifier(bytes32 domainSeparator, address newVerifier)'
+])
 const setupAbi = parseAbi([
   'function setup(address[] _owners,uint256 _threshold,address to,bytes data,address fallbackHandler,address paymentToken,uint256 payment,address paymentReceiver)'
 ])
@@ -267,6 +271,61 @@ export const getSafeHumanization = (
     fullVisualization.push(...[getAction('Set guard:'), getAddressVisualization(guard)])
     return {
       visuals: fullVisualization
+    }
+  }
+
+  if (selector === toFunctionSelector(setFallbackHandlerAbi[0])) {
+    const { args } = decodeFunctionData({ abi: setFallbackHandlerAbi, data })
+    const [handler] = args
+    fullVisualization.push(
+      ...[getAction('Extend your account functionality with'), getAddressVisualization(handler)]
+    )
+
+    // The fallback handler controls how the Safe responds to calls it doesn't natively
+    // implement, most importantly EIP-1271 `isValidSignature` checks, so swapping in
+    // anything other than a known Safe default deserves explicit user attention
+    if (
+      handler.toLowerCase() !== zeroAddress &&
+      !allowedFallbackHandlers.includes(getAddress(handler))
+    ) {
+      warnings.push(
+        getWarning(
+          'This adds new functionality to your account from a contract that is not a Safe default. Only proceed if you trust its source',
+          'SAFE{WALLET}_FALLBACK_HANDLER',
+          undefined,
+          getAddress(handler)
+        )
+      )
+    }
+
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
+
+  if (selector === toFunctionSelector(setDomainVerifierAbi[0])) {
+    const { args } = decodeFunctionData({ abi: setDomainVerifierAbi, data })
+    const [, newVerifier] = args
+    fullVisualization.push(
+      ...[
+        getAction('Authorize custom access rights to your account for'),
+        getAddressVisualization(newVerifier)
+      ]
+    )
+    // Grants the verifier contract standing authority to approve EIP-712 signed messages/orders
+    // under this domain on behalf of the Safe, without further owner confirmation per action
+    warnings.push(
+      getWarning(
+        'This lets the contract above approve certain actions on behalf of your account automatically, without asking you each time. Only proceed if you trust it',
+        'SAFE{WALLET}_DOMAIN_VERIFIER',
+        undefined,
+        getAddress(newVerifier)
+      )
+    )
+    return {
+      visuals: fullVisualization,
+      warnings
     }
   }
 
