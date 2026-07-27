@@ -1414,6 +1414,58 @@ describe('ERC-7730 descriptors', () => {
         .some((visualization) => visualization.content === '0x28530a47')
     ).toBe(false)
   })
+  test('humanizes the nested approval from a multicall transaction', async () => {
+    const victim = '0x3E1B8F98Ed69C6A97A8540E1D7AeD33FdF4509aA'
+    const token = '0x0bF0164D17469241B6E086dA4016DCc54FEAA334'
+    const spender = '0x0012b7C5D4310915bB2d58C0b14C72546D320C05'
+    const maliciousMulticallAccountOp: AccountOp = {
+      ...accountOp,
+      accountAddr: victim,
+      calls: [
+        {
+          to: token,
+          value: 0n,
+          data: '0xac9650d80000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000044095ea7b30000000000000000000000000012b7c5d4310915bb2d58c0b14c72546d320c05ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000000000000000000000000000000000000000000000000000'
+        }
+      ]
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(maliciousMulticallAccountOp)
+    const irCalls = humanizeAccountOp(maliciousMulticallAccountOp, {
+      erc7730Descriptors: descriptors
+    })
+    const multicallVisualization = irCalls[0]?.fullVisualization?.[0]
+
+    expect(descriptors[0]?.path).toBe('built-in/multicall')
+    expect(multicallVisualization).toMatchObject({ type: 'erc7730', title: 'Multicall' })
+    if (multicallVisualization?.type !== 'erc7730') {
+      throw new Error('Expected ERC-7730 multicall visualization')
+    }
+
+    expect(multicallVisualization.rows).toHaveLength(1)
+    expect(multicallVisualization.rows[0]?.label).toBe('')
+    expect(multicallVisualization.rows[0]?.value).toHaveLength(1)
+    expect(multicallVisualization.rows[0]?.value[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Grant approval',
+      rows: [
+        {
+          label: 'For',
+          value: [
+            {
+              type: 'token',
+              address: token.toLowerCase(),
+              value: ethers.MaxUint256
+            }
+          ]
+        },
+        {
+          label: 'To',
+          value: [{ type: 'address', address: spender.toLowerCase() }]
+        }
+      ]
+    })
+  })
   test('humanizes Aave Base eMode categories', async () => {
     const aavePool = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5'
     const aaveInterface = new ethers.Interface(['function setUserEMode(uint8 categoryId)'])
