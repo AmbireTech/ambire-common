@@ -273,15 +273,15 @@ export const getSafeHumanization = (
   return undefined
 }
 
-const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrCall[] => {
+const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall => {
   const matcher = {
-    [toFunctionSelector(execTransactionAbi[0])]: (call: HexIrCall): IrCall | undefined => {
-      if (!call.to) return
-      if (call.value) return
+    [toFunctionSelector(execTransactionAbi[0])]: (matchedCall: HexIrCall): IrCall | undefined => {
+      if (!matchedCall.to) return
+      if (matchedCall.value) return
       let args: unknown[]
 
       try {
-        args = [...decodeFunctionData({ abi: execTransactionAbi, data: call.data }).args]
+        args = [...decodeFunctionData({ abi: execTransactionAbi, data: matchedCall.data }).args]
       } catch {
         return
       }
@@ -304,7 +304,7 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
       const fullVisualization = [
         getAction('Execute a Safe{WALLET} transaction'),
         getLabel('from'),
-        getAddressVisualization(call.to),
+        getAddressVisualization(matchedCall.to),
         getLabel('to'),
         getAddressVisualization(to)
       ]
@@ -325,43 +325,32 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
       const delegateCallWarnings = getDelegateCallWarning(bigintOperation, to)
       if (delegateCallWarnings.length) warnings.push(...delegateCallWarnings)
 
-      return { ...call, fullVisualization, warnings }
+      return { ...matchedCall, fullVisualization, warnings }
     }
   }
-  const newCalls = calls.map((call) => {
-    const safeSpecificHumanization = getSafeHumanization(
-      accOp.accountAddr,
-      call.to,
-      call.value,
-      call.data
-    )
-    if (safeSpecificHumanization) {
-      return {
-        ...call,
-        fullVisualization: safeSpecificHumanization.visuals,
-        warnings: safeSpecificHumanization.warnings
-      }
-    }
 
-    if (!isHexCall(call)) return call
+  let newCall = call
+  const safeSpecificHumanization = getSafeHumanization(
+    accOp.accountAddr,
+    call.to,
+    call.value,
+    call.data
+  )
+  if (safeSpecificHumanization) {
+    newCall = {
+      ...call,
+      fullVisualization: safeSpecificHumanization.visuals,
+      warnings: safeSpecificHumanization.warnings
+    }
+  } else if (isHexCall(call)) {
     const match = matcher[call.data.slice(0, 10)]
-    if (call.fullVisualization || !match) return call
-    const newCall = match(call)
-    if (!newCall) return call
-    return newCall
-  })
-
-  if (accOp.safeTx) {
-    const warningInSafeTx = getDelegateCallWarning(BigInt(accOp.safeTx.operation), accOp.safeTx.to)
-    if (warningInSafeTx.length && newCalls.length) {
-      const firstCall = newCalls[0]!
-      const firstCallWarnings: HumanizerWarning[] = firstCall.warnings || []
-      warningInSafeTx.push(...firstCallWarnings)
-      firstCall.warnings = warningInSafeTx
+    if (!call.fullVisualization && match) {
+      const matchedCall = match(call)
+      if (matchedCall) newCall = matchedCall
     }
   }
 
-  return newCalls
+  return newCall
 }
 
 export default SafeModule

@@ -144,7 +144,7 @@ const getSettlementVisualization = (
   ]
 }
 
-const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, calls: IrCall[]) => {
+const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const matcher: Record<string, (call: HexIrCall) => HumanizerVisualization[]> = {
     [toFunctionSelector(swapAbi[0])]: (call) => {
       const { args } = decodeFunctionData({ abi: swapAbi, data: call.data })
@@ -186,15 +186,13 @@ const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, calls: IrCall[
     }
   }
 
-  return calls.map((call) => {
-    if (call.fullVisualization || !isHexCall(call)) return call
-    if (call.to?.toLowerCase() !== COW_SWAP_SETTLEMENT_ADDRESS) return call
+  if (call.fullVisualization || !isHexCall(call)) return call
+  if (call.to?.toLowerCase() !== COW_SWAP_SETTLEMENT_ADDRESS) return call
 
-    const match = matcher[call.data.slice(0, 10)]
-    if (!match) return call
+  const match = matcher[call.data.slice(0, 10)]
+  if (!match) return call
 
-    return { ...call, fullVisualization: match({ ...call, to: call.to || zeroAddress }) }
-  })
+  return { ...call, fullVisualization: match({ ...call, to: call.to || zeroAddress }) }
 }
 
 export default CowSwapModule
