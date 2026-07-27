@@ -160,6 +160,7 @@ import {
   isUnderpriced,
   SignAccountOpType
 } from './helper'
+import { getMulticallBanners } from './nestedTokenApproval'
 import {
   SignAccountOpFeeTokenPreference,
   SignAccountOpPreferenceController
@@ -3904,6 +3905,8 @@ export class SignAccountOpController
         })
       }
     }
+
+    banners.push(...getMulticallBanners(this.accountOp.calls))
 
     const dappVerificationBanner = this.#getDappVerificationBanner()
     if (dappVerificationBanner) banners.push(dappVerificationBanner)
