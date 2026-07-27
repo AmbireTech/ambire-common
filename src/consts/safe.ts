@@ -8,6 +8,8 @@ export const SAFE_NETWORKS = [
   747474, 4326, 8217, 4663, 534352
 ]
 
+export const SAFE_API_TIMEOUT_MS = 15000
+
 /**
  * Information about Safe contract addresses by their versions
  */
