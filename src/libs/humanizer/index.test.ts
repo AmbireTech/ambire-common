@@ -357,8 +357,8 @@ describe('Humanizer main function', () => {
     // const ir: Ir = []
     const expectedVisualizations = [
       [
-        getAction('Interacting'),
-        getLabel('with'),
+        getAction('Multicall'),
+        getLabel('on'),
         getAddressVisualization('0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2')
       ]
     ]
@@ -2165,8 +2165,7 @@ describe('ERC-7730 descriptors', () => {
     }
   })
 
-  // temporarily skipped until we make a proper fix for the multicall humanization
-  test.skip('resolves Safe execTransaction through the Safe singleton and humanizes inner calls only', async () => {
+  test('resolves Safe execTransaction through the Safe singleton and humanizes inner calls only', async () => {
     const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
     const safeSingleton = '0x29fcb43b46531bca003ddc8fcb67ffe91900c762'
     const multiSend = '0x9641d764fc13c8b624c04430c7356c1c7c8102e2'
@@ -2254,9 +2253,9 @@ describe('ERC-7730 descriptors', () => {
                 value: [getToken(tokenAddress, 1514n, 8453n)]
               }
             ]),
-            getErc7730Visualization('setPreSignature', [
+            getErc7730Visualization('SetPreSignature', [
               {
-                label: 'Contract',
+                label: 'On',
                 value: [getAddressVisualization(settlement)]
               }
             ])
@@ -3013,8 +3012,7 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
-  // temporarily skipped until we make a proper fix for the multicall humanization
-  test.skip('keeps unknown SafeTx delegatecall calldata as a selector and warns with the target address', async () => {
+  test.only('keeps unknown SafeTx delegatecall calldata as a selector and warns with the target address', async () => {
     const safeProxy = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
     const recipeExecutor = '0xc91305DdE651c899EF8eE1D0C33E7dab1B5ABF0D'
     const safeTxMessage = {
@@ -3098,7 +3096,14 @@ describe('ERC-7730 descriptors', () => {
         },
         {
           label: 'Transaction',
-          value: [getAddressVisualization(recipeExecutor), getText('0x0c2c8750')]
+          value: [
+            getErc7730Visualization('Interacting', [
+              {
+                label: 'With',
+                value: [getAddressVisualization(recipeExecutor)]
+              }
+            ])
+          ]
         },
         {
           label: 'Gas amount',
@@ -3552,8 +3557,7 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
-  // temporarily skipped until we make a proper fix for the multicall humanization
-  test.skip('humanizes SafeTx multisend with truncated ABI padding as separate transaction rows', async () => {
+  test('humanizes SafeTx multisend with truncated ABI padding as separate transaction rows', async () => {
     const tokenAddress = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
     const spender = '0xc92e8bdf79f0507f65a392b0ab4667716bfe0110'
     const settlement = '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
@@ -3649,9 +3653,9 @@ describe('ERC-7730 descriptors', () => {
                 value: [getAddressVisualization(spender)]
               }
             ]),
-            getErc7730Visualization('setPreSignature', [
+            getErc7730Visualization('SetPreSignature', [
               {
-                label: 'Contract',
+                label: 'On',
                 value: [getAddressVisualization(settlement)]
               }
             ])
@@ -4160,7 +4164,7 @@ describe('non-strict encoding / dirty bytes', () => {
 
     const irCalls = humanizeAccountOp(accountOp)
     compareHumanizerVisualizations(irCalls, [
-      [getAction('Interacting'), getLabel('with'), getAddressVisualization(nftAddress)]
+      [getAction('SetApprovalForAll'), getLabel('on'), getAddressVisualization(nftAddress)]
     ])
   })
 })

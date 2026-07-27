@@ -90,21 +90,31 @@ const fallbackCases: Array<{
     ]
   },
   {
-    label: 'has-to:no-value:has-data — Interacting with address',
+    label: 'has-to:no-value:has-data — known function name used instead of Interacting with',
     call: { to: TO, value: 0n, data: DATA } as IrCall,
     expected: [
-      { type: 'action', content: 'Interacting' },
-      { type: 'label', content: 'with' },
+      { type: 'action', content: 'Approve' },
+      { type: 'label', content: 'on' },
       { type: 'address', address: TO }
     ]
   },
   {
-    label: 'has-to:has-value:has-data — Send ETH and Interacting with address',
+    label:
+      'has-to:has-value:has-data — Send ETH and known function name instead of Interacting with',
     call: { to: TO, value: ETH, data: DATA } as IrCall,
     expected: [
       { type: 'action', content: 'Send' },
       { type: 'token', address: ZERO, value: ETH },
       { type: 'label', content: 'and' },
+      { type: 'action', content: 'Approve' },
+      { type: 'label', content: 'on' },
+      { type: 'address', address: TO }
+    ]
+  },
+  {
+    label: 'has-to:no-value:has-data — falls back to Interacting with when selector is unknown',
+    call: { to: TO, value: 0n, data: '0xdeadbeef' } as IrCall,
+    expected: [
       { type: 'action', content: 'Interacting' },
       { type: 'label', content: 'with' },
       { type: 'address', address: TO }

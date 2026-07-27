@@ -33,6 +33,7 @@ import {
   getAddressVisualization,
   getChain,
   getErc7730Visualization,
+  getKnownFunctionName as getKnownFunctionNameFromSelector,
   getText,
   getToken,
   getWarning,
@@ -1079,24 +1080,6 @@ const getSafeTxCallFromMessage = (message: Message): Call | null => {
   }
 }
 
-const getKnownFunctionName = (call: Call): string | null => {
-  const selector = call.data?.slice(0, 10).toLowerCase()
-  if (!selector) return null
-
-  const matchingFragment = Object.values((humanizerInfo as HumanizerMeta).abis)
-    .map((abi) => abi[selector])
-    .find((fragment) => fragment?.type === 'function')
-  const signaturePrefix = 'function '
-  const functionSignature = matchingFragment?.signature.startsWith(signaturePrefix)
-    ? matchingFragment.signature.slice(signaturePrefix.length)
-    : undefined
-  const functionNameEnd = functionSignature?.indexOf('(') ?? -1
-  const functionName =
-    functionNameEnd >= 0 ? functionSignature?.slice(0, functionNameEnd).trim() : null
-
-  return functionName || null
-}
-
 const capitalizeLabel = (value: string): string => {
   if (!value) return value
 
@@ -1159,7 +1142,9 @@ const getActionTitleFromFlatCallVisualization = (
 const getKnownCallVisualization = (
   call: Call
 ): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
-  const functionName = getKnownFunctionName(call)
+  const selector = call.data?.slice(0, 10).toLowerCase()
+  const functionName =
+    selector && getKnownFunctionNameFromSelector(humanizerInfo as HumanizerMeta, selector)
   if (!functionName || !call.to) return null
 
   const visualization = getErc7730Visualization(functionName, [
