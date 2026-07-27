@@ -8,11 +8,11 @@ import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.jso
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
-import { ProviderError } from '../../classes/ProviderError'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { getRpcProvider } from '../../services/provider'
 import { getAccountDeployParams, getSpoof, isBasicAccount } from '../account/account'
 import { BaseAccount } from '../account/BaseAccount'
@@ -168,12 +168,14 @@ export function getFunctionParams(
   }
 }
 
-export async function debugTraceCall(
+export async function getDiscoveredAssets(
+  provider: RPCProvider,
   baseAcc: BaseAccount,
   op: AccountOp,
   network: Network,
   accountState: AccountOnchainState,
-  overrideData?: any
+  foundTokens: string[],
+  foundNftTransfers: [string, bigint[]][]
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
   const account = baseAcc.getAccount()
   const opts = {
@@ -195,50 +197,6 @@ export async function debugTraceCall(
       op.calls.map(callToTuple)
     ]
   ]
-
-  // initialize a new provider for debug trace call to avoid batching it
-  // as sometimes debug_traceCall gets handled really slowly from the RPCs
-  // and that affects wallet performance
-  const provider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl)
-
-  const params = getFunctionParams(account, op, accountState)
-  if (!params) return { tokens: [], nfts: [] }
-
-  const trace: CallTracerFrame = await provider
-    .send('debug_traceCall', [
-      {
-        to: params.to,
-        value: toQuantity(params.value.toString()),
-        data: params.data,
-        from: params.from
-      },
-      'latest',
-      {
-        // we're replacing the custom tracer with the built-in callTracer
-        // because it has broader RPC support. The trade off is that the
-        // data we're pulling from the RPC is a bit bigger compared to the
-        // custom tracer. But at least it works broadly as networks like Base
-        // that use geth only don't support custom tracers, resulting in
-        // bad discovery
-        tracer: 'callTracer',
-        tracerConfig: {
-          withLog: true
-        },
-        stateOverrides: getShouldStateOverride(network, opts.simulation.baseAccount)
-          ? {
-              [params.from]: {
-                balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-              },
-              ...overrideData
-            }
-          : {}
-      }
-    ])
-    .catch((e) => {
-      throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
-    })
-
-  const { tokens: foundTokens, nfts: foundNftTransfers } = parseCallTracerResult(trace)
 
   // we set the 3rd param to "true" as we don't need state override
   const deploylessTokens = fromDescriptor(provider, BalanceGetter, true)
@@ -269,13 +227,6 @@ export async function debugTraceCall(
   const beforeNftCollections = before.collections
   const afterNftCollections = after.collections
 
-  // clean up the provider after usage
-  try {
-    provider.destroy()
-  } catch (e) {
-    console.error(e)
-  }
-
   return {
     tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
     nfts: foundNftTransfers.filter((nft, i) => {
@@ -288,5 +239,91 @@ export async function debugTraceCall(
 
       return !foundAfterToken[i][3] || foundAfterToken[0][3] === '0x'
     })
+  }
+}
+
+export async function debugTraceCall(
+  baseAcc: BaseAccount,
+  op: AccountOp,
+  network: Network,
+  accountState: AccountOnchainState,
+  overrideData?: any
+): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
+  const account = baseAcc.getAccount()
+  const opts = {
+    blockTag: 'latest' as const,
+    from: DEPLOYLESS_SIMULATION_FROM,
+    mode: DeploylessMode.ProxyContract,
+    isEOA: isBasicAccount(account, accountState),
+    simulation: {
+      accountOps: [op],
+      baseAccount: baseAcc,
+      state: accountState
+    }
+  }
+
+  const params = getFunctionParams(account, op, accountState)
+
+  // we throw on purpose here so the controller receives feedback that
+  // debugTraceCall has actually failed
+  if (!params) throw new Error('cannot run debug_traceCall as getFunctionParams is empty')
+
+  // initialize a new provider for debug trace call to avoid batching it
+  // as sometimes debug_traceCall gets handled really slowly from the RPCs
+  // and that affects wallet performance
+  const provider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl)
+
+  try {
+    const trace: CallTracerFrame = await provider.send('debug_traceCall', [
+      {
+        to: params.to,
+        value: toQuantity(params.value.toString()),
+        data: params.data,
+        from: params.from
+      },
+      'latest',
+      {
+        // we're replacing the custom tracer with the built-in callTracer
+        // because it has broader RPC support. The trade off is that the
+        // data we're pulling from the RPC is a bit bigger compared to the
+        // custom tracer. But at least it works broadly as networks like Base
+        // that use geth only don't support custom tracers, resulting in
+        // bad discovery
+        tracer: 'callTracer',
+        tracerConfig: {
+          withLog: true
+        },
+        stateOverrides: getShouldStateOverride(network, opts.simulation.baseAccount)
+          ? {
+              [params.from]: {
+                balance: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+              },
+              ...overrideData
+            }
+          : {}
+      }
+    ])
+
+    const { tokens: foundTokens, nfts: foundNftTransfers } = parseCallTracerResult(trace)
+
+    return await getDiscoveredAssets(
+      provider,
+      baseAcc,
+      op,
+      network,
+      accountState,
+      foundTokens,
+      foundNftTransfers
+    )
+  } catch (e: any) {
+    // we do this so we could run finally
+    throw e
+  } finally {
+    // clean up the provider after usage
+    try {
+      provider.destroy()
+    } catch (e) {
+      console.error(e)
+    }
   }
 }
