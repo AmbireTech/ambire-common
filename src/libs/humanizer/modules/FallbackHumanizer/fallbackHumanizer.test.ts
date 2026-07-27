@@ -125,7 +125,7 @@ const fallbackCases: Array<{
 describe('fallbackHumanizer', () => {
   test('all switch cases', () => {
     fallbackCases.forEach(({ call, expected }) => {
-      const [result] = fallbackHumanizer(accountOp, [call], humanizerInfo as HumanizerMeta)
+      const result = fallbackHumanizer(accountOp, call, humanizerInfo as HumanizerMeta)
       expect(result!.fullVisualization).toHaveLength(expected.length)
       result!.fullVisualization!.forEach((item, i) => {
         expect(item).toMatchObject(expected[i]!)

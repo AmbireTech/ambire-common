@@ -26,8 +26,8 @@ describe('singleton factory', () => {
         getAddressVisualization('0xce0042b868300000d44a59004da54a005ffdcf9f')
       ]
     ]
-    let irCalls = genericErc20Humanizer({} as any, txns, humanizerInfo as HumanizerMeta)
-    irCalls = singletonFactory({} as any, irCalls, humanizerInfo as HumanizerMeta)
+    let irCalls = txns.map((c) => genericErc20Humanizer({} as any, c))
+    irCalls = irCalls.map((c) => singletonFactory({} as any, c, humanizerInfo as HumanizerMeta))
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
 })
