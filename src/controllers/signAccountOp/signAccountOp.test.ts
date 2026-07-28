@@ -989,8 +989,18 @@ describe('SignAccountOp Controller ', () => {
   })
 
   test('sets a custom Safe nonce and refreshes its EIP-712 data', async () => {
-    const { controller } = await initSafeNonce()
+    const { controller, accountsCtrl } = await initSafeNonce()
     const initialSafeEip712Data = controller.safeEip712Data
+    const accountState =
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!
+
+    controller.setSafeNonce(accountState.nonce + 1n)
+    expect(controller.canBroadcast).toBe(false)
+
+    controller.setSafeNonce(accountState.nonce)
+    expect(controller.canBroadcast).toBe(true)
 
     controller.setSafeNonce(42n)
 

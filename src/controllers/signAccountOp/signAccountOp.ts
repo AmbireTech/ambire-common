@@ -610,7 +610,7 @@ export class SignAccountOpController
         this.accountOp.accountAddr,
         this.accountOp.chainId
       )
-      this.updateStatus()
+      await this.#simulateAndEstimate()
     } catch (error) {
       this.emitError({
         level: 'silent',
@@ -3020,7 +3020,10 @@ export class SignAccountOpController
           ? this.accountOp.signed.concat([this.accountOp.signingKeyAddr])
           : [this.accountOp.signingKeyAddr]
 
-        const isQuickBroadcast = this.threshold === 1 && this.accountKeyStoreKeys.length === 1
+        const isQuickBroadcast =
+          this.threshold === 1 &&
+          this.accountKeyStoreKeys.length === 1 &&
+          (!this.#customSafeNonce || this.#customSafeNonce === accountState.nonce)
         if (!isQuickBroadcast) {
           if (!prevSignedSigs.length) {
             // propose the txn to Safe Global upon first entry
@@ -3534,6 +3537,10 @@ export class SignAccountOpController
         }
       } catch (error: any) {
         console.error('Error broadcasting', error)
+
+        // reset the eoaNonce on error
+        this.#updateAccountOp({ eoaNonce: undefined })
+
         // for multiple txn cases
         // if a batch of 5 txn is sent to Ledger for sign but the user reject
         // #3, #1 and #2 are already broadcast. Reduce the accountOp's call
@@ -3582,6 +3589,7 @@ export class SignAccountOpController
         if (switcher.canSwitch(this.baseAccount)) {
           switcher.switch()
           this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#silentGasPriceUpdate()
           retryMsg = 'Broadcast failed because bundler was down. Please try again'
         }
@@ -4026,6 +4034,11 @@ export class SignAccountOpController
 
   get canBroadcast() {
     if (!this.account.safeCreation) return true
+
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (this.#customSafeNonce !== null && this.#customSafeNonce !== accountState?.nonce)
+      return false
 
     // if the threshold is 1 and there's only 1 imported key, allow quick broadcast
     if (this.threshold === 1 && this.accountKeyStoreKeys.length === 1) return true
