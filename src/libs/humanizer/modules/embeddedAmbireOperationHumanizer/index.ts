@@ -7,19 +7,15 @@ import { getAction } from '../../utils'
 // this call will be executed without needing extra authentication. For more details check out AmbireAccount.sol
 export const embeddedAmbireOperationHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
-  irCalls: IrCall[]
+  call: IrCall
 ) => {
-  return irCalls.map((call: IrCall) => {
-    if (!call.to) return call
-    if (call.data === '0x') return call
-    if (call.to.toLowerCase() === accountOp.accountAddr.toLowerCase()) {
-      return {
-        ...call,
-        fullVisualization: [
-          getAction('Allow multiple actions from this account!', { warning: true })
-        ]
-      }
+  if (!call.to) return call
+  if (call.data === '0x') return call
+  if (call.to.toLowerCase() === accountOp.accountAddr.toLowerCase()) {
+    return {
+      ...call,
+      fullVisualization: [getAction('Allow multiple actions from this account!', { warning: true })]
     }
-    return call
-  })
+  }
+  return call
 }

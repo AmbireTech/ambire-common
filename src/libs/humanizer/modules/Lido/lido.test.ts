@@ -38,7 +38,9 @@ describe('1Inch', () => {
     const expectedVisualization = [
       [getAction('Wrap'), getToken('0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84', 100000n)]
     ]
-    const irCalls = LidoModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    const irCalls = transactions.map((c) =>
+      LidoModule(accountOp, c, humanizerInfo as HumanizerMeta)
+    )
     compareHumanizerVisualizations(irCalls, expectedVisualization)
   })
 })

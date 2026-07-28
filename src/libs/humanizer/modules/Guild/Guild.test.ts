@@ -35,7 +35,9 @@ describe('Guild', () => {
     const expectedVisualization = [
       [getAction('Claim Guild badge'), getLabel('for'), getLabel('Ambire Wallet', true)]
     ]
-    const irCalls = OneInchModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    const irCalls = transactions.map((c) =>
+      OneInchModule(accountOp, c, humanizerInfo as HumanizerMeta)
+    )
     compareHumanizerVisualizations(irCalls, expectedVisualization)
   })
 })

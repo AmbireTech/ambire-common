@@ -6,7 +6,7 @@ import {
   resolveENSDomain,
   reverseLookupEns,
   ReverseLookupResult
-} from '@/services/ensDomains'
+} from '@/services/ensDomains/ensDomains'
 
 import { isNameExpiryStale } from '../expiry'
 import {
