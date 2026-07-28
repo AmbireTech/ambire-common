@@ -1845,8 +1845,8 @@ export class SignAccountOpController
 
     if (!dappUrls.length) return null
 
-    // Pass the session ID so getDappVerificationBanner can check co-sessions in the same
-    // tab/window for dangerous context (e.g. a phishing page hosting the dApp in an iframe).
+    // Pass the session ID so getDappVerificationBanner can check the session's frame context
+    // for danger (e.g. a phishing page hosting the dApp in an iframe).
     const sessionId = this.accountOp.dappSessionId
 
     const dappVerificationBanner = this.#dapps.getDappVerificationBanner(dappUrls, { sessionId })
