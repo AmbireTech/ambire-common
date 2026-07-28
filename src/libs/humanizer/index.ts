@@ -25,6 +25,7 @@ import {
   zealyMessageModule
 } from './messageModules'
 import { fallbackShortPlaintext } from './messageModules/fallbackShortPlaintext'
+
 // from least generic to most generic
 // the final visualization and warnings are from the first triggered module
 const humanizerTMModules = [
@@ -125,5 +126,5 @@ const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): I
 }
 
 export * from './erc7730'
-export { humanizeAccountOp, humanizerCallModules, humanizeMessage }
+export { humanizeAccountOp, humanizeMessage, humanizerCallModules }
 export type { HumanizeAccountOpOptions, HumanizeMessageOptions }

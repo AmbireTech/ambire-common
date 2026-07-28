@@ -1,3 +1,5 @@
+import MetaMorphoModule from '@/libs/humanizer/modules/MetaMorpho'
+
 import { HumanizerCallModule } from './interfaces'
 import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
@@ -61,6 +63,7 @@ export const singleCallHumanizerModules: HumanizerCallModule[] = [
   WALLETModule,
   SafeModule,
   Bundler3Module,
+  MetaMorphoModule,
   AllowanceModule,
   ModuleProxyFactoryModule,
   privilegeHumanizer,
