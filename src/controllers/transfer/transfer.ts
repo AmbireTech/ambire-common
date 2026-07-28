@@ -1121,7 +1121,12 @@ export class TransferController extends EventEmitter implements ITransferControl
       return
     }
 
-    const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
+    const baseAcc = getBaseAccount(
+      this.#selectedAccount.account,
+      accountState,
+      network,
+      this.#featureFlags.isFeatureEnabled('erc4337')
+    )
     const accountOp = {
       id: generateUuid(),
       accountAddr: this.#selectedAccount.account.addr,

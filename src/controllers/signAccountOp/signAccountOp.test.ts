@@ -585,7 +585,8 @@ const init = async (
   const baseAccount = getBaseAccount(
     account,
     accountsCtrl.accountStates[account.addr]![network.chainId.toString()]!,
-    network
+    network,
+    true
   )
 
   const callRelayer = options?.callRelayer || relayerCall.bind({ url: '', fetch })

@@ -1139,7 +1139,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         )
       }
 
-      const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
+      const baseAcc = getBaseAccount(
+        this.#selectedAccount.account,
+        accountState,
+        network,
+        this.#featureFlags.isFeatureEnabled('erc4337')
+      )
       const accountAddr = getAddress(request.params[0].from)
 
       if (isWalletSendCalls && !request.params[0].calls.length)
@@ -1461,7 +1466,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const baseAcc = getBaseAccount(
       this.#selectedAccount.account,
       accountState,
-      this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!
+      this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!,
+      this.#featureFlags.isFeatureEnabled('erc4337')
     )
 
     const requestParams = getIntentRequestParams({
@@ -1610,7 +1616,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const baseAcc = getBaseAccount(
       this.#selectedAccount.account,
       accountState,
-      this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!
+      this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!,
+      this.#featureFlags.isFeatureEnabled('erc4337')
     )
 
     const callsRequestParams = getTransferRequestParams({
@@ -1691,7 +1698,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           throw new EmittableError({ message: error.message, level: 'major', error })
         }
 
-        const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
+        const baseAcc = getBaseAccount(
+          this.#selectedAccount.account,
+          accountState,
+          network,
+          this.#featureFlags.isFeatureEnabled('erc4337')
+        )
         const swapAndBridgeRequestParams = await getSwapAndBridgeRequestParams(
           transaction,
           network.chainId,

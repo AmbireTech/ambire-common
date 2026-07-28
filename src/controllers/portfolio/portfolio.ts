@@ -1742,7 +1742,12 @@ export class PortfolioController
     const network = this.#networks.allNetworks.find((net) => net.chainId === chainId)
     if (!network) return undefined
 
-    const baseAcc = getBaseAccount(acc, networkState, network)
+    const baseAcc = getBaseAccount(
+      acc,
+      networkState,
+      network,
+      this.#featureFlags.isFeatureEnabled('erc4337')
+    )
     return baseAcc.getNonceId()
   }
 
@@ -1874,7 +1879,14 @@ export class PortfolioController
           )
           const state = simulation?.states?.[network.chainId.toString()] || networkAccountState
 
-          const baseAcc = state ? getBaseAccount(selectedAccount, state, network) : null
+          const baseAcc = state
+            ? getBaseAccount(
+                selectedAccount,
+                state,
+                network,
+                this.#featureFlags.isFeatureEnabled('erc4337')
+              )
+            : null
 
           const [isSuccessful, discoveryResponse] = await this.updatePortfolioState(
             selectedAccount,

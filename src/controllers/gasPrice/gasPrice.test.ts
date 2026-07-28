@@ -46,13 +46,7 @@ describe('GasPriceController', () => {
     const fetchGasPrices = jest.fn()
     getAvailableBunldersMock.mockReturnValue([{ fetchGasPrices }])
 
-    const controller = new GasPriceController(
-      network,
-      provider,
-      baseAccount,
-      getSignAccountOpState,
-      () => false
-    )
+    const controller = new GasPriceController(network, provider, baseAccount, getSignAccountOpState)
 
     await controller.fetch()
 
@@ -67,13 +61,7 @@ describe('GasPriceController', () => {
     const fetchGasPrices = jest.fn().mockResolvedValue(gasPrices as never)
     getAvailableBunldersMock.mockReturnValue([{ fetchGasPrices }])
 
-    const controller = new GasPriceController(
-      network,
-      provider,
-      baseAccount,
-      getSignAccountOpState,
-      () => true
-    )
+    const controller = new GasPriceController(network, provider, baseAccount, getSignAccountOpState)
 
     await controller.fetch()
 

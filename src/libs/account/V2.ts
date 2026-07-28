@@ -54,7 +54,9 @@ export class V2 extends BaseAccount {
     op: AccountOp
   ): FeePaymentOption[] {
     if (!this.isErc4337Enabled) {
-      return feePaymentOptions.filter((opt) => opt.paidBy !== this.account.addr)
+      return feePaymentOptions.filter(
+        (opt) => opt.paidBy !== this.account.addr && opt.availableAmount > 0n
+      )
     }
 
     const hasPaymaster =

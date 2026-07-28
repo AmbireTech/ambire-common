@@ -8,7 +8,7 @@ export interface FeatureFlags {
   /**
    * Allow the user to opt out of erc4337 which will automatically
    * disable paying gas in different tokens & gas tank.
-   * For Ambire v2 accounts, it will also disalbe ETH payments (the user
+   * For Ambire v2 accounts, it will also disable ETH payments (the user
    * will need an EOA account just like using a Safe)
    */
   erc4337: boolean

@@ -22,7 +22,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { paymasterFactory } from '../../services/paymaster'
 import { getRpcProvider } from '../../services/provider'
 import { getSmartAccount } from '../account/account'
-import { getBaseAccount } from '../account/getBaseAccount'
+import { getBaseAccount } from '../account/getBaseAccount, true'
 import { Call } from '../accountOp/types'
 import { getAccountState } from '../accountState/accountState'
 import { Portfolio } from '../portfolio/portfolio'
@@ -367,12 +367,13 @@ describe('estimate', () => {
       chainId: 1n,
       nonce: null,
       signature: null,
-      calls: [call]
+      calls: [call],
+      id: 'random'
     }
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const accountState = accountStates[EOAAccount.addr]![ethereum.chainId.toString()]!
-    const baseAcc = getBaseAccount(EOAAccount, accountState, ethereum)
+    const baseAcc = getBaseAccount(EOAAccount, accountState, ethereum, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -432,7 +433,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const accountState = accountStates[EOAAccount.addr]![polygon.chainId.toString()]!
-    const baseAcc = getBaseAccount(EOAAccount, accountState, polygon)
+    const baseAcc = getBaseAccount(EOAAccount, accountState, polygon, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -507,7 +508,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const accountState = accountStates[EOAAccount.addr]![polygon.chainId.toString()]!
-    const baseAcc = getBaseAccount(EOAAccount, accountState, polygon)
+    const baseAcc = getBaseAccount(EOAAccount, accountState, polygon, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -564,7 +565,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([EOAAccount])
     const accountState = accountStates[EOAAccount.addr]![polygon.chainId.toString()]!
-    const baseAcc = getBaseAccount(EOAAccount, accountState, polygon)
+    const baseAcc = getBaseAccount(EOAAccount, accountState, polygon, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -607,7 +608,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([v1Acc])
     const accountState = accountStates[v1Acc.addr]![ethereum.chainId.toString()]!
-    const baseAcc = getBaseAccount(v1Acc, accountState, ethereum)
+    const baseAcc = getBaseAccount(v1Acc, accountState, ethereum, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -662,7 +663,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([v1Acc])
     const accountState = accountStates[v1Acc.addr]![ethereum.chainId.toString()]!
-    const baseAcc = getBaseAccount(v1Acc, accountState, ethereum)
+    const baseAcc = getBaseAccount(v1Acc, accountState, ethereum, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -701,7 +702,7 @@ describe('estimate', () => {
 
     const accountStates = await getAccountsInfo([viewOnlyAcc])
     const accountState = accountStates[viewOnlyAcc.addr]![ethereum.chainId.toString()]!
-    const baseAcc = getBaseAccount(viewOnlyAcc, accountState, ethereum)
+    const baseAcc = getBaseAccount(viewOnlyAcc, accountState, ethereum, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -758,12 +759,13 @@ describe('estimate', () => {
       chainId: 10n,
       nonce: await (v1AccAbi as any).nonce(),
       signature: spoofSig,
-      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }]
+      calls: [{ to: eoaAddr, value: BigInt(1), data: '0x' }],
+      id: 'random'
     }
 
     const accountStates = await getAccountsInfo([accountOptimismv1])
     const accountState = accountStates[accountOptimismv1.addr]![optimism.chainId.toString()]!
-    const baseAcc = getBaseAccount(accountOptimismv1, accountState, optimism)
+    const baseAcc = getBaseAccount(accountOptimismv1, accountState, optimism, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -805,12 +807,13 @@ describe('estimate', () => {
           value: 0n,
           data: ERC20Interface.encodeFunctionData('transfer', [eoaAddr, 1])
         }
-      ]
+      ],
+      id: 'random'
     }
 
     const accountStates = await getAccountsInfo([deprycatedV2])
     const accountState = accountStates[deprycatedV2.addr]![arbitrum.chainId.toString()]!
-    const baseAcc = getBaseAccount(deprycatedV2, accountState, arbitrum)
+    const baseAcc = getBaseAccount(deprycatedV2, accountState, arbitrum, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -844,11 +847,12 @@ describe('estimate', () => {
       chainId: 10n,
       nonce: 6n, // corrupt the nonce
       signature: '0x',
-      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }]
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
+      id: 'random'
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr]![optimism.chainId.toString()]!
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, optimism)
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, optimism, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -892,11 +896,12 @@ describe('estimate', () => {
       meta: {
         entryPointAuthorization:
           '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
-      }
+      },
+      id: 'random'
     }
     const accountStates = await getAccountsInfo([smartAcc])
     const accountState = accountStates[smartAcc.addr]![optimism.chainId.toString()]!
-    const baseAcc = getBaseAccount(smartAcc, accountState, optimism)
+    const baseAcc = getBaseAccount(smartAcc, accountState, optimism, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -945,11 +950,12 @@ describe('estimate', () => {
       meta: {
         entryPointAuthorization:
           '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
-      }
+      },
+      id: 'random'
     }
     const accountStates = await getAccountsInfo([smartAcc])
     const accountState = accountStates[smartAcc.addr]![optimism.chainId.toString()]!
-    const baseAcc = getBaseAccount(smartAcc, accountState, optimism)
+    const baseAcc = getBaseAccount(smartAcc, accountState, optimism, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -994,11 +1000,12 @@ describe('estimate', () => {
       meta: {
         entryPointAuthorization:
           '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b01'
-      }
+      },
+      id: 'random'
     }
     const accountStates = await getAccountsInfo([smartAcc])
     const accountState = accountStates[smartAcc.addr]![optimism.chainId.toString()]!
-    const baseAcc = getBaseAccount(smartAcc, accountState, optimism)
+    const baseAcc = getBaseAccount(smartAcc, accountState, optimism, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -1028,11 +1035,12 @@ describe('estimate', () => {
       chainId: 10n,
       nonce,
       signature: '0x',
-      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }]
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
+      id: 'random'
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr]![optimism.chainId.toString()]!
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, optimism)
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, optimism, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -1073,7 +1081,8 @@ describe('estimate', () => {
       chainId: 10n,
       nonce,
       signature: '0x',
-      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }]
+      calls: [{ to: FEE_COLLECTOR, value: 1n, data: '0x' }],
+      id: 'random'
     }
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr]![optimism.chainId.toString()]!
@@ -1081,7 +1090,7 @@ describe('estimate', () => {
     // corrupt the nonce to be lower
     accountState.erc4337Nonce = 6n
 
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, optimism)
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, optimism, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -1124,11 +1133,12 @@ describe('estimate', () => {
       chainId: polygon.chainId,
       nonce: 1n,
       signature: '0x',
-      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: parseEther('10'), data: '0x' }]
+      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: parseEther('10'), data: '0x' }],
+      id: 'random'
     }
     const accountStates = await getAccountsInfo([deprycatedV2])
     const accountState = accountStates[deprycatedV2.addr]![polygon.chainId.toString()]!
-    const baseAcc = getBaseAccount(deprycatedV2, accountState, polygon)
+    const baseAcc = getBaseAccount(deprycatedV2, accountState, polygon, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -1154,7 +1164,8 @@ describe('estimate', () => {
       chainId: polygon.chainId,
       nonce: 1n,
       signature: '0x',
-      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: 100000n, data: '0x' }]
+      calls: [{ to: trezorSlot6v2NotDeployed.addr, value: 100000n, data: '0x' }],
+      id: 'random'
     }
     const accountStates = await getAccountsInfo([deprycatedV2])
     const accountState = accountStates[deprycatedV2.addr]![polygon.chainId.toString()]!
@@ -1190,12 +1201,13 @@ describe('estimate', () => {
       chainId: 1n,
       nonce: 1n,
       signature: '0x',
-      calls: [{ to, value: BigInt(0), data: expiredData }]
+      calls: [{ to, value: BigInt(0), data: expiredData }],
+      id: 'random'
     }
 
     const accountStates = await getAccountsInfo([v1Acc])
     const accountState = accountStates[v1Acc.addr]![ethereum.chainId.toString()]!
-    const baseAcc = getBaseAccount(v1Acc, accountState, ethereum)
+    const baseAcc = getBaseAccount(v1Acc, accountState, ethereum, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -1234,7 +1246,7 @@ describe('estimate', () => {
     const gasGuardInterface = new Interface(gasGuardAbi)
     const accountStates = await getAccountsInfo([devconSmart])
     const accountState = accountStates[devconSmart.addr]![bsc.chainId.toString()]!
-    const baseAcc = getBaseAccount(devconSmart, accountState, bsc)
+    const baseAcc = getBaseAccount(devconSmart, accountState, bsc, true)
     const bscProvider = getRpcProvider(bsc.rpcUrls, bsc.chainId)
     const switcher = new BundlerSwitcher(bsc, areUpdatesForbidden)
 
@@ -1256,7 +1268,8 @@ describe('estimate', () => {
       chainId: bsc.chainId,
       nonce: 1n,
       signature: '0x',
-      calls: [gasGuardCallPassWithInitialGasLimit]
+      calls: [gasGuardCallPassWithInitialGasLimit],
+      id: 'random'
     }
     const response = await getEstimation(
       baseAcc,
@@ -1293,7 +1306,8 @@ describe('estimate', () => {
       chainId: bsc.chainId,
       nonce: 1n,
       signature: '0x',
-      calls: [gasGuardCallPassWithIncreasedGasLimit]
+      calls: [gasGuardCallPassWithIncreasedGasLimit],
+      id: 'random'
     }
     const responseTwo = await getEstimation(
       baseAcc,
@@ -1330,7 +1344,8 @@ describe('estimate', () => {
       chainId: bsc.chainId,
       nonce: 1n,
       signature: '0x',
-      calls: [gasGuardCallPassWithMoreIncreasedGasLimit]
+      calls: [gasGuardCallPassWithMoreIncreasedGasLimit],
+      id: 'random'
     }
     const responseFour = await getEstimation(
       baseAcc,
@@ -1368,7 +1383,8 @@ describe('estimate', () => {
       chainId: bsc.chainId,
       nonce: 1n,
       signature: '0x',
-      calls: [gasGuardCallPassWithGasLimitToTheRoof]
+      calls: [gasGuardCallPassWithGasLimitToTheRoof],
+      id: 'random'
     }
     const responseFive = await getEstimation(
       baseAcc,
@@ -1405,7 +1421,8 @@ describe('estimate', () => {
       chainId: bsc.chainId,
       nonce: 1n,
       signature: '0x',
-      calls: [gasGuardCallPassWithUnreasonableGasLimit]
+      calls: [gasGuardCallPassWithUnreasonableGasLimit],
+      id: 'random'
     }
     const responseThree = await getEstimation(
       baseAcc,
@@ -1461,11 +1478,12 @@ describe('estimate', () => {
       chainId: 1n,
       nonce,
       signature: '0x',
-      calls: [call, secondCall]
+      calls: [call, secondCall],
+      id: 'random'
     }
     const accountStates = await getAccountsInfo([devconSmart])
     const accountState = accountStates[devconSmart.addr]![ethereum.chainId.toString()]!
-    const baseAcc = getBaseAccount(devconSmart, accountState, ethereum)
+    const baseAcc = getBaseAccount(devconSmart, accountState, ethereum, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -1517,11 +1535,12 @@ describe('estimate', () => {
       chainId: 1n,
       nonce,
       signature: '0x',
-      calls: [call]
+      calls: [call],
+      id: 'random'
     }
     const accountStates = await getAccountsInfo([devconSmart])
     const accountState = accountStates[devconSmart.addr]![ethereum.chainId.toString()]!
-    const baseAcc = getBaseAccount(devconSmart, accountState, ethereum)
+    const baseAcc = getBaseAccount(devconSmart, accountState, ethereum, true)
     const response = await getEstimation(
       baseAcc,
       accountState,
@@ -1553,12 +1572,13 @@ describe('estimate', () => {
       chainId: 25n,
       nonce: BigInt(await cronosProvider.getTransactionCount(localRelayer.addr)),
       signature: '0x',
-      calls: [call]
+      calls: [call],
+      id: 'random'
     }
     const accountStates = await getAccountsInfo([localRelayer])
     const accountState = accountStates[localRelayer.addr]!['25']!
     const cronos = networks.find((n) => n.chainId === 25n)!
-    const baseAcc = getBaseAccount(localRelayer, accountState, cronos)
+    const baseAcc = getBaseAccount(localRelayer, accountState, cronos, true)
     const response = await getEstimation(
       baseAcc,
       accountState,

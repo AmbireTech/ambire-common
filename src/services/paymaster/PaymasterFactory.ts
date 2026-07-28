@@ -20,18 +20,10 @@ export class PaymasterFactory {
 
   errorCallback: Function | undefined = undefined
 
-  getIsErc4337Enabled: () => boolean = () => true
-
-  init(
-    relayerUrl: string,
-    fetch: Fetch,
-    errorCallback: Function,
-    getIsErc4337Enabled: () => boolean = () => true
-  ) {
+  init(relayerUrl: string, fetch: Fetch, errorCallback: Function) {
     this.relayerUrl = relayerUrl
     this.fetch = fetch
     this.errorCallback = errorCallback
-    this.getIsErc4337Enabled = getIsErc4337Enabled
   }
 
   async create(
@@ -56,12 +48,7 @@ export class PaymasterFactory {
       if (localOp.meta && localOp.meta.paymasterService) localOp.meta.paymasterService.failed = true
     }
 
-    const paymaster = new Paymaster(
-      this.relayerUrl,
-      this.fetch,
-      this.errorCallback,
-      this.getIsErc4337Enabled
-    )
+    const paymaster = new Paymaster(this.relayerUrl, this.fetch, this.errorCallback)
     await paymaster.init(localOp, userOp, account, network, provider)
     return paymaster
   }

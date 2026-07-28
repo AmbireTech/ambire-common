@@ -27,7 +27,7 @@ export abstract class BaseAccount {
     account: Account,
     network: Network,
     accountState: AccountOnchainState,
-    isErc4337Enabled = true
+    isErc4337Enabled: boolean
   ) {
     this.account = account
     this.network = network
