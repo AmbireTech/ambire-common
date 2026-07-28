@@ -3287,14 +3287,7 @@ describe('ERC-7730 descriptors', () => {
         },
         {
           label: 'Transaction',
-          value: [
-            getErc7730Visualization('Interacting', [
-              {
-                label: 'With',
-                value: [getAddressVisualization(recipeExecutor)]
-              }
-            ])
-          ]
+          value: [getAddressVisualization(recipeExecutor), getText('0x0c2c8750')]
         },
         {
           label: 'Gas amount',
