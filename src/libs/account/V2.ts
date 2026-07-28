@@ -55,7 +55,8 @@ export class V2 extends BaseAccount {
   ): FeePaymentOption[] {
     if (!this.isErc4337Enabled) {
       return feePaymentOptions.filter(
-        (opt) => opt.paidBy !== this.account.addr && opt.availableAmount > 0n
+        (opt) =>
+          isNative(opt.token) || (opt.paidBy !== this.account.addr && opt.availableAmount > 0n)
       )
     }
 
@@ -217,5 +218,9 @@ export class V2 extends BaseAccount {
 
   canSetCustomGas(feeOption: FeePaymentOption): boolean {
     return this.canSetCustomGasPrices(feeOption)
+  }
+
+  canBroadcastByItself() {
+    return this.isErc4337Enabled
   }
 }
