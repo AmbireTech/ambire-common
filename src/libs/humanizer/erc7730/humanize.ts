@@ -9,10 +9,12 @@ import {
   ZeroAddress
 } from 'ethers'
 
+import { humanizerCallModules } from '../'
 import humanizerInfo from '../../../consts/humanizer/humanizerInfo.json'
 import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
+import { singleCallHumanizerModules } from '../callModules'
 import {
   HumanizerCallModule,
   HumanizerErc7730Row,
@@ -51,8 +53,6 @@ import {
   Erc7730VisibleRule
 } from './types'
 import { getSafeTxCallsFromMessage, isPlainObject, parseIntegerLiteral } from './utils'
-import { humanizerCallModules } from '../'
-import fallbackHumanizer from '../modules/FallbackHumanizer'
 
 type DescriptorFormatMatch = {
   formatKey: string
@@ -784,13 +784,29 @@ const getCalldataRows = (
           value: toBigIntOrNull(amount) || 0n
         },
         context.chainId,
-        accountAddr
+        accountAddr,
+        singleCallHumanizerModules
       )
 
       if (moduleFallbackVisualization) {
         acc.push({
           label: nestedRowLabel,
           value: [moduleFallbackVisualization]
+        })
+
+        return acc
+      }
+
+      const knownCallVisualization = getKnownCallVisualization({
+        to: callee,
+        data: calldata,
+        value: toBigIntOrNull(amount) || 0n
+      })
+
+      if (knownCallVisualization) {
+        acc.push({
+          label: nestedRowLabel,
+          value: [knownCallVisualization]
         })
 
         return acc
@@ -1200,35 +1216,48 @@ const getSafeCallFallbackVisualization = (
 const getModuleFallbackVisualization = (
   call: Call,
   chainId: bigint,
-  accountAddr: string
+  accountAddr: string,
+  modules?: HumanizerCallModule[]
 ): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
   const accountOp = {
     accountAddr,
     chainId,
     calls: [call]
   } as AccountOp
-  // TODO: temporary fix to avoid conflicts in all humanizer modules. This can be refactored
-  // after main and v2 are synced with PR #2551
-  const localFallbackModules: HumanizerCallModule[] = humanizerCallModules
 
   let humanizedCall: IrCall | undefined
 
-  localFallbackModules.some((module) => {
-    try {
-      const [result] = module(accountOp, [call as IrCall])
-      if (!result?.fullVisualization?.length) return false
+  if (modules) {
+    let humanizedCalls: IrCall[] = [call as IrCall]
+    modules.forEach((module) => {
+      try {
+        humanizedCalls = module(accountOp, humanizedCalls, humanizerInfo as HumanizerMeta)
+      } catch (error) {
+        console.error(error)
+      }
+    })
+    humanizedCall = humanizedCalls[0]
+  } else {
+    // TODO: temporary fix to avoid conflicts in all humanizer modules. This can be refactored
+    // after main and v2 are synced with PR #2551
+    const localFallbackModules: HumanizerCallModule[] = humanizerCallModules
+    localFallbackModules.some((module) => {
+      try {
+        const [result] = module(accountOp, [call as IrCall])
+        if (!result?.fullVisualization?.length) return false
 
-      humanizedCall = result
-      return true
-    } catch (error) {
-      console.error(error)
-      return false
+        humanizedCall = result
+        return true
+      } catch (error) {
+        console.error(error)
+        return false
+      }
+    })
+
+    if (!humanizedCall?.fullVisualization?.length) {
+      const [fallbackCall] = genericErc20Humanizer({ accountAddr }, [call as IrCall])
+      humanizedCall = fallbackCall
     }
-  })
-
-  if (!humanizedCall?.fullVisualization?.length) {
-    const [fallbackCall] = genericErc20Humanizer({ accountAddr }, [call as IrCall])
-    humanizedCall = fallbackCall
   }
 
   const rows = getRowsFromFlatCallVisualization(humanizedCall?.fullVisualization)
