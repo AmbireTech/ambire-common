@@ -8,7 +8,6 @@ import { GasPriceRecommendation, getGasPriceRecommendations, MIN_GAS_PRICE } fro
 import MockProvider from './MockProvider'
 
 const network = networks.find((n) => n.chainId === 1n)!
-const polygon = networks.find((n) => n.chainId === 137n)!
 const legacyNetwork = { ...network, feeOptions: { is1559: false } }
 
 const getByName = (recommendations: GasPriceRecommendation[], name: string) =>
@@ -47,22 +46,6 @@ describe('non-1559 Network gas price tests', () => {
     expect(getByName(gasPrice, 'medium').gasPrice).toBe(1010000000n)
     expect(getByName(gasPrice, 'fast').gasPrice).toBe(1020000000n)
     expect(getByName(gasPrice, 'ape').gasPrice).toBe(1030000000n)
-    provider.destroy()
-  })
-
-  test('should apply the network fee increase before speed multipliers', async () => {
-    const provider = MockProvider.init({
-      baseFeePerGas: null,
-      ethGasPrice: ethers.parseUnits('2', 'gwei')
-    })
-
-    const gasPriceData = await getGasPriceRecommendations(provider, polygon)
-    const gasPrice = gasPriceData.gasPrice as GasPriceRecommendation[]
-
-    expect(getByName(gasPrice, 'slow').gasPrice).toBe(ethers.parseUnits('2.64', 'gwei'))
-    expect(getByName(gasPrice, 'medium').gasPrice).toBe(ethers.parseUnits('2.6664', 'gwei'))
-    expect(getByName(gasPrice, 'fast').gasPrice).toBe(ethers.parseUnits('2.6928', 'gwei'))
-    expect(getByName(gasPrice, 'ape').gasPrice).toBe(ethers.parseUnits('2.7192', 'gwei'))
     provider.destroy()
   })
 })

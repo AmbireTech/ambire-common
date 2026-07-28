@@ -1520,8 +1520,14 @@ export class SignAccountOpController
     this.bundlerSwitcher.cleanUp()
     this.gasPrice.areGasPricesUsedFromBundlerEstimation = false
 
-    await this.estimation.estimate(this.accountOp)
-    this.update({ hasNewEstimation: true })
+    try {
+      await this.estimation.estimate(this.accountOp)
+      this.update({ hasNewEstimation: true })
+    } catch {
+      // @justInCase basically, this is a re-estimate with proper errro handling
+      // if it blows up for some reason, it should also blow up in
+      // its proper places. No need to propagate the error here
+    }
   }
 
   update({
