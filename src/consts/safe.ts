@@ -11,19 +11,6 @@ export const SAFE_NETWORKS = [
 export const SAFE_API_TIMEOUT_MS = 15000
 
 /**
- * Information about Safe contract addresses by their versions
- */
-const vOneThree = {
-  singleton: '0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552'
-}
-const vOneFourOne = {
-  singleton: '0x41675C099F32341bf84BFc5382aF534df5C7461a'
-}
-const vOneFive = {
-  singleton: '0xFf51A5898e281Db6DfC7855790607438dF2ca44b'
-}
-
-/**
  * SimulateTxAccessor addresses by Safe version.
  */
 export const safeSimulateTxAccessor = {
