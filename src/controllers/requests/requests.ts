@@ -33,7 +33,7 @@ import {
 } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
-import { FocusWindowParams, IUiController, WindowProps } from '../../interfaces/ui'
+import { FocusWindowParams, isSidePanelView, IUiController, WindowProps } from '../../interfaces/ui'
 import {
   CallsUserRequest,
   OpenRequestWindowParams,
@@ -617,7 +617,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   // persisted mode flag (survives brief view/port races) and fall back to an
   // already-open side-panel view.
   get #isSidePanelOpen() {
-    return this.#ui.views.some((view) => view.type === 'side-panel')
+    return this.#ui.views.some((view) => isSidePanelView(view))
   }
 
   async #shouldHandleRequestsInSidePanel() {

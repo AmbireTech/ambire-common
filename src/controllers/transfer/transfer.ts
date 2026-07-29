@@ -23,7 +23,7 @@ import {
   ITransferController,
   TransferUpdate
 } from '../../interfaces/transfer'
-import { IUiController, View } from '../../interfaces/ui'
+import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
@@ -297,7 +297,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     const hasNoSearchParams = Object.keys(searchParams || {}).length === 0
 
     const shouldKeepExistingForm =
-      isFormInitialized && isSameMode && hasNoSearchParams && view.type !== 'side-panel'
+      isFormInitialized && isSameMode && hasNoSearchParams && !isSidePanelView(view)
 
     if (shouldKeepExistingForm) {
       if (!this.areDefaultsSet) {
