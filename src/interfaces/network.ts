@@ -23,7 +23,6 @@ interface FeeOptions {
   minBaseFee?: bigint
   elasticityMultiplier?: bigint
   baseFeeMaxChangeDenominator?: bigint
-  feeIncrease?: bigint // should we increase the relayer fee in %
   // transactions on Base get stuck on slow as we lower the baseFee a lot
   // so we make the minBaseFee the same as the last block one
   minBaseFeeEqualToLastBlock?: boolean
@@ -206,7 +205,6 @@ export type RelayerNetwork = {
     is1559: boolean
     elasticityMultiplier?: number
     baseFeeMaxChangeDenominator?: number
-    feeIncrease?: number
     minBaseFee?: number
     minBaseFeeEqualToLastBlock?: boolean
   }

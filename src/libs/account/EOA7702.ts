@@ -59,7 +59,7 @@ export class EOA7702 extends BaseAccount {
   }
 
   supportsBundlerEstimation() {
-    return true
+    return this.isErc4337Enabled
   }
 
   /*
@@ -195,6 +195,10 @@ export class EOA7702 extends BaseAccount {
 
   isSponsorable(): boolean {
     return this.network.chainId === 100n
+  }
+
+  canUseErc4337(): boolean {
+    return true
   }
 
   getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {

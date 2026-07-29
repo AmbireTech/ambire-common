@@ -742,6 +742,7 @@ const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
  * amount in USD to the fee percent
  */
 const getSwapSponsorship = ({
+  isErc4337Enabled,
   hasConvinienceFee,
   nativePrice,
   fromAmountInUsd,
@@ -750,6 +751,7 @@ const getSwapSponsorship = ({
   providerId,
   isBridge
 }: {
+  isErc4337Enabled: boolean
   hasConvinienceFee: boolean
   nativePrice: number | undefined
   fromAmountInUsd: number | undefined
@@ -766,6 +768,7 @@ const getSwapSponsorship = ({
     }
   | undefined => {
   if (
+    !isErc4337Enabled ||
     !hasConvinienceFee ||
     !nativePrice ||
     !fromAmountInUsd ||
