@@ -177,7 +177,12 @@ describe('Portfolio', () => {
     const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
       simulation: {
         accountOps: [accountOp],
-        baseAccount: getBaseAccount(account, accountStates[accountOp.accountAddr]!['1']!, ethereum),
+        baseAccount: getBaseAccount(
+          account,
+          accountStates[accountOp.accountAddr]!['1']!,
+          ethereum,
+          true
+        ),
         state: accountStates[accountOp.accountAddr]!['1']!
       }
     })
@@ -246,7 +251,8 @@ describe('Portfolio', () => {
           baseAccount: getBaseAccount(
             account,
             accountStates[accountOp.accountAddr]!['1']!,
-            ethereum
+            ethereum,
+            true
           ),
           state: accountStates[accountOp.accountAddr]![accountOp.chainId.toString()]!
         }
@@ -332,7 +338,12 @@ describe('Portfolio', () => {
     const postSimulation = await portfolio.get(acc, {
       simulation: {
         accountOps: [accountOp],
-        baseAccount: getBaseAccount(account, accountStates[accountOp.accountAddr]!['1']!, ethereum),
+        baseAccount: getBaseAccount(
+          account,
+          accountStates[accountOp.accountAddr]!['1']!,
+          ethereum,
+          true
+        ),
         state: accountStates[accountOp.accountAddr]!['1']!
       }
     })
@@ -375,7 +386,12 @@ describe('Portfolio', () => {
     const postSimulation = await portfolio.get(acc, {
       simulation: {
         accountOps: [accountOp],
-        baseAccount: getBaseAccount(account, accountStates[accountOp.accountAddr]!['1']!, ethereum),
+        baseAccount: getBaseAccount(
+          account,
+          accountStates[accountOp.accountAddr]!['1']!,
+          ethereum,
+          true
+        ),
         state: accountStates[accountOp.accountAddr]!['1']!
       }
     })
@@ -424,7 +440,8 @@ describe('Portfolio', () => {
           baseAccount: getBaseAccount(
             account,
             accountStates[accountOp.accountAddr]!['1']!,
-            ethereum
+            ethereum,
+            true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
         }
@@ -445,7 +462,8 @@ describe('Portfolio', () => {
           baseAccount: getBaseAccount(
             account,
             accountStates[accountOp.accountAddr]!['1']!,
-            ethereum
+            ethereum,
+            true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
         }
@@ -499,7 +517,8 @@ describe('Portfolio', () => {
           baseAccount: getBaseAccount(
             account,
             accountStates[accountOp.accountAddr]!['1']!,
-            ethereum
+            ethereum,
+            true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
         }
@@ -547,7 +566,8 @@ describe('Portfolio', () => {
           baseAccount: getBaseAccount(
             account,
             accountStates[accountOp.accountAddr]!['1']!,
-            ethereum
+            ethereum,
+            true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
         }
@@ -597,7 +617,12 @@ describe('Portfolio', () => {
     const postSimulation = await portfolio.get(PORTFOLIO_TESTS_V2.addr, {
       simulation: {
         accountOps: [accountOp],
-        baseAccount: getBaseAccount(account, accountStates[accountOp.accountAddr]!['1']!, ethereum),
+        baseAccount: getBaseAccount(
+          account,
+          accountStates[accountOp.accountAddr]!['1']!,
+          ethereum,
+          true
+        ),
         state: accountStates[accountOp.accountAddr]!['1']!
       }
     })
@@ -650,7 +675,8 @@ describe('Portfolio', () => {
           baseAccount: getBaseAccount(
             account,
             accountStates[accountOp.accountAddr]!['1']!,
-            ethereum
+            ethereum,
+            true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
         }

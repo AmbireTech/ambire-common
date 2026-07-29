@@ -14,6 +14,7 @@ import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogi
 import { Banner } from '../../interfaces/banner'
 import { Dapp, DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -117,6 +118,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #portfolio: IPortfolioController
 
+  #featureFlags: IFeatureFlagsController
+
   #externalSignerControllers: Partial<{
     internal: ExternalSignerController
     trezor: ExternalSignerController
@@ -215,6 +218,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     relayerUrl,
     callRelayer,
     portfolio,
+    featureFlags,
     externalSignerControllers,
     activity,
     phishing,
@@ -244,6 +248,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     relayerUrl: string
     callRelayer: BindedRelayerCall
     portfolio: IPortfolioController
+    featureFlags: IFeatureFlagsController
     externalSignerControllers: Partial<{
       internal: ExternalSignerController
       trezor: ExternalSignerController
@@ -280,6 +285,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#relayerUrl = relayerUrl
     this.#callRelayer = callRelayer
     this.#portfolio = portfolio
+    this.#featureFlags = featureFlags
     this.#externalSignerControllers = externalSignerControllers
     this.#activity = activity
     this.#phishing = phishing
@@ -1238,7 +1244,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         )
       }
 
-      const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
+      const baseAcc = getBaseAccount(
+        this.#selectedAccount.account,
+        accountState,
+        network,
+        this.#featureFlags.isFeatureEnabled('erc4337')
+      )
       const accountAddr = getAddress(request.params[0].from)
 
       if (isWalletSendCalls && !request.params[0].calls.length)
@@ -1560,7 +1571,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const baseAcc = getBaseAccount(
       this.#selectedAccount.account,
       accountState,
-      this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!
+      this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!,
+      this.#featureFlags.isFeatureEnabled('erc4337')
     )
 
     const requestParams = getIntentRequestParams({
@@ -1709,7 +1721,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const baseAcc = getBaseAccount(
       this.#selectedAccount.account,
       accountState,
-      this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!
+      this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!,
+      this.#featureFlags.isFeatureEnabled('erc4337')
     )
 
     const callsRequestParams = getTransferRequestParams({
@@ -1790,7 +1803,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           throw new EmittableError({ message: error.message, level: 'major', error })
         }
 
-        const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
+        const baseAcc = getBaseAccount(
+          this.#selectedAccount.account,
+          accountState,
+          network,
+          this.#featureFlags.isFeatureEnabled('erc4337')
+        )
         const swapAndBridgeRequestParams = await getSwapAndBridgeRequestParams(
           transaction,
           network.chainId,
@@ -2074,6 +2092,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           networks: this.#networks,
           keystore: this.#keystore,
           portfolio: this.#portfolio,
+          featureFlags: this.#featureFlags,
           signAccountOpPreference: this.#signAccountOpPreference,
           externalSignerControllers: this.#externalSignerControllers,
           activity: this.#activity,

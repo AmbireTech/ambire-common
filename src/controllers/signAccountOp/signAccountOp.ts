@@ -42,6 +42,7 @@ import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
 import {
   ExternalKey,
@@ -213,6 +214,8 @@ export class SignAccountOpController
   #keystore: IKeystoreController
 
   #portfolio: IPortfolioController
+
+  #featureFlags: IFeatureFlagsController
 
   #signAccountOpPreference: SignAccountOpPreferenceController
 
@@ -388,6 +391,7 @@ export class SignAccountOpController
     networks,
     keystore,
     portfolio,
+    featureFlags,
     signAccountOpPreference,
     externalSignerControllers,
     account,
@@ -410,6 +414,7 @@ export class SignAccountOpController
     networks: INetworksController
     keystore: IKeystoreController
     portfolio: IPortfolioController
+    featureFlags: IFeatureFlagsController
     signAccountOpPreference: SignAccountOpPreferenceController
     externalSignerControllers: ExternalSignerControllers
     account: Account
@@ -431,12 +436,18 @@ export class SignAccountOpController
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
+    this.#featureFlags = featureFlags
     this.#signAccountOpPreference = signAccountOpPreference
     this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
-    this.baseAccount = getBaseAccount(account, accountState, network)
+    this.baseAccount = getBaseAccount(
+      account,
+      accountState,
+      network,
+      this.#featureFlags.isFeatureEnabled('erc4337')
+    )
     this.#network = network
     this.#activity = activity
     this.#dapps = dapps
@@ -479,7 +490,8 @@ export class SignAccountOpController
       provider,
       portfolio,
       this.bundlerSwitcher,
-      this.#activity
+      this.#activity,
+      this.#featureFlags
     )
     this.#onUpdateAfterTraceCallSuccess = onUpdateAfterTraceCallSuccess
     this.gasPrice = new GasPriceController(network, provider, this.baseAccount, () => ({
@@ -538,6 +550,30 @@ export class SignAccountOpController
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
     }
     this.#updateSafeEip712Data()
+  }
+
+  #rebuildBaseAccount() {
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+
+    if (!accountState) return
+
+    this.baseAccount = getBaseAccount(
+      this.account,
+      accountState,
+      this.#network,
+      this.#featureFlags.isFeatureEnabled('erc4337')
+    )
+    this.gasPrice?.setBaseAccount(this.baseAccount)
+  }
+
+  #clearFeeSelection() {
+    this.#paidBy = null
+    this.feeTokenResult = null
+    this.selectedOption = undefined
+    this.selectedFeeSpeed = FeeSpeed.Fast
+    this.feeSpeeds = {}
+    this.#updateAccountOp({ gasFeePayment: null })
   }
 
   #updateNonce(nonce: bigint) {
@@ -1562,6 +1598,23 @@ export class SignAccountOpController
     this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
   }
 
+  async enableErc4337AndReestimate() {
+    await this.#featureFlags.setFeatureFlag('erc4337', true)
+    this.#rebuildBaseAccount()
+    this.#clearFeeSelection()
+    this.bundlerSwitcher.cleanUp()
+    this.gasPrice.areGasPricesUsedFromBundlerEstimation = false
+
+    try {
+      await this.estimation.estimate(this.accountOp)
+      this.update({ hasNewEstimation: true })
+    } catch {
+      // @justInCase basically, this is a re-estimate with proper errro handling
+      // if it blows up for some reason, it should also blow up in
+      // its proper places. No need to propagate the error here
+    }
+  }
+
   update({
     gasPrices,
     customGasPrices,
@@ -2258,6 +2311,10 @@ export class SignAccountOpController
 
     // no increase if the user has set them
     if (this.hasCustomGasPrices) return this.gasPrices
+
+    // no increase if there's no bundlerEstimation as this means
+    // we're not using erc-4337 for broadcast
+    if (!this.estimation.estimation?.bundlerEstimation) return this.gasPrices
 
     return {
       slow: {
@@ -3514,14 +3571,17 @@ export class SignAccountOpController
           }
           if (txnLength > 1) this.update({ signedTransactionsCount: i + 1 })
 
-          // record the EOA txn
-          this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
-            rawTxn: signedTxn
-          }).catch((e: any) => {
-            console.log('failed to record EOA txn to relayer', accountOp.chainId)
+          // record the EOA txn only if isErc4337Enabled as
+          // we need this for the gas tank
+          if (this.isErc4337Enabled) {
+            this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
+              rawTxn: signedTxn
+            }).catch((e: any) => {
+              console.log('failed to record EOA txn to relayer', accountOp.chainId)
 
-            console.log(e)
-          })
+              console.log(e)
+            })
+          }
         }
 
         transactionRes = {
@@ -4025,6 +4085,14 @@ export class SignAccountOpController
     return this.baseAccount.canSetCustomGas(this.selectedOption, this.accountOp)
   }
 
+  get isErc4337Enabled(): boolean {
+    return this.#featureFlags.isFeatureEnabled('erc4337')
+  }
+
+  get canEnableErc4337(): boolean {
+    return !this.isErc4337Enabled && this.baseAccount.canUseErc4337()
+  }
+
   get threshold(): number {
     const accountState =
       this.#accounts.accountStates[this.account.addr]![this.#network.chainId.toString()]
@@ -4073,6 +4141,8 @@ export class SignAccountOpController
       canAccountBroadcastByItself: this.canAccountBroadcastByItself,
       canSetCustomGasPrices: this.canSetCustomGasPrices,
       canSetCustomGas: this.canSetCustomGas,
+      isErc4337Enabled: this.isErc4337Enabled,
+      canEnableErc4337: this.canEnableErc4337,
       threshold: this.threshold,
       canBroadcast: this.canBroadcast,
       hasSafeApiFailed: this.hasSafeApiFailed,

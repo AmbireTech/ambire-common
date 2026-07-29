@@ -597,7 +597,8 @@ const init = async (
   const baseAccount = getBaseAccount(
     account,
     accountsCtrl.accountStates[account.addr]![network.chainId.toString()]!,
-    network
+    network,
+    true
   )
 
   const callRelayer = options?.callRelayer || relayerCall.bind({ url: '', fetch })
@@ -626,7 +627,8 @@ const init = async (
     provider,
     portfolio,
     bundlerSwitcher,
-    activity
+    activity,
+    featureFlagsCtrl
   )
   estimationController.estimation = estimationOrMock
   estimationController.hasEstimated = true
@@ -678,6 +680,7 @@ const init = async (
     networks: networksCtrl,
     keystore,
     portfolio,
+    featureFlags: featureFlagsCtrl,
     signAccountOpPreference,
     externalSignerControllers: {},
     account,
@@ -1388,8 +1391,8 @@ describe('SignAccountOp Controller ', () => {
       feeTokenChainId: 1n,
       amount: 6005000n, // ((300 + 300) × 10000) + 10000, i.e. ((baseFee + priorityFee) * gasUsed) + addedNative
       simulatedGasLimit: 10000n, // 10000, i.e. gasUsed,
-      maxPriorityFeePerGas: 330n, // 10% increase for fast
-      gasPrice: 660n // 10% increase for fast
+      maxPriorityFeePerGas: 300n,
+      gasPrice: 600n
     })
 
     expect(controller.accountOp.signature).toEqual('0x') // broadcasting and signRawTransaction is handled in main controller
@@ -2140,8 +2143,8 @@ describe('Negative cases', () => {
       '0x0000000000000000000000000000000000000000'
     )
     expect(controller.accountOp.gasFeePayment!.feeTokenChainId).toEqual(137n)
-    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(330n) // 10% increase
-    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(660n) // 10% increase
+    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(300n)
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(600n)
 
     const typedData = getTypedData(
       network.chainId,
