@@ -9,7 +9,11 @@ import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helper
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BALANCE_GETTER, NFT_GETTER } from '../../consts/deploy'
-import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
+import {
+  BLACKLIST_UPDATE_INTERVAL,
+  PORTFOLIO_LOADING_MAX_AGE_MS,
+  PORTFOLIO_NETWORK_UPDATE_TIMEOUT_MS
+} from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
@@ -3925,6 +3929,167 @@ describe('Portfolio Controller ', () => {
 
       expect(networkParams).toContain('1')
       expect(networkParams).toContain('customAppChain')
+    })
+  })
+
+  describe('hung portfolio update recovery', () => {
+    const minimalPortfolioGetResult = {
+      updateStarted: Date.now(),
+      discoveryTime: 0,
+      oracleCallTime: 0,
+      priceUpdateTime: 0,
+      tokenDataCache: new Map(),
+      tokens: [],
+      feeTokens: [],
+      toBeLearned: { erc20s: {}, erc721s: {} },
+      tokenErrors: [],
+      collectionErrors: [],
+      collections: [],
+      errors: [],
+      blockNumber: 1,
+      beforeNonce: 0n,
+      afterNonce: 0n
+    } as PortfolioLibGetResult
+
+    async function seedAccountNetworkState(controller: PortfolioController) {
+      jest
+        .spyOn(Portfolio.prototype, 'get')
+        .mockResolvedValue(minimalPortfolioGetResult)
+      jest.spyOn(defiPositionsLib, 'getCustomProviderPositions').mockResolvedValue({
+        positionsByProvider: [],
+        providerErrors: []
+      })
+      // @ts-expect-error private method
+      jest.spyOn(controller, 'getPortfolioFromApiDiscovery').mockResolvedValue(null)
+
+      await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
+        maxDataAgeMs: 0,
+        defiMaxDataAgeMs: -1,
+        isManualUpdate: true
+      })
+
+      jest.restoreAllMocks()
+    }
+
+    it('does not skip a network update when isLoading is older than PORTFOLIO_LOADING_MAX_AGE_MS', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareTest()
+      await seedAccountNetworkState(controller)
+
+      const networkState = controller.getAccountPortfolioState(account.addr)['1']
+      expect(networkState).toBeDefined()
+      networkState!.isLoading = true
+      networkState!.loadingStartedAt = Date.now() - PORTFOLIO_LOADING_MAX_AGE_MS - 1000
+      // Age-based skip must not apply either — otherwise we cannot isolate the isLoading fix
+      if (networkState!.result) {
+        ;(networkState!.result as PortfolioNetworkResult).updateStarted =
+          Date.now() - 60 * 1000 - 1000
+      }
+      networkState!.lastSuccessfulUpdate = Date.now() - 60 * 1000 - 1000
+
+      let getCalledAfterStaleLoading = false
+      jest.spyOn(Portfolio.prototype, 'get').mockImplementation(async () => {
+        getCalledAfterStaleLoading = true
+        return minimalPortfolioGetResult
+      })
+      jest.spyOn(defiPositionsLib, 'getCustomProviderPositions').mockResolvedValue({
+        positionsByProvider: [],
+        providerErrors: []
+      })
+      // @ts-expect-error private method
+      jest.spyOn(controller, 'getPortfolioFromApiDiscovery').mockResolvedValue(null)
+
+      await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
+        maxDataAgeMs: 60 * 1000,
+        defiMaxDataAgeMs: -1,
+        isManualUpdate: false
+      })
+
+      expect(getCalledAfterStaleLoading).toBe(true)
+      expect(controller.getAccountPortfolioState(account.addr)['1']?.isLoading).toBe(false)
+      restore()
+    })
+
+    it('still skips a network update while isLoading is recent', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareTest()
+      await seedAccountNetworkState(controller)
+
+      const networkState = controller.getAccountPortfolioState(account.addr)['1']
+      expect(networkState).toBeDefined()
+      networkState!.isLoading = true
+      networkState!.loadingStartedAt = Date.now()
+      if (networkState!.result) {
+        ;(networkState!.result as PortfolioNetworkResult).updateStarted =
+          Date.now() - 60 * 1000 - 1000
+      }
+      networkState!.lastSuccessfulUpdate = Date.now() - 60 * 1000 - 1000
+
+      let getCalled = false
+      jest.spyOn(Portfolio.prototype, 'get').mockImplementation(async () => {
+        getCalled = true
+        return minimalPortfolioGetResult
+      })
+      jest.spyOn(defiPositionsLib, 'getCustomProviderPositions').mockResolvedValue({
+        positionsByProvider: [],
+        providerErrors: []
+      })
+      // @ts-expect-error private method
+      jest.spyOn(controller, 'getPortfolioFromApiDiscovery').mockResolvedValue(null)
+
+      await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
+        maxDataAgeMs: 60 * 1000,
+        defiMaxDataAgeMs: -1,
+        isManualUpdate: false
+      })
+
+      expect(getCalled).toBe(false)
+      expect(controller.getAccountPortfolioState(account.addr)['1']?.isLoading).toBe(true)
+      restore()
+    })
+
+    it('clears isLoading when portfolioLib.get hangs past PORTFOLIO_NETWORK_UPDATE_TIMEOUT_MS', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareTest()
+      await seedAccountNetworkState(controller)
+
+      jest
+        .spyOn(Portfolio.prototype, 'get')
+        .mockImplementation(() => new Promise(() => {}) as Promise<PortfolioLibGetResult>)
+      jest.spyOn(defiPositionsLib, 'getCustomProviderPositions').mockResolvedValue({
+        positionsByProvider: [],
+        providerErrors: []
+      })
+      // @ts-expect-error private method
+      jest.spyOn(controller, 'getPortfolioFromApiDiscovery').mockResolvedValue(null)
+
+      jest.useFakeTimers()
+      try {
+        // @ts-expect-error protected method
+        const updatePromise = controller.updatePortfolioState(
+          account,
+          ethereum,
+          controller.initializePortfolioLibIfNeeded(account.addr, ethereum.chainId, ethereum),
+          { defiMaxDataAgeMs: -1, hasKeys: true, maxDataAgeMs: 0, isManualUpdate: true }
+        )
+
+        // Runs sync until the first await; isLoading is already set
+        expect(controller.getAccountPortfolioState(account.addr)['1']?.isLoading).toBe(true)
+
+        // Let mocked discovery resolve, then fire the network-update timeout
+        await Promise.resolve()
+        await jest.advanceTimersByTimeAsync(PORTFOLIO_NETWORK_UPDATE_TIMEOUT_MS + 50)
+        const [success] = await updatePromise
+
+        expect(success).toBe(false)
+        expect(controller.getAccountPortfolioState(account.addr)['1']?.isLoading).toBe(false)
+        expect(
+          controller.getAccountPortfolioState(account.addr)['1']?.criticalError?.message
+        ).toMatch(/took too long/i)
+      } finally {
+        jest.useRealTimers()
+        restore()
+      }
     })
   })
 })

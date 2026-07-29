@@ -439,6 +439,11 @@ export type PortfolioKeyResult =
 export type NetworkState<T = PortfolioKeyResult> = {
   isReady: boolean
   isLoading: boolean
+  /**
+   * Set when isLoading flips to true. Used so a hung update cannot skip forever
+   * via canSkipUpdate, and so timed-out background work cannot overwrite a newer update.
+   */
+  loadingStartedAt?: number
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
   lastSuccessfulUpdate?: number

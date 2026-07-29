@@ -15,3 +15,11 @@ export const PHISHING_FAILED_TO_GET_UPDATE_INTERVAL = 600000 // 10 minutes
 export const ESTIMATE_UPDATE_INTERVAL = 30000
 export const GAS_PRICE_UPDATE_INTERVAL = 12000
 export const FETCH_SAFE_TXNS = 3 * 60 * 1000 // 3 minutes
+/** Hard ceiling for a single network portfolio update (tokens + custom DeFi). */
+export const PORTFOLIO_NETWORK_UPDATE_TIMEOUT_MS = 60 * 1000
+/** isLoading older than this is treated as stuck — later updates must not skip forever. */
+export const PORTFOLIO_LOADING_MAX_AGE_MS = 60 * 1000
+/** Timeout for custom on-chain DeFi position fetches (AAVE / Uni V3). */
+export const CUSTOM_DEFI_POSITIONS_TIMEOUT_MS = 30 * 1000
+/** Timeout for AAVE's pre-deployless reservesLength staticCall. */
+export const AAVE_STATIC_CALL_TIMEOUT_MS = 15 * 1000
