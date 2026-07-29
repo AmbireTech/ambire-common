@@ -23,9 +23,10 @@ import { SafeTx } from '../../interfaces/safe'
 import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
 import wait from '../../utils/wait'
 import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
-import { decodeMultiSend, multiCallAbi } from './helpers'
+import { decodeMultiSend, multiCallAbi, parseSafeMessageOrigin } from './helpers'
 
 import type {
+  AddMessageOptions,
   ProposeTransactionProps,
   SafeCreationInfoResponse,
   SafeMessage,
@@ -165,13 +166,19 @@ export async function addMessage(
   chainId: bigint,
   safeAddress: Hex,
   message: string | EIP712TypedData,
-  signature: string
+  signature: string,
+  origin?: string
 ) {
   const apiKit = getApiKit(chainId)
-  return apiKit.addMessage(safeAddress, {
+  // `origin` is a free-form field the Safe Transaction Service persists and returns
+  // on the message. api-kit doesn't type it, but it forwards the options as the POST
+  // body verbatim, so we widen the payload to carry it through.
+  const options: AddMessageOptions & { origin?: string } = {
     message: normalizeSafeGlobalMessage(message),
     signature
-  })
+  }
+  if (origin) options.origin = origin
+  return apiKit.addMessage(safeAddress, options)
 }
 
 export function normalizeSafeGlobalMessage(message: string | EIP712TypedData) {
@@ -373,6 +380,8 @@ export function toSigMessageUserRequests(response: SafeResults): {
     signature: Hex
     created: number
     signatures: Hex[]
+    dappName?: string
+    dappUrl?: string
   }
   isConfirmed: boolean
 }[] {
@@ -386,6 +395,8 @@ export function toSigMessageUserRequests(response: SafeResults): {
       signature: Hex
       created: number
       signatures: Hex[]
+      dappName?: string
+      dappUrl?: string
     }
     isConfirmed: boolean
   }[] = []
@@ -397,6 +408,8 @@ export function toSigMessageUserRequests(response: SafeResults): {
         ? (concat(message.confirmations.map((c) => c.signature)) as Hex)
         : null
       if (!signature) return
+
+      const { name: dappName, url: dappUrl } = parseSafeMessageOrigin(message.origin)
 
       userRequests.push({
         type: 'safeSignMessageRequest',
@@ -414,7 +427,9 @@ export function toSigMessageUserRequests(response: SafeResults): {
             message.confirmations
           ),
           created: new Date(message.created).getTime(),
-          signatures: message.confirmations.map((c) => c.signature) as Hex[]
+          signatures: message.confirmations.map((c) => c.signature) as Hex[],
+          dappName,
+          dappUrl
         },
         isConfirmed: !!message.isConfirmed
       })

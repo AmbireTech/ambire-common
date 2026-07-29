@@ -2,6 +2,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { Dapp } from '../../interfaces/dapp'
+import { Domains } from '../../interfaces/domains'
 import { EmailVaultData } from '../../interfaces/emailVault'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
@@ -75,6 +76,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#cleanUpEmailVaultStorage() // As of version 5.33.5
       await this.#fixSelectedAccountDismissedBannerIdsType() // as of version 6.7.3
       await this.#migrateDappsAddConnectionSources() // As of v6.11.0
+      await this.#migrateDomainsCacheToNames() // As of v6.14.0
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -745,6 +747,51 @@ export class StorageController extends EventEmitter implements IStorageControlle
       }
 
       await this.#storage.set(EMAIL_VAULT_STORAGE_KEY_THAT_NEEDS_CLEANUP, cleanEmailVaultStorage)
+    }
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
+  }
+
+  // As of version 6.14.0, the domains cache moved from per-service fields
+  // (`ens`, `namoshi`, `ensAvatar`, `ensExpiry`) stored directly on the entry to a
+  // `{ names, avatar, expiry }` shape. Normalize any legacy entry left in storage.
+  async #migrateDomainsCacheToNames() {
+    const MIGRATION_KEY = 'migrateDomainsCacheToNames'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const domainsCache: Record<string, any> = await this.#storage.get('domainsCache', {})
+
+    // Legacy entries lack the `names` key; the current shape always has it.
+    const hasLegacyEntry = Object.values(domainsCache).some(
+      (entry) => entry && typeof entry === 'object' && !('names' in entry)
+    )
+
+    if (hasLegacyEntry) {
+      const migrated: Domains = {}
+
+      for (const [address, data] of Object.entries(domainsCache)) {
+        if (!data || typeof data !== 'object') continue
+
+        if ('names' in data) {
+          migrated[address] = data
+          continue
+        }
+
+        const names: Domains[string]['names'] = {}
+        if ('ens' in data) names.ens = data.ens ?? null
+        if ('namoshi' in data) names.namoshi = data.namoshi ?? null
+
+        migrated[address] = {
+          names,
+          avatar: data.ensAvatar ?? undefined,
+          expiry: data.ensExpiry ?? undefined,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt,
+          updateFailedAt: data.updateFailedAt
+        }
+      }
+
+      await this.#storage.set('domainsCache', migrated)
     }
 
     await this.#markMigrationPassed(MIGRATION_KEY)

@@ -29,6 +29,7 @@ import {
 } from '../../interfaces/signMessage'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
 import { fetchErc7730DescriptorForMessage, humanizeMessage } from '../../libs/humanizer'
+import { buildSafeMessageOrigin } from '../../libs/safe/helpers'
 import {
   addMessage,
   addMessageSignature,
@@ -455,11 +456,18 @@ export class SignMessageController
     const account = this.#account
     if (!network || !account) return
 
+    // Attach the requesting dapp's name and url so the other owners can see the
+    // request context when co-signing on a different device (see buildSafeMessageOrigin)
+    const origin = buildSafeMessageOrigin(this.dapp)
+
     // send only to Safe Global if it doesn't already exists and if the threshold is not met
-    await withTimeout(() => addMessage(network.chainId, account.addr as Hex, message, sig), {
-      timeoutMs: SAFE_API_TIMEOUT_MS,
-      message: `Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`
-    }).catch((e) => {
+    await withTimeout(
+      () => addMessage(network.chainId, account.addr as Hex, message, sig, origin),
+      {
+        timeoutMs: SAFE_API_TIMEOUT_MS,
+        message: `Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`
+      }
+    ).catch((e) => {
       console.log('failed to send message to Safe Global: ', e)
     })
   }

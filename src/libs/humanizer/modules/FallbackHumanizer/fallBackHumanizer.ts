@@ -1,8 +1,15 @@
 import { ZeroAddress } from 'ethers'
 
+import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
+import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
+import {
+  getAction,
+  getAddressVisualization,
+  getKnownFunctionName,
+  getLabel,
+  getToken
+} from '../../utils'
 
 export const fallbackHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
@@ -30,6 +37,10 @@ export const fallbackHumanizer: HumanizerCallModule = (
           ]
         }
       case 'has-to:no-value:no-data':
+        // preserve a visualization already set by an earlier, more specific module (e.g. a
+        // Safe{WALLET} "reject queued transaction" call), instead of unconditionally
+        // overwriting it with a generic "Empty call to" label below
+        if (call.fullVisualization) return call
         return {
           ...call,
           fullVisualization: [getAction('Empty call to'), getAddressVisualization(call.to!)]
@@ -46,11 +57,22 @@ export const fallbackHumanizer: HumanizerCallModule = (
         }
       case 'has-to:no-value:has-data':
       case 'has-to:has-value:has-data':
-        let fullVisualization = call.fullVisualization || [
-          getAction('Interacting'),
-          getLabel('with'),
-          getAddressVisualization(call.to!)
-        ]
+        const knownFunctionName = getKnownFunctionName(
+          humanizerInfo as HumanizerMeta,
+          call.data.slice(0, 10)
+        )
+        const capitalizedFunctionName = knownFunctionName
+          ? `${knownFunctionName.charAt(0).toUpperCase()}${knownFunctionName.slice(1)}`
+          : undefined
+        let fullVisualization =
+          call.fullVisualization ||
+          (capitalizedFunctionName
+            ? [
+                getAction(capitalizedFunctionName),
+                getLabel('on'),
+                getAddressVisualization(call.to!)
+              ]
+            : [getAction('Interacting'), getLabel('with'), getAddressVisualization(call.to!)])
         if (
           call.value &&
           ![

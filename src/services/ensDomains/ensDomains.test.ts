@@ -1,4 +1,5 @@
 import { labelhash, namehash } from 'viem'
+import * as viemEnsModule from 'viem/ens'
 import { normalize } from 'viem/ens'
 
 import { expect, jest } from '@jest/globals'
@@ -86,17 +87,17 @@ describe('reverseLookupEns (batched + CCIP fallback)', () => {
       .spyOn(deploylessModule, 'fromDescriptor')
       .mockReturnValue({ call: callMock } as unknown as deploylessModule.Deployless)
 
+    // The code calls the standalone `getEnsName(client, { address, ... })` from viem/ens, so the
+    // options object (with the address) is the SECOND argument; the client is the first.
     const getEnsNameMock = jest
-      .fn<(args: any) => Promise<string | null>>()
+      .fn<(client: any, args: any) => Promise<string | null>>()
       .mockResolvedValue('offchain.eth')
-    jest
-      .spyOn(providerModule, 'getViemClientForProvider')
-      .mockReturnValue({ getEnsName: getEnsNameMock } as any)
+    jest.spyOn(viemEnsModule, 'getEnsName').mockImplementation(getEnsNameMock as any)
 
     const result = await reverseLookupEns([offchainAddress, onchainAddress], STUB_PROVIDER)
 
     expect(getEnsNameMock).toHaveBeenCalledTimes(1)
-    expect((getEnsNameMock.mock.calls[0]![0] as any).address).toBe(offchainAddress)
+    expect((getEnsNameMock.mock.calls[0]![1] as any).address).toBe(offchainAddress)
     expect(result[offchainAddress]).toEqual({ name: 'offchain.eth', failed: false })
     expect(result[onchainAddress]).toEqual({ name: 'onchain.eth', failed: false })
   })
@@ -113,11 +114,9 @@ describe('reverseLookupEns (batched + CCIP fallback)', () => {
       .mockReturnValue({ call: callMock } as unknown as deploylessModule.Deployless)
 
     const getEnsNameMock = jest
-      .fn<(args: any) => Promise<string | null>>()
+      .fn<(client: any, args: any) => Promise<string | null>>()
       .mockRejectedValue(new Error('gateway unreachable'))
-    jest
-      .spyOn(providerModule, 'getViemClientForProvider')
-      .mockReturnValue({ getEnsName: getEnsNameMock } as any)
+    jest.spyOn(viemEnsModule, 'getEnsName').mockImplementation(getEnsNameMock as any)
 
     const result = await reverseLookupEns([offchainAddress], STUB_PROVIDER)
 

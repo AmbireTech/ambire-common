@@ -90,21 +90,31 @@ const fallbackCases: Array<{
     ]
   },
   {
-    label: 'has-to:no-value:has-data — Interacting with address',
+    label: 'has-to:no-value:has-data — known function name used instead of Interacting with',
     call: { to: TO, value: 0n, data: DATA } as IrCall,
     expected: [
-      { type: 'action', content: 'Interacting' },
-      { type: 'label', content: 'with' },
+      { type: 'action', content: 'Approve' },
+      { type: 'label', content: 'on' },
       { type: 'address', address: TO }
     ]
   },
   {
-    label: 'has-to:has-value:has-data — Send ETH and Interacting with address',
+    label:
+      'has-to:has-value:has-data — Send ETH and known function name instead of Interacting with',
     call: { to: TO, value: ETH, data: DATA } as IrCall,
     expected: [
       { type: 'action', content: 'Send' },
       { type: 'token', address: ZERO, value: ETH },
       { type: 'label', content: 'and' },
+      { type: 'action', content: 'Approve' },
+      { type: 'label', content: 'on' },
+      { type: 'address', address: TO }
+    ]
+  },
+  {
+    label: 'has-to:no-value:has-data — falls back to Interacting with when selector is unknown',
+    call: { to: TO, value: 0n, data: '0xdeadbeef' } as IrCall,
+    expected: [
       { type: 'action', content: 'Interacting' },
       { type: 'label', content: 'with' },
       { type: 'address', address: TO }
@@ -119,6 +129,20 @@ const fallbackCases: Array<{
       fullVisualization: [{ type: 'action', content: 'Swap', id: 1 }]
     } as IrCall,
     expected: [{ type: 'action', content: 'Swap' }]
+  },
+  {
+    // BUG regression: a Safe{WALLET} "reject" call is a 0-value, no-data self-call, so it lands
+    // in the same 'has-to:no-value:no-data' bucket as a plain empty call. A prior humanizer
+    // module (e.g. SafeModule) may have already set a specific fullVisualization for it (e.g.
+    // "Reject Tx with nonce X"), which must be preserved instead of being overwritten here
+    label: 'has-to:no-value:no-data — existing fullVisualization (e.g. Safe reject) preserved',
+    call: {
+      to: TO,
+      value: 0n,
+      data: '0x',
+      fullVisualization: [{ type: 'action', content: 'Reject Tx with nonce 5', id: 1 }]
+    } as IrCall,
+    expected: [{ type: 'action', content: 'Reject Tx with nonce 5' }]
   }
 ]
 

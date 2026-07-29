@@ -1493,7 +1493,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     message,
     messageHash,
     created,
-    signatures
+    signatures,
+    dappName,
+    dappUrl
   }: {
     chainId: bigint
     signed: string[]
@@ -1501,6 +1503,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     messageHash: Hex
     created: number
     signatures: Hex[]
+    dappName?: string
+    dappUrl?: string
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -1519,7 +1523,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           signed,
           hash: messageHash,
           created,
-          signatures
+          signatures,
+          dappName,
+          dappUrl
         }
       }
       await this.addUserRequests([req], { position: 'last', executionType: 'queue' })
@@ -1550,7 +1556,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         signed,
         hash: messageHash,
         created,
-        signatures
+        signatures,
+        dappName,
+        dappUrl
       }
     }
     await this.addUserRequests([req], { position: 'last', executionType: 'queue' })

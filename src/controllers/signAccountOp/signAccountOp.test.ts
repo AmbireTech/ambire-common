@@ -84,6 +84,7 @@ import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
 import { SurveyController } from '../survey/survey'
 import { UiController } from '../ui/ui'
+import { clearDiscoverTxnTokensCache } from './discoverTxnTokens'
 import { getFeeSpeedIdentifier, SignAccountOpType } from './helper'
 import { FeeSpeed, SigningStatus } from './signAccountOp'
 import { SignAccountOpPreferenceController } from './signAccountOpPreference'
@@ -649,8 +650,8 @@ const init = async (
     })
     await realDappsController.initialLoadPromise
 
-    // Register any dApp sessions so the real #getTabContextStatus can inspect co-sessions
-    // sharing the same tab (the iframe-in-suspicious-tab scenario).
+    // Register any dApp sessions so the real #getFrameContextStatus can read the top frame
+    // reported for them (the iframe-in-suspicious-tab scenario).
     options.sessions?.forEach((session) => {
       realDappsController.dappSessions[session.sessionId] = session
     })
@@ -2909,19 +2910,20 @@ describe('dapp verification banners', () => {
 
   // Scenario: VERIFIED dApp loaded as iframe inside a sites.google.com tab
   // intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
-  // Uses the real DappsController: the suspicious co-session shares the tab with the dApp's
-  // own session, so the real #getTabContextStatus derives the SUSPICIOUS_HOSTING context.
-  test('should return SUSPICIOUS_HOSTING banner from session context when dApp is an iframe in a suspicious hosting tab', async () => {
-    const verifiedDappSession = new Session({ tabId: 300, windowId: 1, url: verifiedDapp.url })
-    const googleSession = new Session({
+  // Uses the real DappsController: the session carries the top frame the browser reported for it,
+  // so the real #getFrameContextStatus derives the SUSPICIOUS_HOSTING context.
+  test('should return SUSPICIOUS_HOSTING banner from frame context when dApp is an iframe in a suspicious hosting tab', async () => {
+    const verifiedDappSession = new Session({
       tabId: 300,
       windowId: 1,
-      url: 'https://sites.google.com'
+      url: verifiedDapp.url,
+      frameId: 2,
+      topFrameUrl: 'https://sites.google.com/view/fake-dapp'
     })
 
     const { controller } = await initDappVerificationBannerTest(verifiedDapp, {
       dappSessionId: verifiedDappSession.sessionId,
-      sessions: [verifiedDappSession, googleSession]
+      sessions: [verifiedDappSession]
     })
 
     expect(controller.banners[0]?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
@@ -3017,6 +3019,7 @@ describe('traceCall asset discovery', () => {
 
     await wait(100)
     controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+    clearDiscoverTxnTokensCache()
     jest.clearAllMocks()
 
     return controller
@@ -3121,6 +3124,43 @@ describe('traceCall asset discovery', () => {
     // errors, since eth_simulateV1 (the last fallback) succeeds.
     expect(emitErrorSpy).not.toHaveBeenCalled()
     expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+  })
+
+  test('tries the last successful method first on the next discovery', async () => {
+    const controller = await initTraceCall()
+
+    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
+
+    await (controller as any).traceCall()
+
+    controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+    jest.clearAllMocks()
+
+    await (controller as any).traceCall()
+
+    expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
+    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+  })
+
+  test('falls back to the other methods when the cached method fails', async () => {
+    const controller = await initTraceCall()
+
+    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
+
+    await (controller as any).traceCall()
+
+    controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+    jest.clearAllMocks()
+    debugTraceCallSpy.mockRejectedValueOnce(new Error('trace failed'))
+
+    await (controller as any).traceCall()
+
+    expect(debugTraceCallSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      createAccessListCallSpy.mock.invocationCallOrder[0]!
+    )
+    expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
+    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
   })
 
   test('sets Failed and emits a silent error when discovery throws', async () => {

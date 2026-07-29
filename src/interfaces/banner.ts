@@ -106,6 +106,10 @@ export type Action = (
       actionName: 'update-extension-version'
     }
   | {
+      // Mobile-only: apply a downloaded over the air update (bundle) by restarting the app
+      actionName: 'apply-ota-update'
+    }
+  | {
       actionName: 'reload-selected-account'
     }
   | {

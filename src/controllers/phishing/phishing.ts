@@ -39,10 +39,11 @@ const PHISHING_ACTIVE_VIEW_TYPES = new Set(['request-window', 'popup', 'tab'])
  * 1. Intrinsic status — the dApp's own domain, resolved by getDomainBlacklistedStatus().
  *    Priority: BLACKLISTED (phishing DB) > SUSPICIOUS_HOSTING (this list) > VERIFIED.
  *
- * 2. Session context — if a dApp is loaded as an iframe inside a tab that also holds a
- *    session for a SUSPICIOUS_HOSTING or BLACKLISTED domain, #getTabContextStatus() returns
- *    SUSPICIOUS_HOSTING. This is only used for the banner — never written to #dapps or
- *    storage, so the dApp's global status is not contaminated for unrelated sessions.
+ * 2. Frame context — if a dApp is loaded as an iframe inside a tab whose top-level document is
+ *    on a SUSPICIOUS_HOSTING or BLACKLISTED domain, #getFrameContextStatus() returns
+ *    SUSPICIOUS_HOSTING. The top-frame origin is reported by the browser with every request, so
+ *    it cannot be spoofed by the page. This is only used for the banner — never written to
+ *    #dapps or storage, so the dApp's global status is not contaminated for unrelated sessions.
  *
  * Final priority in getDappVerificationBanner():
  *   dApp intrinsic BLACKLISTED  >  context SUSPICIOUS_HOSTING  >  dApp intrinsic SUSPICIOUS_HOSTING  >  VERIFIED
@@ -53,7 +54,7 @@ const PHISHING_ACTIVE_VIEW_TYPES = new Set(['request-window', 'popup', 'tab'])
  *   my-dapp.vercel.app (in this list, not in phishing DB)                       intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
  *   ipfs.io dApp opened directly                                                intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
  *   app.uniswap.org iframe inside a sites.google.com tab                        intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
- *   app.uniswap.org opened directly (no suspicious co-session)                  intrinsic=VERIFIED, context=undefined → VERIFIED
+ *   app.uniswap.org opened directly (it is the tab's top frame)                 intrinsic=VERIFIED, context=undefined → VERIFIED
  *   app.uniswap.org iframe in sites.google.com, but uniswap is BLACKLISTED      intrinsic=BLACKLISTED wins → BLACKLISTED
  */
 /**
