@@ -11,5 +11,6 @@ export const STATUS_WRAPPED_METHODS = {
   handleAccountPickerInitLattice: 'INITIAL',
   handleAccountPickerInitQr: 'INITIAL',
   importSmartAccountFromDefaultSeed: 'INITIAL',
-  selectAccount: 'INITIAL'
+  selectAccount: 'INITIAL',
+  accountPickerSetInitParamsFromNewSeed: 'INITIAL'
 } as const

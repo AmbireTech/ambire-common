@@ -1963,6 +1963,25 @@ export class MainController extends EventEmitter implements IMainController {
     await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
   }
 
+  /**
+   * Creates a brand new recovery phrase and prepares the account picker with it, all
+   * in the background. The phrase is never sent to the UI - the user gets prompted to
+   * write it down later, once the account holds funds.
+   */
+  async accountPickerSetInitParamsFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+    await this.withStatus(
+      'accountPickerSetInitParamsFromNewSeed',
+      async () => {
+        const tempSeed = await this.keystore.generateTempSeed({ extraEntropy })
+
+        await this.accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({
+          privKeyOrSeed: tempSeed.seed
+        })
+      },
+      true
+    )
+  }
+
   // includes the getters in the stringified instance
   toJSON() {
     return {
