@@ -1064,13 +1064,13 @@ describe('Portfolio Controller ', () => {
         states: accountStates[account.addr]!
       })
 
-      const updateSelectedAccountSpy = jest.spyOn(controller, 'updateSelectedAccount')
+      const updatePortfolioStateSpy = jest.spyOn(controller as any, 'updatePortfolioState')
       const nonMatchingAccountOp = structuredClone(accountOp['1']![0]!)
       nonMatchingAccountOp.accountAddr = account2.addr
 
       await controller.discardSimulation([nonMatchingAccountOp])
 
-      expect(updateSelectedAccountSpy).not.toHaveBeenCalled()
+      expect(updatePortfolioStateSpy).not.toHaveBeenCalled()
       expect(getEthereumPortfolioState(controller).accountOps).toStrictEqual(accountOp['1'])
       expect(getSimulatedCollection(controller)?.amountPostSimulation).toBe(0n)
     })
@@ -1118,6 +1118,57 @@ describe('Portfolio Controller ', () => {
       })
 
       await Promise.all([discardPromise, updatePromise])
+
+      const stateAfter = getEthereumPortfolioState(controller)
+
+      expect(areAccountOpsEqual(stateAfter.accountOps!, newAccountOp['1']!)).toBe(true)
+    })
+    test('discardSimulation does not discard a newer simulation that is already in progress', async () => {
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
+      const oldAccountOp = await getAccountOp()
+      const newAccountOp = await getAccountOp('0x932261f9fc8da46c4a22e31b45c4de60623848bf', 39118)
+      const accountStates = await getAccountsInfo([account])
+
+      await controller.updateSelectedAccount(account.addr, [ethereum], {
+        accountOps: oldAccountOp,
+        states: accountStates[account.addr]!
+      })
+
+      let resolveNewSimulationStarted: () => void = () => {}
+      const newSimulationStarted = new Promise<void>((resolve) => {
+        resolveNewSimulationStarted = resolve
+      })
+      let resolveNewSimulation: () => void = () => {}
+      const newSimulationCanFinish = new Promise<void>((resolve) => {
+        resolveNewSimulation = resolve
+      })
+      const originalUpdatePortfolioState = (controller as any).updatePortfolioState.bind(controller)
+
+      jest
+        .spyOn(controller as any, 'updatePortfolioState')
+        .mockImplementation(async (...args: any[]) => {
+          const simulatedAccountOp = args[3]?.simulation?.accountOps?.[0]
+
+          if (simulatedAccountOp?.id === newAccountOp['1']![0]!.id) {
+            resolveNewSimulationStarted()
+            await newSimulationCanFinish
+          }
+
+          return originalUpdatePortfolioState(...args)
+        })
+
+      const updatePromise = controller.updateSelectedAccount(account.addr, [ethereum], {
+        accountOps: newAccountOp,
+        states: accountStates[account.addr]!
+      })
+
+      await newSimulationStarted
+      const discardPromise = controller.discardSimulation(oldAccountOp['1']!)
+
+      // Let discardSimulation enqueue its atomic AccountOp ID check behind the running simulation.
+      await wait(0)
+      resolveNewSimulation()
+      await Promise.all([updatePromise, discardPromise])
 
       const stateAfter = getEthereumPortfolioState(controller)
 

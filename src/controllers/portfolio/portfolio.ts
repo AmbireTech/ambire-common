@@ -812,28 +812,19 @@ export class PortfolioController
    * Example usage: after an account op is broadcasted and confirmed
    */
   async discardSimulation(accountOps: AccountOp[]) {
-    let networksToUpdate: Network[] = []
-    let accountAddrToUpdate: string | null = null
-    let accountOpsAfterUpdate: { [key: string]: AccountOp[] } = {}
+    const updatesByAccount: {
+      [accountAddr: string]: {
+        networksByChainId: { [chainId: string]: Network }
+        accountOpIdsByChainId: { [chainId: string]: string[] }
+      }
+    } = {}
 
     accountOps.forEach((accountOp) => {
       const { accountAddr, chainId } = accountOp
+      const chainIdString = chainId.toString()
 
-      if (!this.#state[accountAddr] || !this.#state[accountAddr][chainId.toString()]) return
+      if (!this.#state[accountAddr]?.[chainIdString]) return
 
-      const networkState = this.#state[accountAddr][chainId.toString()]!
-
-      if (!networkState.result || !networkState.accountOps) return
-
-      accountOpsAfterUpdate[chainId.toString()] = structuredClone(networkState.accountOps || [])
-
-      const accountOpIndex = accountOpsAfterUpdate[chainId.toString()]!.findIndex(
-        (op) => op.id === accountOp.id
-      )
-
-      if (accountOpIndex === -1) return
-
-      accountOpsAfterUpdate[chainId.toString()]!.splice(accountOpIndex, 1)
       const networkData = this.#networks.networks.find((n) => n.chainId === chainId)
 
       if (!networkData) {
@@ -845,18 +836,35 @@ export class PortfolioController
         return
       }
 
-      networksToUpdate.push(networkData)
-      accountAddrToUpdate = accountAddr
+      if (!updatesByAccount[accountAddr]) {
+        updatesByAccount[accountAddr] = {
+          networksByChainId: {},
+          accountOpIdsByChainId: {}
+        }
+      }
+
+      updatesByAccount[accountAddr].networksByChainId[chainIdString] = networkData
+      updatesByAccount[accountAddr].accountOpIdsByChainId[chainIdString] = [
+        ...(updatesByAccount[accountAddr].accountOpIdsByChainId[chainIdString] || []),
+        accountOp.id
+      ]
     })
 
-    if (!accountAddrToUpdate || networksToUpdate.length === 0) return
-    this.debugLog('simulation', `Discarding simulation for ${accountAddrToUpdate}`, () => ({
-      discardedOpIds: accountOps.map((op) => op.id),
-      chainIds: networksToUpdate.map((n) => n.chainId.toString())
-    }))
-    await this.updateSelectedAccount(accountAddrToUpdate, networksToUpdate, {
-      accountOps: accountOpsAfterUpdate
-    })
+    await Promise.all(
+      Object.entries(updatesByAccount).map(
+        async ([accountAddr, { networksByChainId, accountOpIdsByChainId }]) => {
+          const networksToUpdate = Object.values(networksByChainId)
+
+          this.debugLog('simulation', `Discarding simulation for ${accountAddr}`, () => ({
+            discardedOpIds: Object.values(accountOpIdsByChainId).flat(),
+            chainIds: Object.keys(networksByChainId)
+          }))
+          await this.updateSelectedAccount(accountAddr, networksToUpdate, undefined, {
+            accountOpIdsToDiscard: accountOpIdsByChainId
+          })
+        }
+      )
+    )
   }
 
   async updateTokenValidationByStandard(
@@ -1813,6 +1821,7 @@ export class PortfolioController
       maxDataAgeMsUnused?: number
       isManualUpdate?: boolean
       bypassServerSideCache?: boolean
+      accountOpIdsToDiscard?: { [chainId: string]: string[] }
     }
   ) {
     const {
@@ -1822,7 +1831,8 @@ export class PortfolioController
       // portfolio updates, most of which shouldn't update the defi positions.
       defiMaxDataAgeMs = -1,
       isManualUpdate,
-      bypassServerSideCache
+      bypassServerSideCache,
+      accountOpIdsToDiscard
     } = opts || {}
     await this.initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
@@ -1866,14 +1876,32 @@ export class PortfolioController
           const networkAccountState =
             this.#accounts.accountStates?.[accountId]?.[network.chainId.toString()]
           const simulatedAccountOps = accountState[network.chainId.toString()]?.accountOps
-          const accountOpsToSimulate = currentAccountOps || simulatedAccountOps
+          const accountOpIdsToDiscardOnNetwork = accountOpIdsToDiscard?.[network.chainId.toString()]
+          const accountOpIdsToDiscardSet = new Set(accountOpIdsToDiscardOnNetwork)
+
+          // Read and filter the latest simulation inside the queue so an older confirmed
+          // AccountOp cannot discard a newer simulation that was already queued before it.
+          if (
+            accountOpIdsToDiscardOnNetwork &&
+            !simulatedAccountOps?.some((op) => accountOpIdsToDiscardSet.has(op.id))
+          )
+            return
+
+          // currentAccountOps || simulatedAccountOps means that pendingToBeConfirmed
+          // accountOps will be discarded if a new transaction on the same network comes.
+          // We evaluated the complexity to fix this and decided it's not worth it.
+          // When a new txn comes, pendingToBeConfirmed simulations will be dropped
+          // and that's fine as you care about the simulation of your current txn
+          const accountOpsToSimulate = accountOpIdsToDiscardOnNetwork
+            ? simulatedAccountOps!.filter((op) => !accountOpIdsToDiscardSet.has(op.id))
+            : currentAccountOps || simulatedAccountOps
 
           // Even if maxDataAgeMs is set to a non-zero value, we want to force an update when the AccountOps change.
           // We pass undefined, because setting the value to 0 would imply a manual update by the user.
           const maxDataAgeMs = this.#getMaxDataAgeMs(
             accountId,
             network.chainId,
-            !!currentAccountOps,
+            !!currentAccountOps || !!accountOpIdsToDiscardOnNetwork,
             paramsMaxDataAgeMs,
             paramsMaxDataAgeMsUnused
           )
