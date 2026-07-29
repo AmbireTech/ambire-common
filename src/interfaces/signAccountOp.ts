@@ -65,6 +65,7 @@ type SignAccountOpError = {
   title: string
   code?: string
   text?: string
+  action?: 'refetch-account-state'
 }
 
 type SignAccountOpBanner = {

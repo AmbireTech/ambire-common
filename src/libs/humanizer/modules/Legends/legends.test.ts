@@ -51,7 +51,7 @@ describe('Legends', () => {
         getAddressVisualization(INVITEE_V2_ACCOUNT)
       ]
     ]
-    const newCalls = legendsModule({} as any, irCalls, {} as any)
+    const newCalls = irCalls.map((c) => legendsModule({} as any, c, {} as any))
     compareHumanizerVisualizations(newCalls, expectedVisualizations)
   })
   it('Mint nft', () => {
@@ -62,7 +62,7 @@ describe('Legends', () => {
         data: iface.encodeFunctionData('mint(uint)', [1])
       }
     ]
-    const newCalls = legendsModule({} as any, irCalls, {} as any)
+    const newCalls = irCalls.map((c) => legendsModule({} as any, c, {} as any))
     const expectedVisualizations = [
       [
         getAction('Pick character'),
@@ -80,7 +80,7 @@ describe('Legends', () => {
         data: iface.encodeFunctionData('invite', [INVITEE_V2_ACCOUNT])
       }
     ]
-    const newCalls = legendsModule({} as any, irCalls, {} as any)
+    const newCalls = irCalls.map((c) => legendsModule({} as any, c, {} as any))
     const expectedVisualizations = [
       [
         getAction('Invite'),
