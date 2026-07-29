@@ -34,7 +34,7 @@ const speeds = [
   },
   {
     name: 'ape',
-    baseFeeAddBps: 300n,
+    baseFeeAddBps: 500n,
     priorityFeeMinAddBps: 5000n,
     priorityFeeMaxAddBps: 10000n
   }
