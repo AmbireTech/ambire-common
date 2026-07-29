@@ -1882,6 +1882,11 @@ export class PortfolioController
           )
             return
 
+          // currentAccountOps || simulatedAccountOps means that pendingToBeConfirmed
+          // accountOps will be discarded if a new transaction on the same network comes.
+          // We evaluated the complexity to fix this and decided it's not worth it.
+          // When a new txn comes, pendingToBeConfirmed simulations will be dropped
+          // and that's fine as you care about the simulation of your current txn
           const accountOpsToSimulate = accountOpIdsToDiscardOnNetwork
             ? simulatedAccountOps!.filter((op) => !accountOpIdsToDiscardSet.has(op.id))
             : currentAccountOps || simulatedAccountOps
