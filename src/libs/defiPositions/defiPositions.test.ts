@@ -322,12 +322,12 @@ describe('Defi positions helper and portfolio functions', () => {
       expect(mode).not.toBe(DefiUpdateMode.Force)
     })
 
-    it('Should return StaleOk when the data is fresh enough', () => {
+    it('Should return Cache when the data is fresh enough', () => {
       const mode = getDefiUpdateMode(
         buildParams({ previousState: buildDefiState({ lastSuccessfulUpdate: Date.now() - 10000 }) })
       )
 
-      expect(mode).toBe(DefiUpdateMode.StaleOk)
+      expect(mode).toBe(DefiUpdateMode.Cache)
     })
     it('Should return Default when the data is older than maxDataAgeMs', () => {
       const mode = getDefiUpdateMode(
@@ -341,7 +341,7 @@ describe('Defi positions helper and portfolio functions', () => {
 
       expect(mode).toBe(DefiUpdateMode.Default)
     })
-    it('Should return StaleOk when freshness is disabled (maxDataAgeMs < 0)', () => {
+    it('Should return Cache when freshness is disabled (maxDataAgeMs < 0)', () => {
       const mode = getDefiUpdateMode(
         buildParams({
           maxDataAgeMs: -1,
@@ -349,7 +349,7 @@ describe('Defi positions helper and portfolio functions', () => {
         })
       )
 
-      expect(mode).toBe(DefiUpdateMode.StaleOk)
+      expect(mode).toBe(DefiUpdateMode.Cache)
     })
   })
   describe('getAllAssetsAsHints', () => {

@@ -326,7 +326,9 @@ export class PortfolioController
             queueSegment.length === 1 && queueSegment[0]?.data.chainId === 'customAppChain'
 
           // Tells velcro-v3 how fresh the defi positions must be
-          const defiParam = `&defi=${isUpdatingOnlyDefiApps ? 'cache' : defiUpdateMode}`
+          const defiParam = `&defi=${
+            isUpdatingOnlyDefiApps ? DefiUpdateMode.Cache : defiUpdateMode
+          }`
 
           const url = `${this.#velcroUrl}/portfolio?networks=${queueSegment
             .map((x) => x.data.chainId)
@@ -1256,7 +1258,7 @@ export class PortfolioController
       maxDataAgeMs: defiMaxDataAgeMs
     })
 
-    const canSkipDefiUpdate = defiUpdateMode === DefiUpdateMode.StaleOk
+    const canSkipDefiUpdate = defiUpdateMode === DefiUpdateMode.Cache
 
     // Request can be skipped altogether
     if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
