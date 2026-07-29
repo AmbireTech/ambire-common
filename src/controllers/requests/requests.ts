@@ -646,7 +646,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (!this.#isSidePanelOpen) {
       try {
-        await this.#ui.openSidePanel?.(baseWindowId)
+        // Side-panel may already be transitioning/open. Awaiting can hang and make
+        // banner actions appear broken, so we trigger it and proceed.
+        const openSidePanelPromise = this.#ui.openSidePanel?.(baseWindowId)
+        if (openSidePanelPromise && typeof (openSidePanelPromise as any).catch === 'function') {
+          ;(openSidePanelPromise as any).catch((error: unknown) => {
+            console.error('Failed to open side panel for request', error)
+          })
+        }
       } catch (error) {
         console.error('Failed to open side panel for request', error)
       }
@@ -2207,7 +2214,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   async setCurrentUserRequestById(requestId: UserRequest['id'], params?: OpenRequestWindowParams) {
-    const request = this.visibleUserRequests.find((r) => r.id === requestId)
+    // Prefer `visibleUserRequests` (keeps account-scoped behavior), but fall back to
+    // `userRequests` to avoid no-ops when the UI banner points at a request that is
+    // momentarily not considered "visible" (e.g. during side-panel/port races).
+    const requestIdStr = String(requestId)
+    const request =
+      this.visibleUserRequests.find((r) => String(r.id) === requestIdStr) ||
+      this.userRequests.find((r) => String(r.id) === requestIdStr)
     if (!request)
       throw new EmittableError({
         message:
