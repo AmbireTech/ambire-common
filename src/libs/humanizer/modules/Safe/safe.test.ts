@@ -6,7 +6,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getLabel } from '../../utils'
-import SafeModule from './'
+import SafeModule, { getSafeHumanization } from './'
 
 const buildSafeTxFixture = (
   overrides: Partial<SafeMultisigTransactionResponse>
@@ -183,6 +183,61 @@ describe('Safe', () => {
       )
 
       expect(result.warnings?.some((w) => w.code === 'SAFE{WALLET}_DELEGATE_CALL')).toBeFalsy()
+    })
+  })
+
+  describe('setFallbackHandler', () => {
+    const setFallbackHandlerAbi = parseAbi(['function setFallbackHandler(address handler)'])
+
+    const encode = (handler: string) =>
+      encodeFunctionData({ abi: setFallbackHandlerAbi, args: [handler as `0x${string}`] })
+
+    test('does not warn when the handler is a known Safe default (CompatibilityFallbackHandler v1.3.0)', () => {
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        accountOp.accountAddr,
+        0n,
+        encode('0xf48f2B2d2a534e402487b3ee7C18c33Aec0Fe5e4')
+      )
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_FALLBACK_HANDLER')).toBeFalsy()
+    })
+
+    test('does not warn when the handler is the zero address (disabling the fallback handler)', () => {
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        accountOp.accountAddr,
+        0n,
+        encode('0x0000000000000000000000000000000000000000')
+      )
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_FALLBACK_HANDLER')).toBeFalsy()
+    })
+
+    test('warns when the handler is not a known Safe default (e.g. an ExtensibleFallbackHandler)', () => {
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        accountOp.accountAddr,
+        0n,
+        encode('0x2f55e8b20D0B9FEFA187AA7d00B6Cbe563605bF5')
+      )
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_FALLBACK_HANDLER')).toBe(true)
+    })
+  })
+
+  describe('setDomainVerifier', () => {
+    const setDomainVerifierAbi = parseAbi([
+      'function setDomainVerifier(bytes32 domainSeparator, address newVerifier)'
+    ])
+
+    test('always warns, since it grants a contract standing signature authority for a domain', () => {
+      const data = encodeFunctionData({
+        abi: setDomainVerifierAbi,
+        args: [
+          '0xd72ffa789b6fae41254d0b5a13e6e1e92ed947ec6a251edf1cf0b6c02c257b4',
+          '0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74'
+        ]
+      })
+      const result = getSafeHumanization(accountOp.accountAddr, accountOp.accountAddr, 0n, data)
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_DOMAIN_VERIFIER')).toBe(true)
     })
   })
 })

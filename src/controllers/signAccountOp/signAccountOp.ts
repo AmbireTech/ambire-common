@@ -9,6 +9,7 @@ import {
   toBeHex,
   ZeroAddress
 } from 'ethers'
+import { maxUint256 } from 'viem'
 
 import { isNative } from '@/libs/portfolio/helpers'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
@@ -154,6 +155,7 @@ import { discoverTxnTokens } from './discoverTxnTokens'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
+  getSafeDelegateCallWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
@@ -229,12 +231,16 @@ export class SignAccountOpController
 
   hasSafeApiFailed: boolean = false
 
+  isRefetchingAccountState: boolean = false
+
   /**
    * Never modify this directly, use #updateAccountOp instead.
    * Otherwise the accountOp will be out of sync with the one stored
    * in requests/actions.
    */
   #accountOp: AccountOp
+
+  #customSafeNonce: bigint | null = null
 
   gasPrices?: GasSpeeds
 
@@ -532,6 +538,89 @@ export class SignAccountOpController
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
     }
     this.#updateSafeEip712Data()
+  }
+
+  #updateNonce(nonce: bigint) {
+    if (this.#customSafeNonce !== null) return
+    this.#updateAccountOp({ nonce })
+  }
+
+  setSafeNonce(nonce: bigint) {
+    if (!this.account.safeCreation) {
+      const message = 'Nonce could not be set, Safe account data is missing'
+      this.emitError({
+        message,
+        error: new Error(message),
+        level: 'minor'
+      })
+      return
+    }
+    if (this.status?.type && noStateUpdateStatuses.includes(this.status.type)) {
+      const message = 'Nonce cannot be set as the transaction is in a signing state'
+      this.emitError({
+        message,
+        error: new Error(message),
+        level: 'minor'
+      })
+      return
+    }
+    if (this.accountOp.signed?.length || this.accountOp.safeTx?.confirmations?.length) {
+      const message = 'Nonce cannot be set as the transaction is already signed'
+      this.emitError({
+        message,
+        error: new Error(message),
+        level: 'minor'
+      })
+      return
+    }
+    if (nonce < 0n || nonce > maxUint256) {
+      const message = `Invalid nonce: ${nonce.toString()}`
+      this.emitError({
+        message,
+        error: new Error(message),
+        level: 'minor'
+      })
+      return
+    }
+
+    this.#customSafeNonce = nonce
+    this.#updateAccountOp({
+      nonce,
+      safeTx: this.accountOp.safeTx
+        ? {
+            ...this.accountOp.safeTx,
+            nonce: nonce.toString()
+          }
+        : undefined,
+      signature: null,
+      txnId: undefined,
+      asUserOperation: undefined
+    })
+    this.emitUpdate()
+  }
+
+  async refetchAccountState() {
+    if (this.isRefetchingAccountState) return
+
+    this.isRefetchingAccountState = true
+    this.emitUpdate()
+
+    try {
+      await this.#accounts.forceFetchPendingState(
+        this.accountOp.accountAddr,
+        this.accountOp.chainId
+      )
+      await this.#simulateAndEstimate()
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: 'Unable to refresh your account information. Please try again.',
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+    } finally {
+      this.isRefetchingAccountState = false
+      this.emitUpdate()
+    }
   }
 
   #getSafeSigningData(accountState: AccountOnchainState) {
@@ -1291,7 +1380,8 @@ export class SignAccountOpController
       this.#accountOp.signed.length >= this.threshold
     ) {
       errors.push({
-        title: 'You need to broadcast pending transactions before this one.'
+        title: 'You need to broadcast pending transactions before this one.',
+        action: 'refetch-account-state'
       })
     }
 
@@ -1376,9 +1466,7 @@ export class SignAccountOpController
     // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
     // that we should update the portfolio to get a correct simulation
     if (estimation && estimation.ambireEstimation && estimation.flags.hasNonceDiscrepancy) {
-      this.#updateAccountOp({
-        nonce: BigInt(estimation.ambireEstimation.ambireAccountNonce)
-      })
+      this.#updateNonce(BigInt(estimation.ambireEstimation.ambireAccountNonce))
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -1399,9 +1487,7 @@ export class SignAccountOpController
         this.accountOp.accountAddr,
         this.accountOp.chainId
       )
-      this.#updateAccountOp({
-        nonce: pendingAccountState.nonce
-      })
+      this.#updateNonce(pendingAccountState.nonce)
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -1529,9 +1615,7 @@ export class SignAccountOpController
 
         const estimation = this.estimation.estimation as FullEstimationSummary
         if (estimation.ambireEstimation && !isSpeedUpTransaction) {
-          this.#updateAccountOp({
-            nonce: BigInt(estimation.ambireEstimation.ambireAccountNonce)
-          })
+          this.#updateNonce(BigInt(estimation.ambireEstimation.ambireAccountNonce))
         }
       } else if (this.estimation.status === EstimationStatus.Error) {
         // No need to update gasPrices if the estimation failed
@@ -2899,10 +2983,9 @@ export class SignAccountOpController
         this.account.safeCreation &&
         (this.#accountOp.signed?.length || 0) < this.threshold
       ) {
-        // if the Safe txn is not already signed, fetch the latest nonce
-        // as we don't have a mechanism for fixing nonces for Safe accounts
-        // during the estimation phase itself
-        if (!this.accountOp.safeTx) {
+        // If the Safe txn is not already signed, fetch the latest nonce unless
+        // the user explicitly selected one for this transaction.
+        if (!this.accountOp.safeTx && this.#customSafeNonce === null) {
           const latestNonce = await getNonce(this.accountOp.accountAddr, this.provider).catch(
             (e) => {
               console.log('failed to retrieve the latest nonce for Safe')
@@ -2911,9 +2994,7 @@ export class SignAccountOpController
             }
           )
           if (latestNonce) {
-            this.#updateAccountOp({
-              nonce: latestNonce
-            })
+            this.#updateNonce(latestNonce)
           }
         }
 
@@ -2939,7 +3020,10 @@ export class SignAccountOpController
           ? this.accountOp.signed.concat([this.accountOp.signingKeyAddr])
           : [this.accountOp.signingKeyAddr]
 
-        const isQuickBroadcast = this.threshold === 1 && this.accountKeyStoreKeys.length === 1
+        const isQuickBroadcast =
+          this.threshold === 1 &&
+          this.accountKeyStoreKeys.length === 1 &&
+          (!this.#customSafeNonce || this.#customSafeNonce === accountState.nonce)
         if (!isQuickBroadcast) {
           if (!prevSignedSigs.length) {
             // propose the txn to Safe Global upon first entry
@@ -3007,7 +3091,7 @@ export class SignAccountOpController
             this.accountOp,
             this.provider
           )
-          if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
+          if (nonce !== this.accountOp.nonce) this.#updateNonce(nonce)
 
           const signer = await this.#getDefaultSigner()
           this.#updateAccountOp({
@@ -3234,7 +3318,7 @@ export class SignAccountOpController
           this.accountOp,
           this.provider
         )
-        if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
+        if (nonce !== this.accountOp.nonce) this.#updateNonce(nonce)
 
         this.#updateAccountOp({
           signature: await this.#withHardwareWalletSigningRequest(
@@ -3453,6 +3537,10 @@ export class SignAccountOpController
         }
       } catch (error: any) {
         console.error('Error broadcasting', error)
+
+        // reset the eoaNonce on error
+        this.#updateAccountOp({ eoaNonce: undefined })
+
         // for multiple txn cases
         // if a batch of 5 txn is sent to Ledger for sign but the user reject
         // #3, #1 and #2 are already broadcast. Reduce the accountOp's call
@@ -3501,6 +3589,7 @@ export class SignAccountOpController
         if (switcher.canSwitch(this.baseAccount)) {
           switcher.switch()
           this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#silentGasPriceUpdate()
           retryMsg = 'Broadcast failed because bundler was down. Please try again'
         }
@@ -3908,6 +3997,15 @@ export class SignAccountOpController
     const dappVerificationBanner = this.#getDappVerificationBanner()
     if (dappVerificationBanner) banners.push(dappVerificationBanner)
 
+    const safeDelegateCallWarning = getSafeDelegateCallWarning(this.accountOp)
+    if (safeDelegateCallWarning) {
+      banners.push({
+        id: safeDelegateCallWarning.id,
+        type: 'warning',
+        text: safeDelegateCallWarning.text || safeDelegateCallWarning.title
+      })
+    }
+
     return banners
   }
 
@@ -3936,6 +4034,11 @@ export class SignAccountOpController
 
   get canBroadcast() {
     if (!this.account.safeCreation) return true
+
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (this.#customSafeNonce !== null && this.#customSafeNonce !== accountState?.nonce)
+      return false
 
     // if the threshold is 1 and there's only 1 imported key, allow quick broadcast
     if (this.threshold === 1 && this.accountKeyStoreKeys.length === 1) return true
