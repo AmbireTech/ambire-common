@@ -1,4 +1,4 @@
-import { JsonRpcProvider, Wallet } from 'ethers'
+import { Interface, JsonRpcProvider, Wallet } from 'ethers'
 
 import {
   Host as RailgunHost,
@@ -467,7 +467,25 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         ? { __type: 'native' }
         : { __type: 'erc20', contract: tokenAddress }
       const txs = await this.#plugin.prepareShieldMulti([{ asset, amount }])
-      const calls: Call[] = txs.map((tx) => ({ to: tx.to, data: tx.data, value: tx.value }))
+      const shieldCalls: Call[] = txs.map((tx) => ({ to: tx.to, data: tx.data, value: tx.value }))
+
+      // For ERC20 shields the Railgun Smart Wallet pulls the token via `transferFrom`, so it
+      // needs an allowance first. The Kohaku SDK's shield builder emits ONLY the shield call
+      // (no approve - confirmed there's no approve/allowance logic in the SDK or its WASM), so
+      // prepend one here. Ambire batches the calls, so approve + shield land atomically. Native
+      // shields wrap ETH via msg.value and need no approval.
+      const calls: Call[] = []
+      const [firstShieldCall] = shieldCalls
+      if (!isNative && firstShieldCall) {
+        // The shield call's `to` is the Railgun contract that runs `transferFrom`, i.e. the
+        // exact spender to approve. Approve just `amount` (what shield pulls) - not unlimited.
+        const spender = firstShieldCall.to
+        const approveData = new Interface([
+          'function approve(address spender, uint256 amount) returns (bool)'
+        ]).encodeFunctionData('approve', [spender, amount])
+        calls.push({ to: tokenAddress, data: approveData, value: 0n })
+      }
+      calls.push(...shieldCalls)
 
       this.#sendUiMessage({ requestId, ok: true, res: calls })
     } catch (error: any) {
@@ -520,18 +538,22 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       })
     }
 
-    // TEMP DIAGNOSTIC (revert once the EIP-7702 delegation investigation - see the
-    // integration plan - is resolved): when RAILGUN_SEPOLIA_TEST_DISPOSABLE_SIGNER_PRIVATE_KEY
-    // is set, reuse that pre-funded (native Sepolia ETH) test key instead of a fresh one, to
-    // test whether the disposable signer needs an existing native balance for the EIP-7702
-    // delegation step to succeed (as opposed to a zero-balance fresh key). The key lives in
-    // an env var (see .env-sample) rather than hardcoded here so a real key is never
-    // committed to source, even though it only ever holds testnet funds.
+    // TEMP DIAGNOSTIC (Railgun Sepolia MVP - see the integration plan). We are testing the
+    // "traditional" Pimlico 4337 path (the option the Kohaku team recommends): the disposable
+    // EOA is expected to be upgraded to a smart account via EIP-7702 *on the fly* inside the
+    // UserOp, so a fresh, zero-balance, never-delegated key should broadcast with no
+    // pre-funding. Setting RAILGUN_SEPOLIA_TEST_DISPOSABLE_SIGNER_PRIVATE_KEY instead reuses a
+    // pre-funded (native Sepolia ETH) test key, to A/B whether an existing native balance is
+    // what actually makes the delegation step succeed. The key lives in an env var (see
+    // .env-sample) rather than hardcoded here so a real key is never committed to source, even
+    // though it only ever holds testnet funds.
     // Fresh, single-use key - never derived from the wallet's seeds and never persisted.
-    const disposableSigner = this.#railgunSepoliaTestDisposableSignerPrivateKey
+    const usedPrefundedTestKey = !!this.#railgunSepoliaTestDisposableSignerPrivateKey
+    const disposableSigner = usedPrefundedTestKey
       ? EthSigner.privateKey(this.#railgunSepoliaTestDisposableSignerPrivateKey as `0x${string}`)
       : EthSigner.privateKey(Wallet.createRandom().privateKey as `0x${string}`)
-    const eip1193Provider = new RailgunEip1193ProviderAdapter(provider as JsonRpcProvider)
+    const ethersProvider = provider as JsonRpcProvider
+    const eip1193Provider = new RailgunEip1193ProviderAdapter(ethersProvider)
     const smartAccount = new SimpleSmartAccount(
       disposableSigner.address,
       BigInt(RAILGUN_SEPOLIA_CHAIN_ID),
@@ -544,9 +566,93 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     this.#plugin.setBundler(bundler)
     this.#plugin.setSmartAccount(smartAccount, disposableSigner)
 
+    // Snapshot the disposable EOA's on-chain state right before broadcasting so a failure tells
+    // us whether a zero-balance, never-delegated (code === '0x') fresh key is the real blocker
+    // for the on-the-fly EIP-7702 delegation. Gated behind the RailgunController debug toggle
+    // and wrapped so a diagnostic RPC hiccup can never abort the broadcast itself.
+    if (this.isDebugLogEnabled) {
+      try {
+        const [nativeBalanceWei, code] = await Promise.all([
+          ethersProvider.getBalance(disposableSigner.address),
+          ethersProvider.getCode(disposableSigner.address)
+        ])
+        this.debugLog('broadcast', 'disposable signer pre-broadcast state', {
+          address: disposableSigner.address,
+          usedPrefundedTestKey,
+          nativeBalanceWei,
+          isZeroBalance: nativeBalanceWei === 0n,
+          code,
+          isAlreadyDelegated: code !== '0x'
+        })
+      } catch (diagnosticError) {
+        this.debugLog('broadcast', 'failed to read disposable signer pre-broadcast state', {
+          address: disposableSigner.address,
+          diagnosticError
+        })
+      }
+    }
+
+    // TEMP DIAGNOSTIC: tap the raw bundler JSON-RPC traffic so we can see the actual UserOp on
+    // the wire (does it carry the privacy paymaster and/or an eip7702Auth?) and the bundler's
+    // raw error response (richer than the WASM-wrapped "-32521 reverted 0x"). The Kohaku bundler
+    // talks to Pimlico via the GLOBAL fetch - confirmed in the SDK's wasm-bindgen shim, which
+    // calls `fetch(request)` rather than the host fetch - so we wrap globalThis.fetch for the
+    // duration of this broadcast only. Only wrapped when the RailgunController debug toggle is
+    // on (zero overhead otherwise), and always restored in the finally below.
+    const originalFetch = this.isDebugLogEnabled ? globalThis.fetch : null
+    if (originalFetch) {
+      const tappedFetch = async (input: any, init?: any): Promise<Response> => {
+        const url = typeof input === 'string' ? input : input?.url
+        const isBundlerCall = typeof url === 'string' && url.includes('api.pimlico.io')
+        if (isBundlerCall) {
+          try {
+            const body =
+              init?.body ??
+              (typeof input?.clone === 'function' ? await input.clone().text() : undefined)
+            this.debugLog('broadcast', 'bundler request', { url, body })
+          } catch (tapError) {
+            this.debugLog('broadcast', 'failed to tap bundler request', tapError)
+          }
+        }
+        const response = await originalFetch(input, init)
+        if (isBundlerCall) {
+          try {
+            // Clone before reading so the WASM still receives an unconsumed response body.
+            this.debugLog('broadcast', 'bundler response', {
+              status: response.status,
+              body: await response.clone().text()
+            })
+          } catch (tapError) {
+            this.debugLog('broadcast', 'failed to tap bundler response', tapError)
+          }
+        }
+        return response
+      }
+      // Local cast: the wrapper is structurally fetch-compatible; reproducing the full
+      // `typeof fetch` overload set is not worth it for a temp diagnostic.
+      globalThis.fetch = tappedFetch as typeof globalThis.fetch
+    }
+
     try {
       await this.#plugin.broadcast(op)
+      this.debugLog('broadcast', 'broadcast succeeded', {
+        usedPrefundedTestKey,
+        disposableSignerAddress: disposableSigner.address
+      })
+    } catch (broadcastError) {
+      // Log the full error (bundler AA codes, revert reasons and nested `cause`/`details`
+      // usually live here) before it is re-thrown to the withStatus wrapper, which only
+      // surfaces `.message` to the UI. Enable the RailgunController debug toggle to see it,
+      // since debugLog is a no-op otherwise.
+      this.debugLog('broadcast', 'broadcast failed', {
+        usedPrefundedTestKey,
+        disposableSignerAddress: disposableSigner.address,
+        broadcastError
+      })
+      throw broadcastError
     } finally {
+      // Restore the original fetch before anything else, even if the broadcast threw.
+      if (originalFetch) globalThis.fetch = originalFetch
       // Re-sync regardless of outcome: a bundler-side retry can reject (e.g. "Note
       // already spent") even when an earlier attempt for the same op already landed
       // on-chain, so the UI's shielded balance would otherwise stay stale after a
