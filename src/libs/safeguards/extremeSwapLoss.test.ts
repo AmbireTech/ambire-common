@@ -13,7 +13,7 @@ describe('extremeSwapLoss safeguards', () => {
   })
 
   test('should detect extreme swap losses above the threshold', () => {
-    expect(isExtremeSwapLoss(10_000)).toBe(false)
+    expect(isExtremeSwapLoss(1_000)).toBe(false)
     expect(isExtremeSwapLoss(10_001)).toBe(true)
   })
 

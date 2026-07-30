@@ -166,9 +166,8 @@ describe('Tokens', () => {
 
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
-    const irCalls: IrCall[] = genericErc20Humanizer(
-      { accountAddr: accountOp.accountAddr },
-      accountOp.calls
+    const irCalls: IrCall[] = accountOp.calls.map((c) =>
+      genericErc20Humanizer({ accountAddr: accountOp.accountAddr }, c)
     )
     const addedValue = 1000000000n
 
@@ -247,7 +246,7 @@ describe('Tokens', () => {
 
   test('genericErc721Humanizer', () => {
     accountOp.calls = [...transactions.erc721]
-    const irCalls = genericErc721Humanizer(accountOp, accountOp.calls)
+    const irCalls = accountOp.calls.map((c) => genericErc721Humanizer(accountOp, c))
 
     compareHumanizerVisualizations(irCalls, [
       [

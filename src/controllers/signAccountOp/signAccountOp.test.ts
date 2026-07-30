@@ -332,6 +332,18 @@ const smartAccount: Account = {
   }
 }
 
+const safeAccount: Account = {
+  ...smartAccount,
+  creation: null,
+  safeCreation: {
+    factoryAddr: smartAccount.addr as Hex,
+    singleton: smartAccount.addr as Hex,
+    saltNonce: '0x00',
+    setupData: '0x',
+    version: '1.4.1'
+  }
+}
+
 const e2esmartAccount: Account = {
   addr: '0x4C71d299f23eFC660b3295D1f631724693aE22Ac',
   associatedKeys: ['0xa18fe725A4a0E25A02411Ab28073E4F35D32d8e2'],
@@ -585,7 +597,8 @@ const init = async (
   const baseAccount = getBaseAccount(
     account,
     accountsCtrl.accountStates[account.addr]![network.chainId.toString()]!,
-    network
+    network,
+    true
   )
 
   const callRelayer = options?.callRelayer || relayerCall.bind({ url: '', fetch })
@@ -614,7 +627,8 @@ const init = async (
     provider,
     portfolio,
     bundlerSwitcher,
-    activity
+    activity,
+    featureFlagsCtrl
   )
   estimationController.estimation = estimationOrMock
   estimationController.hasEstimated = true
@@ -650,8 +664,8 @@ const init = async (
     })
     await realDappsController.initialLoadPromise
 
-    // Register any dApp sessions so the real #getTabContextStatus can inspect co-sessions
-    // sharing the same tab (the iframe-in-suspicious-tab scenario).
+    // Register any dApp sessions so the real #getFrameContextStatus can read the top frame
+    // reported for them (the iframe-in-suspicious-tab scenario).
     options.sessions?.forEach((session) => {
       realDappsController.dappSessions[session.sessionId] = session
     })
@@ -666,6 +680,7 @@ const init = async (
     networks: networksCtrl,
     keystore,
     portfolio,
+    featureFlags: featureFlagsCtrl,
     signAccountOpPreference,
     externalSignerControllers: {},
     account,
@@ -687,7 +702,7 @@ const init = async (
     gasPrices: gasPricesOrMock
   })
 
-  return { controller, storageCtrl, signAccountOpPreference }
+  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl }
 }
 
 const initDappVerificationBannerTest = async (
@@ -837,7 +852,7 @@ describe('SignAccountOp Controller ', () => {
     feePaymentOptions = getDefaultFeeSelectionOptions(),
     options?: Parameters<typeof init>[6]
   ) => {
-    const { controller, storageCtrl } = await init(
+    const { controller, storageCtrl, accountsCtrl } = await init(
       smartAccount,
       createAccountOp(smartAccount, 1n),
       eoaSigner,
@@ -863,8 +878,171 @@ describe('SignAccountOp Controller ', () => {
 
     await wait(1)
 
-    return { controller, storageCtrl }
+    return { controller, storageCtrl, accountsCtrl }
   }
+
+  const initSafeNonce = async (signed: string[] = []) => {
+    const feePaymentOptions = getDefaultFeeSelectionOptions().map((option) => ({
+      ...option,
+      paidBy: safeAccount.addr
+    }))
+    const accountOp = createAccountOp(safeAccount, 1n)
+    accountOp.op.nonce = 3n
+    accountOp.op.signed = signed
+
+    return init(
+      safeAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: {
+          gasUsed: 25000n,
+          feePaymentOptions
+        },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 25000n,
+          feePaymentOptions,
+          ambireAccountNonce: 3,
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      defaultFeeSelectionGasPrices
+    )
+  }
+
+  describe('refetchAccountState', () => {
+    test('refreshes the account state and clears the loading state', async () => {
+      const { controller, accountsCtrl } = await initDefaultFeeSelection()
+      const accountState =
+        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+          controller.accountOp.chainId.toString()
+        ]!
+      const forceFetchPendingStateSpy = jest
+        .spyOn(accountsCtrl, 'forceFetchPendingState')
+        .mockResolvedValue(accountState)
+
+      await expect(controller.refetchAccountState()).resolves.toBeUndefined()
+
+      expect(forceFetchPendingStateSpy).toHaveBeenCalledWith(
+        controller.accountOp.accountAddr,
+        controller.accountOp.chainId
+      )
+      expect(controller.isRefetchingAccountState).toBe(false)
+    })
+
+    test('ignores concurrent refresh attempts', async () => {
+      const { controller, accountsCtrl } = await initDefaultFeeSelection()
+      const accountState =
+        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+          controller.accountOp.chainId.toString()
+        ]!
+      const pendingRefresh = createDeferred<void>()
+      const forceFetchPendingStateSpy = jest
+        .spyOn(accountsCtrl, 'forceFetchPendingState')
+        .mockImplementation(async () => {
+          await pendingRefresh.promise
+          return accountState
+        })
+
+      const firstRefresh = controller.refetchAccountState()
+      await controller.refetchAccountState()
+
+      expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(1)
+      expect(controller.isRefetchingAccountState).toBe(true)
+
+      pendingRefresh.resolve()
+      await firstRefresh
+
+      expect(controller.isRefetchingAccountState).toBe(false)
+    })
+
+    test('emits fetch errors without rejecting and allows retrying', async () => {
+      const { restore } = suppressConsole()
+      const { controller, accountsCtrl } = await initDefaultFeeSelection()
+      const accountState =
+        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+          controller.accountOp.chainId.toString()
+        ]!
+      const fetchError = new Error('RPC timeout')
+      const forceFetchPendingStateSpy = jest
+        .spyOn(accountsCtrl, 'forceFetchPendingState')
+        .mockRejectedValueOnce(fetchError)
+        .mockResolvedValueOnce(accountState)
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await expect(controller.refetchAccountState()).resolves.toBeUndefined()
+
+      expect(onError).toHaveBeenCalledWith({
+        level: 'silent',
+        message: 'Unable to refresh your account information. Please try again.',
+        error: fetchError
+      })
+      expect(controller.isRefetchingAccountState).toBe(false)
+
+      await expect(controller.refetchAccountState()).resolves.toBeUndefined()
+
+      expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(2)
+      expect(controller.isRefetchingAccountState).toBe(false)
+      restore()
+    })
+  })
+
+  test('sets a custom Safe nonce and refreshes its EIP-712 data', async () => {
+    const { controller, accountsCtrl } = await initSafeNonce()
+    const initialSafeEip712Data = controller.safeEip712Data
+    const accountState =
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!
+
+    controller.setSafeNonce(accountState.nonce + 1n)
+    expect(controller.canBroadcast).toBe(false)
+
+    controller.setSafeNonce(accountState.nonce)
+    expect(controller.canBroadcast).toBe(true)
+
+    controller.setSafeNonce(42n)
+
+    expect(controller.accountOp.nonce).toBe(42n)
+    expect(controller.safeEip712Data).not.toEqual(initialSafeEip712Data)
+
+    controller.update({ hasNewEstimation: true })
+    expect(controller.accountOp.nonce).toBe(42n)
+  })
+
+  test('does not change the nonce of a non-Safe or already-signed transaction', async () => {
+    const { controller: nonSafeController } = await initDefaultFeeSelection()
+    const { controller: signedSafeController } = await initSafeNonce([eoaSigner.keyPublicAddress])
+
+    nonSafeController.setSafeNonce(42n)
+    signedSafeController.setSafeNonce(42n)
+
+    expect(nonSafeController.accountOp.nonce).toBe(0n)
+    expect(signedSafeController.accountOp.nonce).toBe(3n)
+  })
+
+  test('rejects Safe nonces outside the uint256 range', async () => {
+    const { controller } = await initSafeNonce()
+
+    controller.setSafeNonce(-1n)
+    expect(controller.accountOp.nonce).toBe(3n)
+
+    controller.setSafeNonce(1n << 256n)
+    expect(controller.accountOp.nonce).toBe(3n)
+  })
+
+  test('does not change a Safe nonce while signing is in progress', async () => {
+    const { controller } = await initSafeNonce()
+    controller.updateStatus(SigningStatus.InProgress)
+
+    controller.setSafeNonce(42n)
+
+    expect(controller.accountOp.nonce).toBe(3n)
+  })
 
   test('defaults fee payment to the network-native token before gas tank or ERC-20', async () => {
     const { controller } = await initDefaultFeeSelection()
@@ -1213,8 +1391,8 @@ describe('SignAccountOp Controller ', () => {
       feeTokenChainId: 1n,
       amount: 6005000n, // ((300 + 300) × 10000) + 10000, i.e. ((baseFee + priorityFee) * gasUsed) + addedNative
       simulatedGasLimit: 10000n, // 10000, i.e. gasUsed,
-      maxPriorityFeePerGas: 330n, // 10% increase for fast
-      gasPrice: 660n // 10% increase for fast
+      maxPriorityFeePerGas: 300n,
+      gasPrice: 600n
     })
 
     expect(controller.accountOp.signature).toEqual('0x') // broadcasting and signRawTransaction is handled in main controller
@@ -1965,8 +2143,8 @@ describe('Negative cases', () => {
       '0x0000000000000000000000000000000000000000'
     )
     expect(controller.accountOp.gasFeePayment!.feeTokenChainId).toEqual(137n)
-    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(330n) // 10% increase
-    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(660n) // 10% increase
+    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(300n)
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(600n)
 
     const typedData = getTypedData(
       network.chainId,
@@ -2910,19 +3088,20 @@ describe('dapp verification banners', () => {
 
   // Scenario: VERIFIED dApp loaded as iframe inside a sites.google.com tab
   // intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
-  // Uses the real DappsController: the suspicious co-session shares the tab with the dApp's
-  // own session, so the real #getTabContextStatus derives the SUSPICIOUS_HOSTING context.
-  test('should return SUSPICIOUS_HOSTING banner from session context when dApp is an iframe in a suspicious hosting tab', async () => {
-    const verifiedDappSession = new Session({ tabId: 300, windowId: 1, url: verifiedDapp.url })
-    const googleSession = new Session({
+  // Uses the real DappsController: the session carries the top frame the browser reported for it,
+  // so the real #getFrameContextStatus derives the SUSPICIOUS_HOSTING context.
+  test('should return SUSPICIOUS_HOSTING banner from frame context when dApp is an iframe in a suspicious hosting tab', async () => {
+    const verifiedDappSession = new Session({
       tabId: 300,
       windowId: 1,
-      url: 'https://sites.google.com'
+      url: verifiedDapp.url,
+      frameId: 2,
+      topFrameUrl: 'https://sites.google.com/view/fake-dapp'
     })
 
     const { controller } = await initDappVerificationBannerTest(verifiedDapp, {
       dappSessionId: verifiedDappSession.sessionId,
-      sessions: [verifiedDappSession, googleSession]
+      sessions: [verifiedDappSession]
     })
 
     expect(controller.banners[0]?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
