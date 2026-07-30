@@ -336,6 +336,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    */
   #cachedSupportedChains: CachedSupportedChains = { lastFetched: 0, data: [] }
 
+  /**
+   * A "to" token preselected from outside Swap & Bridge (e.g. from the trending tokens list).
+   * Kept so it can be re-selected after the automatic "to" token list reset (which happens on
+   * every "from" network change), until the user changes the "to" token or network themselves.
+   */
+  #preselectedToToken: { address: string; chainId: number } | null = null
+
   routePriority: 'output' | 'time' = 'output'
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -985,6 +992,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       emitUpdate?: boolean
       updateQuote?: boolean
       shouldIncrementFromAmountUpdateCounter?: boolean
+      /**
+       * Set it when the user changes the "to" token or network from the UI, so a "to" token
+       * preselected from outside Swap & Bridge stops being restored on "from" network changes.
+       */
+      isToSelectionByUser?: boolean
     }
   ) {
     const {
@@ -1007,8 +1019,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const {
       emitUpdate = true,
       updateQuote = true,
-      shouldIncrementFromAmountUpdateCounter = false
+      shouldIncrementFromAmountUpdateCounter = false,
+      isToSelectionByUser = false
     } = updateProps || {}
+
+    if (isToSelectionByUser) this.#preselectedToToken = null
 
     const chainId = toChainId ?? this.toChainId
     let toSelectedTokenAddr: string | undefined
@@ -1088,6 +1103,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
+    // Only valid while the "to" network is still the one the token was preselected on
+    const preselectedToTokenAddrToRestore =
+      this.#preselectedToToken?.chainId === this.toChainId
+        ? this.#preselectedToToken.address
+        : undefined
+
     const toTokensKey = this.#toTokenListKey
     const toTokenList = toTokensKey ? this.#toTokenList[toTokensKey] : undefined
     // Addresses passed from outside Swap & Bridge (e.g. a trending token, which comes lowercased
@@ -1123,7 +1144,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         ? // we put toSelectedTokenAddr so that "retry" btn functionality works
           this.updateToTokenList(
             shouldUpdateToTokenList,
-            nextToToken?.address || toSelectedTokenAddr
+            nextToToken?.address || toSelectedTokenAddr || preselectedToTokenAddrToRestore
           )
         : undefined,
       updateQuote
@@ -1142,6 +1163,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#setFromAmountAndNotifyUI('')
     this.#setFromAmountInFiatAndNotifyUI('')
     this.toSelectedToken = null
+    this.#preselectedToToken = null
     this.quote = null
     this.updateQuoteStatus = 'INITIAL'
     this.quoteRoutesStatuses = {}
@@ -1185,6 +1207,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // until the user manually selects a new token
     const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
+
+    if (preselectedToToken) {
+      this.#preselectedToToken = {
+        address: preselectedToToken.address,
+        chainId: Number(preselectedToToken.chainId)
+      }
+    }
 
     // When the price endpoint is down, tokens come back without a USD price. We must
     // not exclude them as "priceless" in that case, otherwise switching to an account
@@ -1650,6 +1679,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   async switchFromAndToTokens() {
     this.switchTokensStatus = 'LOADING'
+    // The user takes over the "to" token by switching the sides
+    this.#preselectedToToken = null
     this.#emitUpdateIfNeeded()
 
     const prevFromSelectedToken = this.fromSelectedToken ? { ...this.fromSelectedToken } : null
