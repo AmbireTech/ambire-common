@@ -357,8 +357,8 @@ describe('Humanizer main function', () => {
     // const ir: Ir = []
     const expectedVisualizations = [
       [
-        getAction('Interacting'),
-        getLabel('with'),
+        getAction('Multicall'),
+        getLabel('on'),
         getAddressVisualization('0x87870bca3f3fd6335c3f4ce8392d69350b4fa4e2')
       ]
     ]
@@ -1414,6 +1414,197 @@ describe('ERC-7730 descriptors', () => {
         .some((visualization) => visualization.content === '0x28530a47')
     ).toBe(false)
   })
+  test('humanizes the nested approval from a multicall transaction', async () => {
+    const victim = '0x3E1B8F98Ed69C6A97A8540E1D7AeD33FdF4509aA'
+    const token = '0x0bF0164D17469241B6E086dA4016DCc54FEAA334'
+    const spender = '0x0012b7C5D4310915bB2d58C0b14C72546D320C05'
+    const maliciousMulticallAccountOp: AccountOp = {
+      ...accountOp,
+      accountAddr: victim,
+      calls: [
+        {
+          to: token,
+          value: 0n,
+          data: '0xac9650d80000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000044095ea7b30000000000000000000000000012b7c5d4310915bb2d58c0b14c72546d320c05ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000000000000000000000000000000000000000000000000000'
+        }
+      ]
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(maliciousMulticallAccountOp)
+    const irCalls = humanizeAccountOp(maliciousMulticallAccountOp, {
+      erc7730Descriptors: descriptors
+    })
+    const multicallVisualization = irCalls[0]?.fullVisualization?.[0]
+
+    expect(descriptors[0]?.path).toBe('built-in/multicall')
+    expect(multicallVisualization).toMatchObject({ type: 'erc7730', title: 'Multicall' })
+    if (multicallVisualization?.type !== 'erc7730') {
+      throw new Error('Expected ERC-7730 multicall visualization')
+    }
+
+    expect(multicallVisualization.rows).toHaveLength(1)
+    expect(multicallVisualization.rows[0]?.label).toBe('')
+    expect(multicallVisualization.rows[0]?.value).toHaveLength(1)
+    expect(multicallVisualization.rows[0]?.value[0]).toMatchObject({
+      type: 'erc7730',
+      title: 'Grant approval',
+      rows: [
+        {
+          label: 'For',
+          value: [
+            {
+              type: 'token',
+              address: token.toLowerCase(),
+              value: ethers.MaxUint256
+            }
+          ]
+        },
+        {
+          label: 'To',
+          value: [{ type: 'address', address: spender.toLowerCase() }]
+        }
+      ]
+    })
+  })
+  test('humanizes approval and increase allowance calls nested in a multicall', async () => {
+    const token = '0x0bF0164D17469241B6E086dA4016DCc54FEAA334'
+    const spender = '0x0012b7C5D4310915bB2d58C0b14C72546D320C05'
+    const approvalAmount = 10n ** 18n
+    const allowanceIncrease = 10n ** 18n
+    const multicallInterface = new ethers.Interface([
+      'function multicall(bytes[] data)',
+      'function approve(address _spender, uint256 _value)',
+      'function increaseAllowance(address spender, uint256 addedValue)'
+    ])
+    const multicallAccountOp: AccountOp = {
+      ...accountOp,
+      accountAddr: '0x3E1B8F98Ed69C6A97A8540E1D7AeD33FdF4509aA',
+      calls: [
+        {
+          to: token,
+          value: 0n,
+          data: multicallInterface.encodeFunctionData('multicall', [
+            [
+              multicallInterface.encodeFunctionData('approve', [spender, approvalAmount]),
+              multicallInterface.encodeFunctionData('increaseAllowance', [
+                spender,
+                allowanceIncrease
+              ])
+            ]
+          ])
+        }
+      ]
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(multicallAccountOp)
+    const irCalls = humanizeAccountOp(multicallAccountOp, { erc7730Descriptors: descriptors })
+    const multicallVisualization = irCalls[0]?.fullVisualization?.[0]
+
+    expect(multicallVisualization).toMatchObject({ type: 'erc7730', title: 'Multicall' })
+    if (multicallVisualization?.type !== 'erc7730') {
+      throw new Error('Expected ERC-7730 multicall visualization')
+    }
+
+    expect(multicallVisualization.rows).toHaveLength(2)
+    expect(multicallVisualization.rows.map((row) => row.label)).toEqual(['', ''])
+    const approvalVisualization = multicallVisualization.rows[0]?.value[0]
+    const allowanceVisualization = multicallVisualization.rows[1]?.value[0]
+    if (approvalVisualization?.type !== 'erc7730' || allowanceVisualization?.type !== 'erc7730') {
+      throw new Error('Expected nested ERC-7730 visualizations')
+    }
+
+    expect([approvalVisualization.title, allowanceVisualization.title]).toEqual([
+      'Grant approval',
+      'Increase allowance'
+    ])
+    expect(approvalVisualization).toMatchObject({
+      type: 'erc7730',
+      rows: [
+        {
+          label: 'For',
+          value: [
+            {
+              type: 'token',
+              address: token.toLowerCase(),
+              value: approvalAmount
+            }
+          ]
+        },
+        {
+          label: 'To',
+          value: [{ type: 'address', address: spender.toLowerCase() }]
+        }
+      ]
+    })
+    expect(allowanceVisualization).toMatchObject({
+      type: 'erc7730',
+      rows: [
+        {
+          label: 'Of',
+          value: [{ type: 'address', address: spender.toLowerCase() }]
+        },
+        {
+          label: 'With',
+          value: [
+            {
+              type: 'token',
+              address: token.toLowerCase(),
+              value: allowanceIncrease
+            }
+          ]
+        }
+      ]
+    })
+  })
+  test('humanizes known protocol calls nested in a multicall', async () => {
+    const nativeValue = ethers.parseEther('0.000097814288231747')
+    const multicallAccountOp: AccountOp = {
+      ...accountOp,
+      accountAddr: '0x7547079620B30DA0f76Ff762889a0F8Eed204ff7',
+      chainId: 8453n,
+      calls: [
+        {
+          to: '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1',
+          value: nativeValue,
+          data: '0xac9650d800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001e00000000000000000000000000000000000000000000000000000000000000164883164560000000000000000000000004200000000000000000000000000000000000006000000000000000000000000cbb7c0000ab88b473b1f5afd9ef808440eed33bf00000000000000000000000000000000000000000000000000000000000001f4fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbf082fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffbf65e000000000000000000000000000000000000000000000000000058f629e76d43000000000000000000000000000000000000000000000000000000000000013a00000000000000000000000000000000000000000000000000003a445ea91f0500000000000000000000000000000000000000000000000000000000000000d30000000000000000000000007547079620b30da0f76ff762889a0f8eed204ff7000000000000000000000000000000000000000000000000000000006a6700e500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000412210e8a00000000000000000000000000000000000000000000000000000000'
+        }
+      ]
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(multicallAccountOp)
+    const irCalls = humanizeAccountOp(multicallAccountOp, {
+      erc7730Descriptors: descriptors,
+      nativeAssetSymbol: 'ETH'
+    })
+    const multicallVisualization = irCalls[0]?.fullVisualization?.[0]
+
+    expect(descriptors[0]?.path).toBe('built-in/multicall')
+    expect(multicallVisualization).toMatchObject({ type: 'erc7730', title: 'Multicall' })
+    if (multicallVisualization?.type !== 'erc7730') {
+      throw new Error('Expected ERC-7730 multicall visualization')
+    }
+
+    const nestedVisualizations = multicallVisualization.rows
+      .flatMap((row) => row.value)
+      .filter((visualization) => visualization.type === 'erc7730')
+
+    expect(nestedVisualizations.map((visualization) => visualization.title)).toEqual([
+      'Add liquidity',
+      'Withdraw'
+    ])
+    expect(multicallVisualization.rows.at(-1)).toMatchObject({
+      label: 'Send',
+      value: [expect.objectContaining({ address: ZeroAddress, value: nativeValue })]
+    })
+    expect(irCalls[0]!.warnings).toEqual([
+      getWarning('This transaction will send ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
+    ])
+    const serializedVisualization = JSON.stringify(multicallVisualization, (_, value) =>
+      typeof value === 'bigint' ? value.toString() : value
+    )
+    expect(serializedVisualization).not.toContain('0x88316456')
+    expect(serializedVisualization).not.toContain('0x12210e8a')
+  })
   test('humanizes Aave Base eMode categories', async () => {
     const aavePool = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5'
     const aaveInterface = new ethers.Interface(['function setUserEMode(uint8 categoryId)'])
@@ -2253,9 +2444,9 @@ describe('ERC-7730 descriptors', () => {
                 value: [getToken(tokenAddress, 1514n, 8453n)]
               }
             ]),
-            getErc7730Visualization('setPreSignature', [
+            getErc7730Visualization('SetPreSignature', [
               {
-                label: 'Contract',
+                label: 'On',
                 value: [getAddressVisualization(settlement)]
               }
             ])
@@ -3646,9 +3837,9 @@ describe('ERC-7730 descriptors', () => {
                 value: [getAddressVisualization(spender)]
               }
             ]),
-            getErc7730Visualization('setPreSignature', [
+            getErc7730Visualization('SetPreSignature', [
               {
-                label: 'Contract',
+                label: 'On',
                 value: [getAddressVisualization(settlement)]
               }
             ])
@@ -3907,6 +4098,171 @@ describe('ERC-7730 descriptors', () => {
       ])
     ])
   })
+
+  // Real Base mainnet SafeTx multisend (4 calls: Safe self-setup x2, an ERC-20 approval and an
+  // unrecognized settlement call) captured to catch a regression where calls that no humanizer
+  // module could recognize were silently dropped instead of falling back to an address+selector row.
+  test('keeps all 4 calls of a real SafeTx multisend after humanization', async () => {
+    const safeAddress = '0x2c5d356f2244b942c72ddfccbfa2e61529dc9c8d'
+    const multiSend = '0x9641d764fc13c8b624c04430c7356c1c7c8102e2'
+    const usdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+    const spender = '0xc92e8bdf79f0507f65a392b0ab4667716bfe0110'
+    const settlementContract = '0xfdafc9d1902f4e0b84f65f49f244b32b31013b74'
+    const multiSendData =
+      '0x8d80ff0a00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000464002c5d356f2244b942c72ddfccbfa2e61529dc9c8d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000024f08a03230000000000000000000000002f55e8b20d0b9fefa187aa7d00b6cbe563605bf5002c5d356f2244b942c72ddfccbfa2e61529dc9c8d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000443365582cd72ffa789b6fae41254d0b5a13e6e1e92ed947ec6a251edf1cf0b6c02c257b4b000000000000000000000000fdafc9d1902f4e0b84f65f49f244b32b31013b7400833589fcd6edb6e08f4c7c32d4f71b54bda0291300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe0110ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00fdafc9d1902f4e0b84f65f49f244b32b31013b74000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002640d0d9800000000000000000000000000000000000000000000000000000000000000008000000000000000000000000052ed56da04309aca4c3fecc595298d80c2f16bac000000000000000000000000000000000000000000000000000000000000024000000000000000000000000000000000000000000000000000000000000000010000000000000000000000006cf1e9ca41f7611def408122793c358a3d11e5a50000000000000000000000000000000000000000000000000000019fa3b9fe0100000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000140000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda02913000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000002c5d356f2244b942c72ddfccbfa2e61529dc9c8d00000000000000000000000000000000000000000000000000000000000f55c80000000000000000000000000000000000000000000000000001a02678851ac10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000007080000000000000000000000000000000000000000000000000000000000000000d1735c8b769e3b06acd45b0c09c76b4961b8215a15d6eaeefa05593ab382156500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          verifyingContract: safeAddress,
+          chainId: 8453
+        },
+        message: {
+          to: multiSend,
+          value: '0',
+          data: multiSendData,
+          operation: 1,
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: ZeroAddress,
+          refundReceiver: ZeroAddress,
+          nonce: 0,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    const irMessage = humanizeMessage(safeTxMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                {
+                  intent: 'Safe',
+                  fields: [
+                    { path: 'operation', label: 'Operation type' },
+                    {
+                      path: 'data',
+                      label: 'Transaction',
+                      format: 'calldata',
+                      params: { calleePath: '#.to' }
+                    },
+                    { path: 'safeTxGas', label: 'Gas amount' },
+                    { path: 'gasPrice', label: 'Gas price' },
+                    { path: 'gasToken', label: 'Gas token', format: 'addressName' },
+                    { path: 'refundReceiver', label: 'Gas receiver', format: 'addressName' }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('Safe', [
+        {
+          label: 'Operation type',
+          value: [getText('1')]
+        },
+        {
+          label: 'Transactions',
+          value: [
+            getErc7730Visualization('Extend your account functionality with', [
+              {
+                label: 'Extend your account functionality with',
+                value: [getAddressVisualization('0x2f55e8b20d0b9fefa187aa7d00b6cbe563605bf5')]
+              }
+            ]),
+            getErc7730Visualization('Authorize custom access rights to your account for', [
+              {
+                label: 'Authorize custom access rights to your account for',
+                value: [getAddressVisualization(settlementContract)]
+              }
+            ]),
+            getErc7730Visualization('Grant approval', [
+              {
+                label: 'For',
+                value: [getToken(usdc, ethers.MaxUint256)]
+              },
+              {
+                label: 'To',
+                value: [getAddressVisualization(spender)]
+              }
+            ]),
+            getErc7730Visualization('Create CoW TWAP order', [
+              {
+                label: 'Create CoW TWAP order',
+                value: [getToken(usdc, 2010000n, 8453n)]
+              },
+              {
+                label: 'For at least',
+                value: [
+                  getToken(
+                    '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+                    915124135802242n,
+                    8453n
+                  )
+                ]
+              },
+              {
+                label: 'And send it to',
+                value: [getAddressVisualization(safeAddress)]
+              }
+            ])
+          ]
+        },
+        {
+          label: 'Gas amount',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas price',
+          value: [getText('0')]
+        },
+        {
+          label: 'Gas token',
+          value: [getAddressVisualization(ZeroAddress)]
+        },
+        {
+          label: 'Gas receiver',
+          value: [getAddressVisualization(ZeroAddress)]
+        }
+      ])
+    ])
+    // Regression guard: none of the 4 calls should be silently dropped, even the two
+    // whose call target (setFallbackHandler self-call / unrecognized settlement call)
+    // no humanizer module could decode.
+    const transactionsRow = (irMessage.fullVisualization?.[0] as any)?.rows?.find(
+      (row: any) => row.label === 'Transactions'
+    )
+    expect(transactionsRow?.value).toHaveLength(4)
+  })
 })
 
 // Non-strict / dirty-bytes ABI encoding: the 12 leading zero bytes that pad a 20-byte
@@ -4006,7 +4362,7 @@ describe('non-strict encoding / dirty bytes', () => {
 
     const irCalls = humanizeAccountOp(accountOp)
     compareHumanizerVisualizations(irCalls, [
-      [getAction('Interacting'), getLabel('with'), getAddressVisualization(nftAddress)]
+      [getAction('SetApprovalForAll'), getLabel('on'), getAddressVisualization(nftAddress)]
     ])
   })
 })

@@ -571,15 +571,28 @@ export class DappsController extends EventEmitter implements IDappsController {
     return dappSession
   }
 
-  async getOrCreateDappSession({ windowId, tabId, url, wcTopic }: SessionInitProps) {
+  async getOrCreateDappSession({
+    windowId,
+    tabId,
+    url,
+    wcTopic,
+    frameId,
+    topFrameUrl
+  }: SessionInitProps) {
     if (!tabId || !url) throw new Error('Invalid props passed to getOrCreateDappSession')
 
     const dappId = getDappIdFromUrl(new URL(url).origin)
     const sessionId = getSessionId({ windowId, tabId, dappId })
 
-    if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
+    const existingSession = this.dappSessions[sessionId]
+    if (existingSession) {
+      // The session id has no per-document component, so a reused session may come from an
+      // earlier visit. Refresh the frame context instead of trusting what it was created with.
+      existingSession.updateFrameContext({ frameId, topFrameUrl })
+      return existingSession
+    }
 
-    return this.#createDappSession({ windowId, tabId, url, wcTopic })
+    return this.#createDappSession({ windowId, tabId, url, wcTopic, frameId, topFrameUrl })
   }
 
   getDappSessionByWcTopic(wcTopic: string): Session | undefined {
@@ -625,6 +638,23 @@ export class DappsController extends EventEmitter implements IDappsController {
     delete this.dappSessions[sessionId]
 
     this.emitUpdate()
+  }
+
+  /**
+   * Removes every session of a closed tab, including those of the iframes it hosted. Sessions are
+   * only created by an incoming dApp request, so nothing recreates them for a tab that is gone.
+   */
+  deleteDappSessionsForTab = (tabId: number) => {
+    let hasDeletedSession = false
+
+    Object.entries(this.dappSessions).forEach(([sessionId, session]) => {
+      if (session.tabId !== tabId) return
+
+      delete this.dappSessions[sessionId]
+      hasDeletedSession = true
+    })
+
+    if (hasDeletedSession) this.emitUpdate()
   }
 
   deleteDappSessionByWcTopic = (wcTopic: string) => {
@@ -1140,10 +1170,10 @@ export class DappsController extends EventEmitter implements IDappsController {
           this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
             const intrinsicStatus = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
 
-            // Check all other sessions in the same tab/window for a dangerous context
+            // Check whether the dApp is embedded in a dangerous top-level document
             // (e.g. a phishing page hosting the dApp in an iframe). Context status is
             // not stored in #dapps so the dApp's global status stays uncontaminated.
-            const contextStatus = this.#getTabContextStatus(session)
+            const contextStatus = this.#getFrameContextStatus(session)
             // BLACKLISTED on the dApp itself always wins over any session context status.
             const effectiveStatus =
               intrinsicStatus === 'BLACKLISTED' ? 'BLACKLISTED' : (contextStatus ?? intrinsicStatus)
@@ -1229,31 +1259,23 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   /**
-   * Returns the highest-priority dangerous status from any OTHER session sharing the same
-   * tab/window as `session`. BLACKLISTED takes priority over SUSPICIOUS_HOSTING.
+   * Returns SUSPICIOUS_HOSTING when the dApp runs in a tab whose top-level document is dangerous -
+   * a phishing page embedding a legitimate dApp in an iframe, where the dApp's own status looks
+   * clean. `topFrameOrigin` comes from the browser on every request, so the page cannot spoof it.
    *
-   * This detects phishing pages that host a legitimate dApp in an iframe: the legitimate
-   * dApp's own session looks clean, but the phishing page's session (e.g. sites.google.com)
-   * is in the same tab and has SUSPICIOUS_HOSTING status.
-   *
-   * Returns `undefined` if no dangerous co-session is found, or if the status cannot yet
-   * be determined (phishing DB not loaded and domain not in the static list).
+   * `undefined` means no verdict: the dApp is the top frame itself, the platform reports no frame
+   * context (mobile WebViews, WalletConnect), or the top frame is not dangerous. Frames between
+   * the top one and the dApp are not visible without the `webNavigation` permission - not checked.
    */
-  #getTabContextStatus(session: Session): BlacklistedStatus | undefined {
-    for (const s of Object.values(this.dappSessions)) {
-      if (
-        s.sessionId === session.sessionId ||
-        s.tabId !== session.tabId ||
-        s.windowId !== session.windowId
-      ) {
-        continue
-      }
-      const status = this.#phishing.getDomainBlacklistedStatus(s.origin)
-      // Whether the co-session's domain is BLACKLISTED or SUSPICIOUS_HOSTING, the threat
-      // is the same for this session: dangerous hosting context. Always return SUSPICIOUS_HOSTING
-      // — BLACKLISTED belongs to the co-session's own domain, not to this dApp.
-      if (status === 'BLACKLISTED' || status === 'SUSPICIOUS_HOSTING') return 'SUSPICIOUS_HOSTING'
-    }
+  #getFrameContextStatus(session: Session): BlacklistedStatus | undefined {
+    const { topFrameOrigin } = session
+    if (!topFrameOrigin || topFrameOrigin === session.origin) return undefined
+
+    const status = this.#phishing.getDomainBlacklistedStatus(topFrameOrigin)
+    // A BLACKLISTED top frame is still only a dangerous context for this dApp, so it maps to
+    // SUSPICIOUS_HOSTING - BLACKLISTED belongs to the top frame's own domain, not to this dApp.
+    if (status === 'BLACKLISTED' || status === 'SUSPICIOUS_HOSTING') return 'SUSPICIOUS_HOSTING'
+
     return undefined
   }
 
@@ -1283,7 +1305,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (!validDappUrls.length) return null
 
     const sessionForId = sessionId ? this.dappSessions[sessionId] : undefined
-    const contextStatus = sessionForId ? this.#getTabContextStatus(sessionForId) : undefined
+    const contextStatus = sessionForId ? this.#getFrameContextStatus(sessionForId) : undefined
 
     const dappVerificationData = validDappUrls.map((url) => {
       const id = getDappIdFromUrl(url)

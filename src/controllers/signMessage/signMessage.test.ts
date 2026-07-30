@@ -797,15 +797,17 @@ describe('SignMessageController', () => {
 
     // Scenario: VERIFIED dApp loaded as iframe inside a sites.google.com tab
     // intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
-    test('should return SUSPICIOUS_HOSTING banner from session context when dApp is an iframe in a suspicious hosting tab', () => {
-      const verifiedDappSession = new Session({ tabId: 200, windowId: 1, url: verifiedDapp.url })
-      const googleSession = new Session({
+    // The context comes from the session's own top frame, which the browser reports on every
+    // request, so the hosting page does not need a session of its own.
+    test('should return SUSPICIOUS_HOSTING banner from frame context when dApp is an iframe in a suspicious hosting tab', () => {
+      const verifiedDappSession = new Session({
         tabId: 200,
         windowId: 1,
-        url: 'https://sites.google.com'
+        url: verifiedDapp.url,
+        frameId: 2,
+        topFrameUrl: 'https://sites.google.com/view/fake-dapp'
       })
       dappsCtrl.dappSessions[verifiedDappSession.sessionId] = verifiedDappSession
-      dappsCtrl.dappSessions[googleSession.sessionId] = googleSession
 
       signMessageController.dapp = {
         ...getDappRequestData(verifiedDapp),
@@ -819,7 +821,6 @@ describe('SignMessageController', () => {
         expect(signMessageController.banners[0]?.type).toBe('warning')
       } finally {
         delete dappsCtrl.dappSessions[verifiedDappSession.sessionId]
-        delete dappsCtrl.dappSessions[googleSession.sessionId]
       }
     })
 
