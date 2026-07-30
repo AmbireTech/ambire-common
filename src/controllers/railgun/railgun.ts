@@ -24,11 +24,14 @@ import { IKeystoreController } from '../../interfaces/keystore'
 import { IProvidersController } from '../../interfaces/provider'
 import {
   IRailgunController,
+  RailgunActivityEntry,
+  RailgunActivityStatus,
   RailgunShieldedBalance,
   RailgunSyncStatus
 } from '../../interfaces/railgun'
 import { IStorageController } from '../../interfaces/storage'
 import { Call } from '../../libs/accountOp/types'
+import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 // MVP targets Sepolia only (unaudited alpha SDK - see AGENTS.md / integration plan).
@@ -38,6 +41,42 @@ const RAILGUN_KEY_INDEX = 0
 // Blocks per `eth_getLogs` for the SDK's RPC-based UTXO syncer (SDK default is 10 - see the
 // rationale at the `createRailgunPlugin` call site).
 const RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS = 10_000
+// Keeps the persisted activity log bounded - it exists to show the user their recent Railgun
+// operations, not to be a complete audit trail.
+const MAX_ACTIVITY_ENTRIES = 20
+// A shielded balance sync scans the chain, so it is legitimately slow (see the rpcBatchSize
+// note), but it must never be able to hang forever: `withStatus` refuses to start any action
+// while another one is LOADING, so one wedged sync locks the user out of the whole screen -
+// including the refresh button that would recover it.
+const RAILGUN_SYNC_TIMEOUT_IN_MS = 3 * 60 * 1000
+
+/**
+ * The Privacy Paymaster fronts the gas for a private operation (which is why the disposable
+ * broadcasting key needs no ETH), but it gets reimbursed inside the pool: `prepareUserOp` adds a
+ * fee note transfer sized by iterating gas estimates. That note can only be denominated in the
+ * wrapped base token - both the plugin (which passes `chain.wrappedBaseToken` as the fee token)
+ * and the WASM ("Currently only the wrapped base token is supported for fee payment") enforce it.
+ *
+ * So both of these mean the same thing to the user: there isn't enough shielded WETH to pay the
+ * relay fee. The first is raised when no workable set of notes exists at all, the second when the
+ * estimate won't settle (some WETH, but not enough of it).
+ */
+const RELAY_FEE_ERRORS = [
+  'Unable to construct valid note configuration for fee payment',
+  'Failed to converge on fee estimate'
+]
+
+const getPrivateOperationErrorMessage = (error: any, fallbackMessage: string) => {
+  const isRelayFeeError =
+    typeof error?.message === 'string' &&
+    RELAY_FEE_ERRORS.some((relayFeeError) => error.message.includes(relayFeeError))
+
+  if (isRelayFeeError) {
+    return 'Could not pay the relay fee for this operation. It is always taken from your shielded WETH (never the token you are sending), so shield some ETH - or keep some out of the amount - and try again.'
+  }
+
+  return error?.message || fallbackMessage
+}
 
 const STATUS_WRAPPED_METHODS = {
   init: 'INITIAL',
@@ -274,6 +313,17 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
 
   shieldedBalances: RailgunShieldedBalance[] = []
 
+  // Lets the UI tell "never synced" (show placeholders) apart from "syncing again" (keep what
+  // is on screen), so a refresh doesn't swap content in and out.
+  lastSyncedAt: number | null = null
+
+  activity: RailgunActivityEntry[] = []
+
+  // Private operations (prove + broadcast) and syncing both drive the same WASM provider, and
+  // it isn't reentrant - running them at once risks wedging it with no way back. Not public
+  // state: the UI already tracks the same thing through `statuses`.
+  #isBroadcastingPrivateOperation = false
+
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   constructor({
@@ -355,6 +405,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     await ensureInitialized(await this.#loadWasm())
 
     this.wrappedBaseTokenAddress = chainConfigSepolia().wrappedBaseToken
+    this.activity = await this.#storage.get('railgunActivity', [])
 
     const host: RailgunHost = {
       keystore: new MnemonicKeystore(mnemonic),
@@ -426,12 +477,98 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     return savedSeed.seed
   }
 
+  #addActivityEntry(
+    entry: Omit<RailgunActivityEntry, 'id' | 'status' | 'createdAt'> & {
+      status?: RailgunActivityStatus
+    }
+  ) {
+    const createdAt = Date.now()
+    // Unique without a uuid dependency: two entries can't be created for the same asset in the
+    // same millisecond, since every op goes through one awaited call per action.
+    const id = `${entry.type}-${entry.tokenAddress}-${createdAt}`
+
+    this.activity = [
+      { ...entry, id, status: entry.status || 'pending', createdAt },
+      ...this.activity
+    ].slice(0, MAX_ACTIVITY_ENTRIES)
+    this.emitUpdate()
+    this.#persistActivity()
+
+    return id
+  }
+
+  #updateActivityEntry(id: string, update: Partial<RailgunActivityEntry>) {
+    this.activity = this.activity.map((entry) =>
+      entry.id === id ? { ...entry, ...update } : entry
+    )
+    this.emitUpdate()
+    this.#persistActivity()
+  }
+
+  // Deliberately not awaited by the callers: the activity log is a UI convenience, so a slow
+  // (or failed) write must not delay - or fail - the operation that produced the entry.
+  #persistActivity() {
+    this.#storage.set('railgunActivity', this.activity).catch((error) => {
+      this.emitError({
+        message: 'Could not save the Railgun activity log.',
+        level: 'silent',
+        error
+      })
+    })
+  }
+
+  /**
+   * Marks pending shields as successful once their token's shielded balance grows. Shields are
+   * broadcast through the regular sign & broadcast flow, so this controller never sees their
+   * receipt - the balance is the only signal it gets. Deliberately a heuristic: an incoming
+   * private transfer of the same token, in the same window, resolves the entry too. Acceptable
+   * for the Sepolia MVP; a real implementation would match the shield's txn id.
+   */
+  #resolvePendingShields(previousBalances: RailgunShieldedBalance[]) {
+    const getPoolAmount = (balances: RailgunShieldedBalance[], tokenAddress: string) =>
+      balances.find((balance) => balance.tokenAddress.toLowerCase() === tokenAddress.toLowerCase())
+        ?.amount || 0n
+
+    const hasGrown = (entry: RailgunActivityEntry) => {
+      // Native shields land in the pool as the wrapped base token
+      const poolTokenAddress = entry.isNative ? this.wrappedBaseTokenAddress : entry.tokenAddress
+      if (!poolTokenAddress) return false
+
+      return (
+        getPoolAmount(this.shieldedBalances, poolTokenAddress) >
+        getPoolAmount(previousBalances, poolTokenAddress)
+      )
+    }
+
+    const resolvedActivity = this.activity.map((entry) =>
+      entry.type === 'shield' && entry.status === 'pending' && hasGrown(entry)
+        ? { ...entry, status: 'success' as const }
+        : entry
+    )
+
+    const hasResolvedAny = resolvedActivity.some(
+      (entry, index) => entry.status !== this.activity[index]?.status
+    )
+    if (!hasResolvedAny) return
+
+    this.activity = resolvedActivity
+    this.#persistActivity()
+  }
+
   async sync() {
+    // A private operation in flight already re-syncs when it settles, so syncing alongside it
+    // would be both redundant and a way to wedge the (non-reentrant) WASM provider.
+    if (this.#isBroadcastingPrivateOperation) {
+      this.debugLog('sync', 'skipped - a private operation is in flight')
+      return
+    }
+
     await this.withStatus('sync', () => this.#sync(), true)
   }
 
   async #sync() {
-    if (!this.#plugin) {
+    const plugin = this.#plugin
+    if (!plugin) {
       throw new EmittableError({
         message: 'Railgun is not initialized yet.',
         level: 'minor',
@@ -446,18 +583,34 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     // chain scan, not the balance math. Timed because a slow scan is indistinguishable from a
     // hang in the UI (both just leave the sync status LOADING) - see the rpcBatchSize note.
     const syncStartedAt = Date.now()
-    const balances = await this.#plugin.balance(undefined)
-    this.debugLog('sync', 'shielded balance sync completed', {
-      durationMs: Date.now() - syncStartedAt,
-      balancesCount: balances.length
-    })
+    try {
+      // Soft timeout: the WASM scan keeps running in the background (withTimeout can't cancel
+      // it), but giving up on awaiting it is what lets the status - and with it the refresh
+      // button and every other action - come back.
+      const balances = await withTimeout(() => plugin.balance(undefined), {
+        timeoutMs: RAILGUN_SYNC_TIMEOUT_IN_MS,
+        message: 'Syncing your shielded balances took too long. Please try again.'
+      })
+      this.debugLog('sync', 'shielded balance sync completed', {
+        durationMs: Date.now() - syncStartedAt,
+        balancesCount: balances.length
+      })
 
-    this.shieldedBalances = balances
-      .filter(isErc20Balance)
-      .map((b) => ({ tokenAddress: b.asset.contract, amount: b.amount }))
+      const previousBalances = this.shieldedBalances
+      this.shieldedBalances = balances
+        .filter(isErc20Balance)
+        .map((b) => ({ tokenAddress: b.asset.contract, amount: b.amount }))
 
-    this.syncStatus = 'ready'
-    this.emitUpdate()
+      this.#resolvePendingShields(previousBalances)
+
+      this.lastSyncedAt = Date.now()
+    } finally {
+      // Always leave a terminal status. 'ready' here means "not syncing any more", not "the sync
+      // worked" - a failure is reported through emitError and `statuses.sync`. Without this a
+      // failed or timed-out scan left `syncStatus` on 'syncing' forever, with nothing to reset it.
+      this.syncStatus = 'ready'
+      this.emitUpdate()
+    }
   }
 
   /**
@@ -509,6 +662,12 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         calls.push({ to: tokenAddress, data: approveData, value: 0n })
       }
       calls.push(...shieldCalls)
+
+      // Recorded as pending here (not once signed): this is the last point in the shield flow
+      // this controller is part of - from here the calls travel through RequestsController, and
+      // whether they get signed and mined is only observable as a balance change on the next
+      // sync (see #resolvePendingShields).
+      this.#addActivityEntry({ type: 'shield', tokenAddress, isNative, amount, recipient: null })
 
       this.#sendUiMessage({ requestId, ok: true, res: calls })
     } catch (error: any) {
@@ -680,7 +839,18 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       // already spent") even when an earlier attempt for the same op already landed
       // on-chain, so the UI's shielded balance would otherwise stay stale after a
       // "failed" broadcast that actually succeeded.
-      await this.#sync()
+      // Its failure is caught here on purpose: a throw from a finally block replaces the
+      // exception on its way out, so a failed re-sync would otherwise hide the broadcast error
+      // that the user actually needs to see.
+      try {
+        await this.#sync()
+      } catch (syncError: any) {
+        this.emitError({
+          message: 'Your shielded balances could not be refreshed. Please refresh manually.',
+          level: 'silent',
+          error: syncError
+        })
+      }
     }
   }
 
@@ -723,18 +893,32 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       })
     }
 
+    const activityId = this.#addActivityEntry({
+      type: 'unshield',
+      tokenAddress,
+      isNative,
+      amount,
+      recipient: toAddress
+    })
+
+    // Held across proving too, not just the broadcast: `prepareUnshield` drains notes through
+    // the same WASM provider a concurrent sync would use.
+    this.#isBroadcastingPrivateOperation = true
     try {
       const asset: AssetId = isNative
         ? { __type: 'native' }
         : { __type: 'erc20', contract: tokenAddress }
       const op = await this.#plugin.prepareUnshield({ asset, amount }, toAddress)
       await this.#broadcastPrivateOperation(op)
+
+      this.#updateActivityEntry(activityId, { status: 'success' })
     } catch (error: any) {
-      throw new EmittableError({
-        message: error?.message || 'Failed to unshield.',
-        level: 'major',
-        error
-      })
+      const message = getPrivateOperationErrorMessage(error, 'Failed to unshield.')
+      this.#updateActivityEntry(activityId, { status: 'failed', error: message })
+
+      throw new EmittableError({ message, level: 'major', error })
+    } finally {
+      this.#isBroadcastingPrivateOperation = false
     }
   }
 
@@ -767,6 +951,17 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       })
     }
 
+    const activityId = this.#addActivityEntry({
+      type: 'transfer',
+      tokenAddress,
+      // Private transfers never involve the native asset - the pool holds none
+      isNative: false,
+      amount,
+      recipient: toZkAddress
+    })
+
+    // See the note in #buildAndBroadcastUnshield - proving uses the same WASM provider
+    this.#isBroadcastingPrivateOperation = true
     try {
       const asset: ERC20AssetId = { __type: 'erc20', contract: tokenAddress }
       const op = await this.#plugin.prepareTransfer(
@@ -774,12 +969,15 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         toZkAddress as RailgunAddress
       )
       await this.#broadcastPrivateOperation(op)
+
+      this.#updateActivityEntry(activityId, { status: 'success' })
     } catch (error: any) {
-      throw new EmittableError({
-        message: error?.message || 'Failed to send privately.',
-        level: 'major',
-        error
-      })
+      const message = getPrivateOperationErrorMessage(error, 'Failed to send privately.')
+      this.#updateActivityEntry(activityId, { status: 'failed', error: message })
+
+      throw new EmittableError({ message, level: 'major', error })
+    } finally {
+      this.#isBroadcastingPrivateOperation = false
     }
   }
 
@@ -790,7 +988,9 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       wrappedBaseTokenAddress: this.wrappedBaseTokenAddress,
       isInitialized: this.isInitialized,
       syncStatus: this.syncStatus,
-      shieldedBalances: this.shieldedBalances
+      shieldedBalances: this.shieldedBalances,
+      lastSyncedAt: this.lastSyncedAt,
+      activity: this.activity
     }
   }
 }
