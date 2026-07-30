@@ -20,6 +20,10 @@ import { Bundler } from '../../services/bundlers/bundler'
 import { mapRelayerNetworkConfigToAmbireNetwork } from '../../utils/networks'
 import { getSASupport } from '../deployless/simulateDeployCall'
 
+const STATE_OVERRIDE_TEST_ADDRESS = '0x0000000000000000000000000000000000696969'
+const STATE_OVERRIDE_TEST_CODE_RETURNING_ONE = '0x600160005260206000f3'
+const STATE_OVERRIDE_TEST_RESULT = toBeHex(1, 32)
+
 // bnb, gnosis, fantom, metis
 export const relayerAdditionalNetworks = [
   {
@@ -103,6 +107,20 @@ export function getProviderBatchMaxCount(network: Network, rpcUrl: string): numb
   return hasUserChangedRpc ? 1 : suggestedRpcBatchCount
 }
 
+export async function getStateOverrideSupport(provider: RPCProvider): Promise<boolean> {
+  try {
+    const result = await provider.send('eth_call', [
+      { to: STATE_OVERRIDE_TEST_ADDRESS, data: '0x' },
+      'latest',
+      { [STATE_OVERRIDE_TEST_ADDRESS]: { code: STATE_OVERRIDE_TEST_CODE_RETURNING_ONE } }
+    ])
+
+    return result === STATE_OVERRIDE_TEST_RESULT
+  } catch {
+    return false
+  }
+}
+
 /**
  * Fetches detailed network information from an RPC provider.
  * Used when adding a new network, updating network info, or when the RPC provider is changed,
@@ -157,12 +175,14 @@ export async function getNetworkInfo(
           retryRequest(() => provider.getCode(SINGLETON)),
           retryRequest(() => provider.getCode(AMBIRE_ACCOUNT_FACTORY)),
           retryRequest(() => getSASupport(provider)),
+          retryRequest(() => getStateOverrideSupport(provider)),
           Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
           // retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
         ]).catch((e: Error) =>
-          raiseFlagged(e, ['0x', '0x', { addressMatches: false, supportsStateOverride: false }])
+          raiseFlagged(e, ['0x', '0x', { addressMatches: false }, false, false])
         )
-        const [singletonCode, factoryCode, saSupport, hasBundlerSupport] = responses
+        const [singletonCode, factoryCode, saSupport, supportsStateOverride, hasBundlerSupport] =
+          responses
         const areContractsDeployed = factoryCode !== '0x'
         // const has4337 = entryPointCode !== '0x' && hasBundler
 
@@ -171,13 +191,13 @@ export async function getNetworkInfo(
         // - or we can't do the simulation with this RPC but we have the factory
         // deployed on the network
         const supportsAmbire =
-          saSupport.addressMatches || (!saSupport.supportsStateOverride && areContractsDeployed)
+          saSupport.addressMatches || (!supportsStateOverride && areContractsDeployed)
         networkInfo = {
           ...networkInfo,
           hasSingleton: singletonCode !== '0x',
           isSAEnabled: supportsAmbire && singletonCode !== '0x',
           areContractsDeployed,
-          rpcNoStateOverride: !saSupport.supportsStateOverride,
+          rpcNoStateOverride: !supportsStateOverride,
           erc4337: {
             enabled: is4337Enabled(hasBundlerSupport, network),
             hasPaymaster: network ? network.erc4337.hasPaymaster : false,
