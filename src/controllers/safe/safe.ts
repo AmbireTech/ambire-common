@@ -19,11 +19,12 @@ import {
   fetchAllPending,
   fetchExecutedTransactions,
   getApiKit,
+  getSafeAccountByOwner,
   getMessage,
   SafeResults
 } from '../../libs/safe/safe'
-import EventEmitter from '../eventEmitter/eventEmitter'
 import { withTimeout } from '../../utils/with-timeout'
+import EventEmitter from '../eventEmitter/eventEmitter'
 
 import type { SafeCreationInfoResponse, SafeInfoResponse, SafeMessage } from '@safe-global/api-kit'
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
@@ -185,74 +186,6 @@ export class SafeController extends EventEmitter implements ISafeController {
     this.importError = undefined
   }
 
-  async #getSafeAccountByOwner(
-    safeAddr: string,
-    owner: Hex,
-    deployedOn: bigint[]
-  ): Promise<{ account: SafeAccountByOwner | null; failed: boolean }> {
-    const getAccountFromChain = async (
-      [chainId, ...remainingChainIds]: bigint[],
-      hasRequestFailed = false
-    ): Promise<{
-      account: SafeAccountByOwner | null
-      failed: boolean
-    }> => {
-      if (chainId === undefined) return { account: null, failed: hasRequestFailed }
-
-      const apiKit = getApiKit(chainId)
-      try {
-        const safeInfo = await withTimeout(() => apiKit.getSafeInfo(safeAddr), {
-          timeoutMs: SAFE_API_TIMEOUT_MS,
-          message: `Safe API: get Safe info timed out after ${SAFE_API_TIMEOUT_MS}ms`
-        })
-        const address = getAddress(safeAddr.toLowerCase()) as Hex
-        const owners = safeInfo.owners.map((safeOwner: string) =>
-          getAddress(safeOwner.toLowerCase())
-        ) as Hex[]
-        if (!owners.some((safeOwner) => safeOwner === owner)) {
-          return getAccountFromChain(remainingChainIds, hasRequestFailed)
-        }
-
-        const safeCreationInfo = await withTimeout(() => apiKit.getSafeCreationInfo(safeAddr), {
-          timeoutMs: SAFE_API_TIMEOUT_MS,
-          message: `Safe API: get Safe creation info timed out after ${SAFE_API_TIMEOUT_MS}ms`
-        })
-
-        return {
-          account: {
-            addr: address,
-            associatedKeys: owners,
-            initialPrivileges: owners.map((safeOwner) => [safeOwner, '0x01']),
-            creation: null,
-            safeCreation: {
-              factoryAddr: safeCreationInfo.factoryAddress as Hex,
-              singleton: safeCreationInfo.singleton as Hex,
-              setupData: safeCreationInfo.setupData as Hex,
-              saltNonce: safeCreationInfo.saltNonce
-                ? (toBeHex(BigInt(safeCreationInfo.saltNonce), 32) as Hex)
-                : (toBeHex(0, 32) as Hex),
-              version: safeInfo.version
-            },
-            preferences: {
-              label: 'Safe',
-              pfp: address
-            },
-            deployedOn
-          },
-          failed: false
-        }
-      } catch (error) {
-        console.error(
-          `Failed to retrieve Safe account ${safeAddr} on network ${chainId.toString()}`,
-          error
-        )
-        return getAccountFromChain(remainingChainIds, true)
-      }
-    }
-
-    return getAccountFromChain(deployedOn)
-  }
-
   async #findSafesByOwner(owner: Hex, searchId: number) {
     await this.#networks.initialLoadPromise
     if (searchId !== this.#safeOwnerSearchId) return
@@ -321,7 +254,7 @@ export class SafeController extends EventEmitter implements ISafeController {
         const safeBatch = newSafeEntries.slice(safeIndex, safeIndex + SAFE_API_BATCH_SIZE)
         const safeAccounts = await Promise.all(
           safeBatch.map(([, safeData]) =>
-            this.#getSafeAccountByOwner(safeData.address, owner, safeData.chainIds)
+            getSafeAccountByOwner(safeData.address, owner, safeData.chainIds)
           )
         )
         if (searchId !== this.#safeOwnerSearchId) return
