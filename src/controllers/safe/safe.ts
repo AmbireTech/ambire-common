@@ -1,13 +1,18 @@
-import { toBeHex } from 'ethers'
+import { getAddress, toBeHex } from 'ethers'
 
 import { FETCH_SAFE_TXNS } from '../../consts/intervals'
-import { SAFE_NETWORKS, safeNullOwner } from '../../consts/safe'
+import {
+  SAFE_API_BATCH_SIZE,
+  SAFE_API_TIMEOUT_MS,
+  SAFE_NETWORKS,
+  safeNullOwner
+} from '../../consts/safe'
 import { IAccountsController, SafeAccountCreation } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
-import { ISafeController } from '../../interfaces/safe'
+import { ISafeController, SafeAccountByOwner } from '../../interfaces/safe'
 import { IStorageController } from '../../interfaces/storage'
 import {
   ExtendedSafeMessage,
@@ -18,12 +23,14 @@ import {
   SafeResults
 } from '../../libs/safe/safe'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { withTimeout } from '../../utils/with-timeout'
 
 import type { SafeCreationInfoResponse, SafeInfoResponse, SafeMessage } from '@safe-global/api-kit'
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 export const STATUS_WRAPPED_METHODS = {
-  findSafe: 'INITIAL'
+  findSafe: 'INITIAL',
+  findSafesByOwner: 'INITIAL'
 } as const
 
 export class SafeController extends EventEmitter implements ISafeController {
@@ -61,6 +68,15 @@ export class SafeController extends EventEmitter implements ISafeController {
     // does the safe need special conditions to send/sign txns
     requiresModules: boolean
   }
+
+  safeOwnerSearch?: {
+    owner: Hex
+    accounts: SafeAccountByOwner[]
+    searchedNetworks: bigint[]
+    failedNetworks: bigint[]
+  }
+
+  #safeOwnerSearchId = 0
 
   constructor({
     eventEmitterRegistry,
@@ -116,7 +132,7 @@ export class SafeController extends EventEmitter implements ISafeController {
       safeNetworks.map((n) =>
         this.#providers.providers[n.chainId.toString()]!.getCode(safeAddr)
           .then((code) => ({ chainId: n.chainId, code }))
-          .catch((e) => ({ chainId: n.chainId, code: '0x' }))
+          .catch(() => ({ chainId: n.chainId, code: '0x' }))
       )
     )
     const deployedOn = codes.find((c) => c.code && c.code !== '0x')
@@ -167,6 +183,186 @@ export class SafeController extends EventEmitter implements ISafeController {
   async resetFind() {
     this.safeInfo = undefined
     this.importError = undefined
+  }
+
+  async #getSafeAccountByOwner(
+    safeAddr: string,
+    owner: Hex,
+    deployedOn: bigint[]
+  ): Promise<{ account: SafeAccountByOwner | null; failed: boolean }> {
+    const getAccountFromChain = async ([chainId, ...remainingChainIds]: bigint[]): Promise<{
+      account: SafeAccountByOwner | null
+      failed: boolean
+    }> => {
+      if (chainId === undefined) return { account: null, failed: true }
+
+      const apiKit = getApiKit(chainId)
+      try {
+        const safeInfo = await withTimeout(() => apiKit.getSafeInfo(safeAddr), {
+          timeoutMs: SAFE_API_TIMEOUT_MS,
+          message: `Safe API: get Safe info timed out after ${SAFE_API_TIMEOUT_MS}ms`
+        })
+        const address = getAddress(safeAddr.toLowerCase()) as Hex
+        const owners = safeInfo.owners.map((safeOwner: string) =>
+          getAddress(safeOwner.toLowerCase())
+        ) as Hex[]
+        if (!owners.some((safeOwner) => safeOwner === owner)) {
+          return { account: null, failed: false }
+        }
+
+        const safeCreationInfo = await withTimeout(() => apiKit.getSafeCreationInfo(safeAddr), {
+          timeoutMs: SAFE_API_TIMEOUT_MS,
+          message: `Safe API: get Safe creation info timed out after ${SAFE_API_TIMEOUT_MS}ms`
+        })
+
+        return {
+          account: {
+            addr: address,
+            associatedKeys: owners,
+            initialPrivileges: owners.map((safeOwner) => [safeOwner, '0x01']),
+            creation: null,
+            safeCreation: {
+              factoryAddr: safeCreationInfo.factoryAddress as Hex,
+              singleton: safeCreationInfo.singleton as Hex,
+              setupData: safeCreationInfo.setupData as Hex,
+              saltNonce: safeCreationInfo.saltNonce
+                ? (toBeHex(BigInt(safeCreationInfo.saltNonce), 32) as Hex)
+                : (toBeHex(0, 32) as Hex),
+              version: safeInfo.version
+            },
+            preferences: {
+              label: 'Safe',
+              pfp: address
+            },
+            deployedOn
+          },
+          failed: false
+        }
+      } catch (error) {
+        console.error(
+          `Failed to retrieve Safe account ${safeAddr} on network ${chainId.toString()}`,
+          error
+        )
+        return getAccountFromChain(remainingChainIds)
+      }
+    }
+
+    return getAccountFromChain(deployedOn)
+  }
+
+  async #findSafesByOwner(owner: Hex, searchId: number) {
+    await this.#networks.initialLoadPromise
+    if (searchId !== this.#safeOwnerSearchId) return
+
+    const safeNetworks = this.#networks.networks.filter((network) =>
+      SAFE_NETWORKS.includes(Number(network.chainId))
+    )
+    const accountsByAddress = new Map<string, SafeAccountByOwner>()
+
+    this.safeOwnerSearch = {
+      owner,
+      accounts: [],
+      searchedNetworks: [],
+      failedNetworks: []
+    }
+    this.emitUpdate()
+
+    for (let i = 0; i < safeNetworks.length; i += SAFE_API_BATCH_SIZE) {
+      if (searchId !== this.#safeOwnerSearchId) return
+
+      const networkBatch = safeNetworks.slice(i, i + SAFE_API_BATCH_SIZE)
+      const batchResults = await Promise.allSettled(
+        networkBatch.map(async (network) => {
+          const response = await withTimeout(
+            () => getApiKit(network.chainId).getSafesByOwner(owner),
+            {
+              timeoutMs: SAFE_API_TIMEOUT_MS,
+              message: `Safe API: owner search timed out after ${SAFE_API_TIMEOUT_MS}ms`
+            }
+          )
+          return { chainId: network.chainId, safes: response.safes }
+        })
+      )
+
+      if (searchId !== this.#safeOwnerSearchId) return
+
+      const failedNetworks: bigint[] = []
+      const deployedOnByAddress = new Map<string, { address: string; chainIds: bigint[] }>()
+
+      batchResults.forEach((result, index) => {
+        const network = networkBatch[index]!
+        if (result.status === 'rejected') {
+          failedNetworks.push(network.chainId)
+          console.error(`Failed to search Safe accounts on network ${network.name}`, result.reason)
+          return
+        }
+
+        result.value.safes.forEach((safeAddr) => {
+          const normalizedAddress = safeAddr.toLowerCase()
+          const existing = deployedOnByAddress.get(normalizedAddress)
+          if (existing) {
+            existing.chainIds.push(result.value.chainId)
+            return
+          }
+          deployedOnByAddress.set(normalizedAddress, {
+            address: safeAddr,
+            chainIds: [result.value.chainId]
+          })
+        })
+      })
+
+      const newSafeEntries = Array.from(deployedOnByAddress.entries()).filter(
+        ([address]) => !accountsByAddress.has(address)
+      )
+      for (let safeIndex = 0; safeIndex < newSafeEntries.length; safeIndex += SAFE_API_BATCH_SIZE) {
+        const safeBatch = newSafeEntries.slice(safeIndex, safeIndex + SAFE_API_BATCH_SIZE)
+        const safeAccounts = await Promise.all(
+          safeBatch.map(([, safeData]) =>
+            this.#getSafeAccountByOwner(safeData.address, owner, safeData.chainIds)
+          )
+        )
+        if (searchId !== this.#safeOwnerSearchId) return
+
+        safeAccounts.forEach(({ account, failed }, index) => {
+          if (account) {
+            accountsByAddress.set(account.addr.toLowerCase(), account)
+            return
+          }
+          if (failed) failedNetworks.push(...safeBatch[index]![1].chainIds)
+        })
+      }
+
+      deployedOnByAddress.forEach(({ chainIds }, address) => {
+        const account = accountsByAddress.get(address)
+        if (!account) return
+        account.deployedOn = Array.from(new Set([...account.deployedOn, ...chainIds]))
+      })
+
+      this.safeOwnerSearch = {
+        owner,
+        accounts: Array.from(accountsByAddress.values()),
+        searchedNetworks: [
+          ...(this.safeOwnerSearch?.searchedNetworks || []),
+          ...networkBatch.map((network) => network.chainId)
+        ],
+        failedNetworks: Array.from(
+          new Set([...(this.safeOwnerSearch?.failedNetworks || []), ...failedNetworks])
+        )
+      }
+      this.emitUpdate()
+    }
+  }
+
+  async findSafesByOwner(ownerAddress: string) {
+    const owner = getAddress(ownerAddress) as Hex
+    const searchId = ++this.#safeOwnerSearchId
+    await this.withStatus('findSafesByOwner', () => this.#findSafesByOwner(owner, searchId), true)
+  }
+
+  async resetFindSafesByOwner() {
+    this.#safeOwnerSearchId += 1
+    this.safeOwnerSearch = undefined
+    this.emitUpdate()
   }
 
   getMessageId(msg: SafeMessage): string {

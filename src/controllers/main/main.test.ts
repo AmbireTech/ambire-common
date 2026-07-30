@@ -184,6 +184,70 @@ describe('Main Controller ', () => {
     )
   })
 
+  describe('updateAccounts', () => {
+    const getAccount = (addr: string) => ({
+      addr,
+      associatedKeys: [],
+      initialPrivileges: [],
+      creation: accounts[0]!.creation,
+      preferences: { label: DEFAULT_ACCOUNT_LABEL, pfp: addr }
+    })
+
+    test('adds selected accounts and removes deselected imported accounts', async () => {
+      const accountToKeep = getAccount('0x1111111111111111111111111111111111111111')
+      const accountToRemove = getAccount('0x2222222222222222222222222222222222222222')
+      const accountToAdd = getAccount('0x3333333333333333333333333333333333333333')
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', [accountToKeep, accountToRemove])
+      })
+      await mainCtrl.initialLoadPromise
+
+      await mainCtrl.updateAccounts({
+        accountsToAdd: [accountToAdd],
+        accountAddressesToRemove: [accountToRemove.addr]
+      })
+
+      expect(mainCtrl.accounts.accounts.map((account) => account.addr)).toEqual([
+        accountToKeep.addr,
+        accountToAdd.addr
+      ])
+    })
+
+    test('ignores removal requests for accounts that are not imported', async () => {
+      const importedAccount = getAccount('0x1111111111111111111111111111111111111111')
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', [importedAccount])
+      })
+      await mainCtrl.initialLoadPromise
+
+      await mainCtrl.updateAccounts({
+        accountsToAdd: [],
+        accountAddressesToRemove: ['0x2222222222222222222222222222222222222222']
+      })
+
+      expect(mainCtrl.accounts.accounts.map((account) => account.addr)).toEqual([
+        importedAccount.addr
+      ])
+    })
+
+    test('does not remove an account that is also being added', async () => {
+      const importedAccount = getAccount('0x1111111111111111111111111111111111111111')
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', [importedAccount])
+      })
+      await mainCtrl.initialLoadPromise
+
+      await mainCtrl.updateAccounts({
+        accountsToAdd: [importedAccount],
+        accountAddressesToRemove: [importedAccount.addr]
+      })
+
+      expect(mainCtrl.accounts.accounts.map((account) => account.addr)).toEqual([
+        importedAccount.addr
+      ])
+    })
+  })
+
   test('should check if network features get displayed correctly for ethereum', async () => {
     const eth = controller.networks.networks.find((n) => n.chainId === 1n)!
     expect(eth?.features.length).toBe(3)

@@ -1,9 +1,9 @@
 import { describe, expect, test } from '@jest/globals'
 
-import type { EIP712TypedData } from '@safe-global/types-kit'
-
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
 import { normalizeSafeGlobalMessage } from './safe'
+
+import type { EIP712TypedData } from '@safe-global/types-kit'
 
 describe('normalizeSafeGlobalMessage', () => {
   test('converts a typed message domain chainId bigint to a decimal string', () => {
@@ -74,9 +74,10 @@ describe('buildSafeMessageOrigin', () => {
 
 describe('parseSafeMessageOrigin', () => {
   test('parses name and url out of the JSON origin', () => {
-    expect(
-      parseSafeMessageOrigin('{"name":"Uniswap","url":"https://app.uniswap.org"}')
-    ).toEqual({ name: 'Uniswap', url: 'https://app.uniswap.org' })
+    expect(parseSafeMessageOrigin('{"name":"Uniswap","url":"https://app.uniswap.org"}')).toEqual({
+      name: 'Uniswap',
+      url: 'https://app.uniswap.org'
+    })
   })
 
   test('round-trips with buildSafeMessageOrigin', () => {

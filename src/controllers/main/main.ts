@@ -113,6 +113,11 @@ import { UniswapAPI } from '@/services/uniswap/api'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
 import wait from '@/utils/wait'
 
+type AccountsUpdate = {
+  accountsToAdd: Account[]
+  accountAddressesToRemove: Account['addr'][]
+}
+
 export class MainController extends EventEmitter implements IMainController {
   #storageAPI: Storage
 
@@ -919,14 +924,12 @@ export class MainController extends EventEmitter implements IMainController {
     await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
     await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
 
-    if (this.accountPicker.readyToRemoveAccounts) {
-      for (const acc of this.accountPicker.readyToRemoveAccounts) {
-        await this.#removeAccount(acc.addr)
-      }
-    }
-
-    // Add accounts as a final step, because some of the next steps check if accounts have keys.
-    await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
+    await this.#updateAccounts({
+      accountsToAdd: this.accountPicker.readyToAddAccounts,
+      accountAddressesToRemove: this.accountPicker.readyToRemoveAccounts.map(
+        (account) => account.addr
+      )
+    })
   }
 
   async commonHandlerForBroadcastSuccess({
@@ -1584,6 +1587,30 @@ export class MainController extends EventEmitter implements IMainController {
 
   async removeAccount(address: Account['addr']) {
     await this.withStatus('removeAccount', async () => this.#removeAccount(address))
+  }
+
+  async #updateAccounts({ accountsToAdd, accountAddressesToRemove }: AccountsUpdate) {
+    const addressesToAdd = new Set(accountsToAdd.map((account) => account.addr.toLowerCase()))
+    const importedAddresses = new Set(
+      this.accounts.accounts.map((account) => account.addr.toLowerCase())
+    )
+    const uniqueAddressesToRemove = Array.from(
+      new Map(accountAddressesToRemove.map((address) => [address.toLowerCase(), address])).values()
+    )
+
+    for (const address of uniqueAddressesToRemove) {
+      const normalizedAddress = address.toLowerCase()
+      if (!importedAddresses.has(normalizedAddress) || addressesToAdd.has(normalizedAddress))
+        continue
+      await this.#removeAccount(address)
+    }
+
+    // Add accounts as a final step, because some of the next steps check if accounts have keys.
+    await this.accounts.addAccounts(accountsToAdd)
+  }
+
+  async updateAccounts(accountsUpdate: AccountsUpdate) {
+    await this.withStatus('updateAccounts', async () => this.#updateAccounts(accountsUpdate))
   }
 
   async reloadSelectedAccount(options?: {
