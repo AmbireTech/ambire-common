@@ -190,11 +190,14 @@ export class SafeController extends EventEmitter implements ISafeController {
     owner: Hex,
     deployedOn: bigint[]
   ): Promise<{ account: SafeAccountByOwner | null; failed: boolean }> {
-    const getAccountFromChain = async ([chainId, ...remainingChainIds]: bigint[]): Promise<{
+    const getAccountFromChain = async (
+      [chainId, ...remainingChainIds]: bigint[],
+      hasRequestFailed = false
+    ): Promise<{
       account: SafeAccountByOwner | null
       failed: boolean
     }> => {
-      if (chainId === undefined) return { account: null, failed: true }
+      if (chainId === undefined) return { account: null, failed: hasRequestFailed }
 
       const apiKit = getApiKit(chainId)
       try {
@@ -207,7 +210,7 @@ export class SafeController extends EventEmitter implements ISafeController {
           getAddress(safeOwner.toLowerCase())
         ) as Hex[]
         if (!owners.some((safeOwner) => safeOwner === owner)) {
-          return { account: null, failed: false }
+          return getAccountFromChain(remainingChainIds, hasRequestFailed)
         }
 
         const safeCreationInfo = await withTimeout(() => apiKit.getSafeCreationInfo(safeAddr), {
@@ -243,7 +246,7 @@ export class SafeController extends EventEmitter implements ISafeController {
           `Failed to retrieve Safe account ${safeAddr} on network ${chainId.toString()}`,
           error
         )
-        return getAccountFromChain(remainingChainIds)
+        return getAccountFromChain(remainingChainIds, true)
       }
     }
 

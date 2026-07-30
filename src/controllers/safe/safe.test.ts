@@ -134,6 +134,24 @@ describe('SafeController findSafesByOwner', () => {
     expect(controller.safeOwnerSearch?.failedNetworks).toEqual([])
   })
 
+  it('falls back to the next deployed network when the first one does not include the owner', async () => {
+    const mainnetApi = createApi({ safes: [SAFE_A], owners: [OTHER_OWNER] })
+    const optimismApi = createApi({ safes: [SAFE_A] })
+    jest
+      .mocked(getApiKit)
+      .mockImplementation((chainId) => (chainId === 1n ? mainnetApi : optimismApi) as any)
+    const controller = createController([1n, 10n])
+
+    await controller.findSafesByOwner(OWNER)
+
+    expect(mainnetApi.getSafeInfo).toHaveBeenCalledWith(SAFE_A)
+    expect(mainnetApi.getSafeCreationInfo).not.toHaveBeenCalled()
+    expect(optimismApi.getSafeInfo).toHaveBeenCalledWith(SAFE_A)
+    expect(optimismApi.getSafeCreationInfo).toHaveBeenCalledWith(SAFE_A)
+    expect(controller.safeOwnerSearch?.accounts).toHaveLength(1)
+    expect(controller.safeOwnerSearch?.failedNetworks).toEqual([])
+  })
+
   it('does not import an account when the Safe no longer includes the requested owner', async () => {
     const api = createApi({ safes: [SAFE_A], owners: [OTHER_OWNER] })
     jest.mocked(getApiKit).mockReturnValue(api as any)
