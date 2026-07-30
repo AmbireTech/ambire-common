@@ -12,6 +12,7 @@ jest.mock('../../libs/safe/safe', () => ({
 }))
 
 const OWNER = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
+const OTHER_OWNER = '0x94b0080a00579c1307b0ef2c499ad98a8ce58e58'
 const SAFE_A = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
 const SAFE_B = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
 
@@ -104,21 +105,20 @@ describe('SafeController findSafesByOwner', () => {
     expect(controller.safeOwnerSearch?.searchedNetworks).toEqual([1n, 10n])
   })
 
-  it('does not publish stale results after the search is reset', async () => {
-    let resolveSearch!: (value: { safes: string[] }) => void
-    const searchResponse = new Promise<{ safes: string[] }>((resolve) => {
-      resolveSearch = resolve
-    })
+  it('replaces the previous results when searching for another owner', async () => {
     const api = createApi({ safes: [] })
-    api.getSafesByOwner.mockImplementation(() => searchResponse)
+    api.getSafesByOwner
+      .mockResolvedValueOnce({ safes: [SAFE_A] })
+      .mockResolvedValueOnce({ safes: [SAFE_B] })
     jest.mocked(getApiKit).mockReturnValue(api as any)
     const controller = createController([1n])
 
-    const searchPromise = controller.findSafesByOwner(OWNER)
-    await controller.resetFindSafesByOwner()
-    resolveSearch({ safes: [SAFE_A] })
-    await searchPromise
+    await controller.findSafesByOwner(OWNER)
+    await controller.findSafesByOwner(OTHER_OWNER)
 
-    expect(controller.safeOwnerSearch).toBeUndefined()
+    expect(controller.safeOwnerSearch?.owner).toBe(getAddress(OTHER_OWNER))
+    expect(controller.safeOwnerSearch?.accounts.map((account) => account.addr)).toEqual([
+      getAddress(SAFE_B)
+    ])
   })
 })
