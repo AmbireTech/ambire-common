@@ -48,6 +48,9 @@ type ReverseLookupOptions = {
 }
 
 type AddressState = {
+  /**
+   * fieldValue can contain a domain name. Keep in mind that it IS NOT normalized
+   */
   fieldValue: string
   resolvedAddress: string
   resolvedAddressType: NameServiceId | null

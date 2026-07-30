@@ -166,6 +166,26 @@ export function getKnownName(
   return humanizerMeta?.knownAddresses?.[getAddress(address)]?.name
 }
 
+// Looks up a 4-byte function selector across every known ABI (not just the ABI of the call's
+// target contract), since humanizerMeta has no reverse index from contract address to ABI name.
+export function getKnownFunctionName(
+  humanizerMeta: HumanizerMeta | undefined,
+  selector: string
+): string | undefined {
+  const normalizedSelector = selector.toLowerCase()
+  const matchingFragment = Object.values(humanizerMeta?.abis || {})
+    .map((abi) => abi[normalizedSelector])
+    .find((fragment) => fragment?.type === 'function')
+
+  const signaturePrefix = 'function '
+  const functionSignature = matchingFragment?.signature.startsWith(signaturePrefix)
+    ? matchingFragment.signature.slice(signaturePrefix.length)
+    : undefined
+  const functionNameEnd = functionSignature?.indexOf('(') ?? -1
+
+  return functionNameEnd >= 0 ? functionSignature?.slice(0, functionNameEnd).trim() : undefined
+}
+
 export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} }
 
 export const uintToAddress = (uint: bigint): string =>

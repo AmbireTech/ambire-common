@@ -451,6 +451,85 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController.reset()
     await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
   })
+  test('should select a preselected to token that the service provider returns in another case', async () => {
+    // Trending tokens carry lowercased CoinGecko addresses, while the service providers return
+    // checksummed ones.
+    const toTokenAddr = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToToken: { address: toTokenAddr.toLowerCase(), chainId: 8453n }
+    })
+
+    expect(swapAndBridgeController.toChainId).toEqual(8453)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should select a preselected to token that is missing from the service provider list', async () => {
+    const toTokenAddr = '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToToken: { address: toTokenAddr, chainId: 8453n }
+    })
+
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+    expect(swapAndBridgeController.toTokenShortList).toContainEqual(
+      expect.objectContaining({ address: toTokenAddr })
+    )
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should keep a preselected to token when the from token network changes', async () => {
+    const toTokenAddr = '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58' // USDT
+    const fromToken = PORTFOLIO_TOKENS[2]! // ETH on Optimism
+    const fromTokenOnAnotherChain = PORTFOLIO_TOKENS[1]! // cbBTC on Base
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToken: { address: fromToken.address, chainId: fromToken.chainId },
+      preselectedToToken: { address: toTokenAddr, chainId: 8453n }
+    })
+    expect(swapAndBridgeController.fromChainId).toEqual(10)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+
+    await swapAndBridgeController.updateForm({ fromSelectedToken: fromTokenOnAnotherChain })
+
+    expect(swapAndBridgeController.fromChainId).toEqual(8453)
+    expect(swapAndBridgeController.toChainId).toEqual(8453)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should stop keeping a preselected to token after the user selects another one', async () => {
+    const toTokenAddr = '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58' // USDT
+    const userSelectedToTokenAddr = '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22' // cbETH
+    const fromToken = PORTFOLIO_TOKENS[2]! // ETH on Optimism
+    const fromTokenOnAnotherChain = PORTFOLIO_TOKENS[1]! // cbBTC on Base
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToken: { address: fromToken.address, chainId: fromToken.chainId },
+      preselectedToToken: { address: toTokenAddr, chainId: 8453n }
+    })
+    await swapAndBridgeController.updateForm(
+      { toSelectedTokenAddr: userSelectedToTokenAddr },
+      { isToSelectionByUser: true }
+    )
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(userSelectedToTokenAddr)
+
+    await swapAndBridgeController.updateForm({ fromSelectedToken: fromTokenOnAnotherChain })
+
+    // The default behavior applies again - the to token gets reset on a from network change
+    expect(swapAndBridgeController.toSelectedToken).toBeNull()
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
   test('should update toChainId', (done) => {
     let emitCounter = 0
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {

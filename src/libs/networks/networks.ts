@@ -64,7 +64,7 @@ export const getNetworksWithFailedRPC = ({ providers }: { providers: RPCProvider
   )
 }
 
-async function retryRequest(init: Function, counter = 0): Promise<any> {
+async function retryRequest(init: () => any, counter = 0): Promise<any> {
   if (counter >= 2) {
     throw new Error('flagged')
   }
@@ -177,10 +177,7 @@ export async function getNetworkInfo(
           hasSingleton: singletonCode !== '0x',
           isSAEnabled: supportsAmbire && singletonCode !== '0x',
           areContractsDeployed,
-          rpcNoStateOverride:
-            network && network.rpcNoStateOverride === true
-              ? true
-              : !saSupport.supportsStateOverride,
+          rpcNoStateOverride: !saSupport.supportsStateOverride,
           erc4337: {
             enabled: is4337Enabled(hasBundlerSupport, network),
             hasPaymaster: network ? network.erc4337.hasPaymaster : false,
@@ -552,7 +549,8 @@ export const networkChainIdToHex = (chainId: number | bigint) => {
     // Remove leading zero in hex representation
     // to match the format expected by dApps (e.g., "0xa" instead of "0x0a")
     return toBeHex(chainId).replace(/^0x0/, '0x')
-  } catch (error) {
+  } catch (e) {
+    console.log('failed to do toBeHex(chainId).replace()', e)
     return `0x${chainId.toString(16)}`
   }
 }
