@@ -1,7 +1,9 @@
-import { IActivityIdbStorage, InternalAccountsOps } from '../../interfaces/activity'
+import { IActivityOpsBackend, InternalAccountsOps } from '../../interfaces/activity'
+import { IStorageController as IStorageControllerType } from '../../interfaces/storage'
 import { SubmittedAccountOp, SubmittedAccountOpLike } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
-import { BaseIdbStore } from './baseIdbStore'
+import { AmbireIdbDatabase } from './idbDatabase'
+import { AMBIRE_IDB_SCHEMA } from './idbSchema'
 
 const STARTUP_RECENT_OPS_LIMIT = 20
 // Hard cap on the number of IDB rows per (account, chainId) group.
@@ -27,23 +29,31 @@ interface IdbAccountOpRow {
 // that start with a given prefix, without matching the prefix itself as a key.
 const RANGE_HIGH = '￿'
 
-export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStorage {
-  constructor() {
-    super({
-      dbName: 'ambire',
-      storeName: 'accountsOps',
-      keyPath: ['accountAddr', 'chainId', 'id'],
-      dbVersion: 1,
-      indexes: [
-        { name: 'by-account-chain-timestamp', keyPath: ['accountAddr', 'chainId', 'timestamp'] },
-        { name: 'by-account-chain-status', keyPath: ['accountAddr', 'chainId', 'status'] }
-      ]
-    })
+const STORE_DEF = AMBIRE_IDB_SCHEMA.stores.find((s) => s.storeName === 'accountsOps')!
+
+export class ActivityIdbStorage implements IActivityOpsBackend {
+  #db: AmbireIdbDatabase
+  #storeName = STORE_DEF.storeName
+
+  constructor(db: AmbireIdbDatabase) {
+    this.#db = db
   }
 
   // ──────────────────────────────────────────────────────────────────────────────
   // Public API
   // ──────────────────────────────────────────────────────────────────────────────
+
+  async ensureMigrated(
+    getStoredOps: () => Promise<InternalAccountsOps>,
+    removeStoredOps: () => Promise<void>
+  ): Promise<void> {
+    const empty = await this.isEmpty()
+    if (!empty) return
+    const storedOps = await getStoredOps()
+    if (Object.keys(storedOps).length === 0) return
+    await this.migrateFromStorage(storedOps)
+    await removeStoredOps()
+  }
 
   /**
    * Load minimal startup dataset: all pending ops + up to STARTUP_RECENT_OPS_LIMIT
@@ -59,14 +69,11 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
    * transaction open for the duration.
    */
   async loadStartupOps(): Promise<InternalAccountsOps> {
-    await this.init()
-    const db = this.db!
-
     // Step 1: enumerate (accountAddr, chainId) groups — key-only cursor, O(N_groups) reads
     const groups: [string, string][] = []
     {
-      const tx = db.transaction(this.config.storeName, 'readonly')
-      let cursor = await tx.objectStore(this.config.storeName).openKeyCursor()
+      const tx = this.#db.transaction(this.#storeName, 'readonly')
+      let cursor = await tx.objectStore(this.#storeName).openKeyCursor()
       while (cursor) {
         const [accountAddr, chainId] = cursor.primaryKey as [string, string, string]
         groups.push([accountAddr, chainId])
@@ -81,8 +88,8 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
     // the first await resolves, so the transaction always has pending requests.
     const result: InternalAccountsOps = {}
     {
-      const tx = db.transaction(this.config.storeName, 'readonly')
-      const store = tx.objectStore(this.config.storeName)
+      const tx = this.#db.transaction(this.#storeName, 'readonly')
+      const store = tx.objectStore(this.#storeName)
       const tsIndex = store.index('by-account-chain-timestamp')
       const statusIndex = store.index('by-account-chain-status')
 
@@ -136,7 +143,6 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
       }
     }
 
-    console.log(`[ActivityIdbStorage] loadStartupOps: ${groups.length} groups loaded`)
     return result
   }
 
@@ -150,22 +156,17 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
     op: SubmittedAccountOp,
     trimmedId?: string
   ): Promise<void> {
-    await this.init()
     const chainIdStr = typeof chainId === 'bigint' ? chainId.toString() : chainId
-    const tx = this.db!.transaction(this.config.storeName, 'readwrite')
-    const store = tx.objectStore(this.config.storeName)
+    const tx = this.#db.transaction(this.#storeName, 'readwrite')
+    const store = tx.objectStore(this.#storeName)
 
     // Fire put before any await so the transaction has a pending request.
     // .catch(() => {}) suppresses unhandled-rejection warnings; tx.done still
     // rejects on failure and is awaited below.
-    console.log(`[ActivityIdbStorage] putSingleOp ${accountAddr}:${chainIdStr} op=${op.id}`)
     store.put(this.#opToRow(accountAddr, chainIdStr, op)).catch(() => {})
 
     if (trimmedId) {
       // In-memory trim already identified the op to evict.
-      console.log(
-        `[ActivityIdbStorage] putSingleOp evicting in-memory trimmed op=${trimmedId} for ${accountAddr}:${chainIdStr}`
-      )
       store.delete([accountAddr, chainIdStr, trimmedId]).catch(() => {})
     } else {
       // The in-memory group is within its cap, but IDB may have accumulated more
@@ -177,9 +178,6 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
         [accountAddr, chainIdStr, RANGE_HIGH]
       )
       const count = await store.count(groupRange)
-      console.log(
-        `[ActivityIdbStorage] putSingleOp IDB group size after put: ${count} for ${accountAddr}:${chainIdStr}`
-      )
       if (count > MAX_IDB_GROUP_SIZE) {
         const tsIndex = store.index('by-account-chain-timestamp')
         const cursor = await tsIndex.openCursor(
@@ -189,17 +187,13 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
           )
         )
         if (cursor) {
-          console.log(
-            `[ActivityIdbStorage] putSingleOp IDB cap hit (${count}/${MAX_IDB_GROUP_SIZE}) — evicting oldest op id=${cursor.value.id} ts=${cursor.value.timestamp} for ${accountAddr}:${chainIdStr}`
-          )
           store.delete(cursor.primaryKey as IDBValidKey).catch(() => {})
         }
       }
     }
 
     await tx.done
-    console.log(`[ActivityIdbStorage] putSingleOp committed for ${accountAddr}:${chainIdStr}`)
-    this.checkQuota()
+    this.#checkQuota()
   }
 
   /**
@@ -208,18 +202,13 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
    */
   async updateOps(ops: SubmittedAccountOp[]): Promise<void> {
     if (ops.length === 0) return
-    await this.init()
 
-    console.log(
-      `[ActivityIdbStorage] updateOps ${ops.length} op(s): ${ops.map((o) => o.id).join(', ')}`
-    )
-    const tx = this.db!.transaction(this.config.storeName, 'readwrite')
-    const store = tx.objectStore(this.config.storeName)
+    const tx = this.#db.transaction(this.#storeName, 'readwrite')
+    const store = tx.objectStore(this.#storeName)
     for (const op of ops) {
       store.put(this.#opToRow(op.accountAddr, op.chainId.toString(), op)).catch(() => {})
     }
     await tx.done
-    console.log(`[ActivityIdbStorage] updateOps committed`)
   }
 
   /**
@@ -231,23 +220,17 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
     accountAddr: string,
     chainId: bigint | string
   ): Promise<SubmittedAccountOp[] | undefined> {
-    await this.init()
-
     const chainIdStr = typeof chainId === 'bigint' ? chainId.toString() : chainId
     const range = IDBKeyRange.bound(
       [accountAddr, chainIdStr, ''],
       [accountAddr, chainIdStr, RANGE_HIGH]
     )
-    const rows = (await this.db!.getAll(this.config.storeName, range)) as IdbAccountOpRow[]
+    const rows = (await this.#db.getAll(this.#storeName, range)) as IdbAccountOpRow[]
 
     if (rows.length === 0) return undefined
 
     rows.sort((a, b) => b.timestamp - a.timestamp)
-    const result = rows.map((r) => r.op as SubmittedAccountOp)
-    console.log(
-      `[ActivityIdbStorage] getOpsForAccountAndChain ${accountAddr}:${chainIdStr} - found ${result.length} ops`
-    )
-    return result
+    return rows.map((r) => r.op as SubmittedAccountOp)
   }
 
   /**
@@ -273,10 +256,8 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
       ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
     }>
   ): Promise<void> {
-    await this.init()
-
-    const tx = this.db!.transaction(this.config.storeName, 'readwrite')
-    const store = tx.objectStore(this.config.storeName)
+    const tx = this.#db.transaction(this.#storeName, 'readwrite')
+    const store = tx.objectStore(this.#storeName)
 
     for (const { accountAddr, chainId, ops } of records) {
       const chainIdStr = typeof chainId === 'bigint' ? chainId.toString() : chainId
@@ -284,24 +265,17 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
     }
 
     await tx.done
-    const totalOps = records.reduce((sum, r) => sum + r.ops.length, 0)
-    console.log(
-      `[ActivityIdbStorage] putMultiple complete - wrote ${records.length} records (${totalOps} ops)`
-    )
-    this.checkQuota()
+    this.#checkQuota()
   }
 
   /**
    * Delete all ops for an account across all chains.
    */
   async deleteAccount(accountAddr: string): Promise<void> {
-    await this.init()
-
     const range = IDBKeyRange.bound([accountAddr, '', ''], [accountAddr, RANGE_HIGH, RANGE_HIGH])
-    const tx = this.db!.transaction(this.config.storeName, 'readwrite')
-    await tx.objectStore(this.config.storeName).delete(range)
+    const tx = this.#db.transaction(this.#storeName, 'readwrite')
+    await tx.objectStore(this.#storeName).delete(range)
     await tx.done
-    console.log(`[ActivityIdbStorage] deleteAccount ${accountAddr} - deleted all rows`)
   }
 
   /**
@@ -312,10 +286,6 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
     const records = Object.entries(data).flatMap(([accountAddr, chainMap]) =>
       Object.entries(chainMap).map(([chainId, ops]) => ({ accountAddr, chainId, ops }))
     )
-    const totalOps = records.reduce((sum, r) => sum + r.ops.length, 0)
-    console.log(
-      `[ActivityIdbStorage] migrateFromStorage - importing ${records.length} records with ${totalOps} total ops`
-    )
     return this.putMultiple(records)
   }
 
@@ -323,14 +293,8 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
    * Check if IDB has any data (used to detect if migration is needed).
    */
   async isEmpty(): Promise<boolean> {
-    await this.init()
-
-    const count = await this.db!.count(this.config.storeName)
-    const empty = count === 0
-    console.log(
-      `[ActivityIdbStorage] isEmpty check - ${empty ? 'empty' : `${count} records found`}`
-    )
-    return empty
+    const count = await this.#db.count(this.#storeName)
+    return count === 0
   }
 
   // ──────────────────────────────────────────────────────────────────────────────
@@ -370,6 +334,31 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
     return Array.from(deduped.values())
   }
 
+  #checkQuota(): void {
+    if (!navigator.storage?.estimate) return
+
+    navigator.storage
+      .estimate()
+      .then((estimate) => {
+        if (!estimate.quota || !estimate.usage) return
+
+        const percentUsed = (estimate.usage / estimate.quota) * 100
+        const usedMB = (estimate.usage / 1024 / 1024).toFixed(1)
+        const quotaMB = (estimate.quota / 1024 / 1024).toFixed(1)
+
+        console.log(
+          `[ActivityIdbStorage] ${this.#storeName} quota: ${usedMB}MB / ${quotaMB}MB (${percentUsed.toFixed(1)}%)`
+        )
+
+        if (percentUsed > 80) {
+          console.warn(
+            `[ActivityIdbStorage] ${this.#storeName} quota usage high (${percentUsed.toFixed(1)}%)`
+          )
+        }
+      })
+      .catch(() => {})
+  }
+
   #opToRow(
     accountAddr: string,
     chainIdStr: string,
@@ -395,5 +384,77 @@ export class ActivityIdbStorage extends BaseIdbStore implements IActivityIdbStor
       status: op.status,
       op
     }
+  }
+}
+
+/**
+ * chrome.storage.local–backed persistence for AccountsOps.
+ * Used in environments without IndexedDB support (mobile).
+ * Writes the full in-memory ops blob on every mutation — no row-level granularity.
+ */
+export class ActivityKeyValueStorage implements IActivityOpsBackend {
+  #storage: IStorageControllerType
+  #getOps: () => InternalAccountsOps
+
+  /**
+   * @param storage - The storage controller to read/write from.
+   * @param getOps  - Returns the controller's current in-memory AccountsOps so
+   *                  write methods can persist the full up-to-date blob.
+   */
+  constructor(storage: IStorageControllerType, getOps: () => InternalAccountsOps) {
+    this.#storage = storage
+    this.#getOps = getOps
+  }
+
+  // Migration is not needed for storage — data is already in storage.
+  async ensureMigrated(_g: () => Promise<InternalAccountsOps>, _r: () => Promise<void>) {}
+
+  async loadStartupOps(): Promise<InternalAccountsOps> {
+    return this.#storage.get('accountsOps', {})
+  }
+
+  async putSingleOp(
+    _accountAddr: string,
+    _chainId: bigint | string,
+    _op: SubmittedAccountOp,
+    _trimmedId?: string
+  ): Promise<void> {
+    await this.#storage.set('accountsOps', this.#getOps())
+  }
+
+  async updateOps(_ops: SubmittedAccountOp[]): Promise<void> {
+    await this.#storage.set('accountsOps', this.#getOps())
+  }
+
+  async getOpsForAccountAndChain(
+    accountAddr: string,
+    chainId: bigint | string
+  ): Promise<SubmittedAccountOp[] | undefined> {
+    const chainIdStr = typeof chainId === 'bigint' ? chainId.toString() : chainId
+    const ops = this.#getOps()[accountAddr]?.[chainIdStr]
+    if (!ops?.length) return undefined
+    return [...ops].sort((a, b) => b.timestamp - a.timestamp)
+  }
+
+  async putOpsForAccountAndChain(
+    _accountAddr: string,
+    _chainId: bigint | string,
+    _ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
+  ): Promise<void> {
+    await this.#storage.set('accountsOps', this.#getOps())
+  }
+
+  async putMultiple(
+    _records: Array<{
+      accountAddr: string
+      chainId: bigint | string
+      ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
+    }>
+  ): Promise<void> {
+    await this.#storage.set('accountsOps', this.#getOps())
+  }
+
+  async deleteAccount(_accountAddr: string): Promise<void> {
+    await this.#storage.set('accountsOps', this.#getOps())
   }
 }

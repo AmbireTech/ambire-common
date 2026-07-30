@@ -11,15 +11,42 @@ export interface InternalAccountsOps {
 }
 
 /**
- * Interface for IndexedDB-backed storage of account operations.
- * Provides minimal, targeted reads/writes compared to full blob serialization.
+ * Persistence backend for account operations.
+ * Implementations: ActivityIdbStorage (IndexedDB) and ActivityKeyValueStorage (chrome.storage.local).
+ * ActivityController always holds one of these — there are no conditional IDB checks in the controller.
  */
-export interface IActivityIdbStorage {
+export interface IActivityOpsBackend {
   /**
-   * Load minimal startup dataset: all pending ops + 20 most recent per (account, chainId)
-   * Used during ActivityController initialization.
+   * Load the startup dataset.
+   * IDB: returns pending ops + up to 20 finalized per (account, chainId).
+   * Storage: returns the full ops blob.
    */
   loadStartupOps(): Promise<InternalAccountsOps>
+
+  /**
+   * One-time migration from legacy chrome.storage.local to IDB.
+   * Called with callbacks so the interface stays decoupled from IStorageController.
+   * IDB backend: migrates if empty; storage backend: no-op.
+   */
+  ensureMigrated(
+    getStoredOps: () => Promise<InternalAccountsOps>,
+    removeStoredOps: () => Promise<void>
+  ): Promise<void>
+
+  /**
+   * Write a single new op and optionally delete the op evicted by the in-memory trim.
+   */
+  putSingleOp(
+    accountAddr: string,
+    chainId: bigint | string,
+    op: SubmittedAccountOp,
+    trimmedId?: string
+  ): Promise<void>
+
+  /**
+   * Update existing rows in place (e.g. status or balance-change updates).
+   */
+  updateOps(ops: SubmittedAccountOp[]): Promise<void>
 
   /**
    * Fetch full history for a specific (account, chainId) pair.
@@ -32,7 +59,6 @@ export interface IActivityIdbStorage {
 
   /**
    * Write ops for a single (account, chainId) pair.
-   * Accepts both internal and external account ops.
    */
   putOpsForAccountAndChain(
     accountAddr: string,
@@ -41,9 +67,7 @@ export interface IActivityIdbStorage {
   ): Promise<void>
 
   /**
-   * Batch write multiple (account, chainId) records in a single transaction.
-   * More efficient than multiple individual puts.
-   * Accepts both internal and external account ops.
+   * Batch write multiple (account, chainId) records.
    */
   putMultiple(
     records: Array<{
@@ -57,32 +81,7 @@ export interface IActivityIdbStorage {
    * Delete all ops for an account across all chains.
    */
   deleteAccount(accountAddr: string): Promise<void>
-
-  /**
-   * One-time migration: import all ops from chrome.storage.local into IDB.
-   * After successful import, the caller should remove the key from chrome.storage.local.
-   */
-  migrateFromStorage(data: InternalAccountsOps): Promise<void>
-
-  /**
-   * Check if IDB has any data (used to detect if migration is needed).
-   */
-  isEmpty(): Promise<boolean>
-
-  /**
-   * Write a single new op and optionally delete the op evicted by the in-memory trim.
-   * Use instead of putOpsForAccountAndChain when adding one op at a time.
-   */
-  putSingleOp(
-    accountAddr: string,
-    chainId: bigint | string,
-    op: SubmittedAccountOp,
-    trimmedId?: string
-  ): Promise<void>
-
-  /**
-   * Update existing rows in place (e.g. status or balance-change updates).
-   * Only the provided ops are written — no range-delete.
-   */
-  updateOps(ops: SubmittedAccountOp[]): Promise<void>
 }
+
+/** @deprecated Use IActivityOpsBackend */
+export type IActivityIdbStorage = IActivityOpsBackend

@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, test } from '@jest/globals'
 import { SubmittedAccountOpLike } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { ActivityIdbStorage } from './activityIdb'
-import { BaseIdbStore } from './baseIdbStore'
+import { AmbireIdbDatabase, openAmbireIdb, resetAmbireIdbForTesting } from './idbDatabase'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Test constants
@@ -40,13 +40,17 @@ function makeOp(
   } as SubmittedAccountOpLike
 }
 
-beforeEach(() => {
-  // Reset the shared DB connection so each test gets a completely isolated environment.
-  BaseIdbStore.resetDb('ambire')
+let db: AmbireIdbDatabase
+
+beforeEach(async () => {
+  // Reset the singleton and replace the in-memory IDB factory so each test
+  // gets a completely isolated environment.
+  resetAmbireIdbForTesting()
   global.indexedDB = new IDBFactory()
   global.IDBKeyRange = IDBKeyRange
   // checkQuota() reads navigator.storage — stub it to avoid ReferenceError in Node.
   ;(global as any).navigator = {}
+  db = await openAmbireIdb()
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -56,12 +60,12 @@ beforeEach(() => {
 describe('ActivityIdbStorage', () => {
   describe('isEmpty', () => {
     test('returns true on a fresh store', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       expect(await store.isEmpty()).toBe(true)
     })
 
     test('returns false after data is written', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
         makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
       ])
@@ -71,7 +75,7 @@ describe('ActivityIdbStorage', () => {
 
   describe('putOpsForAccountAndChain + getOpsForAccountAndChain', () => {
     test('stores ops and returns them sorted by timestamp descending', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
         makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000),
         makeOp('op-2', ACC_A, CHAIN_1, AccountOpStatus.Success, 3000),
@@ -83,12 +87,12 @@ describe('ActivityIdbStorage', () => {
     })
 
     test('returns undefined when no ops exist for the pair', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       expect(await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)).toBeUndefined()
     })
 
     test('accepts bigint chainId — retrieve with bigint or equivalent string', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await store.putOpsForAccountAndChain(ACC_A, CHAIN_137, [
         makeOp('op-1', ACC_A, CHAIN_137, AccountOpStatus.Success, 1000)
       ])
@@ -98,7 +102,7 @@ describe('ActivityIdbStorage', () => {
     })
 
     test('replaces existing ops on second write to the same pair', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
         makeOp('old', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
       ])
@@ -113,7 +117,7 @@ describe('ActivityIdbStorage', () => {
     })
 
     test('different chains for the same account are stored independently', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
         makeOp('chain1-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
       ])
@@ -128,7 +132,7 @@ describe('ActivityIdbStorage', () => {
 
   describe('putMultiple', () => {
     test('writes all (account, chainId) pairs atomically', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await store.putMultiple([
         {
           accountAddr: ACC_A,
@@ -153,7 +157,7 @@ describe('ActivityIdbStorage', () => {
     })
 
     test('replaces existing ops per pair', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await store.putMultiple([
         {
           accountAddr: ACC_A,
@@ -177,7 +181,7 @@ describe('ActivityIdbStorage', () => {
 
   describe('deleteAccount', () => {
     test('removes all chains for the given account', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await store.putMultiple([
         {
           accountAddr: ACC_A,
@@ -198,7 +202,7 @@ describe('ActivityIdbStorage', () => {
     })
 
     test('does not affect other accounts', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await store.putMultiple([
         {
           accountAddr: ACC_A,
@@ -218,14 +222,14 @@ describe('ActivityIdbStorage', () => {
     })
 
     test('is a no-op when the account has no ops', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await expect(store.deleteAccount(ACC_A)).resolves.not.toThrow()
     })
   })
 
   describe('migrateFromStorage', () => {
     test('imports all ops from InternalAccountsOps format', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await store.migrateFromStorage({
         [ACC_A]: {
           '1': [makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000) as any],
@@ -242,7 +246,7 @@ describe('ActivityIdbStorage', () => {
     })
 
     test('preserves op ids and timestamps after migration', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await store.migrateFromStorage({
         [ACC_A]: {
           '1': [makeOp('migrate-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 42000) as any]
@@ -257,12 +261,12 @@ describe('ActivityIdbStorage', () => {
 
   describe('loadStartupOps', () => {
     test('returns an empty object for an empty store', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       expect(await store.loadStartupOps()).toEqual({})
     })
 
     test('returns all pending ops regardless of how many there are', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       // 25 pending — more than the 20-op finalized limit
       const ops = Array.from({ length: 25 }, (_, i) =>
         makeOp(`op-${i}`, ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, i * 100)
@@ -274,7 +278,7 @@ describe('ActivityIdbStorage', () => {
     })
 
     test('limits finalized ops to 20 per (account, chainId) group', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       const ops = Array.from({ length: 25 }, (_, i) =>
         makeOp(`op-${i}`, ACC_A, CHAIN_1, AccountOpStatus.Success, i * 100)
       )
@@ -285,7 +289,7 @@ describe('ActivityIdbStorage', () => {
     })
 
     test('always includes pending ops even when the finalized limit is already reached', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       const finalized = Array.from({ length: 20 }, (_, i) =>
         makeOp(`fin-${i}`, ACC_A, CHAIN_1, AccountOpStatus.Success, i * 10)
       )
@@ -301,7 +305,7 @@ describe('ActivityIdbStorage', () => {
     })
 
     test('returns ops sorted by timestamp descending within each group', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
         makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 100),
         makeOp('op-2', ACC_A, CHAIN_1, AccountOpStatus.Success, 300),
@@ -313,7 +317,7 @@ describe('ActivityIdbStorage', () => {
     })
 
     test('handles multiple accounts and chains independently', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       await store.putMultiple([
         {
           accountAddr: ACC_A,
@@ -339,7 +343,7 @@ describe('ActivityIdbStorage', () => {
     })
 
     test('selects the 20 newest finalized ops (highest timestamps) per group', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       // ops 0-24 — op with index 24 has the highest timestamp
       const ops = Array.from({ length: 25 }, (_, i) =>
         makeOp(`op-${i}`, ACC_A, CHAIN_1, AccountOpStatus.Success, i * 100)
@@ -356,7 +360,7 @@ describe('ActivityIdbStorage', () => {
 
   describe('bigint serialization roundtrip', () => {
     test('chainId and nonce survive serialize → store → deserialize', async () => {
-      const store = new ActivityIdbStorage()
+      const store = new ActivityIdbStorage(db)
       const op = {
         id: 'bigint-op',
         accountAddr: ACC_A,

@@ -73,6 +73,7 @@ import { IMainController, STATUS_WRAPPED_METHODS } from '@/interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '@/interfaces/network'
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
+import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { IPortfolioController } from '@/interfaces/portfolio'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
@@ -228,7 +229,8 @@ export class MainController extends EventEmitter implements IMainController {
     featureFlags,
     keystoreSigners,
     externalSignerControllers,
-    uiManager
+    uiManager,
+    idb
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -245,6 +247,7 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
+    idb?: AmbireIdbDatabase
   }) {
     super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
@@ -475,7 +478,8 @@ export class MainController extends EventEmitter implements IMainController {
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       },
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      idb
     )
     this.transferScanner = new TransfersScannerController({
       activity: this.activity,

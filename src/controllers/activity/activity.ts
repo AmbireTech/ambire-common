@@ -6,12 +6,13 @@ import {
   pickBetterPoisoningMatch,
   ScoredAddressPoisoningMatch
 } from '@/libs/transfer/address-poisoning'
-import { ActivityIdbStorage } from '@/services/storage/activityIdb'
+import { ActivityIdbStorage, ActivityKeyValueStorage } from '@/services/storage/activityIdb'
+import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import {
   IActivityController,
-  IActivityIdbStorage,
+  IActivityOpsBackend,
   InternalAccountsOps
 } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
@@ -96,8 +97,6 @@ export interface ExternalAccountOps {
 // We are limiting items array to include no more than 1000 records,
 // as we trim out the oldest ones (in the beginning of the items array).
 // We do this to maintain optimal storage and performance.
-// Set to true to disable IndexedDB and benchmark against chrome.storage.local
-const DISABLE_ACTIVITY_IDB = false
 
 const trim = <T>(items: T[], maxSize = 1000): void => {
   if (items.length > maxSize) {
@@ -247,7 +246,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #fetch: Fetch
 
-  #activityIdb?: IActivityIdbStorage
+  #persistence!: IActivityOpsBackend
 
   #initialLoadPromise?: Promise<void>
 
@@ -322,21 +321,19 @@ export class ActivityController extends EventEmitter implements IActivityControl
     portfolio: IPortfolioController,
     safe: ISafeController,
     onContractsDeployed: (network: Network) => Promise<void>,
-    eventEmitterRegistry?: IEventEmitterRegistryController
+    eventEmitterRegistry?: IEventEmitterRegistryController,
+    idb?: AmbireIdbDatabase
   ) {
     super(eventEmitterRegistry)
     this.#storage = storage
     this.#fetch = fetch
 
-    // Initialize ActivityIdbStorage if available (browser environment)
-    if (!DISABLE_ACTIVITY_IDB && typeof indexedDB !== 'undefined') {
-      try {
-        this.#activityIdb = new ActivityIdbStorage()
-        console.log('[ActivityController] ActivityIdbStorage initialized')
-      } catch (error) {
-        console.error('[ActivityController] Failed to initialize ActivityIdbStorage', error)
-      }
-    }
+    // idb is provided only by web/extension environments — the background calls
+    // openAmbireIdb() and passes the result through MainController. On mobile,
+    // idb is undefined and the controller falls back to chrome.storage / AsyncStorage.
+    this.#persistence = idb
+      ? new ActivityIdbStorage(idb)
+      : new ActivityKeyValueStorage(storage, () => this.#accountsOps)
 
     this.#callRelayer = callRelayer
     this.#accounts = accounts
@@ -359,42 +356,21 @@ export class ActivityController extends EventEmitter implements IActivityControl
     let externalAccountOps: ExternalAccountOps = {}
     let signedMessages: InternalSignedMessages = {}
 
-    // Migrate from chrome.storage.local to IDB if needed (first load)
-    if (this.#activityIdb) {
-      try {
-        const idbIsEmpty = await this.#activityIdb.isEmpty()
-        if (idbIsEmpty) {
-          const storedOps = await this.#storage.get('accountsOps', {})
-          if (Object.keys(storedOps).length > 0) {
-            console.log('[ActivityController] Migrating accountsOps to IDB')
-            await this.#activityIdb.migrateFromStorage(storedOps)
-            console.log('[ActivityController] accountsOps migration complete')
-          }
-        }
-      } catch (error) {
-        console.error('[ActivityController] Failed to migrate to IDB', error)
-      }
+    // One-time migration from chrome.storage.local to IDB (IDB backend only; storage backend no-ops).
+    // On success the legacy key is removed so storage doesn't hold a stale subset.
+    try {
+      await this.#persistence.ensureMigrated(
+        () => this.#storage.get('accountsOps', {}),
+        () => this.#storage.remove('accountsOps')
+      )
+    } catch (error) {
+      console.error('[ActivityController] Failed to migrate to IDB', error)
     }
 
-    // Load from IDB or fallback to storage
-    if (this.#activityIdb) {
-      try {
-        console.time('[ActivityController] startup-load:idb')
-        accountsOps = await this.#activityIdb.loadStartupOps()
-        console.timeEnd('[ActivityController] startup-load:idb')
-      } catch (error) {
-        console.error(
-          '[ActivityController] Failed to load from IDB, falling back to storage',
-          error
-        )
-        console.time('[ActivityController] startup-load:storage-fallback')
-        accountsOps = await this.#storage.get('accountsOps', {})
-        console.timeEnd('[ActivityController] startup-load:storage-fallback')
-      }
-    } else {
-      console.time('[ActivityController] startup-load:storage')
-      accountsOps = await this.#storage.get('accountsOps', {})
-      console.timeEnd('[ActivityController] startup-load:storage')
+    try {
+      accountsOps = await this.#persistence.loadStartupOps()
+    } catch (error) {
+      console.error('[ActivityController] Failed to load accountsOps', error)
     }
 
     // Always load externalAccountOps from storage (not migrated to IDB yet)
@@ -507,20 +483,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     let internalAccountOpsByChain = this.#accountsOps[filters.account] || {}
     const externalAccountOpsByChain = this.#externalAccountOps[filters.account] || {}
 
-    console.log('[ActivityController] filterAccountsOps called', {
-      account: filters.account,
-      chainId: filters.chainId?.toString(),
-      page: pagination.fromPage,
-      knownAccounts: Object.keys(this.#accountsOps),
-      internalChains: Object.entries(internalAccountOpsByChain).map(
-        ([c, ops]) => `${c}:${ops.length}ops`
-      ),
-      externalChains: Object.entries(externalAccountOpsByChain).map(
-        ([c, ops]) => `${c}:${ops.length}ops`
-      ),
-      enabledNetworkChainIds
-    })
-
     // Lazy-load from IDB if requesting pages beyond the in-memory window and IDB is available.
     // Skip if in-memory already holds the full history (>= STARTUP_RECENT_OPS_LIMIT means it was
     // previously expanded, so a second IDB round-trip would return the same data).
@@ -533,18 +495,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // including page 0, so the correct total page count is shown immediately on chain switch.
     const idbStartupWindowSize = 20
     const alreadyFullyLoaded = inMemoryCount > idbStartupWindowSize
-    if (this.#activityIdb && filters.chainId && chainIdString && !alreadyFullyLoaded) {
+    if (filters.chainId && chainIdString && !alreadyFullyLoaded) {
       try {
-        console.time(`[ActivityController] lazy-load:idb page=${pagination.fromPage}`)
-        const fullOpsFromIdb = await this.#activityIdb.getOpsForAccountAndChain(
+        const fullOpsFromIdb = await this.#persistence.getOpsForAccountAndChain(
           filters.account,
           filters.chainId
         )
-        console.timeEnd(`[ActivityController] lazy-load:idb page=${pagination.fromPage}`)
         if (fullOpsFromIdb) {
-          console.log(
-            `[ActivityController] lazy-load: in-memory had ${inMemoryCount} ops → IDB returned ${fullOpsFromIdb.length} ops for ${filters.account}:${chainIdString}`
-          )
           // Update in-memory cache with full array from IDB
           if (!internalAccountOpsByChain[chainIdString]) {
             internalAccountOpsByChain[chainIdString] = []
@@ -556,10 +513,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
         console.error('ActivityController: Failed to lazy-load from IDB', error)
         // Continue with in-memory data
       }
-    } else {
-      console.log(
-        `[ActivityController] pagination page=${pagination.fromPage}: served from in-memory (${inMemoryCount} ops cached)`
-      )
     }
 
     const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(
@@ -615,12 +568,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       )
     }
 
-    console.time(`[ActivityController] paginate page=${pagination.fromPage}`)
     const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
-    console.timeEnd(`[ActivityController] paginate page=${pagination.fromPage}`)
-    console.log(
-      `[ActivityController] paginate: ${filteredItems.length} total ops → page ${pagination.fromPage} has ${result.items.length} items (${result.maxPages} pages total)`
-    )
 
     this.setDashboardBannersSeen(sessionId, filters.account)
     this.accountsOps[sessionId] = { result, filters, pagination }
@@ -718,28 +666,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   /**
-   * Writes accountsOps via IDB if available, otherwise falls back to chrome.storage.local.
-   * When IDB is available, errors are logged but do NOT fall back to storage — writing
-   * this.#accountsOps (startup subset) to storage would permanently truncate full history.
-   */
-  async #persistToIdb(fn: () => Promise<void>): Promise<void> {
-    if (!this.#activityIdb) {
-      await this.#storage.set('accountsOps', this.#accountsOps)
-      return
-    }
-    try {
-      await fn()
-      console.log('ActivityController: IDB persist succeeded')
-    } catch (error) {
-      console.error('ActivityController: Failed to persist to IDB', error)
-    }
-  }
-
-  /**
-   * Persist changed ops to IDB (or storage fallback), sync filtered views, and emit an update.
+   * Persist changed ops, sync filtered views, and emit an update.
    */
   private async persistAccountsOps(changedOps: SubmittedAccountOp[]) {
-    await this.#persistToIdb(() => this.#activityIdb!.updateOps(changedOps))
+    try {
+      await this.#persistence.updateOps(changedOps)
+    } catch (error) {
+      console.error('ActivityController: Failed to persist updated ops', error)
+    }
     await this.syncFilteredAccountsOps()
     this.emitUpdate()
   }
@@ -864,9 +798,11 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.syncFilteredAccountsOps()
     this.emitUpdate()
 
-    await this.#persistToIdb(() =>
-      this.#activityIdb!.putSingleOp(accountAddr, chainId, accountOp, trimmedId)
-    )
+    try {
+      await this.#persistence.putSingleOp(accountAddr, chainId, accountOp, trimmedId)
+    } catch (error) {
+      console.error('ActivityController: Failed to persist new op', error)
+    }
   }
 
   async addExternalAccountOp({
@@ -1628,21 +1564,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.syncFilteredAccountsOps()
     await this.syncSignedMessages()
 
-    // Delete from IDB if available
-    if (this.#activityIdb) {
-      try {
-        await this.#activityIdb.deleteAccount(address)
-      } catch (error) {
-        console.error(
-          'ActivityController: Failed to delete from IDB, falling back to storage',
-          error
-        )
-        await this.#storage.set('accountsOps', this.#accountsOps)
-        await this.#storage.set('signedMessages', this.#signedMessages)
-      }
-    } else {
-      await this.#storage.set('accountsOps', this.#accountsOps)
-      await this.#storage.set('signedMessages', this.#signedMessages)
+    // signedMessages is always persisted to storage (not in IDB).
+    await this.#storage.set('signedMessages', this.#signedMessages)
+
+    try {
+      await this.#persistence.deleteAccount(address)
+    } catch (error) {
+      console.error('ActivityController: Failed to delete account from persistence', error)
     }
 
     this.emitUpdate()
