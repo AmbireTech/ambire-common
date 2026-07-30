@@ -35,6 +35,9 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 const RAILGUN_SEPOLIA_CHAIN_ID = '11155111'
 const RAILGUN_SEED_LABEL = 'Railgun Privacy Seed'
 const RAILGUN_KEY_INDEX = 0
+// Blocks per `eth_getLogs` for the SDK's RPC-based UTXO syncer (SDK default is 10 - see the
+// rationale at the `createRailgunPlugin` call site).
+const RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS = 10_000
 
 const STATUS_WRAPPED_METHODS = {
   init: 'INITIAL',
@@ -368,6 +371,17 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
 
     const plugin = await createRailgunPlugin(host, {
       keyIndex: RAILGUN_KEY_INDEX,
+      // The SDK syncs with `UtxoSyncer.chained([subsquid, rpc])`: the Subsquid indexer covers
+      // history, and the RPC syncer scans everything above it. Crucially, Subsquid reports its
+      // `latest_block` from `transactions(orderBy: blockNumber_DESC, limit: 1)` - the last
+      // Railgun *transact* on the chain, NOT the indexer's head - and Railgun transacts on
+      // Sepolia are sparse (hours to days apart). So the RPC syncer is always handed a tail of
+      // thousands of blocks that grows by ~7.2k blocks/day of testnet inactivity. At the SDK's
+      // default batch size of 10 that is one `eth_getLogs` per 10 blocks, i.e. hundreds of
+      // sequential round-trips per sync - which is why `sync()` never finished and the UI sat on
+      // "Syncing shielded balances..." indefinitely. Railgun's Sepolia contract emits only a
+      // few thousand logs in total, so a wide window stays far below Alchemy's response cap.
+      rpcBatchSize: RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS,
       // Freshly shielded funds sit in a pending-POI state and are excluded from balance()
       // until validated by the POI aggregator - which does not serve Sepolia, so testnet
       // shields would never appear if POI stayed enabled. Disabled for this reason (not a
@@ -428,7 +442,16 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     this.syncStatus = 'syncing'
     this.emitUpdate()
 
+    // `balance()` syncs the UTXO tree before answering, so its duration is dominated by the
+    // chain scan, not the balance math. Timed because a slow scan is indistinguishable from a
+    // hang in the UI (both just leave the sync status LOADING) - see the rpcBatchSize note.
+    const syncStartedAt = Date.now()
     const balances = await this.#plugin.balance(undefined)
+    this.debugLog('sync', 'shielded balance sync completed', {
+      durationMs: Date.now() - syncStartedAt,
+      balancesCount: balances.length
+    })
+
     this.shieldedBalances = balances
       .filter(isErc20Balance)
       .map((b) => ({ tokenAddress: b.asset.contract, amount: b.amount }))
