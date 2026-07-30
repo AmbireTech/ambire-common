@@ -84,7 +84,8 @@ export const getSafeHumanization = (
   to?: string,
   value?: string | number | bigint,
   data?: string,
-  setupHookDepth = 0
+  setupHookDepth = 0,
+  nonce?: string | number | bigint | null
 ): { visuals?: HumanizerVisualization[]; warnings?: HumanizerWarning[] } | undefined => {
   if (!data || !isHex(data)) return
 
@@ -98,7 +99,14 @@ export const getSafeHumanization = (
     value?.toString() === '0' &&
     data === '0x'
   ) {
-    fullVisualization.push(...[getAction('Reject currently queued transaction')])
+    // a Safe{WALLET} "reject" is just an empty, 0-value self-call proposed with the same
+    // nonce as the transaction it is meant to replace, so surface that nonce when it's known
+    // instead of showing a blank/empty call
+    fullVisualization.push(
+      ...(nonce !== undefined && nonce !== null
+        ? [getAction('Reject'), getLabel('Tx with nonce'), getLabel(nonce, true)]
+        : [getAction('Reject currently queued transaction')])
+    )
     return {
       visuals: fullVisualization
     }
@@ -363,6 +371,9 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
       const bigintValue = BigInt(value)
       const bigintOperation = BigInt(operation)
 
+      // this decoded call is a nested `execTransaction` invocation (e.g. a relayer executing on
+      // behalf of the Safe), so `accOp.nonce` does not necessarily reflect this inner Safe
+      // transaction's nonce and is intentionally not passed here
       const safeSpecificHumanization = getSafeHumanization(accOp.accountAddr, to, bigintValue, data)
       const fullVisualization = [
         getAction('Execute a Safe{WALLET} transaction'),
@@ -391,13 +402,16 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
       return { ...matchedCall, fullVisualization, warnings }
     }
   }
-
   let newCall = call
+  // for a queued Safe{WALLET} transaction (built in `toCallsUserRequest`), `accOp.nonce` is
+  // set from the Safe transaction's own nonce, so it can be safely surfaced in a reject label
   const safeSpecificHumanization = getSafeHumanization(
     accOp.accountAddr,
     call.to,
     call.value,
-    call.data
+    call.data,
+    0,
+    accOp.nonce
   )
   if (safeSpecificHumanization) {
     newCall = {
