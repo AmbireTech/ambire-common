@@ -114,6 +114,13 @@ export type StorageProps = {
   functionSelectors: Selectors
   // Per-controller debug logging toggles. Only enabled ones are stored
   debugLogNamespaces: Record<string, boolean>
+  // Railgun (privacy pool) integration
+  // Id of the dedicated KeystoreController seed used to derive the Railgun (0zk) identity.
+  // Kept separate from the wallet's recovery seed(s) on purpose.
+  railgunSeedId: string | null
+  // Flat key-value blob the Railgun SDK's Host.storage adapter reads/writes into
+  // (UTXO sync state, POI cache, etc). Keyed by the SDK's own internal keys.
+  railgunPluginStorage: Record<string, string>
 }
 
 export interface Storage {

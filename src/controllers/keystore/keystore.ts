@@ -700,11 +700,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   async persistTempSeed() {
-    if (!this.#tempSeed) return
+    if (!this.#tempSeed) return undefined
 
-    await this.#addSeed(this.#tempSeed)
+    const persistedSeed = await this.#addSeed(this.#tempSeed)
     this.#tempSeed = null
     this.emitUpdate()
+
+    return persistedSeed
   }
 
   async #addSeed({ seed, seedPassphrase, hdPathTemplate }: KeystoreTempSeed) {
@@ -727,7 +729,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     }
 
     const existingEntry = await this.#findStoredSeed(seed, seedPassphrase)
-    if (existingEntry) return
+    if (existingEntry)
+      return {
+        id: existingEntry.id,
+        label: existingEntry.label,
+        hdPathTemplate: existingEntry.hdPathTemplate,
+        withPassphrase: !!existingEntry.seedPassphrase
+      }
 
     const entropy = extractEntropyFromSeed(seed)
 
@@ -748,6 +756,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
     this.emitUpdate()
+
+    return {
+      id: newEntry.id,
+      label: newEntry.label,
+      hdPathTemplate: newEntry.hdPathTemplate,
+      withPassphrase: !!newEntry.seedPassphrase
+    }
   }
 
   async addSeed(keystoreSeed: KeystoreTempSeed) {

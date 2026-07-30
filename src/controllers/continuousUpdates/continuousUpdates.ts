@@ -6,7 +6,8 @@ import {
   ACCOUNT_STATE_STAND_BY_INTERVAL,
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
-  INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL
+  INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
+  RAILGUN_BALANCE_REFRESH_INTERVAL
 } from '../../consts/intervals'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -66,6 +67,12 @@ export class ContinuousUpdatesController extends EventEmitter {
   #safeGlobalTxnInterval: IRecurringTimeout
 
   #safeGlobalMessageInterval: IRecurringTimeout
+
+  #railgunBalancesInterval: IRecurringTimeout
+
+  get railgunBalancesInterval() {
+    return this.#railgunBalancesInterval
+  }
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void> | undefined
@@ -158,6 +165,24 @@ export class ContinuousUpdatesController extends EventEmitter {
       'resolveConfirmedSafeMessages'
     )
 
+    this.#railgunBalancesInterval = new RecurringTimeout(
+      this.#updateRailgunBalances.bind(this),
+      RAILGUN_BALANCE_REFRESH_INTERVAL,
+      this.emitError.bind(this),
+      'railgunBalancesInterval'
+    )
+
+    // Railgun requires explicit user opt-in (dedicated seed + WASM init), so the
+    // refresh interval only runs once initialized, and stops if that ever reverts
+    // (e.g. the background context restarted and Railgun hasn't been re-initialized yet).
+    this.#main.railgun.onUpdate(() => {
+      if (this.#main.railgun.isInitialized) {
+        this.#railgunBalancesInterval.start({ runImmediately: true })
+      } else {
+        this.#railgunBalancesInterval.stop()
+      }
+    }, 'continuous-update')
+
     this.#main.swapAndBridge.onUpdate(() => {
       if (this.#main.swapAndBridge.signAccountOpController?.broadcastStatus === 'SUCCESS') {
         this.#accountStateLatestInterval.restart()
@@ -227,6 +252,14 @@ export class ContinuousUpdatesController extends EventEmitter {
       maxDataAgeMs: 60 * 1000,
       maxDataAgeMsUnused: 60 * 60 * 1000
     })
+  }
+
+  async #updateRailgunBalances() {
+    await this.initialLoadPromise
+
+    if (!this.#main.railgun.isInitialized) return
+
+    await this.#main.railgun.sync()
   }
 
   async #updateAccountsOpsStatuses() {

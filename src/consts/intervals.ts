@@ -15,3 +15,6 @@ export const PHISHING_FAILED_TO_GET_UPDATE_INTERVAL = 600000 // 10 minutes
 export const ESTIMATE_UPDATE_INTERVAL = 30000
 export const GAS_PRICE_UPDATE_INTERVAL = 12000
 export const FETCH_SAFE_TXNS = 3 * 60 * 1000 // 3 minutes
+// Shielded balances change far less often than public portfolio activity, and each
+// sync re-scans UTXO commitments, so a longer interval keeps RPC/Subsquid load low.
+export const RAILGUN_BALANCE_REFRESH_INTERVAL = 3 * 60 * 1000 // 3 minutes
