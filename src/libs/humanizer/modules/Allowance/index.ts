@@ -42,7 +42,7 @@ export const getSetAllowanceResetText = (call: IrCall): string | null => {
   return getAllowanceResetText(BigInt(resetTimeMin))
 }
 
-const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrCall[] => {
+const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall => {
   const matcher: Record<string, (call: HexIrCall) => IrCall | undefined> = {
     [toFunctionSelector(setAllowanceAbi[0])]: (call) => {
       const { args } = decodeFunctionData({ abi: setAllowanceAbi, data: call.data })
@@ -104,16 +104,12 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
       return { ...call, fullVisualization }
     }
   }
-  const newCalls = calls.map((call) => {
-    if (call.fullVisualization || !isHexCall(call)) return call
-    const match = matcher[call.data.slice(0, 10)]
-    if (!match) return call
-    const newCall = match(call)
-    if (!newCall) return call
-    return newCall
-  })
-
-  return newCalls
+  if (call.fullVisualization || !isHexCall(call)) return call
+  const match = matcher[call.data.slice(0, 10)]
+  if (!match) return call
+  const newCall = match(call)
+  if (!newCall) return call
+  return newCall
 }
 
 export default AllowanceModule

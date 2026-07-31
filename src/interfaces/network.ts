@@ -23,7 +23,6 @@ interface FeeOptions {
   minBaseFee?: bigint
   elasticityMultiplier?: bigint
   baseFeeMaxChangeDenominator?: bigint
-  feeIncrease?: bigint // should we increase the relayer fee in %
   // transactions on Base get stuck on slow as we lower the baseFee a lot
   // so we make the minBaseFee the same as the last block one
   minBaseFeeEqualToLastBlock?: boolean
@@ -115,6 +114,7 @@ export interface Network {
   allowForce4337?: boolean
   disabled?: boolean
   customBundlerUrl?: string
+  isColibriEnabled?: boolean
   /**
    * Initial polling interval for pending account operation statuses.
    */
@@ -136,6 +136,7 @@ export interface AddNetworkRequestParams {
   explorerUrl?: Network['explorerUrl']
   iconUrls: Network['iconUrls']
   customBundlerUrl?: Network['customBundlerUrl']
+  isColibriEnabled?: Network['isColibriEnabled']
 }
 
 export interface ChainlistNetwork {
@@ -204,7 +205,6 @@ export type RelayerNetwork = {
     is1559: boolean
     elasticityMultiplier?: number
     baseFeeMaxChangeDenominator?: number
-    feeIncrease?: number
     minBaseFee?: number
     minBaseFeeEqualToLastBlock?: boolean
   }

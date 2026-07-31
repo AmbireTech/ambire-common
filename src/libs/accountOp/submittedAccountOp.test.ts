@@ -18,21 +18,25 @@ describe('SubmittedAccountOp', () => {
       const recipients = getAccountOpRecipients(op)
 
       expect(recipients).toEqual([
-        '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
-        '0x53289fa7Aa588434DC3e9f584c89B3EB9352db5C'
+        { address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', domain: undefined },
+        { address: '0x53289fa7Aa588434DC3e9f584c89B3EB9352db5C', domain: undefined }
       ])
     })
     test('should filter recipients based on whitelist', () => {
       const whitelist = ['0x53289fa7Aa588434DC3e9f584c89B3EB9352db5C']
       const recipients = getAccountOpRecipients(op, whitelist)
 
-      expect(recipients).toEqual(['0x53289fa7Aa588434DC3e9f584c89B3EB9352db5C'])
+      expect(recipients).toEqual([
+        { address: '0x53289fa7Aa588434DC3e9f584c89B3EB9352db5C', domain: undefined }
+      ])
     })
     test('whitelist is not case-sensitive', () => {
       const whitelist = ['0x53289fa7aa588434dc3e9f584c89b3eb9352db5c']
       const recipients = getAccountOpRecipients(op, whitelist)
 
-      expect(recipients).toEqual(['0x53289fa7Aa588434DC3e9f584c89B3EB9352db5C'])
+      expect(recipients).toEqual([
+        { address: '0x53289fa7Aa588434DC3e9f584c89B3EB9352db5C', domain: undefined }
+      ])
     })
     test('same address in multiple calls should appear only once', () => {
       const opWithDuplicates = {
@@ -46,8 +50,23 @@ describe('SubmittedAccountOp', () => {
       const recipients = getAccountOpRecipients(opWithDuplicates)
 
       expect(recipients).toEqual([
-        '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85',
-        '0x53289fa7Aa588434DC3e9f584c89B3EB9352db5C'
+        { address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', domain: undefined },
+        { address: '0x53289fa7Aa588434DC3e9f584c89B3EB9352db5C', domain: undefined }
+      ])
+    })
+    test('should include recipientDomain when present on a call', () => {
+      const opWithDomain = {
+        ...op,
+        calls: [{ ...op.calls[0], recipientDomain: 'Sample.ETH' }]
+      } as SubmittedAccountOp
+
+      const recipients = getAccountOpRecipients(opWithDomain)
+
+      // call.to and the decoded ERC-20 transfer recipient both inherit the
+      // same call's recipientDomain
+      expect(recipients).toEqual([
+        { address: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', domain: 'sample.eth' },
+        { address: '0x53289fa7Aa588434DC3e9f584c89B3EB9352db5C', domain: 'sample.eth' }
       ])
     })
   })

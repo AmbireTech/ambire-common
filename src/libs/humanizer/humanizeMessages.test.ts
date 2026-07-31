@@ -1,10 +1,11 @@
-import { parseEther } from 'ethers'
+import { MaxUint256, parseEther } from 'ethers'
 
 import { beforeEach, describe, expect } from '@jest/globals'
 
 import { Message, TypedMessageUserRequest } from '../../interfaces/userRequest'
 import { ENTRY_POINT_AUTHORIZATION_REQUEST_ID } from '../userOperation/userOperation'
-import { erc20Module, erc721Module, permit2Module } from './messageModules'
+import { humanizeMessage } from './index'
+import { cowSwapModule, erc20Module, erc721Module, permit2Module } from './messageModules'
 import { entryPointModule } from './messageModules/entryPointModule'
 import { compareVisualizations } from './testHelpers'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from './utils'
@@ -13,6 +14,7 @@ const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 const NFT_ADDRESS = '0x026224A2940bFE258D0dbE947919B62fE321F042'
+const DAI_ADDRESS = '0x6b175474e89094c44da98b954eedeac495271d0f'
 const typedMessages = {
   erc20: [
     {
@@ -24,6 +26,32 @@ const typedMessages = {
     }
   ],
 
+  daiPermit: [
+    // grant with expiry
+    {
+      holder: address1,
+      spender: address2,
+      nonce: 1n,
+      expiry: 968187600n,
+      allowed: true
+    },
+    // grant without expiry (0 means the permit never expires)
+    {
+      holder: address1,
+      spender: address2,
+      nonce: 1n,
+      expiry: 0n,
+      allowed: true
+    },
+    // revoke
+    {
+      holder: address1,
+      spender: address2,
+      nonce: 1n,
+      expiry: 968187600n,
+      allowed: false
+    }
+  ],
   erc721: [
     {
       spender: address2,
@@ -129,6 +157,57 @@ describe('typed message tests', () => {
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
   })
+  test('erc20 module with DAI-style permit (grant)', () => {
+    const expectedVisualization = [
+      getAction('Grant approval'),
+      getLabel('for'),
+      getToken(DAI_ADDRESS, MaxUint256),
+      getLabel('to'),
+      getAddressVisualization(address2),
+      getDeadline(968187600n)
+    ]
+
+    messageTemplate.content.message = typedMessages.daiPermit[0]!
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = DAI_ADDRESS
+    const { fullVisualization } = erc20Module(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+  test('erc20 module with DAI-style permit (grant, no expiry)', () => {
+    const expectedVisualization = [
+      getAction('Grant approval'),
+      getLabel('for'),
+      getToken(DAI_ADDRESS, MaxUint256),
+      getLabel('to'),
+      getAddressVisualization(address2)
+    ]
+
+    messageTemplate.content.message = typedMessages.daiPermit[1]!
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = DAI_ADDRESS
+    const { fullVisualization } = erc20Module(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+  test('erc20 module with DAI-style permit (revoke)', () => {
+    const expectedVisualization = [
+      getAction('Revoke approval'),
+      getToken(DAI_ADDRESS, 0n),
+      getLabel('for'),
+      getAddressVisualization(address2)
+    ]
+
+    messageTemplate.content.message = typedMessages.daiPermit[2]!
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = DAI_ADDRESS
+    const { fullVisualization } = erc20Module(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
   test('erc721 module', () => {
     const expectedVisualization = [
       getAction('Permit use of'),
@@ -212,6 +291,115 @@ describe('typed message tests', () => {
     const { fullVisualization } = permit2Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedBatchVisualization)
+  })
+
+  test('cowswap module sell order', () => {
+    const accountAddr = '0xd8293ad21678c6f09da139b4b62d38e514a03b78'
+    const sellToken = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+    const buyToken = '0x63706e401c06ac8513145b7687a14804d17f814b'
+    const sellAmount = 934812n
+    const buyAmount = 10404139468585152n
+    const validTo = 1783581106n
+    const expectedVisualization = [
+      getAction('Place an order to Sell'),
+      getToken(sellToken, sellAmount, 8453n),
+      getLabel('for at least'),
+      getToken(buyToken, buyAmount, 8453n),
+      getDeadline(validTo)
+    ]
+
+    messageTemplate.accountAddr = accountAddr
+    messageTemplate.chainId = 8453n
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).domain = {
+      name: 'Gnosis Protocol',
+      version: 'v2',
+      chainId: 8453n,
+      verifyingContract: '0x9008D19f58AAbD9eD0D60971565AA8510560ab41'
+    }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
+      EIP712Domain: [
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' }
+      ],
+      Order: [
+        { name: 'sellToken', type: 'address' },
+        { name: 'buyToken', type: 'address' },
+        { name: 'receiver', type: 'address' },
+        { name: 'sellAmount', type: 'uint256' },
+        { name: 'buyAmount', type: 'uint256' },
+        { name: 'validTo', type: 'uint32' },
+        { name: 'appData', type: 'bytes32' },
+        { name: 'feeAmount', type: 'uint256' },
+        { name: 'kind', type: 'string' },
+        { name: 'partiallyFillable', type: 'bool' },
+        { name: 'sellTokenBalance', type: 'string' },
+        { name: 'buyTokenBalance', type: 'string' }
+      ]
+    }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType = 'Order'
+    messageTemplate.content.message = {
+      sellToken,
+      buyToken,
+      sellAmount: sellAmount.toString(),
+      buyAmount: buyAmount.toString(),
+      validTo: Number(validTo),
+      kind: 'sell',
+      partiallyFillable: false,
+      appData: '0x767a9774c9a589f88b23530486fb7d8836613b44a3e82e01ba1351e9c68584b2',
+      receiver: accountAddr,
+      feeAmount: '0',
+      sellTokenBalance: 'erc20',
+      buyTokenBalance: 'erc20'
+    }
+
+    const { fullVisualization } = cowSwapModule(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+
+    const irMessage = humanizeMessage(messageTemplate)
+    compareVisualizations(irMessage.fullVisualization!, expectedVisualization)
+  })
+
+  test('cowswap module order cancellations', () => {
+    const accountAddr = '0xd8293ad21678c6f09da139b4b62d38e514a03b78'
+    const orderUid =
+      '0x6ebba3d3f1ee5a04be5c4a6fd2e13bc3a8bbda2f8caae7b5e420ad8b99473242d8293ad21678c6f09da139b4b62d38e514a03b786a4f91c9'
+    const validTo = BigInt('0x6a4f91c9')
+    const expectedVisualization = [
+      getAction('Cancel CowSwap order'),
+      getLabel(`with order ID ${orderUid.slice(0, 8)}...${orderUid.slice(-6)}`),
+      getDeadline(validTo)
+    ]
+
+    messageTemplate.accountAddr = accountAddr
+    messageTemplate.chainId = 8453n
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).domain = {
+      name: 'Gnosis Protocol',
+      version: 'v2',
+      chainId: 8453n,
+      verifyingContract: '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
+    }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
+      EIP712Domain: [
+        { name: 'name', type: 'string' },
+        { name: 'version', type: 'string' },
+        { name: 'chainId', type: 'uint256' },
+        { name: 'verifyingContract', type: 'address' }
+      ],
+      OrderCancellations: [{ name: 'orderUids', type: 'bytes[]' }]
+    }
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).primaryType =
+      'OrderCancellations'
+    messageTemplate.content.message = { orderUids: [orderUid] }
+
+    const { fullVisualization } = cowSwapModule(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+
+    const irMessage = humanizeMessage(messageTemplate)
+    compareVisualizations(irMessage.fullVisualization!, expectedVisualization)
   })
 
   test('Entry point module', () => {

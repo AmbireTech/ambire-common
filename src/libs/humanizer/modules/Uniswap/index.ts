@@ -40,6 +40,7 @@ const uniAddresses = [
   // arbitrum
   '0x5E325eDA8064b456f4781070C0738d849c824258',
   // base
+  '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1',
   '0x6fF5693b99212Da76ad316178A184AB56D299b43',
   '0xFdf682F51FE81Aa4898F0AE2163d8A55c127fbC7',
   '0x6Df1c91424F79E40E33B1A48F0687B666bE71075',
@@ -113,28 +114,17 @@ const uniAddresses = [
   '0xB0C89059d7190EDb17eFF19829cc009cEe923916'
 ]
 
-export const uniswapHumanizer: HumanizerCallModule = (
-  accountOp: AccountOp,
-  currentIrCalls: IrCall[]
-) => {
-  const newCalls: IrCall[] = []
-  currentIrCalls.forEach((call: IrCall) => {
-    if (!call.to || !isAddress(call.to) || !uniAddresses.includes(getAddress(call.to))) {
-      newCalls.push(call)
-      return
+export const uniswapHumanizer: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
+  if (!call.to || !isAddress(call.to) || !uniAddresses.includes(getAddress(call.to))) return call
+
+  if (!isHexCall(call)) return { ...call, fullVisualization: [getAction('Uniswap action')] }
+
+  const sigHash = call.data.substring(0, 10)
+  if (fullUniswapHumanizerMapping[sigHash])
+    return {
+      ...call,
+      fullVisualization: fullUniswapHumanizerMapping[sigHash](accountOp, call)
     }
 
-    if (!isHexCall(call)) {
-      newCalls.push({ ...call, fullVisualization: [getAction('Uniswap action')] })
-      return
-    }
-    const sigHash = call.data.substring(0, 10)
-    if (fullUniswapHumanizerMapping[sigHash])
-      newCalls.push({
-        ...call,
-        fullVisualization: fullUniswapHumanizerMapping[sigHash](accountOp, call)
-      })
-    else newCalls.push({ ...call, fullVisualization: [getAction('Uniswap action')] })
-  })
-  return newCalls
+  return { ...call, fullVisualization: [getAction('Uniswap action')] }
 }

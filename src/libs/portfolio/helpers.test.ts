@@ -6,14 +6,13 @@ import {
   formatExternalHintsAPIResponse,
   getHintsError,
   getTotal,
-  isSuspectedToken,
   learnedErc721sToHints,
-  mapToken,
   mergeERC721s
 } from './helpers'
 import { ERC721s, ExternalHintsAPIResponse, GetOptions } from './interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from './portfolio'
 import { PORTFOLIO_STATE } from './testData'
+import { isSuspectedToken, mapToken } from './tokenProcessing'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
 const optimism = networks.find((x) => x.chainId === 10n)!

@@ -22,10 +22,11 @@ import { Message } from '../../../interfaces/userRequest'
 import { withTimeout } from '../../../utils/with-timeout'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
-import { decodeMultiSend } from '../../safe/safe'
+import { decodeMultiSend } from '../../safe/helpers'
 import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
 import { getEip712EncodeTypeHash } from './eip712'
 import { fetchRelayerResource } from './fetch'
+import { MULTICALL_DESCRIPTOR, MULTICALL_SELECTOR } from './multicall'
 import {
   CacheEntry,
   Erc7730CalldataIndex,
@@ -247,12 +248,6 @@ const getErc20ApproveDescriptor = (
               format: 'tokenAmount',
               params: { tokenPath: '@.to' },
               visible: 'always'
-            },
-            {
-              path: '@.value',
-              label: 'Send',
-              format: 'amount',
-              visible: { ifNotIn: ['0'] }
             }
           ]
         }
@@ -322,12 +317,6 @@ const getPermit2ApproveDescriptor = (path: string, intent: string): Erc7730Resol
               format: 'tokenAmount',
               params: { tokenPath: '#.token' },
               visible: 'always'
-            },
-            {
-              path: '@.value',
-              label: 'Send',
-              format: 'amount',
-              visible: { ifNotIn: ['0'] }
             },
             {
               path: '#.expiration',
@@ -649,6 +638,7 @@ const getBuiltInDescriptorForCall = (call: Call): Erc7730ResolvedDescriptor | nu
     }
   }
   if (selector === ERC20_TRANSFER_SELECTOR) return ERC20_TRANSFER_DESCRIPTOR
+  if (selector === MULTICALL_SELECTOR) return MULTICALL_DESCRIPTOR
   if (
     call.to &&
     call.to.toLowerCase() === PERMIT2_ADDRESS &&

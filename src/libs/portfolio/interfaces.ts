@@ -9,6 +9,7 @@ import {
   NetworkState as DefiNetworkState,
   PositionsByProvider
 } from '../defiPositions/types'
+import type { DeploylessMode } from '../deployless/deployless'
 
 // @TODO: Move most of these interfaces to src/interfaces and
 // figure out how to restructure portfolio/defiPositions types
@@ -17,6 +18,10 @@ export interface GetOptionsSimulation<T = AccountOp[]> {
   accountOps: T
   baseAccount: BaseAccount
   state: AccountOnchainState
+}
+export type DeploylessContractOptions = {
+  mode: DeploylessMode
+  to: string
 }
 export type TokenError = string | '0x'
 
@@ -296,6 +301,16 @@ export interface PortfolioLibGetResult {
   afterNonce: bigint
 }
 
+export type PortfolioVerificationStatus = 'loading' | 'success' | 'warning' | 'stale'
+
+export type PortfolioVerification = {
+  provider: 'colibri'
+  status: PortfolioVerificationStatus
+  error?: string
+  blockDiff?: number
+  updatedAt?: number
+}
+
 export interface Total {
   [currency: string]: number
 }
@@ -427,6 +442,7 @@ export type NetworkState<T = PortfolioKeyResult> = {
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
   lastSuccessfulUpdate?: number
+  verification?: PortfolioVerification
   result?: T
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
@@ -558,6 +574,10 @@ export interface GetOptions {
   }
   additionalErc20Hints?: Hints['erc20s']
   additionalErc721Hints?: Hints['erc721s']
+  deployless?: {
+    erc20?: DeploylessContractOptions
+    erc721?: DeploylessContractOptions
+  }
   disableAutoDiscovery?: boolean
   /**
    * Dynamic token blacklist fetched from the API, merged with the static

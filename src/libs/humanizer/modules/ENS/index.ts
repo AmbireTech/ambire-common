@@ -31,120 +31,118 @@ const getDurationText = (duration: bigint): string => {
   return durationLabel
 }
 
-export const ensModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
+export const ensModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   // @TODO: set text and others
-  return irCalls.map((call) => {
-    if (!isHexCall(call)) return call
+  if (!isHexCall(call)) return call
 
-    if (call.to && call.to.toLowerCase() === ENS_CONTROLLER.toLowerCase()) {
-      if (call.data.slice(0, 10) === toFunctionSelector(registerAbi[0])) {
-        const { args } = decodeFunctionData({ abi: registerAbi, data: call.data })
-        const [name, owner, duration] = args
-        const fullVisualization = [getAction('Register'), getLabel(`${name}.ens`, true)]
+  if (call.to && call.to.toLowerCase() === ENS_CONTROLLER.toLowerCase()) {
+    if (call.data.slice(0, 10) === toFunctionSelector(registerAbi[0])) {
+      const { args } = decodeFunctionData({ abi: registerAbi, data: call.data })
+      const [name, owner, duration] = args
+      const fullVisualization = [getAction('Register'), getLabel(`${name}.ens`, true)]
 
-        if (owner !== accountOp.accountAddr)
-          fullVisualization.push(getLabel('to'), getAddressVisualization(owner))
-        const durationLabel = getDurationText(duration)
-
-        fullVisualization.push(getLabel('for'), getLabel(durationLabel, true))
-
-        return { ...call, fullVisualization }
-      }
-
-      if (call.data.slice(0, 10) === toFunctionSelector(renewAbi[0])) {
-        const { args } = decodeFunctionData({ abi: renewAbi, data: call.data })
-        const [id, duration] = args
-        const durationLabel = getDurationText(duration)
-        const fullVisualization = [
-          getAction('Renew'),
-          getLabel(`${id}.eth`),
-          getLabel('for'),
-          getLabel(durationLabel, true)
-        ]
-
-        return { ...call, fullVisualization }
-      }
-
-      if (call.data.slice(0, 10) === toFunctionSelector(commitAbi[0])) {
-        return {
-          ...call,
-          fullVisualization: [getAction('Request'), getLabel('to register an ENS record')]
-        }
-      }
-    }
-    const resolverMatcher: Record<string, (data: Hex) => HumanizerVisualization[]> = {
-      [toFunctionSelector(setTextAbi[0])]: (data) => {
-        const { args } = decodeFunctionData({ abi: setTextAbi, data })
-        const [, key, value] = args
-        return [getAction('Set'), getLabel(`${key} to`), getLabel(value, true)]
-      },
-      [toFunctionSelector(setAddrAbi[0])]: (data) => {
-        const { args } = decodeFunctionData({ abi: setAddrAbi, data })
-        const [, coinType, a] = args
-        const ct = registeredCoinTypes[Number(coinType)]
-        const networkName = (ct && ct[2]) || 'Unknown network'
-        return networkName === 'Ether'
-          ? [
-              getAction('Transfer ENS'),
-              getLabel('to'),
-              isAddress(a) ? getAddressVisualization(a) : getLabel(a, true)
-            ]
-          : [
-              getAction('Set'),
-              getLabel('address'),
-              isAddress(a) ? getAddressVisualization(a) : getLabel(a, true),
-              getLabel('on'),
-              getLabel(networkName, true)
-            ]
-      },
-      [toFunctionSelector(setContenthashAbi[0])]: () => {
-        return [getAction('Update'), getLabel('data')]
-      },
-      [toFunctionSelector(setABIAbi[0])]: () => {
-        return [getAction('Set'), getLabel('ABI')]
-      }
-    }
-
-    if (call.to && call.to.toLowerCase() === ENS_RESOLVER.toLowerCase()) {
-      const resolverHandler = resolverMatcher[call.data.slice(0, 10)]
-      if (resolverHandler) return { ...call, fullVisualization: resolverHandler(call.data) }
-
-      if (call.data.slice(0, 10) === toFunctionSelector(multicallAbi[0])) {
-        const { args } = decodeFunctionData({ abi: multicallAbi, data: call.data })
-        const [data] = args
-        const separator = getLabel('and')
-        const fullVisualization = data
-          .map((i): HumanizerVisualization[] => {
-            const handler = resolverMatcher[i.slice(0, 10)]
-            return handler ? handler(i) : [getAction('Unknown ENS action')]
-          })
-          .reduce(
-            (acc: HumanizerVisualization[], curr: HumanizerVisualization[], index: number) =>
-              acc.concat(index ? [separator, ...curr] : curr),
-            []
-          )
-        return { ...call, fullVisualization }
-      }
-    }
-    if (
-      call.to &&
-      call.to.toLowerCase() === BULK_RENEWAL.toLowerCase() &&
-      call.data.startsWith(toFunctionSelector(renewAllAbi[0]))
-    ) {
-      const { args } = decodeFunctionData({ abi: renewAllAbi, data: call.data })
-      const [names, duration] = args
+      if (owner !== accountOp.accountAddr)
+        fullVisualization.push(getLabel('to'), getAddressVisualization(owner))
       const durationLabel = getDurationText(duration)
 
+      fullVisualization.push(getLabel('for'), getLabel(durationLabel, true))
+
+      return { ...call, fullVisualization }
+    }
+
+    if (call.data.slice(0, 10) === toFunctionSelector(renewAbi[0])) {
+      const { args } = decodeFunctionData({ abi: renewAbi, data: call.data })
+      const [id, duration] = args
+      const durationLabel = getDurationText(duration)
+      const fullVisualization = [
+        getAction('Renew'),
+        getLabel(`${id}.eth`),
+        getLabel('for'),
+        getLabel(durationLabel, true)
+      ]
+
+      return { ...call, fullVisualization }
+    }
+
+    if (call.data.slice(0, 10) === toFunctionSelector(commitAbi[0])) {
       return {
         ...call,
-        fullVisualization: [
-          getAction('Renew'),
-          ...names.map((name: string) => getLabel(`${name}.eth`, true)),
-          getLabel('for'),
-          getLabel(durationLabel, true)
-        ]
+        fullVisualization: [getAction('Request'), getLabel('to register an ENS record')]
       }
     }
-    return call
-  })
+  }
+  const resolverMatcher: Record<string, (data: Hex) => HumanizerVisualization[]> = {
+    [toFunctionSelector(setTextAbi[0])]: (data) => {
+      const { args } = decodeFunctionData({ abi: setTextAbi, data })
+      const [, key, value] = args
+      return [getAction('Set'), getLabel(`${key} to`), getLabel(value, true)]
+    },
+    [toFunctionSelector(setAddrAbi[0])]: (data) => {
+      const { args } = decodeFunctionData({ abi: setAddrAbi, data })
+      const [, coinType, a] = args
+      const ct = registeredCoinTypes[Number(coinType)]
+      const networkName = (ct && ct[2]) || 'Unknown network'
+      return networkName === 'Ether'
+        ? [
+            getAction('Transfer ENS'),
+            getLabel('to'),
+            isAddress(a) ? getAddressVisualization(a) : getLabel(a, true)
+          ]
+        : [
+            getAction('Set'),
+            getLabel('address'),
+            isAddress(a) ? getAddressVisualization(a) : getLabel(a, true),
+            getLabel('on'),
+            getLabel(networkName, true)
+          ]
+    },
+    [toFunctionSelector(setContenthashAbi[0])]: () => {
+      return [getAction('Update'), getLabel('data')]
+    },
+    [toFunctionSelector(setABIAbi[0])]: () => {
+      return [getAction('Set'), getLabel('ABI')]
+    }
+  }
+
+  if (call.to && call.to.toLowerCase() === ENS_RESOLVER.toLowerCase()) {
+    const resolverHandler = resolverMatcher[call.data.slice(0, 10)]
+    if (resolverHandler) return { ...call, fullVisualization: resolverHandler(call.data) }
+
+    if (call.data.slice(0, 10) === toFunctionSelector(multicallAbi[0])) {
+      const { args } = decodeFunctionData({ abi: multicallAbi, data: call.data })
+      const [data] = args
+      const separator = getLabel('and')
+      const fullVisualization = data
+        .map((i): HumanizerVisualization[] => {
+          const handler = resolverMatcher[i.slice(0, 10)]
+          return handler ? handler(i) : [getAction('Unknown ENS action')]
+        })
+        .reduce(
+          (acc: HumanizerVisualization[], curr: HumanizerVisualization[], index: number) =>
+            acc.concat(index ? [separator, ...curr] : curr),
+          []
+        )
+      return { ...call, fullVisualization }
+    }
+  }
+  if (
+    call.to &&
+    call.to.toLowerCase() === BULK_RENEWAL.toLowerCase() &&
+    call.data.startsWith(toFunctionSelector(renewAllAbi[0]))
+  ) {
+    const { args } = decodeFunctionData({ abi: renewAllAbi, data: call.data })
+    const [names, duration] = args
+    const durationLabel = getDurationText(duration)
+
+    return {
+      ...call,
+      fullVisualization: [
+        getAction('Renew'),
+        ...names.map((name: string) => getLabel(`${name}.eth`, true)),
+        getLabel('for'),
+        getLabel(durationLabel, true)
+      ]
+    }
+  }
+  return call
 }

@@ -3,7 +3,7 @@ import { Contacts } from '@/interfaces/addressBook'
 import { EmailVaultData } from '@/interfaces/emailVault'
 
 import { FeatureFlags } from '../consts/featureFlags'
-import { SignedMessage } from '../controllers/activity/types'
+import { SentToHistory, SignedMessage } from '../controllers/activity/types'
 import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
@@ -17,7 +17,7 @@ import { Account, AccountId, AccountPreferences } from './account'
 import { AutoLoginPoliciesByAccount, AutoLoginSettings } from './autoLogin'
 import { Selectors } from './contractInfo'
 import { ControllerInterface } from './controller'
-import { Dapp, RecentDappEntry } from './dapp'
+import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
@@ -42,6 +42,7 @@ export type StorageProps = {
   accountsOps: { [key: string]: { [key: string]: SubmittedAccountOp[] } }
   externalAccountOps: { [key: string]: { [key: string]: SubmittedAccountOpLike[] } }
   signedMessages: { [key: AccountId]: SignedMessage[] }
+  sentToHistory: SentToHistory
   // Migrations
   passedMigrations: string[]
   migrations: string[]
@@ -55,6 +56,10 @@ export type StorageProps = {
   dappsV2: Dapp[]
   dapps: Dapp[]
   recentDapps: RecentDappEntry[]
+  trending: {
+    updatedAt: number
+    tokens: TrendingToken[]
+  }
   // Selected account
   dismissedBanners: (string | number)[]
   selectedAccount: string | null

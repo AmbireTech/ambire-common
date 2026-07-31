@@ -16,6 +16,60 @@ import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
 import { PhishingController } from '../phishing/phishing'
 
+const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
+
+// Two valid entries plus one invalid (no price) to exercise normalization + filtering.
+// Mirrors the trimmed endpoint shape: a { tokens: [...] } wrapper of minimal coin objects
+// with flat USD fields, a top-level homepage and pre-deduped exchange ids.
+const mockTrending = {
+  tokens: [
+    {
+      id: 'bitcoin',
+      name: 'Bitcoin',
+      symbol: 'BTC',
+      market_cap_rank: 1,
+      image: {
+        thumb: 'https://example.com/btc-thumb.png',
+        small: 'https://example.com/btc-small.png',
+        large: 'https://example.com/btc-large.png'
+      },
+      asset_platform_id: 'ethereum',
+      contract_address: '0xbtc',
+      platforms: { ethereum: '0xbtc' },
+      decimals: { ethereum: 8 },
+      homepage: ['https://bitcoin.org'],
+      exchanges: ['binance', 'coinbase'],
+      usd: 65000.5,
+      usd_24h_change: 1.23,
+      usd_market_cap: 1200000000,
+      usd_24h_vol: 45000000,
+      usd_fully_diluted_valuation: 1300000000,
+      total_supply: 21000000,
+      description: { en: 'The first cryptocurrency.' }
+    },
+    {
+      id: 'ethereum',
+      name: 'Ethereum',
+      symbol: 'ETH',
+      market_cap_rank: 2,
+      // No `large` → the normalizer falls back to `small`.
+      image: { small: 'https://example.com/eth-small.png' },
+      usd: 3200,
+      usd_24h_change: -2.5,
+      usd_market_cap: 400000000,
+      usd_24h_vol: 20000000,
+      description: null
+    },
+    // Invalid: missing price → must be filtered out by normalizeTrendingTokens.
+    {
+      id: 'no-price-coin',
+      name: 'No Price Coin',
+      symbol: 'NPC',
+      market_cap_rank: 999
+    }
+  ]
+}
+
 const prepareTest = async (
   storageInit?: (storageController: IStorageController) => Promise<void>,
   getMockFetchImplementation?: (url: string, ...args: any) => Promise<any>
@@ -39,6 +93,14 @@ const prepareTest = async (
           ok: true,
           status: 200,
           json: async () => mockChains
+        }
+      }
+
+      if (url === TRENDING_TOKENS_URL) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => mockTrending
         }
       }
 
@@ -534,11 +596,16 @@ describe('DappsController', () => {
       }
     })
 
-    // Session context scenarios
+    // Frame context scenarios
+    //
+    // The context comes from the session's own top-frame origin, which the browser reports with
+    // every request. These tests build sessions the way the background does: frameId 0 and a
+    // topFrameUrl equal to the dApp url for a top-level dApp, a non-zero frameId and the hosting
+    // page's url for an embedded one.
 
     // Scenario: app.uniswap.org iframe inside a sites.google.com tab
     // intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
-    test('VERIFIED dApp shows SUSPICIOUS_HOSTING when a co-session in the same tab is a suspicious hosting domain', async () => {
+    test('VERIFIED dApp embedded in a suspicious hosting top frame shows SUSPICIOUS_HOSTING', async () => {
       const { controller } = await prepareTest(async (storageCtrl) => {
         await storageCtrl.set('dappsV2', predefinedDapps)
         await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
@@ -548,10 +615,13 @@ describe('DappsController', () => {
       const aave = controller.dapps.find((d) => d.name === 'AAVE')!
       expect(aave.blacklisted).toBe('VERIFIED')
 
-      // Two sessions in the same tab: sites.google.com (suspicious) + AAVE (iframe dApp)
-      const googleSession = new Session({ tabId: 50, windowId: 1, url: 'https://sites.google.com' })
-      const aaveSession = new Session({ tabId: 50, windowId: 1, url: aave.url })
-      controller.dappSessions[googleSession.sessionId] = googleSession
+      const aaveSession = new Session({
+        tabId: 50,
+        windowId: 1,
+        url: aave.url,
+        frameId: 3,
+        topFrameUrl: 'https://sites.google.com/view/fake-aave'
+      })
       controller.dappSessions[aaveSession.sessionId] = aaveSession
 
       const banner = controller.getDappVerificationBanner([aave.url], {
@@ -561,9 +631,38 @@ describe('DappsController', () => {
       expect(banner?.type).toBe('warning')
     })
 
-    // Scenario: app.uniswap.org opened directly (no suspicious co-session)
+    // The phishing page only embeds the dApp and never touches window.ethereum, so it has no
+    // session of its own. The context is read off the embedded dApp's session either way.
+    test('embedded dApp shows SUSPICIOUS_HOSTING even when the top frame has no session', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const aave = controller.dapps.find((d) => d.name === 'AAVE')!
+
+      const aaveSession = new Session({
+        tabId: 51,
+        windowId: 1,
+        url: aave.url,
+        frameId: 1,
+        topFrameUrl: 'https://sites.google.com/view/fake-aave'
+      })
+      controller.dappSessions[aaveSession.sessionId] = aaveSession
+
+      // The embedded dApp is the only session in the tab
+      expect(Object.keys(controller.dappSessions)).toEqual([aaveSession.sessionId])
+
+      const banner = controller.getDappVerificationBanner([aave.url], {
+        sessionId: aaveSession.sessionId
+      })
+      expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+    })
+
+    // Scenario: app.uniswap.org opened directly as the tab's top frame
     // intrinsic=VERIFIED, context=undefined → null (no banner)
-    test('VERIFIED dApp with no suspicious co-session shows no banner', async () => {
+    test('VERIFIED dApp opened as the top frame shows no banner', async () => {
       const { controller } = await prepareTest(async (storageCtrl) => {
         await storageCtrl.set('dappsV2', predefinedDapps)
         await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
@@ -573,8 +672,13 @@ describe('DappsController', () => {
       const aave = controller.dapps.find((d) => d.name === 'AAVE')!
       expect(aave.blacklisted).toBe('VERIFIED')
 
-      // Only the dApp's own session — no suspicious co-session
-      const aaveSession = new Session({ tabId: 51, windowId: 1, url: aave.url })
+      const aaveSession = new Session({
+        tabId: 52,
+        windowId: 1,
+        url: aave.url,
+        frameId: 0,
+        topFrameUrl: aave.url
+      })
       controller.dappSessions[aaveSession.sessionId] = aaveSession
 
       const banner = controller.getDappVerificationBanner([aave.url], {
@@ -602,14 +706,13 @@ describe('DappsController', () => {
         })
         await controller.fetchAndUpdatePromise
 
-        // Two sessions: sites.google.com (suspicious) + AAVE (BLACKLISTED itself)
-        const googleSession = new Session({
-          tabId: 52,
+        const aaveSession = new Session({
+          tabId: 53,
           windowId: 1,
-          url: 'https://sites.google.com'
+          url: 'https://aave.com',
+          frameId: 2,
+          topFrameUrl: 'https://sites.google.com/view/fake-aave'
         })
-        const aaveSession = new Session({ tabId: 52, windowId: 1, url: 'https://aave.com' })
-        controller.dappSessions[googleSession.sessionId] = googleSession
         controller.dappSessions[aaveSession.sessionId] = aaveSession
 
         const banner = controller.getDappVerificationBanner(['https://aave.com'], {
@@ -621,8 +724,9 @@ describe('DappsController', () => {
       }
     })
 
-    // Extra: co-session in a different tab must not affect context
-    test('co-session in a different tab does not trigger SUSPICIOUS_HOSTING context', async () => {
+    // Regression: the session of an earlier visit to a phishing page lives on until the tab is
+    // closed. It must not warn on the legitimate dApp the same tab navigated to afterwards.
+    test('stale session from an earlier visit in the same tab does not trigger a warning', async () => {
       const { controller } = await prepareTest(async (storageCtrl) => {
         await storageCtrl.set('dappsV2', predefinedDapps)
         await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
@@ -631,10 +735,21 @@ describe('DappsController', () => {
 
       const aave = controller.dapps.find((d) => d.name === 'AAVE')!
 
-      // Google session is in tab 99, AAVE session is in tab 53 — different tabs
-      const googleSession = new Session({ tabId: 99, windowId: 1, url: 'https://sites.google.com' })
-      const aaveSession = new Session({ tabId: 53, windowId: 1, url: aave.url })
-      controller.dappSessions[googleSession.sessionId] = googleSession
+      const staleGoogleSession = new Session({
+        tabId: 54,
+        windowId: 1,
+        url: 'https://sites.google.com/view/fake-aave',
+        frameId: 0,
+        topFrameUrl: 'https://sites.google.com/view/fake-aave'
+      })
+      const aaveSession = new Session({
+        tabId: 54,
+        windowId: 1,
+        url: aave.url,
+        frameId: 0,
+        topFrameUrl: aave.url
+      })
+      controller.dappSessions[staleGoogleSession.sessionId] = staleGoogleSession
       controller.dappSessions[aaveSession.sessionId] = aaveSession
 
       const banner = controller.getDappVerificationBanner([aave.url], {
@@ -643,8 +758,9 @@ describe('DappsController', () => {
       expect(banner).toBeNull()
     })
 
-    // Extra: context status must not contaminate the dApp's global status in #dapps
-    test('dApp global status in #dapps is not contaminated by session context SUSPICIOUS_HOSTING', async () => {
+    // Regression: browsers recycle tab ids, so a new tab can inherit the id of a closed one and
+    // match the session left behind by the page that used to live there.
+    test('recycled tab id does not carry the previous tab context over', async () => {
       const { controller } = await prepareTest(async (storageCtrl) => {
         await storageCtrl.set('dappsV2', predefinedDapps)
         await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
@@ -653,9 +769,96 @@ describe('DappsController', () => {
 
       const aave = controller.dapps.find((d) => d.name === 'AAVE')!
 
-      const googleSession = new Session({ tabId: 54, windowId: 1, url: 'https://sites.google.com' })
-      const aaveSession = new Session({ tabId: 54, windowId: 1, url: aave.url })
-      controller.dappSessions[googleSession.sessionId] = googleSession
+      const closedTabSession = new Session({
+        tabId: 55,
+        windowId: 1,
+        url: 'https://my-dapp.vercel.app',
+        frameId: 0,
+        topFrameUrl: 'https://my-dapp.vercel.app'
+      })
+      const aaveSession = new Session({
+        tabId: 55,
+        windowId: 1,
+        url: aave.url,
+        frameId: 0,
+        topFrameUrl: aave.url
+      })
+      controller.dappSessions[closedTabSession.sessionId] = closedTabSession
+      controller.dappSessions[aaveSession.sessionId] = aaveSession
+
+      const banner = controller.getDappVerificationBanner([aave.url], {
+        sessionId: aaveSession.sessionId
+      })
+      expect(banner).toBeNull()
+    })
+
+    // Mobile WebViews inject into the main frame only and WalletConnect has no frame at all, so
+    // neither reports frame context. Missing context must fail open, not warn.
+    test('session without frame context shows no context-derived warning', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const aave = controller.dapps.find((d) => d.name === 'AAVE')!
+
+      const aaveSession = new Session({ tabId: 56, url: aave.url })
+      controller.dappSessions[aaveSession.sessionId] = aaveSession
+
+      expect(aaveSession.topFrameOrigin).toBeUndefined()
+
+      const banner = controller.getDappVerificationBanner([aave.url], {
+        sessionId: aaveSession.sessionId
+      })
+      expect(banner).toBeNull()
+    })
+
+    // Opaque top-level documents (about:blank, sandboxed frames) parse to the "null" origin,
+    // which is not a domain that can be checked against anything.
+    test('opaque top frame origin is ignored', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const aave = controller.dapps.find((d) => d.name === 'AAVE')!
+
+      const aaveSession = new Session({
+        tabId: 57,
+        windowId: 1,
+        url: aave.url,
+        frameId: 1,
+        topFrameUrl: 'about:blank'
+      })
+      controller.dappSessions[aaveSession.sessionId] = aaveSession
+
+      expect(aaveSession.topFrameOrigin).toBeUndefined()
+
+      const banner = controller.getDappVerificationBanner([aave.url], {
+        sessionId: aaveSession.sessionId
+      })
+      expect(banner).toBeNull()
+    })
+
+    // Extra: context status must not contaminate the dApp's global status in #dapps
+    test('dApp global status in #dapps is not contaminated by frame context SUSPICIOUS_HOSTING', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const aave = controller.dapps.find((d) => d.name === 'AAVE')!
+
+      const aaveSession = new Session({
+        tabId: 58,
+        windowId: 1,
+        url: aave.url,
+        frameId: 1,
+        topFrameUrl: 'https://sites.google.com/view/fake-aave'
+      })
       controller.dappSessions[aaveSession.sessionId] = aaveSession
 
       // Banner shows SUSPICIOUS_HOSTING due to context
@@ -666,6 +869,135 @@ describe('DappsController', () => {
 
       // But the global dApp status in #dapps is unchanged
       expect(controller.getDapp(aave.id)?.blacklisted).toBe('VERIFIED')
+    })
+  })
+
+  describe('dApp session frame context', () => {
+    test('getOrCreateDappSession refreshes the frame context of a reused session', async () => {
+      const { controller } = await prepareTest()
+
+      const embeddedSession = await controller.getOrCreateDappSession({
+        tabId: 70,
+        windowId: 1,
+        url: 'https://app.aave.com',
+        frameId: 4,
+        topFrameUrl: 'https://sites.google.com/view/fake-aave'
+      })
+      expect(embeddedSession.topFrameOrigin).toBe('https://sites.google.com')
+
+      // Same tab and dApp, but this time the dApp is the tab's top-level document
+      const reusedSession = await controller.getOrCreateDappSession({
+        tabId: 70,
+        windowId: 1,
+        url: 'https://app.aave.com',
+        frameId: 0,
+        topFrameUrl: 'https://app.aave.com'
+      })
+
+      expect(reusedSession).toBe(embeddedSession)
+      expect(reusedSession.frameId).toBe(0)
+      expect(reusedSession.topFrameOrigin).toBe('https://app.aave.com')
+    })
+
+    // A platform that cannot report frame context (mobile, WalletConnect) must not wipe the
+    // context an injected request has already established for that session.
+    test('a request without frame context leaves the previous context untouched', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.getOrCreateDappSession({
+        tabId: 71,
+        windowId: 1,
+        url: 'https://app.aave.com',
+        frameId: 4,
+        topFrameUrl: 'https://sites.google.com/view/fake-aave'
+      })
+
+      const session = await controller.getOrCreateDappSession({
+        tabId: 71,
+        windowId: 1,
+        url: 'https://app.aave.com'
+      })
+
+      expect(session.frameId).toBe(4)
+      expect(session.topFrameOrigin).toBe('https://sites.google.com')
+    })
+
+    test('a top frame url the browser omits clears the previous context', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.getOrCreateDappSession({
+        tabId: 72,
+        windowId: 1,
+        url: 'https://app.aave.com',
+        frameId: 4,
+        topFrameUrl: 'https://sites.google.com/view/fake-aave'
+      })
+
+      const session = await controller.getOrCreateDappSession({
+        tabId: 72,
+        windowId: 1,
+        url: 'https://app.aave.com',
+        frameId: 0
+      })
+
+      expect(session.topFrameOrigin).toBeUndefined()
+    })
+
+    test('deleteDappSessionsForTab removes every session of the tab and no other', async () => {
+      const { controller } = await prepareTest()
+
+      const topFrameSession = await controller.getOrCreateDappSession({
+        tabId: 73,
+        windowId: 1,
+        url: 'https://sites.google.com/view/fake-aave',
+        frameId: 0,
+        topFrameUrl: 'https://sites.google.com/view/fake-aave'
+      })
+      const embeddedSession = await controller.getOrCreateDappSession({
+        tabId: 73,
+        windowId: 1,
+        url: 'https://app.aave.com',
+        frameId: 2,
+        topFrameUrl: 'https://sites.google.com/view/fake-aave'
+      })
+      const otherTabSession = await controller.getOrCreateDappSession({
+        tabId: 74,
+        windowId: 1,
+        url: 'https://app.uniswap.org',
+        frameId: 0,
+        topFrameUrl: 'https://app.uniswap.org'
+      })
+
+      controller.deleteDappSessionsForTab(73)
+
+      expect(controller.dappSessions[topFrameSession.sessionId]).toBeUndefined()
+      expect(controller.dappSessions[embeddedSession.sessionId]).toBeUndefined()
+      expect(controller.dappSessions[otherTabSession.sessionId]).toBeDefined()
+    })
+
+    test('deleteDappSessionsForTab emits an update only when it removes something', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.getOrCreateDappSession({
+        tabId: 75,
+        windowId: 1,
+        url: 'https://app.aave.com',
+        frameId: 0,
+        topFrameUrl: 'https://app.aave.com'
+      })
+
+      let emitCount = 0
+      const unsubscribe = controller.onUpdate(() => {
+        emitCount++
+      })
+
+      controller.deleteDappSessionsForTab(76)
+      expect(emitCount).toBe(0)
+
+      controller.deleteDappSessionsForTab(75)
+      expect(emitCount).toBe(1)
+
+      unsubscribe()
     })
   })
 
@@ -1582,5 +1914,134 @@ describe('DappsController', () => {
       // overrides it. This documents the current behavior; see note in the answer.
       expect(stored.chainId).toBe(1)
     })
+  })
+
+  describe('trending tokens', () => {
+    const seedStorage = async (storageCtrl: IStorageController) => {
+      await storageCtrl.set('dappsV2', predefinedDapps)
+      await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+    }
+
+    test('fetches, normalizes and filters invalid entries on load', async () => {
+      const { controller } = await prepareTest(seedStorage)
+      await controller.updateTrendingTokens()
+
+      // The third fixture entry has no price and must be dropped.
+      expect(controller.trendingTokens).toHaveLength(2)
+
+      const btc = controller.trendingTokens.find((tt) => tt.symbol === 'BTC')!
+      expect(btc.id).toBe('bitcoin')
+      expect(btc.priceUSD).toBe(65000.5)
+      expect(btc.priceChange24hUSD).toBe(1.23)
+      expect(btc.marketCapRank).toBe(1)
+      expect(btc.icon).toBe('https://example.com/btc-large.png') // prefers `large`
+      expect(btc.marketCapUSD).toBe(1200000000)
+      expect(btc.totalVolumeUSD).toBe(45000000)
+      expect(btc.fullyDilutedValuationUSD).toBe(1300000000)
+      expect(btc.totalSupply).toBe(21000000)
+      expect(btc.description).toBe('The first cryptocurrency.')
+      expect(btc.address).toBe('0xbtc')
+      expect(btc.platformId).toBe('ethereum')
+      expect(btc.decimals).toBe(8)
+      expect(btc.website).toBe('https://bitcoin.org')
+      // Exchange ids come pre-deduped from the server and pass through as-is.
+      expect(btc.exchangeIds).toEqual(['binance', 'coinbase'])
+
+      const eth = controller.trendingTokens.find((tt) => tt.symbol === 'ETH')!
+      expect(eth.priceChange24hUSD).toBe(-2.5)
+      expect(eth.description).toBeNull() // description was null
+      expect(eth.address).toBeNull() // no contract/platform provided
+      expect(eth.exchangeIds).toEqual([])
+    })
+
+    test('persists fetched trending tokens to storage', async () => {
+      const { controller, mainCtrl } = await prepareTest(seedStorage)
+      await controller.updateTrendingTokens()
+
+      const stored = await mainCtrl.storage.get('trending', { updatedAt: 0, tokens: [] })
+      expect(stored.tokens).toHaveLength(2)
+      expect(typeof stored.updatedAt).toBe('number')
+      expect(stored.updatedAt).toBeGreaterThan(0)
+    })
+
+    test('restores trending tokens from storage on init', async () => {
+      const seeded = {
+        id: 'solana',
+        name: 'Solana',
+        symbol: 'SOL',
+        icon: 'https://example.com/sol.png',
+        priceUSD: 150,
+        priceChange24hUSD: 5,
+        marketCapRank: 5,
+        description: 'A fast L1.',
+        address: null,
+        platformId: null,
+        decimals: null,
+        marketCapUSD: 70000000,
+        totalVolumeUSD: 3000000,
+        fullyDilutedValuationUSD: null,
+        totalSupply: null,
+        website: null,
+        exchangeIds: []
+      }
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await seedStorage(storageCtrl)
+        // A fresh updatedAt keeps the skip-if-fresh guard from refetching over the seed.
+        await storageCtrl.set('trending', { updatedAt: Date.now(), tokens: [seeded] })
+      })
+
+      expect(controller.trendingTokens).toEqual([seeded])
+    })
+
+    test('keeps trending empty and throws when the fetch fails', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareTest(seedStorage, async (url: string, ...args: any) => {
+        if (url === 'https://api.llama.fi/protocols')
+          return { ok: true, status: 200, json: async () => mockDapps }
+        if (url === 'https://api.llama.fi/v2/chains')
+          return { ok: true, status: 200, json: async () => mockChains }
+        if (url === TRENDING_TOKENS_URL) return { ok: false, status: 500, json: async () => ({}) }
+        return fetch(url, ...args)
+      })
+
+      // Throws so the ContinuousUpdatesController scheduler can back off its retry cadence.
+      await expect(controller.updateTrendingTokens()).rejects.toThrow()
+      expect(controller.trendingTokens).toEqual([])
+      restore()
+    })
+
+    // Integration test - the trending endpoint is NOT mocked here (unlike in the tests above), so
+    // a change in the response structure that the normalizer and the UI can't handle fails here
+    // instead of silently reaching users as an empty or broken trending list.
+    test('normalizes the response of the real trending tokens endpoint', async () => {
+      const { controller } = await prepareTest(seedStorage, async (url: string, ...args: any) => {
+        if (url === 'https://api.llama.fi/protocols')
+          return { ok: true, status: 200, json: async () => mockDapps }
+        if (url === 'https://api.llama.fi/v2/chains')
+          return { ok: true, status: 200, json: async () => mockChains }
+        return fetch(url, ...args)
+      })
+
+      await controller.updateTrendingTokens()
+
+      expect(controller.trendingTokens.length).toBeGreaterThan(0)
+
+      controller.trendingTokens.forEach((token) => {
+        expect(token.id.length).toBeGreaterThan(0)
+        expect(token.name.length).toBeGreaterThan(0)
+        expect(token.symbol.length).toBeGreaterThan(0)
+        expect(Number.isFinite(token.priceUSD)).toBe(true)
+      })
+
+      // The market data and the icon the trending list and the token-details screen render must
+      // arrive for the first (most trending) token at the very least.
+      const [topToken] = controller.trendingTokens
+      expect(topToken!.icon.startsWith('http')).toBe(true)
+      expect(topToken!.priceUSD).toBeGreaterThan(0)
+      expect(topToken!.priceChange24hUSD).not.toBeNull()
+      expect(topToken!.marketCapUSD).not.toBeNull()
+      expect(topToken!.totalVolumeUSD).not.toBeNull()
+      expect(topToken!.marketCapRank).not.toBeNull()
+    }, 40000)
   })
 })

@@ -12,7 +12,7 @@ import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
 import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
-import { encodeCalls } from '../safe/safe'
+import { encodeCalls } from '../safe/helpers'
 
 const safeSimulateTxAccessorAbi = [
   'function simulate(address to, uint256 value, bytes data, uint8 operation)'
@@ -202,7 +202,8 @@ export async function createAccessListCall(
 
     return returned
   } catch (e: any) {
-    console.error('Debug: eth_createAccessList error', e)
+    // do not console log the error as it's getting passed back to the
+    // signAccountOp controller where it gets logged as a traceCall error
 
     throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
   } finally {

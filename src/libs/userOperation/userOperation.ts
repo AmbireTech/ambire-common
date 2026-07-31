@@ -15,7 +15,7 @@ import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { AccountOp, callToTuple, getSignableCalls } from '../accountOp/accountOp'
-import { getSafeBroadcastTxn } from '../safe/safe'
+import { getSafeBroadcastTxn } from '../safe/helpers'
 import { PackedUserOperation, UserOperation, UserOperationEventData } from './types'
 
 export function calculateCallDataCost(callData: string): bigint {

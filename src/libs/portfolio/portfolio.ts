@@ -12,6 +12,7 @@ import { Deployless, fromDescriptor } from '../deployless/deployless'
 import batcher from './batcher'
 import { isBlacklistedAsset, prepareBlacklistPatterns, STATIC_BLACKLIST } from './blacklist'
 import { portfolioDebugLog } from './debug'
+import { PORTFOLIO_LIB_ERROR_NAMES } from './errorNames'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
 import {
@@ -56,19 +57,8 @@ export const LIMITS: Limits = {
   }
 }
 
-// @TODO: Move this somewhere else
-export const PORTFOLIO_LIB_ERROR_NAMES = {
-  /** External hints API (Velcro) request failed but fallback is sufficient */
-  NonCriticalApiHintsError: 'NonCriticalApiHintsError',
-  /** External API (Velcro) hints are older than X minutes */
-  StaleApiHintsError: 'StaleApiHintsError',
-  /** No external API (Velcro) hints are available- the request failed without fallback */
-  NoApiHintsError: 'NoApiHintsError',
-  /** One or more cena request has failed */
-  PriceFetchError: 'PriceFetchError',
-  /** Defi discovery failed */
-  DefiDiscoveryError: 'DefiDiscoveryError'
-}
+// Re-exported for backwards compatibility.
+export { PORTFOLIO_LIB_ERROR_NAMES }
 
 export const getEmptyHints = (): Hints => ({
   erc20s: [],
@@ -218,7 +208,8 @@ export class Portfolio {
       tokenDataCache: paramsTokenDataCache,
       tokenDataRecency,
       blacklist,
-      preventTokenBlacklisting
+      preventTokenBlacklisting,
+      deployless
     } = { ...defaultOptions, ...opts }
     const toBeLearned: PortfolioLibGetResult['toBeLearned'] = {
       erc20s: [],
@@ -302,7 +293,7 @@ export class Portfolio {
             getTokens(
               this.network,
               this.deploylessTokens,
-              { simulation, blockTag, specialErc20Hints },
+              { simulation, blockTag, specialErc20Hints, deployless },
               accountAddr,
               page,
               index
@@ -314,7 +305,7 @@ export class Portfolio {
           getNFTs(
             this.network,
             this.deploylessNfts,
-            { simulation, blockTag },
+            { simulation, blockTag, deployless },
             accountAddr,
             page,
             limits
@@ -606,7 +597,7 @@ export class Portfolio {
   async getTokensByAddresses(
     accountAddr: string,
     tokenAddrs: string[],
-    opts: Pick<GetOptions, 'blockTag' | 'simulation' | 'specialErc20Hints'>
+    opts: Pick<GetOptions, 'blockTag' | 'simulation' | 'specialErc20Hints' | 'deployless'>
   ): Promise<[TokenError, TokenResult][]> {
     const uniqueTokenAddrs = [...new Set(tokenAddrs)]
 

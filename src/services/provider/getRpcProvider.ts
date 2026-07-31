@@ -1,8 +1,11 @@
 import { JsonRpcApiProviderOptions, JsonRpcProvider, Network } from 'ethers'
-import { createPublicClient, custom, PublicClient } from 'viem'
+import { createPublicClient, custom } from 'viem'
 
 import { Network as NetworkInterface } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import getRootDomain from '../../utils/getRootDomain'
+
+import type { PublicClient } from 'viem'
 
 const RPC_BATCH_CONFIG: Record<string, number> = {
   'drpc.org': 3, // batch of more than 3 requests are not allowed on free tier (response 500 with internal code 31)
@@ -12,7 +15,7 @@ const RPC_BATCH_CONFIG: Record<string, number> = {
   // 'tatum.io': 1 // batch calls are available for paid plans only (response 402)
 }
 
-const viemClientByProvider = new WeakMap<JsonRpcProvider, PublicClient>()
+const viemClientByProvider = new WeakMap<RPCProvider, PublicClient>()
 
 /** Some RPCs limit batching which causes immediate failures on our end, so configure the known ones */
 const getBatchCountFromUrl = (rpcUrl: string): number | undefined => {
@@ -59,7 +62,11 @@ const getRpcProvider = (
   return new JsonRpcProvider(rpcUrl, undefined, providerOptions)
 }
 
-const getViemClientForProvider = (provider: JsonRpcProvider): PublicClient => {
+const getProviderConnectionUrl = (network: NetworkInterface) => {
+  return network.selectedRpcUrl
+}
+
+const getViemClientForProvider = (provider: RPCProvider): PublicClient => {
   const cached = viemClientByProvider.get(provider)
   if (cached) return cached
 
@@ -73,4 +80,4 @@ const getViemClientForProvider = (provider: JsonRpcProvider): PublicClient => {
   return client
 }
 
-export { getRpcProvider, getViemClientForProvider }
+export { getProviderConnectionUrl, getRpcProvider, getViemClientForProvider }

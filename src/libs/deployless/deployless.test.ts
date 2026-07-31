@@ -1,6 +1,6 @@
-import { AbiCoder, concat, toBeHex } from 'ethers'
+import { AbiCoder, concat, Interface, toBeHex } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 
 import { addressOne } from '../../../test/config'
 import { getRpcProvider } from '../../services/provider'
@@ -28,6 +28,80 @@ describe('Deployless', () => {
         stateToOverride: {}
       })
     ).rejects.toThrow('state override passed but not requested')
+  })
+
+  test('should require a deployed contract address in predeployed mode', async () => {
+    const fakeProvider = {
+      call: jest.fn(),
+      send: jest.fn()
+    }
+    const localDeployless = new Deployless(fakeProvider as any, helloWorld.abi, helloWorld.bin)
+
+    await expect(
+      localDeployless.call('helloWorld', [], {
+        mode: DeploylessMode.Predeployed
+      })
+    ).rejects.toThrow('Predeployed mode requires a deployed contract address')
+
+    expect(fakeProvider.call).not.toHaveBeenCalled()
+    expect(fakeProvider.send).not.toHaveBeenCalled()
+  })
+
+  test('should call a deployed contract directly in predeployed mode', async () => {
+    const helloWorldIface = new Interface(helloWorld.abi)
+    const fakeProvider = {
+      call: jest
+        .fn<() => Promise<string>>()
+        .mockResolvedValue(helloWorldIface.encodeFunctionResult('helloWorld', ['hello world'])),
+      send: jest.fn()
+    }
+    const localDeployless = new Deployless(fakeProvider as any, helloWorld.abi, helloWorld.bin)
+    const result = await localDeployless.call('helloWorld', [], {
+      mode: DeploylessMode.Predeployed,
+      to: addressOne,
+      blockTag: 123
+    })
+
+    expect(result).toBe('hello world')
+    expect(fakeProvider.call).toHaveBeenCalledWith({
+      blockTag: '0x7b',
+      from: undefined,
+      to: addressOne,
+      gasPrice: undefined,
+      gasLimit: undefined,
+      data: helloWorldIface.encodeFunctionData('helloWorld', [])
+    })
+    expect(fakeProvider.send).not.toHaveBeenCalled()
+  })
+
+  test('should use a longer timeout in verifier mode', async () => {
+    jest.useFakeTimers()
+    const setTimeoutSpy = jest.spyOn(global, 'setTimeout')
+    const fakeProvider = {
+      call: jest.fn<() => Promise<string>>().mockReturnValue(new Promise(() => {})),
+      send: jest.fn()
+    }
+    const localDeployless = new Deployless(fakeProvider as any, helloWorld.abi, helloWorld.bin)
+
+    try {
+      const callPromise = localDeployless
+        .call('helloWorld', [], {
+          mode: DeploylessMode.Predeployed,
+          to: addressOne
+        })
+        .catch((error) => error)
+
+      await Promise.resolve()
+      expect(setTimeoutSpy).toHaveBeenLastCalledWith(expect.any(Function), 40000)
+
+      await jest.advanceTimersByTimeAsync(40000)
+      const error = await callPromise
+
+      expect(error.message).toBe('rpc-timeout. Rpc: custom')
+    } finally {
+      setTimeoutSpy.mockRestore()
+      jest.useRealTimers()
+    }
   })
 
   /*

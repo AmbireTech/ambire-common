@@ -489,8 +489,9 @@ export class NetworksController extends EventEmitter implements INetworksControl
       ...changedNetwork
     }
 
-    if (!skipUpdate) void this.#onAddOrUpdateNetworks([this.#networks[chainId.toString()]!])
     await this.#storage.set('networks', this.#networks)
+
+    if (!skipUpdate) void this.#onAddOrUpdateNetworks([this.#networks[chainId.toString()]!])
 
     const checkRPC = async (
       networkToAddOrUpdate: {

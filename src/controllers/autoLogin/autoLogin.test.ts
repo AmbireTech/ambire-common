@@ -193,6 +193,36 @@ URI: https://docs.fileverse.io
 
       expect(status).toBe('domain-mismatch')
     })
+    it('sibling subdomain of the SIWE domain should be treated as a domain mismatch', async () => {
+      const siwe = generateSiweMessage()
+
+      const status = AutoLoginController.getParsedSiweMessage(
+        siwe,
+        'https://evil.fileverse.io'
+      )!.status
+
+      expect(status).toBe('domain-mismatch')
+    })
+    it('www. prefix on the request origin should still match the SIWE domain', async () => {
+      const siwe = generateSiweMessage()
+
+      const status = AutoLoginController.getParsedSiweMessage(
+        siwe,
+        'https://www.docs.fileverse.io'
+      )!.status
+
+      expect(status).toBe('valid')
+    })
+    it('mismatching ports should be treated as a domain mismatch', async () => {
+      const siwe = generateSiweMessage({ domain: 'docs.fileverse.io:3000' })
+
+      const status = AutoLoginController.getParsedSiweMessage(
+        siwe,
+        'https://docs.fileverse.io:4000'
+      )!.status
+
+      expect(status).toBe('domain-mismatch')
+    })
     it('not before in the future - should return status invalid', async () => {
       const malformedMessage = generateSiweMessage({
         notBefore: new Date(Date.now() + 60000)

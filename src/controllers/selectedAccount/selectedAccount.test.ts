@@ -84,6 +84,9 @@ const prepareTest = async () => {
   await mainCtrl.autoLogin.initialLoadPromise
   await mainCtrl.portfolio.initialLoadPromise
 
+  // Wait 1 tick because controller update listeners are debounced in the selectedAccount controller
+  await wait(1)
+
   return {
     selectedAccountCtrl: mainCtrl.selectedAccount,
     portfolioCtrl: mainCtrl.portfolio,

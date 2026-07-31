@@ -1,7 +1,6 @@
 import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
 
 import { IrCall } from '@/libs/humanizer/interfaces'
-import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 import { EIP7702Auth } from '../../consts/7702'
 import { SINGLETON } from '../../consts/deploy'
@@ -11,6 +10,8 @@ import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from '../../interfaces
 import { PaymasterService } from '../erc7677/types'
 import { UserOperation } from '../userOperation/types'
 import { AccountOpStatus, Call, CallTuple } from './types'
+
+import type { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 // This is an abstract representation of the gas fee payment
 // 1) it cannot contain details about maxFeePerGas/baseFee because some networks might not be aware of EIP-1559; it only cares about total amount

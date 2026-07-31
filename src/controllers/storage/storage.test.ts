@@ -24,7 +24,8 @@ const ALL_MIGRATION_KEYS = [
   'removePhishingDetectionV2',
   'cleanUpEmailVaultStorage',
   'fixSelectedAccountDismissedBannerIdsType',
-  'migrateDappsAddConnectionSources'
+  'migrateDappsAddConnectionSources',
+  'migrateDomainsCacheToNames'
 ]
 
 // Wraps a memory store and counts how many times each key is read and how many
@@ -185,6 +186,54 @@ describe('StorageController', () => {
       const second = new StorageController(memStorage)
       const after = await second.get('dappsV2', [])
       expect((after as any[])[0].connectedSources).toBeUndefined()
+    })
+  })
+
+  describe('migrateDomainsCacheToNames', () => {
+    const ADDRESS = '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'
+
+    test('normalizes legacy per-service fields into the { names, avatar, expiry } shape', async () => {
+      const memStorage: Storage = produceMemoryStore()
+      await memStorage.set('domainsCache', {
+        [ADDRESS]: {
+          ens: 'elmoto.eth',
+          namoshi: null,
+          ensAvatar: 'https://something.com/avatar.png',
+          updatedAt: 123
+        }
+      } as any)
+
+      const storageCtrl = new StorageController(memStorage)
+      const migrated: any = await storageCtrl.get('domainsCache', {})
+
+      const entry = migrated[ADDRESS]
+      expect(entry.names.ens).toBe('elmoto.eth')
+      expect(entry.names.namoshi).toBe(null)
+      expect(entry.avatar).toBe('https://something.com/avatar.png')
+      expect(entry.updatedAt).toBe(123)
+      // Legacy fields are gone after the migration.
+      expect('ens' in entry).toBe(false)
+      expect('ensAvatar' in entry).toBe(false)
+
+      const passed = await storageCtrl.get('passedMigrations', [])
+      expect(passed).toContain('migrateDomainsCacheToNames')
+    })
+
+    test('leaves an already-migrated entry untouched', async () => {
+      const memStorage: Storage = produceMemoryStore()
+      const current = {
+        [ADDRESS]: {
+          names: { ens: 'elmoto.eth', namoshi: null },
+          avatar: null,
+          createdAt: 1,
+          updatedAt: 2
+        }
+      }
+      await memStorage.set('domainsCache', current as any)
+
+      const storageCtrl = new StorageController(memStorage)
+      const migrated = await storageCtrl.get('domainsCache', {})
+      expect(migrated).toEqual(current)
     })
   })
 

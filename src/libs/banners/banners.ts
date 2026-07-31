@@ -1,3 +1,6 @@
+import { FEE_COLLECTOR } from '@/consts/addresses'
+import { ENS_EXPIRY_WARN_WINDOW_IN_MS } from '@/services/ensDomains/ensDomains'
+
 import { Account, AccountId } from '../../interfaces/account'
 import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
@@ -5,7 +8,6 @@ import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { PositionCountOnDisabledNetworks } from '../defiPositions/types'
 import { HumanizerVisualization } from '../humanizer/interfaces'
-import { getSameNonceRequests } from '../safe/safe'
 import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
 
 export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
@@ -177,20 +179,37 @@ const getSafeBanner = ({
   requests: CallsUserRequest[]
   network: Network
   selectedAccount: Account
-}): Banner => {
+}): Banner | null => {
+  // count the requests for Safe accounts instead of the calls
+  const requestCount = requests.length
+  const firstReq = requests[0]
+  if (requestCount === 0 || !firstReq) return null
+
   return {
     id: `${selectedAccount.addr}-${network.chainId.toString()}`,
     type: 'info',
     category: 'pending-to-be-signed-acc-op',
-    title: `Pending transactions ${network.name ? `on ${network.name}` : ''}`,
-    text: `${requests.length} transactions are mutually exclusive (Same nonce). You can sign only one.`,
+    title: `${requestCount === 1 ? 'Pending transaction' : `${requestCount} Pending transactions`} on`,
+    meta: { chainId: network.chainId },
     actions: [
       {
         actionName: 'open-accountOp',
-        meta: { requestId: requests[0]!.id },
+        meta: { requestId: firstReq.id },
         label: 'Open'
       }
-    ]
+    ],
+    dismissAction:
+      requestCount === 1
+        ? {
+            label: 'Reject',
+            actionName: 'reject-accountOp',
+            meta: {
+              err: 'User rejected the transaction request.',
+              requestId: firstReq.id,
+              shouldOpenNextAction: false
+            }
+          }
+        : undefined
   }
 }
 
@@ -210,21 +229,20 @@ export const getAccountOpBanners = ({
   const txnBanners: Banner[] = []
 
   Object.entries(callsUserRequestsByNetwork).forEach(([netId, requests]) => {
-    let remainingRequests: CallsUserRequest[] = []
-    if (!!selectedAccount.safeCreation && requests.length > 1) {
-      const sameNonceRequests = getSameNonceRequests(requests)
-      const network = networks.filter((n) => n.chainId.toString() === netId)[0]!
-      Object.keys(sameNonceRequests).forEach((nonce) => {
-        const grouped = sameNonceRequests[nonce]!
-        if (grouped.length === 1) {
-          remainingRequests = [...remainingRequests, ...grouped]
-          return
-        }
-        txnBanners.push(getSafeBanner({ requests: grouped, network, selectedAccount }))
+    // push all safe request for 1 network in a single banner
+    if (!!selectedAccount.safeCreation) {
+      const network = networks.find((n) => n.chainId.toString() === netId)
+      if (!network) return
+      const safeBanner = getSafeBanner({
+        requests,
+        network,
+        selectedAccount
       })
-    } else remainingRequests = requests
+      if (safeBanner) txnBanners.push(safeBanner)
+      return
+    }
 
-    remainingRequests.forEach((request) => {
+    requests.forEach((request) => {
       const network = networks.filter((n) => n.chainId.toString() === netId)[0]!
       const callCount = request.signAccountOp.accountOp.calls.length
 
@@ -233,9 +251,10 @@ export const getAccountOpBanners = ({
         type: 'info',
         category: 'pending-to-be-signed-acc-op',
         title: `${
-          callCount === 1 ? 'Transaction' : `${callCount} Transactions`
-        } waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
+          callCount === 1 ? 'Pending transaction' : `${callCount} Pending transactions`
+        } on`,
         text: '',
+        meta: { chainId: network.chainId },
         actions: [
           {
             actionName: 'open-accountOp',
@@ -277,6 +296,59 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
     ]
   }
   return banner
+}
+
+export const ensExpiryBannerId = 'ens-expiry-banner'
+
+/**
+ * Banner warning that the selected account's own ENS name is expiring soon or is in the grace period.
+ * Escalates from a warning to an error once the name has expired.
+ */
+export const getEnsExpiryBanner = ({
+  accountAddr,
+  ens,
+  expiresAt,
+  gracePeriodEndsAt
+}: {
+  accountAddr: string
+  ens: string
+  expiresAt: number
+  gracePeriodEndsAt: number
+}): Banner | null => {
+  const now = Date.now()
+
+  if (now < expiresAt - ENS_EXPIRY_WARN_WINDOW_IN_MS) return null
+  if (now > gracePeriodEndsAt) return null
+
+  const hasExpired = now > expiresAt
+  const type: BannerType = hasExpired ? 'error' : 'warning'
+
+  return {
+    id: ensExpiryBannerId,
+    type,
+    title: hasExpired
+      ? `Your ENS name ${ens} has expired`
+      : `Your ENS name ${ens} is expiring soon`,
+    text: hasExpired
+      ? 'It is in the grace period. Renew it now - once released, the name can be taken over and funds others send to it could reach someone else.'
+      : 'Renew it to keep ownership. Expired names can be taken over, and funds others send to the name could reach someone else.',
+    actions: [
+      {
+        actionName: 'open-external-url',
+        meta: {
+          url: `https://app.ens.domains/${ens}?referrer=${FEE_COLLECTOR}`
+        },
+        label: 'Renew'
+      }
+    ],
+    dismissAction: {
+      actionName: 'dismiss-ens-expiry-banner',
+      label: 'Dismiss'
+    },
+    meta: {
+      accountAddr
+    }
+  }
 }
 
 export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabled-networks-banner'

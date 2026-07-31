@@ -5,6 +5,7 @@ import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AutoLoginPolicy, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner, IBannerController } from '../../interfaces/banner'
+import { IDomainsController } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -18,7 +19,9 @@ import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import {
   defiPositionsOnDisabledNetworksBannerId,
-  getDefiPositionsOnDisabledNetworksForTheSelectedAccount
+  ensExpiryBannerId,
+  getDefiPositionsOnDisabledNetworksForTheSelectedAccount,
+  getEnsExpiryBanner
 } from '../../libs/banners/banners'
 import { AssetType } from '../../libs/defiPositions/types'
 import {
@@ -47,6 +50,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   #providers: IProvidersController | null = null
 
   #banner: IBannerController | null = null
+
+  #domains: IDomainsController | null = null
 
   account: Account | null = null
 
@@ -120,15 +125,18 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   initControllers({
     portfolio,
     networks,
-    providers
+    providers,
+    domains
   }: {
     portfolio: IPortfolioController
     networks: INetworksController
     providers: IProvidersController
+    domains: IDomainsController
   }) {
     this.#portfolio = portfolio
     this.#networks = networks
     this.#providers = providers
+    this.#domains = domains
 
     this.updateSelectedAccountPortfolio(true)
     this.#updatePortfolioErrors(true)
@@ -138,6 +146,12 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         this.updateSelectedAccountPortfolio()
       })
     }, 'selectedAccount')
+
+    this.#domains.onUpdate(() => {
+      this.#debounceFunctionCallsOnSameTick('updateDomainData', () => {
+        if (this.account) this.propagateUpdate()
+      })
+    })
 
     this.#providers.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateErrors', () => {
@@ -491,38 +505,81 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.emitUpdate()
   }
 
+  async dismissEnsExpiryBannerForTheSelectedAccount() {
+    if (!this.account) return
+
+    const expiry = this.#domains?.domains[getAddress(this.account.addr)]?.expiry
+    if (!expiry) return
+
+    // Key the dismissal by expiry timestamp so a renewed name (new expiry) shows the banner again.
+    const dismissKey = `${this.account.addr}-${expiry.expiresAt}`
+
+    if (!this.dismissedBannerIds[ensExpiryBannerId]) this.dismissedBannerIds[ensExpiryBannerId] = []
+    if (!this.dismissedBannerIds[ensExpiryBannerId]!.includes(dismissKey))
+      this.dismissedBannerIds[ensExpiryBannerId]!.push(dismissKey)
+
+    await this.#storage.set('selectedAccountDismissedBannerIds', this.dismissedBannerIds)
+    this.emitUpdate()
+  }
+
   // ! IMPORTANT !
   // Banners that depend on async data from sub-controllers should be implemented
   // in the sub-controllers themselves. This is because updates in the sub-controllers
   // will not trigger emitUpdate in the MainController, therefore the banners will
   // remain the same until a subsequent update in the MainController.
   get banners(): Banner[] {
+    if (!this.account) return []
+
+    const banners: Banner[] = []
+
+    // ENS expiry banner
+    const ownDomainEntry = this.#domains?.domains[getAddress(this.account.addr)]
+    const ensExpiry = ownDomainEntry?.expiry
+    const ensName = ownDomainEntry?.names?.ens
+    if (ensExpiry && ensName) {
+      const dismissKey = `${this.account.addr}-${ensExpiry.expiresAt}`
+      const isDismissed = !!this.dismissedBannerIds[ensExpiryBannerId]?.includes(dismissKey)
+
+      const ensExpiryBanner = isDismissed
+        ? null
+        : getEnsExpiryBanner({
+            accountAddr: this.account.addr,
+            ens: ensName,
+            expiresAt: ensExpiry.expiresAt,
+            gracePeriodEndsAt: ensExpiry.gracePeriodEndsAt
+          })
+      if (ensExpiryBanner) banners.push(ensExpiryBanner)
+    }
+
+    // DeFi positions banner
     if (
-      !this.account ||
-      !this.#networks ||
-      !this.#portfolio ||
-      !this.#networks.isInitialized ||
-      !this.portfolio.isAllReady
-    )
-      return []
+      this.#networks &&
+      this.#portfolio &&
+      this.#networks.isInitialized &&
+      this.portfolio.isAllReady
+    ) {
+      const defiPositionsCountOnDisabledNetworks =
+        this.#portfolio.defiPositionsCountOnDisabledNetworks[this.account.addr] || {}
 
-    const defiPositionsCountOnDisabledNetworks =
-      this.#portfolio.defiPositionsCountOnDisabledNetworks[this.account.addr] || {}
+      const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
+        ? this.#networks.allNetworks.filter(
+            (n) =>
+              !this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]?.includes(
+                `${this.account!.addr}-${n.chainId}`
+              )
+          )
+        : this.#networks.allNetworks
 
-    const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
-      ? this.#networks.allNetworks.filter(
-          (n) =>
-            !this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]?.includes(
-              `${this.account!.addr}-${n.chainId}`
-            )
-        )
-      : this.#networks.allNetworks
+      banners.push(
+        ...getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
+          defiPositionsCountOnDisabledNetworks,
+          networks: notDismissedNetworks,
+          accountAddr: this.account.addr
+        })
+      )
+    }
 
-    return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
-      defiPositionsCountOnDisabledNetworks,
-      networks: notDismissedNetworks,
-      accountAddr: this.account.addr
-    })
+    return banners
   }
 
   toJSON() {

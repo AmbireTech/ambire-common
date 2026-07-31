@@ -3,6 +3,7 @@ import { describe, expect, test } from '@jest/globals'
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
+import { Hex } from '../../interfaces/hex'
 import {
   BenzinUserRequest,
   CallsUserRequest,
@@ -69,7 +70,7 @@ const accounts = [
   }
 ]
 
-const prepareTest = async (seedTestDapp = false) => {
+const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) => {
   const { mainCtrl, eventEmitterRegistry, getWindowId, eventEmitter } = await makeMainController(
     async (storageCtrl) => {
       await storageCtrl.set('accounts', accounts)
@@ -77,6 +78,20 @@ const prepareTest = async (seedTestDapp = false) => {
       if (seedTestDapp) await storageCtrl.set('dappsV2', [TEST_DAPP])
     }
   )
+
+  if (isSelectedAccountSafe) {
+    const selectedAccount = mainCtrl.accounts.accounts.find(
+      (account) => account.addr === '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    )!
+    selectedAccount.creation = null
+    selectedAccount.safeCreation = {
+      factoryAddr: selectedAccount.addr as Hex,
+      singleton: selectedAccount.addr as Hex,
+      saltNonce: '0x00',
+      setupData: '0x',
+      version: '1.4.1'
+    }
+  }
 
   // Mock account states for all accounts
   for (const account of mainCtrl.accounts.accounts) {
@@ -127,6 +142,7 @@ const prepareTest = async (seedTestDapp = false) => {
       networks: mainCtrl.networks,
       keystore: mainCtrl.keystore,
       portfolio: mainCtrl.portfolio,
+      featureFlags: mainCtrl.featureFlags,
       signAccountOpPreference: mainCtrl.signAccountOpPreference,
       externalSignerControllers: {},
       activity: mainCtrl.activity,
@@ -193,6 +209,8 @@ const prepareTest = async (seedTestDapp = false) => {
 
   return {
     selectedAccountCtrl: mainCtrl.selectedAccount,
+    accountsCtrl: mainCtrl.accounts,
+    portfolioCtrl: mainCtrl.portfolio,
     controller: mainCtrl.requests,
     getSignAccountOp,
     getCallsRequest,
@@ -280,12 +298,70 @@ describe('RequestsController ', () => {
         amount: '1',
         amountInFiat: 100000n,
         executionType: 'open-request-window',
-        recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+        recipientAddress: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+        recipientDomain: undefined
       }
     })
 
     expect(controller.userRequests.length).toBe(1)
     expect(controller.userRequests[0]!.kind).toBe('calls')
+  })
+
+  test('adds a new Safe request when two partially signed requests occupy earlier nonces', async () => {
+    const { controller, accountsCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+    const buildRequest = () =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [
+              {
+                to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+                value: 1n,
+                data: '0x'
+              }
+            ],
+            meta: {
+              accountAddr,
+              chainId
+            }
+          }
+        }
+      })
+
+    await buildRequest()
+    const nonce119Request = controller.userRequests[0] as CallsUserRequest
+    nonce119Request.signAccountOp.update({
+      accountOpData: {
+        signed: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
+        txnId: `0x${'1'.repeat(64)}`
+      }
+    })
+
+    await buildRequest()
+    const nonce120Request = controller.userRequests.find(
+      (request) => request !== nonce119Request
+    ) as CallsUserRequest
+    nonce120Request.signAccountOp.setSafeNonce(120n)
+    nonce120Request.signAccountOp.update({
+      accountOpData: {
+        signed: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
+        txnId: `0x${'2'.repeat(64)}`
+      }
+    })
+
+    await buildRequest()
+
+    expect(controller.userRequests).toHaveLength(3)
+    expect(controller.userRequests).toContain(nonce119Request)
+    expect(controller.userRequests).toContain(nonce120Request)
+    expect(nonce119Request.signAccountOp.accountOp.nonce).toBe(119n)
+    expect(nonce120Request.signAccountOp.accountOp.nonce).toBe(120n)
+    expect(new Set(controller.userRequests.map((request) => request.id)).size).toBe(3)
   })
   test('build contract deployment dapp request', async () => {
     const { controller } = await prepareTest(true)
@@ -369,6 +445,40 @@ describe('RequestsController ', () => {
     expect(controller.visibleUserRequests.length).toBe(0)
     expect(rejectMock).toHaveBeenCalled()
     expect(resolveMock).not.toHaveBeenCalled()
+  })
+  test('rejecting an account switch removes the pending request and its simulation', async () => {
+    const { controller, getCallsRequest, portfolioCtrl, selectedAccountCtrl } = await prepareTest()
+    const req = await getCallsRequest({
+      addr: accounts[0]!.addr,
+      chainId: 1n
+    })
+    const rejectMock = jest.fn()
+    req.dappPromises = [
+      {
+        id: 'account-switch-request',
+        resolve: jest.fn(),
+        reject: rejectMock,
+        session: MOCK_SESSION,
+        meta: {}
+      }
+    ]
+    const destroySpy = jest.spyOn(req.signAccountOp, 'destroy')
+    const overrideSimulationResultsSpy = jest.spyOn(portfolioCtrl, 'overrideSimulationResults')
+
+    await controller.addUserRequests([req], { allowAccountSwitch: true })
+
+    const switchAccountRequest = controller.userRequests[0]!
+    expect(switchAccountRequest.kind).toBe('switchAccount')
+    expect(controller.userRequestsWaitingAccountSwitch).toStrictEqual([req])
+
+    await controller.rejectUserRequests('User rejected', [switchAccountRequest.id])
+    await selectedAccountCtrl.setAccount(accounts[0]!)
+
+    expect(rejectMock).toHaveBeenCalledTimes(1)
+    expect(overrideSimulationResultsSpy).toHaveBeenCalledWith(req.signAccountOp.accountOp)
+    expect(destroySpy).toHaveBeenCalledTimes(1)
+    expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+    expect(controller.userRequests).toHaveLength(0)
   })
   test('add multiple user requests', async () => {
     const { controller, getCallsRequest } = await prepareTest()
@@ -688,14 +798,15 @@ describe('RequestsController ', () => {
 
     const buildSignTypedDataRequest = (
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
-      typedData: object
+      typedData: object,
+      signerAddress: string = FROM
     ) =>
       controller.build({
         type: 'dappRequest',
         params: {
           request: {
             method: 'eth_signTypedData_v4',
-            params: [FROM, JSON.stringify(typedData)],
+            params: [signerAddress, JSON.stringify(typedData)],
             session: MOCK_SESSION
           },
           dappPromise: {
@@ -778,6 +889,66 @@ describe('RequestsController ', () => {
       const req = controller.userRequests[0]! as any
       expect(req.kind).toBe('typedMessage')
       expect(req.meta.params.domain.chainId).toBe(1n)
+    })
+
+    const SELECTED_ACCOUNT = FROM
+    const OTHER_ACCOUNT = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+
+    const AMBIRE_OPERATION_TYPED_DATA = {
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' },
+          { name: 'salt', type: 'bytes32' }
+        ],
+        AmbireOperation: [
+          { name: 'account', type: 'address' },
+          { name: 'hash', type: 'bytes32' }
+        ]
+      },
+      primaryType: 'AmbireOperation',
+      domain: {
+        name: 'Ambire',
+        version: '1',
+        chainId: 1,
+        verifyingContract: SELECTED_ACCOUNT,
+        salt: '0x0000000000000000000000000000000000000000000000000000000000000000'
+      },
+      message: {
+        account: SELECTED_ACCOUNT,
+        hash: '0x1111111111111111111111111111111111111111111111111111111111111111'
+      }
+    }
+
+    test('rejects AmbireOperation typed data for the selected account', async () => {
+      const { controller } = await prepareTest(true)
+      await expect(
+        buildSignTypedDataRequest(controller, AMBIRE_OPERATION_TYPED_DATA, SELECTED_ACCOUNT)
+      ).rejects.toThrow('Signing an AmbireOperation is not allowed')
+      expect(controller.userRequests.length).toBe(0)
+    })
+
+    test('rejects AmbireOperation typed data for a non-selected account', async () => {
+      const { controller } = await prepareTest(true)
+      const otherAccountTypedData = {
+        ...AMBIRE_OPERATION_TYPED_DATA,
+        domain: {
+          ...AMBIRE_OPERATION_TYPED_DATA.domain,
+          verifyingContract: OTHER_ACCOUNT
+        },
+        message: {
+          account: OTHER_ACCOUNT,
+          hash: '0x1111111111111111111111111111111111111111111111111111111111111111'
+        }
+      }
+
+      await expect(
+        buildSignTypedDataRequest(controller, otherAccountTypedData, OTHER_ACCOUNT)
+      ).rejects.toThrow('Signing an AmbireOperation is not allowed')
+      expect(controller.userRequests.length).toBe(0)
+      expect(controller.userRequestsWaitingAccountSwitch.length).toBe(0)
     })
   })
 })
