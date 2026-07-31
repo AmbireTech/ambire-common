@@ -149,7 +149,7 @@ describe('AccountPicker', () => {
     expect(controller.accountsOnPage.filter((a) => !isSmartAccount(a.account))).toHaveLength(5)
   })
 
-  test('should expose basic accounts while smart accounts are still loading', async () => {
+  test('should update basic account usage while smart accounts are still loading', async () => {
     const { controller } = await prepareTest()
     const pageSize = 5
     const keyIterator = new KeyIterator(process.env.SEED)
@@ -180,10 +180,12 @@ describe('AccountPicker', () => {
     const setPagePromise = controller.setPage({ page: 1 })
 
     while (!controller.smartAccountsLoading) await wait(0)
+    await wait(0)
 
     expect(controller.accountsLoading).toBe(false)
     expect(controller.accountsOnPage).toHaveLength(pageSize)
     expect(controller.accountsOnPage.every((a) => !isSmartAccount(a.account))).toBe(true)
+    expect(controller.accountsOnPage.every((a) => a.account.usedOnNetworks === null)).toBe(true)
 
     controller.selectAccount(controller.accountsOnPage[0]!.account)
     expect(controller.selectedAccounts).toHaveLength(1)

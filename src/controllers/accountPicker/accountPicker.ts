@@ -761,41 +761,51 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         this.smartAccountsLoading = true
         this.emitUpdate()
 
-        const smartAccounts = await this.#deriveAccounts({
-          shouldRetrieveSmartAccountIndices: true
+        const basicAccountsUsedOnNetworksPromise = this.#getAndSetAccountsUsedOnNetworks({
+          accounts: derivedAccounts,
+          requestId,
+          page
         })
+        const smartAccountsPromise = this.#deriveAccounts({
+          shouldRetrieveSmartAccountIndices: true
+        }).then(async (smartAccounts) => {
+          if (this.#isSetPageRequestCancelled(requestId, page)) return
+
+          this.#derivedAccounts = [...this.#derivedAccounts, ...smartAccounts]
+          this.smartAccountsLoading = false
+          this.emitUpdate()
+
+          await this.#getAndSetAccountsUsedOnNetworks({
+            accounts: smartAccounts,
+            requestId,
+            page
+          })
+        })
+
+        await Promise.all([basicAccountsUsedOnNetworksPromise, smartAccountsPromise])
+      } else {
+        // The used on information is not critical. Allow the user to proceed after
+        // 1 second. It will get populated in the background.
+        const minWaitTimeout = setTimeout(() => {
+          if (this.#isSetPageRequestCancelled(requestId, page)) return
+
+          this.accountsLoading = false
+          this.emitUpdate()
+        }, 1000)
+
+        await this.#getAndSetAccountsUsedOnNetworks({
+          accounts: derivedAccounts,
+          requestId,
+          page
+        })
+
+        clearTimeout(minWaitTimeout)
 
         if (this.#isSetPageRequestCancelled(requestId, page)) return
 
-        this.#derivedAccounts = [...this.#derivedAccounts, ...smartAccounts]
-        this.smartAccountsLoading = false
+        this.accountsLoading = false
         this.emitUpdate()
       }
-
-      // The used on information is not critical. For account types without a
-      // second derivation phase, allow the user to proceed after 1 second.
-      const minWaitTimeout = this.accountsLoading
-        ? setTimeout(() => {
-            if (this.#isSetPageRequestCancelled(requestId, page)) return
-
-            this.accountsLoading = false
-            this.emitUpdate()
-          }, 1000)
-        : undefined
-
-      const derivedAccountsWithUsedOn = await this.#getAccountsUsedOnNetworks({
-        accounts: this.#derivedAccounts,
-        page
-      })
-
-      if (this.#isSetPageRequestCancelled(requestId, page)) return
-
-      this.#derivedAccounts = derivedAccountsWithUsedOn
-
-      if (minWaitTimeout) clearTimeout(minWaitTimeout)
-
-      this.accountsLoading = false
-      this.emitUpdate()
 
       if (this.keyIterator?.type === 'internal' && this.keyIterator?.subType === 'private-key') {
         const accountsOnPageWithoutTheLinked = this.accountsOnPage.filter((acc) => !acc.isLinked)
@@ -813,10 +823,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     } catch (e: any) {
       if (this.#isSetPageRequestCancelled(requestId, page)) return
       const fallbackMessage = `Failed to retrieve accounts on page ${this.page}. Please try again or contact support for assistance. Error details: ${e?.message}.`
+      this.#setPageRequestId++
       this.accountsLoading = false
       this.smartAccountsLoading = false
       this.pageError = e instanceof ExternalSignerError ? e.message : fallbackMessage
       this.emitUpdate()
+      return
     }
 
     if (this.#isSetPageRequestCancelled(requestId, page)) return
@@ -1273,6 +1285,28 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     })
 
     return sortedAccountsWithNetworksArray
+  }
+
+  async #getAndSetAccountsUsedOnNetworks({
+    accounts,
+    requestId,
+    page
+  }: {
+    accounts: DerivedAccountWithoutNetworkMeta[]
+    requestId: number
+    page: number
+  }) {
+    const accountsWithUsedOn = await this.#getAccountsUsedOnNetworks({ accounts, page })
+
+    if (this.#isSetPageRequestCancelled(requestId, page)) return
+
+    const accountsWithUsedOnByAddress = new Map(
+      accountsWithUsedOn.map((account) => [account.account.addr, account])
+    )
+    this.#derivedAccounts = this.#derivedAccounts.map(
+      (account) => accountsWithUsedOnByAddress.get(account.account.addr) ?? account
+    )
+    this.emitUpdate()
   }
 
   /**
