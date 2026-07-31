@@ -2,7 +2,7 @@ import { Wallet } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
-import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
@@ -223,12 +223,21 @@ describe('AccountPicker', () => {
       shouldAddNextAccountAutomatically: false
     })
     await controller.init()
+    const { restore } = suppressConsole()
     await controller.setPage({ page: 1 })
+    restore()
 
     expect(controller.accountsLoading).toBe(false)
     expect(controller.smartAccountsLoading).toBe(false)
     expect(controller.accountsOnPage).toHaveLength(pageSize)
-    expect(controller.pageError).toContain('Failed to retrieve accounts on page 1')
+    expect(controller.pageError).toBeNull()
+    expect(controller.emittedErrors.at(-1)?.level).toBe('minor')
+    expect(controller.emittedErrors.at(-1)?.message).toBe(
+      'We could not finish searching for smart accounts. You can still import the accounts already shown.'
+    )
+
+    controller.selectAccount(controller.accountsOnPage[0]!.account)
+    expect(controller.selectedAccounts).toHaveLength(1)
   })
 
   test('should ignore smart accounts retrieved after the account picker is reset', async () => {

@@ -768,19 +768,34 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         })
         const smartAccountsPromise = this.#deriveAccounts({
           shouldRetrieveSmartAccountIndices: true
-        }).then(async (smartAccounts) => {
-          if (this.#isSetPageRequestCancelled(requestId, page)) return
-
-          this.#derivedAccounts = [...this.#derivedAccounts, ...smartAccounts]
-          this.smartAccountsLoading = false
-          this.emitUpdate()
-
-          await this.#getAndSetAccountsUsedOnNetworks({
-            accounts: smartAccounts,
-            requestId,
-            page
-          })
         })
+          .then(async (smartAccounts) => {
+            if (this.#isSetPageRequestCancelled(requestId, page)) return
+
+            this.#derivedAccounts = [...this.#derivedAccounts, ...smartAccounts]
+            this.smartAccountsLoading = false
+            this.emitUpdate()
+
+            await this.#getAndSetAccountsUsedOnNetworks({
+              accounts: smartAccounts,
+              requestId,
+              page
+            })
+          })
+          .catch((error: unknown) => {
+            if (this.#isSetPageRequestCancelled(requestId, page)) return
+
+            const message =
+              'We could not finish searching for smart accounts. You can still import the accounts already shown.'
+            this.smartAccountsLoading = false
+            this.emitError({
+              error: error instanceof Error ? error : new Error(message),
+              message,
+              level: 'minor',
+              sendCrashReport: !(error instanceof ExternalSignerError)
+            })
+            this.emitUpdate()
+          })
 
         await Promise.all([basicAccountsUsedOnNetworksPromise, smartAccountsPromise])
       } else {
