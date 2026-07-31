@@ -119,14 +119,13 @@ const prepareTest = async (
     {
       awaitInitialLoad: false,
       skipAppsFetchOnLoad: false,
+      skipDappsAndPhishingInit: skipInit,
       overrides: {
         fetch: mockFetch
       }
     }
   )
   const controller = mainCtrl.dapps
-
-  if (!skipInit) await controller.init()
 
   return { controller, mainCtrl }
 }

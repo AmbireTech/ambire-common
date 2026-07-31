@@ -14,17 +14,19 @@ const prepareTest = async (
   // Return the controller before init() so a test can observe the pre-load state.
   skipInit = false
 ) => {
-  const { mainCtrl } = await makeMainController(async (storageCtrl) => {
-    if (phishingDomains.length || phishingAddresses.length) {
-      await storageCtrl.set('phishing', {
-        version: 1,
-        updatedAt: Date.now(),
-        domains: phishingDomains,
-        addresses: phishingAddresses
-      })
-    }
-  })
-  if (!skipInit) await mainCtrl.phishing.init()
+  const { mainCtrl } = await makeMainController(
+    async (storageCtrl) => {
+      if (phishingDomains.length || phishingAddresses.length) {
+        await storageCtrl.set('phishing', {
+          version: 1,
+          updatedAt: Date.now(),
+          domains: phishingDomains,
+          addresses: phishingAddresses
+        })
+      }
+    },
+    { skipDappsAndPhishingInit: skipInit }
+  )
 
   return { controller: mainCtrl.phishing, ui: mainCtrl.ui, mainCtrl }
 }
