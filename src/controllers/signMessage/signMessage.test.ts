@@ -129,6 +129,7 @@ describe('SignMessageController', () => {
     accountsCtrl = mainCtrl.accounts
     inviteCtrl = mainCtrl.invite
     dappsCtrl = mainCtrl.dapps
+    await dappsCtrl.init()
   })
 
   beforeEach(async () => {

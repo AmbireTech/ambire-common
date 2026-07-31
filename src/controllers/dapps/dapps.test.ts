@@ -72,7 +72,9 @@ const mockTrending = {
 
 const prepareTest = async (
   storageInit?: (storageController: IStorageController) => Promise<void>,
-  getMockFetchImplementation?: (url: string, ...args: any) => Promise<any>
+  getMockFetchImplementation?: (url: string, ...args: any) => Promise<any>,
+  // Return the controller before init() so a test can observe the pre-load state.
+  skipInit = false
 ) => {
   const mockFetch = jest.fn()
 
@@ -124,7 +126,7 @@ const prepareTest = async (
   )
   const controller = mainCtrl.dapps
 
-  await controller.initialLoadPromise
+  if (!skipInit) await controller.init()
 
   return { controller, mainCtrl }
 }
@@ -1813,6 +1815,10 @@ describe('DappsController', () => {
         await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
       })
 
+      // Let the boot-time catalog fetch settle so its trailing emitUpdate isn't
+      // counted against the disconnect below.
+      await controller.fetchAndUpdatePromise
+
       let updateCount = 0
       const unsubscribe = controller.onUpdate(() => {
         updateCount += 1
@@ -2043,5 +2049,49 @@ describe('DappsController', () => {
       expect(topToken!.totalVolumeUSD).not.toBeNull()
       expect(topToken!.marketCapRank).not.toBeNull()
     }, 40000)
+  })
+  describe('deferred init', () => {
+    const seedAave = async (storageCtrl: IStorageController) => {
+      await storageCtrl.set('dappsV2', [
+        makeDapp({
+          id: 'aave.com',
+          name: 'Aave',
+          url: 'https://aave.com',
+          isCustom: true,
+          isConnected: true,
+          connectedSources: ['injected'],
+          chainId: 1,
+          blacklisted: 'VERIFIED'
+        })
+      ])
+      await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+    }
+
+    test('isReady is false before init() and true after the load completes', async () => {
+      const { controller } = await prepareTest(seedAave, undefined, true)
+
+      expect(controller.isReady).toBe(false)
+
+      await controller.init()
+
+      expect(controller.isReady).toBe(true)
+    })
+
+    test('init() is idempotent: concurrent and repeat calls read storage and fetch once', async () => {
+      const { controller, mainCtrl } = await prepareTest(seedAave, undefined, true)
+
+      const storageGetSpy = jest.spyOn(mainCtrl.storage, 'get')
+      const fetchSpy = jest.spyOn(controller, 'fetchAndUpdateDapps')
+
+      await Promise.all([controller.init(), controller.init(), controller.init()])
+      await controller.init()
+
+      const dappsV2Reads = storageGetSpy.mock.calls.filter(([key]) => key === 'dappsV2')
+      expect(dappsV2Reads).toHaveLength(1)
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+      storageGetSpy.mockRestore()
+      fetchSpy.mockRestore()
+    })
   })
 })

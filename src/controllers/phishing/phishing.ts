@@ -1,5 +1,4 @@
 import { getDomain } from 'tldts'
-
 import { zeroAddress } from 'viem'
 
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -15,7 +14,6 @@ import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishin
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 import { getDappIdFromUrl } from '../../libs/dapps/helpers'
-
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -207,6 +205,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
+  isReady = false
+
   constructor({
     eventEmitterRegistry,
     fetch,
@@ -255,10 +255,19 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       if (shouldSwitchToInactiveUpdateInterval)
         this.#updatePhishingInterval.restart({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
     })
+  }
 
+  /**
+   * Not called immediately on construction because the data in storage is huge and overwhelming
+   * for the mobile app.
+   */
+  async init() {
+    if (this.initialLoadPromise) return this.initialLoadPromise
+    if (this.isReady) return
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
+    return this.initialLoadPromise
   }
 
   async #load() {
@@ -276,6 +285,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     this.updatePhishingInterval.start({ runImmediately: true })
 
+    this.isReady = true
     this.emitUpdate()
   }
 
