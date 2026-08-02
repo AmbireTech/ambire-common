@@ -82,7 +82,8 @@ import { getScamDetectedText } from '../../libs/banners/banners'
 import {
   BROADCAST_OPTIONS,
   broadcastTransaction,
-  buildRawTransaction
+  buildRawTransaction,
+  getUnsignedTransaction
 } from '../../libs/broadcast/broadcast'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
@@ -282,6 +283,10 @@ export class SignAccountOpController
   // "Gas fee updated" confirmation instead of a scary error toast, so the user
   // can accept the new fee and continue without redoing the whole flow.
   gasFeeChangedConfirmationRequired: boolean = false
+
+  // The serialized unsigned raw transaction (RLP preimage hex) generated for
+  // view-only Regular (EOA) accounts, so it can be copied and signed elsewhere.
+  unsignedTransaction: string | null = null
 
   previousFee: SpeedCalc | null = null
 
@@ -3943,6 +3948,93 @@ export class SignAccountOpController
     return (this.accountOp.signed || []).length >= this.threshold
   }
 
+  /**
+   * Generates the serialized unsigned raw transaction for a view-only Regular
+   * (EOA) account so the user can copy it and sign/broadcast it elsewhere.
+   * Storing the result in state and emitting an update lets the UI pick it up
+   * (dispatch is fire-and-forget and does not return a value).
+   */
+  async generateUnsignedTransaction() {
+    // Only view-only Regular (EOA) accounts can generate an unsigned tx
+    // that maps 1:1 to a standard EIP-1559/legacy transaction.
+    const isEOA = !this.account.creation && !this.account.safeCreation
+    const isViewOnly = this.accountKeyStoreKeys.length === 0
+    if (!isEOA || !isViewOnly) {
+      this.emitError({
+        level: 'silent',
+        message: 'Cannot generate an unsigned transaction for this account.',
+        error: new Error('generateUnsignedTransaction called for a non view-only EOA account.')
+      })
+      return
+    }
+
+    if (!this.accountOp.gasFeePayment) {
+      this.emitError({
+        level: 'silent',
+        message: 'Missing gas fee details. Unable to generate an unsigned transaction.',
+        error: new Error('generateUnsignedTransaction: missing gasFeePayment.')
+      })
+      return
+    }
+
+    const rawTxnBroadcast = [
+      BROADCAST_OPTIONS.bySelf,
+      BROADCAST_OPTIONS.bySelf7702,
+      BROADCAST_OPTIONS.delegation
+    ]
+    if (!rawTxnBroadcast.includes(this.accountOp.gasFeePayment.broadcastOption)) {
+      this.emitError({
+        level: 'silent',
+        message: 'This transaction cannot be broadcast as a standard transaction.',
+        error: new Error(
+          `generateUnsignedTransaction: unsupported broadcast option ${this.accountOp.gasFeePayment.broadcastOption}.`
+        )
+      })
+      return
+    }
+
+    if (!this.provider) {
+      this.emitError({
+        level: 'silent',
+        message: 'Provider not found. Unable to generate an unsigned transaction.',
+        error: new Error('generateUnsignedTransaction: provider missing.')
+      })
+      return
+    }
+
+    try {
+      const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+        this.accountOp.accountAddr,
+        this.accountOp.chainId
+      )
+      if (!accountState) {
+        this.emitError({
+          level: 'silent',
+          message: 'Unable to fetch account state. Cannot generate an unsigned transaction.',
+          error: new Error(
+            `generateUnsignedTransaction: account state for ${this.accountOp.accountAddr} missing.`
+          )
+        })
+        return
+      }
+
+      this.unsignedTransaction = await getUnsignedTransaction(
+        this.account,
+        this.accountOp,
+        accountState,
+        this.provider,
+        this.#network
+      )
+      this.emitUpdate()
+    } catch (e) {
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to generate an unsigned transaction.',
+        error: e as Error
+      })
+    }
+  }
+
   toJSON() {
     return {
       ...this,
@@ -3976,6 +4068,7 @@ export class SignAccountOpController
       hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
       safeEip712Data: this.safeEip712Data,
       gasFeeChangedConfirmationRequired: this.gasFeeChangedConfirmationRequired,
+      unsignedTransaction: this.unsignedTransaction,
       previousFee: this.previousFee
     }
   }
