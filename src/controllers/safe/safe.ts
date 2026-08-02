@@ -19,8 +19,8 @@ import {
   fetchAllPending,
   fetchExecutedTransactions,
   getApiKit,
-  getSafeAccountByOwner,
   getMessage,
+  getSafeAccountByOwner,
   SafeResults
 } from '../../libs/safe/safe'
 import { withTimeout } from '../../utils/with-timeout'
@@ -266,6 +266,15 @@ export class SafeController extends EventEmitter implements ISafeController {
           }
           if (failed) failedNetworks.push(...safeBatch[index]![1].chainIds)
         })
+
+        // we use this to show results immediately to the user
+        this.safeOwnerSearch = {
+          owner,
+          accounts: Array.from(accountsByAddress.values()),
+          searchedNetworks: this.safeOwnerSearch?.searchedNetworks || [],
+          failedNetworks: this.safeOwnerSearch?.failedNetworks || []
+        }
+        this.emitUpdate()
       }
 
       deployedOnByAddress.forEach(({ chainIds }, address) => {

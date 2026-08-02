@@ -15,6 +15,10 @@ const OWNER = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
 const OTHER_OWNER = '0x94b0080a00579c1307b0ef2c499ad98a8ce58e58'
 const SAFE_A = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
 const SAFE_B = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+const SAFE_C = '0x4200000000000000000000000000000000000006'
+const SAFE_D = '0x0000000000000000000000000000000000000001'
+const SAFE_E = '0x0000000000000000000000000000000000000002'
+const SAFE_F = '0x0000000000000000000000000000000000000003'
 
 const createApi = ({ safes = [] }: { safes?: string[] }) => ({
   getSafesByOwner: jest.fn(async () => ({ safes }))
@@ -87,6 +91,52 @@ describe('SafeController findSafesByOwner', () => {
       getAddress(SAFE_B)
     ])
     expect(controller.safeOwnerSearch?.searchedNetworks).toEqual(chainIds)
+  })
+
+  it('emits each completed Safe account batch before completing its network batch', async () => {
+    const safes = [SAFE_A, SAFE_B, SAFE_C, SAFE_D, SAFE_E, SAFE_F]
+    jest.mocked(getApiKit).mockReturnValue(createApi({ safes }) as any)
+
+    let resolveLastSafeBatch!: () => void
+    const lastSafeBatchPromise = new Promise<void>((resolve) => {
+      resolveLastSafeBatch = resolve
+    })
+    jest.mocked(getSafeAccountByOwner).mockImplementation(async (safeAddr, _owner, deployedOn) => {
+      if (safeAddr === SAFE_E) await lastSafeBatchPromise
+
+      return {
+        account: {
+          addr: getAddress(safeAddr),
+          deployedOn
+        } as SafeAccountByOwner,
+        failed: false
+      }
+    })
+
+    const controller = createController([1n])
+    let resolveFirstSafeBatch!: () => void
+    const firstSafeBatchEmitted = new Promise<void>((resolve) => {
+      resolveFirstSafeBatch = resolve
+    })
+    controller.onUpdate(() => {
+      if (controller.safeOwnerSearch?.accounts.length === 4) resolveFirstSafeBatch()
+    })
+
+    const searchPromise = controller.findSafesByOwner(OWNER)
+    await firstSafeBatchEmitted
+
+    expect(controller.safeOwnerSearch?.accounts.map((account) => account.addr)).toEqual(
+      safes.slice(0, 4).map((safe) => getAddress(safe))
+    )
+    expect(controller.safeOwnerSearch?.searchedNetworks).toEqual([])
+
+    resolveLastSafeBatch()
+    await searchPromise
+
+    expect(controller.safeOwnerSearch?.accounts.map((account) => account.addr)).toEqual(
+      safes.map((safe) => getAddress(safe))
+    )
+    expect(controller.safeOwnerSearch?.searchedNetworks).toEqual([1n])
   })
 
   it('keeps results from successful networks and reports failed networks', async () => {
