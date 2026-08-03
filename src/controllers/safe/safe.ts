@@ -304,6 +304,12 @@ export class SafeController extends EventEmitter implements ISafeController {
     await this.withStatus('findSafesByOwner', () => this.#findSafesByOwner(owner, searchId), true)
   }
 
+  resetFindSafesByOwner() {
+    this.#safeOwnerSearchId += 1
+    this.safeOwnerSearch = undefined
+    this.emitUpdate()
+  }
+
   getMessageId(msg: SafeMessage): string {
     return `${msg.messageHash}`
   }

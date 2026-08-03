@@ -171,4 +171,30 @@ describe('SafeController findSafesByOwner', () => {
       getAddress(SAFE_B)
     ])
   })
+
+  it('does not publish results that finish after the owner search is reset', async () => {
+    let resolveSearch!: (value: { safes: string[] }) => void
+    let markSearchAsStarted!: () => void
+    const searchStarted = new Promise<void>((resolve) => {
+      markSearchAsStarted = resolve
+    })
+    const searchResponse = new Promise<{ safes: string[] }>((resolve) => {
+      resolveSearch = resolve
+    })
+    const api = createApi({ safes: [] })
+    api.getSafesByOwner.mockImplementation(() => {
+      markSearchAsStarted()
+      return searchResponse
+    })
+    jest.mocked(getApiKit).mockReturnValue(api as any)
+    const controller = createController([1n])
+
+    const searchPromise = controller.findSafesByOwner(OWNER)
+    await searchStarted
+    controller.resetFindSafesByOwner()
+    resolveSearch({ safes: [SAFE_A] })
+    await searchPromise
+
+    expect(controller.safeOwnerSearch).toBeUndefined()
+  })
 })
