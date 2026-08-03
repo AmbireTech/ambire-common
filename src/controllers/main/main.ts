@@ -1413,6 +1413,49 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  async #handleAccountPickerInitNfc(
+    NfcKeyIterator: any, // TODO: KeyIterator type mismatch
+    payload: { extendedPublicKey: string; hdPath: string }
+  ) {
+    try {
+      const nfcCtrl = this.#externalSignerControllers.nfc
+
+      if (!nfcCtrl) {
+        const message =
+          'Could not initialize connection with your card. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      const keyIterator = new NfcKeyIterator({ controller: nfcCtrl })
+      // Initialize the iterator from the extended public key exported by the card
+      // before the AccountPicker init, so it can derive addresses on its own
+      // (the card is tapped only once, not per address).
+      keyIterator.initFromExportedKey(payload)
+
+      // v1 accounts have never supported NFC cards, so there is nothing to look
+      // for on the relayer (same reasoning as the QR flow).
+      this.accountPicker.setInitParams({
+        keyIterator,
+        hdPathTemplate: keyIterator.hdPathTemplate,
+        pageSize: 5,
+        shouldAddNextAccountAutomatically: false,
+        shouldSearchForLinkedAccounts: false
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not import the card account. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountPickerInitNfc(
+    NfcKeyIterator: any, // TODO: KeyIterator type mismatch
+    payload: { extendedPublicKey: string; hdPath: string }
+  ) {
+    await this.withStatus('handleAccountPickerInitNfc', async () =>
+      this.#handleAccountPickerInitNfc(NfcKeyIterator, payload)
+    )
+  }
+
   async updateAccountsOpsStatuses() {
     await this.initialLoadPromise
 
