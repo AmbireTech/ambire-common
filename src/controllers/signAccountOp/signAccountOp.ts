@@ -4105,8 +4105,7 @@ export class SignAccountOpController
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-    if (this.#customSafeNonce !== null && this.#customSafeNonce !== accountState?.nonce)
-      return false
+    if (this.accountOp.nonce !== null && this.accountOp.nonce !== accountState?.nonce) return false
 
     // if the threshold is 1 and there's only 1 imported key, allow quick broadcast
     if (this.threshold === 1 && this.accountKeyStoreKeys.length === 1) return true

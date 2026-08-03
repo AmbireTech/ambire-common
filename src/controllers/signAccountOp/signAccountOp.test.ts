@@ -1014,6 +1014,28 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.accountOp.nonce).toBe(42n)
   })
 
+  test('does not allow broadcasting an imported Safe transaction with a future nonce', async () => {
+    const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
+    const accountState =
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!
+
+    controller.update({ accountOpData: { nonce: null } })
+    expect(controller.canBroadcast).toBe(true)
+
+    controller.update({ accountOpData: { nonce: accountState.nonce } })
+    expect(controller.canBroadcast).toBe(true)
+
+    controller.update({ accountOpData: { nonce: accountState.nonce + 1n } })
+
+    expect(controller.errors).toContainEqual({
+      title: 'You need to broadcast pending transactions before this one.',
+      action: 'refetch-account-state'
+    })
+    expect(controller.canBroadcast).toBe(false)
+  })
+
   test('does not change the nonce of a non-Safe or already-signed transaction', async () => {
     const { controller: nonSafeController } = await initDefaultFeeSelection()
     const { controller: signedSafeController } = await initSafeNonce([eoaSigner.keyPublicAddress])
