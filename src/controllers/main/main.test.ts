@@ -246,6 +246,24 @@ describe('Main Controller ', () => {
         importedAccount.addr
       ])
     })
+
+    test('selects the first newly imported account when imported accounts come first', async () => {
+      const importedAccount = getAccount('0x1111111111111111111111111111111111111111')
+      const firstNewAccount = getAccount('0x2222222222222222222222222222222222222222')
+      const secondNewAccount = getAccount('0x3333333333333333333333333333333333333333')
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', [importedAccount])
+        await storageCtrl.set('selectedAccount', importedAccount.addr)
+      })
+      await mainCtrl.initialLoadPromise
+
+      await mainCtrl.updateAccounts({
+        accountsToAdd: [importedAccount, firstNewAccount, secondNewAccount],
+        accountAddressesToRemove: []
+      })
+
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(firstNewAccount.addr)
+    })
   })
 
   test('should check if network features get displayed correctly for ethereum', async () => {
