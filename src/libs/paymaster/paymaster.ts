@@ -399,8 +399,6 @@ export class Paymaster extends AbstractPaymaster {
     // ERC7677 is already sponsoring the userOperation so we don't upgrade over it
     if (!this.op?.meta?.swapSponsorship || this.type === 'ERC7677' || !this.network) return
 
-    console.log('calling upgrade')
-
     const gas =
       BigInt(bundlerEstimateResult.callGasLimit) + BigInt(bundlerEstimateResult.preVerificationGas)
     const amountInWei = gas * BigInt(gasPrices.ape.maxFeePerGas)
@@ -413,7 +411,7 @@ export class Paymaster extends AbstractPaymaster {
     )
     const costPlusOverhead = cost + cost * 0.25
     if (costPlusOverhead >= this.op.meta.swapSponsorship.swapFeeInUsd) {
-      console.log('returning because cost is not justified')
+      console.log('no sponsorship as cost is not justified')
       return
     }
 
