@@ -116,6 +116,11 @@ export class Session {
 
   constructor({ tabId, windowId, url, wcTopic, frameId, topFrameUrl }: SessionInitProps = {}) {
     if (url) {
+      // SECURITY: kept exactly as the browser reports it, including the trailing dot of a
+      // fully-qualified host. Platform messengers compare it byte-for-byte against the page's
+      // read-only `location.origin` before delivering a response or a broadcast (see the mobile
+      // WebView), so a canonicalized origin would no longer match the page it belongs to.
+      // The dApp's identity - what every security check resolves - is `id`, not `origin`.
       this.origin = new URL(url).origin
     } else {
       this.origin = 'internal'
