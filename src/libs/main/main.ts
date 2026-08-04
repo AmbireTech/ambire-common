@@ -30,7 +30,8 @@ export const getShouldSimulateInTheBackground = (
       nonce !== null &&
       r.id !== currentReq.id &&
       r.signAccountOp.accountOp.chainId === currentReq.signAccountOp.accountOp.chainId &&
-      nonce === currentReqNonce
+      nonce === currentReqNonce &&
+      !r.meta.isSafeRejected
     )
   })
 

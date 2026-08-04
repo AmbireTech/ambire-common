@@ -181,48 +181,6 @@ export const getDappUserRequestsBanners = (
   ]
 }
 
-const getSafeBanner = ({
-  requests,
-  network,
-  selectedAccount
-}: {
-  requests: CallsUserRequest[]
-  network: Network
-  selectedAccount: Account
-}): Banner | null => {
-  // count the requests for Safe accounts instead of the calls
-  const requestCount = requests.length
-  const firstReq = requests[0]
-  if (requestCount === 0 || !firstReq) return null
-
-  return {
-    id: `${selectedAccount.addr}-${network.chainId.toString()}`,
-    type: 'info',
-    category: 'pending-to-be-signed-acc-op',
-    title: `${requestCount === 1 ? 'Pending transaction' : `${requestCount} Pending transactions`} on`,
-    meta: { chainId: network.chainId, accountAddr: selectedAccount.addr },
-    actions: [
-      {
-        actionName: 'open-accountOp',
-        meta: { requestId: firstReq.id },
-        label: 'Open'
-      }
-    ],
-    dismissAction:
-      requestCount === 1
-        ? {
-            label: 'Reject',
-            actionName: 'reject-accountOp',
-            meta: {
-              err: 'User rejected the transaction request.',
-              requestId: firstReq.id,
-              shouldOpenNextAction: false
-            }
-          }
-        : undefined
-  }
-}
-
 export const getAccountOpBanners = ({
   callsUserRequestsByNetwork,
   selectedAccount,
@@ -234,24 +192,11 @@ export const getAccountOpBanners = ({
   selectedAccount: Account
   networks: Network[]
 }): Banner[] => {
-  if (!callsUserRequestsByNetwork) return []
+  if (!callsUserRequestsByNetwork || !!selectedAccount.safeCreation) return []
 
   const txnBanners: Banner[] = []
 
   Object.entries(callsUserRequestsByNetwork).forEach(([netId, requests]) => {
-    // push all safe request for 1 network in a single banner
-    if (!!selectedAccount.safeCreation) {
-      const network = networks.find((n) => n.chainId.toString() === netId)
-      if (!network) return
-      const safeBanner = getSafeBanner({
-        requests,
-        network,
-        selectedAccount
-      })
-      if (safeBanner) txnBanners.push(safeBanner)
-      return
-    }
-
     requests.forEach((request) => {
       const network = networks.filter((n) => n.chainId.toString() === netId)[0]!
       const callCount = request.signAccountOp.accountOp.calls.length

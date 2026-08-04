@@ -94,6 +94,10 @@ export class SafeController extends EventEmitter implements ISafeController {
     )
   }
 
+  get rejectedSafeTxns() {
+    return [...this.#rejectedSafeTxns]
+  }
+
   /**
    * Check if the passed safeAddr is deployed on any chain that:
    * - the user has enabled in the extension +
@@ -116,7 +120,7 @@ export class SafeController extends EventEmitter implements ISafeController {
       safeNetworks.map((n) =>
         this.#providers.providers[n.chainId.toString()]!.getCode(safeAddr)
           .then((code) => ({ chainId: n.chainId, code }))
-          .catch((e) => ({ chainId: n.chainId, code: '0x' }))
+          .catch(() => ({ chainId: n.chainId, code: '0x' }))
       )
     )
     const deployedOn = codes.find((c) => c.code && c.code !== '0x')
@@ -174,11 +178,8 @@ export class SafeController extends EventEmitter implements ISafeController {
   }
 
   #filterOutHidden(pending: SafeResults, safeAddr: string): SafeResults {
-    // filter out all resolved & rejected Safe txns
-    const hiddenTxns = [
-      ...this.#rejectedSafeTxns,
-      ...this.#automaticallyResolvedSafeTxns.map((row) => row.txnIds).flat()
-    ]
+    const resolvedSafeTxns = this.#automaticallyResolvedSafeTxns.map((row) => row.txnIds).flat()
+    const hiddenMessages = [...this.#rejectedSafeTxns, ...resolvedSafeTxns]
 
     return Object.assign(
       {},
@@ -186,12 +187,14 @@ export class SafeController extends EventEmitter implements ISafeController {
         const state = this.#accounts.accountStates[safeAddr]?.[chainId]
         return {
           [chainId]: {
-            txns: pending[chainId]!.txns.filter((r) => !hiddenTxns.includes(r.safeTxHash)),
+            txns: pending[chainId]!.txns.filter((r) => !resolvedSafeTxns.includes(r.safeTxHash)),
             messages: pending[chainId]!.messages.filter((m) => {
               return (
                 // filter out rejected msgs by the user
-                !hiddenTxns.includes(this.getMessageId(m)) &&
-                !hiddenTxns.includes(`${this.getMessageId(m)}-${new Date(m.created).getTime()}`) &&
+                !hiddenMessages.includes(this.getMessageId(m)) &&
+                !hiddenMessages.includes(
+                  `${this.getMessageId(m)}-${new Date(m.created).getTime()}`
+                ) &&
                 // and those that the user cannot sign
                 (state?.threshold || 0) > m.confirmations.length
               )
@@ -236,7 +239,12 @@ export class SafeController extends EventEmitter implements ISafeController {
   }
 
   async rejectTxnId(safeTxnIds: string[]) {
-    this.#rejectedSafeTxns = [...this.#rejectedSafeTxns, ...safeTxnIds]
+    this.#rejectedSafeTxns = [...new Set([...this.#rejectedSafeTxns, ...safeTxnIds])]
+    return this.#storage.set('rejectedSafeTxns', this.#rejectedSafeTxns)
+  }
+
+  async restoreTxnId(safeTxnIds: string[]) {
+    this.#rejectedSafeTxns = this.#rejectedSafeTxns.filter((id) => !safeTxnIds.includes(id))
     return this.#storage.set('rejectedSafeTxns', this.#rejectedSafeTxns)
   }
 
@@ -283,7 +291,8 @@ export class SafeController extends EventEmitter implements ISafeController {
   toJSON() {
     return {
       ...this,
-      ...super.toJSON()
+      ...super.toJSON(),
+      rejectedSafeTxns: this.rejectedSafeTxns
     }
   }
 }

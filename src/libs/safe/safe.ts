@@ -290,7 +290,8 @@ export async function fetchAllPending(
 
 export function toCallsUserRequest(
   safeAddr: Hex,
-  response: SafeResults
+  response: SafeResults,
+  rejectedSafeTxns: string[] = []
 ): {
   type: 'calls'
   params: {
@@ -358,6 +359,7 @@ export function toCallsUserRequest(
                 signature,
                 nonce: BigInt(txn.nonce)
               },
+              isSafeRejected: rejectedSafeTxns.includes(txn.safeTxHash),
               safeTx: txn
             }
           },

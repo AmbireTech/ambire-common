@@ -211,6 +211,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
     selectedAccountCtrl: mainCtrl.selectedAccount,
     accountsCtrl: mainCtrl.accounts,
     portfolioCtrl: mainCtrl.portfolio,
+    safeCtrl: mainCtrl.safe,
     controller: mainCtrl.requests,
     getSignAccountOp,
     getCallsRequest,
@@ -445,6 +446,33 @@ describe('RequestsController ', () => {
     expect(controller.visibleUserRequests.length).toBe(0)
     expect(rejectMock).toHaveBeenCalled()
     expect(resolveMock).not.toHaveBeenCalled()
+  })
+  test('keeps a rejected Safe transaction available for restore', async () => {
+    const { controller, getCallsRequest, safeCtrl } = await prepareTest(false, true)
+    const req = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const txnId = '0x1234' as Hex
+    req.signAccountOp.accountOp.txnId = txnId
+    req.signAccountOp.accountOp.nonce = 3n
+
+    await controller.addUserRequests([req])
+    await controller.rejectUserRequests('User rejected', [req.id])
+
+    expect(controller.userRequests).toHaveLength(1)
+    expect(controller.visibleUserRequests).toHaveLength(0)
+    expect(req.meta.isSafeRejected).toBe(true)
+    expect(safeCtrl.rejectedSafeTxns).toContain(txnId)
+
+    await controller.restoreSafeUserRequest(req.id)
+
+    expect(req.meta.isSafeRejected).toBe(false)
+    expect(controller.visibleUserRequests).toEqual([req])
+    expect(controller.currentUserRequest).toBe(req)
+    expect(safeCtrl.rejectedSafeTxns).not.toContain(txnId)
+
+    req.signAccountOp.destroy()
   })
   test('rejecting an account switch removes the pending request and its simulation', async () => {
     const { controller, getCallsRequest, portfolioCtrl, selectedAccountCtrl } = await prepareTest()

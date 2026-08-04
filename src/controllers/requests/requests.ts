@@ -348,7 +348,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   get visibleUserRequests(): UserRequest[] {
     return this.userRequests.filter((r) => {
       if (r.kind === 'calls') {
-        return r.signAccountOp.accountOp.accountAddr === this.#selectedAccount.account?.addr
+        return (
+          r.signAccountOp.accountOp.accountAddr === this.#selectedAccount.account?.addr &&
+          !r.meta.isSafeRejected
+        )
       }
       if (
         r.kind === 'typedMessage' ||
@@ -878,6 +881,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const req = this.userRequests.find((uReq) => uReq.id === id)
 
       if (!req) return
+
+      if (
+        shouldRejectSafeRequests &&
+        req.kind === 'calls' &&
+        req.signAccountOp.account.safeCreation &&
+        req.signAccountOp.accountOp.txnId &&
+        req.signAccountOp.accountOp.nonce !== null
+      ) {
+        req.meta.isSafeRejected = true
+        req.dappPromises = []
+        req.signAccountOp.pause()
+        safeRejectIds.push(req.signAccountOp.accountOp.txnId)
+        return
+      }
 
       // remove from the request queue
       this.userRequests.splice(this.userRequests.indexOf(req), 1)
@@ -2137,6 +2154,25 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         error: new Error(`UserRequest not found. Id: ${requestId}`)
       })
     await this.#setCurrentUserRequest(request, params)
+  }
+
+  async restoreSafeUserRequest(requestId: UserRequest['id']) {
+    const request = this.userRequests.find(
+      (r) => r.id === requestId && r.kind === 'calls' && r.meta.isSafeRejected
+    ) as CallsUserRequest | undefined
+    const txnId = request?.signAccountOp.accountOp.txnId
+    const nonce = request?.signAccountOp.accountOp.nonce
+
+    if (!request || !txnId || nonce === null || nonce === undefined) return
+
+    const currentNonce =
+      this.#accounts.accountStates[request.meta.accountAddr]?.[request.meta.chainId.toString()]
+        ?.nonce
+    if (currentNonce !== undefined && nonce < currentNonce) return
+
+    await this.#safe.restoreTxnId([txnId])
+    request.meta.isSafeRejected = false
+    await this.#setCurrentUserRequest(request)
   }
 
   async setCurrentUserRequestByIndex(requestIndex: number, params?: OpenRequestWindowParams) {
