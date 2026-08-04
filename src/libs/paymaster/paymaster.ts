@@ -395,7 +395,6 @@ export class Paymaster extends AbstractPaymaster {
     gasPrices: GasSpeeds,
     userOp: UserOperation
   ): Promise<void> {
-    console.log(this.op)
     // ERC7677 is already sponsoring the userOperation so we don't upgrade over it
     if (!this.op?.meta?.swapSponsorship || this.type === 'ERC7677' || !this.network) return
 
@@ -420,6 +419,7 @@ export class Paymaster extends AbstractPaymaster {
     // and we need confirmation from the relayer that the sponsorship is
     // eligible before declaring it. Otherwise, we run the risk of the paymaster
     // declining the sponsorship when the user clicks "Sign"
+    let sponsorshipTimeout: ReturnType<typeof setTimeout> | undefined
     try {
       await Promise.race([
         getPaymasterStubData(
@@ -438,12 +438,23 @@ export class Paymaster extends AbstractPaymaster {
           this.network
         ),
         new Promise((_resolve, reject) => {
-          setTimeout(() => reject(new Error('Sponsorship error, request too slow')), 4000)
+          sponsorshipTimeout = setTimeout(
+            () => reject(new Error('Sponsorship error, request too slow')),
+            4000
+          )
         })
       ])
       this.type = 'SwapSponsorship'
     } catch (e) {
-      console.log('Swap sponsorship declined', e)
+      if (this.errorCallback) {
+        this.errorCallback({
+          level: 'silent',
+          message: 'Sponsorship declined',
+          error: e
+        })
+      }
+    } finally {
+      if (sponsorshipTimeout !== undefined) clearTimeout(sponsorshipTimeout)
     }
   }
 }
