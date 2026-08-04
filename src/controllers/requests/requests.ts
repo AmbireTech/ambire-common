@@ -2175,7 +2175,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     await this.#safe.restoreTxnId([txnId])
     request.meta.isSafeRejected = false
-    await this.#setCurrentUserRequest(request)
+    this.emitUpdate()
   }
 
   async setCurrentUserRequestByIndex(requestIndex: number, params?: OpenRequestWindowParams) {
