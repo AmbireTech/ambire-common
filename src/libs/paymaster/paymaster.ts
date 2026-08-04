@@ -446,13 +446,7 @@ export class Paymaster extends AbstractPaymaster {
       ])
       this.type = 'SwapSponsorship'
     } catch (e) {
-      if (this.errorCallback) {
-        this.errorCallback({
-          level: 'silent',
-          message: 'Sponsorship declined',
-          error: e
-        })
-      }
+      console.log('Sponsorship declined', e)
     } finally {
       if (sponsorshipTimeout !== undefined) clearTimeout(sponsorshipTimeout)
     }
