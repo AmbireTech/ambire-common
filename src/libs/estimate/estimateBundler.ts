@@ -181,7 +181,7 @@ export async function bundlerEstimate(
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {
       const gasData = estimations.estimation
-      paymaster.upgrade(gasData, latestGasPrice)
+      await paymaster.upgrade(gasData, latestGasPrice, userOp)
       return {
         preVerificationGas: gasData.preVerificationGas,
         verificationGasLimit: gasData.verificationGasLimit,
