@@ -76,7 +76,8 @@ export async function getCalculatedSafeAddress(
     proxyCreationCode = await (factory as any).proxyCreationCode()
   } catch (e) {
     console.error(
-      `failed to call proxyCreationCode on Safe factory with addr: ${creation.factoryAddress}`
+      `failed to call proxyCreationCode on Safe factory with addr: ${creation.factoryAddress}`,
+      e
     )
     return null
   }
@@ -102,7 +103,7 @@ export function decodeSetupData(setupData: Hex): Hex[] {
   try {
     decoded = setupMethodInterface.decodeFunctionData('setup', setupData)
   } catch (e) {
-    console.error('failed to decode the Safe setup data')
+    console.error('failed to decode the Safe setup data', e)
     return []
   }
 
@@ -205,7 +206,10 @@ export async function getMessage({
   messageHash: Hex
 }): Promise<ExtendedSafeMessage | null> {
   const apiKit = getApiKit(chainId)
-  const msg = await apiKit.getMessage(messageHash).catch((e) => null)
+  const msg = await apiKit.getMessage(messageHash).catch((e) => {
+    console.log('safe message not found', e)
+    return null
+  })
   if (!msg) return null
   return {
     ...msg,

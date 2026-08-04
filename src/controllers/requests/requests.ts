@@ -500,7 +500,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
         // It's necessary to continue operating with the token `amountPostSimulation` amount.
-        if (this.shouldSimulateAccountOps)
+        //
+        // but skip simulation for rejected safe requests. They are visible
+        // in the queue but they should not be simulated
+        if (this.shouldSimulateAccountOps && !req.meta.isSafeRejected)
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#portfolio.simulateAccountOp(req.signAccountOp.accountOp)
       } else if (req.kind === 'typedMessage' || req.kind === 'message' || req.kind === 'siwe') {

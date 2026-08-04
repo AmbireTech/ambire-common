@@ -19,6 +19,10 @@ export const getShouldSimulateInTheBackground = (
   // simulations should get persisted for all non-Safe accounts
   if (!currentReq.signAccountOp.account.safeCreation) return true
 
+  // Rejected Safe requests stay in the queue so they can be restored, but their
+  // simulation results should not be kept while they are inactive.
+  if (currentReq.meta.isSafeRejected) return false
+
   // check if there are other requests with a conflicting nonce to this one.
   // If there are, do not simulate this in the background
   const currentReqNonce = getNonce(currentReq)

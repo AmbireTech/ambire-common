@@ -7,6 +7,7 @@ type RequestParams = {
   id: string
   chainId?: bigint
   isSafe?: boolean
+  isSafeRejected?: boolean
   nonce?: bigint | null
   safeTxNonce?: bigint | number | string
 }
@@ -15,11 +16,13 @@ const makeRequest = ({
   id,
   chainId = 1n,
   isSafe = true,
+  isSafeRejected = false,
   nonce = 0n,
   safeTxNonce
 }: RequestParams): CallsUserRequest =>
   ({
     id,
+    meta: { isSafeRejected },
     signAccountOp: {
       account: {
         safeCreation: isSafe ? {} : undefined
@@ -45,6 +48,21 @@ describe('getShouldSimulateInTheBackground', () => {
     expect(getShouldSimulateInTheBackground(currentRequest, [currentRequest, otherRequest])).toBe(
       true
     )
+  })
+
+  test('blocks background simulation for a rejected Safe request', () => {
+    const currentRequest = makeRequest({ id: 'current', isSafeRejected: true, nonce: 2n })
+
+    expect(getShouldSimulateInTheBackground(currentRequest, [currentRequest])).toBe(false)
+  })
+
+  test('ignores a rejected Safe request when checking for nonce conflicts', () => {
+    const currentRequest = makeRequest({ id: 'current', nonce: 2n })
+    const rejectedRequest = makeRequest({ id: 'rejected', isSafeRejected: true, nonce: 2n })
+
+    expect(
+      getShouldSimulateInTheBackground(currentRequest, [currentRequest, rejectedRequest])
+    ).toBe(true)
   })
 
   test('blocks background simulation when a Safe Global request conflicts with a local Safe nonce', () => {
