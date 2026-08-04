@@ -183,6 +183,7 @@ export type SignAccountOpUpdateProps = {
   paidBy?: string
   paidByKeyType?: Key['type']
   speed?: FeeSpeed
+  shouldPersistSpeed?: boolean
   signingKeyAddr?: Key['addr']
   signingKeyType?: InternalKey['type'] | ExternalKey['type']
   signedTransactionsCount?: number | null
@@ -439,6 +440,7 @@ export class SignAccountOpController
     this.#featureFlags = featureFlags
     this.#signAccountOpPreference = signAccountOpPreference
     this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
+    this.selectedFeeSpeed = this.#signAccountOpPreference.feeSpeedPreference
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
@@ -1623,6 +1625,7 @@ export class SignAccountOpController
     pendingFeeTokenPreference,
     paidBy,
     speed,
+    shouldPersistSpeed,
     signingKeyAddr,
     signingKeyType,
     signedTransactionsCount,
@@ -1805,6 +1808,9 @@ export class SignAccountOpController
 
       if (speed && this.isInitialized && !isSpeedUpTransaction) {
         this.selectedFeeSpeed = speed
+        if (shouldPersistSpeed) {
+          void this.#signAccountOpPreference.setFeeSpeedPreference(speed)
+        }
       }
 
       if (signingKeyAddr && signingKeyType && this.isInitialized && !isSpeedUpTransaction) {
@@ -2347,6 +2353,12 @@ export class SignAccountOpController
     const identifier = getFeeSpeedIdentifier(feePaymentOption, this.account.addr)
     const speeds = this.feeSpeeds[identifier]
     if (!speeds) return
+
+    const preferredSpeed = this.#signAccountOpPreference.feeSpeedPreference
+    if (speeds.find(({ type, disabled }) => type === preferredSpeed && !disabled)) {
+      this.selectedFeeSpeed = preferredSpeed
+      return
+    }
 
     // set fast if available
     if (speeds.find(({ type, disabled }) => type === FeeSpeed.Fast && !disabled)) {

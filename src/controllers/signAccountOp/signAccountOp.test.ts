@@ -1085,6 +1085,28 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.selectedOption?.token.flags.onGasTank).toBe(true)
   })
 
+  test('uses the saved fee speed as the default for a new signing request', async () => {
+    const { controller } = await initDefaultFeeSelection(undefined, {
+      initialSetStorage: async (storageCtrl) => {
+        await storageCtrl.set('signAccountOpFeeSpeedPreference', FeeSpeed.Medium)
+      }
+    })
+
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
+  })
+
+  test('persists only explicitly selected fee speeds', async () => {
+    const { controller, storageCtrl } = await initDefaultFeeSelection()
+
+    controller.update({ speed: FeeSpeed.Slow })
+    await wait(1)
+    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toBeUndefined()
+
+    controller.update({ speed: FeeSpeed.Medium, shouldPersistSpeed: true })
+    await wait(1)
+    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toBe(FeeSpeed.Medium)
+  })
+
   test('uses a saved ERC-20 default only for the matching chain', async () => {
     const { controller, storageCtrl } = await initDefaultFeeSelection(undefined, {
       initialSetStorage: async (storage) => {
