@@ -15,7 +15,12 @@ import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/form
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getFeeCall } from '../calls/calls'
-import { getPaymasterData, getPaymasterStubData } from '../erc7677/erc7677'
+import {
+  AMBIRE_SWAP_POLICY,
+  getAmbireSponsorshipUrl,
+  getPaymasterData,
+  getPaymasterStubData
+} from '../erc7677/erc7677'
 import {
   PaymasterErrorReponse,
   PaymasterEstimationData,
@@ -86,10 +91,13 @@ export class Paymaster extends AbstractPaymaster {
   // a chain id paymaster route open yet as it's not merged
   ambirePaymasterUrl: string | undefined
 
+  #relayerUrl: string
+
   constructor(relayerUrl: string, fetch: Fetch, errorCallback: Function) {
     super()
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.errorCallback = errorCallback
+    this.#relayerUrl = relayerUrl
   }
 
   async init(
@@ -382,9 +390,16 @@ export class Paymaster extends AbstractPaymaster {
    * from the bundler so we could calculate the txn fee. If the swap fee is
    * bigger than the txn fee, we upgrade the paymaster to SwapSponsorship.
    */
-  upgrade(bundlerEstimateResult: BundlerEstimateResult, gasPrices: GasSpeeds): void {
+  async upgrade(
+    bundlerEstimateResult: BundlerEstimateResult,
+    gasPrices: GasSpeeds,
+    userOp: UserOperation
+  ): Promise<void> {
+    console.log(this.op)
     // ERC7677 is already sponsoring the userOperation so we don't upgrade over it
-    if (!this.op?.meta?.swapSponsorship || this.type === 'ERC7677') return
+    if (!this.op?.meta?.swapSponsorship || this.type === 'ERC7677' || !this.network) return
+
+    console.log('calling upgrade')
 
     const gas =
       BigInt(bundlerEstimateResult.callGasLimit) + BigInt(bundlerEstimateResult.preVerificationGas)
@@ -397,6 +412,40 @@ export class Paymaster extends AbstractPaymaster {
       )
     )
     const costPlusOverhead = cost + cost * 0.25
-    if (costPlusOverhead < this.op.meta.swapSponsorship.swapFeeInUsd) this.type = 'SwapSponsorship'
+    if (costPlusOverhead >= this.op.meta.swapSponsorship.swapFeeInUsd) {
+      console.log('returning because cost is not justified')
+      return
+    }
+
+    // call the paymaster for a final validation before showing the
+    // "Swap Sponsorship screen" as providers often change their implementation
+    // and we need confirmation from the relayer that the sponsorship is
+    // eligible before declaring it. Otherwise, we run the risk of the paymaster
+    // declining the sponsorship when the user clicks "Sign"
+    try {
+      await Promise.race([
+        getPaymasterStubData(
+          {
+            url: getAmbireSponsorshipUrl(this.#relayerUrl),
+            id: new Date().getTime(),
+            context: {
+              policyId: AMBIRE_SWAP_POLICY,
+              swapSponsorship: {
+                price: this.op.meta.swapSponsorship.feeTokenPriceInUsd,
+                decimals: this.op.meta.swapSponsorship.feeTokenDecimals
+              }
+            }
+          },
+          userOp,
+          this.network
+        ),
+        new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error('Sponsorship error, request too slow')), 4000)
+        })
+      ])
+      this.type = 'SwapSponsorship'
+    } catch (e) {
+      console.log('Swap sponsorship declined', e)
+    }
   }
 }
