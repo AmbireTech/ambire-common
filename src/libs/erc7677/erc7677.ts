@@ -13,6 +13,8 @@ import {
   PaymasterService
 } from './types'
 
+export const AMBIRE_SWAP_POLICY = 'ambireSwapSponsorship'
+
 export function getPaymasterService(
   chainId: bigint,
   capabilities?: { paymasterService?: PaymasterCapabilities | PaymasterService }
@@ -40,6 +42,10 @@ export function getPaymasterService(
   return paymasterService
 }
 
+export function getAmbireSponsorshipUrl(relayerUrl: string): string {
+  return `${relayerUrl}/v2/sponsorship`
+}
+
 export function getAmbirePaymasterService(
   baseAcc: BaseAccount,
   relayerUrl: string
@@ -47,7 +53,7 @@ export function getAmbirePaymasterService(
   if (!baseAcc.isSponsorable()) return undefined
 
   return {
-    url: `${relayerUrl}/v2/sponsorship`,
+    url: getAmbireSponsorshipUrl(relayerUrl),
     id: new Date().getTime()
   }
 }
