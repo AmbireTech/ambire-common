@@ -207,6 +207,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     const dataForCurrent = this.safeOwnerSearches[owner]
     if (
       dataForCurrent &&
+      dataForCurrent.status === 'DONE' &&
       dataForCurrent.updatedAt > Date.now() - SAFE_OWNER_SEARCH_TTL &&
       !dataForCurrent.failedNetworks.length &&
       safeNetworks.every(({ chainId }) => dataForCurrent.searchedNetworks.includes(chainId))
@@ -226,7 +227,7 @@ export class SafeController extends EventEmitter implements ISafeController {
       accounts: [],
       searchedNetworks: [],
       failedNetworks: [],
-      updatedAt: 0,
+      updatedAt: Date.now(),
       status: 'LOADING'
     }
     this.emitUpdate()
@@ -295,7 +296,7 @@ export class SafeController extends EventEmitter implements ISafeController {
           accounts: Array.from(accountsByAddress.values()),
           searchedNetworks: this.safeOwnerSearches[owner]?.searchedNetworks || [],
           failedNetworks: this.safeOwnerSearches[owner]?.failedNetworks || [],
-          updatedAt: 0,
+          updatedAt: Date.now(),
           status: 'LOADING'
         }
         this.emitUpdate()
@@ -307,7 +308,6 @@ export class SafeController extends EventEmitter implements ISafeController {
         account.deployedOn = Array.from(new Set([...account.deployedOn, ...chainIds]))
       })
 
-      console.log(failedNetworks)
       this.safeOwnerSearches[owner] = {
         owner,
         accounts: Array.from(accountsByAddress.values()),
@@ -318,7 +318,7 @@ export class SafeController extends EventEmitter implements ISafeController {
         failedNetworks: Array.from(
           new Set([...(this.safeOwnerSearches[owner]?.failedNetworks || []), ...failedNetworks])
         ),
-        updatedAt: 0,
+        updatedAt: Date.now(),
         status: 'LOADING'
       }
       this.emitUpdate()

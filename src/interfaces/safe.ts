@@ -1,5 +1,5 @@
-import { ControllerInterface } from './controller'
 import { Account } from './account'
+import { ControllerInterface } from './controller'
 import { Hex } from './hex'
 
 export type ISafeController = ControllerInterface<

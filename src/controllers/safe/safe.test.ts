@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, jest } from '@jest/globals'
 import { getAddress } from 'ethers'
+
+import { beforeEach, describe, expect, it, jest } from '@jest/globals'
 
 import { Hex } from '../../interfaces/hex'
 import { SafeAccountByOwner } from '../../interfaces/safe'
@@ -134,7 +135,8 @@ describe('SafeController findSafesByOwner', () => {
       safes.slice(0, 4).map((safe) => getAddress(safe))
     )
     expect(getOwnerSearch(controller)?.searchedNetworks).toEqual([])
-    expect(getOwnerSearch(controller)?.updatedAt).toBe(0)
+    expect(getOwnerSearch(controller)?.updatedAt).toBeGreaterThan(0)
+    expect(getOwnerSearch(controller)?.status).toBe('LOADING')
 
     resolveLastSafeBatch()
     await searchPromise
@@ -183,7 +185,7 @@ describe('SafeController findSafesByOwner', () => {
     ).toEqual([getAddress(SAFE_B)])
   })
 
-  it('replaces only the matching owner cache when searching again', async () => {
+  it('replaces only the matching stale owner cache when searching again', async () => {
     const api = createApi({ safes: [] })
     api.getSafesByOwner
       .mockResolvedValueOnce({ safes: [SAFE_A] })
@@ -194,6 +196,7 @@ describe('SafeController findSafesByOwner', () => {
 
     await controller.findSafesByOwner(OWNER)
     await controller.findSafesByOwner(OTHER_OWNER)
+    getOwnerSearch(controller)!.updatedAt = 0
     await controller.findSafesByOwner(OWNER.toLowerCase())
 
     expect(Object.keys(controller.safeOwnerSearches)).toHaveLength(2)
@@ -205,7 +208,39 @@ describe('SafeController findSafesByOwner', () => {
     ).toEqual([getAddress(SAFE_B)])
   })
 
-  it('does not cancel an active owner search when another search is rejected', async () => {
+  it('does not cancel an active owner search when another owner search fails', async () => {
+    let resolveSearch!: (value: { safes: string[] }) => void
+    let markSearchAsStarted!: () => void
+    const searchStarted = new Promise<void>((resolve) => {
+      markSearchAsStarted = resolve
+    })
+    const searchResponse = new Promise<{ safes: string[] }>((resolve) => {
+      resolveSearch = resolve
+    })
+    const api = createApi({ safes: [] })
+    api.getSafesByOwner
+      .mockImplementationOnce(() => {
+        markSearchAsStarted()
+        return searchResponse
+      })
+      .mockRejectedValueOnce(new Error('Service unavailable'))
+    jest.mocked(getApiKit).mockReturnValue(api as any)
+    const controller = createController([1n])
+
+    const ownerSearchPromise = controller.findSafesByOwner(OWNER)
+    await searchStarted
+    await controller.findSafesByOwner(OTHER_OWNER)
+    resolveSearch({ safes: [SAFE_A] })
+    await ownerSearchPromise
+
+    expect(getOwnerSearch(controller)?.accounts.map((account) => account.addr)).toEqual([
+      getAddress(SAFE_A)
+    ])
+    expect(getOwnerSearch(controller, OTHER_OWNER)?.failedNetworks).toEqual([1n])
+    expect(getOwnerSearch(controller, OTHER_OWNER)?.status).toBe('DONE')
+  })
+
+  it('debounces a repeated search for the same owner while loading', async () => {
     let resolveSearch!: (value: { safes: string[] }) => void
     let markSearchAsStarted!: () => void
     const searchStarted = new Promise<void>((resolve) => {
@@ -224,13 +259,14 @@ describe('SafeController findSafesByOwner', () => {
 
     const ownerSearchPromise = controller.findSafesByOwner(OWNER)
     await searchStarted
-    await controller.findSafesByOwner(OTHER_OWNER)
+    const repeatedSearchPromise = controller.findSafesByOwner(OWNER.toLowerCase())
     resolveSearch({ safes: [SAFE_A] })
-    await ownerSearchPromise
+    await Promise.all([ownerSearchPromise, repeatedSearchPromise])
 
+    expect(api.getSafesByOwner).toHaveBeenCalledTimes(1)
     expect(getOwnerSearch(controller)?.accounts.map((account) => account.addr)).toEqual([
       getAddress(SAFE_A)
     ])
-    expect(getOwnerSearch(controller, OTHER_OWNER)).toBeUndefined()
+    expect(getOwnerSearch(controller)?.status).toBe('DONE')
   })
 })
