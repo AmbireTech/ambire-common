@@ -34,6 +34,14 @@ export const STATUS_WRAPPED_METHODS = {
   findSafesByOwner: 'INITIAL'
 } as const
 
+type SafeOwnerSearch = {
+  owner: Hex
+  accounts: SafeAccountByOwner[]
+  searchedNetworks: bigint[]
+  failedNetworks: bigint[]
+  updatedAt: number
+}
+
 export class SafeController extends EventEmitter implements ISafeController {
   #storage: IStorageController
 
@@ -70,14 +78,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     requiresModules: boolean
   }
 
-  safeOwnerSearch?: {
-    owner: Hex
-    accounts: SafeAccountByOwner[]
-    searchedNetworks: bigint[]
-    failedNetworks: bigint[]
-  }
-
-  #safeOwnerSearchId = 0
+  safeOwnerSearches: Record<Hex, SafeOwnerSearch> = {}
 
   constructor({
     eventEmitterRegistry,
@@ -186,26 +187,26 @@ export class SafeController extends EventEmitter implements ISafeController {
     this.importError = undefined
   }
 
-  async #findSafesByOwner(owner: Hex, searchId: number) {
+  async #findSafesByOwner(owner: Hex) {
     await this.#networks.initialLoadPromise
-    if (searchId !== this.#safeOwnerSearchId) return
 
     const safeNetworks = this.#networks.networks.filter((network) =>
       SAFE_NETWORKS.includes(Number(network.chainId))
     )
     const accountsByAddress = new Map<string, SafeAccountByOwner>()
-
-    this.safeOwnerSearch = {
-      owner,
-      accounts: [],
-      searchedNetworks: [],
-      failedNetworks: []
+    this.safeOwnerSearches = {
+      ...this.safeOwnerSearches,
+      [owner]: {
+        owner,
+        accounts: [],
+        searchedNetworks: [],
+        failedNetworks: [],
+        updatedAt: 0
+      }
     }
     this.emitUpdate()
 
     for (let i = 0; i < safeNetworks.length; i += SAFE_API_BATCH_SIZE) {
-      if (searchId !== this.#safeOwnerSearchId) return
-
       const networkBatch = safeNetworks.slice(i, i + SAFE_API_BATCH_SIZE)
       const batchResults = await Promise.allSettled(
         networkBatch.map(async (network) => {
@@ -219,8 +220,6 @@ export class SafeController extends EventEmitter implements ISafeController {
           return { chainId: network.chainId, safes: response.safes }
         })
       )
-
-      if (searchId !== this.#safeOwnerSearchId) return
 
       const failedNetworks: bigint[] = []
       const deployedOnByAddress = new Map<string, { address: string; chainIds: bigint[] }>()
@@ -257,8 +256,6 @@ export class SafeController extends EventEmitter implements ISafeController {
             getSafeAccountByOwner(safeData.address, owner, safeData.chainIds)
           )
         )
-        if (searchId !== this.#safeOwnerSearchId) return
-
         safeAccounts.forEach(({ account, failed }, index) => {
           if (account) {
             accountsByAddress.set(account.addr.toLowerCase(), account)
@@ -268,11 +265,15 @@ export class SafeController extends EventEmitter implements ISafeController {
         })
 
         // we use this to show results immediately to the user
-        this.safeOwnerSearch = {
-          owner,
-          accounts: Array.from(accountsByAddress.values()),
-          searchedNetworks: this.safeOwnerSearch?.searchedNetworks || [],
-          failedNetworks: this.safeOwnerSearch?.failedNetworks || []
+        this.safeOwnerSearches = {
+          ...this.safeOwnerSearches,
+          [owner]: {
+            owner,
+            accounts: Array.from(accountsByAddress.values()),
+            searchedNetworks: this.safeOwnerSearches[owner]?.searchedNetworks || [],
+            failedNetworks: this.safeOwnerSearches[owner]?.failedNetworks || [],
+            updatedAt: 0
+          }
         }
         this.emitUpdate()
       }
@@ -283,31 +284,37 @@ export class SafeController extends EventEmitter implements ISafeController {
         account.deployedOn = Array.from(new Set([...account.deployedOn, ...chainIds]))
       })
 
-      this.safeOwnerSearch = {
-        owner,
-        accounts: Array.from(accountsByAddress.values()),
-        searchedNetworks: [
-          ...(this.safeOwnerSearch?.searchedNetworks || []),
-          ...networkBatch.map((network) => network.chainId)
-        ],
-        failedNetworks: Array.from(
-          new Set([...(this.safeOwnerSearch?.failedNetworks || []), ...failedNetworks])
-        )
+      this.safeOwnerSearches = {
+        ...this.safeOwnerSearches,
+        [owner]: {
+          owner,
+          accounts: Array.from(accountsByAddress.values()),
+          searchedNetworks: [
+            ...(this.safeOwnerSearches[owner]?.searchedNetworks || []),
+            ...networkBatch.map((network) => network.chainId)
+          ],
+          failedNetworks: Array.from(
+            new Set([...(this.safeOwnerSearches[owner]?.failedNetworks || []), ...failedNetworks])
+          ),
+          updatedAt: 0
+        }
       }
       this.emitUpdate()
     }
+
+    this.safeOwnerSearches = {
+      ...this.safeOwnerSearches,
+      [owner]: {
+        ...this.safeOwnerSearches[owner]!,
+        updatedAt: Date.now()
+      }
+    }
+    this.emitUpdate()
   }
 
   async findSafesByOwner(ownerAddress: string) {
     const owner = getAddress(ownerAddress) as Hex
-    const searchId = ++this.#safeOwnerSearchId
-    await this.withStatus('findSafesByOwner', () => this.#findSafesByOwner(owner, searchId), true)
-  }
-
-  resetFindSafesByOwner() {
-    this.#safeOwnerSearchId += 1
-    this.safeOwnerSearch = undefined
-    this.emitUpdate()
+    await this.withStatus('findSafesByOwner', () => this.#findSafesByOwner(owner), true)
   }
 
   getMessageId(msg: SafeMessage): string {
