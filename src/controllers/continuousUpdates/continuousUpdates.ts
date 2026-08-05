@@ -512,7 +512,9 @@ export class ContinuousUpdatesController extends EventEmitter {
           r.kind === 'calls' &&
           !!r.signAccountOp.account.safeCreation &&
           r.signAccountOp.accountOp.txnId &&
-          r.signAccountOp.accountOp.signed?.length
+          r.signAccountOp.accountOp.signed?.length &&
+          // do not fetch updates for locally rejected txns
+          !r.meta.isSafeRejected
       )
       .map((r) => {
         const accountOp = (r as CallsUserRequest).signAccountOp.accountOp
@@ -524,7 +526,7 @@ export class ContinuousUpdatesController extends EventEmitter {
     if (!pendingSafeTxns.length) return
 
     const confirmed = await this.#main.safe.fetchExecuted(pendingSafeTxns).catch((e) => {
-      console.log('failed to retrieve executed Safe txns')
+      console.log('failed to retrieve executed Safe txns', e)
       return []
     })
     if (!confirmed.length) return
