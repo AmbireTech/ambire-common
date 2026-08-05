@@ -473,11 +473,20 @@ export class Paymaster extends AbstractPaymaster {
     if (this.type === 'Ambire' && this.paymasterService?.context?.policyId === AMBIRE_GNOSIS_POLICY)
       return
 
+    // apply estimation and gas changes to the userOp so a more realistic,
+    // final userOp could be sent over for paymaster stub data
+    const localOp = { ...userOp }
+    localOp.preVerificationGas = bundlerEstimateResult.preVerificationGas
+    localOp.verificationGasLimit = bundlerEstimateResult.verificationGasLimit
+    localOp.callGasLimit = bundlerEstimateResult.callGasLimit
+    localOp.maxFeePerGas = gasPrices.medium.maxFeePerGas
+    localOp.maxPriorityFeePerGas = gasPrices.medium.maxPriorityFeePerGas
+
     await this.#tryToSetSwapSponsorship(bundlerEstimateResult, gasPrices, userOp)
+    if (!!this.op?.meta?.swapSponsorship) return
 
     // try to init ERC-7677 if a paymasterService has been provided and it hasn't failed
-    if (this.op?.meta?.paymasterService && !this.op.meta.paymasterService.failed) {
-      await this.#tryToSetErc7677(userOp)
-    }
+    if (this.op?.meta?.paymasterService && !this.op.meta.paymasterService.failed)
+      await this.#tryToSetErc7677(localOp)
   }
 }
