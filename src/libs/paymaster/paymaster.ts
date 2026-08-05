@@ -148,8 +148,10 @@ export class Paymaster extends AbstractPaymaster {
     if (op.meta?.paymasterService) this.paymasterService = op.meta.paymasterService
 
     // try to init ERC-7677 if a paymasterService has been provided and it hasn't failed
-    if (op.meta?.paymasterService && !op.meta?.paymasterService.failed)
+    if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
       await this.#tryToSetErc7677(userOp)
+      if (this.type === 'ERC7677') return
+    }
 
     // has the paymaster dried up
     const seenInsufficientFunds =
