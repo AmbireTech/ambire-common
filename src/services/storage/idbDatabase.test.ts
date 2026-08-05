@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto'
 
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
+import { openDB } from 'idb'
 import { beforeEach, describe, expect, test } from '@jest/globals'
 
 import { AMBIRE_IDB_SCHEMA } from './idbSchema'
@@ -54,9 +55,25 @@ describe('openAmbireIdb', () => {
     await p2
   })
 
-  test('migrations run sequentially — v1 handler creates all schema stores', async () => {
+  test('blocking() closes this connection so another context can upgrade', async () => {
+    // Regression guard: the handler used to drop the cached promise without ever
+    // calling db.close(), so an upgrade from a newer app version stayed blocked
+    // indefinitely and the user had to reload by hand.
+    const held = await openAmbireIdb()
+    expect(held.version).toBe(AMBIRE_IDB_SCHEMA.dbVersion)
+
+    // Another context opens the same database at a higher version. This can only
+    // complete if the connection above yields.
+    const upgraded = await openDB(AMBIRE_IDB_SCHEMA.dbName, AMBIRE_IDB_SCHEMA.dbVersion + 1)
+
+    expect(upgraded.version).toBe(AMBIRE_IDB_SCHEMA.dbVersion + 1)
+    upgraded.close()
+  })
+
+  test('a fresh install ends up with every store in the manifest', async () => {
+    // Structure comes from reconcileSchema(), which runs before the versioned
+    // migration handlers — the handlers themselves only transform existing rows.
     const db = await openAmbireIdb()
-    // After migration to v1 every store in the schema must exist
     const storeNames = Array.from(db.objectStoreNames)
     for (const storeDef of AMBIRE_IDB_SCHEMA.stores) {
       expect(storeNames).toContain(storeDef.storeName)

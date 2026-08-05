@@ -17,21 +17,26 @@ export interface InternalAccountsOps {
  */
 export interface IActivityOpsBackend {
   /**
-   * Load the startup dataset.
-   * IDB: returns pending ops + up to 20 finalized per (account, chainId).
-   * Storage: returns the full ops blob.
-   */
-  loadStartupOps(): Promise<InternalAccountsOps>
-
-  /**
    * One-time migration from legacy chrome.storage.local to IDB.
    * Called with callbacks so the interface stays decoupled from IStorageController.
    * IDB backend: migrates if empty; storage backend: no-op.
+   *
+   * isEmpty() and migrateFromStorage() are NOT part of this interface — they are
+   * implementation details of how ActivityIdbStorage decides whether to migrate,
+   * not something callers need polymorphically. Adding them here would force
+   * ActivityKeyValueStorage to carry dead stub methods it never uses.
    */
   ensureMigrated(
     getStoredOps: () => Promise<InternalAccountsOps>,
     removeStoredOps: () => Promise<void>
   ): Promise<void>
+
+  /**
+   * Load the startup dataset.
+   * IDB: returns pending ops + up to 20 finalized per (account, chainId).
+   * Storage: returns the full ops blob.
+   */
+  loadStartupOps(): Promise<InternalAccountsOps>
 
   /**
    * Write a single new op and optionally delete the op evicted by the in-memory trim.
