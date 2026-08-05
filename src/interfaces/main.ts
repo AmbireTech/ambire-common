@@ -10,6 +10,7 @@ export const STATUS_WRAPPED_METHODS = {
   handleAccountPickerInitTrezor: 'INITIAL',
   handleAccountPickerInitLattice: 'INITIAL',
   handleAccountPickerInitQr: 'INITIAL',
+  handleAccountPickerInitNfc: 'INITIAL',
   importSmartAccountFromDefaultSeed: 'INITIAL',
   selectAccount: 'INITIAL'
 } as const
