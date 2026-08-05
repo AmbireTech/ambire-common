@@ -162,15 +162,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       ])
       this.keyStoreUid = keyStoreUid
       this.#keystoreSeeds = keystoreSeeds.map((s) => {
-        // Seeds stored before the backup flow was introduced were always revealed
-        // to the user on creation/import, so they count as backed up.
-        const seed = s.isBackedUp === undefined ? { ...s, isBackedUp: true } : s
-
-        if (seed.id) return seed
+        if (s.id) return s
 
         // Migrate the old seed structure to the new one for cases where the prev versions
         // of the extension supported only one saved seed which lacked id and label props.
-        return { ...seed, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' }
+        return { ...s, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' }
       })
       this.#keystoreKeys = keystoreKeys
     } catch (e: any) {
@@ -666,16 +662,18 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   get seeds() {
-    return this.#keystoreSeeds.map(({ id, label, hdPathTemplate, seedPassphrase, isBackedUp }) => ({
-      id,
-      label: label || 'Unnamed Recovery Seed',
-      hdPathTemplate,
-      withPassphrase: !!seedPassphrase,
-      isBackedUp
-    }))
+    return this.#keystoreSeeds.map(
+      ({ id, label, hdPathTemplate, seedPassphrase, notBackedUp }) => ({
+        id,
+        label: label || 'Unnamed Recovery Seed',
+        hdPathTemplate,
+        withPassphrase: !!seedPassphrase,
+        notBackedUp
+      })
+    )
   }
 
-  async addTempSeed({ seed, seedPassphrase, hdPathTemplate, isBackedUp }: KeystoreTempSeed) {
+  async addTempSeed({ seed, seedPassphrase, hdPathTemplate, notBackedUp }: KeystoreTempSeed) {
     const validHdPath = DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate)
     if (!validHdPath)
       throw new EmittableError({
@@ -685,7 +683,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         error: new Error('keystore: hd path to temp seed incorrect')
       })
 
-    this.#tempSeed = { seed, seedPassphrase, hdPathTemplate, isBackedUp }
+    this.#tempSeed = { seed, seedPassphrase, hdPathTemplate, notBackedUp }
 
     this.emitUpdate()
   }
@@ -703,7 +701,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     this.#tempSeed = {
       seed,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-      isBackedUp: false
+      notBackedUp: true
     }
 
     this.emitUpdate()
@@ -724,7 +722,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     this.emitUpdate()
   }
 
-  async #addSeed({ seed, seedPassphrase, hdPathTemplate, isBackedUp }: KeystoreTempSeed) {
+  async #addSeed({ seed, seedPassphrase, hdPathTemplate, notBackedUp }: KeystoreTempSeed) {
     await this.initialLoadPromise
 
     if (this.#mainKey === null)
@@ -758,7 +756,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         ? await encryptWithKey(this.#mainKey, new TextEncoder().encode(seedPassphrase))
         : null,
       hdPathTemplate,
-      isBackedUp
+      notBackedUp
     }
 
     this.#keystoreSeeds.push(newEntry)
@@ -776,14 +774,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     id,
     label,
     hdPathTemplate,
-    isBackedUp
+    notBackedUp
   }: {
     id: KeystoreSeed['id']
     label?: KeystoreSeed['label']
     hdPathTemplate?: KeystoreSeed['hdPathTemplate']
-    isBackedUp?: KeystoreSeed['isBackedUp']
+    notBackedUp?: KeystoreSeed['notBackedUp']
   }) {
-    if (!label && !hdPathTemplate && isBackedUp === undefined) return
+    if (!label && !hdPathTemplate && notBackedUp === undefined) return
 
     const keystoreSeed = this.#keystoreSeeds.find((s) => s.id === id)
     if (!keystoreSeed) return
@@ -792,7 +790,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     if (hdPathTemplate) keystoreSeed.hdPathTemplate = hdPathTemplate
 
-    if (isBackedUp !== undefined) keystoreSeed.isBackedUp = isBackedUp
+    if (notBackedUp !== undefined) keystoreSeed.notBackedUp = notBackedUp
 
     const updatedKeystoreSeeds = this.#keystoreSeeds.map((s) =>
       s.id === keystoreSeed.id ? keystoreSeed : s
@@ -808,16 +806,16 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     id,
     label,
     hdPathTemplate,
-    isBackedUp
+    notBackedUp
   }: {
     id: KeystoreSeed['id']
     label?: KeystoreSeed['label']
     hdPathTemplate?: KeystoreSeed['hdPathTemplate']
-    isBackedUp?: KeystoreSeed['isBackedUp']
+    notBackedUp?: KeystoreSeed['notBackedUp']
   }) {
     await this.withStatus(
       'updateSeed',
-      () => this.#updateSeed({ id, label, hdPathTemplate, isBackedUp }),
+      () => this.#updateSeed({ id, label, hdPathTemplate, notBackedUp }),
       true
     )
   }
@@ -827,7 +825,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * so the app stops prompting them to back this phrase up.
    */
   async markSeedAsBackedUp(id: KeystoreSeed['id']) {
-    await this.updateSeed({ id, isBackedUp: true })
+    await this.updateSeed({ id, notBackedUp: false })
   }
 
   async deleteSeed(id: KeystoreSeed['id']) {

@@ -12,12 +12,7 @@ import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
-import {
-  ExternalKey,
-  IKeystoreController,
-  InternalKey,
-  StoredKeystoreSeed
-} from '../../interfaces/keystore'
+import { ExternalKey, IKeystoreController, InternalKey } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import { StorageController } from '../storage/storage'
@@ -407,13 +402,11 @@ describe('KeystoreController', () => {
     expect(keystore.isUnlocked).toBeTruthy()
     await keystore.addSeed({
       seed: process.env.SEED,
-      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-      isBackedUp: true
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
     expect(keystore.seeds.length).toBe(1)
     expect(keystore.seeds[0]!.label).toBe('Recovery Phrase 1')
     expect(keystore.seeds[0]!.hdPathTemplate).toBe(BIP44_STANDARD_DERIVATION_TEMPLATE)
-    expect(keystore.seeds[0]!.isBackedUp).toBe(true)
   })
   test('should update existing seed', async () => {
     expect(keystore.seeds.length).toBe(1)
@@ -449,34 +442,33 @@ describe('KeystoreController recovery phrase backup state', () => {
     await keystoreCtrl.unlockWithSecret('password', pass)
   })
 
-  test('a generated phrase is persisted as not backed up', async () => {
+  test('a generated phrase is flagged as not backed up', async () => {
     const tempSeed = await keystoreCtrl.generateTempSeed({})
-    expect(tempSeed.isBackedUp).toBe(false)
+    expect(tempSeed.notBackedUp).toBe(true)
 
     await keystoreCtrl.persistTempSeed()
 
     expect(keystoreCtrl.seeds.length).toBe(1)
-    expect(keystoreCtrl.seeds[0]!.isBackedUp).toBe(false)
+    expect(keystoreCtrl.seeds[0]!.notBackedUp).toBe(true)
   })
 
-  test('an imported phrase is persisted as backed up', async () => {
+  test('an imported phrase is not flagged, as the user has already seen it', async () => {
     await keystoreCtrl.addTempSeed({
       seed: process.env.SEED,
-      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-      isBackedUp: true
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
     await keystoreCtrl.persistTempSeed()
 
-    expect(keystoreCtrl.seeds[0]!.isBackedUp).toBe(true)
+    expect(keystoreCtrl.seeds[0]!.notBackedUp).toBeFalsy()
   })
 
-  test('markSeedAsBackedUp flips the flag and does not touch other seeds', async () => {
+  test('markSeedAsBackedUp clears the flag and does not touch other seeds', async () => {
     await keystoreCtrl.generateTempSeed({})
     await keystoreCtrl.persistTempSeed()
     await keystoreCtrl.addTempSeed({
       seed: process.env.SEED,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-      isBackedUp: false
+      notBackedUp: true
     })
     await keystoreCtrl.persistTempSeed()
 
@@ -485,8 +477,8 @@ describe('KeystoreController recovery phrase backup state', () => {
 
     await keystoreCtrl.markSeedAsBackedUp(secondSeed!.id)
 
-    expect(keystoreCtrl.seeds.find((s) => s.id === secondSeed!.id)?.isBackedUp).toBe(true)
-    expect(keystoreCtrl.seeds.find((s) => s.id === firstSeed!.id)?.isBackedUp).toBe(false)
+    expect(keystoreCtrl.seeds.find((s) => s.id === secondSeed!.id)?.notBackedUp).toBe(false)
+    expect(keystoreCtrl.seeds.find((s) => s.id === firstSeed!.id)?.notBackedUp).toBe(true)
   })
 
   test('markSeedAsBackedUp is a no-op for an unknown phrase id', async () => {
@@ -495,48 +487,7 @@ describe('KeystoreController recovery phrase backup state', () => {
 
     await keystoreCtrl.markSeedAsBackedUp('does-not-exist')
 
-    expect(keystoreCtrl.seeds[0]!.isBackedUp).toBe(false)
-  })
-
-  test('phrases stored before the backup flow existed count as backed up', async () => {
-    const storage = produceMemoryStore()
-    const storageCtrl = new StorageController(storage)
-    const uiCtrl = new UiController({ uiManager })
-
-    const legacyKeystoreCtrl = new KeystoreController(
-      'default',
-      storageCtrl,
-      keystoreSigners,
-      uiCtrl
-    )
-    await legacyKeystoreCtrl.addSecret('password', pass, '', false)
-    await legacyKeystoreCtrl.unlockWithSecret('password', pass)
-    await legacyKeystoreCtrl.addTempSeed({
-      seed: process.env.SEED,
-      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-      isBackedUp: true
-    })
-    await legacyKeystoreCtrl.persistTempSeed()
-
-    // Simulate a phrase written to storage by a version that had no isBackedUp flag
-    const storedSeeds = await storageCtrl.get('keystoreSeeds', [])
-    const seedsWithoutBackupFlag = storedSeeds.map((storedSeed) => {
-      const legacySeed: Partial<StoredKeystoreSeed> = { ...storedSeed }
-      delete legacySeed.isBackedUp
-
-      return legacySeed
-    })
-    await storageCtrl.set('keystoreSeeds', seedsWithoutBackupFlag as StoredKeystoreSeed[])
-
-    const reloadedKeystoreCtrl = new KeystoreController(
-      'default',
-      storageCtrl,
-      keystoreSigners,
-      uiCtrl
-    )
-    await reloadedKeystoreCtrl.initialLoadPromise
-
-    expect(reloadedKeystoreCtrl.seeds[0]!.isBackedUp).toBe(true)
+    expect(keystoreCtrl.seeds[0]!.notBackedUp).toBe(true)
   })
 })
 

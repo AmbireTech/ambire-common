@@ -188,12 +188,7 @@ export type KeystoreSeed = {
   seed: string
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
-  /**
-   * Whether the user has already gone through the flow that reveals the phrase
-   * and asks them to confirm they wrote it down. Phrases created inside the app
-   * start as not backed up, since the user never sees them upon creation.
-   */
-  isBackedUp: boolean
+  notBackedUp?: boolean
 }
 
 export type StoredKeystoreSeed = Omit<KeystoreSeed, 'seed' | 'seedPassphrase'> & {
@@ -208,7 +203,7 @@ export type KeystoreTempSeed = {
   seed: string
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
-  isBackedUp: boolean
+  notBackedUp?: boolean
 }
 
 export type KeystoreSignerType = {

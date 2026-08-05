@@ -190,8 +190,7 @@ const createMockOldAesStorageFixture = async (
         label: 'Recovery Phrase',
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE as HD_PATH_TEMPLATE_TYPE,
         seed: encryptedSeed,
-        seedPassphrase: encryptedSeedPassphrase,
-        isBackedUp: true
+        seedPassphrase: encryptedSeedPassphrase
       }
     }),
     ...additionalMockSeeds.map((seed) => {
@@ -641,7 +640,6 @@ describe('CTR to GCM migration', () => {
           id: 'invalid-seed',
           label: 'Broken Recovery Phrase',
           hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-          isBackedUp: true,
           seed: encryptTextWithCtr(
             'not a valid mnemonic phrase',
             invalidKeyCipherKey,
@@ -725,7 +723,6 @@ describe('CTR to GCM migration', () => {
             id: 'invalid-seed',
             label: 'Broken Recovery Phrase',
             hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-            isBackedUp: true,
             seed: mockInvalidSeed
           }
         ],
