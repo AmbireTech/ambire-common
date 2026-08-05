@@ -4,6 +4,16 @@ import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IUiController, UiManager, View } from '../../interfaces/ui'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+function areSearchParamsEqual(a: View['searchParams'], b: View['searchParams']): boolean {
+  if (a === b) return true
+  if (!a || !b) return !a && !b
+
+  const aKeys = Object.keys(a)
+  if (aKeys.length !== Object.keys(b).length) return false
+
+  return aKeys.every((key) => a[key] === b[key])
+}
+
 export class UiController extends EventEmitter implements IUiController {
   uiEvent: UiEventEmitter
 
@@ -55,8 +65,15 @@ export class UiController extends EventEmitter implements IUiController {
     const view = this.views.find((v) => v.id === viewId)
     if (!view) return
 
-    // @ts-expect-error
-    const shouldUpdate = Object.entries(updatedProps).some(([key, value]) => view[key] !== value)
+    const shouldUpdate = Object.entries(updatedProps).some(([key, value]) => {
+      // searchParams is a plain object rebuilt by the caller on every dispatch,
+      // so a reference check always reports a change. Compare it by value.
+      if (key === 'searchParams') {
+        return !areSearchParamsEqual(view.searchParams, value as View['searchParams'])
+      }
+
+      return view[key as keyof View] !== value
+    })
     if (!shouldUpdate) return
 
     let previousRoute = view.previousRoute
