@@ -4,5 +4,6 @@ export const HARDWARE_WALLET_DEVICE_NAMES: { [key in ExternalKey['type']]: strin
   ledger: 'Ledger',
   trezor: 'Trezor',
   lattice: 'GridPlus',
-  qr: 'QR-based'
+  qr: 'QR-based',
+  nfc: 'NFC-based'
 }
