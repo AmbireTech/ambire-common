@@ -24,7 +24,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
 import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
-import { IStorageController } from '../../interfaces/storage'
+import { AutomaticallyResolvedSafeTxn, IStorageController } from '../../interfaces/storage'
 import {
   ISwapAndBridgeController,
   SwapAndBridgeActiveRoute,
@@ -49,7 +49,7 @@ import {
 } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { AccountOp } from '../../libs/accountOp/accountOp'
+import { AccountOp, getAccountOpNonce } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
 import {
   getAccountOpBanners,
@@ -877,8 +877,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     } = options || {}
 
     const userRequestsToAdd: UserRequest[] = []
-    const safeResolveIds: { txnIds: string[]; nonce: bigint }[] = []
+    const safeResolveIds: AutomaticallyResolvedSafeTxn[] = []
     const safeRejectIds: string[] = []
+    let didRemoveCurrentUserRequest = false
 
     ids.forEach((id) => {
       const req = this.userRequests.find((uReq) => uReq.id === id)
@@ -890,7 +891,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         req.kind === 'calls' &&
         req.signAccountOp.account.safeCreation &&
         req.signAccountOp.accountOp.txnId &&
-        req.signAccountOp.accountOp.nonce !== null
+        getAccountOpNonce(req.signAccountOp.accountOp) !== null
       ) {
         req.meta.isSafeRejected = true
         req.dappPromises = []
@@ -901,6 +902,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       // remove from the request queue
       this.userRequests.splice(this.userRequests.indexOf(req), 1)
+      if (this.currentUserRequest?.id === req.id) didRemoveCurrentUserRequest = true
 
       // update the pending stuff to be signed
       const { kind, meta } = req
@@ -921,19 +923,26 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // - reject it upon a normal reject req;
         // - resolve it on accountOp resolve
 
-        if (
-          !!req.signAccountOp.account.safeCreation &&
-          req.signAccountOp.accountOp.txnId &&
-          req.signAccountOp.accountOp.nonce !== null
-        ) {
+        if (!!req.signAccountOp.account.safeCreation && req.signAccountOp.accountOp.txnId) {
+          const safeNonce = getAccountOpNonce(req.signAccountOp.accountOp)
+          if (safeNonce === null) {
+            req.signAccountOp.destroy()
+            return
+          }
+
           if (shouldRejectSafeRequests) safeRejectIds.push(req.signAccountOp.accountOp.txnId)
           else {
             const resolved = safeResolveIds.find(
-              (txns) => txns.nonce === req.signAccountOp.accountOp.nonce
+              (txns) =>
+                txns.accountAddr === req.signAccountOp.accountOp.accountAddr &&
+                txns.chainId === req.signAccountOp.accountOp.chainId &&
+                txns.nonce === safeNonce
             )
             if (!resolved)
               safeResolveIds.push({
-                nonce: req.signAccountOp.accountOp.nonce,
+                accountAddr: req.signAccountOp.accountOp.accountAddr,
+                chainId: req.signAccountOp.accountOp.chainId,
+                nonce: safeNonce,
                 txnIds: [req.signAccountOp.accountOp.txnId]
               })
             else resolved.txnIds.push(req.signAccountOp.accountOp.txnId)
@@ -989,6 +998,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       await this.#setCurrentUserRequest(this.visibleUserRequests[0] || null, {
         skipFocus: true
       })
+    } else if (didRemoveCurrentUserRequest) {
+      await this.#setCurrentUserRequest(null)
     } else {
       this.emitUpdate()
     }
@@ -2164,7 +2175,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       (r) => r.id === requestId && r.kind === 'calls' && r.meta.isSafeRejected
     ) as CallsUserRequest | undefined
     const txnId = request?.signAccountOp.accountOp.txnId
-    const nonce = request?.signAccountOp.accountOp.nonce
+    const nonce = request ? getAccountOpNonce(request.signAccountOp.accountOp) : null
 
     if (!request || !txnId || nonce === null || nonce === undefined) return
 
@@ -2261,12 +2272,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const req = this.userRequests.find((uReq) => uReq.id === requestId)
     if (!req || req.kind !== 'calls' || !req.signAccountOp.account.safeCreation) return []
 
-    const broadcastNonce = req.signAccountOp.accountOp.nonce
+    const broadcastAccountOp = req.signAccountOp.accountOp
+    const broadcastNonce = getAccountOpNonce(broadcastAccountOp)
+    if (broadcastNonce === null) return []
+
     return this.userRequests.filter(
       (r) =>
         r.kind === 'calls' &&
         !!r.signAccountOp.account.safeCreation &&
-        r.signAccountOp.accountOp.nonce === broadcastNonce &&
+        r.signAccountOp.accountOp.accountAddr === broadcastAccountOp.accountAddr &&
+        r.signAccountOp.accountOp.chainId === broadcastAccountOp.chainId &&
+        getAccountOpNonce(r.signAccountOp.accountOp) === broadcastNonce &&
         r.id !== requestId
     )
   }

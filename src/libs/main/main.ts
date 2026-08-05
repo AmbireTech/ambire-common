@@ -1,12 +1,7 @@
 import { CallsUserRequest } from '../../interfaces/userRequest'
+import { getAccountOpNonce } from '../accountOp/accountOp'
 
 export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
-
-const getNonce = (req: CallsUserRequest): bigint | null => {
-  const nonce = req.signAccountOp.accountOp.safeTx?.nonce ?? req.signAccountOp.accountOp.nonce
-
-  return nonce === null || typeof nonce === 'undefined' ? null : BigInt(nonce)
-}
 
 /**
  * Whether to simulate account ops if the request window is closed or the current
@@ -25,9 +20,9 @@ export const getShouldSimulateInTheBackground = (
 
   // check if there are other requests with a conflicting nonce to this one.
   // If there are, do not simulate this in the background
-  const currentReqNonce = getNonce(currentReq)
+  const currentReqNonce = getAccountOpNonce(currentReq.signAccountOp.accountOp)
   const hasConflictingNonceUserRequest = callUserRequests.some((r) => {
-    const nonce = getNonce(r)
+    const nonce = getAccountOpNonce(r.signAccountOp.accountOp)
 
     return (
       currentReqNonce !== null &&

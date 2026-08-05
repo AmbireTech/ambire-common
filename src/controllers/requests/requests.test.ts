@@ -211,6 +211,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
     selectedAccountCtrl: mainCtrl.selectedAccount,
     accountsCtrl: mainCtrl.accounts,
     portfolioCtrl: mainCtrl.portfolio,
+    storageCtrl: mainCtrl.storage,
     safeCtrl: mainCtrl.safe,
     controller: mainCtrl.requests,
     getSignAccountOp,
@@ -469,10 +470,102 @@ describe('RequestsController ', () => {
 
     expect(req.meta.isSafeRejected).toBe(false)
     expect(controller.visibleUserRequests).toEqual([req])
-    expect(controller.currentUserRequest).toBe(req)
+    expect(controller.currentUserRequest).toBe(null)
     expect(safeCtrl.rejectedSafeTxns).not.toContain(txnId)
 
     req.signAccountOp.destroy()
+  })
+  test('finds same-nonce Safe alternatives by their immutable Safe nonce and scope', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const broadcastRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    const sameNonceRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    const nextNonceRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    const otherNetworkRequest = await getCallsRequest({ addr: accountAddr, chainId: 10n })
+
+    broadcastRequest.id = 'broadcast-request'
+    sameNonceRequest.id = 'same-nonce-request'
+    nextNonceRequest.id = 'next-nonce-request'
+    otherNetworkRequest.id = 'other-network-request'
+
+    broadcastRequest.signAccountOp.accountOp.nonce = 8n
+    sameNonceRequest.signAccountOp.accountOp.nonce = 8n
+    nextNonceRequest.signAccountOp.accountOp.nonce = 8n
+    otherNetworkRequest.signAccountOp.accountOp.nonce = 8n
+    broadcastRequest.signAccountOp.accountOp.safeTx = { nonce: 7 } as any
+    sameNonceRequest.signAccountOp.accountOp.safeTx = { nonce: '7' } as any
+    nextNonceRequest.signAccountOp.accountOp.safeTx = { nonce: 8 } as any
+    otherNetworkRequest.signAccountOp.accountOp.safeTx = { nonce: 7 } as any
+    controller.userRequests = [
+      broadcastRequest,
+      sameNonceRequest,
+      nextNonceRequest,
+      otherNetworkRequest
+    ]
+
+    expect(controller.getSameNonceSafeRequests(broadcastRequest.id)).toEqual([sameNonceRequest])
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
+  test('silently retires all same-nonce Safe alternatives with their immutable nonce', async () => {
+    const { controller, getCallsRequest, safeCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const broadcastRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    const sameNonceRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    const nextNonceRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+
+    broadcastRequest.id = 'broadcast-request'
+    sameNonceRequest.id = 'same-nonce-request'
+    nextNonceRequest.id = 'next-nonce-request'
+    broadcastRequest.signAccountOp.accountOp.txnId = '0xbroadcast'
+    sameNonceRequest.signAccountOp.accountOp.txnId = '0xalternative'
+    nextNonceRequest.signAccountOp.accountOp.txnId = '0xnext'
+    broadcastRequest.signAccountOp.accountOp.nonce = 8n
+    sameNonceRequest.signAccountOp.accountOp.nonce = 8n
+    nextNonceRequest.signAccountOp.accountOp.nonce = 8n
+    broadcastRequest.signAccountOp.accountOp.safeTx = { nonce: 7 } as any
+    sameNonceRequest.signAccountOp.accountOp.safeTx = { nonce: 7 } as any
+    nextNonceRequest.signAccountOp.accountOp.safeTx = { nonce: 8 } as any
+    controller.userRequests = [broadcastRequest, sameNonceRequest, nextNonceRequest]
+    await controller.setCurrentUserRequestById(broadcastRequest.id)
+    const resolveTxnIdSpy = jest.spyOn(safeCtrl, 'resolveTxnId')
+
+    await controller.removeUserRequests([broadcastRequest.id, sameNonceRequest.id], {
+      shouldRejectSafeRequests: false,
+      shouldOpenNextRequest: false
+    })
+
+    expect(controller.userRequests).toEqual([nextNonceRequest])
+    expect(controller.currentUserRequest).toBe(null)
+    expect(resolveTxnIdSpy).toHaveBeenCalledWith([
+      {
+        accountAddr,
+        chainId: 1n,
+        nonce: 7n,
+        txnIds: ['0xbroadcast', '0xalternative']
+      }
+    ])
+
+    nextNonceRequest.signAccountOp.destroy()
+  })
+  test('keeps automatically resolved Safe transactions isolated by account and network', async () => {
+    const { safeCtrl, storageCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const otherAccountAddr = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+    const resolvedSafeTxns = [
+      { accountAddr, chainId: 1n, nonce: 7n, txnIds: ['ethereum-safe-txn'] },
+      { accountAddr, chainId: 10n, nonce: 7n, txnIds: ['optimism-safe-txn'] },
+      { accountAddr: otherAccountAddr, chainId: 1n, nonce: 7n, txnIds: ['other-safe-txn'] }
+    ]
+
+    await safeCtrl.resolveTxnId(resolvedSafeTxns)
+    await safeCtrl.unresolve(accountAddr, 1n, 7n)
+
+    expect(await storageCtrl.get('automaticallyResolvedSafeTxns', [])).toEqual(
+      resolvedSafeTxns.slice(1)
+    )
   })
   test('rejecting an account switch removes the pending request and its simulation', async () => {
     const { controller, getCallsRequest, portfolioCtrl, selectedAccountCtrl } = await prepareTest()

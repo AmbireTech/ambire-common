@@ -656,7 +656,7 @@ export class MainController extends EventEmitter implements IMainController {
         )
         await this.commonHandlerForBroadcastSuccess(props)
         // resolve dapp requests, open benzin and etc only if the main sign accountOp
-        this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
+        await this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
         this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
       },
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
@@ -1881,7 +1881,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (safeRequests.length) {
       await this.requests.removeUserRequests(safeRequests, {
-        shouldRejectSafeRequests: false
+        shouldRejectSafeRequests: false,
+        shouldOpenNextRequest: false
       })
     }
 
@@ -1904,7 +1905,9 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     await this.requests.removeUserRequests([accountOpRequest.id], {
-      shouldRemoveSwapAndBridgeRoute: false
+      shouldRemoveSwapAndBridgeRoute: false,
+      shouldOpenNextRequest: false,
+      shouldRejectSafeRequests: false
     })
 
     this.resolveDappBroadcast(submittedAccountOp, dappHandlers)

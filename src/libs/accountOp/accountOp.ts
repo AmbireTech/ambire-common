@@ -117,6 +117,12 @@ export interface AccountOp {
   dappSessionId?: string
 }
 
+export const getAccountOpNonce = (accountOp: AccountOp): bigint | null => {
+  const nonce = accountOp.safeTx?.nonce ?? accountOp.nonce
+
+  return nonce === null || typeof nonce === 'undefined' ? null : BigInt(nonce)
+}
+
 /**
  * If we want to deploy a contract, the to field of Call will actually
  * be empty (undefined). In order to simulate it in a transaction or

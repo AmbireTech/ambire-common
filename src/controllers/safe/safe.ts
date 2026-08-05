@@ -8,7 +8,7 @@ import { Hex } from '../../interfaces/hex'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISafeController } from '../../interfaces/safe'
-import { IStorageController } from '../../interfaces/storage'
+import { AutomaticallyResolvedSafeTxn, IStorageController } from '../../interfaces/storage'
 import {
   ExtendedSafeMessage,
   fetchAllPending,
@@ -40,7 +40,7 @@ export class SafeController extends EventEmitter implements ISafeController {
    */
   #updatedAt?: { time: number; addr: string }
 
-  #automaticallyResolvedSafeTxns: { nonce: bigint; txnIds: string[] }[] = []
+  #automaticallyResolvedSafeTxns: AutomaticallyResolvedSafeTxn[] = []
 
   #rejectedSafeTxns: string[] = []
 
@@ -248,29 +248,36 @@ export class SafeController extends EventEmitter implements ISafeController {
     return this.#storage.set('rejectedSafeTxns', this.#rejectedSafeTxns)
   }
 
-  async resolveTxnId(resolves: { txnIds: string[]; nonce: bigint }[]) {
+  async resolveTxnId(resolves: AutomaticallyResolvedSafeTxn[]) {
     for (let i = 0; i < resolves.length; i++) {
       const resolve = resolves[i]!
       const resolved = this.#automaticallyResolvedSafeTxns.find(
-        (txns) => txns.nonce === resolve.nonce
+        (txns) =>
+          txns.accountAddr === resolve.accountAddr &&
+          txns.chainId === resolve.chainId &&
+          txns.nonce === resolve.nonce
       )
 
       if (!resolved) this.#automaticallyResolvedSafeTxns.push(resolve)
-      else resolved.txnIds.push(...resolve.txnIds)
+      else resolved.txnIds = [...new Set([...resolved.txnIds, ...resolve.txnIds])]
     }
 
     return this.#storage.set('automaticallyResolvedSafeTxns', this.#automaticallyResolvedSafeTxns)
   }
 
   /**
-   * Upon failure, unresolve all Safe txns with the same nonce
+   * Upon failure, unresolve all Safe txns for the same account, network and nonce.
+   * Older entries without account and network metadata are removed by nonce for compatibility.
    */
-  async unresolve(nonce: bigint) {
+  async unresolve(accountAddr: string, chainId: bigint, nonce: bigint) {
     // reset the counter so we could fetch immediately
     this.#updatedAt = undefined
 
     this.#automaticallyResolvedSafeTxns = this.#automaticallyResolvedSafeTxns.filter(
-      (txns) => txns.nonce !== nonce
+      (txns) =>
+        txns.nonce !== nonce ||
+        (!!txns.accountAddr && txns.accountAddr !== accountAddr) ||
+        (typeof txns.chainId !== 'undefined' && txns.chainId !== chainId)
     )
     return this.#storage.set('automaticallyResolvedSafeTxns', this.#automaticallyResolvedSafeTxns)
   }

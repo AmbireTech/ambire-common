@@ -1219,7 +1219,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   updatedAccountsOps.push(updatedOpIfAny)
                   const acc = this.#accounts.accounts.find((a) => a.addr === op.accountAddr)
                   if (acc && !!acc.safeCreation) {
-                    await this.#safe.unresolve(op.nonce).catch((e) => e)
+                    await this.#safe.unresolve(op.accountAddr, op.chainId, op.nonce).catch((e) => e)
                     shouldFetchSafeTxns = true
                   }
                 }
@@ -1348,7 +1348,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
                       (a) => a.addr === accountOp.accountAddr
                     )
                     if (acc && !!acc.safeCreation) {
-                      await this.#safe.unresolve(accountOp.nonce).catch((e) => e)
+                      await this.#safe
+                        .unresolve(accountOp.accountAddr, accountOp.chainId, accountOp.nonce)
+                        .catch((e) => e)
                       shouldFetchSafeTxns = true
                     }
                   }
