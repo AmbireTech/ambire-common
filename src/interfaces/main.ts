@@ -6,6 +6,7 @@ export type IMainController = ControllerInterface<
 
 export const STATUS_WRAPPED_METHODS = {
   removeAccount: 'INITIAL',
+  updateAccounts: 'INITIAL',
   handleAccountPickerInitLedger: 'INITIAL',
   handleAccountPickerInitTrezor: 'INITIAL',
   handleAccountPickerInitLattice: 'INITIAL',
