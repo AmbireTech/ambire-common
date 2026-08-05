@@ -21,6 +21,7 @@ import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
+import type { FeeSpeed } from './signAccountOp'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
 export type IStorageController = ControllerInterface<
@@ -93,6 +94,7 @@ export type StorageProps = {
   signAccountOpFeeTokenPreference: {
     [chainId: string]: string | 'gasTank'
   }
+  signAccountOpFeeSpeedPreference: FeeSpeed
   networks: { [key: string]: Network }
   accounts: Account[]
   networkPreferences: { [key: string]: Partial<Network> }
