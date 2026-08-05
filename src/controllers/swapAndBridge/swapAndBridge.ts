@@ -2931,7 +2931,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     // Swap banners aren't generated because swaps are completed instantly,
     // thus the activity banner on broadcast is sufficient
-    return getBridgeBanners(activeRoutesForSelectedAccount, callsUserRequests)
+    return getBridgeBanners(
+      activeRoutesForSelectedAccount,
+      callsUserRequests,
+      this.#selectedAccount.account.addr
+    )
   }
 
   get #shouldAutoUpdateQuote() {
