@@ -14,6 +14,7 @@ import {
 } from './types'
 
 export const AMBIRE_SWAP_POLICY = 'ambireSwapSponsorship'
+export const AMBIRE_GNOSIS_POLICY = 'ambireGnosisSponsorship'
 
 export function getPaymasterService(
   chainId: bigint,
@@ -54,7 +55,10 @@ export function getAmbirePaymasterService(
 
   return {
     url: getAmbireSponsorshipUrl(relayerUrl),
-    id: new Date().getTime()
+    id: new Date().getTime(),
+    context: {
+      policyId: AMBIRE_GNOSIS_POLICY
+    }
   }
 }
 

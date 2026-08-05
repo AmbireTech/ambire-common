@@ -16,6 +16,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getFeeCall } from '../calls/calls'
 import {
+  AMBIRE_GNOSIS_POLICY,
   AMBIRE_SWAP_POLICY,
   getAmbireSponsorshipUrl,
   getPaymasterData,
@@ -79,6 +80,8 @@ export class Paymaster extends AbstractPaymaster {
 
   op: AccountOp | null = null
 
+  #account: Account | null = null
+
   paymasterService: PaymasterService | null = null
 
   network: Network | null = null
@@ -100,6 +103,36 @@ export class Paymaster extends AbstractPaymaster {
     this.#relayerUrl = relayerUrl
   }
 
+  async #tryToSetErc7677(userOp: UserOperation) {
+    if (!this.paymasterService || !this.#account || !this.network) return
+
+    try {
+      // when requesting stub data with an empty account, send over
+      // the deploy data as per EIP-7677 standard
+      const localOp = { ...userOp }
+      if (BigInt(localOp.nonce) === 0n && this.#account.creation) {
+        const factoryInterface = new Interface(AmbireFactory.abi)
+        localOp.factory = this.#account.creation.factoryAddr
+        localOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
+          this.#account.creation.bytecode,
+          this.#account.creation.salt
+        ])
+      }
+
+      const response = await Promise.race([
+        getPaymasterStubData(this.paymasterService, localOp, this.network),
+        new Promise((_resolve, reject) => {
+          setTimeout(() => reject(new Error('Sponsorship error, request too slow')), 5000)
+        })
+      ])
+      this.sponsorDataEstimation = response as PaymasterEstimationData
+      this.type = 'ERC7677'
+      return
+    } catch (e) {
+      console.log('ERC7677 sponsorship declined', e)
+    }
+  }
+
   async init(
     op: AccountOp,
     userOp: UserOperation,
@@ -110,38 +143,13 @@ export class Paymaster extends AbstractPaymaster {
     this.op = op
     this.network = network
     this.provider = provider
+    this.#account = account
     this.ambirePaymasterUrl = `/v2/paymaster/${this.network.chainId}/request`
+    if (op.meta?.paymasterService) this.paymasterService = op.meta.paymasterService
 
-    if (op.meta?.paymasterService && !op.meta?.paymasterService.failed) {
-      try {
-        this.paymasterService = op.meta.paymasterService
-
-        // when requesting stub data with an empty account, send over
-        // the deploy data as per EIP-7677 standard
-        const localOp = { ...userOp }
-        if (BigInt(localOp.nonce) === 0n && account.creation) {
-          const factoryInterface = new Interface(AmbireFactory.abi)
-          localOp.factory = account.creation.factoryAddr
-          localOp.factoryData = factoryInterface.encodeFunctionData('deploy', [
-            account.creation.bytecode,
-            account.creation.salt
-          ])
-        }
-
-        const response = await Promise.race([
-          getPaymasterStubData(op.meta.paymasterService, localOp, network),
-          new Promise((_resolve, reject) => {
-            setTimeout(() => reject(new Error('Sponsorship error, request too slow')), 5000)
-          })
-        ])
-        this.sponsorDataEstimation = response as PaymasterEstimationData
-        this.type = 'ERC7677'
-        return
-      } catch (e) {
-        // TODO: error handling
-        console.log(e)
-      }
-    }
+    // try to init ERC-7677 if a paymasterService has been provided and it hasn't failed
+    if (op.meta?.paymasterService && !op.meta?.paymasterService.failed)
+      await this.#tryToSetErc7677(userOp)
 
     // has the paymaster dried up
     const seenInsufficientFunds =
@@ -382,21 +390,12 @@ export class Paymaster extends AbstractPaymaster {
     )
   }
 
-  /**
-   * We use the upgrade method when we initially need to start with another
-   * paymaster type, e.g. Ambire, but then we understand we can use another
-   * one because special conditions apply.
-   * One such case is the swap&bridge where we first need to know the estimation
-   * from the bundler so we could calculate the txn fee. If the swap fee is
-   * bigger than the txn fee, we upgrade the paymaster to SwapSponsorship.
-   */
-  async upgrade(
+  async #tryToSetSwapSponsorship(
     bundlerEstimateResult: BundlerEstimateResult,
     gasPrices: GasSpeeds,
     userOp: UserOperation
-  ): Promise<void> {
-    // ERC7677 is already sponsoring the userOperation so we don't upgrade over it
-    if (!this.op?.meta?.swapSponsorship || this.type === 'ERC7677' || !this.network) return
+  ) {
+    if (!this.op?.meta?.swapSponsorship || !this.network) return
 
     const gas =
       BigInt(bundlerEstimateResult.callGasLimit) + BigInt(bundlerEstimateResult.preVerificationGas)
@@ -449,6 +448,34 @@ export class Paymaster extends AbstractPaymaster {
       console.log('Sponsorship declined', e)
     } finally {
       if (sponsorshipTimeout !== undefined) clearTimeout(sponsorshipTimeout)
+    }
+  }
+
+  /**
+   * We use the upgrade method when we initially need to start with another
+   * paymaster type, e.g. Ambire, but then we understand we can use another
+   * one because special conditions apply.
+   * One such case is the swap&bridge where we first need to know the estimation
+   * from the bundler so we could calculate the txn fee. If the swap fee is
+   * bigger than the txn fee, we upgrade the paymaster to SwapSponsorship.
+   */
+  async upgrade(
+    bundlerEstimateResult: BundlerEstimateResult,
+    gasPrices: GasSpeeds,
+    userOp: UserOperation
+  ): Promise<void> {
+    // ERC7677 is already sponsoring the userOperation so we don't upgrade over it
+    if (this.type === 'ERC7677' || !this.network) return
+
+    // do not upgrade over the gnosis paymaster sponsorship
+    if (this.type === 'Ambire' && this.paymasterService?.context?.policyId === AMBIRE_GNOSIS_POLICY)
+      return
+
+    await this.#tryToSetSwapSponsorship(bundlerEstimateResult, gasPrices, userOp)
+
+    // try to init ERC-7677 if a paymasterService has been provided and it hasn't failed
+    if (this.op?.meta?.paymasterService && !this.op.meta.paymasterService.failed) {
+      await this.#tryToSetErc7677(userOp)
     }
   }
 }
