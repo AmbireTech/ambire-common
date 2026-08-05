@@ -1,3 +1,4 @@
+import { processAAVEPositions, processUniV3Positions } from '../defiPositions/positionsProcessing'
 import { processBalances, processCollections } from '../portfolio/balanceProcessing'
 
 /**
@@ -8,7 +9,9 @@ import { processBalances, processCollections } from '../portfolio/balanceProcess
  */
 export const OFFLOAD_TASKS = {
   processBalances,
-  processCollections
+  processCollections,
+  processAAVEPositions,
+  processUniV3Positions
 } as const
 
 export type OffloadTask = keyof typeof OFFLOAD_TASKS

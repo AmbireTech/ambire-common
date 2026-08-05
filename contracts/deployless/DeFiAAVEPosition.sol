@@ -141,7 +141,10 @@ struct AAVEUserBalance {
     UserAccountData accountData;
     bytes userBalanceErr;
     bytes accountDataErr;
-
+    // Total number of reserves in the pool. Returned on every page so the
+    // caller can page through all reserves without a separate reserves-count
+    // request first.
+    uint256 reservesCount;
 }
 
 interface IPoolAddressesProvider {
@@ -413,6 +416,7 @@ contract DeFiAAVEPosition {
     function getAAVEPosition(address userAddr, address poolAddr, uint from, uint to) external view returns (AAVEUserBalance memory result) {
         (result.userBalance, result.accountDataErr) = positions.getTokenBalancesFromPool(userAddr, poolAddr, from, to);
         (result.accountData, result.accountDataErr) = positions.getUserAccountData(userAddr, poolAddr);
+        result.reservesCount = IPOOL(poolAddr).getReservesList().length;
         return result;
     }
 }
