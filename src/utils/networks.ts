@@ -164,9 +164,6 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     }),
     ...(typeof incomingFeeOptions.baseFeeMaxChangeDenominator === 'number' && {
       baseFeeMaxChangeDenominator: BigInt(incomingFeeOptions.baseFeeMaxChangeDenominator)
-    }),
-    ...(typeof incomingFeeOptions.feeIncrease === 'number' && {
-      feeIncrease: BigInt(incomingFeeOptions.feeIncrease)
     })
   }
 

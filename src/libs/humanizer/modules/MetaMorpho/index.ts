@@ -160,7 +160,7 @@ const decodeVaultMulticall = (
     }
   })
 
-const humanizeCall = (accOp: AccountOp, call: IrCall): IrCall => {
+const MetaMorphoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall => {
   if (call.fullVisualization) return call
   if (!call.to) return call
   if (!isHexCall(call)) return call
@@ -181,8 +181,5 @@ const humanizeCall = (accOp: AccountOp, call: IrCall): IrCall => {
 
   return { ...call, fullVisualization }
 }
-
-const MetaMorphoModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrCall[] =>
-  calls.map((call) => humanizeCall(accOp, call))
 
 export default MetaMorphoModule

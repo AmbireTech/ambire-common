@@ -4193,16 +4193,16 @@ describe('ERC-7730 descriptors', () => {
         {
           label: 'Transactions',
           value: [
-            getErc7730Visualization('Interacting', [
+            getErc7730Visualization('Extend your account functionality with', [
               {
-                label: 'With',
-                value: [getAddressVisualization(safeAddress)]
+                label: 'Extend your account functionality with',
+                value: [getAddressVisualization('0x2f55e8b20d0b9fefa187aa7d00b6cbe563605bf5')]
               }
             ]),
-            getErc7730Visualization('Interacting', [
+            getErc7730Visualization('Authorize custom access rights to your account for', [
               {
-                label: 'With',
-                value: [getAddressVisualization(safeAddress)]
+                label: 'Authorize custom access rights to your account for',
+                value: [getAddressVisualization(settlementContract)]
               }
             ]),
             getErc7730Visualization('Grant approval', [
@@ -4215,10 +4215,24 @@ describe('ERC-7730 descriptors', () => {
                 value: [getAddressVisualization(spender)]
               }
             ]),
-            getErc7730Visualization('Interacting', [
+            getErc7730Visualization('Create CoW TWAP order', [
               {
-                label: 'With',
-                value: [getAddressVisualization(settlementContract)]
+                label: 'Create CoW TWAP order',
+                value: [getToken(usdc, 2010000n, 8453n)]
+              },
+              {
+                label: 'For at least',
+                value: [
+                  getToken(
+                    '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+                    915124135802242n,
+                    8453n
+                  )
+                ]
+              },
+              {
+                label: 'And send it to',
+                value: [getAddressVisualization(safeAddress)]
               }
             ])
           ]

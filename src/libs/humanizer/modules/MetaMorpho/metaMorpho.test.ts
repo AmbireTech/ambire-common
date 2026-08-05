@@ -35,7 +35,7 @@ describe('MetaMorpho', () => {
       getLabel('to'),
       getAddressVisualization(SPENDER)
     ]
-    const irCalls = MetaMorphoModule(accountOp, [call])
+    const irCalls = [call].map((c) => MetaMorphoModule(accountOp, c))
     compareHumanizerVisualizations(irCalls, [expectedVisualization])
   })
 
@@ -55,7 +55,7 @@ describe('MetaMorpho', () => {
       getAction('Deposit into vault'),
       getToken(VAULT_ADDRESS, 1000000000000000000n)
     ]
-    const irCalls = MetaMorphoModule(accountOp, [call])
+    const irCalls = [call].map((c) => MetaMorphoModule(accountOp, c))
     compareHumanizerVisualizations(irCalls, [expectedVisualization])
   })
 
@@ -69,7 +69,7 @@ describe('MetaMorpho', () => {
       getAction('Withdraw from vault'),
       getToken(VAULT_ADDRESS, 500000000000000000n)
     ]
-    const irCalls = MetaMorphoModule(accountOp, [call])
+    const irCalls = [call].map((c) => MetaMorphoModule(accountOp, c))
     compareHumanizerVisualizations(irCalls, [expectedVisualization])
   })
 
@@ -80,8 +80,8 @@ describe('MetaMorpho', () => {
       // unrelated selector inside the bundle, not a known vault action
       data: '0xac9650d800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000849b2c0a3700000000000000000000000000000000000000000000000000000000000000000000000000000000000000006969174fd72466430a46e18234d0b530c9fd5f4900000000000000000000000000000000000000000000000000000000000000000000000000000000000000006969174fd72466430a46e18234d0b530c9fd5f4900000000000000000000000000000000000000000000000000000000'
     }
-    const irCalls = MetaMorphoModule(accountOp, [call])
-    expect(irCalls[0]!.fullVisualization).toBeUndefined()
+    const irCall = MetaMorphoModule(accountOp, call)
+    expect(irCall.fullVisualization).toBeUndefined()
   })
 
   test('mixes a known and an unrecognized inner call, separated by a break line', () => {
@@ -99,7 +99,7 @@ describe('MetaMorpho', () => {
       getBreak(),
       getAction('Unknown call')
     ]
-    const irCalls = MetaMorphoModule(accountOp, [call])
+    const irCalls = [call].map((c) => MetaMorphoModule(accountOp, c))
     compareHumanizerVisualizations(irCalls, [expectedVisualization])
   })
 })

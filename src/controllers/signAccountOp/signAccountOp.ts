@@ -9,6 +9,7 @@ import {
   toBeHex,
   ZeroAddress
 } from 'ethers'
+import { maxUint256 } from 'viem'
 
 import { isNative } from '@/libs/portfolio/helpers'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
@@ -41,6 +42,7 @@ import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
 import {
   ExternalKey,
@@ -154,6 +156,7 @@ import { discoverTxnTokens } from './discoverTxnTokens'
 import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
+  getSafeDelegateCallWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
@@ -180,6 +183,7 @@ export type SignAccountOpUpdateProps = {
   paidBy?: string
   paidByKeyType?: Key['type']
   speed?: FeeSpeed
+  shouldPersistSpeed?: boolean
   signingKeyAddr?: Key['addr']
   signingKeyType?: InternalKey['type'] | ExternalKey['type']
   signedTransactionsCount?: number | null
@@ -212,6 +216,8 @@ export class SignAccountOpController
 
   #portfolio: IPortfolioController
 
+  #featureFlags: IFeatureFlagsController
+
   #signAccountOpPreference: SignAccountOpPreferenceController
 
   #externalSignerControllers: ExternalSignerControllers
@@ -229,12 +235,16 @@ export class SignAccountOpController
 
   hasSafeApiFailed: boolean = false
 
+  isRefetchingAccountState: boolean = false
+
   /**
    * Never modify this directly, use #updateAccountOp instead.
    * Otherwise the accountOp will be out of sync with the one stored
    * in requests/actions.
    */
   #accountOp: AccountOp
+
+  #customSafeNonce: bigint | null = null
 
   gasPrices?: GasSpeeds
 
@@ -382,6 +392,7 @@ export class SignAccountOpController
     networks,
     keystore,
     portfolio,
+    featureFlags,
     signAccountOpPreference,
     externalSignerControllers,
     account,
@@ -404,6 +415,7 @@ export class SignAccountOpController
     networks: INetworksController
     keystore: IKeystoreController
     portfolio: IPortfolioController
+    featureFlags: IFeatureFlagsController
     signAccountOpPreference: SignAccountOpPreferenceController
     externalSignerControllers: ExternalSignerControllers
     account: Account
@@ -425,12 +437,19 @@ export class SignAccountOpController
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
+    this.#featureFlags = featureFlags
     this.#signAccountOpPreference = signAccountOpPreference
     this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
+    this.selectedFeeSpeed = this.#signAccountOpPreference.feeSpeedPreference
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
-    this.baseAccount = getBaseAccount(account, accountState, network)
+    this.baseAccount = getBaseAccount(
+      account,
+      accountState,
+      network,
+      this.#featureFlags.isFeatureEnabled('erc4337')
+    )
     this.#network = network
     this.#activity = activity
     this.#dapps = dapps
@@ -473,7 +492,8 @@ export class SignAccountOpController
       provider,
       portfolio,
       this.bundlerSwitcher,
-      this.#activity
+      this.#activity,
+      this.#featureFlags
     )
     this.#onUpdateAfterTraceCallSuccess = onUpdateAfterTraceCallSuccess
     this.gasPrice = new GasPriceController(network, provider, this.baseAccount, () => ({
@@ -532,6 +552,113 @@ export class SignAccountOpController
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
     }
     this.#updateSafeEip712Data()
+  }
+
+  #rebuildBaseAccount() {
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+
+    if (!accountState) return
+
+    this.baseAccount = getBaseAccount(
+      this.account,
+      accountState,
+      this.#network,
+      this.#featureFlags.isFeatureEnabled('erc4337')
+    )
+    this.gasPrice?.setBaseAccount(this.baseAccount)
+  }
+
+  #clearFeeSelection() {
+    this.#paidBy = null
+    this.feeTokenResult = null
+    this.selectedOption = undefined
+    this.selectedFeeSpeed = FeeSpeed.Fast
+    this.feeSpeeds = {}
+    this.#updateAccountOp({ gasFeePayment: null })
+  }
+
+  #updateNonce(nonce: bigint) {
+    if (this.#customSafeNonce !== null) return
+    this.#updateAccountOp({ nonce })
+  }
+
+  setSafeNonce(nonce: bigint) {
+    if (!this.account.safeCreation) {
+      const message = 'Nonce could not be set, Safe account data is missing'
+      this.emitError({
+        message,
+        error: new Error(message),
+        level: 'minor'
+      })
+      return
+    }
+    if (this.status?.type && noStateUpdateStatuses.includes(this.status.type)) {
+      const message = 'Nonce cannot be set as the transaction is in a signing state'
+      this.emitError({
+        message,
+        error: new Error(message),
+        level: 'minor'
+      })
+      return
+    }
+    if (this.accountOp.signed?.length || this.accountOp.safeTx?.confirmations?.length) {
+      const message = 'Nonce cannot be set as the transaction is already signed'
+      this.emitError({
+        message,
+        error: new Error(message),
+        level: 'minor'
+      })
+      return
+    }
+    if (nonce < 0n || nonce > maxUint256) {
+      const message = `Invalid nonce: ${nonce.toString()}`
+      this.emitError({
+        message,
+        error: new Error(message),
+        level: 'minor'
+      })
+      return
+    }
+
+    this.#customSafeNonce = nonce
+    this.#updateAccountOp({
+      nonce,
+      safeTx: this.accountOp.safeTx
+        ? {
+            ...this.accountOp.safeTx,
+            nonce: nonce.toString()
+          }
+        : undefined,
+      signature: null,
+      txnId: undefined,
+      asUserOperation: undefined
+    })
+    this.emitUpdate()
+  }
+
+  async refetchAccountState() {
+    if (this.isRefetchingAccountState) return
+
+    this.isRefetchingAccountState = true
+    this.emitUpdate()
+
+    try {
+      await this.#accounts.forceFetchPendingState(
+        this.accountOp.accountAddr,
+        this.accountOp.chainId
+      )
+      await this.#simulateAndEstimate()
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: 'Unable to refresh your account information. Please try again.',
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+    } finally {
+      this.isRefetchingAccountState = false
+      this.emitUpdate()
+    }
   }
 
   #getSafeSigningData(accountState: AccountOnchainState) {
@@ -1291,7 +1418,8 @@ export class SignAccountOpController
       this.#accountOp.signed.length >= this.threshold
     ) {
       errors.push({
-        title: 'You need to broadcast pending transactions before this one.'
+        title: 'You need to broadcast pending transactions before this one.',
+        action: 'refetch-account-state'
       })
     }
 
@@ -1376,9 +1504,7 @@ export class SignAccountOpController
     // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
     // that we should update the portfolio to get a correct simulation
     if (estimation && estimation.ambireEstimation && estimation.flags.hasNonceDiscrepancy) {
-      this.#updateAccountOp({
-        nonce: BigInt(estimation.ambireEstimation.ambireAccountNonce)
-      })
+      this.#updateNonce(BigInt(estimation.ambireEstimation.ambireAccountNonce))
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -1399,9 +1525,7 @@ export class SignAccountOpController
         this.accountOp.accountAddr,
         this.accountOp.chainId
       )
-      this.#updateAccountOp({
-        nonce: pendingAccountState.nonce
-      })
+      this.#updateNonce(pendingAccountState.nonce)
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -1476,6 +1600,23 @@ export class SignAccountOpController
     this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
   }
 
+  async enableErc4337AndReestimate() {
+    await this.#featureFlags.setFeatureFlag('erc4337', true)
+    this.#rebuildBaseAccount()
+    this.#clearFeeSelection()
+    this.bundlerSwitcher.cleanUp()
+    this.gasPrice.areGasPricesUsedFromBundlerEstimation = false
+
+    try {
+      await this.estimation.estimate(this.accountOp)
+      this.update({ hasNewEstimation: true })
+    } catch {
+      // @justInCase basically, this is a re-estimate with proper errro handling
+      // if it blows up for some reason, it should also blow up in
+      // its proper places. No need to propagate the error here
+    }
+  }
+
   update({
     gasPrices,
     customGasPrices,
@@ -1484,6 +1625,7 @@ export class SignAccountOpController
     pendingFeeTokenPreference,
     paidBy,
     speed,
+    shouldPersistSpeed,
     signingKeyAddr,
     signingKeyType,
     signedTransactionsCount,
@@ -1529,9 +1671,7 @@ export class SignAccountOpController
 
         const estimation = this.estimation.estimation as FullEstimationSummary
         if (estimation.ambireEstimation && !isSpeedUpTransaction) {
-          this.#updateAccountOp({
-            nonce: BigInt(estimation.ambireEstimation.ambireAccountNonce)
-          })
+          this.#updateNonce(BigInt(estimation.ambireEstimation.ambireAccountNonce))
         }
       } else if (this.estimation.status === EstimationStatus.Error) {
         // No need to update gasPrices if the estimation failed
@@ -1668,6 +1808,9 @@ export class SignAccountOpController
 
       if (speed && this.isInitialized && !isSpeedUpTransaction) {
         this.selectedFeeSpeed = speed
+        if (shouldPersistSpeed) {
+          void this.#signAccountOpPreference.setFeeSpeedPreference(speed)
+        }
       }
 
       if (signingKeyAddr && signingKeyType && this.isInitialized && !isSpeedUpTransaction) {
@@ -2175,6 +2318,10 @@ export class SignAccountOpController
     // no increase if the user has set them
     if (this.hasCustomGasPrices) return this.gasPrices
 
+    // no increase if there's no bundlerEstimation as this means
+    // we're not using erc-4337 for broadcast
+    if (!this.estimation.estimation?.bundlerEstimation) return this.gasPrices
+
     return {
       slow: {
         maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.slow.maxFeePerGas), 5n),
@@ -2206,6 +2353,12 @@ export class SignAccountOpController
     const identifier = getFeeSpeedIdentifier(feePaymentOption, this.account.addr)
     const speeds = this.feeSpeeds[identifier]
     if (!speeds) return
+
+    const preferredSpeed = this.#signAccountOpPreference.feeSpeedPreference
+    if (speeds.find(({ type, disabled }) => type === preferredSpeed && !disabled)) {
+      this.selectedFeeSpeed = preferredSpeed
+      return
+    }
 
     // set fast if available
     if (speeds.find(({ type, disabled }) => type === FeeSpeed.Fast && !disabled)) {
@@ -2899,10 +3052,9 @@ export class SignAccountOpController
         this.account.safeCreation &&
         (this.#accountOp.signed?.length || 0) < this.threshold
       ) {
-        // if the Safe txn is not already signed, fetch the latest nonce
-        // as we don't have a mechanism for fixing nonces for Safe accounts
-        // during the estimation phase itself
-        if (!this.accountOp.safeTx) {
+        // If the Safe txn is not already signed, fetch the latest nonce unless
+        // the user explicitly selected one for this transaction.
+        if (!this.accountOp.safeTx && this.#customSafeNonce === null) {
           const latestNonce = await getNonce(this.accountOp.accountAddr, this.provider).catch(
             (e) => {
               console.log('failed to retrieve the latest nonce for Safe')
@@ -2911,9 +3063,7 @@ export class SignAccountOpController
             }
           )
           if (latestNonce) {
-            this.#updateAccountOp({
-              nonce: latestNonce
-            })
+            this.#updateNonce(latestNonce)
           }
         }
 
@@ -2939,7 +3089,10 @@ export class SignAccountOpController
           ? this.accountOp.signed.concat([this.accountOp.signingKeyAddr])
           : [this.accountOp.signingKeyAddr]
 
-        const isQuickBroadcast = this.threshold === 1 && this.accountKeyStoreKeys.length === 1
+        const isQuickBroadcast =
+          this.threshold === 1 &&
+          this.accountKeyStoreKeys.length === 1 &&
+          (!this.#customSafeNonce || this.#customSafeNonce === accountState.nonce)
         if (!isQuickBroadcast) {
           if (!prevSignedSigs.length) {
             // propose the txn to Safe Global upon first entry
@@ -3007,7 +3160,7 @@ export class SignAccountOpController
             this.accountOp,
             this.provider
           )
-          if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
+          if (nonce !== this.accountOp.nonce) this.#updateNonce(nonce)
 
           const signer = await this.#getDefaultSigner()
           this.#updateAccountOp({
@@ -3234,7 +3387,7 @@ export class SignAccountOpController
           this.accountOp,
           this.provider
         )
-        if (nonce !== this.accountOp.nonce) this.#updateAccountOp({ nonce })
+        if (nonce !== this.accountOp.nonce) this.#updateNonce(nonce)
 
         this.#updateAccountOp({
           signature: await this.#withHardwareWalletSigningRequest(
@@ -3430,14 +3583,17 @@ export class SignAccountOpController
           }
           if (txnLength > 1) this.update({ signedTransactionsCount: i + 1 })
 
-          // record the EOA txn
-          this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
-            rawTxn: signedTxn
-          }).catch((e: any) => {
-            console.log('failed to record EOA txn to relayer', accountOp.chainId)
+          // record the EOA txn only if isErc4337Enabled as
+          // we need this for the gas tank
+          if (this.isErc4337Enabled) {
+            this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
+              rawTxn: signedTxn
+            }).catch((e: any) => {
+              console.log('failed to record EOA txn to relayer', accountOp.chainId)
 
-            console.log(e)
-          })
+              console.log(e)
+            })
+          }
         }
 
         transactionRes = {
@@ -3453,6 +3609,10 @@ export class SignAccountOpController
         }
       } catch (error: any) {
         console.error('Error broadcasting', error)
+
+        // reset the eoaNonce on error
+        this.#updateAccountOp({ eoaNonce: undefined })
+
         // for multiple txn cases
         // if a batch of 5 txn is sent to Ledger for sign but the user reject
         // #3, #1 and #2 are already broadcast. Reduce the accountOp's call
@@ -3501,6 +3661,7 @@ export class SignAccountOpController
         if (switcher.canSwitch(this.baseAccount)) {
           switcher.switch()
           this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.#silentGasPriceUpdate()
           retryMsg = 'Broadcast failed because bundler was down. Please try again'
         }
@@ -3908,6 +4069,15 @@ export class SignAccountOpController
     const dappVerificationBanner = this.#getDappVerificationBanner()
     if (dappVerificationBanner) banners.push(dappVerificationBanner)
 
+    const safeDelegateCallWarning = getSafeDelegateCallWarning(this.accountOp)
+    if (safeDelegateCallWarning) {
+      banners.push({
+        id: safeDelegateCallWarning.id,
+        type: 'warning',
+        text: safeDelegateCallWarning.text || safeDelegateCallWarning.title
+      })
+    }
+
     return banners
   }
 
@@ -3927,6 +4097,14 @@ export class SignAccountOpController
     return this.baseAccount.canSetCustomGas(this.selectedOption, this.accountOp)
   }
 
+  get isErc4337Enabled(): boolean {
+    return this.#featureFlags.isFeatureEnabled('erc4337')
+  }
+
+  get canEnableErc4337(): boolean {
+    return !this.isErc4337Enabled && this.baseAccount.canUseErc4337()
+  }
+
   get threshold(): number {
     const accountState =
       this.#accounts.accountStates[this.account.addr]![this.#network.chainId.toString()]
@@ -3936,6 +4114,10 @@ export class SignAccountOpController
 
   get canBroadcast() {
     if (!this.account.safeCreation) return true
+
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    if (this.accountOp.nonce !== null && this.accountOp.nonce !== accountState?.nonce) return false
 
     // if the threshold is 1 and there's only 1 imported key, allow quick broadcast
     if (this.threshold === 1 && this.accountKeyStoreKeys.length === 1) return true
@@ -3970,6 +4152,8 @@ export class SignAccountOpController
       canAccountBroadcastByItself: this.canAccountBroadcastByItself,
       canSetCustomGasPrices: this.canSetCustomGasPrices,
       canSetCustomGas: this.canSetCustomGas,
+      isErc4337Enabled: this.isErc4337Enabled,
+      canEnableErc4337: this.canEnableErc4337,
       threshold: this.threshold,
       canBroadcast: this.canBroadcast,
       hasSafeApiFailed: this.hasSafeApiFailed,

@@ -1,4 +1,4 @@
-import { ENS_EXPIRY_WARN_WINDOW_IN_MS, NameExpiry } from '@/services/ensDomains'
+import { ENS_EXPIRY_WARN_WINDOW_IN_MS, NameExpiry } from '@/services/ensDomains/ensDomains'
 import { expect } from '@jest/globals'
 
 import { EXPIRY_CLOSE_TO_DEADLINE_POLL_IN_MS, isNameExpiryStale } from './expiry'

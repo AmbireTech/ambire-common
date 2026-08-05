@@ -59,6 +59,10 @@ export class GasPriceController extends EventEmitter {
     this.#getSignAccountOpState = getSignAccountOpState
   }
 
+  setBaseAccount(baseAccount: BaseAccount) {
+    this.#baseAccount = baseAccount
+  }
+
   async fetch(emitLevelOnFailure: ErrorRef['level'] = 'silent') {
     if (this.areGasPricesUsedFromBundlerEstimation) return
 

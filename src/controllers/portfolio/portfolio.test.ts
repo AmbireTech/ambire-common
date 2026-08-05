@@ -71,7 +71,7 @@ const gnosis: Network = {
   explorerUrl: 'https://gnosisscan.io',
   platformId: 'xdai',
   nativeAssetId: 'xdai',
-  feeOptions: { is1559: false, feeIncrease: 100n },
+  feeOptions: { is1559: false },
   wrappedAddr: '0x6A023ccd1ff6f2045C3309768eAd9E68F978f6e1'
 }
 
