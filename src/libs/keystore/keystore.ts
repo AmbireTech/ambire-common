@@ -209,15 +209,16 @@ export const deriveSecret = async (
   secretValue: string,
   salt: string
 ): Promise<Uint8Array<ArrayBuffer>> => {
-  // Use wait(0) to yield to the event loop and avoid blocking the UI
-  await wait(0)
+  const shouldYieldAroundScrypt = !scryptAdapter.runsOffCallerThread
+
+  if (shouldYieldAroundScrypt) await wait(0)
   const secretKey = await scryptAdapter.scrypt(getBytesForSecret(secretValue), getBytes(salt), {
     N: SCRYPT_PARAMS.N,
     r: SCRYPT_PARAMS.r,
     p: SCRYPT_PARAMS.p,
     dkLen: SCRYPT_PARAMS.dkLen
   })
-  await wait(0)
+  if (shouldYieldAroundScrypt) await wait(0)
 
   return secretKey as Uint8Array<ArrayBuffer>
 }
