@@ -9,6 +9,7 @@ import {
   NetworkState as DefiNetworkState,
   PositionsByProvider
 } from '../defiPositions/types'
+
 import type { DeploylessMode } from '../deployless/deployless'
 
 // @TODO: Move most of these interfaces to src/interfaces and
@@ -100,7 +101,11 @@ export type TokenDataCacheValue = Pick<TokenResult, 'marketDataIn' | 'priceIn' |
  */
 export type TokenDataCache = Map<string, [number, TokenDataCacheValue]>
 
-export type MetaData = { blockNumber?: number; beforeNonce?: bigint; afterNonce?: bigint }
+export type MetaData = {
+  blockNumber?: bigint
+  beforeNonce?: bigint
+  afterNonce?: bigint
+}
 
 /**
  * ERC-721 hints, returned by the Velcro API

@@ -1,14 +1,6 @@
 import assert from 'assert'
-import {
-  AbiCoder,
-  concat,
-  getBytes,
-  Interface,
-  JsonRpcProvider,
-  Provider,
-  toQuantity
-} from 'ethers'
-import { decodeFunctionResult, encodeFunctionData } from 'viem'
+import { AbiCoder, Interface, JsonRpcProvider, Provider, toQuantity } from 'ethers'
+import { concat, decodeFunctionResult, encodeFunctionData, Hex } from 'viem'
 
 import DeploylessCompiled from '../../../contracts/compiled/Deployless.json'
 import { ProviderError } from '../../classes/ProviderError'
@@ -25,6 +17,7 @@ const codeOfContractAbi = ['function codeOf(bytes deployCode) external view']
 // any made up addr would work
 const arbitraryAddr = '0x0000000000000000000000000000000000696969'
 const abiCoder = new AbiCoder()
+const HEX_PREFIX = '0x'
 
 export enum DeploylessMode {
   Detect,
@@ -146,7 +139,8 @@ export class Deployless {
   }
 
   private static checkDataSize(data: string): string {
-    if (getBytes(data).length >= 24576)
+    // Done this way instead of getBytes for performance
+    if ((data.length - HEX_PREFIX.length) / 2 >= 24576)
       throw new Error(
         'Transaction cannot be sent because the 24kb call data size limit has been reached. Please use StateOverride mode instead.'
       )
@@ -203,14 +197,23 @@ export class Deployless {
       gasLimit: opts?.gasLimit,
       data: Deployless.checkDataSize(
         concat([
-          deploylessProxyBin,
-          abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData])
+          deploylessProxyBin as Hex,
+          abiCoder.encode(['bytes', 'bytes'], [this.contractBytecode, callData]) as Hex
         ])
       )
     })
   }
 
   async call(methodName: string, args: any[], _opts: Partial<CallOptions> = {}): Promise<any> {
+    const returnDataRaw = await this.callRaw(methodName, args, _opts)
+    return this.decodeResult(methodName, returnDataRaw)
+  }
+
+  async callRaw(
+    methodName: string,
+    args: any[],
+    _opts: Partial<CallOptions> = {}
+  ): Promise<`0x${string}`> {
     const opts = { ...defaultOptions, ..._opts }
     const forceProxy = opts.mode === DeploylessMode.ProxyContract
     const forcePredeployed = opts.mode === DeploylessMode.Predeployed
@@ -267,10 +270,14 @@ export class Deployless {
       this.providerUrl
     )
 
+    return returnDataRaw as `0x${string}`
+  }
+
+  decodeResult(methodName: string, data: `0x${string}`): any {
     return decodeFunctionResult({
       abi: this.abi,
       functionName: methodName,
-      data: returnDataRaw as `0x${string}`
+      data
     })
   }
 }
