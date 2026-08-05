@@ -811,6 +811,9 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
     expect(swapAndBridgeController.banners[0]!.actions).toHaveLength(1)
+    expect(swapAndBridgeController.banners[0]!.meta?.accountAddr).toEqual(
+      '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    )
   })
   describe('continuous active-route updates', () => {
     beforeEach(() => {

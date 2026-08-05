@@ -1015,6 +1015,28 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.accountOp.nonce).toBe(42n)
   })
 
+  test('does not allow broadcasting an imported Safe transaction with a future nonce', async () => {
+    const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
+    const accountState =
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!
+
+    controller.update({ accountOpData: { nonce: null } })
+    expect(controller.canBroadcast).toBe(true)
+
+    controller.update({ accountOpData: { nonce: accountState.nonce } })
+    expect(controller.canBroadcast).toBe(true)
+
+    controller.update({ accountOpData: { nonce: accountState.nonce + 1n } })
+
+    expect(controller.errors).toContainEqual({
+      title: 'You need to broadcast pending transactions before this one.',
+      action: 'refetch-account-state'
+    })
+    expect(controller.canBroadcast).toBe(false)
+  })
+
   test('does not change the nonce of a non-Safe or already-signed transaction', async () => {
     const { controller: nonSafeController } = await initDefaultFeeSelection()
     const { controller: signedSafeController } = await initSafeNonce([eoaSigner.keyPublicAddress])
@@ -1062,6 +1084,28 @@ describe('SignAccountOp Controller ', () => {
     })
 
     expect(controller.selectedOption?.token.flags.onGasTank).toBe(true)
+  })
+
+  test('uses the saved fee speed as the default for a new signing request', async () => {
+    const { controller } = await initDefaultFeeSelection(undefined, {
+      initialSetStorage: async (storageCtrl) => {
+        await storageCtrl.set('signAccountOpFeeSpeedPreference', FeeSpeed.Medium)
+      }
+    })
+
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
+  })
+
+  test('persists only explicitly selected fee speeds', async () => {
+    const { controller, storageCtrl } = await initDefaultFeeSelection()
+
+    controller.update({ speed: FeeSpeed.Slow })
+    await wait(1)
+    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toBeUndefined()
+
+    controller.update({ speed: FeeSpeed.Medium, shouldPersistSpeed: true })
+    await wait(1)
+    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toBe(FeeSpeed.Medium)
   })
 
   test('uses a saved ERC-20 default only for the matching chain', async () => {
