@@ -3,13 +3,15 @@ import { parseUnits } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 import { Token as LiFiToken } from '@lifi/types'
 
-import { SwapAndBridgeQuote } from '../../interfaces/swapAndBridge'
+import { SwapAndBridgeQuote, SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
+import { TokenResult } from '../portfolio/interfaces'
 import {
   calculateAmountWarnings,
   enrichRouteWithOutputUsdPrice,
   getFeeTokenForSponsorship,
   getIsBridgeRoute,
-  getSwapSponsorship
+  getSwapSponsorship,
+  sortTokenListResponse
 } from './swapAndBridge'
 
 // Helper function to create a mock route for testing
@@ -566,5 +568,70 @@ describe('swapAndBridge lib', () => {
       // The function catches errors and returns null
       expect(result).toBeNull()
     })
+  })
+})
+
+describe('sortTokenListResponse', () => {
+  const toToken = (address: string, symbol = address.slice(0, 6)): SwapAndBridgeToToken => ({
+    address,
+    symbol,
+    name: symbol,
+    chainId: 1,
+    decimals: 18
+  })
+
+  const portfolioToken = (address: string, amount: bigint, priceUsd: number): TokenResult =>
+    ({
+      address,
+      symbol: address.slice(0, 6),
+      name: address.slice(0, 6),
+      decimals: 18,
+      chainId: 1n,
+      amount,
+      priceIn: [{ baseCurrency: 'usd', price: priceUsd }],
+      marketDataIn: [],
+      flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: false, isFeeToken: false }
+    }) as unknown as TokenResult
+
+  const A = '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
+  const B = '0xBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+  const C = '0xCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
+
+  test('puts tokens held in the portfolio ahead of ones that are not', () => {
+    const sorted = sortTokenListResponse(
+      [toToken(C), toToken(A), toToken(B)],
+      [portfolioToken(B, 1000000000000000000n, 1)]
+    )
+
+    expect(sorted[0]!.address).toBe(B)
+  })
+
+  test('orders two held tokens by USD balance, highest first', () => {
+    const sorted = sortTokenListResponse(
+      [toToken(A), toToken(B)],
+      [
+        portfolioToken(A, 1000000000000000000n, 1), // $1
+        portfolioToken(B, 1000000000000000000n, 50) // $50
+      ]
+    )
+
+    expect(sorted.map((t) => t.address)).toEqual([B, A])
+  })
+
+  test('matches the portfolio regardless of address casing', () => {
+    // The provider list and the portfolio do not agree on checksum casing, and a
+    // case-sensitive match silently treated held tokens as not held.
+    const sorted = sortTokenListResponse(
+      [toToken(C), toToken(A.toLowerCase())],
+      [portfolioToken(A, 1000000000000000000n, 1)]
+    )
+
+    expect(sorted[0]!.address).toBe(A.toLowerCase())
+  })
+
+  test('preserves the provider order when no token is held', () => {
+    const sorted = sortTokenListResponse([toToken(C), toToken(A), toToken(B)], [])
+
+    expect(sorted.map((t) => t.address)).toEqual([C, A, B])
   })
 })

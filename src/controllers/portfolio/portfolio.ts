@@ -1,5 +1,7 @@
 import { getAddress } from 'ethers'
 
+import { yieldToMain } from '@/utils/scheduler'
+
 import {
   IRecurringTimeout,
   RecurringTimeout
@@ -1451,6 +1453,7 @@ export class PortfolioController
         defiMaxDataAgeMs,
         hasKeys: portfolioProps.hasKeys
       })
+      await yieldToMain()
       const allHints = this.hints.getAllHints(
         account.addr,
         network.chainId,
@@ -1503,6 +1506,8 @@ export class PortfolioController
             t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0' &&
             !t.flags.rewardsType
         ) ?? null
+
+      await yieldToMain()
 
       const newDefiState = getNewDefiState(
         state.result,

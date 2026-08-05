@@ -322,6 +322,94 @@ const getFormattedApiPositions = (result: Omit<PositionsByProvider, 'source'>[])
 }
 
 /**
+ * Groups the portfolio tokens by their lowercased address, keeping the original
+ * order within each group, so that looking a token up by address doesn't
+ * require a scan of the whole list.
+ */
+const groupTokensByLowercasedAddress = (
+  portfolioTokens: TokenResult[]
+): Map<string, TokenResult[]> => {
+  const tokensByAddress = new Map<string, TokenResult[]>()
+
+  portfolioTokens.forEach((token) => {
+    const address = token.address.toLowerCase()
+    const sameAddressTokens = tokensByAddress.get(address)
+
+    if (sameAddressTokens) sameAddressTokens.push(token)
+    else tokensByAddress.set(address, [token])
+  })
+
+  return tokensByAddress
+}
+
+/**
+ * Finds the portfolio token that a DeFi position asset refers to by its address.
+ * An exact address match wins over a case-insensitive one, and rewards and gas
+ * tank tokens are never a protocol asset. Returns undefined if the portfolio
+ * holds no such token.
+ */
+const findTokenByProtocolAssetAddress = (
+  tokensByAddress: Map<string, TokenResult[]>,
+  protocolAssetAddress: string
+): TokenResult | undefined =>
+  tokensByAddress
+    .get(protocolAssetAddress.toLowerCase())
+    ?.find(
+      (token) =>
+        token.address === protocolAssetAddress ||
+        (!token.flags.rewardsType && !token.flags.onGasTank)
+    )
+
+/**
+ * Finds the portfolio token that a DeFi position asset with no protocol asset
+ * refers to. Nothing but the symbol links the two, so a match is accepted only
+ * when both also hold nearly the same value, otherwise two unrelated tokens
+ * sharing a symbol would be treated as one. Returns undefined when there is no
+ * confident match.
+ *
+ * This scans every token and prices each candidate, so only reach for it when
+ * there is no address to match on.
+ */
+const findTokenBySimilarSymbolAndValue = (
+  portfolioTokens: TokenResult[],
+  asset: PositionAsset
+): TokenResult | undefined => {
+  const assetValue = asset.value
+
+  // If the token or asset don't have a value we MUST! not compare them
+  // by value as that would lead to false positives
+  if (!assetValue) return undefined
+
+  const assetSymbol = asset.symbol.toLowerCase()
+
+  return portfolioTokens.find((token) => {
+    if (token.flags.rewardsType || token.flags.onGasTank) return false
+
+    const symbol = token.symbol.toLowerCase()
+    // The portfolio token should contain the asset symbol, but be a different token
+    if (symbol === assetSymbol || !symbol.includes(assetSymbol)) return false
+
+    const priceUSD = token.priceIn.find(
+      ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
+    )?.price
+
+    if (!priceUSD) return false
+
+    const tokenBalanceUSD = Number(
+      safeTokenAmountAndNumberMultiplication(
+        BigInt(token.amountPostSimulation || token.amount),
+        token.decimals,
+        priceUSD
+      )
+    )
+
+    if (!tokenBalanceUSD) return false
+
+    return isTokenPriceWithinHalfPercent(tokenBalanceUSD, assetValue)
+  })
+}
+
+/**
  * Enhances the portfolio tokens with Defi position data.
  * Examples:
  * - Marks tokens that are part of a DeFi position with the position ID.
@@ -348,6 +436,7 @@ const enhancePortfolioTokensWithDefiPositions = (
       }
     >()
     const notYetHandledTokensToAdd: TokenResult[] = []
+    const tokensByAddress = groupTokensByLowercasedAddress(portfolioTokens)
 
     defiPositionsState.positionsByProvider.forEach((posByProvider) => {
       // Skip app providers
@@ -369,51 +458,9 @@ const enhancePortfolioTokensWithDefiPositions = (
           pos.assets.forEach((asset) => {
             const protocolAsset = asset.protocolAsset || null
 
-            const tokenCorrespondingToProtocolAsset = portfolioTokens.find((t) => {
-              const isSameAddress = t.address === protocolAsset?.address
-
-              if (isSameAddress) return true
-
-              const priceUSD = t.priceIn.find(
-                ({ baseCurrency }: { baseCurrency: string }) => baseCurrency.toLowerCase() === 'usd'
-              )?.price
-
-              const tokenBalanceUSD = priceUSD
-                ? Number(
-                    safeTokenAmountAndNumberMultiplication(
-                      BigInt(t.amountPostSimulation || t.amount),
-                      t.decimals,
-                      priceUSD
-                    )
-                  )
-                : undefined
-
-              if (protocolAsset?.address) {
-                return (
-                  !t.flags.rewardsType &&
-                  !t.flags.onGasTank &&
-                  t.address.toLowerCase() === protocolAsset.address.toLowerCase()
-                )
-              }
-
-              // If the token or asset don't have a value we MUST! not compare them
-              // by value as that would lead to false positives
-              if (!tokenBalanceUSD || !asset.value) return false
-
-              // If there is no protocol asset we have to fallback to finding the token
-              // by symbol and chainId. In that case we must ensure that the value of the two
-              // assets is similar
-              return (
-                !t.flags.rewardsType &&
-                !t.flags.onGasTank &&
-                // the portfolio token should contain the original asset symbol
-                t.symbol.toLowerCase().includes(asset.symbol.toLowerCase()) &&
-                // but should be a different token symbol
-                t.symbol.toLowerCase() !== asset.symbol.toLowerCase() &&
-                // and prices should have no more than 0.5% diff
-                isTokenPriceWithinHalfPercent(tokenBalanceUSD || 0, asset.value || 0)
-              )
-            })
+            const tokenCorrespondingToProtocolAsset = protocolAsset?.address
+              ? findTokenByProtocolAssetAddress(tokensByAddress, protocolAsset.address)
+              : findTokenBySimilarSymbolAndValue(portfolioTokens, asset)
 
             if (tokenCorrespondingToProtocolAsset) {
               defiAssetsMap.set(tokenCorrespondingToProtocolAsset.address.toLowerCase(), {

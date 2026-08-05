@@ -245,17 +245,28 @@ export class Portfolio {
       ...Object.values(specialErc721Hints || {})
     ])
 
-    const checksummedErc20Hints = hints.erc20s
-      .map((address) => {
-        try {
-          // getAddress may throw an error. This will break the portfolio
-          // if the error isn't caught
-          return getAddress(address)
-        } catch {
-          return null
-        }
-      })
-      .filter(Boolean) as string[]
+    // Deduped before checksumming, not after. The hints arrive with duplicates on
+    // purpose (every imported account contributes its own learned tokens) and
+    // checksumming hashes the address, so a duplicate is a hash for nothing.
+    const seenErc20Hints = new Set<string>()
+    const checksummedErc20Hints: string[] = []
+
+    hints.erc20s.forEach((address) => {
+      try {
+        const lowercasedAddress = address.toLowerCase()
+
+        if (seenErc20Hints.has(lowercasedAddress)) return
+
+        // getAddress may throw an error. This will break the portfolio
+        // if the error isn't caught
+        const checksummedAddress = getAddress(address)
+
+        seenErc20Hints.add(lowercasedAddress)
+        checksummedErc20Hints.push(checksummedAddress)
+      } catch {
+        // Not an address, so it can't be a token
+      }
+    })
 
     // Merge static and dynamic blacklisted addresses for this chain
     const chainIdStr = this.network.chainId.toString()
