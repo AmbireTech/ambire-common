@@ -6,13 +6,13 @@ import { getDappIdFromUrl, getNormalizedHostnameFromUrl, normalizeHostname } fro
 describe('dapps helpers', () => {
   describe('normalizeHostname', () => {
     it('strips the trailing dot of a fully-qualified hostname', () => {
-      expect(normalizeHostname('yombadge.web.app.')).toBe('yombadge.web.app')
+      expect(normalizeHostname('example.web.app.')).toBe('example.web.app')
       expect(normalizeHostname('app.aave.com.')).toBe('app.aave.com')
     })
 
     it('strips repeated trailing dots', () => {
-      expect(normalizeHostname('yombadge.web.app..')).toBe('yombadge.web.app')
-      expect(normalizeHostname('yombadge.web.app...')).toBe('yombadge.web.app')
+      expect(normalizeHostname('example.web.app..')).toBe('example.web.app')
+      expect(normalizeHostname('example.web.app...')).toBe('example.web.app')
     })
 
     it('leaves an already canonical hostname untouched', () => {
@@ -29,18 +29,18 @@ describe('dapps helpers', () => {
 
   describe('getNormalizedHostnameFromUrl', () => {
     it('returns the canonical hostname of a fully-qualified host', () => {
-      expect(getNormalizedHostnameFromUrl('https://yombadge.web.app./')).toBe('yombadge.web.app')
-      expect(getNormalizedHostnameFromUrl('https://yombadge.web.app./claim?ref=1')).toBe(
-        'yombadge.web.app'
+      expect(getNormalizedHostnameFromUrl('https://example.web.app./')).toBe('example.web.app')
+      expect(getNormalizedHostnameFromUrl('https://example.web.app./claim?ref=1')).toBe(
+        'example.web.app'
       )
-      expect(getNormalizedHostnameFromUrl('https://yombadge.web.app.:8443/claim')).toBe(
-        'yombadge.web.app'
+      expect(getNormalizedHostnameFromUrl('https://example.web.app.:8443/claim')).toBe(
+        'example.web.app'
       )
     })
 
     it('normalizes casing and the ideographic full stop the URL parser maps to a dot', () => {
-      expect(getNormalizedHostnameFromUrl('https://YomBadge.WEB.App./')).toBe('yombadge.web.app')
-      expect(getNormalizedHostnameFromUrl('https://yombadge。web。app。/')).toBe('yombadge.web.app')
+      expect(getNormalizedHostnameFromUrl('https://ExAmple.WEB.App./')).toBe('example.web.app')
+      expect(getNormalizedHostnameFromUrl('https://example。web。app。/')).toBe('example.web.app')
     })
 
     it('keeps internationalized hostnames in punycode, as the phishing lists store them', () => {
@@ -62,15 +62,15 @@ describe('dapps helpers', () => {
 
   describe('getDappIdFromUrl', () => {
     it('resolves a fully-qualified host to the same id as its canonical form', () => {
-      expect(getDappIdFromUrl('https://yombadge.web.app./')).toBe('yombadge.web.app')
-      expect(getDappIdFromUrl('https://yombadge.web.app./')).toBe(
-        getDappIdFromUrl('https://yombadge.web.app/')
+      expect(getDappIdFromUrl('https://example.web.app./')).toBe('example.web.app')
+      expect(getDappIdFromUrl('https://example.web.app./')).toBe(
+        getDappIdFromUrl('https://example.web.app/')
       )
       expect(getDappIdFromUrl('https://app.aave.com.')).toBe('app.aave.com')
     })
 
     it('strips www. from a fully-qualified host as well', () => {
-      expect(getDappIdFromUrl('https://www.yombadge.web.app./')).toBe('yombadge.web.app')
+      expect(getDappIdFromUrl('https://www.example.web.app./')).toBe('example.web.app')
     })
 
     it('keeps resolving the existing cases', () => {

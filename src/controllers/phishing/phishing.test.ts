@@ -136,7 +136,7 @@ describe('PhishingController', () => {
       expect(controller.getDomainBlacklistedStatus('https://my-dapp.vercel.app./')).toBe(
         'SUSPICIOUS_HOSTING'
       )
-      expect(controller.getDomainBlacklistedStatus('https://yombadge.web.app./claim')).toBe(
+      expect(controller.getDomainBlacklistedStatus('https://example.web.app./claim')).toBe(
         'SUSPICIOUS_HOSTING'
       )
       expect(controller.getDomainBlacklistedStatus('https://sites.google.com./view/fake')).toBe(
@@ -190,13 +190,13 @@ describe('PhishingController', () => {
 
   describe('fully-qualified (trailing dot) hostnames', () => {
     test('getDomainBlacklistedStatus returns BLACKLISTED for a host-level phishing DB entry visited with a trailing dot', async () => {
-      const { controller } = await prepareTest(['yombadge.web.app'])
+      const { controller } = await prepareTest(['example.web.app'])
 
-      expect(controller.getDomainBlacklistedStatus('https://yombadge.web.app')).toBe('BLACKLISTED')
-      expect(controller.getDomainBlacklistedStatus('https://yombadge.web.app./')).toBe(
+      expect(controller.getDomainBlacklistedStatus('https://example.web.app')).toBe('BLACKLISTED')
+      expect(controller.getDomainBlacklistedStatus('https://example.web.app./')).toBe(
         'BLACKLISTED'
       )
-      expect(controller.getDomainBlacklistedStatus('https://yombadge.web.app./claim?ref=1')).toBe(
+      expect(controller.getDomainBlacklistedStatus('https://example.web.app./claim?ref=1')).toBe(
         'BLACKLISTED'
       )
     })
@@ -221,7 +221,7 @@ describe('PhishingController', () => {
     })
 
     test('getDomainBlacklistedStatus returns VERIFIED for an unrelated host with a trailing dot', async () => {
-      const { controller } = await prepareTest(['yombadge.web.app'])
+      const { controller } = await prepareTest(['example.web.app'])
 
       expect(controller.getDomainBlacklistedStatus('https://rewards.ambire.com./')).toBe('VERIFIED')
     })
@@ -231,12 +231,12 @@ describe('PhishingController', () => {
       const results: Record<string, string> = {}
 
       await controller.updateDomainsBlacklistedStatus(
-        ['https://yombadge.web.app./claim'],
+        ['https://example.web.app./claim'],
         (statuses) => Object.assign(results, statuses)
       )
 
-      expect(results['yombadge.web.app']).toBe('SUSPICIOUS_HOSTING')
-      expect(results['yombadge.web.app.']).toBeUndefined()
+      expect(results['example.web.app']).toBe('SUSPICIOUS_HOSTING')
+      expect(results['example.web.app.']).toBeUndefined()
     })
   })
 })
