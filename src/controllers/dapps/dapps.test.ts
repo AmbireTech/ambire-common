@@ -1603,6 +1603,33 @@ describe('DappsController', () => {
       expect(stored.accountPreferences).toEqual(accountPreferences)
     })
 
+    test('addDapp clears existing account preferences when reconnecting without them', async () => {
+      const accountPreferences = {
+        enabled: true,
+        selectedAccount: '0x16c81367c30c71d6B712355255A07FCe8fd3b5bB',
+        accounts: ['0x16c81367c30c71d6B712355255A07FCe8fd3b5bB']
+      }
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [
+          {
+            ...baseDapp(),
+            isConnected: false,
+            connectedSources: [],
+            accountPreferences
+          }
+        ])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      const dappToReconnect = baseDapp()
+      dappToReconnect.accountPreferences = undefined
+
+      await controller.addDapp(dappToReconnect, 'injected')
+
+      const stored = controller.getDapp('aave.com')!
+      expect(stored.connectedSources).toEqual(['injected'])
+      expect(stored.accountPreferences).toBeUndefined()
+    })
+
     test('hasPermission(id, source) is source-scoped; hasPermission(id) is any-source', async () => {
       const { controller } = await prepareTest(async (storageCtrl) => {
         await storageCtrl.set('dappsV2', predefinedDapps)

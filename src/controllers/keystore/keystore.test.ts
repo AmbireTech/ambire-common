@@ -431,6 +431,66 @@ describe('KeystoreController', () => {
   })
 })
 
+describe('KeystoreController recovery phrase backup state', () => {
+  let keystoreCtrl: IKeystoreController
+
+  beforeEach(async () => {
+    const storageCtrl = new StorageController(produceMemoryStore())
+    const uiCtrl = new UiController({ uiManager })
+    keystoreCtrl = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
+    await keystoreCtrl.addSecret('password', pass, '', false)
+    await keystoreCtrl.unlockWithSecret('password', pass)
+  })
+
+  test('a generated phrase is flagged as not backed up', async () => {
+    const tempSeed = await keystoreCtrl.generateTempSeed({})
+    expect(tempSeed.notBackedUp).toBe(true)
+
+    await keystoreCtrl.persistTempSeed()
+
+    expect(keystoreCtrl.seeds.length).toBe(1)
+    expect(keystoreCtrl.seeds[0]!.notBackedUp).toBe(true)
+  })
+
+  test('an imported phrase is not flagged, as the user has already seen it', async () => {
+    await keystoreCtrl.addTempSeed({
+      seed: process.env.SEED,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    await keystoreCtrl.persistTempSeed()
+
+    expect(keystoreCtrl.seeds[0]!.notBackedUp).toBeFalsy()
+  })
+
+  test('markSeedAsBackedUp clears the flag and does not touch other seeds', async () => {
+    await keystoreCtrl.generateTempSeed({})
+    await keystoreCtrl.persistTempSeed()
+    await keystoreCtrl.addTempSeed({
+      seed: process.env.SEED,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      notBackedUp: true
+    })
+    await keystoreCtrl.persistTempSeed()
+
+    expect(keystoreCtrl.seeds.length).toBe(2)
+    const [firstSeed, secondSeed] = keystoreCtrl.seeds
+
+    await keystoreCtrl.markSeedAsBackedUp(secondSeed!.id)
+
+    expect(keystoreCtrl.seeds.find((s) => s.id === secondSeed!.id)?.notBackedUp).toBe(false)
+    expect(keystoreCtrl.seeds.find((s) => s.id === firstSeed!.id)?.notBackedUp).toBe(true)
+  })
+
+  test('markSeedAsBackedUp is a no-op for an unknown phrase id', async () => {
+    await keystoreCtrl.generateTempSeed({})
+    await keystoreCtrl.persistTempSeed()
+
+    await keystoreCtrl.markSeedAsBackedUp('does-not-exist')
+
+    expect(keystoreCtrl.seeds[0]!.notBackedUp).toBe(true)
+  })
+})
+
 describe('import/export with pub key test', () => {
   const wallet = ethers.Wallet.createRandom()
   let keystore2: IKeystoreController

@@ -854,7 +854,10 @@ export class DappsController extends EventEmitter implements IDappsController {
         isConnected: mergedSources.length > 0
       }
 
-      if (dapp.accountPreferences) dappUpdate.accountPreferences = dapp.accountPreferences
+      // An explicit undefined clears preferences; an omitted property preserves them on source merges.
+      if ('accountPreferences' in dapp) {
+        dappUpdate.accountPreferences = dapp.accountPreferences
+      }
 
       this.updateDapp(dapp.id, dappUpdate)
       return
