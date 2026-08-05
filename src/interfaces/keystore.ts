@@ -192,6 +192,7 @@ export type KeystoreSeed = {
   seed: string
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+  notBackedUp?: boolean
 }
 
 export type StoredKeystoreSeed = Omit<KeystoreSeed, 'seed' | 'seedPassphrase'> & {
@@ -206,6 +207,7 @@ export type KeystoreTempSeed = {
   seed: string
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+  notBackedUp?: boolean
 }
 
 export type KeystoreSignerType = {
