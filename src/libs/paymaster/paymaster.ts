@@ -487,7 +487,7 @@ export class Paymaster extends AbstractPaymaster {
     // apply estimation and gas changes to the userOp so a more realistic,
     // final userOp could be sent over for paymaster stub data
     //
-    // do not use a structuredClone here as we don't want mutation on other props
+    // do not use structuredClone here as we rely on mutating nested objects
     const localOp = { ...userOp }
     localOp.preVerificationGas = bundlerEstimateResult.preVerificationGas
     localOp.verificationGasLimit = bundlerEstimateResult.verificationGasLimit
