@@ -83,6 +83,37 @@ export const isSuspectedToken = (
   return null
 }
 
+let feeTokenIndex: Map<string, (typeof gasTankFeeTokens)[number]> | null = null
+
+const feeTokenKey = (address: string, chainId: string) => `${address.toLowerCase()}|${chainId}`
+
+const getFeeTokenIndex = () => {
+  if (feeTokenIndex) return feeTokenIndex
+
+  feeTokenIndex = new Map<string, (typeof gasTankFeeTokens)[number]>()
+
+  gasTankFeeTokens.forEach((feeToken) => {
+    const key = feeTokenKey(feeToken.address, feeToken.chainId.toString())
+
+    if (!feeTokenIndex!.has(key)) feeTokenIndex!.set(key, feeToken)
+  })
+
+  return feeTokenIndex
+}
+
+/**
+ * Look up a gas-tank fee token by address and chain in O(1)
+ */
+export function getFeeToken(
+  address: string,
+  chainIdKey: string,
+  tokenChainId: bigint
+): (typeof gasTankFeeTokens)[number] | undefined {
+  const chainId = ['gasTank', 'rewards'].includes(chainIdKey) ? tokenChainId.toString() : chainIdKey
+
+  return getFeeTokenIndex().get(feeTokenKey(address, chainId))
+}
+
 export function getFlags(
   networkData: any,
   chainId: string,
@@ -101,11 +132,7 @@ export function getFlags(
   if (networkData?.walletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
     rewardsType = 'wallet-vesting'
 
-  const foundFeeToken = gasTankFeeTokens.find(
-    (t) =>
-      t.address.toLowerCase() === address.toLowerCase() &&
-      (isRewardsOrGasTank ? t.chainId === tokenChainId : t.chainId.toString() === chainId)
-  )
+  const foundFeeToken = getFeeToken(address, chainId, tokenChainId)
 
   const canTopUpGasTank = !!foundFeeToken && !foundFeeToken?.disableGasTankDeposit && !rewardsType
   const isFeeToken =
