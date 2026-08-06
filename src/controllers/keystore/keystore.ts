@@ -5,7 +5,16 @@ import {
   encryptWithPublicKey,
   publicKeyByPrivateKey
 } from 'eth-crypto'
-import { computeAddress, concat, getBytes, hexlify, keccak256, Mnemonic, Wallet } from 'ethers'
+import {
+  computeAddress,
+  concat,
+  getBytes,
+  HDNodeWallet,
+  hexlify,
+  keccak256,
+  Mnemonic,
+  Wallet
+} from 'ethers'
 
 import {
   CIPHER,
@@ -27,8 +36,10 @@ import {
   DERIVATION_OPTIONS,
   HD_PATH_TEMPLATE_TYPE
 } from '../../consts/derivation'
+import { RAILGUN_DERIVATION_PATH_PREFIXES } from '../../consts/railgun'
 import { Account } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { Hex } from '../../interfaces/hex'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   ExternalKey,
@@ -1217,6 +1228,31 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       seed: decryptedSeed,
       seedPassphrase: seedPassphrase
     }
+  }
+
+  /**
+   * Derives a Railgun spending or viewing key from a stored recovery phrase, so the Railgun
+   * plugin can get the keys it needs without the recovery phrase itself ever leaving the
+   * keystore. Deterministic by construction: the same (seedId, path) always yields the same
+   * key, which is what makes the resulting 0zk address recoverable from the seed alone.
+   *
+   * Only Railgun's own derivation paths are allowed (see
+   * RAILGUN_DERIVATION_PATH_PREFIXES for why this whitelist is the point of the method, not
+   * a formality).
+   */
+  async deriveRailgunKey(seedId: KeystoreSeed['id'], path: string): Promise<Hex> {
+    await this.initialLoadPromise
+
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+
+    const isRailgunPath = RAILGUN_DERIVATION_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))
+    if (!isRailgunPath)
+      throw new Error(`keystore: refusing to derive a key outside Railgun's paths (${path})`)
+
+    const { seed, seedPassphrase } = await this.getSavedSeed(seedId)
+
+    return HDNodeWallet.fromMnemonic(Mnemonic.fromPhrase(seed, seedPassphrase), path)
+      .privateKey as Hex
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {

@@ -239,8 +239,7 @@ export class MainController extends EventEmitter implements IMainController {
     externalSignerControllers,
     uiManager,
     loadRailgunWasm,
-    pimlicoApiKey,
-    railgunSepoliaTestDisposableSignerPrivateKey
+    pimlicoApiKey
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -257,18 +256,13 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
-    // Railgun (privacy pool) is currently web-only (see integration plan) - the WASM
-    // asset loader is platform-specific, so this is optional for other environments
-    // (mobile, benzin, legends) that don't construct it.
+    // Railgun (privacy pool) is currently web-only - the WASM asset loader is
+    // platform-specific, so this is optional for other environments (mobile, benzin, legends)
+    // that don't construct it.
     loadRailgunWasm?: () => Promise<Response | BufferSource>
     // Pimlico ERC-4337 bundler API key, used only for Railgun unshield/private-transfer
-    // broadcasting (Sepolia MVP). Optional - that flow simply isn't available without it.
+    // broadcasting. Optional - that flow simply isn't available without it.
     pimlicoApiKey?: string
-    // TEMP DIAGNOSTIC (Railgun Sepolia MVP, see RailgunController) - private key of a
-    // disposable Sepolia-only test signer used to investigate EIP-7702 delegation
-    // behavior. Optional - falls back to a fresh `Wallet.createRandom()` signer per
-    // broadcast (the real intended behavior) when not provided.
-    railgunSepoliaTestDisposableSignerPrivateKey?: string
   }) {
     super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
@@ -432,7 +426,9 @@ export class MainController extends EventEmitter implements IMainController {
     )
     this.railgun = new RailgunController({
       keystore: this.keystore,
+      networks: this.networks,
       providers: this.providers,
+      selectedAccount: this.selectedAccount,
       storage: this.storage,
       fetch: this.fetch,
       loadWasm:
@@ -444,7 +440,6 @@ export class MainController extends EventEmitter implements IMainController {
         }),
       sendUiMessage: this.ui.message.sendUiMessage,
       pimlicoApiKey,
-      railgunSepoliaTestDisposableSignerPrivateKey,
       eventEmitterRegistry
     })
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {

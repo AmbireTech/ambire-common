@@ -172,9 +172,14 @@ export class ContinuousUpdatesController extends EventEmitter {
       'railgunBalancesInterval'
     )
 
-    // Railgun requires explicit user opt-in (dedicated seed + WASM init), so the
-    // refresh interval only runs once initialized, and stops if that ever reverts
-    // (e.g. the background context restarted and Railgun hasn't been re-initialized yet).
+    // Railgun requires explicit user opt-in (key derivation + WASM init + a shielded pool
+    // sync), so the refresh interval only runs once initialized, and stops if that ever
+    // reverts (e.g. the background context restarted, or the keystore locked, and Railgun
+    // hasn't been re-initialized yet).
+    //
+    // With POI enabled this interval is not just a balance refresh: the SDK generates and
+    // submits the POI proofs for notes it has pending during a sync, so a wallet that never
+    // syncs after sending leaves those notes without an innocence proof - and unspendable.
     this.#main.railgun.onUpdate(() => {
       if (this.#main.railgun.isInitialized) {
         this.#railgunBalancesInterval.start({ runImmediately: true })
@@ -259,7 +264,9 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     if (!this.#main.railgun.isInitialized) return
 
-    await this.#main.railgun.sync()
+    // Flagged as a background update so a transient failure on this timer doesn't toast the
+    // user (and report to Sentry) on every tick - see RailgunController.sync.
+    await this.#main.railgun.sync({ isBackgroundUpdate: true })
   }
 
   async #updateAccountsOpsStatuses() {

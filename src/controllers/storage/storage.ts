@@ -77,6 +77,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#fixSelectedAccountDismissedBannerIdsType() // as of version 6.7.3
       await this.#migrateDappsAddConnectionSources() // As of v6.11.0
       await this.#migrateDomainsCacheToNames() // As of v6.14.0
+      await this.#removeLegacyRailgunIdentityState()
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -793,6 +794,26 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
       await this.#storage.set('domainsCache', migrated)
     }
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
+  }
+
+  /**
+   * Railgun's identity used to be a randomly generated seed stored in the keystore and pointed
+   * at by `railgunSeedId`. It is now derived deterministically from the recovery phrase the
+   * selected account belongs to, so that pointer is gone - and with it, everything synced or
+   * recorded for the old identity, which belonged to a different 0zk address entirely.
+   *
+   * The keystore entry itself is deliberately left alone: it is user key material, and deleting
+   * it is the user's call to make from Settings, not a migration's.
+   */
+  async #removeLegacyRailgunIdentityState() {
+    const MIGRATION_KEY = 'removeLegacyRailgunIdentityState'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    await this.#storage.remove('railgunSeedId')
+    await this.#storage.remove('railgunPluginStorage')
+    await this.#storage.remove('railgunActivity')
 
     await this.#markMigrationPassed(MIGRATION_KEY)
   }

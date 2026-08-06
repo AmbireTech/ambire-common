@@ -128,7 +128,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **ProvidersController** – Initializes and manages JSON-RPC providers for each configured network.
 - **PhishingController** – Maintains and updates a list of phishing domains and addresses to protect users.
 - **PortfolioController** – Fetches and caches token balances, DeFi positions, and price data per account.
-- **RailgunController** – Manages the wallet's dedicated Railgun (0zk) privacy identity, syncs shielded balances, and builds shield/unshield/private-transfer operations (Sepolia MVP).
+- **RailgunController** – Derives the account's Railgun (0zk) identity deterministically from its recovery phrase, syncs POI-aware shielded balances per supported chain (Ethereum and Sepolia are the only ones the SDK supports), and builds shield/unshield/private-transfer operations.
 - **RequestsController** – Handles all requests (e.g., signing, connecting to an app, etc.), which come from the app UI and dApps.
 - **SafeController** – Integrates with Safe (Gnosis Safe) multisig wallets for transaction and message fetching.
 - **SelectedAccountController** – Tracks the currently selected account and derives its data (e.g., portfolio and auto login policies)
