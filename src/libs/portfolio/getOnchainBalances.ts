@@ -15,6 +15,7 @@ import { Deployless, DeploylessMode } from '../deployless/deployless'
 import { decodeError } from '../errorDecoder'
 import { DEPLOYLESS_ERRORS } from '../errorHumanizer/errors'
 import { getHumanReadableErrorMessage } from '../errorHumanizer/helpers'
+import { offload } from '../offload/offload'
 import {
   CollectionResult,
   DeploylessContractOptions,
@@ -25,7 +26,7 @@ import {
   TokenError,
   TokenResult
 } from './interfaces'
-import { mapToken } from './tokenProcessing'
+import { toMapTokenHints, toMapTokenNetwork } from './tokenProcessing'
 
 class SimulationError extends Error {
   public simulationErrorMsg: string
@@ -144,7 +145,7 @@ export async function getNFTs(
   accountAddr: string,
   tokenAddrs: [string, bigint[]][],
   limits: LimitsOptions
-): Promise<[[TokenError, CollectionResult][], {}][]> {
+): Promise<[[TokenError, CollectionResult][], {}]> {
   const deploylessOpts = getDeploylessOpts(accountAddr, network, {
     ...opts,
     blockTag:
@@ -154,20 +155,8 @@ export async function getNFTs(
     deployless: opts.deployless?.erc721
   })
 
-  const mapNft = (token: any, address: string) => {
-    return {
-      name: token.name,
-      chainId: network.chainId,
-      address,
-      symbol: token.symbol,
-      amount: BigInt(token.nfts.length),
-      decimals: 1,
-      collectibles: [...token.nfts]
-    } satisfies Omit<CollectionResult, 'flags' | 'priceIn' | 'marketDataIn'>
-  }
-
   if (!opts.simulation) {
-    const collections = await deployless.call(
+    const data = await deployless.callRaw(
       'getAllNFTs',
       [
         accountAddr,
@@ -177,14 +166,14 @@ export async function getNFTs(
       ],
       deploylessOpts
     )
+    const { collections } = await offload('processCollections', {
+      kind: 'getAllNFTs',
+      data,
+      network: toMapTokenNetwork(network),
+      tokenAddrs: tokenAddrs.map(([address]) => address)
+    })
 
-    return [
-      collections.map((token: any, index: number) => [
-        token.error,
-        mapNft(token, tokenAddrs[index]![0])
-      ]),
-      {}
-    ]
+    return [collections, {}]
   }
 
   const { accountOps, baseAccount } = opts.simulation
@@ -196,7 +185,7 @@ export async function getNFTs(
     nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
     calls: calls.map(toSingletonCall).map(callToTuple)
   }))
-  const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call(
+  const data = await deployless.callRaw(
     'simulateAndGetAllNFTs',
     [
       accountAddr,
@@ -211,57 +200,23 @@ export async function getNFTs(
     deploylessOpts
   )
 
-  const beforeNonce = before.nonce
-  const afterNonce = after.nonce
-  handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps)
+  const { collections, simulation } = await offload('processCollections', {
+    kind: 'simulateAndGetAllNFTs',
+    data,
+    network: toMapTokenNetwork(network),
+    tokenAddrs: tokenAddrs.map(([address]) => address)
+  })
 
-  // simulation was performed if the nonce is changed
-  const hasSimulation = afterNonce !== beforeNonce
+  if (simulation) {
+    handleSimulationError(
+      simulation.simulationErrData,
+      simulation.beforeNonce,
+      simulation.afterNonce,
+      simulationOps
+    )
+  }
 
-  const simulationTokens: (CollectionResult & { addr: any })[] | null = hasSimulation
-    ? after.collections.map((simulationToken: any, tokenIndex: number) => ({
-        ...mapNft(simulationToken, deltaAddressesMapping[tokenIndex]),
-        addr: deltaAddressesMapping[tokenIndex]
-      }))
-    : null
-
-  return [
-    before.collections.map((beforeToken: any, i: number) => {
-      const simulationToken = simulationTokens
-        ? simulationTokens.find(
-            (token: any) => token.addr.toLowerCase() === tokenAddrs[i]![0].toLowerCase()
-          )
-        : null
-
-      const token = mapNft(beforeToken, tokenAddrs[i]![0])
-      const receiving: bigint[] = []
-      const sending: bigint[] = []
-
-      token.collectibles.forEach((oldCollectible: bigint) => {
-        // the first check is required because if there are no changes we will always have !undefined from the second check
-        if (
-          simulationToken?.collectibles &&
-          !simulationToken?.collectibles?.includes(oldCollectible)
-        )
-          sending.push(oldCollectible)
-      })
-      simulationToken?.collectibles?.forEach((newCollectible: bigint) => {
-        if (!token.collectibles.includes(newCollectible)) receiving.push(newCollectible)
-      })
-
-      return [
-        beforeToken.error,
-        {
-          ...token,
-          // Please refer to getTokens() for more info regarding `amountBeforeSimulation` calc
-          simulationAmount: simulationToken ? simulationToken.amount - token.amount : undefined,
-          amountPostSimulation: simulationToken ? simulationToken.amount : token.amount,
-          postSimulation: { receiving, sending }
-        }
-      ]
-    }),
-    {}
-  ]
+  return [collections, {}]
 }
 
 export async function getTokens(
@@ -271,10 +226,9 @@ export async function getTokens(
   accountAddr: string,
   tokenAddrs: string[],
   pageIndex?: number
-): Promise<[[TokenError, TokenResult][], MetaData][]> {
-  if (typeof pageIndex === 'number' && pageIndex > 0) {
-    // Allow the main thread to process other tasks before continuing
-    // as encode/decode operations (in deployless) are very CPU intensive
+): Promise<[[TokenError, TokenResult][], MetaData]> {
+  const DEBUGGING = true
+  if (typeof pageIndex === 'number' && (pageIndex > 0 || DEBUGGING)) {
     await yieldToMain()
   }
 
@@ -307,7 +261,10 @@ export async function getTokens(
 
     return {
       simulationOps,
-      result: await deployless.call(
+      // callRaw keeps encoding on main (one selector hash + ~230 word
+      // encodings is cheap; the work is the 230-struct decode) and ships
+      // the raw hex over to the processor for decode+map in one pass.
+      data: await deployless.callRaw(
         'simulateAndGetBalances',
         [
           accountAddr,
@@ -323,73 +280,44 @@ export async function getTokens(
   }
 
   if (!opts.simulation) {
-    const [results, blockNumber] = await deployless.call(
-      'getBalances',
-      [accountAddr, tokenAddrs],
-      deploylessOpts
-    )
+    const data = await deployless.callRaw('getBalances', [accountAddr, tokenAddrs], deploylessOpts)
+    const { tokens, blockNumber } = await offload('processBalances', {
+      kind: 'getBalances',
+      data,
+      network: toMapTokenNetwork(network),
+      tokenAddrs,
+      specialErc20Hints: toMapTokenHints(opts.specialErc20Hints),
+      blockTag: opts.blockTag
+    })
 
-    return [
-      results.map((token: any, i: number) => [
-        token.error,
-        mapToken(token, network, tokenAddrs[i]!, opts, undefined, token.amount)
-      ]),
-      {
-        blockNumber
-      }
-    ]
+    return [tokens, { blockNumber }]
   }
 
   const mainResults = await getMainResults()
-  const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] = mainResults.result
+  const { tokens, blockNumber, simulation } = await offload('processBalances', {
+    kind: 'simulateAndGetBalances',
+    data: mainResults.data,
+    network: toMapTokenNetwork(network),
+    tokenAddrs,
+    specialErc20Hints: toMapTokenHints(opts.specialErc20Hints),
+    blockTag: opts.blockTag
+  })
 
-  const beforeNonce = before.nonce
-  const afterNonce = after.nonce
-  handleSimulationError(simulationErr, beforeNonce, afterNonce, mainResults.simulationOps || [])
+  if (simulation) {
+    handleSimulationError(
+      simulation.simulationErrData,
+      simulation.beforeNonce,
+      simulation.afterNonce,
+      mainResults.simulationOps || []
+    )
+  }
 
-  // simulation was performed if the nonce is changed
-  const hasSimulation = afterNonce !== beforeNonce
-
-  const simulationTokens = hasSimulation
-    ? after.balances.map((simulationToken: any, tokenIndex: number) => ({
-        ...simulationToken,
-        amount: simulationToken.amount,
-        addr: deltaAddressesMapping[tokenIndex]
-      }))
-    : null
   return [
-    before.balances.map((token: any, i: number) => {
-      const simulation = simulationTokens
-        ? simulationTokens.find((simulationToken: any) => simulationToken.addr === tokenAddrs[i])
-        : null
-
-      const simulationAmount = simulation ? simulation.amount - token.amount : undefined
-      const amountPostSimulation = simulation ? simulation.amount : token.amount
-
-      // Here's the math before `simulationAmount` and `amountPostSimulation`.
-      // AccountA initial balance: 10 USDC.
-      // AccountA attempts to transfer 5 USDC (not signed yet).
-      // An external entity sends 3 USDC to AccountA on-chain.
-      // Deployless simulation contract processing:
-      //   - Balance before simulation (before.balances): 10 USDC + 3 USDC = 13 USDC.
-      //   - Balance after simulation (after.balances): 10 USDC - 5 USDC + 3 USDC = 8 USDC.
-      // Simulation-only balance displayed on the Sign Screen (we will call it `simulationAmount`):
-      //   - difference between after simulation and before: 8 USDC - 13 USDC = -5 USDC
-      // Final balance displayed on the Dashboard (we will call it `amountPostSimulation`):
-      //   - after.balances, 8 USDC.
-      return [
-        token.error,
-        {
-          ...mapToken(token, network, tokenAddrs[i]!, opts, !!simulationAmount, token.amount),
-          simulationAmount,
-          amountPostSimulation
-        }
-      ]
-    }),
+    tokens,
     {
       blockNumber,
-      beforeNonce,
-      afterNonce
+      beforeNonce: simulation?.beforeNonce,
+      afterNonce: simulation?.afterNonce
     }
   ]
 }

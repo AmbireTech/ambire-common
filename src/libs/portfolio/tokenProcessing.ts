@@ -1,87 +1,41 @@
-import { ZeroAddress } from 'ethers'
-import { getAddress } from 'viem'
-
-import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import humanizerInfoRaw from '../../consts/humanizer/humanizerInfo.json'
 import { Network } from '../../interfaces/network'
-import { overrideSymbol } from './helpers'
-import { GetOptions, KnownTokenInfo, SuspectedType, TokenResult } from './interfaces'
+import { GetOptions, SuspectedType, TokenResult } from './interfaces'
+import { getFeeToken, overrideSymbol, ZERO_ADDRESS } from './tokenIndexes'
+import { isSuspectedToken } from './tokenSuspicion'
 
-// A separate file so humanizerInfo.json doesn't end up in the UI bundle
-const knownAddresses: { [addr: string]: KnownTokenInfo } = humanizerInfoRaw.knownAddresses || {}
+// Re-exported so the public surface stays where callers already import it from
+export { isSuspectedToken } from './tokenSuspicion'
 
-const removeNonLatinChars = (str: string): string =>
-  str
-    // normalize to NFC form to unify visually-similar composed characters
-    .normalize('NFC')
-    .split('')
-    // keep only ASCII range (printable chars)
-    .filter((ch) => {
-      const code = ch.charCodeAt(0)
-      return code >= 32 && code <= 126
-    })
-    .join('')
+// Reduced network shape: only the fields mapToken actually reads. Network
+// satisfies it structurally so no caller has to change, and offloaded callers
+// ship a smaller payload across the thread boundary.
+export type MapTokenNetwork = Pick<
+  Network,
+  'chainId' | 'name' | 'nativeAssetName' | 'nativeAssetSymbol'
+>
 
-// safe address normalizer
-const normalizeAddress = (addr: string) => {
-  try {
-    return getAddress(addr)
-  } catch {
-    return addr
+// Network and the hint lists below are owned by controllers that keep mutating
+// them. Handing one straight to an offloaded task marks it as serialized, and
+// the next write to it warns and may not be seen on the other side, so both are
+// copied into fresh objects first. See src/libs/offload/README.md.
+
+/** Copies the network fields mapToken reads into a fresh object. */
+export const toMapTokenNetwork = (network: MapTokenNetwork): MapTokenNetwork => ({
+  chainId: network.chainId,
+  name: network.name,
+  nativeAssetName: network.nativeAssetName,
+  nativeAssetSymbol: network.nativeAssetSymbol
+})
+
+/** Copies the special ERC20 hint lists into fresh arrays. */
+export const toMapTokenHints = (
+  hints: GetOptions['specialErc20Hints']
+): GetOptions['specialErc20Hints'] =>
+  hints && {
+    custom: [...hints.custom],
+    hidden: [...hints.hidden],
+    learn: [...hints.learn]
   }
-}
-
-export const isSuspectedRegardsKnownAddresses = (
-  tokenAddr: string,
-  tokenSymbol: string,
-  chainId: bigint
-): boolean => {
-  if (!knownAddresses || !tokenAddr || !tokenSymbol) return false
-
-  const normalizedAddr = normalizeAddress(tokenAddr)
-  const normalizedSymbol = removeNonLatinChars(tokenSymbol).toUpperCase()
-  const numericChainId = Number(chainId)
-
-  const knownTokens = Object.values(knownAddresses)
-
-  // Only consider known tokens that have chainIds defined (skip those without chainIds)
-  return knownTokens.some((known: any) => {
-    const knownSymbolRaw = known?.token?.symbol
-    const knownChains = known?.chainIds
-    if (!knownSymbolRaw || !knownChains) return false // skip unknowns or entries without chainIds
-
-    const knownSymbol = removeNonLatinChars(knownSymbolRaw).toUpperCase()
-    if (knownSymbol !== normalizedSymbol) return false
-
-    if (!knownChains.includes(numericChainId)) return false
-
-    // same symbol + same chain but different address -> suspected spoof
-    return normalizeAddress(known.address) !== normalizedAddr
-  })
-}
-
-export const isSuspectedToken = (
-  address: string,
-  symbol: string,
-  chainId: bigint
-): SuspectedType => {
-  const normalizedAddr = normalizeAddress(address)
-  const numericChainId = Number(chainId)
-
-  // 1) lookup known token by address
-  const knownToken = knownAddresses?.[normalizedAddr]
-
-  // 2) Only auto-accept if known token exists AND chainIds is defined AND includes chainId
-  if (knownToken?.chainIds?.includes(numericChainId)) {
-    return null // trusted
-  }
-
-  // 3) Same-symbol spoofing on same chain (different address)
-  if (isSuspectedRegardsKnownAddresses(address, symbol, chainId)) return 'suspected'
-
-  // 4) Not flagged
-  return null
-}
 
 export function getFlags(
   networkData: any,
@@ -101,21 +55,20 @@ export function getFlags(
   if (networkData?.walletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
     rewardsType = 'wallet-vesting'
 
-  const foundFeeToken = gasTankFeeTokens.find(
-    (t) =>
-      t.address.toLowerCase() === address.toLowerCase() &&
-      (isRewardsOrGasTank ? t.chainId === tokenChainId : t.chainId.toString() === chainId)
-  )
+  const foundFeeToken = getFeeToken(address, chainId, tokenChainId)
 
   const canTopUpGasTank = !!foundFeeToken && !foundFeeToken?.disableGasTankDeposit && !rewardsType
   const isFeeToken =
-    address === ZeroAddress ||
+    address === ZERO_ADDRESS ||
     // disable if not in gas tank
     (foundFeeToken && !foundFeeToken.disableAsFeeToken) ||
     chainId === 'gasTank'
 
   let suspectedType: SuspectedType = null
 
+  // The scan walks every known address with a per-entry NFC normalize, so it is
+  // deliberately limited to tokens the simulation actually moved — a handful per
+  // simulation, and none at all on the dashboard path.
   if (hasSimulationAmount && !isRewardsOrGasTank) {
     suspectedType = isSuspectedToken(address, symbol, BigInt(chainId))
   }
@@ -132,7 +85,7 @@ export function getFlags(
 
 export const mapToken = (
   token: Pick<TokenResult, 'amount' | 'decimals' | 'name' | 'symbol'>,
-  network: Network,
+  network: MapTokenNetwork,
   address: string,
   opts: Pick<GetOptions, 'specialErc20Hints' | 'blockTag'>,
   hasSimulationAmount?: boolean,

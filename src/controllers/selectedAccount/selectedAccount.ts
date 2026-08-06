@@ -1,5 +1,7 @@
 import { formatEther, getAddress, isAddress } from 'ethers'
 
+import { IUiController } from '@/interfaces/ui'
+
 import { STK_WALLET, UNI_V3_WALLET_WETH_POOL, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
@@ -36,6 +38,10 @@ import {
 import { getProjectedRewardsStatsAndToken } from '../../utils/rewards'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+// Portfolio recalculations fire back-to-back as per-network results stream in.
+// Throttle their UI emit so the state isn't serialized on every partial tick.
+const PORTFOLIO_UPDATE_THROTTLE_MS = 150
+
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
   #storage: IStorageController
 
@@ -52,6 +58,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   #banner: IBannerController | null = null
 
   #domains: IDomainsController | null = null
+
+  #ui: IUiController | null = null
 
   account: Account | null = null
 
@@ -88,13 +96,15 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     storage,
     accounts,
     autoLogin,
-    banner
+    banner,
+    ui
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     storage: IStorageController
     accounts: IAccountsController
     autoLogin: IAutoLoginController
     banner: IBannerController
+    ui: IUiController
   }) {
     super(eventEmitterRegistry)
 
@@ -102,6 +112,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#accounts = accounts
     this.#autoLogin = autoLogin
     this.#banner = banner
+    this.#ui = ui
 
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -327,14 +338,24 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       })
     }
 
+    let justLoaded = false
+
     // Reset the loading timestamp if the portfolio is ready
     if (this.#portfolioLoadingTimeout && newSelectedAccountPortfolio.isAllReady) {
+      justLoaded = true
       clearTimeout(this.#portfolioLoadingTimeout)
       this.#portfolioLoadingTimeout = null
     }
 
     // Set the loading timestamp when the portfolio starts loading
-    if (!this.#portfolioLoadingTimeout && !newSelectedAccountPortfolio.isAllReady) {
+    if (
+      !this.#portfolioLoadingTimeout &&
+      !newSelectedAccountPortfolio.isAllReady &&
+      // Don't start the timeout until the user is on the dashboard
+      // to avoid showing the waiting too long warning on mobile when the
+      // loading has started before the user has navigated to the dashboard
+      this.#ui?.views.some((v) => v.currentRoute === 'dashboard')
+    ) {
       this.#portfolioLoadingTimeout = setTimeout(() => {
         this.portfolio.shouldShowPartialResult = true
         this.updateSelectedAccountPortfolio()
@@ -365,7 +386,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#updatePortfolioErrors(true)
 
     if (!skipUpdate) {
-      this.emitUpdate()
+      this.emitUpdate({ throttleMs: justLoaded ? 0 : PORTFOLIO_UPDATE_THROTTLE_MS })
     }
   }
 

@@ -28,26 +28,6 @@ import {
   Total
 } from './interfaces'
 
-const usdcEMapping: { [key: string]: string } = {
-  '43114': '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
-  '1285': '0x748134b5f553f2bcbd78c6826de99a70274bdeb3',
-  '42161': '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
-  '137': '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
-  '10': '0x7f5c764cbc14f9669b88837ca1490cca17c31607'
-}
-
-export function overrideSymbol(address: string, chainId: bigint, symbol: string) {
-  // Since deployless lib calls contract and USDC.e is returned as USDC, we need to override the symbol
-  if (
-    usdcEMapping[chainId.toString()] &&
-    usdcEMapping[chainId.toString()]!.toLowerCase() === address.toLowerCase()
-  ) {
-    return 'USDC.E'
-  }
-
-  return symbol
-}
-
 export function mergeERC721s(sources: ERC721s[]): ERC721s {
   const result: ERC721s = {}
 
@@ -521,12 +501,23 @@ export const erc721CollectionToLearnedAssetKeys = (collection: [string, bigint[]
  */
 export const learnedErc721sToHints = (keys: string[]): ERC721s => {
   const hints: ERC721s = {}
+  // Split once and collect the enumerable collections up front. Checking for an
+  // enumerable key while building the hints would mean scanning every key for
+  // every key, and an account with many collections brings thousands of them.
+  const parsedKeys: [string, string | undefined][] = []
+  const enumerableCollections = new Set<string>()
 
   keys.forEach((key) => {
     const [collectionAddress, tokenId] = key.split(':')
 
     if (!collectionAddress) return
 
+    parsedKeys.push([collectionAddress, tokenId])
+
+    if (tokenId === 'enumerable') enumerableCollections.add(collectionAddress)
+  })
+
+  parsedKeys.forEach(([collectionAddress, tokenId]) => {
     if (tokenId === 'enumerable') {
       hints[collectionAddress] = []
 
@@ -535,7 +526,7 @@ export const learnedErc721sToHints = (keys: string[]): ERC721s => {
     // The key already exists as an enumerable hint. Example:
     // collectionA:enumerable exists and collectionB:id is attempted to be added
     // (it shouldn't be)
-    if (keys.includes(`${collectionAddress}:enumerable`)) {
+    if (enumerableCollections.has(collectionAddress)) {
       return
     }
 

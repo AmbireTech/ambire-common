@@ -1,4 +1,4 @@
-import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'ethers'
+import { formatUnits, isAddress, parseUnits, ZeroAddress } from 'ethers'
 
 import { getAccountNetworks } from '@/libs/networks/networks'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
@@ -1450,16 +1450,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       })
     const portfolioTokens = this.portfolioTokenList.filter((t) => t.chainId === BigInt(toChainId))
 
+    const apiTokenAddresses = new Set(apiTokens.map((t) => t.address.toLowerCase()))
     const additionalTokensFromPortfolio = portfolioTokens
-      .filter((token) => !apiTokens.some((t) => t.address === token.address))
+      .filter((token) => !apiTokenAddresses.has(token.address.toLowerCase()))
       .map((t) => convertPortfolioTokenToSwapAndBridgeToToken(t, toChainId))
 
-    const chainBannedTokens: string[] = getBannedToTokenList(toChainId.toString())
+    const chainBannedTokens = new Set(
+      getBannedToTokenList(toChainId.toString()).map((address) => address.toLowerCase())
+    )
 
-    return sortTokenListResponse(
-      [...apiTokens, ...additionalTokensFromPortfolio],
-      portfolioTokens
-    ).filter((t) => !chainBannedTokens.includes(getAddress(t.address)))
+    const tokens = [...apiTokens, ...additionalTokensFromPortfolio].filter(
+      (t) => !chainBannedTokens.has(t.address.toLowerCase())
+    )
+
+    return sortTokenListResponse(tokens, portfolioTokens)
   }
 
   get updateToTokenListStatus() {

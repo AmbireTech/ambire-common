@@ -11,7 +11,7 @@ export function paginate(input: string[] | [string, bigint[]][], limit: number):
 }
 
 export function flattenResults<T>(
-  everything: Promise<[[string, T][], MetaData][]>[]
+  everything: Promise<[[string, T][], MetaData]>[]
 ): Promise<[[TokenError, T][], MetaData | {}]> {
   return Promise.all(everything).then((results) => {
     if (!results || !results.length) {

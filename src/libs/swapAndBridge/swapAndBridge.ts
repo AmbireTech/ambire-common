@@ -212,9 +212,13 @@ export const sortTokenListResponse = (
   tokenListResponse: SwapAndBridgeToToken[],
   accountPortfolioTokenList: TokenResult[]
 ) => {
+  const portfolioTokenByAddress = new Map(
+    accountPortfolioTokenList.map((t) => [t.address.toLowerCase(), t])
+  )
+
   return tokenListResponse.sort((a: SwapAndBridgeToToken, b: SwapAndBridgeToToken) => {
-    const aInPortfolio = accountPortfolioTokenList.find((t) => t.address === a.address)
-    const bInPortfolio = accountPortfolioTokenList.find((t) => t.address === b.address)
+    const aInPortfolio = portfolioTokenByAddress.get(a.address.toLowerCase())
+    const bInPortfolio = portfolioTokenByAddress.get(b.address.toLowerCase())
 
     // Tokens in portfolio should come first
     if (aInPortfolio && !bInPortfolio) return -1

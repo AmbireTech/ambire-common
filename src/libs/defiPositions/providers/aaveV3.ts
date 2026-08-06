@@ -1,15 +1,19 @@
-import { Contract, JsonRpcProvider, Provider } from 'ethers'
+import { JsonRpcProvider, Provider } from 'ethers'
 
 import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiAAVEPosition.json'
 import { Network } from '../../../interfaces/network'
 import { generateUuid } from '../../../utils/uuid'
 import { fromDescriptor } from '../../deployless/deployless'
+import { offload } from '../../offload/offload'
 import { AAVE_V3 } from '../defiAddresses'
 import { getAssetValue } from '../helpers'
+import { AAVEAsset } from '../positionsProcessing'
 import { AssetType, Position, PositionAsset, PositionsByProvider } from '../types'
 
 const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER =
   115792089237316195423570985008687907853269984665640564039457584007913129639935n
+
+const PAGE_SIZE = 12
 
 export async function getAAVEPositions(
   userAddr: string,
@@ -20,11 +24,6 @@ export async function getAAVEPositions(
   if (chainId && !AAVE_V3[chainId.toString() as keyof typeof AAVE_V3]) return null
 
   const { poolAddr } = AAVE_V3[chainId.toString() as keyof typeof AAVE_V3]
-  const poolContract = new Contract(
-    poolAddr,
-    ['function getReservesCount() view returns (uint256)'],
-    provider
-  )
 
   const deploylessDeFiPositionsGetter = fromDescriptor(
     provider,
@@ -32,50 +31,41 @@ export async function getAAVEPositions(
     network.rpcNoStateOverride // Why?
   )
 
-  const reservesLength = await poolContract.getFunction('getReservesCount').staticCall()
-  const PAGE_SIZE = 15
-  const numberOfPages = Math.ceil(Number(reservesLength) / PAGE_SIZE)
-  const promises = []
-  for (let i = 0; i < numberOfPages; i++) {
-    promises.push(
-      deploylessDeFiPositionsGetter.call(
-        'getAAVEPosition',
-        [userAddr, poolAddr, i * 15, (i + 1) * 15],
-        {}
-      )
-    )
-  }
-  const results = await Promise.all(promises)
-
-  const accountData = results[0].accountData
-
-  const userAssets = results
-    .map((r) => r.userBalance)
-    .flat()
-    .map(({ addr, ...rest }) => ({
-      address: addr,
-      aaveAddress: rest.aaveAddr,
-      ...rest
-    }))
-    .filter(
-      (t: any) =>
-        t.symbol !== 'error' &&
-        t.name !== 'error' &&
-        (t.balance > 0 || t.borrowAssetBalance > 0 || t.stableBorrowAssetBalance > 0)
+  const fetchPage = async (from: number, to: number) => {
+    const data = await deploylessDeFiPositionsGetter.callRaw(
+      'getAAVEPosition',
+      [userAddr, poolAddr, from, to],
+      {}
     )
 
-  if (accountData.healthFactor === AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER) {
-    accountData.healthFactor = null
+    return offload('processAAVEPositions', { data })
   }
+
+  // The first page also returns the total reserves count, so the remaining
+  // pages can be fetched in parallel without a separate count request first.
+  const firstPage = await fetchPage(0, PAGE_SIZE)
+
+  const remainingPageRanges: [number, number][] = []
+  for (let from = PAGE_SIZE; from < firstPage.reservesCount; from += PAGE_SIZE) {
+    remainingPageRanges.push([from, from + PAGE_SIZE])
+  }
+  const remainingPages = await Promise.all(
+    remainingPageRanges.map(([from, to]) => fetchPage(from, to))
+  )
+
+  const userAssets: AAVEAsset[] = [firstPage, ...remainingPages].flatMap((page) => page.assets)
+
+  const healthFactor =
+    firstPage.healthFactor === AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER ? null : firstPage.healthFactor
 
   const position: Position = {
     id: generateUuid(),
     additionalData: {
-      healthRate: accountData.healthFactor ? Number(accountData.healthFactor) / 1e18 : null,
+      healthRate: healthFactor ? Number(healthFactor) / 1e18 : null,
       positionInUSD: 0,
       deptInUSD: 0,
       collateralInUSD: 0,
-      availableBorrowInUSD: Number(accountData.availableBorrowsBase) / 1e8,
+      availableBorrowInUSD: Number(firstPage.availableBorrowsBase) / 1e8,
       name: 'Lending'
     },
     assets: []
