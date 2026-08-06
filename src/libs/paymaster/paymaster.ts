@@ -16,7 +16,7 @@ import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 import { getFeeCall } from '../calls/calls'
 import {
-  AMBIRE_GNOSIS_POLICY,
+  AMBIRE_NETWORK_WIDE_SPONSORSHIP_POLICY,
   AMBIRE_SWAP_POLICY,
   getAmbireSponsorshipUrl,
   getPaymasterData,
@@ -119,15 +119,23 @@ export class Paymaster extends AbstractPaymaster {
         ])
       }
 
-      const response = await Promise.race([
-        getPaymasterStubData(this.paymasterService, localOp, this.network),
-        new Promise((_resolve, reject) => {
-          setTimeout(() => reject(new Error('Sponsorship error, request too slow')), 5000)
-        })
-      ])
-      this.sponsorDataEstimation = response as PaymasterEstimationData
-      this.type = 'ERC7677'
-      return
+      let timeout: ReturnType<typeof setTimeout> | undefined
+      try {
+        const response = await Promise.race([
+          getPaymasterStubData(this.paymasterService, localOp, this.network),
+          new Promise((_resolve, reject) => {
+            timeout = setTimeout(
+              () => reject(new Error('Sponsorship error, request too slow')),
+              5000
+            )
+          })
+        ])
+        this.sponsorDataEstimation = response as PaymasterEstimationData
+        this.type = 'ERC7677'
+        return
+      } finally {
+        if (timeout !== undefined) clearTimeout(timeout)
+      }
     } catch (e) {
       console.log('ERC7677 sponsorship declined', e)
     }
@@ -470,11 +478,16 @@ export class Paymaster extends AbstractPaymaster {
     if (this.type === 'ERC7677' || !this.network) return
 
     // do not upgrade over the gnosis paymaster sponsorship
-    if (this.type === 'Ambire' && this.paymasterService?.context?.policyId === AMBIRE_GNOSIS_POLICY)
+    if (
+      this.type === 'Ambire' &&
+      this.paymasterService?.context?.policyId === AMBIRE_NETWORK_WIDE_SPONSORSHIP_POLICY
+    )
       return
 
     // apply estimation and gas changes to the userOp so a more realistic,
     // final userOp could be sent over for paymaster stub data
+    //
+    // do not use a structuredClone here as we don't want mutation on other props
     const localOp = { ...userOp }
     localOp.preVerificationGas = bundlerEstimateResult.preVerificationGas
     localOp.verificationGasLimit = bundlerEstimateResult.verificationGasLimit
@@ -482,7 +495,7 @@ export class Paymaster extends AbstractPaymaster {
     localOp.maxFeePerGas = gasPrices.medium.maxFeePerGas
     localOp.maxPriorityFeePerGas = gasPrices.medium.maxPriorityFeePerGas
 
-    await this.#tryToSetSwapSponsorship(bundlerEstimateResult, gasPrices, userOp)
+    await this.#tryToSetSwapSponsorship(bundlerEstimateResult, gasPrices, localOp)
     if (!!this.op?.meta?.swapSponsorship) return
 
     // try to init ERC-7677 if a paymasterService has been provided and it hasn't failed
