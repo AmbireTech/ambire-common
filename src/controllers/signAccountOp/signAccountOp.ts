@@ -164,6 +164,7 @@ import {
   SignAccountOpType
 } from './helper'
 import {
+  SignAccountOpFeeSpeedPreference,
   SignAccountOpFeeTokenPreference,
   SignAccountOpPreferenceController
 } from './signAccountOpPreference'
@@ -183,7 +184,7 @@ export type SignAccountOpUpdateProps = {
   paidBy?: string
   paidByKeyType?: Key['type']
   speed?: FeeSpeed
-  shouldPersistSpeed?: boolean
+  pendingFeeSpeedPreference?: FeeSpeed | null
   signingKeyAddr?: Key['addr']
   signingKeyType?: InternalKey['type'] | ExternalKey['type']
   signedTransactionsCount?: number | null
@@ -268,6 +269,15 @@ export class SignAccountOpController
   feeTokenPreference: SignAccountOpFeeTokenPreference = {}
 
   pendingFeeTokenPreference: SignAccountOpFeeTokenPreference | null = null
+
+  feeSpeedPreference: SignAccountOpFeeSpeedPreference = {}
+
+  /**
+   * The speed the user asked to become the default for this network. Staged
+   * here and only written to storage once the transaction is broadcast, so a
+   * one-off speed change doesn't stick.
+   */
+  pendingFeeSpeedPreference: FeeSpeed | null = null
 
   selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Fast
 
@@ -440,7 +450,8 @@ export class SignAccountOpController
     this.#featureFlags = featureFlags
     this.#signAccountOpPreference = signAccountOpPreference
     this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
-    this.selectedFeeSpeed = this.#signAccountOpPreference.feeSpeedPreference
+    this.feeSpeedPreference = this.#signAccountOpPreference.feeSpeedPreference
+    this.selectedFeeSpeed = this.feeSpeedPreference[network.chainId.toString()] || FeeSpeed.Fast
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
@@ -1135,6 +1146,27 @@ export class SignAccountOpController
     }
   }
 
+  async #persistPendingFeeSpeedPreference() {
+    if (!this.pendingFeeSpeedPreference) return
+
+    try {
+      const nextFeeSpeedPreference = {
+        ...this.feeSpeedPreference,
+        [this.accountOp.chainId.toString()]: this.pendingFeeSpeedPreference
+      }
+      await this.#signAccountOpPreference.setFeeSpeedPreference(nextFeeSpeedPreference)
+      this.feeSpeedPreference = nextFeeSpeedPreference
+      this.pendingFeeSpeedPreference = null
+      this.emitUpdate()
+    } catch (error) {
+      this.emitError({
+        message: 'Error saving SignAccountOp fee speed preference',
+        error: error instanceof Error ? error : new Error(String(error)),
+        level: 'silent'
+      })
+    }
+  }
+
   #setDefaults() {
     // Set the first signer as the default one.
     // If there are more available signers, the user will be able to select a different signer from the application.
@@ -1625,7 +1657,7 @@ export class SignAccountOpController
     pendingFeeTokenPreference,
     paidBy,
     speed,
-    shouldPersistSpeed,
+    pendingFeeSpeedPreference,
     signingKeyAddr,
     signingKeyType,
     signedTransactionsCount,
@@ -1787,6 +1819,10 @@ export class SignAccountOpController
           : null
       }
 
+      if (typeof pendingFeeSpeedPreference !== 'undefined') {
+        this.pendingFeeSpeedPreference = pendingFeeSpeedPreference
+      }
+
       this.#syncSpeedUpFeeSelectionFromEstimation()
 
       if (feeToken && paidBy && !isSpeedUpTransaction) {
@@ -1808,8 +1844,9 @@ export class SignAccountOpController
 
       if (speed && this.isInitialized && !isSpeedUpTransaction) {
         this.selectedFeeSpeed = speed
-        if (shouldPersistSpeed) {
-          void this.#signAccountOpPreference.setFeeSpeedPreference(speed)
+        // Picking yet another speed invalidates a default staged for the previous one
+        if (this.pendingFeeSpeedPreference && this.pendingFeeSpeedPreference !== speed) {
+          this.pendingFeeSpeedPreference = null
         }
       }
 
@@ -1976,6 +2013,7 @@ export class SignAccountOpController
     this.#paidBy = null
     this.feeTokenResult = null
     this.pendingFeeTokenPreference = null
+    this.pendingFeeSpeedPreference = null
     this.status = null
     this.signedTransactionsCount = null
     this.hardwareWalletSigningRequest = null
@@ -2354,8 +2392,11 @@ export class SignAccountOpController
     const speeds = this.feeSpeeds[identifier]
     if (!speeds) return
 
-    const preferredSpeed = this.#signAccountOpPreference.feeSpeedPreference
-    if (speeds.find(({ type, disabled }) => type === preferredSpeed && !disabled)) {
+    const preferredSpeed = this.feeSpeedPreference[this.accountOp.chainId.toString()]
+    if (
+      preferredSpeed &&
+      speeds.find(({ type, disabled }) => type === preferredSpeed && !disabled)
+    ) {
       this.selectedFeeSpeed = preferredSpeed
       return
     }
@@ -2975,6 +3016,7 @@ export class SignAccountOpController
     }
 
     await this.#persistPendingFeeTokenPreference()
+    await this.#persistPendingFeeSpeedPreference()
 
     const estimation = this.estimation.estimation as FullEstimationSummary
     const broadcastOption = this.accountOp.gasFeePayment.broadcastOption
@@ -4138,6 +4180,8 @@ export class SignAccountOpController
       feeToken: this.feeToken,
       feeTokenPreference: this.feeTokenPreference,
       pendingFeeTokenPreference: this.pendingFeeTokenPreference,
+      feeSpeedPreference: this.feeSpeedPreference,
+      pendingFeeSpeedPreference: this.pendingFeeSpeedPreference,
       speedOptions: this.speedOptions,
       selectedOption: this.selectedOption,
       account: this.account,
