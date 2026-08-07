@@ -50,6 +50,11 @@ const DEFAULT_STATE = {
  *    Enforcing the gate only on fresh installs could be based on empty keystore,
  *    i.e. `!keystoreState.isReadyToStoreKeys`. And to not complicate additionally
  *    the controller here - this logic could live in the mobile router only.
+ *    Users updating from the legacy v1 app must NOT see the gate either - their
+ *    keystore is empty (v1 data lives in a separate storage), but we can bypass
+ *    them by `hasLegacyAccounts()` from `@mobile/services/legacyMigration`, NOT by
+ *    `shouldShowMigrationOnboarding()` - the latter flips to false once they pass
+ *    the onboarding, which would then drop them straight into the invite gate.
  */
 export class InviteController extends EventEmitter implements IInviteController {
   #storage: IStorageController
