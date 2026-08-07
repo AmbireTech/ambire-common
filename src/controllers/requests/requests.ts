@@ -911,6 +911,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         req.dappPromises = []
         req.signAccountOp.pause()
         safeRejectIds.push(req.signAccountOp.accountOp.txnId)
+
+        // TODO: double check this
+        // the simulation is getting cleared one level above removeUserRequests
+        // however, it might start again if there's a nextRequest being set
+        // in #setCurrentRequest. So double check if we have have a condition
+        // when to fire this and when not to
+        const accountOps = getSequentialSafeAccountOps(this.userRequests, req)
+        void this.#portfolio.simulateAccountOp(accountOps)
         return
       }
 
