@@ -2132,7 +2132,15 @@ export class PortfolioController
     return this.#networksWithAssetsByAccounts[accountAddr] || {}
   }
 
-  async simulateAccountOp(op: AccountOp): Promise<void> {
+  /**
+   * Always pass account ops that belong to the same account & network
+   */
+  async simulateAccountOp(ops: AccountOp[]): Promise<void> {
+    // typescript protection
+    if (!ops.length) return
+    const op = ops[0]
+    if (!op) return
+
     const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)
     const network = this.#networks.networks.find((net) => net.chainId === op.chainId)
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
@@ -2169,7 +2177,7 @@ export class PortfolioController
 
     const simulation = !noSimulation
       ? {
-          accountOps: { [network.chainId.toString()]: [op] },
+          accountOps: { [network.chainId.toString()]: ops },
           states: { [network.chainId.toString()]: accountState }
         }
       : undefined

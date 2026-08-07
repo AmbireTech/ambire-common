@@ -1,41 +1,156 @@
-import { describe, expect, jest, test } from '@jest/globals'
 import { getAddress } from 'ethers'
 
-import { Hex } from '../../interfaces/hex'
+import { describe, expect, jest, test } from '@jest/globals'
+
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
-import { getSafeAccountByOwner, normalizeSafeGlobalMessage } from './safe'
+import {
+  getSafeAccountByOwner,
+  getSequentialSafeAccountOps,
+  normalizeSafeGlobalMessage
+} from './safe'
 
+import type { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
 import type { EIP712TypedData } from '@safe-global/types-kit'
+import type { Hex } from '../../interfaces/hex'
+import type { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 
-const OWNER = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78' as Hex
+const OWNER: Hex = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
 const OTHER_OWNER = '0x94b0080A00579C1307B0eF2C499AD98A8ce58e58'
 const SAFE_ADDRESS = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
 
-const getSafeInfo = (owners = [OWNER]) => ({
+const makeCallsRequest = ({
+  id,
+  nonce,
+  accountAddr = SAFE_ADDRESS,
+  chainId = 1n,
+  isSafeRejected = false
+}: {
+  id: string
+  nonce: bigint | null
+  accountAddr?: string
+  chainId?: bigint
+  isSafeRejected?: boolean
+}): CallsUserRequest => {
+  const signAccountOp = {
+    account: { addr: accountAddr },
+    accountOp: { id, accountAddr, chainId, nonce }
+  } as unknown as CallsUserRequest['signAccountOp']
+
+  return {
+    id,
+    kind: 'calls',
+    meta: { isSafeRejected, accountAddr, chainId },
+    dappPromises: [],
+    signAccountOp
+  }
+}
+
+const getSafeInfo = (owners: string[] = [OWNER]): SafeInfoResponse => ({
   address: SAFE_ADDRESS,
   fallbackHandler: '0x0000000000000000000000000000000000000000',
   guard: '0x0000000000000000000000000000000000000000',
-  masterCopy: '0x0000000000000000000000000000000000000000',
+  singleton: '0x0000000000000000000000000000000000000000',
   modules: [],
-  nonce: 0,
+  nonce: '0',
   owners,
   threshold: 1,
   version: '1.4.1'
 })
 
-const getSafeCreationInfo = () => ({
+const getSafeCreationInfo = (): SafeCreationInfoResponse => ({
   created: '2025-01-01T00:00:00Z',
   creator: OWNER,
   factoryAddress: '0x1234567890123456789012345678901234567890',
   saltNonce: '1',
   setupData: '0x1234',
   singleton: '0x2345678901234567890123456789012345678901',
-  transactionHash: `0x${'1'.repeat(64)}`
+  transactionHash: `0x${'1'.repeat(64)}`,
+  userOperation: null
 })
 
-const createApi = (owners = [OWNER]) => ({
+const createApi = (owners: string[] = [OWNER]) => ({
   getSafeCreationInfo: jest.fn(async () => getSafeCreationInfo()),
   getSafeInfo: jest.fn(async () => getSafeInfo(owners))
+})
+
+describe('getSequentialSafeAccountOps', () => {
+  test('sorts account ops by nonce and removes the first account op after a gap', () => {
+    const currentRequest = makeCallsRequest({ id: 'current', nonce: 131n })
+    const requests = [
+      makeCallsRequest({ id: 'nonce-134', nonce: 134n }),
+      currentRequest,
+      makeCallsRequest({ id: 'nonce-132', nonce: 132n })
+    ]
+
+    expect(getSequentialSafeAccountOps(requests, currentRequest).map(({ nonce }) => nonce)).toEqual(
+      [131n, 132n]
+    )
+  })
+
+  test('keeps all account ops when every nonce is incremental', () => {
+    const currentRequest = makeCallsRequest({ id: 'current', nonce: 131n })
+    const requests = [134n, 132n, 131n, 133n].map((nonce) =>
+      makeCallsRequest({ id: `nonce-${nonce}`, nonce })
+    )
+
+    expect(getSequentialSafeAccountOps(requests, currentRequest).map(({ nonce }) => nonce)).toEqual(
+      [131n, 132n, 133n, 134n]
+    )
+  })
+
+  test('removes every account op after the first nonce gap', () => {
+    const currentRequest = makeCallsRequest({ id: 'current', nonce: 131n })
+    const requests = [139n, 133n, 137n, 132n, 138n, 131n, 134n].map((nonce) =>
+      makeCallsRequest({ id: `nonce-${nonce}`, nonce })
+    )
+
+    expect(getSequentialSafeAccountOps(requests, currentRequest).map(({ nonce }) => nonce)).toEqual(
+      [131n, 132n, 133n, 134n]
+    )
+  })
+
+  test('only includes non-rejected calls for the current account and network', () => {
+    const currentRequest = makeCallsRequest({ id: 'current', nonce: 10n })
+    const requests: UserRequest[] = [
+      currentRequest,
+      makeCallsRequest({ id: 'matching', nonce: 11n }),
+      makeCallsRequest({ id: 'rejected', nonce: 12n, isSafeRejected: true }),
+      makeCallsRequest({ id: 'other-account', nonce: 12n, accountAddr: OTHER_OWNER }),
+      makeCallsRequest({ id: 'other-network', nonce: 12n, chainId: 10n }),
+      { id: 'transfer', kind: 'transfer', meta: {}, dappPromises: [] }
+    ]
+
+    expect(getSequentialSafeAccountOps(requests, currentRequest).map(({ id }) => id)).toEqual([
+      'current',
+      'matching'
+    ])
+  })
+
+  test('returns no account ops for a current request without an account op', () => {
+    const currentRequest: UserRequest = {
+      id: 'transfer',
+      kind: 'transfer',
+      meta: {},
+      dappPromises: []
+    }
+
+    expect(
+      getSequentialSafeAccountOps([makeCallsRequest({ id: 'calls', nonce: 1n })], currentRequest)
+    ).toEqual([])
+  })
+
+  test('excludes account ops without a nonce and anything beyond the resulting gap', () => {
+    const currentRequest = makeCallsRequest({ id: 'current', nonce: 1n })
+    const requests = [
+      currentRequest,
+      makeCallsRequest({ id: 'missing-nonce', nonce: null }),
+      makeCallsRequest({ id: 'nonce-3', nonce: 3n })
+    ]
+
+    expect(getSequentialSafeAccountOps(requests, currentRequest).map(({ nonce }) => nonce)).toEqual(
+      [1n]
+    )
+  })
 })
 
 describe('getSafeAccountByOwner', () => {
@@ -102,8 +217,9 @@ describe('normalizeSafeGlobalMessage', () => {
     }
 
     const normalizedMessage = normalizeSafeGlobalMessage(message as unknown as EIP712TypedData)
+    if (typeof normalizedMessage === 'string') throw new Error('Expected a typed message')
 
-    expect((normalizedMessage as EIP712TypedData).domain.chainId).toBe('1')
+    expect(normalizedMessage.domain.chainId).toBe('1')
   })
 
   test('does not copy messages without a bigint domain chainId', () => {

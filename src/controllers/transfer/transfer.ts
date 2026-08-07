@@ -1168,7 +1168,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       shouldSimulate: false,
       onBroadcastSuccess: async (props) => {
         const { submittedAccountOp } = props
-        void this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
+        void this.#portfolio.simulateAccountOp([props.accountOp]).then(() => {
           this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
         })
 

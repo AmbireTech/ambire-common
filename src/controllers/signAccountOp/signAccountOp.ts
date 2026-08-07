@@ -1492,7 +1492,7 @@ export class SignAccountOpController
     if (shouldTraceCall) this.traceCall()
 
     await Promise.all([
-      this.#portfolio.simulateAccountOp(this.accountOp),
+      this.#portfolio.simulateAccountOp([this.accountOp]),
       this.estimation.estimate(this.accountOp).catch((e) => e)
     ])
 
@@ -1505,7 +1505,7 @@ export class SignAccountOpController
     // that we should update the portfolio to get a correct simulation
     if (estimation && estimation.ambireEstimation && estimation.flags.hasNonceDiscrepancy) {
       this.#updateNonce(BigInt(estimation.ambireEstimation.ambireAccountNonce))
-      await this.#portfolio.simulateAccountOp(this.accountOp)
+      await this.#portfolio.simulateAccountOp([this.accountOp])
     }
 
     // if the portfolio detects a nonce discrepancy and the estimation is a Success,
@@ -1526,7 +1526,7 @@ export class SignAccountOpController
         this.accountOp.chainId
       )
       this.#updateNonce(pendingAccountState.nonce)
-      await this.#portfolio.simulateAccountOp(this.accountOp)
+      await this.#portfolio.simulateAccountOp([this.accountOp])
     }
 
     // if there's an estimation error, override the pending results

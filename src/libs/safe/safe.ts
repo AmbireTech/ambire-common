@@ -21,9 +21,14 @@ import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { Hex } from '../../interfaces/hex'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeAccountByOwner, SafeTx } from '../../interfaces/safe'
-import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
+import {
+  CallsUserRequest,
+  TypedMessageUserRequest,
+  UserRequest
+} from '../../interfaces/userRequest'
 import wait from '../../utils/wait'
 import { withTimeout } from '../../utils/with-timeout'
+import { AccountOp, getAccountOpNonce } from '../accountOp/accountOp'
 import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
 import { decodeMultiSend, multiCallAbi, parseSafeMessageOrigin } from './helpers'
 
@@ -62,6 +67,51 @@ export function getApiKit(chainId: bigint) {
     apiKey: process.env.SAFE_API_KEY,
     txServiceUrl: getTxServiceUrl(chainId)
   })
+}
+
+/**
+ * The goal here is to get all account ops for acc|net for safe requests
+ * that are not rejected and are sequential, with no gaps.
+ * Example:
+ * - txns with nonces: 131, 132, 133 - get all of them
+ * - txns with nonces: 131, 132, 134 - remove 134
+ * - txns with nonces: 131, 133, 134 - remove 133, 134
+ */
+export function getSequentialSafeAccountOps(
+  userRequests: UserRequest[],
+  curR: UserRequest
+): AccountOp[] {
+  if (curR.kind !== 'calls') return []
+
+  const accountOps = userRequests
+    .filter(
+      (r): r is CallsUserRequest =>
+        r.kind === 'calls' &&
+        r.signAccountOp.account.addr === curR.signAccountOp.account.addr &&
+        r.signAccountOp.accountOp.chainId === curR.signAccountOp.accountOp.chainId &&
+        !r.meta.isSafeRejected
+    )
+    .map((r) => r.signAccountOp.accountOp)
+    .sort((a, b) => {
+      const aNonce = getAccountOpNonce(a)
+      const bNonce = getAccountOpNonce(b)
+
+      if (aNonce === bNonce) return 0
+      if (aNonce === null) return 1
+      if (bNonce === null) return -1
+      return aNonce < bNonce ? -1 : aNonce > bNonce ? 1 : 0
+    })
+
+  const firstGapIndex = accountOps.findIndex((accountOp, index) => {
+    const nonce = getAccountOpNonce(accountOp)
+    if (nonce === null) return true
+    if (index === 0) return false
+
+    const previousNonce = getAccountOpNonce(accountOps[index - 1]!)
+    return previousNonce === null || nonce !== previousNonce + 1n
+  })
+
+  return firstGapIndex === -1 ? accountOps : accountOps.slice(0, firstGapIndex)
 }
 
 type SafeAccountApiKitFactory = (

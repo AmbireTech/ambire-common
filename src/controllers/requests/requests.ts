@@ -68,6 +68,7 @@ import {
   messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
+import { getSequentialSafeAccountOps } from '../../libs/safe/safe'
 import {
   AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
   isAmbireOperationTypedData
@@ -505,7 +506,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // in the queue but they should not be simulated
         if (this.shouldSimulateAccountOps && !req.meta.isSafeRejected)
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.#portfolio.simulateAccountOp(req.signAccountOp.accountOp)
+          this.#portfolio.simulateAccountOp([req.signAccountOp.accountOp])
       } else if (req.kind === 'typedMessage' || req.kind === 'message' || req.kind === 'siwe') {
         const existingMessageRequest = this.userRequests.find(
           (r) => r.kind === req.kind && r.meta.accountAddr === req.meta.accountAddr
@@ -588,12 +589,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.currentUserRequest.kind === 'calls' &&
       this.currentUserRequest.signAccountOp
     ) {
-      if (
-        !getShouldSimulateInTheBackground(
-          this.currentUserRequest,
-          this.visibleUserRequests.filter((r) => r.kind === 'calls')
-        )
-      ) {
+      if (!getShouldSimulateInTheBackground(this.currentUserRequest)) {
         await this.#portfolio.overrideSimulationResults(
           this.currentUserRequest.signAccountOp.accountOp
         )
@@ -604,6 +600,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // Resume the signAccountOp of the incoming request
     if (nextRequest && nextRequest.kind === 'calls' && nextRequest.signAccountOp) {
       nextRequest.signAccountOp.resume()
+    }
+
+    // if there's no nextRequest and the current request is a safe account,
+    // collect all safe requests for the network and start a portfolio sim
+    // so the user can work with the latest snapshot from the dashboard
+    const curR = this.currentUserRequest
+    if (
+      curR &&
+      curR.kind === 'calls' &&
+      !!curR.signAccountOp.account.safeCreation &&
+      !nextRequest
+    ) {
+      const accountOps = getSequentialSafeAccountOps(this.userRequests, curR)
+      void this.#portfolio.simulateAccountOp(accountOps)
     }
 
     this.currentUserRequest = nextRequest
@@ -2186,6 +2196,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     await this.#safe.restoreTxnId([txnId])
     request.meta.isSafeRejected = false
+    request.signAccountOp.resume()
     this.emitUpdate()
   }
 
