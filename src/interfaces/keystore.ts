@@ -59,6 +59,11 @@ export interface ExternalSignerController {
   submitSignatureResponse?: (payload: string | Uint8Array) => void //Qr based specific
   parseAndSetAccountFromQR?: (payload: string | Uint8Array) => Promise<ParsedQrAccount> //Qr based specific
   nfcWalletType?: NfcWalletType // NFC (tap-to-sign card) specific
+  // Mark the start and the end of one account op's signing, so a device that unlocks
+  // with a PIN can keep it for that long and ask for it once instead of once per
+  // signature. NFC (tap-to-sign card) specific.
+  beginPinSession?: () => Promise<void>
+  endPinSession?: () => Promise<void>
 }
 export type ExternalSignerControllers = Partial<{ [key in Key['type']]: ExternalSignerController }>
 

@@ -3803,6 +3803,8 @@ export class SignAccountOpController
     this.gasFeeChangedConfirmationRequired = false
     this.previousFee = null
 
+    this.#beginPinSessions()
+
     this.signAndBroadcastPromise = (async () => {
       this.signPromise = this.sign().finally(() => {
         this.signPromise = undefined
@@ -3836,6 +3838,7 @@ export class SignAccountOpController
       }
     })().finally(() => {
       this.signAndBroadcastPromise = undefined
+      this.#endPinSessions()
     })
 
     await this.signAndBroadcastPromise
@@ -3853,6 +3856,19 @@ export class SignAccountOpController
 
       this.#externalSignerControllers[keyType]?.signingCleanup?.()
     })
+  }
+
+  /**
+   * One account op can take several signatures from the same key, and a device that
+   * unlocks with a PIN asks for it before each. Marking where the signing starts and
+   * ends lets it keep the PIN for that long. Only the boundaries reach it, never the PIN.
+   */
+  #beginPinSessions() {
+    Object.values(this.#externalSignerControllers).forEach((c) => c?.beginPinSession?.())
+  }
+
+  #endPinSessions() {
+    Object.values(this.#externalSignerControllers).forEach((c) => c?.endPinSession?.())
   }
 
   get isSignInProgress() {
