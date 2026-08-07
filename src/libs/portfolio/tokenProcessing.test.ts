@@ -18,7 +18,7 @@ describe('getFeeToken', () => {
     )
 
     expect(duplicates.length).toBeGreaterThan(1)
-    expect(getFeeToken(DUPLICATED_ON_AVALANCHE, '43114', 43114n)).toBe(duplicates[0])
+    expect(getFeeToken(DUPLICATED_ON_AVALANCHE, 43114n)).toBe(duplicates[0])
   })
 
   it('is case-insensitive on the given address', () => {
@@ -27,23 +27,13 @@ describe('getFeeToken', () => {
     )
 
     expect(usdt).toBeDefined()
-    expect(getFeeToken(USDT_ETHEREUM.toLowerCase(), '1', 1n)).toBe(usdt)
-    expect(getFeeToken(USDT_ETHEREUM.toUpperCase(), '1', 1n)).toBe(usdt)
-  })
-
-  it('finds the native token by the zero address on both branches', () => {
-    const nativeOnEthereum = gasTankFeeTokens.find(
-      (t) => t.address === ZeroAddress && t.chainId === 1n
-    )
-
-    expect(nativeOnEthereum).toBeDefined()
-    expect(getFeeToken(ZeroAddress, '1', 1n)).toBe(nativeOnEthereum)
-    expect(getFeeToken(ZeroAddress, 'gasTank', 1n)).toBe(nativeOnEthereum)
+    expect(getFeeToken(USDT_ETHEREUM.toLowerCase(), 1n)).toBe(usdt)
+    expect(getFeeToken(USDT_ETHEREUM.toUpperCase(), 1n)).toBe(usdt)
   })
 
   it('returns undefined for an address that is not a fee token', () => {
-    expect(getFeeToken(NOT_A_FEE_TOKEN, '1', 1n)).toBeUndefined()
-    expect(getFeeToken(NOT_A_FEE_TOKEN, 'gasTank', 1n)).toBeUndefined()
+    expect(getFeeToken(NOT_A_FEE_TOKEN, 1n)).toBeUndefined()
+    expect(getFeeToken(NOT_A_FEE_TOKEN, 1n)).toBeUndefined()
   })
 
   it('returns undefined when the address is a fee token but on another chain', () => {
@@ -52,12 +42,12 @@ describe('getFeeToken', () => {
     )
 
     expect(wethOnOptimism).toBeDefined()
-    expect(getFeeToken(WETH_OPTIMISM, '1', 1n)).toBeUndefined()
-    expect(getFeeToken(WETH_OPTIMISM, 'gasTank', 1n)).toBeUndefined()
+    expect(getFeeToken(WETH_OPTIMISM, 1n)).toBeUndefined()
+    expect(getFeeToken(WETH_OPTIMISM, 1n)).toBeUndefined()
   })
 
   it('reuses the index across calls instead of rebuilding it', () => {
-    expect(getFeeToken(USDT_ETHEREUM, '1', 1n)).toBe(getFeeToken(USDT_ETHEREUM, '1', 1n))
+    expect(getFeeToken(USDT_ETHEREUM, 1n)).toBe(getFeeToken(USDT_ETHEREUM, 1n))
   })
 })
 
@@ -87,7 +77,7 @@ describe('getFlags fee token flags', () => {
   it('treats the native token as a fee token even without a gas tank entry', () => {
     const flags = getFlags({}, '31337', 31337n, ZeroAddress, 'Ether', 'ETH')
 
-    expect(getFeeToken(ZeroAddress, '31337', 31337n)).toBeUndefined()
+    expect(getFeeToken(ZeroAddress, 31337n)).toBeUndefined()
     expect(flags.isFeeToken).toBe(true)
     expect(flags.canTopUpGasTank).toBe(false)
   })
