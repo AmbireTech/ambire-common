@@ -1105,39 +1105,42 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Fast)
   })
 
-  test('never persists a fee speed before the transaction is broadcast', async () => {
+  test('persists a user selected fee speed right away, for the current chain only', async () => {
+    const { controller, storageCtrl } = await initDefaultFeeSelection()
+
+    controller.update({ speed: FeeSpeed.Slow, shouldPersistSpeed: true })
+    await wait(1)
+
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Slow)
+    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toEqual({
+      '1': FeeSpeed.Slow
+    })
+  })
+
+  test('does not persist a fee speed that was not selected by the user', async () => {
     const { controller, storageCtrl } = await initDefaultFeeSelection()
 
     controller.update({ speed: FeeSpeed.Slow })
     await wait(1)
-    expect(controller.pendingFeeSpeedPreference).toBeNull()
-    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toBeUndefined()
 
-    controller.update({ pendingFeeSpeedPreference: FeeSpeed.Slow })
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Slow)
+    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toBeUndefined()
+  })
+
+  test('saving a fee speed keeps the ones saved for the other chains', async () => {
+    const { controller, storageCtrl } = await initDefaultFeeSelection(undefined, {
+      initialSetStorage: async (storage) => {
+        await storage.set('signAccountOpFeeSpeedPreference', { '137': FeeSpeed.Ape })
+      }
+    })
+
+    controller.update({ speed: FeeSpeed.Medium, shouldPersistSpeed: true })
     await wait(1)
-    expect(controller.pendingFeeSpeedPreference).toBe(FeeSpeed.Slow)
-    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toBeUndefined()
-  })
 
-  test('drops a staged default speed once a different speed is selected', async () => {
-    const { controller } = await initDefaultFeeSelection()
-
-    controller.update({ speed: FeeSpeed.Slow })
-    controller.update({ pendingFeeSpeedPreference: FeeSpeed.Slow })
-    expect(controller.pendingFeeSpeedPreference).toBe(FeeSpeed.Slow)
-
-    controller.update({ speed: FeeSpeed.Medium })
-    expect(controller.pendingFeeSpeedPreference).toBeNull()
-  })
-
-  test('keeps a staged default speed when the same speed is re-selected', async () => {
-    const { controller } = await initDefaultFeeSelection()
-
-    controller.update({ speed: FeeSpeed.Slow })
-    controller.update({ pendingFeeSpeedPreference: FeeSpeed.Slow })
-    controller.update({ speed: FeeSpeed.Slow })
-
-    expect(controller.pendingFeeSpeedPreference).toBe(FeeSpeed.Slow)
+    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toEqual({
+      '1': FeeSpeed.Medium,
+      '137': FeeSpeed.Ape
+    })
   })
 
   test('uses a saved ERC-20 default only for the matching chain', async () => {
