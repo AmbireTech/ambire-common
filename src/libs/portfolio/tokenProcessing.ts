@@ -106,12 +106,9 @@ const getFeeTokenIndex = () => {
  */
 export function getFeeToken(
   address: string,
-  chainIdKey: string,
-  tokenChainId: bigint
+  chainid: bigint
 ): (typeof gasTankFeeTokens)[number] | undefined {
-  const chainId = ['gasTank', 'rewards'].includes(chainIdKey) ? tokenChainId.toString() : chainIdKey
-
-  return getFeeTokenIndex().get(feeTokenKey(address, chainId))
+  return getFeeTokenIndex().get(feeTokenKey(address, chainid.toString()))
 }
 
 export function getFlags(
@@ -132,7 +129,7 @@ export function getFlags(
   if (networkData?.walletClaimableBalance?.address.toLowerCase() === address.toLowerCase())
     rewardsType = 'wallet-vesting'
 
-  const foundFeeToken = getFeeToken(address, chainId, tokenChainId)
+  const foundFeeToken = getFeeToken(address, tokenChainId)
 
   const canTopUpGasTank = !!foundFeeToken && !foundFeeToken?.disableGasTankDeposit && !rewardsType
   const isFeeToken =

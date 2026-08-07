@@ -1,6 +1,8 @@
 import { ZeroAddress } from 'ethers'
 import { getAddress } from 'viem'
 
+import { getFeeToken } from '@/libs/portfolio/tokenProcessing'
+
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
@@ -584,11 +586,7 @@ export class Portfolio {
         // return the native token
         if (t.address === ZeroAddress && t.chainId === this.network.chainId) return true
 
-        return gasTankFeeTokens.find(
-          (gasTankT) =>
-            gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
-            gasTankT.chainId === t.chainId
-        )
+        return getFeeToken(t.address, t.chainId)
       }),
       beforeNonce,
       afterNonce,
