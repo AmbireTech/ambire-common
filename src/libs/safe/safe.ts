@@ -76,6 +76,7 @@ export function getApiKit(chainId: bigint) {
  * - txns with nonces: 131, 132, 133 - get all of them
  * - txns with nonces: 131, 132, 134 - remove 134
  * - txns with nonces: 131, 133, 134 - remove 133, 134
+ * - txns with nonces: 131, 132, 132 - remove both 132 txns
  */
 export function getSequentialSafeAccountOps(
   userRequests: UserRequest[],
@@ -102,7 +103,7 @@ export function getSequentialSafeAccountOps(
       return aNonce < bNonce ? -1 : aNonce > bNonce ? 1 : 0
     })
 
-  const firstGapIndex = accountOps.findIndex((accountOp, index) => {
+  const firstNonSequentialIndex = accountOps.findIndex((accountOp, index) => {
     const nonce = getAccountOpNonce(accountOp)
     if (nonce === null) return true
     if (index === 0) return false
@@ -111,7 +112,17 @@ export function getSequentialSafeAccountOps(
     return previousNonce === null || nonce !== previousNonce + 1n
   })
 
-  return firstGapIndex === -1 ? accountOps : accountOps.slice(0, firstGapIndex)
+  if (firstNonSequentialIndex === -1) return accountOps
+
+  const nonce = getAccountOpNonce(accountOps[firstNonSequentialIndex]!)
+  const previousNonce =
+    firstNonSequentialIndex > 0 ? getAccountOpNonce(accountOps[firstNonSequentialIndex - 1]!) : null
+  const firstInvalidIndex =
+    nonce !== null && nonce === previousNonce
+      ? firstNonSequentialIndex - 1
+      : firstNonSequentialIndex
+
+  return accountOps.slice(0, firstInvalidIndex)
 }
 
 type SafeAccountApiKitFactory = (

@@ -501,12 +501,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
         // It's necessary to continue operating with the token `amountPostSimulation` amount.
-        //
-        // but skip simulation for rejected safe requests. They are visible
-        // in the queue but they should not be simulated
-        if (this.shouldSimulateAccountOps && !req.meta.isSafeRejected)
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.#portfolio.simulateAccountOp([req.signAccountOp.accountOp])
+        if (this.shouldSimulateAccountOps) {
+          const accountOps = req.signAccountOp.account.safeCreation
+            ? getSequentialSafeAccountOps([...this.userRequests, req], req)
+            : [req.signAccountOp.accountOp]
+          void this.#portfolio.simulateAccountOp(accountOps)
+        }
       } else if (req.kind === 'typedMessage' || req.kind === 'message' || req.kind === 'siwe') {
         const existingMessageRequest = this.userRequests.find(
           (r) => r.kind === req.kind && r.meta.accountAddr === req.meta.accountAddr
@@ -2196,7 +2196,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     await this.#safe.restoreTxnId([txnId])
     request.meta.isSafeRejected = false
-    request.signAccountOp.resume()
+
+    // on restore, simulate in the dashboard whatever is eligible
+    const accountOps = getSequentialSafeAccountOps(this.userRequests, request)
+    void this.#portfolio.simulateAccountOp(accountOps)
     this.emitUpdate()
   }
 

@@ -109,6 +109,33 @@ describe('getSequentialSafeAccountOps', () => {
     )
   })
 
+  test('removes both account ops with a duplicate nonce and every account op after them', () => {
+    const currentRequest = makeCallsRequest({ id: 'nonce-132', nonce: 132n })
+    const requests = [
+      makeCallsRequest({ id: 'nonce-134', nonce: 134n }),
+      makeCallsRequest({ id: 'first-nonce-133', nonce: 133n }),
+      currentRequest,
+      makeCallsRequest({ id: 'second-nonce-133', nonce: 133n })
+    ]
+
+    expect(getSequentialSafeAccountOps(requests, currentRequest).map(({ nonce }) => nonce)).toEqual(
+      [132n]
+    )
+  })
+
+  test('returns no account ops when the first nonce is duplicated', () => {
+    const currentRequest = makeCallsRequest({ id: 'first-nonce-132', nonce: 132n })
+    const requests = [
+      makeCallsRequest({ id: 'nonce-135', nonce: 135n }),
+      currentRequest,
+      makeCallsRequest({ id: 'nonce-134', nonce: 134n }),
+      makeCallsRequest({ id: 'nonce-133', nonce: 133n }),
+      makeCallsRequest({ id: 'second-nonce-132', nonce: 132n })
+    ]
+
+    expect(getSequentialSafeAccountOps(requests, currentRequest)).toEqual([])
+  })
+
   test('only includes non-rejected calls for the current account and network', () => {
     const currentRequest = makeCallsRequest({ id: 'current', nonce: 10n })
     const requests: UserRequest[] = [
