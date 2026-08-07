@@ -45,6 +45,11 @@ const DEFAULT_STATE = {
  *    extension-scoped, so the mobile gate most likely needs its own one.
  * 4. Keep the controller platform-agnostic - no `isMobile` checks in here. The
  *    mobile router is the one that decides whether to enforce the gate.
+ * 5. Existing mobile users must NOT see the gate, they get auto-access -
+ *    otherwise an app update would lock them out. Only fresh installs get gated.
+ *    Enforcing the gate only on fresh installs could be based on empty keystore,
+ *    i.e. `!keystoreState.isReadyToStoreKeys`. And to not complicate additionally
+ *    the controller here - this logic could live in the mobile router only.
  */
 export class InviteController extends EventEmitter implements IInviteController {
   #storage: IStorageController
