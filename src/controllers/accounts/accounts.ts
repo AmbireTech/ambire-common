@@ -302,7 +302,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.accounts = getUniqueAccountsArray(nextAccounts)
     await this.#storage.set('accounts', this.accounts)
 
-    this.#onAddAccounts(accounts)
+    // we add newAccountsNotAddedYet first so the extension selects
+    // a newly imported account first
+    this.#onAddAccounts([...newAccountsNotAddedYet, ...newAccountsAlreadyAdded])
 
     // update the state of new accounts. Otherwise, the user needs to restart his extension
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
