@@ -36,6 +36,7 @@ import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
+import { ExternalSignerController, ExternalSignerControllers } from '../../interfaces/keystore'
 import { IProvidersController } from '../../interfaces/provider'
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
@@ -419,6 +420,7 @@ const init = async (
     type?: SignAccountOpType
     initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
+    externalSignerControllers?: ExternalSignerControllers
   }
 ) => {
   const storage: Storage = produceMemoryStore()
@@ -682,7 +684,7 @@ const init = async (
     portfolio,
     featureFlags: featureFlagsCtrl,
     signAccountOpPreference,
-    externalSignerControllers: {},
+    externalSignerControllers: options?.externalSignerControllers || {},
     account,
     network,
     activity,
@@ -3487,5 +3489,81 @@ describe('traceCall asset discovery', () => {
       expect(addTokensToBeLearnedSpy).not.toHaveBeenCalled()
       expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
     })
+  })
+})
+
+describe('external signer PIN sessions', () => {
+  suppressConsoleBeforeEach(true)
+
+  const pinSessionGasPrices = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+
+  const initPinSession = async () => {
+    const nfc = {
+      type: 'nfc',
+      deviceModel: '',
+      deviceId: '',
+      beginPinSession: jest.fn(async () => {}),
+      endPinSession: jest.fn(async () => {})
+    } as unknown as ExternalSignerController & {
+      beginPinSession: jest.Mock
+      endPinSession: jest.Mock
+    }
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: nativeFeeToken
+      }
+    ]
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        flags: {},
+        updatedAt: Date.now()
+      } as any,
+      pinSessionGasPrices,
+      false,
+      { externalSignerControllers: { nfc } as any }
+    )
+
+    return { controller, nfc }
+  }
+
+  test('opens the PIN session before signing and closes it once the whole flow is over', async () => {
+    const { controller, nfc } = await initPinSession()
+    const callOrder: string[] = []
+
+    nfc.beginPinSession.mockImplementation(async () => {
+      callOrder.push('begin')
+    })
+    nfc.endPinSession.mockImplementation(async () => {
+      callOrder.push('end')
+    })
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // One session for the whole account op, no matter how many signatures it takes -
+    // that is what lets a single PIN entry cover all of them.
+    expect(callOrder).toEqual(['begin', 'end'])
+  })
+
+  test('opens a new PIN session for the next account op, so the PIN is asked for again', async () => {
+    const { controller, nfc } = await initPinSession()
+
+    await controller.signAndBroadcast().catch(() => {})
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(nfc.beginPinSession).toHaveBeenCalledTimes(2)
+    expect(nfc.endPinSession).toHaveBeenCalledTimes(2)
   })
 })
