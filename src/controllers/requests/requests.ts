@@ -896,12 +896,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       if (!req) return
 
+      // A safe request could be rejected, but it also could be auto-resolved
+      // when isReject is passed for a signed safe txn, we pause the signAccountOp
+      // and allow the user to restore it at a later time.
+      // If isReject is not passed, it means we're auto-removing an expired nonce
+      // because another same nonce transaction has been broadcast
       if (
         shouldRejectSafeRequests &&
         req.kind === 'calls' &&
-        req.signAccountOp.account.safeCreation &&
-        req.signAccountOp.accountOp.txnId &&
-        getAccountOpNonce(req.signAccountOp.accountOp) !== null
+        !!req.signAccountOp.account.safeCreation &&
+        !!req.signAccountOp.accountOp.txnId
       ) {
         req.meta.isSafeRejected = true
         req.dappPromises = []
@@ -911,6 +915,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       // remove from the request queue
+      // if (!!req.signAccountOp.account.safeCreation)
       this.userRequests.splice(this.userRequests.indexOf(req), 1)
       if (this.currentUserRequest?.id === req.id) didRemoveCurrentUserRequest = true
 
@@ -929,38 +934,36 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           })
         }
 
-        // if it's a Safe txn:
-        // - reject it upon a normal reject req;
-        // - resolve it on accountOp resolve
-
-        if (!!req.signAccountOp.account.safeCreation && req.signAccountOp.accountOp.txnId) {
-          const safeNonce = getAccountOpNonce(req.signAccountOp.accountOp)
-          if (safeNonce === null) {
-            req.signAccountOp.destroy()
-            return
-          }
-
-          if (shouldRejectSafeRequests) safeRejectIds.push(req.signAccountOp.accountOp.txnId)
-          else {
-            const resolved = safeResolveIds.find(
-              (txns) =>
-                txns.accountAddr === req.signAccountOp.accountOp.accountAddr &&
-                txns.chainId === req.signAccountOp.accountOp.chainId &&
-                txns.nonce === safeNonce
-            )
-            if (!resolved)
-              safeResolveIds.push({
-                accountAddr: req.signAccountOp.accountOp.accountAddr,
-                chainId: req.signAccountOp.accountOp.chainId,
-                nonce: safeNonce,
-                txnIds: [req.signAccountOp.accountOp.txnId]
-              })
-            else resolved.txnIds.push(req.signAccountOp.accountOp.txnId)
-          }
+        // if it's not a safe request OR it's non-signed Safe request, move on
+        if (
+          !req.signAccountOp.account.safeCreation ||
+          !req.signAccountOp.accountOp.txnId ||
+          !req.signAccountOp.accountOp.nonce
+        ) {
+          req.signAccountOp.destroy()
+          return
         }
 
-        req.signAccountOp.destroy()
-        return
+        // handle removing a safe transaction
+        // if it's not signed, we destroy it
+        // if we're rejecting it, we write it as rejected in storage but pause
+        // the signing process
+        // if we're auto-resolving it (same nonce txn already broadcast), we
+        // write it to storage as auto resolved and then destroy it
+        const data = {
+          accountAddr: req.signAccountOp.accountOp.accountAddr,
+          chainId: req.signAccountOp.accountOp.chainId,
+          nonce: req.signAccountOp.accountOp.nonce,
+          txnIds: [req.signAccountOp.accountOp.txnId]
+        }
+        const resolved = safeResolveIds.find(
+          (txns) =>
+            txns.accountAddr === data.accountAddr &&
+            txns.chainId === data.chainId &&
+            txns.nonce === data.nonce
+        )
+        if (!resolved) safeResolveIds.push(data)
+        else resolved.txnIds.push(...data.txnIds)
       }
       if (kind === 'switchAccount') {
         const requestsToAddOrRemove = this.userRequestsWaitingAccountSwitch.filter(
@@ -1074,6 +1077,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
       )
     )
+    // after override, we need another simulation
 
     waitingUserRequestsToReject.forEach((r) => {
       if (r.kind === 'calls') r.signAccountOp.destroy()
