@@ -1,8 +1,10 @@
 import { Contract, JsonRpcProvider, Provider } from 'ethers'
 
 import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiAAVEPosition.json'
+import { AAVE_STATIC_CALL_TIMEOUT_MS } from '../../../consts/intervals'
 import { Network } from '../../../interfaces/network'
 import { generateUuid } from '../../../utils/uuid'
+import { withTimeout } from '../../../utils/with-timeout'
 import { fromDescriptor } from '../../deployless/deployless'
 import { AAVE_V3 } from '../defiAddresses'
 import { getAssetValue } from '../helpers'
@@ -32,7 +34,14 @@ export async function getAAVEPositions(
     network.rpcNoStateOverride // Why?
   )
 
-  const reservesLength = await poolContract.getFunction('getReservesCount').staticCall()
+  // Raw ethers staticCall has no timeout; without this, a hung RPC pins the portfolio update.
+  const reservesLength = await withTimeout(
+    () => poolContract.getFunction('getReservesCount').staticCall(),
+    {
+      timeoutMs: AAVE_STATIC_CALL_TIMEOUT_MS,
+      message: `Fetching AAVE positions on ${network.name} took too long`
+    }
+  )
   const PAGE_SIZE = 15
   const numberOfPages = Math.ceil(Number(reservesLength) / PAGE_SIZE)
   const promises = []

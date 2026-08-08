@@ -3,11 +3,13 @@ import { isHex } from 'viem'
 
 import { getSanitizedAmount } from '@/libs/transfer/amount'
 
+import { CUSTOM_DEFI_POSITIONS_TIMEOUT_MS } from '../../consts/intervals'
 import { AccountId } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider, RPCProviders } from '../../interfaces/provider'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import shortenAddress from '../../utils/shortenAddress'
+import { withTimeout } from '../../utils/with-timeout'
 import { TokenResult } from '../portfolio'
 import {
   AccountState,
@@ -75,33 +77,40 @@ const getCustomProviderPositions = async (
     let error: any
 
     let newPositions = (
-      await Promise.all([
-        getAAVEPositions(addr, provider, network).catch((e: any) => {
-          providerErrors.push({
-            providerName: 'AAVE v3',
-            error: e?.message || 'Unknown error'
-          })
+      await withTimeout(
+        () =>
+          Promise.all([
+            getAAVEPositions(addr, provider, network).catch((e: any) => {
+              providerErrors.push({
+                providerName: 'AAVE v3',
+                error: e?.message || 'Unknown error'
+              })
 
-          return null
-        }),
-        // Uniswap is a bit of an odd case. We return the positions merged with Debank data
-        getDebankEnhancedUniV3Positions(
-          addr,
-          provider,
-          network,
-          previousPositions,
-          debankNetworkPositionsByProvider ||
-            previousPositions.filter((p) => p.source !== 'custom'),
-          isDebankCallSuccessful
-        ).catch((e: any) => {
-          providerErrors.push({
-            providerName: 'Uniswap V3',
-            error: e?.message || 'Unknown error'
-          })
+              return null
+            }),
+            // Uniswap is a bit of an odd case. We return the positions merged with Debank data
+            getDebankEnhancedUniV3Positions(
+              addr,
+              provider,
+              network,
+              previousPositions,
+              debankNetworkPositionsByProvider ||
+                previousPositions.filter((p) => p.source !== 'custom'),
+              isDebankCallSuccessful
+            ).catch((e: any) => {
+              providerErrors.push({
+                providerName: 'Uniswap V3',
+                error: e?.message || 'Unknown error'
+              })
 
-          return null
-        })
-      ])
+              return null
+            })
+          ]),
+        {
+          timeoutMs: CUSTOM_DEFI_POSITIONS_TIMEOUT_MS,
+          message: `Fetching DeFi positions on ${network.name} took too long`
+        }
+      )
     ).filter(Boolean) as PositionsByProvider[]
 
     if (newPositions.length) {

@@ -1,9 +1,13 @@
-import { ZeroAddress } from 'ethers'
+import { Contract, ZeroAddress } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
 import { STK_WALLET } from '../../consts/addresses'
+import {
+  AAVE_STATIC_CALL_TIMEOUT_MS,
+  CUSTOM_DEFI_POSITIONS_TIMEOUT_MS
+} from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
 import { NetworkState, PortfolioNetworkResult, TokenResult } from '../portfolio/interfaces'
@@ -12,6 +16,7 @@ import {
   DefiUpdateMode,
   enhancePortfolioTokensWithDefiPositions,
   getAllAssetsAsHints,
+  getCustomProviderPositions,
   getDefiUpdateMode,
   getFormattedApiPositions,
   getUniqueMergedPositions
@@ -22,7 +27,8 @@ import {
   getStakedWalletPositions,
   getUniV3Positions
 } from './providers'
-import { AssetType, PositionsByProvider } from './types'
+import * as defiProviders from './providers'
+import { AssetType, DeFiPositionsError, PositionsByProvider } from './types'
 
 describe('DeFi positions providers', () => {
   // If this test ever fails because the accounts remove their positions, you can:
@@ -135,6 +141,71 @@ describe('DeFi positions providers', () => {
       expect(pos.additionalData.healthRate).toBeGreaterThan(0)
       expect(pos.additionalData.collateralInUSD).toBeGreaterThan(0)
     })
+    test('AAVE getReservesCount times out instead of hanging forever', async () => {
+      jest.useFakeTimers()
+      const getFunctionSpy = jest.spyOn(Contract.prototype, 'getFunction').mockReturnValue({
+        staticCall: () => new Promise(() => {})
+      } as ReturnType<Contract['getFunction']>)
+
+      try {
+        const promise = getAAVEPositions(userAddrAave, providerEthereum, ethereum)
+        const expectation = expect(promise).rejects.toThrow(/took too long/i)
+        await jest.advanceTimersByTimeAsync(AAVE_STATIC_CALL_TIMEOUT_MS + 50)
+        await expectation
+      } finally {
+        getFunctionSpy.mockRestore()
+        jest.useRealTimers()
+      }
+    })
+  })
+})
+
+describe('getCustomProviderPositions timeouts', () => {
+  const ethereum = networks.find((n) => n.chainId === 1n)!
+  if (!ethereum) throw new Error('unable to find ethereum network in consts')
+  const providerEthereum = getRpcProvider(['https://invictus.ambire.com/ethereum'], 1n)
+
+  test('returns previous custom positions when AAVE/Uni providers hang past timeout', async () => {
+    jest.useFakeTimers()
+    try {
+      jest
+        .spyOn(defiProviders, 'getAAVEPositions')
+        .mockImplementation(() => new Promise(() => {}))
+      jest
+        .spyOn(defiProviders, 'getDebankEnhancedUniV3Positions')
+        .mockImplementation(() => new Promise(() => {}))
+
+      const previousCustom: PositionsByProvider[] = [
+        {
+          providerName: 'AAVE v3',
+          chainId: 1n,
+          source: 'custom',
+          iconUrl: '',
+          siteUrl: '',
+          type: 'common',
+          positions: []
+        }
+      ]
+
+      const promise = getCustomProviderPositions(
+        '0xe40d278afd00e6187db21ff8c96d572359ef03bf',
+        providerEthereum,
+        ethereum,
+        async () => ({}),
+        previousCustom,
+        [],
+        true
+      )
+
+      await jest.advanceTimersByTimeAsync(CUSTOM_DEFI_POSITIONS_TIMEOUT_MS + 50)
+      const result = await promise
+
+      expect(result.error).toBe(DeFiPositionsError.CriticalError)
+      expect(result.positionsByProvider).toEqual(previousCustom)
+    } finally {
+      jest.useRealTimers()
+      jest.restoreAllMocks()
+    }
   })
 })
 

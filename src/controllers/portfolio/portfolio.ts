@@ -5,7 +5,11 @@ import {
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { STK_WALLET } from '../../consts/addresses'
-import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
+import {
+  BLACKLIST_UPDATE_INTERVAL,
+  PORTFOLIO_LOADING_MAX_AGE_MS,
+  PORTFOLIO_NETWORK_UPDATE_TIMEOUT_MS
+} from '../../consts/intervals'
 import {
   Account,
   AccountId,
@@ -85,6 +89,7 @@ import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { getFlags } from '../../libs/portfolio/tokenProcessing'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
+import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
 
@@ -618,6 +623,11 @@ export class PortfolioController
     if (!accountState) return
     if (!accountState[network]) accountState[network] = { errors: [], isReady: false, isLoading }
     accountState[network]!.isLoading = isLoading
+    if (isLoading) {
+      accountState[network]!.loadingStartedAt = Date.now()
+    } else {
+      delete accountState[network]!.loadingStartedAt
+    }
     if (error)
       accountState[network]!.criticalError = {
         message:
@@ -1200,7 +1210,14 @@ export class PortfolioController
         : 0
     const isWithinMinUpdateInterval = !!updateStarted && Date.now() - updateStarted < maxDataAgeMs
 
-    return isWithinMinUpdateInterval || networkState.isLoading
+    // Only treat isLoading as a skip while the update is still within the max age.
+    // A hung update that never clears isLoading must not block retries forever.
+    const isLoadingRecently =
+      networkState.isLoading &&
+      !!networkState.loadingStartedAt &&
+      Date.now() - networkState.loadingStartedAt < PORTFOLIO_LOADING_MAX_AGE_MS
+
+    return isWithinMinUpdateInterval || isLoadingRecently
   }
 
   /**
@@ -1397,8 +1414,8 @@ export class PortfolioController
     if (!accountState) return [false, null]
 
     if (!accountState[network.chainId.toString()]) {
-      // isLoading must be false here, otherwise canSkipUpdate will return true
-      // and portfolio will not be updated
+      // isLoading must be false here (and without a fresh loadingStartedAt), otherwise
+      // canSkipUpdate may treat the network as mid-update and skip the real fetch
       accountState[network.chainId.toString()] = { isLoading: false, isReady: false, errors: [] }
     }
 
@@ -1423,6 +1440,7 @@ export class PortfolioController
 
     this.#setNetworkLoading(account.addr, network.chainId.toString(), true)
     const state = accountState[network.chainId.toString()]!
+    const loadingStartedAt = state.loadingStartedAt
     if (isManualUpdate) state.criticalError = undefined
 
     this.emitUpdate()
@@ -1430,6 +1448,9 @@ export class PortfolioController
     const hasNonZeroTokens = !!Object.values(
       this.#networksWithAssetsByAccounts?.[account.addr] || {}
     ).some(Boolean)
+
+    const isCurrentUpdate = () =>
+      accountState[network.chainId.toString()]?.loadingStartedAt === loadingStartedAt
 
     try {
       if (!portfolioLib)
@@ -1473,28 +1494,41 @@ export class PortfolioController
         delete state.verification
       }
 
-      // Fetch the portfolio and custom defi positions in parallel
-      const [portfolioResult, customPositionsResult] = await Promise.all([
-        portfolioLib.get(account.addr, {
-          tokenDataRecency: 60000 * 5,
-          tokenDataCache: networkTokenDataCache,
-          fetchPinned: !hasNonZeroTokens,
-          ...allHints,
-          ...portfolioProps,
-          blockTag: 'both',
-          disableAutoDiscovery: true,
-          blacklist: this.#blacklist
-        }),
-        getCustomProviderPositions(
-          account.addr,
-          portfolioLib.provider,
-          network,
-          this.#fetch,
-          state.result?.defiPositions.positionsByProvider || [],
-          discoveryData?.data?.defi?.positions,
-          getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
-        )
-      ])
+      // Fetch the portfolio and custom defi positions in parallel.
+      // Hard timeout so a hung RPC cannot leave isLoading=true forever (blocks Send and
+      // the per-network update queue). Soft timeout: late results are discarded via
+      // loadingStartedAt if a newer update has already started.
+      const [portfolioResult, customPositionsResult] = await withTimeout(
+        () =>
+          Promise.all([
+            portfolioLib.get(account.addr, {
+              tokenDataRecency: 60000 * 5,
+              tokenDataCache: networkTokenDataCache,
+              fetchPinned: !hasNonZeroTokens,
+              ...allHints,
+              ...portfolioProps,
+              blockTag: 'both',
+              disableAutoDiscovery: true,
+              blacklist: this.#blacklist
+            }),
+            getCustomProviderPositions(
+              account.addr,
+              portfolioLib.provider,
+              network,
+              this.#fetch,
+              state.result?.defiPositions.positionsByProvider || [],
+              discoveryData?.data?.defi?.positions,
+              getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
+            )
+          ]),
+        {
+          timeoutMs: PORTFOLIO_NETWORK_UPDATE_TIMEOUT_MS,
+          message: `Fetching balances on ${network.name} took too long. Please try again.`
+        }
+      )
+
+      // A newer update superseded this one (e.g. after we timed out and retried).
+      if (!isCurrentUpdate()) return [false, null]
 
       const stkWalletToken =
         portfolioResult.tokens.find(
@@ -1608,6 +1642,9 @@ export class PortfolioController
 
       return [true, discoveryData]
     } catch (e: any) {
+      // Timed-out / failed update that was superseded by a newer one — do not touch state.
+      if (!isCurrentUpdate()) return [false, null]
+
       this.emitError({
         level: 'silent',
         message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId})`,
@@ -1615,6 +1652,7 @@ export class PortfolioController
       })
       state.accountOps = portfolioProps?.simulation?.accountOps
       state.isLoading = false
+      delete state.loadingStartedAt
       if (state.verification?.status === 'loading') {
         state.verification = {
           provider: 'colibri',
