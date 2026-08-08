@@ -38,7 +38,7 @@ import {
   SwapAndBridgeToToken,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
-import { IUiController, View } from '../../interfaces/ui'
+import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -524,6 +524,19 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     })
 
     this.#ui.uiEvent.on('removeView', (view: View) => {
+      if (isSidePanelView(view)) {
+        if (isSwapAndBridge(view.currentRoute)) {
+          this.#isOnSwapAndBridgeRoute = false
+          this.updateQuoteInterval.stop()
+        }
+
+        if (this.sessionIds.includes('side-panel')) {
+          this.unloadScreen('side-panel', true)
+        }
+
+        return
+      }
+
       if (!isSwapAndBridge(view.currentRoute)) return
       this.#isOnSwapAndBridgeRoute = false
       this.updateQuoteInterval.stop()

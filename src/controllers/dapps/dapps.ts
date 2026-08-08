@@ -37,7 +37,7 @@ import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
-import { IUiController, View } from '../../interfaces/ui'
+import { IUiController, View, isExtensionOverlayView } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
 import {
   formatDappName,
@@ -185,7 +185,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.#ui.uiEvent.on('removeView', (removedView: View) => {
       if (
-        removedView.type === 'popup' &&
+        isExtensionOverlayView(removedView) &&
         this.#shouldRetryFetchAndUpdate &&
         this.#retryFetchAndUpdateAttempts < this.#retryFetchAndUpdateMaxAttempts
       ) {
@@ -306,7 +306,10 @@ export class DappsController extends EventEmitter implements IDappsController {
         this.#shouldRetryFetchAndUpdate = true
 
         // run the interval if the initial fetch failed while the extension is not in use
-        if (!this.#retryFetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
+        if (
+          !this.#retryFetchAndUpdateAttempts &&
+          !this.#ui.views.some((v) => isExtensionOverlayView(v))
+        ) {
           this.#retryFetchAndUpdateInterval.start()
         } else {
           this.#retryFetchAndUpdateInterval.stop()

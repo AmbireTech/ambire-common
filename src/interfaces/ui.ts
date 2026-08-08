@@ -8,12 +8,17 @@ export type IUiController = ControllerInterface<
 
 export type View = {
   id: string
-  type: 'request-window' | 'tab' | 'popup' | 'mobile'
+  type: 'request-window' | 'tab' | 'popup' | 'side-panel' | 'mobile'
   currentRoute?: string
   previousRoute?: string
   isReady?: boolean
   searchParams?: { [key: string]: string }
 }
+
+export const isExtensionOverlayView = (view: Pick<View, 'type'>) =>
+  view.type === 'popup' || view.type === 'side-panel'
+
+export const isSidePanelView = (view: Pick<View, 'type'>) => view.type === 'side-panel'
 
 export type UiManager = {
   window: {
@@ -50,6 +55,10 @@ export type UiManager = {
     sendUiMessage: (params: {}) => void
     sendNavigateMessage: (viewId: string, route: string, params: { [key: string]: any }) => void
   }
+  // Extension-only: nudge a dapp tab after side-panel requests so React Query refetches.
+  dispatchDappTabFocus?: (targets: { tabId: number; windowId?: number }[]) => void
+  // Extension-only: open the Chrome side panel for in-panel action requests.
+  openSidePanel?: (windowId?: number) => Promise<void>
 }
 
 export type WindowId = number
