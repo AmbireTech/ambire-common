@@ -1,4 +1,4 @@
-import { Interface, toQuantity, TransactionResponse } from 'ethers'
+import { Interface, toQuantity, Transaction, TransactionResponse } from 'ethers'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -291,6 +291,41 @@ export async function buildRawTransaction(
   }
 
   return rawTxn
+}
+
+/**
+ * Serializes an accountOp as an unsigned raw transaction (the RLP pre-image
+ * that external tools can sign and broadcast via `eth_sendRawTransaction`).
+ * Only meaningful for Regular (EOA) accounts where the accountOp maps 1:1 to
+ * a standard legacy or EIP-1559 transaction, signed by the account itself.
+ */
+export async function getUnsignedTransaction(
+  account: Account,
+  op: AccountOp,
+  accountState: AccountOnchainState,
+  provider: RPCProvider,
+  network: Network
+): Promise<string> {
+  if (!op.gasFeePayment) throw new Error('Missing gas fee payment details.')
+  const gasFeePayment = op.gasFeePayment
+
+  const senderNonce =
+    op.eoaNonce != null
+      ? Number(op.eoaNonce)
+      : Number(await provider.getTransactionCount(account.addr))
+
+  const rawTxn = await buildRawTransaction(
+    account,
+    op,
+    accountState,
+    provider,
+    network,
+    senderNonce,
+    gasFeePayment.broadcastOption,
+    op.calls[0]
+  )
+
+  return Transaction.from(rawTxn).unsignedSerialized
 }
 
 export async function broadcastTransaction(
