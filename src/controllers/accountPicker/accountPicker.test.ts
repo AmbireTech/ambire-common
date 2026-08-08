@@ -1,8 +1,8 @@
 import { Wallet } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 
-import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
@@ -147,6 +147,136 @@ describe('AccountPicker', () => {
     expect(controller.accountsOnPage).toHaveLength(6)
     expect(controller.accountsOnPage.filter((a) => isSmartAccount(a.account))).toHaveLength(1)
     expect(controller.accountsOnPage.filter((a) => !isSmartAccount(a.account))).toHaveLength(5)
+  })
+
+  test('should update basic account usage while smart accounts are still loading', async () => {
+    const { controller } = await prepareTest()
+    const pageSize = 5
+    const keyIterator = new KeyIterator(process.env.SEED)
+    const retrieve = keyIterator.retrieve.bind(keyIterator)
+    let resolveSmartAccountKeys: (keys: string[]) => void = () => {}
+    const smartAccountKeysPromise = new Promise<string[]>((resolve) => {
+      resolveSmartAccountKeys = resolve
+    })
+
+    jest.spyOn(keyIterator, 'retrieve').mockImplementation((indices, hdPathTemplate) => {
+      if ((indices[0]?.from || 0) >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET) {
+        return smartAccountKeysPromise
+      }
+
+      return retrieve(indices, hdPathTemplate)
+    })
+
+    controller.setInitParams({
+      keyIterator,
+      pageSize,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldSearchForLinkedAccounts: false,
+      shouldAddNextAccountAutomatically: false
+    })
+    await controller.init()
+
+    const setPagePromise = controller.setPage({ page: 1 })
+
+    while (!controller.smartAccountsLoading) await wait(0)
+    await wait(0)
+
+    expect(controller.accountsLoading).toBe(false)
+    expect(controller.accountsOnPage).toHaveLength(pageSize)
+    expect(controller.accountsOnPage.every((a) => !isSmartAccount(a.account))).toBe(true)
+    expect(controller.accountsOnPage.every((a) => a.account.usedOnNetworks === null)).toBe(true)
+
+    controller.selectAccount(controller.accountsOnPage[0]!.account)
+    expect(controller.selectedAccounts).toHaveLength(1)
+
+    resolveSmartAccountKeys(
+      key1to11BasicAccUsedForSmartAccKeysOnlyPublicAddresses.slice(0, pageSize)
+    )
+    await setPagePromise
+
+    expect(controller.smartAccountsLoading).toBe(false)
+    expect(controller.accountsOnPage).toHaveLength(pageSize + 1)
+    expect(controller.selectedAccounts).toHaveLength(1)
+  })
+
+  test('should keep basic accounts available when smart account retrieval fails', async () => {
+    const { controller } = await prepareTest()
+    const pageSize = 5
+    const keyIterator = new KeyIterator(process.env.SEED)
+    const retrieve = keyIterator.retrieve.bind(keyIterator)
+
+    jest.spyOn(keyIterator, 'retrieve').mockImplementation((indices, hdPathTemplate) => {
+      if ((indices[0]?.from || 0) >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET) {
+        return Promise.reject(new Error('Smart account key retrieval failed'))
+      }
+
+      return retrieve(indices, hdPathTemplate)
+    })
+
+    controller.setInitParams({
+      keyIterator,
+      pageSize,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldSearchForLinkedAccounts: false,
+      shouldAddNextAccountAutomatically: false
+    })
+    await controller.init()
+    const { restore } = suppressConsole()
+    await controller.setPage({ page: 1 })
+    restore()
+
+    expect(controller.accountsLoading).toBe(false)
+    expect(controller.smartAccountsLoading).toBe(false)
+    expect(controller.accountsOnPage).toHaveLength(pageSize)
+    expect(controller.pageError).toBeNull()
+    expect(controller.emittedErrors.at(-1)?.level).toBe('minor')
+    expect(controller.emittedErrors.at(-1)?.message).toBe(
+      'We could not finish searching for smart accounts. You can still import the accounts already shown.'
+    )
+
+    controller.selectAccount(controller.accountsOnPage[0]!.account)
+    expect(controller.selectedAccounts).toHaveLength(1)
+  })
+
+  test('should ignore smart accounts retrieved after the account picker is reset', async () => {
+    const { controller } = await prepareTest()
+    const keyIterator = new KeyIterator(process.env.SEED)
+    const retrieve = keyIterator.retrieve.bind(keyIterator)
+    let resolveSmartAccountKeys: (keys: string[]) => void = () => {}
+    const smartAccountKeysPromise = new Promise<string[]>((resolve) => {
+      resolveSmartAccountKeys = resolve
+    })
+
+    jest.spyOn(keyIterator, 'retrieve').mockImplementation((indices, hdPathTemplate) => {
+      if ((indices[0]?.from || 0) >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET) {
+        return smartAccountKeysPromise
+      }
+
+      return retrieve(indices, hdPathTemplate)
+    })
+
+    controller.setInitParams({
+      keyIterator,
+      pageSize: 5,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldSearchForLinkedAccounts: false,
+      shouldAddNextAccountAutomatically: false
+    })
+    await controller.init()
+
+    const setPagePromise = controller.setPage({ page: 1 })
+    while (!controller.smartAccountsLoading) await wait(0)
+
+    await controller.reset()
+    resolveSmartAccountKeys(key1to11BasicAccUsedForSmartAccKeysOnlyPublicAddresses.slice(0, 5))
+    await setPagePromise
+
+    expect(controller.isInitialized).toBe(false)
+    expect(controller.smartAccountsLoading).toBe(false)
+    expect(controller.accountsOnPage).toHaveLength(0)
   })
 
   test('should find linked accounts', async () => {
