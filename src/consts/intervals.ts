@@ -18,3 +18,5 @@ export const TRENDING_TOKENS_FAILED_UPDATE_INTERVAL = 60 * 1000 // 1 minute
 export const ESTIMATE_UPDATE_INTERVAL = 30000
 export const GAS_PRICE_UPDATE_INTERVAL = 12000
 export const FETCH_SAFE_TXNS = 3 * 60 * 1000 // 3 minutes
+/** Timeout for AAVE's pre-deployless reservesLength staticCall (raw ethers has no timeout). */
+export const AAVE_STATIC_CALL_TIMEOUT_MS = 15 * 1000
