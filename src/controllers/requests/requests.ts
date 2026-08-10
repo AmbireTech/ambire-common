@@ -620,12 +620,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // if there's no nextRequest and the current request is a safe account,
     // collect all safe requests for the network and start a portfolio sim
     // so the user can work with the latest snapshot from the dashboard
+    //
+    // the same applies if the nextRequest is for another chain
     const curR = this.currentUserRequest
     if (
       curR &&
       curR.kind === 'calls' &&
       !!curR.signAccountOp.account.safeCreation &&
-      !nextRequest
+      (!nextRequest ||
+        (nextRequest.kind === 'calls' &&
+          nextRequest.signAccountOp.accountOp.chainId !== curR.signAccountOp.accountOp.chainId))
     ) {
       void this.#performSimulation(this.userRequests, curR)
     }
