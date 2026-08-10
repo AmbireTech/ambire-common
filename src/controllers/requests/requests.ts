@@ -591,11 +591,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       // if no accountOps should be simulated, clear the results instead
       if (accountOps.length === 0) {
-        void this.#portfolio.overrideSimulationResults(curR.signAccountOp.accountOp)
+        this.#portfolio
+          .overrideSimulationResults(curR.signAccountOp.accountOp)
+          .catch((e) => console.log('Failed to do overrideSimulationResults', e))
         return
       }
 
-      void this.#portfolio.simulateAccountOp(accountOps)
+      this.#portfolio
+        .simulateAccountOp(accountOps)
+        .catch((e) => console.log('Failed to do simulateAccountOp', e))
     } catch (e) {
       console.log('Failed to do #performSimulation', e)
     }
@@ -917,6 +921,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const userRequestsToAdd: UserRequest[] = []
     const safeResolveIds: AutomaticallyResolvedSafeTxn[] = []
     const safeRejectIds: string[] = []
+    const performSimulationPromises: Promise<void>[] = []
+    const simulationAccountChainIds = new Set<string>()
     let didRemoveCurrentUserRequest = false
 
     ids.forEach((id) => {
@@ -940,12 +946,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         req.signAccountOp.pause()
         safeRejectIds.push(req.signAccountOp.accountOp.txnId)
 
-        // TODO: double check this
-        // the simulation is getting cleared one level above removeUserRequests
-        // however, it might start again if there's a nextRequest being set
-        // in #setCurrentRequest. So double check if we have have a condition
-        // when to fire this and when not to
-        void this.#performSimulation(this.userRequests, req)
+        const simulationAccountChainId = `${req.meta.accountAddr.toLowerCase()}:${req.meta.chainId}`
+        if (!simulationAccountChainIds.has(simulationAccountChainId)) {
+          simulationAccountChainIds.add(simulationAccountChainId)
+          performSimulationPromises.push(this.#performSimulation(this.userRequests, req))
+        }
         return
       }
 
@@ -1035,6 +1040,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         safeRejectIds.push(`${meta.hash}`)
       }
     })
+
+    // not attaching .catch() here as each promise is in a try/catch block
+    void Promise.all(performSimulationPromises)
 
     // reject all Safe txns so they do not appear by accident again
     if (safeRejectIds.length) await this.#safe.rejectTxnId(safeRejectIds)

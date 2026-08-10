@@ -477,6 +477,45 @@ describe('RequestsController ', () => {
 
     req.signAccountOp.destroy()
   })
+  test('runs one simulation per account and network when rejecting Safe transactions', async () => {
+    const { controller, getCallsRequest, portfolioCtrl, accountsCtrl } = await prepareTest(
+      false,
+      true
+    )
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const otherAccountAddr = accounts[0]!.addr
+    const selectedAccount = accountsCtrl.accounts.find((account) => account.addr === accountAddr)!
+    const otherAccount = accountsCtrl.accounts.find((account) => account.addr === otherAccountAddr)!
+    otherAccount.creation = null
+    otherAccount.safeCreation = selectedAccount.safeCreation
+
+    const requests = await Promise.all([
+      getCallsRequest({ addr: accountAddr, chainId: 1n }),
+      getCallsRequest({ addr: accountAddr, chainId: 1n }),
+      getCallsRequest({ addr: accountAddr, chainId: 10n }),
+      getCallsRequest({ addr: otherAccountAddr, chainId: 1n })
+    ])
+    requests.forEach((request, index) => {
+      request.id = `safe-request-${index}`
+      request.signAccountOp.accountOp.txnId = `0x${index}`
+    })
+    requests[1]!.meta.accountAddr = accountAddr.toLowerCase()
+    controller.userRequests = requests
+    const simulateAccountOpSpy = jest
+      .spyOn(portfolioCtrl, 'simulateAccountOp')
+      .mockResolvedValue(undefined)
+    const overrideSimulationResultsSpy = jest
+      .spyOn(portfolioCtrl, 'overrideSimulationResults')
+      .mockResolvedValue(undefined)
+
+    await controller.removeUserRequests(requests.map((request) => request.id))
+
+    expect(
+      simulateAccountOpSpy.mock.calls.length + overrideSimulationResultsSpy.mock.calls.length
+    ).toBe(3)
+
+    requests.forEach((request) => request.signAccountOp.destroy())
+  })
   test('finds same-nonce Safe alternatives by their immutable Safe nonce and scope', async () => {
     const { controller, getCallsRequest } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
