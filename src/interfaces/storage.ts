@@ -101,7 +101,9 @@ export type StorageProps = {
   signAccountOpFeeTokenPreference: {
     [chainId: string]: string | 'gasTank'
   }
-  signAccountOpFeeSpeedPreference: FeeSpeed
+  signAccountOpFeeSpeedPreference: {
+    [chainId: string]: FeeSpeed
+  }
   networks: { [key: string]: Network }
   accounts: Account[]
   networkPreferences: { [key: string]: Partial<Network> }
