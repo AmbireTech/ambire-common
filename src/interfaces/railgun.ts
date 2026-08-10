@@ -69,6 +69,13 @@ export type RailgunChainState = {
   // is on screen), so a refresh doesn't swap content in and out.
   lastSyncedAt: number | null
   balances: RailgunShieldedBalance[]
+  /**
+   * Why this chain is unusable right now, or null when it is fine. Per-chain rather than one
+   * controller-wide error because every supported chain is initialized and synced now: a single
+   * dead RPC (or a chain whose cold sync timed out) must not present itself as "Railgun is
+   * broken" while the other chain's shielded balances are on screen and spendable.
+   */
+  error: string | null
 }
 
 export type RailgunActivityType = 'shield' | 'unshield' | 'transfer'

@@ -506,8 +506,6 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
 
   initialLoadPromise?: Promise<void>
 
-  #selectedChainId: string | null = null
-
   /**
    * The wallet's 0zk address - one for every chain, see #resolveRailgunAddress. Null until
    * Railgun has been initialized once, since deriving it needs an unlocked keystore and the WASM.
@@ -673,17 +671,15 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * Self-healing on purpose: an explicit selection that stops being supported (the network was
-   * removed, or its provider went away) falls back to the first available chain instead of
-   * pointing the whole screen at a chain that can't work.
+   * The chains that currently have a live plugin, i.e. the ones whose shielded balances can
+   * actually be spent. A supported chain that failed to initialize (or whose sync timed out and
+   * had its plugin discarded) is deliberately absent, so the UI can offer each action against
+   * the chains that work instead of letting the user start one that can only fail.
    */
-  get selectedChainId(): string | null {
-    const supportedChainIds = this.supportedChainIds
-
-    if (this.#selectedChainId && supportedChainIds.includes(this.#selectedChainId))
-      return this.#selectedChainId
-
-    return supportedChainIds[0] ?? null
+  get initializedChainIds(): string[] {
+    // Ordered by `supportedChainIds` rather than by insertion order, so the chain order the UI
+    // renders stays stable across re-initializations.
+    return this.supportedChainIds.filter((chainId) => this.#plugins.has(chainId))
   }
 
   get unavailableReason(): RailgunUnavailableReason | null {
@@ -700,17 +696,14 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     return !this.unavailableReason
   }
 
-  /** Whether the selected chain is ready to be used (drives the Enable/refresh UI). */
+  /**
+   * Whether Railgun is usable at all (drives the Enable/refresh UI). Deliberately "any chain"
+   * rather than "every chain": one supported network with a broken RPC must not hide a working
+   * shielded balance on the other one - that chain reports its own failure through
+   * `chains[chainId].error`.
+   */
   get isInitialized(): boolean {
-    const chainId = this.selectedChainId
-
-    return !!chainId && this.#plugins.has(chainId)
-  }
-
-  get selectedChain(): RailgunChainState | null {
-    const chainId = this.selectedChainId
-
-    return chainId ? (this.chains[chainId] ?? null) : null
+    return this.#plugins.size > 0
   }
 
   /**
@@ -742,7 +735,8 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         wrappedBaseTokenAddress: null,
         syncStatus: 'idle',
         lastSyncedAt: null,
-        balances: []
+        balances: [],
+        error: null
       }
     )
   }
@@ -783,7 +777,14 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     this.chains = Object.fromEntries(
       Object.keys(this.chains).map((chainId) => [
         chainId,
-        { ...this.#getChainState(chainId), syncStatus: 'idle' as const, balances: [] }
+        {
+          ...this.#getChainState(chainId),
+          syncStatus: 'idle' as const,
+          balances: [],
+          // A teardown is not a failure of the chain, so a stale error from the previous
+          // session must not survive into the next Enable.
+          error: null
+        }
       ])
     )
 
@@ -831,11 +832,23 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     await this.withStatus('init', () => this.#queueWasmOperation(() => this.#init()), true)
   }
 
+  /**
+   * Brings up every supported chain, rather than one the user picked. The 0zk identity is
+   * wallet-wide (see #resolveRailgunAddress) and each chain holds its own shielded pool, so
+   * "which network am I on" is not a question the user should have to answer - the Privacy
+   * screen shows every chain's balances at once, exactly like the dashboard does for public ones.
+   *
+   * Sequential on purpose, and not just because #queueWasmOperation would serialize it anyway:
+   * each chain emits its state as soon as it lands, so the first chain's balances are on screen
+   * while the next one is still walking its pool. A chain that fails is recorded in its own
+   * state and skipped, so one dead RPC can't take the working chains down with it - only an
+   * across-the-board failure is reported as one.
+   */
   async #init() {
     await this.initialLoadPromise
 
-    const chainId = this.selectedChainId
-    if (!chainId)
+    const chainIds = this.supportedChainIds
+    if (!chainIds.length)
       throw new EmittableError({
         message:
           'Railgun is not available on any of your networks. Add Ethereum (or Sepolia in testnet mode) and try again.',
@@ -843,31 +856,30 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         error: new Error('railgun: no supported chain available')
       })
 
-    // Marked as enabled only once it actually came up: a chain that failed to initialize (locked
-    // keystore, dead RPC) would otherwise stay in the set and make every periodic sync retry -
-    // and fail - on its own, with the user never having a working Railgun to show for it.
-    await this.#initChain(chainId)
-    this.#enabledChainIds.add(chainId)
+    const errors: any[] = []
 
-    await this.#syncChain(chainId)
-  }
+    for (const chainId of chainIds) {
+      try {
+        // Marked as enabled only once it actually came up: a chain that failed to initialize
+        // (locked keystore, dead RPC) would otherwise stay in the set and make every periodic
+        // sync retry - and fail - on its own, with the user never having a working Railgun to
+        // show for it.
+        await this.#initChain(chainId)
+        this.#enabledChainIds.add(chainId)
 
-  async selectChain(chainId: string) {
-    if (!this.supportedChainIds.includes(chainId)) {
-      this.emitError({
-        message: 'Railgun is not available on that network.',
-        level: 'minor',
-        error: new Error(`railgun: unsupported chain selected (${chainId})`)
-      })
-      return
+        await this.#syncChain(chainId)
+        this.#updateChainState(chainId, { error: null })
+      } catch (error: any) {
+        errors.push(error)
+        this.#updateChainState(chainId, {
+          error: error?.message || 'Could not enable Railgun on this network.'
+        })
+      }
     }
 
-    this.#selectedChainId = chainId
-    this.emitUpdate()
-
-    // Already opted in on another chain - carry the opt-in over instead of making the user
-    // press Enable again per network.
-    if (this.#enabledChainIds.size && !this.#enabledChainIds.has(chainId)) await this.init()
+    // Every chain failed, so there is nothing on screen for the per-chain errors to sit next to -
+    // the first one is re-thrown so `withStatus` surfaces it as the reason Enable did nothing.
+    if (errors.length === chainIds.length) throw errors[0]
   }
 
   async #initChain(chainId: string) {
@@ -1159,48 +1171,77 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         error: new Error('railgun: sync called before init')
       })
 
-    try {
-      // Sequentially, never in parallel - see #wasmQueue. This runs inside the queue, so no
-      // other WASM operation can interleave with it either.
-      for (const chainId of this.#enabledChainIds) {
-        const { lastSyncedAt } = this.#getChainState(chainId)
-        const isFreshEnough =
-          !!lastSyncedAt && Date.now() - lastSyncedAt < MIN_BACKGROUND_SYNC_AGE_IN_MS
+    const errors: any[] = []
 
-        if (isBackgroundUpdate && isFreshEnough) {
-          this.debugLog('sync', 'skipped a background sync - already fresh', {
-            chainId,
-            lastSyncedAt
-          })
-          continue
-        }
+    /**
+     * A user-initiated refresh retries every supported chain, not just the enabled ones. A chain
+     * that failed at Enable time is deliberately left out of `#enabledChainIds` so the periodic
+     * refresh doesn't keep hammering it, but that would otherwise make it unreachable: once one
+     * chain is up, `isInitialized` is true, so the UI shows Refresh instead of Enable and there
+     * is nothing left to press. Refresh IS the retry.
+     */
+    const chainIds = isBackgroundUpdate ? [...this.#enabledChainIds] : this.supportedChainIds
 
+    // Sequentially, never in parallel - see #wasmQueue. This runs inside the queue, so no
+    // other WASM operation can interleave with it either. Each chain's failure is caught and
+    // recorded on that chain, so a refresh still updates the chains that do work.
+    for (const chainId of chainIds) {
+      const { lastSyncedAt } = this.#getChainState(chainId)
+      const isFreshEnough =
+        !!lastSyncedAt && Date.now() - lastSyncedAt < MIN_BACKGROUND_SYNC_AGE_IN_MS
+
+      if (isBackgroundUpdate && isFreshEnough) {
+        this.debugLog('sync', 'skipped a background sync - already fresh', {
+          chainId,
+          lastSyncedAt
+        })
+        continue
+      }
+
+      try {
         // A chain whose provider was replaced (or that was never built) is rebuilt here, so a
         // mid-session RPC change recovers on its own instead of needing a restart.
         if (!this.#plugins.has(chainId)) await this.#initChain(chainId)
 
         await this.#syncChain(chainId)
+        // Same rule as in #init: a chain joins the periodic refresh only once it has actually
+        // worked, which is what lets a manual refresh recover a chain that failed at Enable.
+        this.#enabledChainIds.add(chainId)
+        this.#updateChainState(chainId, { error: null })
+      } catch (error: any) {
+        errors.push(error)
+        this.#updateChainState(chainId, {
+          error: error?.message || 'Could not refresh the shielded balances on this network.'
+        })
       }
-
-      this.#consecutiveBackgroundSyncFailures = 0
-    } catch (error: any) {
-      if (!isBackgroundUpdate) throw error
-
-      this.#consecutiveBackgroundSyncFailures += 1
-      this.debugLog('sync', 'background sync failed', {
-        consecutiveFailures: this.#consecutiveBackgroundSyncFailures,
-        error
-      })
-
-      if (this.#consecutiveBackgroundSyncFailures < MAX_QUIET_BACKGROUND_SYNC_FAILURES) return
-
-      throw new EmittableError({
-        message:
-          'Your shielded balances have not refreshed for a while. Check your network connection and RPC for this network.',
-        level: 'major',
-        error
-      })
     }
+
+    if (!errors.length) {
+      this.#consecutiveBackgroundSyncFailures = 0
+      return
+    }
+
+    // Only the first failure is escalated: the rest are already on their own chain's state, and
+    // stacking one toast per chain says nothing the screen doesn't already show.
+    const [error] = errors
+
+    if (!isBackgroundUpdate) throw error
+
+    this.#consecutiveBackgroundSyncFailures += 1
+    this.debugLog('sync', 'background sync failed', {
+      consecutiveFailures: this.#consecutiveBackgroundSyncFailures,
+      failedChainsCount: errors.length,
+      error
+    })
+
+    if (this.#consecutiveBackgroundSyncFailures < MAX_QUIET_BACKGROUND_SYNC_FAILURES) return
+
+    throw new EmittableError({
+      message:
+        'Your shielded balances have not refreshed for a while. Check your network connection and RPC for this network.',
+      level: 'major',
+      error
+    })
   }
 
   async #syncChain(chainId: string) {
@@ -1279,18 +1320,22 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     }
   }
 
-  #getSelectedChainPlugin(): { chainId: string; plugin: RailgunPlugin } {
-    const chainId = this.selectedChainId
-    const plugin = chainId ? this.#plugins.get(chainId) : undefined
+  /**
+   * Every action is scoped to the chain of the token it acts on (the UI resolves it from the
+   * selected balance), because each chain is a separate shielded pool - running a chain's
+   * operation through another chain's plugin would prove against the wrong UTXO tree.
+   */
+  #getChainPlugin(chainId: string): RailgunPlugin {
+    const plugin = this.#plugins.get(chainId)
 
-    if (!chainId || !plugin)
+    if (!plugin)
       throw new EmittableError({
-        message: 'Railgun is not initialized yet.',
+        message: 'Railgun is not ready on this network yet.',
         level: 'minor',
-        error: new Error('railgun: action attempted before init')
+        error: new Error(`railgun: action attempted before init for chain ${chainId}`)
       })
 
-    return { chainId, plugin }
+    return plugin
   }
 
   /**
@@ -1303,14 +1348,15 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    */
   async buildShieldCalls(
     {
+      chainId,
       tokenAddress,
       isNative,
       amount
-    }: { tokenAddress: `0x${string}`; isNative: boolean; amount: bigint },
+    }: { chainId: string; tokenAddress: `0x${string}`; isNative: boolean; amount: bigint },
     requestId: string
   ) {
     try {
-      const { chainId, plugin } = this.#getSelectedChainPlugin()
+      const plugin = this.#getChainPlugin(chainId)
 
       const asset: AssetId = isNative
         ? { __type: 'native' }
@@ -1528,6 +1574,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    * `statuses` pattern as `init`/`sync`, not requestId/sendUiMessage.
    */
   async buildAndBroadcastUnshield(params: {
+    chainId: string
     tokenAddress: `0x${string}`
     isNative: boolean
     amount: bigint
@@ -1541,17 +1588,19 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   async #buildAndBroadcastUnshield({
+    chainId,
     tokenAddress,
     isNative,
     amount,
     toAddress
   }: {
+    chainId: string
     tokenAddress: `0x${string}`
     isNative: boolean
     amount: bigint
     toAddress: `0x${string}`
   }) {
-    const { chainId, plugin } = this.#getSelectedChainPlugin()
+    const plugin = this.#getChainPlugin(chainId)
 
     const activityId = this.#addActivityEntry({
       chainId,
@@ -1584,6 +1633,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   async buildAndBroadcastTransfer(params: {
+    chainId: string
     tokenAddress: `0x${string}`
     amount: bigint
     toZkAddress: string
@@ -1596,15 +1646,17 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   async #buildAndBroadcastTransfer({
+    chainId,
     tokenAddress,
     amount,
     toZkAddress
   }: {
+    chainId: string
     tokenAddress: `0x${string}`
     amount: bigint
     toZkAddress: string
   }) {
-    const { chainId, plugin } = this.#getSelectedChainPlugin()
+    const plugin = this.#getChainPlugin(chainId)
 
     const activityId = this.#addActivityEntry({
       chainId,
@@ -1641,8 +1693,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       // to be listed explicitly to reach the UI.
       railgunAddress: this.railgunAddress,
       supportedChainIds: this.supportedChainIds,
-      selectedChainId: this.selectedChainId,
-      selectedChain: this.selectedChain,
+      initializedChainIds: this.initializedChainIds,
       unavailableReason: this.unavailableReason,
       isAvailableForSelectedAccount: this.isAvailableForSelectedAccount,
       isInitialized: this.isInitialized,
