@@ -369,10 +369,12 @@ export class MainController extends EventEmitter implements IMainController {
         const currentSelectedAcc = this.selectedAccount.account
         if (!currentSelectedAcc) return { status: 'no-selected-account' }
         let totalUsdBalance = this.selectedAccount.portfolio.totalBalance
-        let numberOfTransactions = this.activity.getAccountOpsForAccount({
-          accountAddr: currentSelectedAcc.addr,
-          sortAccOps: false
-        }).length
+        // Not getAccountOpsForAccount().length — that returns the in-memory cache, which
+        // on the IndexedDB backend holds only the bounded startup window, so a heavy
+        // account would report ~20 per chain and match the wrong minTxnsTotal bucket.
+        const numberOfTransactions = this.activity.getTotalOpsCountForAccount(
+          currentSelectedAcc.addr
+        )
         const hasKeys =
           getAccountKeysCount({
             accountAddr: currentSelectedAcc.addr,

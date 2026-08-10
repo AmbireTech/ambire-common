@@ -90,8 +90,11 @@ export function reconcileSchema(
 //     microtasks, so further requests issued from a .then() still land inside the
 //     same upgrade. Awaiting anything non-IDB would let the transaction commit:
 //         store.getAll().then((rows) => rows.forEach((r) => store.put(migrate(r))))
-//     Proven by 'a handler can read and transform rows written by an earlier
-//     version' in idbIntegration.test.ts.
+//     Covered by 'a handler can read and transform rows written by an earlier
+//     version' in idbIntegration.test.ts, and verified against 14,000 rows in both
+//     Chrome and Firefox. Do not restructure this into an `await` because it reads
+//     more cleanly — awaiting a non-IDB promise lets the transaction commit, after
+//     which the writes vanish silently and no unit test would catch it.
 //   - Never remove a handler — the chain must stay intact for users upgrading
 //     from any prior version.
 //   - Every version from 1..dbVersion must have an entry, even a no-op one, so

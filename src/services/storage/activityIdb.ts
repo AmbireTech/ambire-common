@@ -310,9 +310,20 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
 
     const tx = await this.#openTx('readwrite')
     const store = tx.objectStore(this.#storeName)
-    for (const op of ops) {
-      store.put(this.#opToRow(op.accountAddr, op.chainId.toString(), op)).catch(() => {})
+
+    try {
+      for (const op of ops) {
+        store.put(this.#opToRow(op.accountAddr, op.chainId.toString(), op)).catch(() => {})
+      }
+    } catch (error) {
+      // Same reasoning as putMultiple: #opToRow throws on an op missing timestamp or
+      // status, and without an abort the puts already queued would still commit,
+      // leaving some ops updated and the rest silently skipped.
+      tx.abort()
+      tx.done.catch(() => {})
+      throw error
     }
+
     await tx.done
   }
 
@@ -399,6 +410,19 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
     const tx = await this.#openTx('readwrite')
     await tx.objectStore(this.#storeName).delete(range)
     await tx.done
+  }
+
+  /**
+   * Count every row for an account across all chains.
+   *
+   * count() on a key range is served from the index structure without reading or
+   * deserializing any record, so this stays cheap even for a heavy account.
+   */
+  async countOpsForAccount(accountAddr: string): Promise<number> {
+    const range = IDBKeyRange.bound([accountAddr, '', ''], [accountAddr, RANGE_HIGH, RANGE_HIGH])
+    const tx = await this.#openTx('readonly')
+
+    return tx.objectStore(this.#storeName).count(range)
   }
 
   /**
@@ -579,5 +603,16 @@ export class ActivityKeyValueStorage implements IActivityOpsBackend {
 
   async deleteAccount(_accountAddr: string): Promise<void> {
     await this.#storage.set('accountsOps', this.#getOps())
+  }
+
+  /**
+   * On this backend the in-memory blob IS the complete history, so summing the group
+   * lengths is already the true total.
+   */
+  async countOpsForAccount(accountAddr: string): Promise<number> {
+    const chainMap = this.#getOps()[accountAddr]
+    if (!chainMap) return 0
+
+    return Object.values(chainMap).reduce((total, ops) => total + (ops?.length ?? 0), 0)
   }
 }

@@ -46,7 +46,9 @@ interface DummyState {
 }
 
 const DEFAULT_DUMMY_STATE: DummyState = { version: 0, data: '' }
-const DUMMY_STORE = 'phishing' // reuses the phishing store already in the schema
+// Reuses the 'phishing' store name, but inside the isolated test DB created below —
+// these tests never touch the production database.
+const DUMMY_STORE = 'phishing'
 const DUMMY_KEY = 'dummy-snapshot'
 
 interface IDummyBackend {
@@ -169,9 +171,9 @@ class DummyController {
 
 let db: AmbireIdbDatabase
 
-// Opens an isolated test DB with all stores the dummy controller needs.
-// Does NOT use openAmbireIdb() because the phishing store is intentionally
-// absent from the production schema until PhishingController is wired up.
+// Opens an isolated test DB rather than going through openAmbireIdb(), so the
+// DummyController scenarios stay independent of the production manifest and do not
+// need updating every time a store or version is added to it.
 async function openTestDb(): Promise<AmbireIdbDatabase> {
   return openDB('integration-test', 1, {
     upgrade(d) {
@@ -521,27 +523,36 @@ describe('Schema manifest ↔ migration handler consistency', () => {
 
 describe('Schema upgrade', () => {
   test('reconcileSchema adds a store introduced by a later manifest version', async () => {
-    const v1Db = await openDB('ambire-dummy-upgrade', 1, {
+    // 'notifications' is deliberately NOT in the manifest — it stands in for a
+    // future addition. Using a real manifest store here would prove nothing, since
+    // reconcileSchema would have created it on the first pass anyway.
+    const FUTURE_STORE = 'notifications'
+
+    const currentDb = await openDB('ambire-dummy-upgrade', 1, {
       upgrade(d, _oldVersion, _newVersion, tx) {
         reconcileSchema(d, tx as AmbireIdbUpgradeTransaction)
       }
     })
-    // Only the manifest stores exist at v1
-    expect(v1Db.objectStoreNames.contains('accountsOps')).toBe(true)
-    expect(v1Db.objectStoreNames.contains('phishing')).toBe(false)
-    v1Db.close()
+    for (const storeDef of AMBIRE_IDB_SCHEMA.stores) {
+      expect(currentDb.objectStoreNames.contains(storeDef.storeName)).toBe(true)
+    }
+    expect(currentDb.objectStoreNames.contains(FUTURE_STORE)).toBe(false)
+    currentDb.close()
 
-    // Simulate the manifest gaining a 'phishing' store at v2
-    const nextStores = [...AMBIRE_IDB_SCHEMA.stores, { storeName: 'phishing', keyPath: 'id' }]
-    const v2Db = await openDB('ambire-dummy-upgrade', 2, {
+    // Now the manifest gains a store
+    const nextStores = [...AMBIRE_IDB_SCHEMA.stores, { storeName: FUTURE_STORE, keyPath: 'id' }]
+    const upgraded = await openDB('ambire-dummy-upgrade', 2, {
       upgrade(d, _oldVersion, _newVersion, tx) {
         reconcileSchema(d, tx as AmbireIdbUpgradeTransaction, nextStores)
       }
     })
 
-    expect(v2Db.objectStoreNames.contains('accountsOps')).toBe(true)
-    expect(v2Db.objectStoreNames.contains('phishing')).toBe(true)
-    v2Db.close()
+    // Pre-existing stores survive and the new one appears
+    for (const storeDef of AMBIRE_IDB_SCHEMA.stores) {
+      expect(upgraded.objectStoreNames.contains(storeDef.storeName)).toBe(true)
+    }
+    expect(upgraded.objectStoreNames.contains(FUTURE_STORE)).toBe(true)
+    upgraded.close()
   })
 
   test('reconcileSchema adds an index to a store that already exists', async () => {

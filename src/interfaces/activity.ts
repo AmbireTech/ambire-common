@@ -86,6 +86,15 @@ export interface IActivityOpsBackend {
    * Delete all ops for an account across all chains.
    */
   deleteAccount(accountAddr: string): Promise<void>
+
+  /**
+   * Total number of persisted ops for an account, across every chain.
+   *
+   * Needed because the IDB startup read is a bounded window, so the in-memory group
+   * lengths are NOT a transaction total. Counting in the backend keeps it cheap — IDB
+   * counts a key range without deserializing rows.
+   */
+  countOpsForAccount(accountAddr: string): Promise<number>
 }
 
 /** @deprecated Use IActivityOpsBackend */

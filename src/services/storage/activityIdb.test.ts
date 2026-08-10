@@ -886,6 +886,33 @@ describe('ActivityIdbStorage', () => {
   })
 
   describe('updateOps', () => {
+    test('a malformed op aborts the batch, leaving earlier updates unapplied', async () => {
+      // Mirrors putMultiple's atomicity guarantee. #opToRow throws on an op with no
+      // timestamp; without tx.abort() the put already queued for the valid op would
+      // still commit, so callers would see a half-applied batch.
+      const store = new ActivityIdbStorage(db)
+      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
+        makeOp('op-a', ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, 1000) as any
+      ])
+
+      const malformed = {
+        ...makeOp('op-b', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000),
+        timestamp: undefined
+      }
+
+      await expect(
+        store.updateOps([
+          makeOp('op-a', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000) as any,
+          malformed as any
+        ])
+      ).rejects.toThrow('without a valid timestamp')
+
+      // op-a must still be pending — the batch was rejected as a whole
+      const rows = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      expect(rows).toHaveLength(1)
+      expect(rows?.[0]?.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+    })
+
     test('updates the status of an existing op', async () => {
       const store = new ActivityIdbStorage(db)
       await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [

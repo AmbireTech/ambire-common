@@ -49,10 +49,10 @@ function makeStorageMock(initial: Record<string, any> = {}) {
 
 let db: AmbireIdbDatabase
 
-// Opens a minimal isolated DB with only the phishing store.
-// Deliberately does NOT use openAmbireIdb() — the phishing store is not in the
-// production schema yet. It will be added (with a version bump) when
-// PhishingController is wired up.
+// Opens a minimal isolated DB with only the phishing store. Deliberately does NOT
+// use openAmbireIdb(): the phishing store is not in AMBIRE_IDB_SCHEMA, because
+// adding it would mean an unrollbackable dbVersion bump for a store nothing reads
+// yet. Switch these to openAmbireIdb() in the change that wires PhishingController.
 async function openTestDb(): Promise<AmbireIdbDatabase> {
   return openDB('phishing-unit-test', 1, {
     upgrade(d) {
