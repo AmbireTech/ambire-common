@@ -550,6 +550,31 @@ describe('RequestsController ', () => {
 
     nextNonceRequest.signAccountOp.destroy()
   })
+  test('silently retires a signed Safe transaction with nonce zero', async () => {
+    const { controller, getCallsRequest, safeCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const request = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+
+    request.signAccountOp.accountOp.txnId = '0xzero'
+    request.signAccountOp.accountOp.nonce = 0n
+    request.signAccountOp.accountOp.safeTx = { nonce: 0 } as any
+    controller.userRequests = [request]
+    const resolveTxnIdSpy = jest.spyOn(safeCtrl, 'resolveTxnId')
+
+    await controller.removeUserRequests([request.id], {
+      shouldRejectSafeRequests: false,
+      shouldOpenNextRequest: false
+    })
+
+    expect(resolveTxnIdSpy).toHaveBeenCalledWith([
+      {
+        accountAddr,
+        chainId: 1n,
+        nonce: 0n,
+        txnIds: ['0xzero']
+      }
+    ])
+  })
   test('keeps automatically resolved Safe transactions isolated by account and network', async () => {
     const { safeCtrl, storageCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'

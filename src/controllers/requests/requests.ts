@@ -965,11 +965,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           })
         }
 
+        const safeNonce = getAccountOpNonce(req.signAccountOp.accountOp)
+
         // if it's not a safe request OR it's non-signed Safe request, move on
         if (
           !req.signAccountOp.account.safeCreation ||
           !req.signAccountOp.accountOp.txnId ||
-          !req.signAccountOp.accountOp.nonce
+          safeNonce === null
         ) {
           req.signAccountOp.destroy()
           return
@@ -984,7 +986,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         const data = {
           accountAddr: req.signAccountOp.accountOp.accountAddr,
           chainId: req.signAccountOp.accountOp.chainId,
-          nonce: req.signAccountOp.accountOp.nonce,
+          nonce: safeNonce,
           txnIds: [req.signAccountOp.accountOp.txnId]
         }
         const resolved = safeResolveIds.find(
