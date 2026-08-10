@@ -334,7 +334,8 @@ describe('RequestsController ', () => {
 
     const unsubscribe = controller.onUpdate(() => {
       const request = controller.userRequests[0]
-      emittedCallsCount = request?.kind === 'calls' ? request.signAccountOp.accountOp.calls.length : 0
+      emittedCallsCount =
+        request?.kind === 'calls' ? request.signAccountOp.accountOp.calls.length : 0
     })
 
     await buildRequest()
