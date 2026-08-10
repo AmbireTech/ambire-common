@@ -104,6 +104,10 @@ export type StorageProps = {
   lastDappsUpdateVersion: string | null
   isPinned: boolean
   isPrivacyModeEnabled: boolean
+  // Browser extension only: the in-page dApp search widget's setting and the
+  // vertical position the user has dragged it to
+  isInPageDappSearchEnabled: boolean
+  inPageDappSearchTopOffset: number
   phishing: {
     version: number
     updatedAt: number
