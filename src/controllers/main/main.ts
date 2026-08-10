@@ -462,7 +462,8 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       phishing: this.phishing,
       ui: this.ui,
-      selectedAccount: this.selectedAccount
+      selectedAccount: this.selectedAccount,
+      accounts: this.accounts
     })
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.signMessage = new SignMessageController(

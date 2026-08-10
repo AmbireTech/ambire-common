@@ -1,5 +1,6 @@
 import { getDomain } from 'tldts'
 
+import { IAccountsController } from '@/interfaces/account'
 import { ISelectedAccountController } from '@/interfaces/selectedAccount'
 
 import {
@@ -39,12 +40,12 @@ import { IUiController, View } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
 import {
   formatDappName,
+  formatStorageDapp,
   getAccountsForDapp,
   getDappIdFromUrl,
   getDappNameFromId,
   getDomainFromUrl,
   modifyDappPropsIfNeeded,
-  normalizeDappConnection,
   sortDapps,
   unifyDefiLlamaDappUrl
 } from '../../libs/dapps/helpers'
@@ -79,6 +80,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   #phishing: IPhishingController
 
   #ui: IUiController
+
+  #accounts: IAccountsController
 
   dappSessions: { [sessionId: string]: Session } = {}
 
@@ -125,7 +128,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     networks,
     phishing,
     ui,
-    selectedAccount
+    selectedAccount,
+    accounts
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -135,6 +139,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     phishing: IPhishingController
     ui: IUiController
     selectedAccount: ISelectedAccountController
+    accounts: IAccountsController
   }) {
     super(eventEmitterRegistry)
 
@@ -145,6 +150,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#phishing = phishing
     this.#ui = ui
     this.#selectedAccount = selectedAccount
+    this.#accounts = accounts
 
     this.#phishing.onUpdate(() => {
       if (!this.#phishing.shouldSyncDapps) return
@@ -244,6 +250,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   async #load() {
+    await this.#accounts.initialLoadPromise
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
@@ -251,9 +258,12 @@ export class DappsController extends EventEmitter implements IDappsController {
       this.#storage.get('dappsV2', predefinedDapps),
       this.#storage.get('recentDapps', [] as RecentDappEntry[])
     ])
-    // Normalize on read so a drifted record (e.g. isConnected: true but connectedSources: [])
-    // can't show a dapp as connected in the UI while permission checks force a reconnect.
-    this.#dapps = new Map(storedDapps.map((d) => [d.id, normalizeDappConnection(d)]))
+    this.#dapps = new Map(
+      storedDapps.map((d) => [
+        d.id,
+        formatStorageDapp(d, { extensionAccounts: this.#accounts.accounts.map(({ addr }) => addr) })
+      ])
+    )
     this.#recentDapps = storedRecentDapps
 
     void this.fetchAndUpdateDapps()

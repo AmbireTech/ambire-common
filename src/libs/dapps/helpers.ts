@@ -143,6 +143,43 @@ export function getAccountsForDapp(
   return extensionSelectedAccountAddr ? [extensionSelectedAccountAddr] : []
 }
 
+/**
+ * Syncs the dapp's account preferences with the current list of extension accounts.
+ */
+function syncAccountPreferencesWithAccounts(dapp: Dapp, extensionAccounts: string[]): Dapp {
+  const accountPreferences = dapp.accountPreferences
+
+  if (!accountPreferences) return dapp
+
+  const validAccounts = accountPreferences.accounts.filter((a) => extensionAccounts.includes(a))
+  if (!validAccounts.length) {
+    // Delete the preferences and disconnect the app as the user no longer has any of the accounts that were previously allowed for this dapp.
+    return {
+      ...dapp,
+      accountPreferences: undefined,
+      isConnected: false,
+      connectedSources: []
+    }
+  }
+
+  const selectedAccount = validAccounts.includes(accountPreferences.selectedAccount)
+    ? accountPreferences.selectedAccount
+    : validAccounts[0]!
+
+  if (selectedAccount !== accountPreferences.selectedAccount && dapp.accountPreferences) {
+    dapp.accountPreferences.selectedAccount = selectedAccount
+  }
+
+  return {
+    ...dapp,
+    accountPreferences: {
+      accounts: validAccounts,
+      selectedAccount,
+      enabled: accountPreferences.enabled
+    }
+  }
+}
+
 // Reconcile a dapp to the per-source connection invariant: `connectedSources` is the source of
 // truth and `isConnected` is always derived from it. Records written before per-source support
 // (or by a code path that updated only one of the two fields) can drift; this collapses them back.
@@ -154,6 +191,12 @@ function normalizeDappConnection(dapp: Dapp): Dapp {
   return { ...dapp, connectedSources, isConnected: connectedSources.length > 0 }
 }
 
+function formatStorageDapp(dapp: Dapp, params: { extensionAccounts: string[] }): Dapp {
+  const { extensionAccounts } = params
+
+  return syncAccountPreferencesWithAccounts(dapp, extensionAccounts)
+}
+
 export {
   getDappIdFromUrl,
   getDappIconFromUrl,
@@ -163,5 +206,6 @@ export {
   modifyDappPropsIfNeeded,
   getDappNameFromId,
   unifyDefiLlamaDappUrl,
-  normalizeDappConnection
+  normalizeDappConnection,
+  formatStorageDapp
 }
