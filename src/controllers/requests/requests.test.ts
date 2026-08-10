@@ -307,6 +307,45 @@ describe('RequestsController ', () => {
     expect(controller.userRequests[0]!.kind).toBe('calls')
   })
 
+  test('emits the updated calls when adding another request to a queued batch', async () => {
+    const { controller } = await prepareTest()
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    let emittedCallsCount = 0
+    const buildRequest = () =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [
+              {
+                to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+                value: 1n,
+                data: '0x'
+              }
+            ],
+            meta: {
+              accountAddr,
+              chainId: 1n
+            }
+          }
+        }
+      })
+
+    const unsubscribe = controller.onUpdate(() => {
+      const request = controller.userRequests[0]
+      emittedCallsCount = request?.kind === 'calls' ? request.signAccountOp.accountOp.calls.length : 0
+    })
+
+    await buildRequest()
+    expect(emittedCallsCount).toBe(1)
+
+    await buildRequest()
+    unsubscribe()
+    expect(controller.userRequests).toHaveLength(1)
+    expect(emittedCallsCount).toBe(2)
+  })
+
   test('adds a new Safe request when two partially signed requests occupy earlier nonces', async () => {
     const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
