@@ -588,6 +588,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       ? getSequentialSafeAccountOps(requests, curR, accountStateNonce)
       : [curR.signAccountOp.accountOp]
 
+    // if no accountOps should be simulated, clear the results instead
+    if (accountOps.length === 0) {
+      void this.#portfolio.overrideSimulationResults(curR.signAccountOp.accountOp)
+      return
+    }
+
     void this.#portfolio.simulateAccountOp(accountOps)
   }
 

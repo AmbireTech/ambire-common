@@ -88,6 +88,36 @@ describe('Main Controller ', () => {
     expect(controller.emailVault?.statuses).toBeDefined()
   })
 
+  test('refreshes Safe transactions once while a manual refresh is in progress', async () => {
+    let finishRefresh: (() => void) | undefined
+    let markRefreshAsStarted: (() => void) | undefined
+    const refreshStarted = new Promise<void>((resolve) => {
+      markRefreshAsStarted = resolve
+    })
+    const fetchSafeTxnsSpy = jest.spyOn(controller, 'fetchSafeTxns').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRefresh = resolve
+          markRefreshAsStarted?.()
+        })
+    )
+
+    const firstRefresh = controller.refreshSafeTxns()
+    await refreshStarted
+    const secondRefresh = controller.refreshSafeTxns()
+
+    expect(controller.statuses.refreshSafeTxns).toBe('LOADING')
+    expect(fetchSafeTxnsSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSafeTxnsSpy).toHaveBeenCalledWith([], true)
+
+    if (!finishRefresh) throw new Error('Safe transaction refresh did not start')
+    finishRefresh()
+    await Promise.all([firstRefresh, secondRefresh])
+
+    expect(controller.statuses.refreshSafeTxns).toBe('INITIAL')
+    fetchSafeTxnsSpy.mockRestore()
+  })
+
   // @TODO - have to rewrite this test and it should be part of email vault tests.
   // test('unlock keyStore with recovery secret emailVault', async () => {
   //   // eslint-disable-next-line @typescript-eslint/no-unused-vars

@@ -1717,6 +1717,12 @@ export class MainController extends EventEmitter implements IMainController {
     return this.#fetchSafeTxnsPromise
   }
 
+  async refreshSafeTxns() {
+    if (this.statuses.refreshSafeTxns === 'LOADING') return
+
+    await this.withStatus('refreshSafeTxns', () => this.fetchSafeTxns([], true), true)
+  }
+
   async #fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
     if (!this.selectedAccount?.account?.safeCreation) return
     // cache the addr here to prevent race conditions
