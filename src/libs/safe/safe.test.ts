@@ -82,9 +82,9 @@ describe('getSequentialSafeAccountOps', () => {
       makeCallsRequest({ id: 'nonce-132', nonce: 132n })
     ]
 
-    expect(getSequentialSafeAccountOps(requests, currentRequest).map(({ nonce }) => nonce)).toEqual(
-      [131n, 132n]
-    )
+    expect(
+      getSequentialSafeAccountOps(requests, currentRequest, 131n).map(({ nonce }) => nonce)
+    ).toEqual([131n, 132n])
   })
 
   test('keeps all account ops when every nonce is incremental', () => {
@@ -93,9 +93,9 @@ describe('getSequentialSafeAccountOps', () => {
       makeCallsRequest({ id: `nonce-${nonce}`, nonce })
     )
 
-    expect(getSequentialSafeAccountOps(requests, currentRequest).map(({ nonce }) => nonce)).toEqual(
-      [131n, 132n, 133n, 134n]
-    )
+    expect(
+      getSequentialSafeAccountOps(requests, currentRequest, 131n).map(({ nonce }) => nonce)
+    ).toEqual([131n, 132n, 133n, 134n])
   })
 
   test('removes every account op after the first nonce gap', () => {
@@ -104,9 +104,9 @@ describe('getSequentialSafeAccountOps', () => {
       makeCallsRequest({ id: `nonce-${nonce}`, nonce })
     )
 
-    expect(getSequentialSafeAccountOps(requests, currentRequest).map(({ nonce }) => nonce)).toEqual(
-      [131n, 132n, 133n, 134n]
-    )
+    expect(
+      getSequentialSafeAccountOps(requests, currentRequest, 131n).map(({ nonce }) => nonce)
+    ).toEqual([131n, 132n, 133n, 134n])
   })
 
   test('removes both account ops with a duplicate nonce and every account op after them', () => {
@@ -118,9 +118,9 @@ describe('getSequentialSafeAccountOps', () => {
       makeCallsRequest({ id: 'second-nonce-133', nonce: 133n })
     ]
 
-    expect(getSequentialSafeAccountOps(requests, currentRequest).map(({ nonce }) => nonce)).toEqual(
-      [132n]
-    )
+    expect(
+      getSequentialSafeAccountOps(requests, currentRequest, 132n).map(({ nonce }) => nonce)
+    ).toEqual([132n])
   })
 
   test('returns no account ops when the first nonce is duplicated', () => {
@@ -133,7 +133,37 @@ describe('getSequentialSafeAccountOps', () => {
       makeCallsRequest({ id: 'second-nonce-132', nonce: 132n })
     ]
 
-    expect(getSequentialSafeAccountOps(requests, currentRequest)).toEqual([])
+    expect(getSequentialSafeAccountOps(requests, currentRequest, 132n)).toEqual([])
+  })
+
+  test('returns no account ops when there is no transaction for the account state nonce', () => {
+    const currentRequest = makeCallsRequest({ id: 'nonce-132', nonce: 132n })
+    const requests = [
+      currentRequest,
+      makeCallsRequest({ id: 'nonce-133', nonce: 133n }),
+      makeCallsRequest({ id: 'nonce-134', nonce: 134n })
+    ]
+
+    expect(getSequentialSafeAccountOps(requests, currentRequest, 131n)).toEqual([])
+  })
+
+  test('returns no account ops when the account state nonce is unavailable', () => {
+    const currentRequest = makeCallsRequest({ id: 'nonce-131', nonce: 131n })
+
+    expect(getSequentialSafeAccountOps([currentRequest], currentRequest, undefined)).toEqual([])
+  })
+
+  test('starts from the account state nonce when stale transactions remain', () => {
+    const currentRequest = makeCallsRequest({ id: 'nonce-130', nonce: 130n })
+    const requests = [
+      currentRequest,
+      makeCallsRequest({ id: 'nonce-131', nonce: 131n }),
+      makeCallsRequest({ id: 'nonce-132', nonce: 132n })
+    ]
+
+    expect(
+      getSequentialSafeAccountOps(requests, currentRequest, 131n).map(({ nonce }) => nonce)
+    ).toEqual([131n, 132n])
   })
 
   test('only includes non-rejected calls for the current account and network', () => {
@@ -147,7 +177,7 @@ describe('getSequentialSafeAccountOps', () => {
       { id: 'transfer', kind: 'transfer', meta: {}, dappPromises: [] }
     ]
 
-    expect(getSequentialSafeAccountOps(requests, currentRequest).map(({ id }) => id)).toEqual([
+    expect(getSequentialSafeAccountOps(requests, currentRequest, 10n).map(({ id }) => id)).toEqual([
       'current',
       'matching'
     ])
@@ -162,7 +192,11 @@ describe('getSequentialSafeAccountOps', () => {
     }
 
     expect(
-      getSequentialSafeAccountOps([makeCallsRequest({ id: 'calls', nonce: 1n })], currentRequest)
+      getSequentialSafeAccountOps(
+        [makeCallsRequest({ id: 'calls', nonce: 1n })],
+        currentRequest,
+        1n
+      )
     ).toEqual([])
   })
 
@@ -174,9 +208,9 @@ describe('getSequentialSafeAccountOps', () => {
       makeCallsRequest({ id: 'nonce-3', nonce: 3n })
     ]
 
-    expect(getSequentialSafeAccountOps(requests, currentRequest).map(({ nonce }) => nonce)).toEqual(
-      [1n]
-    )
+    expect(
+      getSequentialSafeAccountOps(requests, currentRequest, 1n).map(({ nonce }) => nonce)
+    ).toEqual([1n])
   })
 })
 

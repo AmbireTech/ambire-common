@@ -77,10 +77,16 @@ export function getApiKit(chainId: bigint) {
  * - txns with nonces: 131, 132, 134 - remove 134
  * - txns with nonces: 131, 133, 134 - remove 133, 134
  * - txns with nonces: 131, 132, 132 - remove both 132 txns
+ * - current account nonce 131 and txns with nonces 132, 133 - remove all txns
+ *
+ * Also, the simulation should be run from the current account state nonce.
+ * If a txn is missing for it, it should not be shown as the user will
+ * probably want to have the current snapshot visible to work with
  */
 export function getSequentialSafeAccountOps(
   userRequests: UserRequest[],
-  curR: UserRequest
+  curR: UserRequest,
+  accountStateNonce: bigint | undefined
 ): AccountOp[] {
   if (curR.kind !== 'calls') return []
 
@@ -103,26 +109,35 @@ export function getSequentialSafeAccountOps(
       return aNonce < bNonce ? -1 : aNonce > bNonce ? 1 : 0
     })
 
-  const firstNonSequentialIndex = accountOps.findIndex((accountOp, index) => {
+  const accountStateNonceIndex = accountOps.findIndex(
+    (accountOp) => getAccountOpNonce(accountOp) === accountStateNonce
+  )
+  if (accountStateNonceIndex === -1) return []
+
+  const accountOpsFromStateNonce = accountOps.slice(accountStateNonceIndex)
+
+  const firstNonSequentialIndex = accountOpsFromStateNonce.findIndex((accountOp, index) => {
     const nonce = getAccountOpNonce(accountOp)
     if (nonce === null) return true
     if (index === 0) return false
 
-    const previousNonce = getAccountOpNonce(accountOps[index - 1]!)
+    const previousNonce = getAccountOpNonce(accountOpsFromStateNonce[index - 1]!)
     return previousNonce === null || nonce !== previousNonce + 1n
   })
 
-  if (firstNonSequentialIndex === -1) return accountOps
+  if (firstNonSequentialIndex === -1) return accountOpsFromStateNonce
 
-  const nonce = getAccountOpNonce(accountOps[firstNonSequentialIndex]!)
+  const nonce = getAccountOpNonce(accountOpsFromStateNonce[firstNonSequentialIndex]!)
   const previousNonce =
-    firstNonSequentialIndex > 0 ? getAccountOpNonce(accountOps[firstNonSequentialIndex - 1]!) : null
+    firstNonSequentialIndex > 0
+      ? getAccountOpNonce(accountOpsFromStateNonce[firstNonSequentialIndex - 1]!)
+      : null
   const firstInvalidIndex =
     nonce !== null && nonce === previousNonce
       ? firstNonSequentialIndex - 1
       : firstNonSequentialIndex
 
-  return accountOps.slice(0, firstInvalidIndex)
+  return accountOpsFromStateNonce.slice(0, firstInvalidIndex)
 }
 
 type SafeAccountApiKitFactory = (

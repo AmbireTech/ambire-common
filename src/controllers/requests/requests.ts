@@ -502,10 +502,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
         // It's necessary to continue operating with the token `amountPostSimulation` amount.
         if (this.shouldSimulateAccountOps) {
-          const accountOps = req.signAccountOp.account.safeCreation
-            ? getSequentialSafeAccountOps([...this.userRequests, req], req)
-            : [req.signAccountOp.accountOp]
-          void this.#portfolio.simulateAccountOp(accountOps)
+          void this.#performSimulation([...this.userRequests, req], req)
         }
       } else if (req.kind === 'typedMessage' || req.kind === 'message' || req.kind === 'siwe') {
         const existingMessageRequest = this.userRequests.find(
@@ -576,6 +573,24 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
+  /**
+   * We create a wrapper for performing simulations in the requests controller as
+   * we might need to pass multiple accountOps for simulation if the
+   * account is a Safe
+   */
+  async #performSimulation(requests: UserRequest[], curR: CallsUserRequest) {
+    const accountStateNonce =
+      this.#accounts.accountStates[curR.signAccountOp.account.addr]?.[
+        curR.signAccountOp.accountOp.chainId.toString()
+      ]?.nonce
+
+    const accountOps = curR.signAccountOp.account.safeCreation
+      ? getSequentialSafeAccountOps(requests, curR, accountStateNonce)
+      : [curR.signAccountOp.accountOp]
+
+    void this.#portfolio.simulateAccountOp(accountOps)
+  }
+
   async #awaitPendingPromises() {
     await this.requestWindow.closeWindowPromise
     await this.requestWindow.focusWindowPromise
@@ -612,8 +627,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       !!curR.signAccountOp.account.safeCreation &&
       !nextRequest
     ) {
-      const accountOps = getSequentialSafeAccountOps(this.userRequests, curR)
-      void this.#portfolio.simulateAccountOp(accountOps)
+      void this.#performSimulation(this.userRequests, curR)
     }
 
     this.currentUserRequest = nextRequest
@@ -917,8 +931,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // however, it might start again if there's a nextRequest being set
         // in #setCurrentRequest. So double check if we have have a condition
         // when to fire this and when not to
-        const accountOps = getSequentialSafeAccountOps(this.userRequests, req)
-        void this.#portfolio.simulateAccountOp(accountOps)
+        void this.#performSimulation(this.userRequests, req)
         return
       }
 
@@ -2210,8 +2223,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     request.meta.isSafeRejected = false
 
     // on restore, simulate in the dashboard whatever is eligible
-    const accountOps = getSequentialSafeAccountOps(this.userRequests, request)
-    void this.#portfolio.simulateAccountOp(accountOps)
+    void this.#performSimulation(this.userRequests, request)
     this.emitUpdate()
   }
 
