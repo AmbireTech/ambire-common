@@ -68,6 +68,30 @@ export type RailgunChainState = {
   // Lets the UI tell "never synced" (show placeholders) apart from "syncing again" (keep what
   // is on screen), so a refresh doesn't swap content in and out.
   lastSyncedAt: number | null
+  /**
+   * When the sync currently in flight started, or null when none is. Exists because the SDK
+   * reports no progress at all - `RailgunProvider.sync()` returns void, emits nothing, and its
+   * only narration goes to the console (see the RailgunSyncTelemetry experiment). With no
+   * numerator to show, elapsed time is what tells a slow sync from a hung one, and a first sync
+   * on Ethereum measured ~11 minutes - long enough that a bare spinner reads as broken.
+   */
+  syncStartedAt: number | null
+  /**
+   * The chain's head as observed when the most recent sync attempt started, successful or not,
+   * together with `syncedThroughBlock` the two answer "how stale is this balance" in blocks.
+   *
+   * Read here rather than taken from the SDK: its own cursor lives inside the persisted plugin
+   * blob under an undocumented, hex-encoded key, so depending on it would break on a version bump.
+   * One `eth_blockNumber` per chain per sync is cheaper than that coupling.
+   */
+  networkHead: number | null
+  /**
+   * The head the last *successful* sync started from, i.e. the block the shielded balances are
+   * known to be current as of. Deliberately conservative: the SDK re-reads the head as it works,
+   * so it typically ends up slightly further along - claiming less than was actually synced is the
+   * right direction for a freshness claim.
+   */
+  syncedThroughBlock: number | null
   balances: RailgunShieldedBalance[]
   /**
    * Why this chain is unusable right now, or null when it is fine. Per-chain rather than one

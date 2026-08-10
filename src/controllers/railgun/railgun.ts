@@ -736,6 +736,8 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         syncStatus: 'idle',
         lastSyncedAt: null,
         syncStartedAt: null,
+        networkHead: null,
+        syncedThroughBlock: null,
         balances: [],
         error: null
       }
@@ -783,6 +785,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
           syncStatus: 'idle' as const,
           syncStartedAt: null,
           balances: [],
+          // Cleared along with the balances they describe - unlike #teardownChain, which keeps a
+          // timed-out chain's last balances on screen and so keeps their block figures too.
+          networkHead: null,
+          syncedThroughBlock: null,
           // A teardown is not a failure of the chain, so a stale error from the previous
           // session must not survive into the next Enable.
           error: null
@@ -1044,6 +1050,23 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     return 'Debug'
   }
 
+  /**
+   * The chain's current head, or null if it can't be read. Never throws: it exists only to report
+   * how stale the shielded balances are, and losing that number must not lose the sync with it.
+   */
+  async #getBlockNumber(chainId: string): Promise<number | null> {
+    const provider = this.#providerInstances.get(chainId)
+    if (!provider) return null
+
+    try {
+      return await provider.getBlockNumber()
+    } catch (error) {
+      this.debugLog('sync', 'could not read the chain head', { chainId, error })
+
+      return null
+    }
+  }
+
   #getRailgunKeystore(seedId: string): AmbireRailgunKeystore {
     if (this.#railgunKeystore && this.#railgunKeystoreSeedId === seedId)
       return this.#railgunKeystore
@@ -1256,10 +1279,20 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       })
 
     const isFirstSync = !this.#getChainState(chainId).lastSyncedAt
-    this.#updateChainState(chainId, { syncStatus: 'syncing', syncStartedAt: Date.now() })
+    // Read before the scan starts, so it is the target this sync is catching up to rather than a
+    // moving one: a head refreshed mid-sync would make the reported staleness grow while the sync
+    // is closing it. Null when it can't be read - the UI then omits the block figures instead of
+    // showing a wrong one, and the sync itself must never fail over a diagnostic number.
+    const headAtStart = await this.#getBlockNumber(chainId)
+
+    this.#updateChainState(chainId, {
+      syncStatus: 'syncing',
+      syncStartedAt: Date.now(),
+      ...(headAtStart !== null && { networkHead: headAtStart })
+    })
     // Logged on the way in as well as on the way out: without a start line there is no way to
     // tell a slow sync from a hung one in the log.
-    this.debugLog('sync', 'shielded balance sync started', { chainId, isFirstSync })
+    this.debugLog('sync', 'shielded balance sync started', { chainId, isFirstSync, headAtStart })
 
     // `balance()` syncs the UTXO tree before answering, so its duration is dominated by the
     // chain scan (and, with POI on, by proving), not the balance math. Timed because a slow
@@ -1299,7 +1332,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
           amount: balance.amount,
           poiStatus: toRailgunPoiStatus(balance.tag)
         })),
-        lastSyncedAt: Date.now()
+        lastSyncedAt: Date.now(),
+        // Only advanced on success: a failed or timed-out sync must leave the previous value
+        // standing, since that is still the block the balances on screen are current as of.
+        ...(headAtStart !== null && { syncedThroughBlock: headAtStart })
       })
 
       this.#resolvePendingShields(chainId, previousBalances)
