@@ -920,8 +920,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     const userRequestsToAdd: UserRequest[] = []
     const safeRejectIds: string[] = []
-    const performSimulationPromises: Promise<void>[] = []
-    const simulationAccountChainIds = new Set<string>()
+    const simulationRequestsByAccountChainId = new Map<string, CallsUserRequest>()
     let didRemoveCurrentUserRequest = false
 
     ids.forEach((id) => {
@@ -946,9 +945,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         safeRejectIds.push(req.signAccountOp.accountOp.txnId)
 
         const simulationAccountChainId = `${req.meta.accountAddr.toLowerCase()}:${req.meta.chainId}`
-        if (!simulationAccountChainIds.has(simulationAccountChainId)) {
-          simulationAccountChainIds.add(simulationAccountChainId)
-          performSimulationPromises.push(this.#performSimulation(this.userRequests, req))
+        if (!simulationRequestsByAccountChainId.has(simulationAccountChainId)) {
+          simulationRequestsByAccountChainId.set(simulationAccountChainId, req)
         }
         return
       }
@@ -1005,6 +1003,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
     })
 
+    const performSimulationPromises = [...simulationRequestsByAccountChainId.values()].map((req) =>
+      this.#performSimulation(this.userRequests, req)
+    )
     // not attaching .catch() here as each promise is in a try/catch block
     void Promise.all(performSimulationPromises)
 
@@ -2020,7 +2021,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       ])) as any
 
       // do not build requests for expired Safe txns
-      if (meta.safeTxnProps?.nonce && meta.safeTxnProps?.nonce < accountState.nonce) return
+      if (meta.safeTxnProps && meta.safeTxnProps.nonce < accountState.nonce) return
 
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 

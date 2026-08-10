@@ -365,6 +365,48 @@ describe('RequestsController ', () => {
     expect(nonce120Request.signAccountOp.accountOp.nonce).toBe(120n)
     expect(new Set(controller.userRequests.map((request) => request.id)).size).toBe(3)
   })
+  test('BUG: does not build expired Safe requests, including nonce zero', async () => {
+    const { controller, accountsCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue({
+      ...accountState,
+      nonce: 1n
+    })
+    const buildSafeRequest = (nonce: bigint, txnId: Hex) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [
+              {
+                to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+                value: 1n,
+                data: '0x'
+              }
+            ],
+            meta: {
+              accountAddr,
+              chainId,
+              safeTxnProps: { txnId, signature: '0x', nonce }
+            }
+          }
+        }
+      })
+
+    await buildSafeRequest(0n, '0x00')
+    await buildSafeRequest(1n, '0x01')
+    await buildSafeRequest(2n, '0x02')
+
+    const safeRequests = controller.userRequests.filter(
+      (request): request is CallsUserRequest => request.kind === 'calls'
+    )
+    expect(safeRequests.map((request) => request.signAccountOp.accountOp.nonce)).toEqual([1n, 2n])
+
+    safeRequests.forEach((request) => request.signAccountOp.destroy())
+  })
   test('build contract deployment dapp request', async () => {
     const { controller } = await prepareTest(true)
 
@@ -513,6 +555,32 @@ describe('RequestsController ', () => {
     expect(
       simulateAccountOpSpy.mock.calls.length + overrideSimulationResultsSpy.mock.calls.length
     ).toBe(3)
+
+    requests.forEach((request) => request.signAccountOp.destroy())
+  })
+  test('BUG: simulates after all Safe transactions in a batch are marked rejected', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const requests = await Promise.all([
+      getCallsRequest({ addr: accountAddr, chainId: 1n }),
+      getCallsRequest({ addr: accountAddr, chainId: 1n }),
+      getCallsRequest({ addr: accountAddr, chainId: 1n })
+    ])
+
+    requests.forEach((request, index) => {
+      request.id = `safe-request-${index}`
+      request.signAccountOp.accountOp.txnId = `0x${index}`
+      request.signAccountOp.accountOp.nonce = BigInt(index)
+    })
+    controller.userRequests = requests
+    const simulateAccountOpSpy = jest
+      .spyOn(portfolioCtrl, 'simulateAccountOp')
+      .mockResolvedValue(undefined)
+
+    await controller.removeUserRequests([requests[2]!.id, requests[1]!.id])
+
+    expect(simulateAccountOpSpy).toHaveBeenCalledTimes(1)
+    expect(simulateAccountOpSpy).toHaveBeenCalledWith([requests[0]!.signAccountOp.accountOp])
 
     requests.forEach((request) => request.signAccountOp.destroy())
   })
