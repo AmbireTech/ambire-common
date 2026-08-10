@@ -735,6 +735,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         wrappedBaseTokenAddress: null,
         syncStatus: 'idle',
         lastSyncedAt: null,
+        syncStartedAt: null,
         balances: [],
         error: null
       }
@@ -763,7 +764,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   #teardownChain(chainId: string) {
     this.#plugins.delete(chainId)
     this.#providerInstances.delete(chainId)
-    this.#setChainState(chainId, { syncStatus: 'idle' })
+    this.#setChainState(chainId, { syncStatus: 'idle', syncStartedAt: null })
   }
 
   /** Drops everything derived from the current keystore/account state. Does not emit. */
@@ -780,6 +781,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         {
           ...this.#getChainState(chainId),
           syncStatus: 'idle' as const,
+          syncStartedAt: null,
           balances: [],
           // A teardown is not a failure of the chain, so a stale error from the previous
           // session must not survive into the next Enable.
@@ -1254,7 +1256,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       })
 
     const isFirstSync = !this.#getChainState(chainId).lastSyncedAt
-    this.#updateChainState(chainId, { syncStatus: 'syncing' })
+    this.#updateChainState(chainId, { syncStatus: 'syncing', syncStartedAt: Date.now() })
     // Logged on the way in as well as on the way out: without a start line there is no way to
     // tell a slow sync from a hung one in the log.
     this.debugLog('sync', 'shielded balance sync started', { chainId, isFirstSync })
@@ -1316,7 +1318,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       // Always leave a terminal status. 'ready' here means "not syncing any more", not "the sync
       // worked" - a failure is reported through emitError and `statuses.sync`. Without this a
       // failed or timed-out scan left `syncStatus` on 'syncing' forever, with nothing to reset it.
-      this.#updateChainState(chainId, { syncStatus: hasTimedOut ? 'idle' : 'ready' })
+      this.#updateChainState(chainId, {
+        syncStatus: hasTimedOut ? 'idle' : 'ready',
+        syncStartedAt: null
+      })
     }
   }
 
