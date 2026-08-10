@@ -457,6 +457,7 @@ describe('RequestsController ', () => {
     const txnId = '0x1234' as Hex
     req.signAccountOp.accountOp.txnId = txnId
     req.signAccountOp.accountOp.nonce = 3n
+    const destroySpy = jest.spyOn(req.signAccountOp, 'destroy')
 
     await controller.addUserRequests([req])
     await controller.rejectUserRequests('User rejected', [req.id])
@@ -465,6 +466,7 @@ describe('RequestsController ', () => {
     expect(controller.visibleUserRequests).toHaveLength(0)
     expect(req.meta.isSafeRejected).toBe(true)
     expect(safeCtrl.rejectedSafeTxns).toContain(txnId)
+    expect(destroySpy).not.toHaveBeenCalled()
 
     await controller.restoreSafeUserRequest(req.id)
 
@@ -531,6 +533,9 @@ describe('RequestsController ', () => {
     controller.userRequests = [broadcastRequest, sameNonceRequest, nextNonceRequest]
     await controller.setCurrentUserRequestById(broadcastRequest.id)
     const resolveTxnIdSpy = jest.spyOn(safeCtrl, 'resolveTxnId')
+    const broadcastDestroySpy = jest.spyOn(broadcastRequest.signAccountOp, 'destroy')
+    const sameNonceDestroySpy = jest.spyOn(sameNonceRequest.signAccountOp, 'destroy')
+    const nextNonceDestroySpy = jest.spyOn(nextNonceRequest.signAccountOp, 'destroy')
 
     await controller.removeUserRequests([broadcastRequest.id, sameNonceRequest.id], {
       shouldRejectSafeRequests: false,
@@ -547,6 +552,9 @@ describe('RequestsController ', () => {
         txnIds: ['0xbroadcast', '0xalternative']
       }
     ])
+    expect(broadcastDestroySpy).toHaveBeenCalledTimes(1)
+    expect(sameNonceDestroySpy).toHaveBeenCalledTimes(1)
+    expect(nextNonceDestroySpy).not.toHaveBeenCalled()
 
     nextNonceRequest.signAccountOp.destroy()
   })
@@ -560,6 +568,7 @@ describe('RequestsController ', () => {
     request.signAccountOp.accountOp.safeTx = { nonce: 0 } as any
     controller.userRequests = [request]
     const resolveTxnIdSpy = jest.spyOn(safeCtrl, 'resolveTxnId')
+    const destroySpy = jest.spyOn(request.signAccountOp, 'destroy')
 
     await controller.removeUserRequests([request.id], {
       shouldRejectSafeRequests: false,
@@ -574,6 +583,7 @@ describe('RequestsController ', () => {
         txnIds: ['0xzero']
       }
     ])
+    expect(destroySpy).toHaveBeenCalledTimes(1)
   })
   test('keeps automatically resolved Safe transactions isolated by account and network', async () => {
     const { safeCtrl, storageCtrl } = await prepareTest(false, true)

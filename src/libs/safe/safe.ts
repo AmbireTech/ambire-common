@@ -82,6 +82,9 @@ export function getApiKit(chainId: bigint) {
  * Also, the simulation should be run from the current account state nonce.
  * If a txn is missing for it, it should not be shown as the user will
  * probably want to have the current snapshot visible to work with
+ *
+ * Finally, if accountStateNonce is undefined, we do not perform a dashboard
+ * simulation as we don't know where to start from
  */
 export function getSequentialSafeAccountOps(
   userRequests: UserRequest[],

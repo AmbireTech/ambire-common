@@ -579,22 +579,26 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * account is a Safe
    */
   async #performSimulation(requests: UserRequest[], curR: CallsUserRequest) {
-    const accountStateNonce =
-      this.#accounts.accountStates[curR.signAccountOp.account.addr]?.[
-        curR.signAccountOp.accountOp.chainId.toString()
-      ]?.nonce
+    try {
+      const accountStateNonce =
+        this.#accounts.accountStates[curR.signAccountOp.account.addr]?.[
+          curR.signAccountOp.accountOp.chainId.toString()
+        ]?.nonce
 
-    const accountOps = curR.signAccountOp.account.safeCreation
-      ? getSequentialSafeAccountOps(requests, curR, accountStateNonce)
-      : [curR.signAccountOp.accountOp]
+      const accountOps = curR.signAccountOp.account.safeCreation
+        ? getSequentialSafeAccountOps(requests, curR, accountStateNonce)
+        : [curR.signAccountOp.accountOp]
 
-    // if no accountOps should be simulated, clear the results instead
-    if (accountOps.length === 0) {
-      void this.#portfolio.overrideSimulationResults(curR.signAccountOp.accountOp)
-      return
+      // if no accountOps should be simulated, clear the results instead
+      if (accountOps.length === 0) {
+        void this.#portfolio.overrideSimulationResults(curR.signAccountOp.accountOp)
+        return
+      }
+
+      void this.#portfolio.simulateAccountOp(accountOps)
+    } catch (e) {
+      console.log('Failed to do #performSimulation', e)
     }
-
-    void this.#portfolio.simulateAccountOp(accountOps)
   }
 
   async #awaitPendingPromises() {
@@ -997,6 +1001,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         )
         if (!resolved) safeResolveIds.push(data)
         else resolved.txnIds.push(...data.txnIds)
+
+        req.signAccountOp.destroy()
       }
       if (kind === 'switchAccount') {
         const requestsToAddOrRemove = this.userRequestsWaitingAccountSwitch.filter(
@@ -2218,25 +2224,33 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   async restoreSafeUserRequest(requestId: UserRequest['id']) {
-    const request = this.userRequests.find(
-      (r) => r.id === requestId && r.kind === 'calls' && r.meta.isSafeRejected
-    ) as CallsUserRequest | undefined
-    const txnId = request?.signAccountOp.accountOp.txnId
-    const nonce = request ? getAccountOpNonce(request.signAccountOp.accountOp) : null
+    try {
+      const request = this.userRequests.find(
+        (r) => r.id === requestId && r.kind === 'calls' && r.meta.isSafeRejected
+      ) as CallsUserRequest | undefined
+      const txnId = request?.signAccountOp.accountOp.txnId
+      const nonce = request ? getAccountOpNonce(request.signAccountOp.accountOp) : null
 
-    if (!request || !txnId || nonce === null || nonce === undefined) return
+      if (!request || !txnId || nonce === null || nonce === undefined) return
 
-    const currentNonce =
-      this.#accounts.accountStates[request.meta.accountAddr]?.[request.meta.chainId.toString()]
-        ?.nonce
-    if (currentNonce !== undefined && nonce < currentNonce) return
+      const currentNonce =
+        this.#accounts.accountStates[request.meta.accountAddr]?.[request.meta.chainId.toString()]
+          ?.nonce
+      if (currentNonce !== undefined && nonce < currentNonce) return
 
-    await this.#safe.restoreTxnId([txnId])
-    request.meta.isSafeRejected = false
+      await this.#safe.restoreTxnId([txnId])
+      request.meta.isSafeRejected = false
 
-    // on restore, simulate in the dashboard whatever is eligible
-    void this.#performSimulation(this.userRequests, request)
-    this.emitUpdate()
+      // on restore, simulate in the dashboard whatever is eligible
+      void this.#performSimulation(this.userRequests, request)
+      this.emitUpdate()
+    } catch (e: any) {
+      this.emitError({
+        level: 'major',
+        message: 'Failed to restore the transaction. Please try again',
+        error: e
+      })
+    }
   }
 
   async setCurrentUserRequestByIndex(requestIndex: number, params?: OpenRequestWindowParams) {
