@@ -86,7 +86,49 @@ Most controllers have `initialLoadPromise` that resolves when the controller fin
 ### Example:
 The networks controller that reads the network list from storage (which is async) exposes an `initialLoadPromise` that resolves when the networks are loaded. Then, the providers controller awaits the networks controller's `initialLoadPromise` in its own `initialLoadPromise` before initializing the providers, ensuring it has the network data available. The networks controller also awaits its own `initialLoadPromise` in its methods that read the network list, to ensure the data is loaded before accessing it.
 
+## IndexedDB persistence
+
+> `src/services/storage/README.md` documents the runtime side of this layer — module map,
+> startup order, invariants, and the cost of each operation. This section is the recipe for
+> putting a new controller on IDB; read that one to understand what already runs.
+
+Most controllers persist through `StorageController` (`chrome.storage.local` / `AsyncStorage`), which reads and writes a whole key as one blob. Controllers whose data grows without bound (transaction history, caches) can instead persist row-by-row in IndexedDB. `ActivityController` is the reference implementation.
+
+IDB is **not available everywhere**. The extension/web background calls `openAmbireIdb()` and passes the connection down through `MainController`; on mobile it passes `undefined`. A controller therefore never branches on IDB availability itself — it picks one of two interchangeable backends in its constructor and uses it unconditionally:
+
+```ts
+this.#persistence = idb
+  ? new ActivityIdbStorage(idb)
+  : new ActivityKeyValueStorage(storage, () => this.#accountsOps)
+```
+
+### Two different things are called "migration"
+
+- **Schema migration** — stores and indexes _inside_ IDB. Declared in `AMBIRE_IDB_SCHEMA` (`services/storage/idbSchema.ts`) and applied by `reconcileSchema()` / `applyMigrations()` in `idbDatabase.ts` during `onupgradeneeded`. `openAmbireIdb()` is awaited before any controller is constructed, so these always complete before the first read.
+- **Data migration** — moving a controller's existing payload _out of_ key-value storage _into_ IDB, once. This is `ensureMigrated()` on the backend, and it runs at controller load time.
+
+### Adding IDB persistence to a controller
+
+1. Add the store to `AMBIRE_IDB_SCHEMA` and bump `dbVersion` by 1. `reconcileSchema()` creates the store and its indexes — never create them by hand in a handler.
+2. Add an entry to `migrationHandlers` in `idbDatabase.ts` for the new version. A no-op is fine; handlers exist only to transform existing rows. The entry is mandatory so a version bump is always deliberate — a test enforces it.
+3. Declare a backend interface with the data methods the controller actually calls, plus `ensureMigrated(getStoredData, removeStoredData)` where `TLegacy` is the shape currently held in key-value storage. See `IActivityOpsBackend` (`interfaces/activity.ts`) for the pattern. Keep the interface to what is used _polymorphically_: `isEmpty()` and `migrateFromStorage()` are how the IDB implementation decides whether to migrate, so declare them on that class only. Putting them on the shared interface forces the key-value class to carry dead stub methods it never uses.
+4. Implement it twice — once on IDB, once on key-value. `ensureMigrated` on the IDB implementation must, in order: return early if the store is not empty; return early if the legacy payload has no meaningful data (a blank payload would make the store non-empty and permanently skip a later real migration); write the payload; only THEN call `removeStoredData`, so a failed removal still leaves the migrated data in place and doesn't lose it. The key-value implementation makes `ensureMigrated` an outright no-op, since its data already lives in its final location.
+5. Call `ensureMigrated()` as the **first await** in the controller's `#load()`, before any read. Otherwise the controller can observe an empty store while the migration is still in flight.
+6. **If the IDB backend loads only a subset at startup, audit every in-memory consumer.** This is the easiest way to introduce a silent bug. `ActivityController`'s startup read returns only the 20 most recent finalized ops per chain (plus all pending ones), which quietly weakened address-poisoning detection until `hasAccountOpsSentTo` was changed to expand the cache on demand. Anything that reasons over the _full_ history must either load it explicitly or read from a separate durable index.
+
+### Other things to know
+
+- **A `StorageController` migration can no longer reach a key that has been migrated into IDB.** `StorageController.get()`/`set()` await `#storageMigrationsPromise`, so storage migrations always finish before a controller reads — that part is safe, and it is why `#migrateNetworkIdToChainId` (which rewrites the network keys inside `accountsOps`) works correctly today. But once the IDB data migration has run, the legacy blob is a frozen copy that nothing reads. A _new_ storage migration written against `accountsOps` would rewrite that dead copy and silently have no effect. Transform the IDB rows with an `idbDatabase.ts` migration handler instead.
+- Do not delete the legacy key as part of a data migration while the IDB path is still new. Keep it as a safety-net copy and record a completion flag (e.g. `activityIdbMigrated`) instead. The controller must _read_ from that copy when the migration fails, otherwise it shows an empty state for the whole session while the data sits intact one key away. The flag itself has no consumer today — `ActivityController` writes it (`#recordHistoryLivesInIdb`) because it can only be recorded while IDB works, and a session that cannot open IDB can no longer tell "never had transactions" from "history is in IDB and unreachable". There is deliberately no banner or error for that state: it is detected inside `#load()` on service-worker startup, where errors reach nothing because no window is open, and a banner for a condition the user cannot act on was judged not worth the noise.
+- A retained legacy key is **frozen at migration time**, not a live mirror — writes go to IDB only from then on. Treat it as a floor for recovery, never as a source of truth, and decide up front when it gets deleted: keeping it forever means every migrated user carries the data twice (for `accountsOps` that is tens of MB) plus a stale artifact that reads like current data to the next person who finds it.
+- **Known limitation of the `isEmpty()` migration guard.** It cannot tell "never migrated" apart from "migrated, then the store was wiped, then partially repopulated". If IDB is wiped while the app is running and _anything_ is written before the next restart, that single row makes `isEmpty()` false and the legacy copy is never read again — so whatever it held stays stranded. A wipe followed by a restart with no write in between _does_ recover, which is the path that matters in practice: the extension holds `unlimitedStorage`, so routine browser eviction is not a factor and a wipe means corruption or deliberate user action. Accepted deliberately rather than fixed — detecting _partial_ loss needs either a persisted row count (which legitimate decreases from account removal and cap eviction turn into false positives) or reading the whole legacy blob on every startup (which reintroduces exactly the cost IDB exists to remove). Revisit only if a controller keeps its legacy key permanently, in which case the `terminated()` callback in `idbDatabase.ts` is the right signal to re-run the migration on.
+- Bulk writes must tolerate malformed legacy rows. A blob written by an older app version can be missing fields; drop those rows with a warning rather than throwing mid-batch, and keep the batch atomic. A partial commit makes `isEmpty()` return false and permanently disables the migration retry.
+- `PhishingIdbStorage` is fully tested but its store is deliberately **not** in the manifest, and `PhishingController` still persists through key-value storage. It is a ready reference implementation, not a wired feature. Add the store to `AMBIRE_IDB_SCHEMA` in the same change that wires the controller — not before, because the required `dbVersion` bump cannot be rolled back and is not worth carrying for a store nothing reads.
+- **A `dbVersion` bump is effectively one-way.** Once a user's database has been upgraded, a build pinned to the older version cannot open it — `openDB` rejects with `VersionError`, `openAmbireIdb()` fails, and every controller silently falls back to key-value storage. For `ActivityController` that means the retained legacy blob becomes the source of truth again, silently missing everything written since the migration. Treat version bumps as unrollbackable: ship one on its own, not bundled with unrelated risk, and only when something actually reads the new structure.
+- `services/storage/idbIntegration.test.ts` contains a self-contained `DummyController` that is the canonical template for the whole wiring.
+
 ## Other rules:
+
 - Never use raw `setInterval`. Always use `RecurringTimeout` from `@common/utils/RecurringTimeout`.
 - Long-running background intervals must be declared in `ContinuousUpdatesController`, which orchestrates their lifecycle based on app state and controller events. If you need a new background loop, add it there and wire its start/stop/restart logic through the existing event subscriptions.
 - Never call `this.storage.set()` in parallel. Always await the previous call before making another one.
