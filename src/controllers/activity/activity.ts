@@ -1217,11 +1217,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.BroadcastButStuck)
                 if (updatedOpIfAny) {
                   updatedAccountsOps.push(updatedOpIfAny)
-                  const acc = this.#accounts.accounts.find((a) => a.addr === op.accountAddr)
-                  if (acc && !!acc.safeCreation) {
-                    await this.#safe.unresolve(op.accountAddr, op.chainId, op.nonce).catch((e) => e)
-                    shouldFetchSafeTxns = true
-                  }
                 }
               }
             }
@@ -1339,20 +1334,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
                   if (accountOp.isSingletonDeploy && receipt.status) {
                     await this.#onContractsDeployed(network)
-                  }
-
-                  if (!isSuccess) {
-                    // if the txn resulted in a failure, unresolve all Safe txns
-                    // with the same nonce so that the user can retry
-                    const acc = this.#accounts.accounts.find(
-                      (a) => a.addr === accountOp.accountAddr
-                    )
-                    if (acc && !!acc.safeCreation) {
-                      await this.#safe
-                        .unresolve(accountOp.accountAddr, accountOp.chainId, accountOp.nonce)
-                        .catch((e) => e)
-                      shouldFetchSafeTxns = true
-                    }
                   }
 
                   const foundTokens = isSuccess

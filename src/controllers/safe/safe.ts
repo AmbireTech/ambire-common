@@ -13,7 +13,7 @@ import { Hex } from '../../interfaces/hex'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISafeController, SafeAccountByOwner } from '../../interfaces/safe'
-import { AutomaticallyResolvedSafeTxn, IStorageController } from '../../interfaces/storage'
+import { IStorageController } from '../../interfaces/storage'
 import {
   ExtendedSafeMessage,
   fetchAllPending,
@@ -58,8 +58,6 @@ export class SafeController extends EventEmitter implements ISafeController {
    * The last time a request to fetch pending Safe txn was made
    */
   #updatedAt?: { time: number; addr: string }
-
-  #automaticallyResolvedSafeTxns: AutomaticallyResolvedSafeTxn[] = []
 
   #rejectedSafeTxns: string[] = []
 
@@ -110,10 +108,6 @@ export class SafeController extends EventEmitter implements ISafeController {
   async #load() {
     await this.#accounts.initialLoadPromise
     this.#rejectedSafeTxns = await this.#storage.get('rejectedSafeTxns', [])
-    this.#automaticallyResolvedSafeTxns = await this.#storage.get(
-      'automaticallyResolvedSafeTxns',
-      []
-    )
   }
 
   get rejectedSafeTxns() {
@@ -341,8 +335,7 @@ export class SafeController extends EventEmitter implements ISafeController {
   }
 
   #filterOutHidden(pending: SafeResults, safeAddr: string): SafeResults {
-    const resolvedSafeTxns = this.#automaticallyResolvedSafeTxns.map((row) => row.txnIds).flat()
-    const hiddenMessages = [...this.#rejectedSafeTxns, ...resolvedSafeTxns]
+    const hiddenMessages = [...this.#rejectedSafeTxns]
 
     return Object.assign(
       {},
@@ -350,7 +343,7 @@ export class SafeController extends EventEmitter implements ISafeController {
         const state = this.#accounts.accountStates[safeAddr]?.[chainId]
         return {
           [chainId]: {
-            txns: pending[chainId]!.txns.filter((r) => !resolvedSafeTxns.includes(r.safeTxHash)),
+            txns: pending[chainId]!.txns,
             messages: pending[chainId]!.messages.filter((m) => {
               return (
                 // filter out rejected msgs by the user
@@ -409,40 +402,6 @@ export class SafeController extends EventEmitter implements ISafeController {
   async restoreTxnId(safeTxnIds: string[]) {
     this.#rejectedSafeTxns = this.#rejectedSafeTxns.filter((id) => !safeTxnIds.includes(id))
     return this.#storage.set('rejectedSafeTxns', this.#rejectedSafeTxns)
-  }
-
-  async resolveTxnId(resolves: AutomaticallyResolvedSafeTxn[]) {
-    for (let i = 0; i < resolves.length; i++) {
-      const resolve = resolves[i]!
-      const resolved = this.#automaticallyResolvedSafeTxns.find(
-        (txns) =>
-          txns.accountAddr === resolve.accountAddr &&
-          txns.chainId === resolve.chainId &&
-          txns.nonce === resolve.nonce
-      )
-
-      if (!resolved) this.#automaticallyResolvedSafeTxns.push(resolve)
-      else resolved.txnIds = [...new Set([...resolved.txnIds, ...resolve.txnIds])]
-    }
-
-    return this.#storage.set('automaticallyResolvedSafeTxns', this.#automaticallyResolvedSafeTxns)
-  }
-
-  /**
-   * Upon failure, unresolve all Safe txns for the same account, network and nonce.
-   * Older entries without account and network metadata are removed by nonce for compatibility.
-   */
-  async unresolve(accountAddr: string, chainId: bigint, nonce: bigint) {
-    // reset the counter so we could fetch immediately
-    this.#updatedAt = undefined
-
-    this.#automaticallyResolvedSafeTxns = this.#automaticallyResolvedSafeTxns.filter(
-      (txns) =>
-        txns.nonce !== nonce ||
-        (!!txns.accountAddr && txns.accountAddr !== accountAddr) ||
-        (typeof txns.chainId !== 'undefined' && txns.chainId !== chainId)
-    )
-    return this.#storage.set('automaticallyResolvedSafeTxns', this.#automaticallyResolvedSafeTxns)
   }
 
   async getMessagesByHash(

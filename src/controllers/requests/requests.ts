@@ -24,7 +24,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
 import { ISafeController } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
-import { AutomaticallyResolvedSafeTxn, IStorageController } from '../../interfaces/storage'
+import { IStorageController } from '../../interfaces/storage'
 import {
   ISwapAndBridgeController,
   SwapAndBridgeActiveRoute,
@@ -919,7 +919,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     } = options || {}
 
     const userRequestsToAdd: UserRequest[] = []
-    const safeResolveIds: AutomaticallyResolvedSafeTxn[] = []
     const safeRejectIds: string[] = []
     const performSimulationPromises: Promise<void>[] = []
     const simulationAccountChainIds = new Set<string>()
@@ -954,8 +953,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         return
       }
 
-      // remove from the request queue
-      // if (!!req.signAccountOp.account.safeCreation)
       this.userRequests.splice(this.userRequests.indexOf(req), 1)
       if (this.currentUserRequest?.id === req.id) didRemoveCurrentUserRequest = true
 
@@ -973,39 +970,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             if (c.activeRouteId) this.#swapAndBridge.removeActiveRoute(c.activeRouteId)
           })
         }
-
-        const safeNonce = getAccountOpNonce(req.signAccountOp.accountOp)
-
-        // if it's not a safe request OR it's non-signed Safe request, move on
-        if (
-          !req.signAccountOp.account.safeCreation ||
-          !req.signAccountOp.accountOp.txnId ||
-          safeNonce === null
-        ) {
-          req.signAccountOp.destroy()
-          return
-        }
-
-        // handle removing a safe transaction
-        // if it's not signed, we destroy it
-        // if we're rejecting it, we write it as rejected in storage but pause
-        // the signing process
-        // if we're auto-resolving it (same nonce txn already broadcast), we
-        // write it to storage as auto resolved and then destroy it
-        const data = {
-          accountAddr: req.signAccountOp.accountOp.accountAddr,
-          chainId: req.signAccountOp.accountOp.chainId,
-          nonce: safeNonce,
-          txnIds: [req.signAccountOp.accountOp.txnId]
-        }
-        const resolved = safeResolveIds.find(
-          (txns) =>
-            txns.accountAddr === data.accountAddr &&
-            txns.chainId === data.chainId &&
-            txns.nonce === data.nonce
-        )
-        if (!resolved) safeResolveIds.push(data)
-        else resolved.txnIds.push(...data.txnIds)
 
         req.signAccountOp.destroy()
       }
@@ -1046,7 +1010,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     // reject all Safe txns so they do not appear by accident again
     if (safeRejectIds.length) await this.#safe.rejectTxnId(safeRejectIds)
-    if (safeResolveIds.length) await this.#safe.resolveTxnId(safeResolveIds)
 
     if (userRequestsToAdd.length) {
       await this.addUserRequests(userRequestsToAdd, { skipFocus: true })
