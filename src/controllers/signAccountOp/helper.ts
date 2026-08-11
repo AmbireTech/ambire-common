@@ -73,7 +73,8 @@ function getSignificantBalanceDecreaseWarning(
     // In case the balance increased or stayed the same
     if (absoluteDecreaseInUSD <= 0) return null
 
-    const hasSignificantBalanceDecrease = absoluteDecreaseInUSD >= 0.4
+    const hasSignificantBalanceDecrease =
+      absoluteDecreaseInUSD >= totalInUSD * 0.2 && absoluteDecreaseInUSD >= 1000
 
     if (!hasSignificantBalanceDecrease) return null
 
