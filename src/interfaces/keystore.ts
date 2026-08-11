@@ -58,6 +58,12 @@ export interface ExternalSignerController {
   moveToResponseScan?: () => void //Qr based specific
   submitSignatureResponse?: (payload: string | Uint8Array) => void //Qr based specific
   parseAndSetAccountFromQR?: (payload: string | Uint8Array) => Promise<ParsedQrAccount> //Qr based specific
+  nfcWalletType?: NfcWalletType // NFC (tap-to-sign card) specific
+  // Mark the start and the end of one account op's signing, so a device that unlocks
+  // with a PIN can keep it for that long and ask for it once instead of once per
+  // signature. NFC (tap-to-sign card) specific.
+  beginPinSession?: () => Promise<void>
+  endPinSession?: () => Promise<void>
 }
 export type ExternalSignerControllers = Partial<{ [key in Key['type']]: ExternalSignerController }>
 
@@ -159,9 +165,11 @@ export type InternalKey = {
 export type QrWalletType = 'keystone' | 'imtoken' | 'keycard' // We can add more supported QR wallets here in the future, and they will be handled by the QrProtocolAdapter implementations, which are specific to each wallet type
 export type QrProtocolType = 'ur' | 'airgap'
 
+export type NfcWalletType = 'keycard' // We can add more supported NFC (tap-to-sign) cards here in the future
+
 export type ExternalKey = {
   addr: Account['addr']
-  type: 'trezor' | 'ledger' | 'lattice' | 'qr'
+  type: 'trezor' | 'ledger' | 'lattice' | 'qr' | 'nfc'
   label: string
   dedicatedToOneSA: boolean
   meta: {
@@ -174,6 +182,7 @@ export type ExternalKey = {
     qrWalletType?: QrWalletType
     qrProtocol?: QrProtocolType
     masterFingerprint?: string // BIP32 root fingerprint used to identify/verify the originating hardware wallet account set in QR flows
+    nfcWalletType?: NfcWalletType
     [key: string]: any
   }
 }
@@ -188,6 +197,7 @@ export type KeystoreSeed = {
   seed: string
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+  notBackedUp?: boolean
 }
 
 export type StoredKeystoreSeed = Omit<KeystoreSeed, 'seed' | 'seedPassphrase'> & {
@@ -202,6 +212,7 @@ export type KeystoreTempSeed = {
   seed: string
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+  notBackedUp?: boolean
 }
 
 export type KeystoreSignerType = {

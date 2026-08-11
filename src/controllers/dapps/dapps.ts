@@ -27,7 +27,9 @@ import {
   GetCurrentDappRes,
   HasUnverifiedDappsRes,
   IDappsController,
-  RecentDappEntry
+  RawTrendingToken,
+  RecentDappEntry,
+  TrendingToken
 } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
@@ -43,14 +45,19 @@ import {
   getDappIdFromUrl,
   getDappNameFromId,
   getDomainFromUrl,
+  getNormalizedHostnameFromUrl,
   modifyDappPropsIfNeeded,
   normalizeDappConnection,
+  normalizeHostname,
+  normalizeTrendingTokens,
   sortDapps,
   unifyDefiLlamaDappUrl
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
 
 const mergeSource = (
   existing: ConnectionSource[] | undefined,
@@ -101,6 +108,20 @@ export class DappsController extends EventEmitter implements IDappsController {
   #retryFetchAndUpdateMaxAttempts: number = 3
 
   #selectedAccount: ISelectedAccountController
+
+  #trendingTokens: TrendingToken[] = []
+
+  #trendingTokensUpdatedAt: number | null = null
+
+  get trendingTokens(): TrendingToken[] {
+    return this.#trendingTokens
+  }
+
+  // Timestamp of the last successful trending-tokens fetch. Read by the
+  // ContinuousUpdatesController which owns the trending update interval.
+  get trendingTokensUpdatedAt(): number | null {
+    return this.#trendingTokensUpdatedAt
+  }
 
   get shouldRetryFetchAndUpdate() {
     return this.#shouldRetryFetchAndUpdate
@@ -247,14 +268,28 @@ export class DappsController extends EventEmitter implements IDappsController {
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    const [storedDapps, storedRecentDapps] = await Promise.all([
+    const [storedDapps, storedRecentDapps, storedTrending] = await Promise.all([
       this.#storage.get('dappsV2', predefinedDapps),
-      this.#storage.get('recentDapps', [] as RecentDappEntry[])
+      this.#storage.get('recentDapps', [] as RecentDappEntry[]),
+      this.#storage.get('trending', { updatedAt: 0, tokens: [] as TrendingToken[] })
     ])
     // Normalize on read so a drifted record (e.g. isConnected: true but connectedSources: [])
     // can't show a dapp as connected in the UI while permission checks force a reconnect.
-    this.#dapps = new Map(storedDapps.map((d) => [d.id, normalizeDappConnection(d)]))
+    // Ids are canonicalized as well: a record stored before trailing-dot normalization
+    // ("my-dapp.vercel.app.") is unreachable by any lookup, so it would linger as an orphan
+    // entry in the UI while its permissions can never be resolved again.
+    this.#dapps = new Map()
+    storedDapps.forEach((dapp) => {
+      const id = normalizeHostname(dapp.id)
+      // The canonical record wins over its trailing-dot duplicate - it is the one every lookup
+      // resolves to, and its permissions are the ones the user reviewed for it.
+      if (id !== dapp.id && this.#dapps.has(id)) return
+
+      this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
+    })
     this.#recentDapps = storedRecentDapps
+    this.#trendingTokens = storedTrending.tokens
+    this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
 
     void this.fetchAndUpdateDapps()
   }
@@ -509,6 +544,34 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.emitUpdate()
     void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+  }
+
+  /**
+   * Fetches, normalizes and persists the trending tokens. Throws on a failed fetch or a
+   * malformed response so the caller can react (e.g. back off its retry cadence). The update
+   * interval and its lifecycle are owned by the ContinuousUpdatesController.
+   */
+  async updateTrendingTokens() {
+    await this.initialLoadPromise
+
+    const res = await fetchWithTimeout(this.#fetch, TRENDING_TOKENS_URL, {}, 30000)
+
+    if (!res.ok || res.status !== 200) {
+      throw new Error(`Failed to update trending tokens (status: ${res.status}, url: ${res.url})`)
+    }
+
+    const json = await res.json()
+    const raw: RawTrendingToken[] = json?.tokens
+    if (!Array.isArray(raw)) {
+      throw new Error('Trending tokens response does not contain a tokens array')
+    }
+
+    this.#trendingTokens = normalizeTrendingTokens(raw)
+    const updatedAt = Date.now()
+    this.#trendingTokensUpdatedAt = updatedAt
+    this.emitUpdate()
+
+    await this.#storage.set('trending', { updatedAt, tokens: this.#trendingTokens })
   }
 
   async #createDappSession(initProps: SessionInitProps) {
@@ -1277,7 +1340,10 @@ export class DappsController extends EventEmitter implements IDappsController {
             : this.initialLoadPromise
               ? 'LOADING'
               : (contextStatus ?? intrinsic),
-        name: dapp?.name || new URL(url).hostname
+        // The canonical hostname, so the banner names the site the user believes they are on
+        // instead of the fully-qualified spelling a phishing page may navigate to. Falls back to
+        // the raw url for inputs the URL parser rejects, which must not throw here.
+        name: dapp?.name || getNormalizedHostnameFromUrl(url) || url
       }
     })
 
@@ -1390,6 +1456,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       recentDapps: this.recentDapps,
       categories: this.categories,
       isReady: this.isReady,
+      trendingTokens: this.trendingTokens,
       shouldRetryFetchAndUpdate: this.shouldRetryFetchAndUpdate,
       retryFetchAndUpdateInterval: this.retryFetchAndUpdateInterval,
       retryFetchAndUpdateAttempts: this.retryFetchAndUpdateAttempts
