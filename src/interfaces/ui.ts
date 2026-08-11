@@ -13,6 +13,12 @@ export const REQUEST_VIEW_TYPE = 'request-window'
 export type NavigateOptions = {
   replace?: boolean
   state?: { [key: string]: any }
+  /**
+   * Marks a navigation as the one that places a freshly registered view on its first screen. The
+   * UI ignores it once the view has moved off its root route, so a late or retried one cannot
+   * throw the user back to where the app started.
+   */
+  isInitialNavigation?: boolean
 }
 
 export type View = {

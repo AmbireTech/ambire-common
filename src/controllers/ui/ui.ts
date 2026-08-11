@@ -64,7 +64,8 @@ export class UiController extends EventEmitter implements IUiController {
       this.emitUpdate()
     }
 
-    this.syncViewRoute(view.id)
+    // This navigates the new view to its initial route
+    this.syncViewRoute(view.id, { isInitialNavigation: true })
   }
 
   updateView(
@@ -137,7 +138,7 @@ export class UiController extends EventEmitter implements IUiController {
    * - Sending to keystore unlock if locked
    * - Moving between request windows when switching requests
    */
-  async syncViewRoute(viewId: string) {
+  async syncViewRoute(viewId: string, options?: Pick<NavigateOptions, 'isInitialNavigation'>) {
     try {
       const view = this.views.find((v) => v.id === viewId)
       if (!view) return
@@ -153,7 +154,10 @@ export class UiController extends EventEmitter implements IUiController {
 
       if (!route) return
 
-      this.navigateView(viewId, route, { replace: true })
+      this.navigateView(viewId, route, {
+        replace: true,
+        isInitialNavigation: options?.isInitialNavigation
+      })
     } catch (e: any) {
       this.emitError({
         level: 'silent',
