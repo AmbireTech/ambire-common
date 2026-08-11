@@ -1757,7 +1757,7 @@ export class PortfolioController
       networkState,
       network,
       this.#featureFlags.isFeatureEnabled('erc4337'),
-      this.#featureFlags.isFeatureEnabled('erc7702')
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
     return baseAcc.getNonceId()
   }
@@ -1916,7 +1916,7 @@ export class PortfolioController
                 state,
                 network,
                 this.#featureFlags.isFeatureEnabled('erc4337'),
-                this.#featureFlags.isFeatureEnabled('erc7702')
+                this.#featureFlags.isFeatureEnabled('eip7702')
               )
             : null
 
