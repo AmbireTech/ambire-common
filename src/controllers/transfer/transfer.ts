@@ -1125,7 +1125,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#selectedAccount.account,
       accountState,
       network,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('erc7702')
     )
     const accountOp = {
       id: generateUuid(),

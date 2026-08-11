@@ -2651,7 +2651,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#selectedAccount.account,
       accountState,
       network,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('erc7702')
     )
     const swapSponsorship = getSwapSponsorship({
       isErc4337Enabled: this.#featureFlags.isFeatureEnabled('erc4337'),

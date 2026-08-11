@@ -598,6 +598,7 @@ const init = async (
     account,
     accountsCtrl.accountStates[account.addr]![network.chainId.toString()]!,
     network,
+    true,
     true
   )
 
