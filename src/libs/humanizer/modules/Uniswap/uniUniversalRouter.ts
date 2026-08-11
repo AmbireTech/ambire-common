@@ -129,6 +129,17 @@ function parseV4Actions(
     } else if (action === V4_ACTION_CODES.TAKE_ALL) {
       const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_ALL, param)
       parsed.push([getAction('Take'), getToken(args.currency, args.minAmount)])
+    } else if (action === V4_ACTION_CODES.TAKE_PORTION) {
+      const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_PORTION, param)
+      if (args.recipient !== accountAddr) {
+        parsed.push([
+          getAction('Send'),
+          getLabel(`${(Number(args.bips) / 100).toFixed(0)}%`, true),
+          getToken(args.currency, 0n),
+          getLabel('to'),
+          getAddressVisualization(args.recipient)
+        ])
+      }
     } else {
       parsed.push([getAction('Unknown uniswap V4 action')])
     }
@@ -235,7 +246,7 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
                 getToken(path[path.length - 1], 0n),
                 getDeadline(deadline)
               ])
-            } catch (e) {
+            } catch {
               // alternative encoding, handled here
               // https://www.codeslaw.app/contracts/base/0x6Df1c91424F79E40E33B1A48F0687B666bE71075?file=contracts%2Fmodules%2Funiswap%2Fv2%2FV2SwapRouter.sol&start=158&end=160
               // https://www.codeslaw.app/contracts/base/0x6Df1c91424F79E40E33B1A48F0687B666bE71075?file=contracts%2Fmodules%2Funiswap%2Fv2%2FV2SwapRouter.sol&start=223&end=259
