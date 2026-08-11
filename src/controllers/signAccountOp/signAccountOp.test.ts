@@ -3412,10 +3412,6 @@ describe('traceCall asset discovery', () => {
     await (controller as any).traceCall()
     expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
 
-    // After 2s without a response the status reflects the slow pending state.
-    jest.advanceTimersByTime(2000)
-    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.SlowPendingResponse)
-
     // Resolving discovery learns the assets, fires the success callback and
     // settles on Done.
     createAccessListDeferred.resolve(discovered)

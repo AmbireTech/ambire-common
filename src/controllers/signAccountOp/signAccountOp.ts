@@ -2216,9 +2216,7 @@ export class SignAccountOpController
       return
     }
 
-    // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
-    // it should be cleared to prevent the previous interval from changing the status
-    // to `SlowPendingResponse` for the newer `traceCall` invocation.
+    // clear the timeout on each new invoke
     if (this.traceCallTimeoutId) clearTimeout(this.traceCallTimeoutId)
 
     // Here, we also check the status because, in the case of re-estimation,
@@ -2227,7 +2225,6 @@ export class SignAccountOpController
     if (this.traceCallDiscoveryStatus === TraceCallDiscoveryStatus.NotStarted)
       this.setDiscoveryStatus(TraceCallDiscoveryStatus.InProgress)
 
-    // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
     const timeoutId = setTimeout(() => {
       // Prevent race conditions between multiple `traceCall` invocations
       if (
@@ -2235,8 +2232,6 @@ export class SignAccountOpController
         this.traceCallTimeoutId !== timeoutId
       )
         return
-
-      this.setDiscoveryStatus(TraceCallDiscoveryStatus.SlowPendingResponse)
     }, 2000)
 
     this.traceCallTimeoutId = timeoutId

@@ -85,10 +85,9 @@ type HardwareWalletSigningRequest = {
 enum TraceCallDiscoveryStatus {
   NotStarted = 'not-started',
   InProgress = 'in-progress',
-  SlowPendingResponse = 'slow-pending-response',
   Done = 'done',
   Failed = 'failed'
 }
 
 export { TraceCallDiscoveryStatus }
-export type { Warning, SignAccountOpError, SignAccountOpBanner, HardwareWalletSigningRequest }
+export type { HardwareWalletSigningRequest, SignAccountOpBanner, SignAccountOpError, Warning }
