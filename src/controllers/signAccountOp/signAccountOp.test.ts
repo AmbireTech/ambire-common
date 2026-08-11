@@ -3195,9 +3195,9 @@ describe('significant balance decrease banners', () => {
       id: 'significantBalanceDecrease',
       type: 'warning',
       title: 'Significant balance decrease detected',
-      text: 'Our checks indicate that this transaction may significantly reduce your account balance.',
+      text: 'Our checks indicate this transaction may significantly reduce your account balance.',
       secondaryText:
-        'This warning can sometimes be inaccurate, especially when moving funds to another network or providing liquidity. Review the transaction details carefully before continuing.'
+        'May be inaccurate when moving funds to another network or providing liquidity.'
     })
   })
 })
