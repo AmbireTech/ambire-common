@@ -83,6 +83,24 @@ export class SocketAPIMock {
     ]
   }
 
+  async getToken({
+    address,
+    chainId
+  }: {
+    address: string
+    chainId: number
+  }): Promise<SocketAPIToken> {
+    return {
+      name: 'Token Not In The List',
+      address,
+      icon: '',
+      decimals: 18,
+      symbol: 'NOTLISTED',
+      chainId,
+      logoURI: ''
+    }
+  }
+
   async quote({
     fromChainId,
     fromTokenAddress,

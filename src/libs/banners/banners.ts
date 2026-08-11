@@ -19,7 +19,8 @@ export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: Ac
 
 export const getBridgeBanners = (
   activeRoutes: SwapAndBridgeActiveRoute[],
-  callsUserRequests: CallsUserRequest[]
+  callsUserRequests: CallsUserRequest[],
+  accountAddr: AccountId
 ): Banner[] => {
   const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
     return callsUserRequests.some((req) => {
@@ -99,6 +100,9 @@ export const getBridgeBanners = (
       category: 'bridge-in-progress',
       title,
       text,
+      meta: {
+        accountAddr
+      },
       actions: [
         {
           actionName: 'view-bridge',
@@ -134,6 +138,9 @@ export const getSafeMessageRequestBanners = (
       type: 'info',
       title: `You have ${requests.length} pending signature request${requests.length > 1 ? 's' : ''}`,
       text: '',
+      meta: {
+        accountAddr: account.addr
+      },
       actions: [
         {
           actionName: 'open-pending-dapp-requests',
@@ -161,6 +168,9 @@ export const getDappUserRequestsBanners = (
       type: 'info',
       title: `You have ${requests.length} pending app request${requests.length > 1 ? 's' : ''}`,
       text: '',
+      meta: {
+        accountAddr: account.addr
+      },
       actions: [
         {
           actionName: 'open-pending-dapp-requests',
@@ -189,8 +199,9 @@ const getSafeBanner = ({
     id: `${selectedAccount.addr}-${network.chainId.toString()}`,
     type: 'info',
     category: 'pending-to-be-signed-acc-op',
-    title: `${requestCount === 1 ? 'Pending transaction' : `${requestCount} Pending transactions`} on`,
-    meta: { chainId: network.chainId },
+    // the network is rendered by the UI on a second row, below the title
+    title: requestCount === 1 ? 'Pending transaction' : `${requestCount} Pending transactions`,
+    meta: { chainId: network.chainId, accountAddr: selectedAccount.addr },
     actions: [
       {
         actionName: 'open-accountOp',
@@ -250,11 +261,10 @@ export const getAccountOpBanners = ({
         id: `${selectedAccount.addr}-${netId}`,
         type: 'info',
         category: 'pending-to-be-signed-acc-op',
-        title: `${
-          callCount === 1 ? 'Pending transaction' : `${callCount} Pending transactions`
-        } on`,
+        // the network is rendered by the UI on a second row, below the title
+        title: callCount === 1 ? 'Pending transaction' : `${callCount} Pending transactions`,
         text: '',
-        meta: { chainId: network.chainId },
+        meta: { chainId: network.chainId, accountAddr: selectedAccount.addr },
         actions: [
           {
             actionName: 'open-accountOp',

@@ -18,6 +18,6 @@ export class GnsResolver extends EnsCompatibleResolver {
   }
 
   matches(domain: string): boolean {
-    return domain.endsWith('.gwei')
+    return domain.trim().toLowerCase().endsWith('.gwei')
   }
 }

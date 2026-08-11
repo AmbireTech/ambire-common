@@ -1,3 +1,5 @@
+import { normalize as ensNormalize } from 'viem/ens'
+
 import { FeatureFlags } from '@/consts/featureFlags'
 import {
   getEnsAvatar,
@@ -63,6 +65,17 @@ export abstract class EnsCompatibleResolver implements NameResolver {
   }
 
   abstract matches(domain: string): boolean
+
+  /**
+   * ENS-compatible services share ENSIP-15 (UTS-46) normalization.
+   */
+  normalize(domain: string): string | null {
+    try {
+      return ensNormalize(domain.trim()) || null
+    } catch {
+      return null
+    }
+  }
 
   requiredChainId(networkMode: NetworkMode): string | undefined {
     return this.chainId[networkMode]

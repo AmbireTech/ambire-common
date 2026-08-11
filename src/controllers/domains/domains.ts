@@ -15,11 +15,11 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { IVerificationController } from '../../interfaces/verification'
 // Import directly from ensDomains.ts, not the barrel (./index.ts). With tslib 2,
 // `export *` re-exports become getter-only bindings that jest.spyOn cannot override,
 // so domains.test.ts must spy on this same direct-file module instance.
 import { NameExpiry, ReverseLookupResult } from '../../services/ensDomains/ensDomains'
-import { IVerificationController } from '../../interfaces/verification'
 import {
   DEFAULT_RESOLVERS,
   getPrimaryName,
@@ -359,6 +359,12 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
       return
     }
 
+    const name = resolver.normalize(domain)
+    if (!name) {
+      await this.#setResolveDomainFailure(domain, new Error(`Invalid domain name: ${domain}`))
+      return
+    }
+
     if (
       this.resolveDomainsStatus[domain] === 'LOADING' ||
       this.resolveDomainsStatus[domain] === 'RESOLVED'
@@ -388,11 +394,11 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
 
     await resolver
-      .resolve(domain, this.#context())
+      .resolve(name, this.#context())
       .then(async (result) => {
         if (result?.address) {
           // Verify before caching, so a mismatch throws into the catch and nothing bad is persisted.
-          const isVerified = await this.#verifyResolvedAddress(resolver, domain, result.address)
+          const isVerified = await this.#verifyResolvedAddress(resolver, name, result.address)
           if (isVerified) this.verifiedDomainsStatus[domain] = 'VERIFIED'
 
           this.domainToAddresses[domain] = {
@@ -403,7 +409,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
             address: result.address,
             avatar: result.avatar,
             expiry: result.expiry,
-            domain,
+            domain: name,
             type: resolver.id
           })
         }

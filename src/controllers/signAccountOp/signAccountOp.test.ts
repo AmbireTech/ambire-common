@@ -36,6 +36,7 @@ import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
+import { ExternalSignerController, ExternalSignerControllers } from '../../interfaces/keystore'
 import { IProvidersController } from '../../interfaces/provider'
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
@@ -456,6 +457,7 @@ const init = async (
     type?: SignAccountOpType
     initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
+    externalSignerControllers?: ExternalSignerControllers
   }
 ) => {
   const storage: Storage = produceMemoryStore()
@@ -719,7 +721,7 @@ const init = async (
     portfolio,
     featureFlags: featureFlagsCtrl,
     signAccountOpPreference,
-    externalSignerControllers: {},
+    externalSignerControllers: options?.externalSignerControllers || {},
     account,
     network,
     activity,
@@ -1125,23 +1127,59 @@ describe('SignAccountOp Controller ', () => {
   test('uses the saved fee speed as the default for a new signing request', async () => {
     const { controller } = await initDefaultFeeSelection(undefined, {
       initialSetStorage: async (storageCtrl) => {
-        await storageCtrl.set('signAccountOpFeeSpeedPreference', FeeSpeed.Medium)
+        await storageCtrl.set('signAccountOpFeeSpeedPreference', { '1': FeeSpeed.Medium })
       }
     })
 
     expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
   })
 
-  test('persists only explicitly selected fee speeds', async () => {
+  test('ignores a saved fee speed belonging to another chain', async () => {
+    const { controller } = await initDefaultFeeSelection(undefined, {
+      initialSetStorage: async (storageCtrl) => {
+        await storageCtrl.set('signAccountOpFeeSpeedPreference', { '137': FeeSpeed.Slow })
+      }
+    })
+
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Fast)
+  })
+
+  test('persists a user selected fee speed right away, for the current chain only', async () => {
+    const { controller, storageCtrl } = await initDefaultFeeSelection()
+
+    controller.update({ speed: FeeSpeed.Slow, shouldPersistSpeed: true })
+    await wait(1)
+
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Slow)
+    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toEqual({
+      '1': FeeSpeed.Slow
+    })
+  })
+
+  test('does not persist a fee speed that was not selected by the user', async () => {
     const { controller, storageCtrl } = await initDefaultFeeSelection()
 
     controller.update({ speed: FeeSpeed.Slow })
     await wait(1)
+
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Slow)
     expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toBeUndefined()
+  })
+
+  test('saving a fee speed keeps the ones saved for the other chains', async () => {
+    const { controller, storageCtrl } = await initDefaultFeeSelection(undefined, {
+      initialSetStorage: async (storage) => {
+        await storage.set('signAccountOpFeeSpeedPreference', { '137': FeeSpeed.Ape })
+      }
+    })
 
     controller.update({ speed: FeeSpeed.Medium, shouldPersistSpeed: true })
     await wait(1)
-    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toBe(FeeSpeed.Medium)
+
+    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toEqual({
+      '1': FeeSpeed.Medium,
+      '137': FeeSpeed.Ape
+    })
   })
 
   test('uses a saved ERC-20 default only for the matching chain', async () => {
@@ -3559,5 +3597,81 @@ describe('traceCall asset discovery', () => {
       expect(addTokensToBeLearnedSpy).not.toHaveBeenCalled()
       expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
     })
+  })
+})
+
+describe('external signer PIN sessions', () => {
+  suppressConsoleBeforeEach(true)
+
+  const pinSessionGasPrices = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+
+  const initPinSession = async () => {
+    const nfc = {
+      type: 'nfc',
+      deviceModel: '',
+      deviceId: '',
+      beginPinSession: jest.fn(async () => {}),
+      endPinSession: jest.fn(async () => {})
+    } as unknown as ExternalSignerController & {
+      beginPinSession: jest.Mock
+      endPinSession: jest.Mock
+    }
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: nativeFeeToken
+      }
+    ]
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        flags: {},
+        updatedAt: Date.now()
+      } as any,
+      pinSessionGasPrices,
+      false,
+      { externalSignerControllers: { nfc } as any }
+    )
+
+    return { controller, nfc }
+  }
+
+  test('opens the PIN session before signing and closes it once the whole flow is over', async () => {
+    const { controller, nfc } = await initPinSession()
+    const callOrder: string[] = []
+
+    nfc.beginPinSession.mockImplementation(async () => {
+      callOrder.push('begin')
+    })
+    nfc.endPinSession.mockImplementation(async () => {
+      callOrder.push('end')
+    })
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // One session for the whole account op, no matter how many signatures it takes -
+    // that is what lets a single PIN entry cover all of them.
+    expect(callOrder).toEqual(['begin', 'end'])
+  })
+
+  test('opens a new PIN session for the next account op, so the PIN is asked for again', async () => {
+    const { controller, nfc } = await initPinSession()
+
+    await controller.signAndBroadcast().catch(() => {})
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(nfc.beginPinSession).toHaveBeenCalledTimes(2)
+    expect(nfc.endPinSession).toHaveBeenCalledTimes(2)
   })
 })

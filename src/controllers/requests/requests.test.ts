@@ -585,6 +585,9 @@ describe('RequestsController ', () => {
     await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
 
     expect(controller.banners).toHaveLength(2)
+    controller.banners.forEach((banner) => {
+      expect(banner.meta?.accountAddr).toEqual('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+    })
   })
   test('should update visible requests on account change', async () => {
     const { controller, selectedAccountCtrl, getCallsRequest } = await prepareTest()

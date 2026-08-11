@@ -5,7 +5,7 @@ import wait from '@/utils/wait'
 import { expect } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
-import { makeDapp } from '../../../test/helpers/dapps'
+import { blacklistedDapp, makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
 import { predefinedDapps } from '../../consts/dapps/dapps'
@@ -15,6 +15,60 @@ import { Dapp, DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp'
 import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
 import { PhishingController } from '../phishing/phishing'
+
+const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
+
+// Two valid entries plus one invalid (no price) to exercise normalization + filtering.
+// Mirrors the trimmed endpoint shape: a { tokens: [...] } wrapper of minimal coin objects
+// with flat USD fields, a top-level homepage and pre-deduped exchange ids.
+const mockTrending = {
+  tokens: [
+    {
+      id: 'bitcoin',
+      name: 'Bitcoin',
+      symbol: 'BTC',
+      market_cap_rank: 1,
+      image: {
+        thumb: 'https://example.com/btc-thumb.png',
+        small: 'https://example.com/btc-small.png',
+        large: 'https://example.com/btc-large.png'
+      },
+      asset_platform_id: 'ethereum',
+      contract_address: '0xbtc',
+      platforms: { ethereum: '0xbtc' },
+      decimals: { ethereum: 8 },
+      homepage: ['https://bitcoin.org'],
+      exchanges: ['binance', 'coinbase'],
+      usd: 65000.5,
+      usd_24h_change: 1.23,
+      usd_market_cap: 1200000000,
+      usd_24h_vol: 45000000,
+      usd_fully_diluted_valuation: 1300000000,
+      total_supply: 21000000,
+      description: { en: 'The first cryptocurrency.' }
+    },
+    {
+      id: 'ethereum',
+      name: 'Ethereum',
+      symbol: 'ETH',
+      market_cap_rank: 2,
+      // No `large` → the normalizer falls back to `small`.
+      image: { small: 'https://example.com/eth-small.png' },
+      usd: 3200,
+      usd_24h_change: -2.5,
+      usd_market_cap: 400000000,
+      usd_24h_vol: 20000000,
+      description: null
+    },
+    // Invalid: missing price → must be filtered out by normalizeTrendingTokens.
+    {
+      id: 'no-price-coin',
+      name: 'No Price Coin',
+      symbol: 'NPC',
+      market_cap_rank: 999
+    }
+  ]
+}
 
 const prepareTest = async (
   storageInit?: (storageController: IStorageController) => Promise<void>,
@@ -39,6 +93,14 @@ const prepareTest = async (
           ok: true,
           status: 200,
           json: async () => mockChains
+        }
+      }
+
+      if (url === TRENDING_TOKENS_URL) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => mockTrending
         }
       }
 
@@ -942,6 +1004,144 @@ describe('DappsController', () => {
       expect(emitCount).toBe(1)
 
       unsubscribe()
+    })
+  })
+
+  // A fully-qualified hostname ("my-dapp.vercel.app.") loads the identical site as its
+  // dotted-free form, so it must resolve to the same dApp identity everywhere - otherwise
+  // appending one dot turns a flagged dApp into an unknown one.
+  describe('fully-qualified (trailing dot) dApp urls', () => {
+    test('a suspicious hosting dApp visited with a trailing dot still shows the SUSPICIOUS_HOSTING banner', async () => {
+      const vercelDapp = makeDapp({
+        id: 'my-dapp.vercel.app',
+        name: 'Fake Uniswap on Vercel',
+        url: 'https://my-dapp.vercel.app',
+        blacklisted: 'LOADING',
+        isCustom: true
+      })
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, vercelDapp])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const banner = controller.getDappVerificationBanner(['https://my-dapp.vercel.app./claim'])
+      expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+      expect(banner?.type).toBe('warning')
+    })
+
+    test('a BLACKLISTED dApp visited with a trailing dot still shows the BLACKLISTED banner', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, blacklistedDapp])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.fetchAndUpdatePromise
+
+      expect(controller.getDappVerificationBanner(['https://blacklisted-dapp.com./'])?.id).toBe(
+        DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED
+      )
+    })
+
+    test('a suspicious hosting top frame written with a trailing dot still poisons the frame context', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const aave = controller.dapps.find((d) => d.name === 'AAVE')!
+      expect(aave.blacklisted).toBe('VERIFIED')
+
+      const aaveSession = new Session({
+        tabId: 90,
+        windowId: 1,
+        url: aave.url,
+        frameId: 3,
+        topFrameUrl: 'https://sites.google.com./view/fake-aave'
+      })
+      controller.dappSessions[aaveSession.sessionId] = aaveSession
+
+      const banner = controller.getDappVerificationBanner([aave.url], {
+        sessionId: aaveSession.sessionId
+      })
+      expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+    })
+
+    test('getOrCreateDappSession reuses the session of the dotted-free url', async () => {
+      const { controller } = await prepareTest()
+
+      const session = await controller.getOrCreateDappSession({
+        tabId: 91,
+        windowId: 1,
+        url: 'https://app.aave.com',
+        frameId: 0,
+        topFrameUrl: 'https://app.aave.com'
+      })
+      const dottedSession = await controller.getOrCreateDappSession({
+        tabId: 91,
+        windowId: 1,
+        url: 'https://app.aave.com./',
+        frameId: 0,
+        topFrameUrl: 'https://app.aave.com./'
+      })
+
+      expect(dottedSession).toBe(session)
+      expect(dottedSession.id).toBe('app.aave.com')
+    })
+
+    test('a session created from a dotted url keeps the origin the browser reported', async () => {
+      const { controller } = await prepareTest()
+
+      const session = await controller.getOrCreateDappSession({
+        tabId: 92,
+        windowId: 1,
+        url: 'https://app.aave.com./',
+        frameId: 0,
+        topFrameUrl: 'https://app.aave.com./'
+      })
+
+      // The identity is canonical, while the origin stays byte-identical to the page's own
+      // `location.origin` - platform messengers compare against it before delivering data.
+      expect(session.id).toBe('app.aave.com')
+      expect(session.origin).toBe('https://app.aave.com.')
+    })
+
+    test('canonicalizes stored dApp ids on load, dropping a trailing-dot duplicate', async () => {
+      const canonicalDapp = makeDapp({
+        id: 'my-dapp.vercel.app',
+        name: 'Canonical',
+        url: 'https://my-dapp.vercel.app',
+        blacklisted: 'SUSPICIOUS_HOSTING'
+      })
+      const dottedDuplicate = makeDapp({
+        id: 'my-dapp.vercel.app.',
+        name: 'Trailing dot duplicate',
+        url: 'https://my-dapp.vercel.app./',
+        blacklisted: 'VERIFIED',
+        isConnected: true,
+        connectedSources: ['injected']
+      })
+      const dottedOnly = makeDapp({
+        id: 'other-dapp.vercel.app.',
+        name: 'Trailing dot only',
+        url: 'https://other-dapp.vercel.app./',
+        blacklisted: 'VERIFIED'
+      })
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [dottedDuplicate, canonicalDapp, dottedOnly])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      // The canonical record wins over the duplicate, together with its reviewed permissions.
+      expect(controller.getDapp('my-dapp.vercel.app')!.name).toBe('Canonical')
+      expect(controller.getDapp('my-dapp.vercel.app')!.isConnected).toBe(false)
+      expect(controller.getDapp('my-dapp.vercel.app.')).toBeUndefined()
+
+      // A record that only exists in dotted form is renamed, so it stays reachable.
+      expect(controller.getDapp('other-dapp.vercel.app')!.name).toBe('Trailing dot only')
+      expect(controller.getDapp('other-dapp.vercel.app.')).toBeUndefined()
     })
   })
 
@@ -1885,5 +2085,134 @@ describe('DappsController', () => {
       // overrides it. This documents the current behavior; see note in the answer.
       expect(stored.chainId).toBe(1)
     })
+  })
+
+  describe('trending tokens', () => {
+    const seedStorage = async (storageCtrl: IStorageController) => {
+      await storageCtrl.set('dappsV2', predefinedDapps)
+      await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+    }
+
+    test('fetches, normalizes and filters invalid entries on load', async () => {
+      const { controller } = await prepareTest(seedStorage)
+      await controller.updateTrendingTokens()
+
+      // The third fixture entry has no price and must be dropped.
+      expect(controller.trendingTokens).toHaveLength(2)
+
+      const btc = controller.trendingTokens.find((tt) => tt.symbol === 'BTC')!
+      expect(btc.id).toBe('bitcoin')
+      expect(btc.priceUSD).toBe(65000.5)
+      expect(btc.priceChange24hUSD).toBe(1.23)
+      expect(btc.marketCapRank).toBe(1)
+      expect(btc.icon).toBe('https://example.com/btc-large.png') // prefers `large`
+      expect(btc.marketCapUSD).toBe(1200000000)
+      expect(btc.totalVolumeUSD).toBe(45000000)
+      expect(btc.fullyDilutedValuationUSD).toBe(1300000000)
+      expect(btc.totalSupply).toBe(21000000)
+      expect(btc.description).toBe('The first cryptocurrency.')
+      expect(btc.address).toBe('0xbtc')
+      expect(btc.platformId).toBe('ethereum')
+      expect(btc.decimals).toBe(8)
+      expect(btc.website).toBe('https://bitcoin.org')
+      // Exchange ids come pre-deduped from the server and pass through as-is.
+      expect(btc.exchangeIds).toEqual(['binance', 'coinbase'])
+
+      const eth = controller.trendingTokens.find((tt) => tt.symbol === 'ETH')!
+      expect(eth.priceChange24hUSD).toBe(-2.5)
+      expect(eth.description).toBeNull() // description was null
+      expect(eth.address).toBeNull() // no contract/platform provided
+      expect(eth.exchangeIds).toEqual([])
+    })
+
+    test('persists fetched trending tokens to storage', async () => {
+      const { controller, mainCtrl } = await prepareTest(seedStorage)
+      await controller.updateTrendingTokens()
+
+      const stored = await mainCtrl.storage.get('trending', { updatedAt: 0, tokens: [] })
+      expect(stored.tokens).toHaveLength(2)
+      expect(typeof stored.updatedAt).toBe('number')
+      expect(stored.updatedAt).toBeGreaterThan(0)
+    })
+
+    test('restores trending tokens from storage on init', async () => {
+      const seeded = {
+        id: 'solana',
+        name: 'Solana',
+        symbol: 'SOL',
+        icon: 'https://example.com/sol.png',
+        priceUSD: 150,
+        priceChange24hUSD: 5,
+        marketCapRank: 5,
+        description: 'A fast L1.',
+        address: null,
+        platformId: null,
+        decimals: null,
+        marketCapUSD: 70000000,
+        totalVolumeUSD: 3000000,
+        fullyDilutedValuationUSD: null,
+        totalSupply: null,
+        website: null,
+        exchangeIds: []
+      }
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await seedStorage(storageCtrl)
+        // A fresh updatedAt keeps the skip-if-fresh guard from refetching over the seed.
+        await storageCtrl.set('trending', { updatedAt: Date.now(), tokens: [seeded] })
+      })
+
+      expect(controller.trendingTokens).toEqual([seeded])
+    })
+
+    test('keeps trending empty and throws when the fetch fails', async () => {
+      const { restore } = suppressConsole()
+      const { controller } = await prepareTest(seedStorage, async (url: string, ...args: any) => {
+        if (url === 'https://api.llama.fi/protocols')
+          return { ok: true, status: 200, json: async () => mockDapps }
+        if (url === 'https://api.llama.fi/v2/chains')
+          return { ok: true, status: 200, json: async () => mockChains }
+        if (url === TRENDING_TOKENS_URL) return { ok: false, status: 500, json: async () => ({}) }
+        return fetch(url, ...args)
+      })
+
+      // Throws so the ContinuousUpdatesController scheduler can back off its retry cadence.
+      await expect(controller.updateTrendingTokens()).rejects.toThrow()
+      expect(controller.trendingTokens).toEqual([])
+      restore()
+    })
+
+    // Integration test - the trending endpoint is NOT mocked here (unlike in the tests above), so
+    // a change in the response structure that the normalizer and the UI can't handle fails here
+    // instead of silently reaching users as an empty or broken trending list.
+    test('normalizes the response of the real trending tokens endpoint', async () => {
+      const { controller } = await prepareTest(seedStorage, async (url: string, ...args: any) => {
+        if (url === 'https://api.llama.fi/protocols')
+          return { ok: true, status: 200, json: async () => mockDapps }
+        if (url === 'https://api.llama.fi/v2/chains')
+          return { ok: true, status: 200, json: async () => mockChains }
+        return fetch(url, ...args)
+      })
+
+      await controller.updateTrendingTokens()
+
+      expect(controller.trendingTokens.length).toBeGreaterThan(0)
+
+      controller.trendingTokens.forEach((token) => {
+        expect(token.id.length).toBeGreaterThan(0)
+        expect(token.name.length).toBeGreaterThan(0)
+        expect(token.symbol.length).toBeGreaterThan(0)
+        expect(Number.isFinite(token.priceUSD)).toBe(true)
+      })
+
+      // The market data and the icon the trending list and the token-details screen render must
+      // arrive for the first (most trending) token at the very least.
+      const [topToken] = controller.trendingTokens
+      expect(topToken!.icon.startsWith('http')).toBe(true)
+      expect(topToken!.priceUSD).toBeGreaterThan(0)
+      expect(topToken!.priceChange24hUSD).not.toBeNull()
+      expect(topToken!.marketCapUSD).not.toBeNull()
+      expect(topToken!.totalVolumeUSD).not.toBeNull()
+      expect(topToken!.marketCapRank).not.toBeNull()
+    }, 40000)
   })
 })
