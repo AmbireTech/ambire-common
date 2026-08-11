@@ -1442,13 +1442,6 @@ export class SignAccountOpController
     const warnings: Warning[] = []
 
     const state = this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr)
-
-    const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
-      state,
-      this.accountOp.chainId,
-      this.traceCallDiscoveryStatus
-    )
-
     const unknownTokenWarnings = getUnknownTokenWarning(state, this.accountOp.chainId)
 
     if (this.selectedOption) {
@@ -1464,7 +1457,6 @@ export class SignAccountOpController
         warnings.push(feeTokenPriceUnavailableWarning)
     }
 
-    if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
     if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
 
     const accountState =
@@ -2239,7 +2231,6 @@ export class SignAccountOpController
         return
 
       this.setDiscoveryStatus(TraceCallDiscoveryStatus.SlowPendingResponse)
-      this.calculateWarnings()
     }, 2000)
 
     this.traceCallTimeoutId = timeoutId
@@ -2284,7 +2275,6 @@ export class SignAccountOpController
       })
     }
 
-    this.calculateWarnings()
     this.traceCallTimeoutId = null
     clearTimeout(timeoutId)
   }
@@ -3987,6 +3977,11 @@ export class SignAccountOpController
 
   setDiscoveryStatus(status: TraceCallDiscoveryStatus) {
     this.traceCallDiscoveryStatus = status
+
+    // emit an update on done/failed to sync&show the final banners
+    if (status === TraceCallDiscoveryStatus.Done || status === TraceCallDiscoveryStatus.Failed) {
+      this.emitUpdate()
+    }
   }
 
   /**
@@ -4050,6 +4045,7 @@ export class SignAccountOpController
       banners.push({
         id: 'blacklisted-addresses-error-banner',
         type: 'error',
+        title: 'Potentially harmful transaction',
         text: getScamDetectedText(blacklistedItems)
       })
     } else {
@@ -4061,6 +4057,7 @@ export class SignAccountOpController
         banners.push({
           id: 'blacklisted-addresses-warning-banner',
           type: 'warning',
+          title: 'Safety check unavailable',
           text: "We couldn't check the addresses or tokens in this transaction for malicious activity. Proceed with caution."
         })
       }
@@ -4069,11 +4066,27 @@ export class SignAccountOpController
     const dappVerificationBanner = this.#getDappVerificationBanner()
     if (dappVerificationBanner) banners.push(dappVerificationBanner)
 
+    const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
+      this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr),
+      this.accountOp.chainId,
+      this.traceCallDiscoveryStatus
+    )
+    if (significantBalanceDecreaseWarning) {
+      banners.push({
+        id: significantBalanceDecreaseWarning.id,
+        type: 'warning',
+        title: significantBalanceDecreaseWarning.title,
+        text: significantBalanceDecreaseWarning.text || significantBalanceDecreaseWarning.title,
+        secondaryText: significantBalanceDecreaseWarning.secondaryText
+      })
+    }
+
     const safeDelegateCallWarning = getSafeDelegateCallWarning(this.accountOp)
     if (safeDelegateCallWarning) {
       banners.push({
         id: safeDelegateCallWarning.id,
         type: 'warning',
+        title: safeDelegateCallWarning.title,
         text: safeDelegateCallWarning.text || safeDelegateCallWarning.title
       })
     }

@@ -116,7 +116,9 @@ export interface HasUnverifiedDappsRes {
 export type DappVerificationBanner = {
   id: string
   type: 'error' | 'warning'
+  title?: string
   text: string
+  secondaryText?: string
 }
 
 export const DAPP_VERIFICATION_BANNER_IDS = {

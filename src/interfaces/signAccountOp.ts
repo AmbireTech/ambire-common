@@ -55,6 +55,7 @@ type Warning = {
   id: string
   title: string
   text?: string
+  secondaryText?: string
   promptBefore?: ('sign' | 'one-click-sign')[]
   type?: Type
 }
@@ -71,7 +72,9 @@ type SignAccountOpError = {
 type SignAccountOpBanner = {
   id: string
   type: 'error' | 'warning'
+  title?: string
   text: string
+  secondaryText?: string
 }
 
 type HardwareWalletSigningRequest = {

@@ -323,6 +323,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
           type: 'warning',
+          title: 'Safety check in progress',
           text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests: AAVE"
         })
       } finally {
@@ -349,6 +350,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
           type: 'warning',
+          title: 'Safety check in progress',
           text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests: AAVE"
         })
 
@@ -357,6 +359,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
           type: 'warning',
+          title: "App couldn't be verified",
           text: "We couldn't verify the app. Make sure you trust it before signing requests: AAVE"
         })
       } finally {
@@ -379,6 +382,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
           type: 'warning',
+          title: "App couldn't be verified",
           text: "We couldn't verify the app. Make sure you trust it before signing requests: AAVE"
         })
       } finally {
@@ -401,6 +405,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
           type: 'error',
+          title: 'Potentially harmful app',
           text: "This app didn't pass our safety check. Proceed at your own risk: AAVE"
         })
       } finally {
@@ -430,6 +435,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([verifiedCustomDapp.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
           type: 'warning',
+          title: "App not in Ambire's catalog",
           text: 'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: Custom Dapp'
         })
       } finally {
