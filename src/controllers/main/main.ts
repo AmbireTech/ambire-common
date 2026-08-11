@@ -705,8 +705,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.keystore.onUpdate(() => {
       if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
-        void this.ui.syncViewRoutes()
-
+        // Don't call syncViewRoutes here, because the status is set after
+        // operations different than unlock too (change password, export key etc.)
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.storage.associateAccountKeysWithLegacySavedSeedMigration(
           () =>
