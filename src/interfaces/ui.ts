@@ -6,11 +6,27 @@ export type IUiController = ControllerInterface<
   InstanceType<typeof import('../controllers/ui//ui').UiController>
 >
 
+/** The view type of the window that exists solely to display the current user request. */
+export const REQUEST_VIEW_TYPE = 'request-window'
+
+/** Options forwarded to the UI's router when a controller navigates a view. */
+export type NavigateOptions = {
+  replace?: boolean
+  state?: { [key: string]: any }
+}
+
 export type View = {
   id: string
-  type: 'request-window' | 'tab' | 'popup' | 'mobile'
+  type: typeof REQUEST_VIEW_TYPE | 'tab' | 'popup' | 'mobile'
+  /** Where the view reports it actually is. Only the UI writes this. */
   currentRoute?: string
   previousRoute?: string
+  /**
+   * Where a controller last asked the view to go, while that is still unconfirmed. Cleared as
+   * soon as the view reports a route, so a route the UI refused (a redirect guard, for example)
+   * can be requested again instead of being deduped away.
+   */
+  pendingRoute?: string
   isReady?: boolean
   searchParams?: { [key: string]: string }
 }
@@ -48,8 +64,14 @@ export type UiManager = {
       }
     ) => void
     sendUiMessage: (params: {}) => void
-    sendNavigateMessage: (viewId: string, route: string, params: { [key: string]: any }) => void
+    sendNavigateMessage: (viewId: string, route: string, options?: NavigateOptions) => void
   }
+  /**
+   * Tells where a view should be, based on the state of the controllers its screens depend on.
+   * Awaits the initial load of those controllers first, so a `null` answer means the view has
+   * nowhere to go, never that the wallet is not ready yet.
+   */
+  resolveViewRoute: (view: View) => Promise<string | null>
 }
 
 export type WindowId = number
