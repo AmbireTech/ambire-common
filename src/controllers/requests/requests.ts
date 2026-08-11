@@ -613,21 +613,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   // When the wallet runs in Chrome side-panel mode, action requests are rendered
-  // inside the panel itself instead of a separate request window. Prefer the
-  // persisted mode flag (survives brief view/port races) and fall back to an
-  // already-open side-panel view.
+  // inside the panel itself instead of a separate request window — but only while
+  // the side panel is actually open. If the user closed it (or never opened it),
+  // fall back to a request window, same as popup mode. This covers dapp requests
+  // and dashboard banner "Open" actions from a fullscreen tab.
   get #isSidePanelOpen() {
     return this.#ui.views.some((view) => isSidePanelView(view))
   }
 
   async #shouldHandleRequestsInSidePanel() {
-    if (this.#isSidePanelOpen) return true
-
-    try {
-      return !!(await this.#storage.get('isSidePanelModeEnabled', false))
-    } catch {
-      return false
-    }
+    return this.#isSidePanelOpen
   }
 
   // Drop a request-window chrome popup without dismissing the active request —
