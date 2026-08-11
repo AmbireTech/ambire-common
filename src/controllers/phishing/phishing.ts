@@ -13,7 +13,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
-import { getDappIdFromUrl } from '../../libs/dapps/helpers'
+import { getDappIdFromUrl, getNormalizedHostnameFromUrl } from '../../libs/dapps/helpers'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -36,6 +36,9 @@ const PHISHING_ACTIVE_VIEW_TYPES = new Set(['request-window', 'popup', 'tab'])
  *
  * 1. Intrinsic status — the dApp's own domain, resolved by getDomainBlacklistedStatus().
  *    Priority: BLACKLISTED (phishing DB) > SUSPICIOUS_HOSTING (this list) > VERIFIED.
+ *    Both lookups are string comparisons, so they run on the canonical hostname produced by
+ *    getNormalizedHostnameFromUrl()/getDappIdFromUrl() — never on a raw URL hostname, which keeps
+ *    the trailing dot of a fully-qualified host and would miss every entry in both lists.
  *
  * 2. Frame context — if a dApp is loaded as an iframe inside a tab whose top-level document is
  *    on a SUSPICIOUS_HOSTING or BLACKLISTED domain, #getFrameContextStatus() returns
@@ -154,12 +157,12 @@ export const SUSPICIOUS_HOSTING_DOMAINS = [
 ]
 
 function isSuspiciousHostingDomain(url: string): boolean {
-  try {
-    const { hostname } = new URL(url)
-    return SUSPICIOUS_HOSTING_DOMAINS.some((d) => hostname === d || hostname.endsWith(`.${d}`))
-  } catch {
-    return false
-  }
+  // The canonical hostname, so a fully-qualified host ("my-dapp.vercel.app.") is matched against
+  // the list just like the form the user believes they are on.
+  const hostname = getNormalizedHostnameFromUrl(url)
+  if (hostname === null) return false
+
+  return SUSPICIOUS_HOSTING_DOMAINS.some((d) => hostname === d || hostname.endsWith(`.${d}`))
 }
 
 export class PhishingController extends EventEmitter implements IPhishingController {

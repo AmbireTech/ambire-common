@@ -521,12 +521,23 @@ export const erc721CollectionToLearnedAssetKeys = (collection: [string, bigint[]
  */
 export const learnedErc721sToHints = (keys: string[]): ERC721s => {
   const hints: ERC721s = {}
+  // Split once and collect the enumerable collections up front. Checking for an
+  // enumerable key while building the hints would mean scanning every key for
+  // every key, and an account with many collections brings thousands of them.
+  const parsedKeys: [string, string | undefined][] = []
+  const enumerableCollections = new Set<string>()
 
   keys.forEach((key) => {
     const [collectionAddress, tokenId] = key.split(':')
 
     if (!collectionAddress) return
 
+    parsedKeys.push([collectionAddress, tokenId])
+
+    if (tokenId === 'enumerable') enumerableCollections.add(collectionAddress)
+  })
+
+  parsedKeys.forEach(([collectionAddress, tokenId]) => {
     if (tokenId === 'enumerable') {
       hints[collectionAddress] = []
 
@@ -535,7 +546,7 @@ export const learnedErc721sToHints = (keys: string[]): ERC721s => {
     // The key already exists as an enumerable hint. Example:
     // collectionA:enumerable exists and collectionB:id is attempted to be added
     // (it shouldn't be)
-    if (keys.includes(`${collectionAddress}:enumerable`)) {
+    if (enumerableCollections.has(collectionAddress)) {
       return
     }
 

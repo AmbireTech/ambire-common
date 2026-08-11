@@ -45,8 +45,10 @@ import {
   getDappIdFromUrl,
   getDappNameFromId,
   getDomainFromUrl,
+  getNormalizedHostnameFromUrl,
   modifyDappPropsIfNeeded,
   normalizeDappConnection,
+  normalizeHostname,
   normalizeTrendingTokens,
   sortDapps,
   unifyDefiLlamaDappUrl
@@ -284,7 +286,18 @@ export class DappsController extends EventEmitter implements IDappsController {
     ])
     // Normalize on read so a drifted record (e.g. isConnected: true but connectedSources: [])
     // can't show a dapp as connected in the UI while permission checks force a reconnect.
-    this.#dapps = new Map(storedDapps.map((d) => [d.id, normalizeDappConnection(d)]))
+    // Ids are canonicalized as well: a record stored before trailing-dot normalization
+    // ("my-dapp.vercel.app.") is unreachable by any lookup, so it would linger as an orphan
+    // entry in the UI while its permissions can never be resolved again.
+    this.#dapps = new Map()
+    storedDapps.forEach((dapp) => {
+      const id = normalizeHostname(dapp.id)
+      // The canonical record wins over its trailing-dot duplicate - it is the one every lookup
+      // resolves to, and its permissions are the ones the user reviewed for it.
+      if (id !== dapp.id && this.#dapps.has(id)) return
+
+      this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
+    })
     this.#recentDapps = storedRecentDapps
     this.#trendingTokens = storedTrending.tokens
     this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
@@ -676,6 +689,31 @@ export class DappsController extends EventEmitter implements IDappsController {
       delete this.dappSessions[session.sessionId]
       this.emitUpdate()
     }
+  }
+
+  /**
+   * Removes a WalletConnect session terminated by the dApp and, once none of its WC sessions
+   * remain, revokes the `'wc'` connection so the next pairing asks for approval again.
+   */
+  disconnectWcSessionByTopic = (wcTopic: string) => {
+    const session = this.getDappSessionByWcTopic(wcTopic)
+    if (!session) return
+
+    const dappId = session.id
+    delete this.dappSessions[session.sessionId]
+    this.emitUpdate()
+
+    const hasOtherWcSession = Object.values(this.dappSessions).some(
+      (s) => s.id === dappId && !!s.wcTopic
+    )
+    if (hasOtherWcSession) return
+
+    const dapp = this.#dapps.get(dappId)
+    if (!dapp?.connectedSources?.includes('wc')) return
+
+    this.updateDapp(dappId, {
+      connectedSources: dapp.connectedSources.filter((source) => source !== 'wc')
+    })
   }
 
   broadcastDappSessionEvent = async (
@@ -1340,7 +1378,10 @@ export class DappsController extends EventEmitter implements IDappsController {
             : this.initialLoadPromise
               ? 'LOADING'
               : (contextStatus ?? intrinsic),
-        name: dapp?.name || new URL(url).hostname
+        // The canonical hostname, so the banner names the site the user believes they are on
+        // instead of the fully-qualified spelling a phishing page may navigate to. Falls back to
+        // the raw url for inputs the URL parser rejects, which must not throw here.
+        name: dapp?.name || getNormalizedHostnameFromUrl(url) || url
       }
     })
 

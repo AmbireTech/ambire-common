@@ -440,7 +440,8 @@ export class SignAccountOpController
     this.#featureFlags = featureFlags
     this.#signAccountOpPreference = signAccountOpPreference
     this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
-    this.selectedFeeSpeed = this.#signAccountOpPreference.feeSpeedPreference
+    this.selectedFeeSpeed =
+      this.#signAccountOpPreference.feeSpeedPreference[network.chainId.toString()] || FeeSpeed.Fast
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
@@ -1808,8 +1809,13 @@ export class SignAccountOpController
 
       if (speed && this.isInitialized && !isSpeedUpTransaction) {
         this.selectedFeeSpeed = speed
+        // Only an explicitly picked speed becomes the default for the network.
+        // Speeds set while switching the fee token are a fallback, not a choice
         if (shouldPersistSpeed) {
-          void this.#signAccountOpPreference.setFeeSpeedPreference(speed)
+          void this.#signAccountOpPreference.setFeeSpeedPreference({
+            ...this.#signAccountOpPreference.feeSpeedPreference,
+            [this.accountOp.chainId.toString()]: speed
+          })
         }
       }
 
@@ -2354,8 +2360,12 @@ export class SignAccountOpController
     const speeds = this.feeSpeeds[identifier]
     if (!speeds) return
 
-    const preferredSpeed = this.#signAccountOpPreference.feeSpeedPreference
-    if (speeds.find(({ type, disabled }) => type === preferredSpeed && !disabled)) {
+    const preferredSpeed =
+      this.#signAccountOpPreference.feeSpeedPreference[this.accountOp.chainId.toString()]
+    if (
+      preferredSpeed &&
+      speeds.find(({ type, disabled }) => type === preferredSpeed && !disabled)
+    ) {
       this.selectedFeeSpeed = preferredSpeed
       return
     }
@@ -3793,6 +3803,8 @@ export class SignAccountOpController
     this.gasFeeChangedConfirmationRequired = false
     this.previousFee = null
 
+    this.#beginPinSessions()
+
     this.signAndBroadcastPromise = (async () => {
       this.signPromise = this.sign().finally(() => {
         this.signPromise = undefined
@@ -3826,6 +3838,7 @@ export class SignAccountOpController
       }
     })().finally(() => {
       this.signAndBroadcastPromise = undefined
+      this.#endPinSessions()
     })
 
     await this.signAndBroadcastPromise
@@ -3843,6 +3856,19 @@ export class SignAccountOpController
 
       this.#externalSignerControllers[keyType]?.signingCleanup?.()
     })
+  }
+
+  /**
+   * One account op can take several signatures from the same key, and a device that
+   * unlocks with a PIN asks for it before each. Marking where the signing starts and
+   * ends lets it keep the PIN for that long. Only the boundaries reach it, never the PIN.
+   */
+  #beginPinSessions() {
+    Object.values(this.#externalSignerControllers).forEach((c) => c?.beginPinSession?.())
+  }
+
+  #endPinSessions() {
+    Object.values(this.#externalSignerControllers).forEach((c) => c?.endPinSession?.())
   }
 
   get isSignInProgress() {
