@@ -181,7 +181,10 @@ export class ContinuousUpdatesController extends EventEmitter {
     // submits the POI proofs for notes it has pending during a sync, so a wallet that never
     // syncs after sending leaves those notes without an innocence proof - and unspendable.
     this.#main.railgun.onUpdate(() => {
-      if (this.#main.railgun.isInitialized) {
+      // Gated on a completed scan, not merely on an initialized plugin: opening the Privacy screen
+      // derives the identity (RailgunController.initIdentity), and starting a scan off the back of
+      // that would turn a screen visit into the minutes-long first walk nobody asked for.
+      if (this.#main.railgun.isInitialized && this.#main.railgun.hasSyncedAnyChain) {
         this.#railgunBalancesInterval.start({ runImmediately: true })
       } else {
         this.#railgunBalancesInterval.stop()

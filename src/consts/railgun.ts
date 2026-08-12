@@ -39,3 +39,24 @@ export const RAILGUN_DERIVATION_PATH_PREFIXES = ["m/44'/1984'/", "m/420'/1984'/"
  * funds look gone.
  */
 export const RAILGUN_KEY_INDEX = 0
+
+/**
+ * The upper bound stated to the user before an initial sync, and the timeout the controller gives it
+ * - deliberately the same number, so the promise and the behaviour cannot disagree.
+ *
+ * One figure for every chain rather than a table per chain, because the variance between runs is
+ * larger than the difference between the cases. Measured 2026-08-11 against a mainnet pool of ~254k
+ * commitments / ~126k POI operations, with the phases read off the SDK's own log timestamps:
+ *
+ * - First initialization of a chain: 671s on Ethereum, 14s on Sepolia. Of the Ethereum figure, 33%
+ *   is downloading commitments, 34% building the POI/TXID tree, 11% trial-decrypting for the
+ *   identity, the rest tree inserts and nullifiers.
+ * - First initialization for a *further* identity on the same chain: 336s. The POI/TXID half is
+ *   reused, but the SDK still re-downloads and re-processes every commitment - so it is half the
+ *   work, not a tenth, and observed runs have gone well past that when the indexer is slow.
+ * - A sync for an identity that is already initialized: 6s. Only the tail since the last one.
+ *
+ * The pool grows - roughly 22%/year at the observed rate - so this figure has to grow with it. When
+ * it does, the timeout follows automatically.
+ */
+export const RAILGUN_INITIAL_SYNC_MAX_MINUTES = 20

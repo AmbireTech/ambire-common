@@ -5,7 +5,12 @@ export type IRailgunController = ControllerInterface<
   InstanceType<typeof import('../controllers/railgun/railgun').RailgunController>
 >
 
-export type RailgunSyncStatus = 'idle' | 'initializing' | 'syncing' | 'ready'
+/**
+ * 'queued' exists because scans cannot overlap: the WASM module is single-threaded and every plugin
+ * method takes `&mut self`, so a run over several chains is strictly sequential. Saying so is better
+ * than showing two spinners of which only one is moving.
+ */
+export type RailgunSyncStatus = 'idle' | 'initializing' | 'queued' | 'syncing' | 'ready'
 
 /**
  * Why Railgun can't be used right now, so the UI can explain it instead of just disabling
@@ -65,6 +70,13 @@ export type RailgunChainState = {
   // hardcoding a possibly-stale address.
   wrappedBaseTokenAddress: Hex | null
   syncStatus: RailgunSyncStatus
+  /**
+   * Whether the current identity's own entry is on the device, i.e. whether its notes have been
+   * decrypted here before. This is what decides whether a run is the one-time initialization or a
+   * seconds-long catch-up - reading it off `lastSyncedAt` instead is what previously applied the
+   * short timeout to a first run and put the chain in a permanent retry loop.
+   */
+  hasIdentityData: boolean
   // Lets the UI tell "never synced" (show placeholders) apart from "syncing again" (keep what
   // is on screen), so a refresh doesn't swap content in and out.
   lastSyncedAt: number | null
@@ -76,22 +88,6 @@ export type RailgunChainState = {
    * on Ethereum measured ~11 minutes - long enough that a bare spinner reads as broken.
    */
   syncStartedAt: number | null
-  /**
-   * The chain's head as observed when the most recent sync attempt started, successful or not,
-   * together with `syncedThroughBlock` the two answer "how stale is this balance" in blocks.
-   *
-   * Read here rather than taken from the SDK: its own cursor lives inside the persisted plugin
-   * blob under an undocumented, hex-encoded key, so depending on it would break on a version bump.
-   * One `eth_blockNumber` per chain per sync is cheaper than that coupling.
-   */
-  networkHead: number | null
-  /**
-   * The head the last *successful* sync started from, i.e. the block the shielded balances are
-   * known to be current as of. Deliberately conservative: the SDK re-reads the head as it works,
-   * so it typically ends up slightly further along - claiming less than was actually synced is the
-   * right direction for a freshness claim.
-   */
-  syncedThroughBlock: number | null
   balances: RailgunShieldedBalance[]
   /**
    * Why this chain is unusable right now, or null when it is fine. Per-chain rather than one
