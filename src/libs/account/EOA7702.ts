@@ -21,13 +21,6 @@ import { isTransferredTokenFeeOption } from './feeOptions'
 // this class describes an EOA that CAN transition to 7702
 // even if it is YET to transition to 7702
 export class EOA7702 extends BaseAccount {
-  // when doing the 7702 activator, we should add the additional gas required
-  // for the authorization list:
-  // PER_EMPTY_ACCOUNT_COST: 25000
-  // access list storage key: 1900
-  // access list address: 2400
-  ACTIVATOR_GAS_USED = 29300n
-
   /**
    * Introduce a public variable we can use to make a simple check on the FE
    * whether this account type is 7702.
