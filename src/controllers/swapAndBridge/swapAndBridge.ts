@@ -524,14 +524,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     })
 
     this.#ui.uiEvent.on('removeView', (view: View) => {
-      // A panel outlives the routes rendered in it, so its session must be unloaded on close for
-      // the form to start fresh next time. The popup keeps its form on purpose (see unloadScreen).
-      if (isSidePanelView(view) && this.sessionIds.includes(view.type))
-        this.unloadScreen(view.type, true)
-
       if (!isSwapAndBridge(view.currentRoute)) return
       this.#isOnSwapAndBridgeRoute = false
       this.updateQuoteInterval.stop()
+
+      // A closing panel destroys its screens without unmounting them, so the session has to be
+      // unloaded here for the form to start fresh next time.
+      if (isSidePanelView(view)) this.unloadScreen(view.type, true)
     })
   }
 
