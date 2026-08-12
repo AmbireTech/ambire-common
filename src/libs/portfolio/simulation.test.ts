@@ -160,7 +160,7 @@ describe('Portfolio simulation', () => {
       fetchPinned: false,
       simulation: {
         accountOps: [accountOp],
-        baseAccount: getBaseAccount(account, accountState, ethereum, true),
+        baseAccount: getBaseAccount(account, accountState, ethereum, true, true),
         state: accountState
       }
     })
