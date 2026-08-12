@@ -943,17 +943,21 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         ledger: this.#externalSignerControllers.ledger?.deviceId || '',
         trezor: this.#externalSignerControllers.trezor?.deviceId || '',
         lattice: this.#externalSignerControllers?.lattice?.deviceId || '',
-        qr: this.#externalSignerControllers.qr?.deviceId || ''
+        qr: this.#externalSignerControllers.qr?.deviceId || '',
+        nfc: this.#externalSignerControllers.nfc?.deviceId || ''
       }
 
       const deviceModels: { [key in ExternalKey['type']]: string } = {
         ledger: this.#externalSignerControllers.ledger?.deviceModel || '',
         trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
         lattice: this.#externalSignerControllers.lattice?.deviceModel || '',
-        qr: this.#externalSignerControllers.qr?.deviceModel || ''
+        qr: this.#externalSignerControllers.qr?.deviceModel || '',
+        nfc: this.#externalSignerControllers.nfc?.deviceModel || ''
       }
 
       const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || ''
+
+      const nfcWalletType = this.#externalSignerControllers.nfc?.nfcWalletType
 
       const hdPathTemplate = this.hdPathTemplate as HD_PATH_TEMPLATE_TYPE
 
@@ -978,6 +982,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
               ...(keyType === 'qr'
                 ? {
                     masterFingerprint
+                  }
+                : {}),
+              ...(keyType === 'nfc'
+                ? {
+                    nfcWalletType
                   }
                 : {}),
               index,

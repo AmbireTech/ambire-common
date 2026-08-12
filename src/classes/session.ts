@@ -116,6 +116,13 @@ export class Session {
 
   constructor({ tabId, windowId, url, wcTopic, frameId, topFrameUrl }: SessionInitProps = {}) {
     if (url) {
+      // SECURITY: `origin` must stay exactly what the browser/WebView reports, trailing dot and
+      // all - it is later compared byte-for-byte against the page's own read-only `location.origin`
+      // before a response or broadcast is delivered to it (see the mobile WebView's origin gate).
+      // A live, unmodified page cannot be "canonicalized" - only our copy of its origin could be -
+      // so normalizing it here would make that comparison fail for a legitimate page and silently
+      // drop data meant for it. `id` (below) is the canonicalized identity that every phishing and
+      // permission check resolves against; do not canonicalize `origin` to "fix" that too.
       this.origin = new URL(url).origin
     } else {
       this.origin = 'internal'

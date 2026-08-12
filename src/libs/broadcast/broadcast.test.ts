@@ -6,6 +6,8 @@ import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS, buildRawTransaction } from './broadcast'
 
+jest.mock('../../utils/wait', () => jest.fn(async () => undefined))
+
 const safeAddr = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
 const signerAddr = '0xe699999999999999999999999999999999996133'
 
@@ -27,6 +29,13 @@ const account = {
   }
 } as Account
 
+const eoaAccount = {
+  ...account,
+  addr: signerAddr,
+  associatedKeys: [signerAddr],
+  safeCreation: undefined
+} as Account
+
 const accountState = {
   isDeployed: true,
   nonce: 0n
@@ -37,11 +46,15 @@ const network = {
   feeOptions: { is1559: true }
 } as Network
 
-function getAccountOp(simulatedGasLimit: bigint, isCustomGasLimit = false): AccountOp {
+function getAccountOp(
+  simulatedGasLimit: bigint,
+  isCustomGasLimit = false,
+  chainId = network.chainId
+): AccountOp {
   return {
     id: 'safe-op',
     accountAddr: safeAddr,
-    chainId: 6342n,
+    chainId,
     signingKeyAddr: signerAddr,
     signingKeyType: 'internal',
     nonce: 0n,
@@ -76,21 +89,33 @@ function getProvider(estimatedGas: string) {
   } as unknown as RPCProvider
 }
 
+function getEoaBatchOp() {
+  const op = getAccountOp(50000n)
+  return {
+    ...op,
+    accountAddr: signerAddr,
+    calls: [...op.calls, { to: safeAddr, value: 2n, data: '0x' }]
+  }
+}
+
 describe('broadcast', () => {
-  test('uses the final RPC estimate for Safe broadcasts when it is higher than simulated gas', async () => {
+  test.each([
+    { chainId: 6342n, expectedGasLimit: 110000n },
+    { chainId: 4663n, expectedGasLimit: 120000n }
+  ])('adds the expected gas overhead on chain $chainId', async ({ chainId, expectedGasLimit }) => {
     const provider = getProvider('0x186a0')
 
     const rawTxn = await buildRawTransaction(
       account,
-      getAccountOp(50000n),
+      getAccountOp(50000n, false, chainId),
       accountState,
       provider,
-      network,
+      { ...network, chainId },
       7,
       BROADCAST_OPTIONS.byOtherEOA
     )
 
-    expect(rawTxn.gasLimit).toBe(110000n)
+    expect(rawTxn.gasLimit).toBe(expectedGasLimit)
     expect(provider.send).toHaveBeenCalledWith(
       'eth_estimateGas',
       expect.arrayContaining([
@@ -101,6 +126,70 @@ describe('broadcast', () => {
         })
       ])
     )
+  })
+
+  test('retries a failed estimate for a multi-call EOA broadcast', async () => {
+    const provider = getProvider('0x186a0')
+    const estimationError = new Error('estimate failed')
+    jest.mocked(provider.send).mockRejectedValueOnce(estimationError)
+    const op = getEoaBatchOp()
+
+    const rawTxn = await buildRawTransaction(
+      eoaAccount,
+      op,
+      accountState,
+      provider,
+      network,
+      7,
+      BROADCAST_OPTIONS.bySelf,
+      op.calls[0]
+    )
+
+    expect(rawTxn.gasLimit).toBe(110000n)
+    expect(provider.send).toHaveBeenCalledTimes(2)
+  })
+
+  test('stops retrying a failed estimate for a multi-call EOA broadcast at the threshold', async () => {
+    const provider = getProvider('0x186a0')
+    jest.mocked(provider.send).mockRejectedValue(new Error('estimate failed'))
+    const op = getEoaBatchOp()
+
+    await expect(
+      buildRawTransaction(
+        eoaAccount,
+        op,
+        accountState,
+        provider,
+        network,
+        7,
+        BROADCAST_OPTIONS.bySelf,
+        op.calls[0]
+      )
+    ).rejects.toThrow('Failed estimating gas for broadcast')
+
+    expect(provider.send).toHaveBeenCalledTimes(11)
+  })
+
+  test('returns an estimate error immediately for a broadcast that is not a multi-call EOA', async () => {
+    const provider = getProvider('0x186a0')
+    const estimationError = new Error('estimate failed')
+    jest.mocked(provider.send).mockRejectedValue(estimationError)
+    const op = getAccountOp(50000n)
+    op.calls.push({ to: safeAddr, value: 2n, data: '0x' })
+
+    await expect(
+      buildRawTransaction(
+        account,
+        op,
+        accountState,
+        provider,
+        network,
+        7,
+        BROADCAST_OPTIONS.byOtherEOA
+      )
+    ).rejects.toBe(estimationError)
+
+    expect(provider.send).toHaveBeenCalledTimes(1)
   })
 
   test('keeps the simulated gas for Safe broadcasts when it is higher than the final RPC estimate', async () => {
