@@ -695,6 +695,26 @@ describe('accounts sync between two devices', () => {
     expect(signer.key.addr).toBe(keyPublicAddress)
   })
 
+  test('links the synced keys to a seed the device already has', async () => {
+    await importingKeystore.addSecret('password', importingPass, '', true)
+    // The very same recovery phrase was already imported on this device, under an id of
+    // its own, so the synced keys have to be linked to that one
+    await importingKeystore.addTempSeed({
+      seed: process.env.SEED,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    await importingKeystore.persistTempSeed()
+    const alreadyStoredSeedId = importingKeystore.seeds[0]!.id
+
+    await importingKeystore.importFromSync(await buildPayload([keyPublicAddress]), exportingPass)
+
+    expect(importingKeystore.seeds).toHaveLength(1)
+    expect(importingKeystore.seeds[0]!.id).toBe(alreadyStoredSeedId)
+    expect(importingKeystore.keys.find((k) => k.type === 'internal')?.meta.fromSeedId).toBe(
+      alreadyStoredSeedId
+    )
+  })
+
   test('syncing the same accounts twice does not duplicate keys or seeds', async () => {
     await importingKeystore.addSecret('password', importingPass, '', true)
     const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])

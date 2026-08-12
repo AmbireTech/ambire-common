@@ -38,6 +38,7 @@ import {
   InternalKey,
   Key,
   KeyPreferences,
+  KeystoreEncryptedPayload,
   KeystoreSeed,
   KeystoreSignerInterface,
   KeystoreSignerType,
@@ -201,6 +202,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   lock() {
     this.#mainKey = null
     if (this.#tempSeed) this.deleteTempSeed(false)
+    // Anything still queued holds decrypted keys and seed phrases (a sync that happened
+    // before the device password was set), so it must not outlive a lock
+    this.#seedsToAddOnKeystoreReady = []
+    this.#internalKeysToAddOnKeystoreReady = []
     this.emitUpdate()
   }
 
@@ -1232,6 +1237,25 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     const keys = this.#keystoreKeys.filter((key) => keyAddrs.includes(key.addr))
     const seedIds = new Set(keys.map((key) => key.meta?.fromSeedId).filter(Boolean))
     const seeds = this.#keystoreSeeds.filter((seed) => seedIds.has(seed.id))
+
+    // Keys and seeds are migrated to GCM on unlock, so this should never happen. If it
+    // does, fail here rather than on the other device, which would reject the payload
+    const isEncryptedWithGCM = (payload: KeystoreEncryptedPayload) =>
+      typeof payload !== 'string' && payload?.cipherType === CIPHER
+    const hasNotMigratedPayload =
+      keys.some((key) => key.type === 'internal' && !isEncryptedWithGCM(key.privKey)) ||
+      seeds.some(
+        (seed) =>
+          !isEncryptedWithGCM(seed.seed) ||
+          (!!seed.seedPassphrase && !isEncryptedWithGCM(seed.seedPassphrase))
+      )
+
+    if (hasNotMigratedPayload)
+      throw new EmittableError({
+        level: 'major',
+        message: 'Something went wrong when preparing your accounts for syncing. Please try again.',
+        error: new Error('keystore: keys or seeds not migrated to GCM yet')
+      })
 
     return { secret, keys, seeds }
   }
