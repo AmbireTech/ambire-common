@@ -786,7 +786,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
             if (this.#isSetPageRequestCancelled(requestId, page)) return
 
             const message =
-              'We could not finish searching for smart accounts. You can still import the accounts already shown.'
+              'We could not finish loading smart accounts. You can still import the accounts already shown.'
             this.smartAccountsLoading = false
             this.emitError({
               error: error instanceof Error ? error : new Error(message),

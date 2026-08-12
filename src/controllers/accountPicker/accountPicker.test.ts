@@ -233,7 +233,7 @@ describe('AccountPicker', () => {
     expect(controller.pageError).toBeNull()
     expect(controller.emittedErrors.at(-1)?.level).toBe('minor')
     expect(controller.emittedErrors.at(-1)?.message).toBe(
-      'We could not finish searching for smart accounts. You can still import the accounts already shown.'
+      'We could not finish loading smart accounts. You can still import the accounts already shown.'
     )
 
     controller.selectAccount(controller.accountsOnPage[0]!.account)
