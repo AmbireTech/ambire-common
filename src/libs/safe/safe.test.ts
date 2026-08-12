@@ -2,7 +2,13 @@ import { getAddress } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
-import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
+import {
+  buildSafeMessageOrigin,
+  getPreferredSafeRequest,
+  getSafeSimulationNonceKey,
+  getSimulatedSafeRequest,
+  parseSafeMessageOrigin
+} from './helpers'
 import {
   getSafeAccountByOwner,
   getSequentialSafeAccountOps,
@@ -23,17 +29,28 @@ const makeCallsRequest = ({
   nonce,
   accountAddr = SAFE_ADDRESS,
   chainId = 1n,
-  isSafeRejected = false
+  isSafeRejected = false,
+  signed,
+  submissionDate
 }: {
   id: string
   nonce: bigint | null
   accountAddr?: string
   chainId?: bigint
   isSafeRejected?: boolean
+  signed?: string[]
+  submissionDate?: string
 }): CallsUserRequest => {
   const signAccountOp = {
     account: { addr: accountAddr },
-    accountOp: { id, accountAddr, chainId, nonce }
+    accountOp: {
+      id,
+      accountAddr,
+      chainId,
+      nonce,
+      signed,
+      safeTx: submissionDate ? { submissionDate } : undefined
+    }
   } as unknown as CallsUserRequest['signAccountOp']
 
   return {
@@ -109,7 +126,7 @@ describe('getSequentialSafeAccountOps', () => {
     ).toEqual([131n, 132n, 133n, 134n])
   })
 
-  test('removes both account ops with a duplicate nonce and every account op after them', () => {
+  test('keeps one of the account ops with a duplicate nonce and every account op after them', () => {
     const currentRequest = makeCallsRequest({ id: 'nonce-132', nonce: 132n })
     const requests = [
       makeCallsRequest({ id: 'nonce-134', nonce: 134n }),
@@ -118,12 +135,12 @@ describe('getSequentialSafeAccountOps', () => {
       makeCallsRequest({ id: 'second-nonce-133', nonce: 133n })
     ]
 
-    expect(
-      getSequentialSafeAccountOps(requests, currentRequest, 132n).map(({ nonce }) => nonce)
-    ).toEqual([132n])
+    expect(getSequentialSafeAccountOps(requests, currentRequest, 132n).map(({ id }) => id)).toEqual(
+      ['nonce-132', 'first-nonce-133', 'nonce-134']
+    )
   })
 
-  test('returns no account ops when the first nonce is duplicated', () => {
+  test('keeps one of the account ops when the first nonce is duplicated', () => {
     const currentRequest = makeCallsRequest({ id: 'first-nonce-132', nonce: 132n })
     const requests = [
       makeCallsRequest({ id: 'nonce-135', nonce: 135n }),
@@ -133,7 +150,70 @@ describe('getSequentialSafeAccountOps', () => {
       makeCallsRequest({ id: 'second-nonce-132', nonce: 132n })
     ]
 
-    expect(getSequentialSafeAccountOps(requests, currentRequest, 132n)).toEqual([])
+    expect(getSequentialSafeAccountOps(requests, currentRequest, 132n).map(({ id }) => id)).toEqual(
+      ['first-nonce-132', 'nonce-133', 'nonce-134', 'nonce-135']
+    )
+  })
+
+  test('keeps the account op with the most signatures of a duplicated nonce', () => {
+    const currentRequest = makeCallsRequest({ id: 'one-signature', nonce: 132n, signed: [OWNER] })
+    const requests = [
+      currentRequest,
+      makeCallsRequest({
+        id: 'two-signatures',
+        nonce: 132n,
+        signed: [OWNER, OTHER_OWNER]
+      })
+    ]
+
+    expect(getSequentialSafeAccountOps(requests, currentRequest, 132n).map(({ id }) => id)).toEqual(
+      ['two-signatures']
+    )
+  })
+
+  test('keeps the picked account op of a duplicated nonce', () => {
+    const currentRequest = makeCallsRequest({ id: 'one-signature', nonce: 132n, signed: [OWNER] })
+    const requests = [
+      currentRequest,
+      makeCallsRequest({ id: 'two-signatures', nonce: 132n, signed: [OWNER, OTHER_OWNER] })
+    ]
+    const selection = {
+      [getSafeSimulationNonceKey(SAFE_ADDRESS, 1n, 132n)]: 'one-signature'
+    }
+
+    expect(
+      getSequentialSafeAccountOps(requests, currentRequest, 132n, selection).map(({ id }) => id)
+    ).toEqual(['one-signature'])
+  })
+
+  test('falls back to the preferred account op when the picked one is gone', () => {
+    const currentRequest = makeCallsRequest({ id: 'one-signature', nonce: 132n, signed: [OWNER] })
+    const requests = [
+      currentRequest,
+      makeCallsRequest({ id: 'two-signatures', nonce: 132n, signed: [OWNER, OTHER_OWNER] })
+    ]
+    const selection = {
+      [getSafeSimulationNonceKey(SAFE_ADDRESS, 1n, 132n)]: 'executed-transaction'
+    }
+
+    expect(
+      getSequentialSafeAccountOps(requests, currentRequest, 132n, selection).map(({ id }) => id)
+    ).toEqual(['two-signatures'])
+  })
+
+  test('ignores a pick made for another nonce', () => {
+    const currentRequest = makeCallsRequest({ id: 'one-signature', nonce: 132n, signed: [OWNER] })
+    const requests = [
+      currentRequest,
+      makeCallsRequest({ id: 'two-signatures', nonce: 132n, signed: [OWNER, OTHER_OWNER] })
+    ]
+    const selection = {
+      [getSafeSimulationNonceKey(SAFE_ADDRESS, 1n, 133n)]: 'one-signature'
+    }
+
+    expect(
+      getSequentialSafeAccountOps(requests, currentRequest, 132n, selection).map(({ id }) => id)
+    ).toEqual(['two-signatures'])
   })
 
   test('returns no account ops when there is no transaction for the account state nonce', () => {
@@ -211,6 +291,88 @@ describe('getSequentialSafeAccountOps', () => {
     expect(
       getSequentialSafeAccountOps(requests, currentRequest, 1n).map(({ nonce }) => nonce)
     ).toEqual([1n])
+  })
+})
+
+describe('getPreferredSafeRequest', () => {
+  test('prefers the transaction with the most signatures', () => {
+    const requests = [
+      makeCallsRequest({ id: 'one-signature', nonce: 1n, signed: [OWNER] }),
+      makeCallsRequest({ id: 'two-signatures', nonce: 1n, signed: [OWNER, OTHER_OWNER] }),
+      makeCallsRequest({ id: 'no-signatures', nonce: 1n })
+    ]
+
+    expect(getPreferredSafeRequest(requests)?.id).toBe('two-signatures')
+  })
+
+  test('prefers the newest transaction when the signature counts are equal', () => {
+    const requests = [
+      makeCallsRequest({
+        id: 'older',
+        nonce: 1n,
+        signed: [OWNER],
+        submissionDate: '2025-01-01T00:00:00Z'
+      }),
+      makeCallsRequest({
+        id: 'newer',
+        nonce: 1n,
+        signed: [OWNER],
+        submissionDate: '2025-02-01T00:00:00Z'
+      })
+    ]
+
+    expect(getPreferredSafeRequest(requests)?.id).toBe('newer')
+  })
+
+  test('prefers a transaction with a submission date over one without', () => {
+    const requests = [
+      makeCallsRequest({ id: 'without-date', nonce: 1n }),
+      makeCallsRequest({ id: 'with-date', nonce: 1n, submissionDate: '2025-01-01T00:00:00Z' })
+    ]
+
+    expect(getPreferredSafeRequest(requests)?.id).toBe('with-date')
+  })
+
+  test('picks the same transaction on every run when nothing separates them', () => {
+    const requests = [
+      makeCallsRequest({ id: 'b', nonce: 1n }),
+      makeCallsRequest({ id: 'a', nonce: 1n })
+    ]
+
+    expect(getPreferredSafeRequest(requests)?.id).toBe('a')
+    expect(getPreferredSafeRequest([...requests].reverse())?.id).toBe('a')
+  })
+
+  test('returns nothing for an empty list', () => {
+    expect(getPreferredSafeRequest([])).toBeUndefined()
+  })
+})
+
+describe('getSimulatedSafeRequest', () => {
+  test('returns the only transaction of a nonce without looking at the picks', () => {
+    const request = makeCallsRequest({ id: 'only', nonce: 1n })
+    const selection = { [getSafeSimulationNonceKey(SAFE_ADDRESS, 1n, 1n)]: 'another' }
+
+    expect(getSimulatedSafeRequest([request], selection)?.id).toBe('only')
+  })
+
+  test('returns the picked transaction', () => {
+    const requests = [
+      makeCallsRequest({ id: 'picked', nonce: 1n }),
+      makeCallsRequest({ id: 'other', nonce: 1n, signed: [OWNER] })
+    ]
+    const selection = { [getSafeSimulationNonceKey(SAFE_ADDRESS, 1n, 1n)]: 'picked' }
+
+    expect(getSimulatedSafeRequest(requests, selection)?.id).toBe('picked')
+  })
+
+  test('returns the preferred transaction while there is no pick', () => {
+    const requests = [
+      makeCallsRequest({ id: 'no-signatures', nonce: 1n }),
+      makeCallsRequest({ id: 'one-signature', nonce: 1n, signed: [OWNER] })
+    ]
+
+    expect(getSimulatedSafeRequest(requests)?.id).toBe('one-signature')
   })
 })
 
