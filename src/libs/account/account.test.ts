@@ -5,11 +5,19 @@ import { describe, expect, test } from '@jest/globals'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { Account, AccountCreation, AccountOnPage, ImportStatus } from '../../interfaces/account'
+import {
+  Account,
+  AccountCreation,
+  AccountOnchainState,
+  AccountOnPage,
+  AccountStates,
+  ImportStatus
+} from '../../interfaces/account'
 import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
 import { getBytecode } from '../proxyDeploy/bytecode'
 import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 import {
+  canOrHasBecomeSmarter,
   getAccountDeployParams,
   getAccountImportStatus,
   getBasicAccount,
@@ -433,5 +441,60 @@ describe('Account', () => {
         keyIteratorType: 'internal'
       })
     ).toBe(ImportStatus.NotImported)
+  })
+
+  test('Should detect an EOA that can become smarter', () => {
+    const internalKey = {
+      addr: basicAccount.addr,
+      type: 'internal',
+      label: 'Account key',
+      dedicatedToOneSA: false,
+      isExternallyStored: false,
+      meta: { createdAt: null }
+    } as Key
+
+    expect(canOrHasBecomeSmarter(basicAccount, {}, [internalKey])).toBe(true)
+  })
+
+  test('Should detect an EOA that has already become smarter', () => {
+    const accountStates = {
+      [basicAccount.addr]: {
+        '1': { isSmarterEoa: true } as AccountOnchainState
+      }
+    } as AccountStates
+
+    expect(canOrHasBecomeSmarter(basicAccount, accountStates, [])).toBe(true)
+  })
+
+  test('Should not classify an unsupported EOA as smarter', () => {
+    const ledgerKey = {
+      addr: basicAccount.addr,
+      type: 'ledger',
+      label: 'Account key',
+      dedicatedToOneSA: false,
+      isExternallyStored: false,
+      meta: {
+        createdAt: null,
+        deviceId: 'device-id',
+        deviceModel: 'device-model',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        index: 0
+      }
+    } as Key
+
+    expect(canOrHasBecomeSmarter(basicAccount, {}, [ledgerKey])).toBe(false)
+  })
+
+  test('Should not classify a V2 smart account as an EIP-7702 account', () => {
+    const smartAccount = {
+      ...basicAccount,
+      creation: {
+        factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+        bytecode: '0x',
+        salt: '0x'
+      }
+    }
+
+    expect(canOrHasBecomeSmarter(smartAccount, {}, [])).toBe(false)
   })
 })

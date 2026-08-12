@@ -449,7 +449,8 @@ export class SignAccountOpController
       account,
       accountState,
       network,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
     this.#network = network
     this.#activity = activity
@@ -565,7 +566,8 @@ export class SignAccountOpController
       this.account,
       accountState,
       this.#network,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
     this.gasPrice?.setBaseAccount(this.baseAccount)
   }
