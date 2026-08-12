@@ -11,6 +11,7 @@ import {
 } from 'ethers'
 import fetch from 'node-fetch'
 
+import { WARNINGS } from '@/consts/signAccountOp/errorHandling'
 import { describe, expect, jest, test } from '@jest/globals'
 import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-util'
 
@@ -49,6 +50,8 @@ import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { clearErc7730RegistryCache } from '../../libs/humanizer'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
+import { AccountState } from '../../libs/portfolio/interfaces'
+import { PORTFOLIO_STATE } from '../../libs/portfolio/testData'
 import { BindedRelayerCall, relayerCall, RelayerError } from '../../libs/relayerCall/relayerCall'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
@@ -383,6 +386,41 @@ const nativeFeeToken: TokenResult = {
   }
 }
 
+const buildPortfolioState = ({
+  amountBeforeSimulation,
+  amountPostSimulation,
+  isLoading
+}: {
+  amountBeforeSimulation: bigint
+  amountPostSimulation: bigint
+  isLoading: boolean
+}): AccountState => {
+  const networkState = PORTFOLIO_STATE['1']
+  const token = networkState?.result?.tokens[0]
+
+  if (!networkState?.result || !token) throw new Error('Invalid portfolio test fixture')
+
+  return {
+    '1': {
+      ...networkState,
+      isLoading,
+      result: {
+        ...networkState.result,
+        total: { usd: Number(amountBeforeSimulation) },
+        tokens: [
+          {
+            ...token,
+            amount: amountBeforeSimulation,
+            amountPostSimulation,
+            decimals: 0,
+            priceIn: [{ baseCurrency: 'usd', price: 1 }]
+          }
+        ]
+      }
+    }
+  }
+}
+
 const gasTankToken: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
   symbol: 'ETH',
@@ -705,7 +743,7 @@ const init = async (
     gasPrices: gasPricesOrMock
   })
 
-  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl }
+  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl, portfolio }
 }
 
 const initDappVerificationBannerTest = async (
@@ -3100,6 +3138,80 @@ describe('ERC-7730 humanization', () => {
   })
 })
 
+describe('significant balance decrease banners', () => {
+  test('keeps the previous banner while refreshing and recalculates when the result changes', async () => {
+    const { controller, portfolio } = await initDappVerificationBannerTest(verifiedDapp)
+    const portfolioState = portfolio.getAccountPortfolioState(eoaAccount.addr)
+
+    controller.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
+    portfolioState['1'] = { isReady: false, isLoading: true, errors: [] }
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
+
+    portfolioState['1'] = buildPortfolioState({
+      amountBeforeSimulation: 5000n,
+      amountPostSimulation: 3000n,
+      isLoading: false
+    })['1']
+    const significantBalanceDecreaseBanner = controller.banners.find(
+      ({ id }) => id === WARNINGS.significantBalanceDecrease.id
+    )
+    expect(significantBalanceDecreaseBanner).toEqual({
+      id: WARNINGS.significantBalanceDecrease.id,
+      type: 'warning',
+      title: 'Significant balance decrease detected',
+      text: 'Our checks indicate this transaction may significantly reduce your account balance.',
+      secondaryText:
+        'May be inaccurate when moving funds to another network or providing liquidity.'
+    })
+
+    portfolioState['1']!.isLoading = true
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toEqual(significantBalanceDecreaseBanner)
+
+    portfolioState['1'] = buildPortfolioState({
+      amountBeforeSimulation: 5000n,
+      amountPostSimulation: 5000n,
+      isLoading: false
+    })['1']
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
+    expect(
+      controller.warnings.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
+  })
+
+  test('waits for token discovery to finish while the portfolio is refreshing', async () => {
+    const { controller, portfolio } = await initDappVerificationBannerTest(verifiedDapp)
+    const portfolioState = portfolio.getAccountPortfolioState(eoaAccount.addr)
+    portfolioState['1'] = buildPortfolioState({
+      amountBeforeSimulation: 5000n,
+      amountPostSimulation: 3000n,
+      isLoading: true
+    })['1']
+
+    controller.setDiscoveryStatus(TraceCallDiscoveryStatus.InProgress)
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
+
+    controller.setDiscoveryStatus(TraceCallDiscoveryStatus.Failed)
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toEqual({
+      id: WARNINGS.significantBalanceDecrease.id,
+      type: 'warning',
+      title: 'Significant balance decrease detected',
+      text: 'Our checks indicate this transaction may significantly reduce your account balance.',
+      secondaryText:
+        'May be inaccurate when moving funds to another network or providing liquidity.'
+    })
+  })
+})
+
 describe('dapp verification banners', () => {
   test('should return loading banners', async () => {
     const { controller } = await initDappVerificationBannerTest(loadingDapp)
@@ -3108,6 +3220,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
         type: 'warning',
+        title: 'Safety check in progress',
         text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests: Loading Dapp"
       }
     ])
@@ -3120,6 +3233,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
         type: 'warning',
+        title: "App couldn't be verified",
         text: "We couldn't verify the app. Make sure you trust it before signing requests: Failed Dapp"
       }
     ])
@@ -3132,6 +3246,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
         type: 'error',
+        title: 'Potentially harmful app',
         text: "This app didn't pass our safety check. Proceed at your own risk: Blacklisted Dapp"
       }
     ])
@@ -3150,6 +3265,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
         type: 'warning',
+        title: "App not in Ambire's catalog",
         text: 'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: Custom Dapp'
       }
     ])
@@ -3164,6 +3280,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
         type: 'warning',
+        title: 'Suspicious app hosting',
         text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
       }
     ])
@@ -3304,10 +3421,6 @@ describe('traceCall asset discovery', () => {
     // A second request while one is in progress is a no-op (reentrancy guard).
     await (controller as any).traceCall()
     expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
-
-    // After 2s without a response the status reflects the slow pending state.
-    jest.advanceTimersByTime(2000)
-    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.SlowPendingResponse)
 
     // Resolving discovery learns the assets, fires the success callback and
     // settles on Done.

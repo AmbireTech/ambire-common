@@ -1380,6 +1380,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
         type: 'error',
+        title: 'Potentially harmful app',
         text: withOptionalDappNames(
           "This app didn't pass our safety check. Proceed at your own risk.",
           blacklistedDappNames
@@ -1395,6 +1396,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
         type: 'warning',
+        title: 'Suspicious app hosting',
         text: withOptionalDappNames(
           'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.',
           '' // We explicitly don't append the dApp name, because here what matters is the suspicious hosting URL, but showing the name could confuse the user, so we simply don't
@@ -1408,6 +1410,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
         type: 'warning',
+        title: 'Safety check in progress',
         text: withOptionalDappNames(
           "We're still verifying the app. Please wait, or make sure you trust it before signing requests.",
           loadingDappNames
@@ -1423,6 +1426,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
         type: 'warning',
+        title: "App couldn't be verified",
         text: withOptionalDappNames(
           "We couldn't verify the app. Make sure you trust it before signing requests.",
           failedToVerifyDappNames
@@ -1438,6 +1442,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
         type: 'warning',
+        title: "App not in Ambire's catalog",
         text: withOptionalDappNames(
           'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests.',
           notInCatalogDappNames
