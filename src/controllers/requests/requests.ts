@@ -588,7 +588,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.visibleUserRequests.filter((r) => r.kind === 'calls')
         )
       ) {
-        await this.#portfolio.overrideSimulationResults(
+        // this should not be awaited as it gets added to
+        // the queue and that could slow things down
+        void this.#portfolio.overrideSimulationResults(
           this.currentUserRequest.signAccountOp.accountOp
         )
       }
