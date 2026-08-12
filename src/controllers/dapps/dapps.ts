@@ -681,6 +681,31 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
   }
 
+  /**
+   * Removes a WalletConnect session terminated by the dApp and, once none of its WC sessions
+   * remain, revokes the `'wc'` connection so the next pairing asks for approval again.
+   */
+  disconnectWcSessionByTopic = (wcTopic: string) => {
+    const session = this.getDappSessionByWcTopic(wcTopic)
+    if (!session) return
+
+    const dappId = session.id
+    delete this.dappSessions[session.sessionId]
+    this.emitUpdate()
+
+    const hasOtherWcSession = Object.values(this.dappSessions).some(
+      (s) => s.id === dappId && !!s.wcTopic
+    )
+    if (hasOtherWcSession) return
+
+    const dapp = this.#dapps.get(dappId)
+    if (!dapp?.connectedSources?.includes('wc')) return
+
+    this.updateDapp(dappId, {
+      connectedSources: dapp.connectedSources.filter((source) => source !== 'wc')
+    })
+  }
+
   broadcastDappSessionEvent = async (
     ev: any,
     data?: any,
