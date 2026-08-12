@@ -11,6 +11,7 @@ import {
 } from 'ethers'
 import fetch from 'node-fetch'
 
+import { WARNINGS } from '@/consts/signAccountOp/errorHandling'
 import { describe, expect, jest, test } from '@jest/globals'
 import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-util'
 
@@ -3144,7 +3145,9 @@ describe('significant balance decrease banners', () => {
 
     controller.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
     portfolioState['1'] = { isReady: false, isLoading: true, errors: [] }
-    expect(controller.banners.find(({ id }) => id === 'significantBalanceDecrease')).toBeUndefined()
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
 
     portfolioState['1'] = buildPortfolioState({
       amountBeforeSimulation: 5000n,
@@ -3152,10 +3155,10 @@ describe('significant balance decrease banners', () => {
       isLoading: false
     })['1']
     const significantBalanceDecreaseBanner = controller.banners.find(
-      ({ id }) => id === 'significantBalanceDecrease'
+      ({ id }) => id === WARNINGS.significantBalanceDecrease.id
     )
     expect(significantBalanceDecreaseBanner).toEqual({
-      id: 'significantBalanceDecrease',
+      id: WARNINGS.significantBalanceDecrease.id,
       type: 'warning',
       title: 'Significant balance decrease detected',
       text: 'Our checks indicate this transaction may significantly reduce your account balance.',
@@ -3164,18 +3167,20 @@ describe('significant balance decrease banners', () => {
     })
 
     portfolioState['1']!.isLoading = true
-    expect(controller.banners.find(({ id }) => id === 'significantBalanceDecrease')).toEqual(
-      significantBalanceDecreaseBanner
-    )
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toEqual(significantBalanceDecreaseBanner)
 
     portfolioState['1'] = buildPortfolioState({
       amountBeforeSimulation: 5000n,
       amountPostSimulation: 5000n,
       isLoading: false
     })['1']
-    expect(controller.banners.find(({ id }) => id === 'significantBalanceDecrease')).toBeUndefined()
     expect(
-      controller.warnings.find(({ id }) => id === 'significantBalanceDecrease')
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
+    expect(
+      controller.warnings.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
     ).toBeUndefined()
   })
 
@@ -3189,11 +3194,15 @@ describe('significant balance decrease banners', () => {
     })['1']
 
     controller.setDiscoveryStatus(TraceCallDiscoveryStatus.InProgress)
-    expect(controller.banners.find(({ id }) => id === 'significantBalanceDecrease')).toBeUndefined()
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
 
     controller.setDiscoveryStatus(TraceCallDiscoveryStatus.Failed)
-    expect(controller.banners.find(({ id }) => id === 'significantBalanceDecrease')).toEqual({
-      id: 'significantBalanceDecrease',
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toEqual({
+      id: WARNINGS.significantBalanceDecrease.id,
       type: 'warning',
       title: 'Significant balance decrease detected',
       text: 'Our checks indicate this transaction may significantly reduce your account balance.',
