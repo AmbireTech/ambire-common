@@ -1664,12 +1664,40 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
+   * Runs an accounts sync step and replies to the UI request that triggered it, so the
+   * UI can await the result instead of watching a transient status.
+   */
+  async #withSyncResponse(
+    callName: 'exportAccountsForSync' | 'importAccountsFromSync',
+    requestId: string | undefined,
+    fn: () => Promise<any>
+  ) {
+    await this.withStatus(callName, async () => {
+      try {
+        const res = await fn()
+
+        if (requestId) this.ui.message.sendUiMessage({ requestId, ok: true, res })
+      } catch (error: any) {
+        // Rethrown, so that `withStatus` emits (and reports) the error as usual
+        if (requestId)
+          this.ui.message.sendUiMessage({
+            requestId,
+            ok: false,
+            error: error?.message || `${callName} failed`
+          })
+
+        throw error
+      }
+    })
+  }
+
+  /**
    * Prepares the selected accounts and the keys controlling them for the other Ambire
-   * product and sends the result to the UI, which displays it as animated QR codes.
+   * product and returns the payload, which the UI displays as animated QR codes.
    * Everything sensitive leaves this device encrypted, see `keystore.exportForSync`.
    */
-  async exportAccountsForSync(addrs: Account['addr'][]) {
-    await this.withStatus('exportAccountsForSync', async () => {
+  async exportAccountsForSync(addrs: Account['addr'][], requestId?: string) {
+    await this.#withSyncResponse('exportAccountsForSync', requestId, async () => {
       const accounts = this.accounts.getAccountsForSync(addrs)
 
       if (!accounts.length)
@@ -1682,14 +1710,12 @@ export class MainController extends EventEmitter implements IMainController {
       const keyAddrs = Array.from(new Set(accounts.flatMap((account) => account.associatedKeys)))
       const { secret, keys, seeds } = await this.keystore.exportForSync(keyAddrs)
 
-      this.ui.message.sendUiMessage({
-        accountsSyncPayload: serializeAccountsSyncPayload({
-          v: ACCOUNTS_SYNC_PAYLOAD_VERSION,
-          secret,
-          accounts,
-          keys,
-          seeds
-        })
+      return serializeAccountsSyncPayload({
+        v: ACCOUNTS_SYNC_PAYLOAD_VERSION,
+        secret,
+        accounts,
+        keys,
+        seeds
       })
     })
   }
@@ -1699,8 +1725,11 @@ export class MainController extends EventEmitter implements IMainController {
    * `payload` is the hex encoded data assembled from the scanned codes and `password`
    * is the device password of the product that exported them.
    */
-  async importAccountsFromSync({ payload, password }: { payload: string; password: string }) {
-    await this.withStatus('importAccountsFromSync', async () => {
+  async importAccountsFromSync(
+    { payload, password }: { payload: string; password: string },
+    requestId?: string
+  ) {
+    await this.#withSyncResponse('importAccountsFromSync', requestId, async () => {
       let parsedPayload: AccountsSyncPayload
       try {
         parsedPayload = parseAccountsSyncPayload(getBytes(payload))
