@@ -1886,6 +1886,84 @@ describe('DappsController', () => {
     })
   })
 
+  describe('disconnectWcSessionByTopic', () => {
+    const wcDapp = (): Dapp =>
+      makeDapp({
+        id: 'aave.com',
+        name: 'Aave',
+        url: 'https://aave.com',
+        isCustom: false,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+
+    const prepareConnectedWcDapp = async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.addDapp(wcDapp(), 'wc')
+
+      return controller
+    }
+
+    test('revokes the wc connection when the dapp terminates its only session', async () => {
+      const controller = await prepareConnectedWcDapp()
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-a'
+      })
+
+      controller.disconnectWcSessionByTopic('topic-a')
+
+      expect(controller.getDappSessionByWcTopic('topic-a')).toBeUndefined()
+      const stored = controller.getDapp('aave.com')!
+      expect(stored.connectedSources).toEqual([])
+      expect(stored.isConnected).toBe(false)
+      // A later pairing must ask the user for approval again instead of auto-connecting.
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(false)
+    })
+
+    test('keeps the wc connection while another session of the same dapp remains', async () => {
+      const controller = await prepareConnectedWcDapp()
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-a'
+      })
+      await controller.getOrCreateDappSession({
+        tabId: 1000002,
+        url: 'https://aave.com',
+        wcTopic: 'topic-b'
+      })
+
+      controller.disconnectWcSessionByTopic('topic-a')
+
+      expect(controller.getDappSessionByWcTopic('topic-b')).toBeDefined()
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc'])
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(true)
+    })
+
+    test('leaves the injected connection intact', async () => {
+      const controller = await prepareConnectedWcDapp()
+      await controller.addDapp(wcDapp(), 'injected')
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-a'
+      })
+
+      controller.disconnectWcSessionByTopic('topic-a')
+
+      const stored = controller.getDapp('aave.com')!
+      expect(stored.connectedSources).toEqual(['injected'])
+      expect(stored.isConnected).toBe(true)
+    })
+
+  })
+
   describe('disconnectAllDapps', () => {
     const connectedNonCustomDapp = (id: string): Dapp =>
       makeDapp({
