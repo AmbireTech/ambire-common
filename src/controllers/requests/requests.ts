@@ -634,12 +634,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       try {
-        await this.#ui.window.remove('popup')
-        this.requestWindow.openWindowPromise = this.#ui.window
+        this.requestWindow.openWindowPromise = this.#ui.requestView
           .open({ customSize, baseWindowId })
           .finally(() => {
             this.requestWindow.openWindowPromise = undefined
           })
+        // Stays null when the request is rendered in the panel instead of a window
         this.requestWindow.windowProps = await this.requestWindow.openWindowPromise
 
         this.emitUpdate()
@@ -665,8 +665,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
 
     try {
-      await this.#ui.window.remove('popup')
-      this.requestWindow.focusWindowPromise = this.#ui.window
+      this.requestWindow.focusWindowPromise = this.#ui.requestView
         .focus(this.requestWindow.windowProps, params)
         .finally(() => {
           this.requestWindow.focusWindowPromise = undefined
@@ -692,10 +691,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   async closeRequestWindow() {
     await this.#awaitPendingPromises()
 
-    if (!this.requestWindow.windowProps) return
+    if (!this.requestWindow.windowProps) {
+      // Rendered inline (in the panel), so closing means dismissing the active request.
+      // Guarded, because clearing the current request calls this method too.
+      if (this.currentUserRequest) await this.#handleRequestWindowClose()
 
-    this.requestWindow.closeWindowPromise = this.#ui.window
-      .remove(this.requestWindow.windowProps.id)
+      return
+    }
+
+    this.requestWindow.closeWindowPromise = this.#ui.requestView
+      .close(this.requestWindow.windowProps.id)
       .finally(() => {
         this.requestWindow.closeWindowPromise = undefined
       })
@@ -707,8 +712,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#handleRequestWindowClose(this.requestWindow.windowProps.id)
   }
 
-  async #handleRequestWindowClose(winId: number) {
+  /** `winId` is omitted when the request was rendered inline and had no window of its own. */
+  async #handleRequestWindowClose(winId?: number) {
+    const isInlineRequestClosed = winId === undefined && !this.requestWindow.windowProps
+
     if (
+      isInlineRequestClosed ||
       winId === this.requestWindow.windowProps?.id ||
       (!this.visibleUserRequests.length &&
         this.currentUserRequest &&
