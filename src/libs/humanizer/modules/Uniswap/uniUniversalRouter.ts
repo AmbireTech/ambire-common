@@ -131,7 +131,7 @@ function parseV4Actions(
       parsed.push([getAction('Take'), getToken(args.currency, args.minAmount)])
     } else if (action === V4_ACTION_CODES.TAKE_PORTION) {
       const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_PORTION, param)
-      if (args.recipient !== accountAddr) {
+      if (!['0x0000000000000000000000000000000000000002', accountAddr].includes(args.recipient)) {
         parsed.push([
           getAction('Send'),
           getLabel(`${(Number(args.bips) / 100).toFixed(0)}%`, true),
