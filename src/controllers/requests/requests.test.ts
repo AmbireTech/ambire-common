@@ -622,6 +622,39 @@ describe('RequestsController ', () => {
     await controller.closeRequestWindow()
     expect(controller.requestWindow.windowProps).toBe(null)
   })
+  test('should not open a request window while the panel is open', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: () => true }
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+
+    expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
+    expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('should reject the active request on close when there is no request window', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: () => true }
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+    await controller.closeRequestWindow()
+
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.userRequests.length).toBe(0)
+  })
+  test('should keep transaction requests queued on close when there is no request window', async () => {
+    const { controller, uiCtrl, getCallsRequest } = await prepareTest()
+    uiCtrl.panel = { isOpen: () => true }
+    const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+
+    await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
+    await controller.closeRequestWindow()
+
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.userRequests.length).toBe(1)
+  })
   test('removeAccountData', async () => {
     const { controller, getCallsRequest } = await prepareTest()
     const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
