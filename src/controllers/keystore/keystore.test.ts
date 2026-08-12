@@ -542,3 +542,167 @@ describe('import/export with pub key test', () => {
     )
   })
 })
+
+describe('accounts sync between two devices', () => {
+  const EXTERNAL_ADDR = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+  const exportingPass = 'exportingDevicePass'
+  const importingPass = 'importingDevicePass'
+
+  let exportingKeystore: IKeystoreController
+  let importingKeystore: IKeystoreController
+  let exportedSeedId: string
+
+  const uiCtrl = new UiController({ uiManager })
+
+  const createKeystore = () =>
+    new KeystoreController(
+      'default',
+      new StorageController(produceMemoryStore()),
+      keystoreSigners,
+      uiCtrl
+    )
+
+  const buildPayload = (keyAddrs: string[]) =>
+    exportingKeystore
+      .exportForSync(keyAddrs)
+      .then((exported) => ({ v: 1 as const, accounts: [], ...exported }))
+
+  beforeEach(async () => {
+    exportingKeystore = createKeystore()
+    await exportingKeystore.addSecret('password', exportingPass, '', false)
+    await exportingKeystore.unlockWithSecret('password', exportingPass)
+
+    await exportingKeystore.addTempSeed({
+      seed: process.env.SEED,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    await exportingKeystore.persistTempSeed()
+    exportedSeedId = exportingKeystore.seeds[0]!.id
+
+    await exportingKeystore.addKeys([
+      {
+        addr: keyPublicAddress,
+        label: 'Key 1',
+        type: 'internal',
+        privateKey: privKey,
+        dedicatedToOneSA: false,
+        meta: { createdAt: new Date().getTime(), fromSeedId: exportedSeedId }
+      }
+    ])
+    await exportingKeystore.addKeysExternallyStored([
+      {
+        addr: EXTERNAL_ADDR,
+        label: 'Ledger Key 1',
+        type: 'ledger',
+        dedicatedToOneSA: false,
+        meta: {
+          deviceId: '1',
+          deviceModel: 'nanoX',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 1,
+          createdAt: new Date().getTime()
+        }
+      }
+    ])
+
+    importingKeystore = createKeystore()
+  })
+
+  test('exports the selected keys, their seed and the password wrapped main key', async () => {
+    const exported = await exportingKeystore.exportForSync([keyPublicAddress])
+
+    expect(exported.secret.id).toBe('password')
+    expect(exported.secret.aesEncrypted.cipherType).toBe('AES-GCM')
+    // The private key must leave the device encrypted, exactly as it is stored
+    expect(exported.keys).toHaveLength(1)
+    expect(exported.keys[0]!.addr).toBe(keyPublicAddress)
+    expect(exported.keys[0]!.privKey).toMatchObject({ cipherType: 'AES-GCM' })
+    expect(JSON.stringify(exported)).not.toContain(privKey)
+    // Only the seed the exported key was derived from
+    expect(exported.seeds.map((s) => s.id)).toEqual([exportedSeedId])
+  })
+
+  test('does not export keys that were not selected', async () => {
+    const exported = await exportingKeystore.exportForSync([EXTERNAL_ADDR])
+
+    expect(exported.keys.map((k) => k.addr)).toEqual([EXTERNAL_ADDR])
+    expect(exported.seeds).toHaveLength(0)
+  })
+
+  describe('Negative cases', () => {
+    suppressConsoleBeforeEach()
+
+    test('refuses to export from a device without a password', async () => {
+      const biometricsOnlyKeystore = createKeystore()
+      await biometricsOnlyKeystore.addSecret('biometrics', 'biometricsSecret', '', true)
+
+      await expect(biometricsOnlyKeystore.exportForSync([keyPublicAddress])).rejects.toThrow(
+        'Set a password for this device before syncing your accounts.'
+      )
+    })
+
+    test('does not import anything when the password of the other device is wrong', async () => {
+      await importingKeystore.addSecret('password', importingPass, '', true)
+      const payload = await buildPayload([keyPublicAddress])
+
+      await expect(importingKeystore.importFromSync(payload, 'wrongPass')).rejects.toThrow(
+        'Incorrect password. Please try again.'
+      )
+      expect(importingKeystore.keys).toHaveLength(0)
+      expect(importingKeystore.seeds).toHaveLength(0)
+    })
+  })
+
+  test('imports keys and seeds into a device that already has a password', async () => {
+    await importingKeystore.addSecret('password', importingPass, '', true)
+    const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
+
+    await importingKeystore.importFromSync(payload, exportingPass)
+
+    expect(importingKeystore.keys).toHaveLength(2)
+    expect(importingKeystore.keys).toContainEqual(
+      expect.objectContaining({ addr: EXTERNAL_ADDR, type: 'ledger', isExternallyStored: true })
+    )
+    // The key is re-encrypted with the importing device's main key, so it can sign
+    const signer = await importingKeystore.getSigner(keyPublicAddress, 'internal')
+    expect(signer.key.addr).toBe(keyPublicAddress)
+
+    // The seed comes along and the key keeps pointing to it
+    expect(importingKeystore.seeds.map((s) => s.id)).toEqual([exportedSeedId])
+    expect(importingKeystore.keys.find((k) => k.type === 'internal')?.meta.fromSeedId).toBe(
+      exportedSeedId
+    )
+    expect((await importingKeystore.getSavedSeed(exportedSeedId)).seed).toBe(process.env.SEED)
+  })
+
+  test('imports before the device password is set (onboarding) and stores everything once it is', async () => {
+    const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
+
+    await importingKeystore.importFromSync(payload, exportingPass)
+
+    // Nothing can be stored yet, as there is no main key to encrypt with
+    expect(importingKeystore.keys).toHaveLength(0)
+    expect(importingKeystore.seeds).toHaveLength(0)
+
+    await importingKeystore.addSecret('password', importingPass, '', true)
+
+    expect(importingKeystore.keys).toHaveLength(2)
+    expect(importingKeystore.seeds.map((s) => s.id)).toEqual([exportedSeedId])
+    expect(importingKeystore.keys.find((k) => k.type === 'internal')?.meta.fromSeedId).toBe(
+      exportedSeedId
+    )
+    const signer = await importingKeystore.getSigner(keyPublicAddress, 'internal')
+    expect(signer.key.addr).toBe(keyPublicAddress)
+  })
+
+  test('syncing the same accounts twice does not duplicate keys or seeds', async () => {
+    await importingKeystore.addSecret('password', importingPass, '', true)
+    const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
+
+    await importingKeystore.importFromSync(payload, exportingPass)
+    await importingKeystore.importFromSync(payload, exportingPass)
+
+    expect(importingKeystore.keys).toHaveLength(2)
+    expect(importingKeystore.seeds).toHaveLength(1)
+  })
+})

@@ -10,6 +10,7 @@ import { computeAddress, concat, getBytes, hexlify, keccak256, Mnemonic, Wallet 
 import {
   CIPHER,
   CIPHER_OLD,
+  decryptMainKeyWithSecret,
   decryptWithKey,
   deriveSecret,
   encryptMainKeyWithSecret,
@@ -31,6 +32,7 @@ import { Account } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
+  AESGCMEncrypted,
   ExternalKey,
   IKeystoreController,
   InternalKey,
@@ -50,6 +52,7 @@ import {
 import { Platform } from '../../interfaces/platform'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
+import { AccountsSyncPayload } from '../../libs/accountsSync/accountsSync'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
@@ -118,6 +121,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   #internalKeysToAddOnKeystoreReady: ReadyToAddKeys['internal'] = []
 
   #externalKeysToAddOnKeystoreReady: ReadyToAddKeys['external'] = []
+
+  #seedsToAddOnKeystoreReady: (KeystoreTempSeed & { id?: StoredKeystoreSeed['id'] })[] = []
 
   keyStoreUid: string | null
 
@@ -214,11 +219,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   set isReadyToStoreKeys(val) {
     this.#isReadyToStoreKeys = val
 
-    if (val && this.#internalKeysToAddOnKeystoreReady.length) {
-      void this.#addKeys(this.#internalKeysToAddOnKeystoreReady)
-    }
-    if (val && this.#externalKeysToAddOnKeystoreReady.length) {
-      void this.#addKeysExternallyStored(this.#externalKeysToAddOnKeystoreReady)
+    const hasQueuedData =
+      !!this.#seedsToAddOnKeystoreReady.length ||
+      !!this.#internalKeysToAddOnKeystoreReady.length ||
+      !!this.#externalKeysToAddOnKeystoreReady.length
+
+    if (val && hasQueuedData) {
+      void this.#addQueuedKeysAndSeeds()
     }
   }
 
@@ -381,26 +388,23 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       throw new Error('keystore: invalid gcm secret cipher type')
     }
 
-    const keyFromSecret = await crypto.subtle.importKey(
-      'raw',
-      // use 256 bits (first 32 bytes)
-      secretKey.slice(0, 32),
-      { name: CIPHER },
-      false,
-      ['encrypt', 'decrypt']
-    )
+    this.#mainKey = await this.#decryptMainKeyWithSecret(secretKey, secretEntry.aesEncrypted)
 
-    let decrypted: ArrayBuffer
+    this.errorMessage = ''
+  }
+
+  /**
+   * Decrypts a main key wrapped with the provided secret, translating a wrong
+   * secret into the user facing "Incorrect password" error. Used both when
+   * unlocking this device and when importing keys synced from another device
+   * (where the main key of the other device gets unwrapped with its password).
+   */
+  async #decryptMainKeyWithSecret(
+    secretKey: Uint8Array<ArrayBuffer>,
+    aesEncrypted: AESGCMEncrypted
+  ): Promise<MainKey> {
     try {
-      decrypted = await crypto.subtle.decrypt(
-        {
-          name: CIPHER,
-          iv: new Uint8Array(getBytes(secretEntry.aesEncrypted.iv)),
-          tagLength: 128
-        },
-        keyFromSecret,
-        new Uint8Array(getBytes(secretEntry.aesEncrypted.ciphertext))
-      )
+      return await decryptMainKeyWithSecret(secretKey, aesEncrypted)
     } catch (error: any) {
       // Either wrong password or corrupted/tampered ciphertext
       if (error?.name === 'OperationError') {
@@ -424,16 +428,6 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
           error instanceof Error ? error : new Error('keystore: unexpected error during GCM unlock')
       })
     }
-
-    this.#mainKey = await crypto.subtle.importKey(
-      'raw',
-      decrypted.slice(0, 32),
-      { name: CIPHER },
-      true,
-      ['encrypt', 'decrypt']
-    )
-
-    this.errorMessage = ''
   }
 
   async #findStoredSeed(seed: string, seedPassphrase?: string | null) {
@@ -722,7 +716,18 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     this.emitUpdate()
   }
 
-  async #addSeed({ seed, seedPassphrase, hdPathTemplate, notBackedUp }: KeystoreTempSeed) {
+  /**
+   * Adds a seed to the keystore and returns the id it is stored with. An `id` can be
+   * passed to preserve the id a seed already had on another device (accounts sync),
+   * so that the synced keys' `meta.fromSeedId` keeps pointing to it.
+   */
+  async #addSeed({
+    seed,
+    seedPassphrase,
+    hdPathTemplate,
+    notBackedUp,
+    id
+  }: KeystoreTempSeed & { id?: StoredKeystoreSeed['id'] }): Promise<StoredKeystoreSeed['id']> {
     await this.initialLoadPromise
 
     if (this.#mainKey === null)
@@ -742,14 +747,15 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     }
 
     const existingEntry = await this.#findStoredSeed(seed, seedPassphrase)
-    if (existingEntry) return
+    if (existingEntry) return existingEntry.id
 
     const entropy = extractEntropyFromSeed(seed)
 
     const label = `Recovery Phrase ${this.#keystoreSeeds.length + 1}`
 
+    const isIdTaken = !!id && this.#keystoreSeeds.some((s) => s.id === id)
     const newEntry: StoredKeystoreSeed = {
-      id: generateUuid(),
+      id: isIdTaken || !id ? generateUuid() : id,
       label,
       seed: await encryptWithKey(this.#mainKey, entropy),
       seedPassphrase: seedPassphrase
@@ -764,10 +770,45 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
     this.emitUpdate()
+
+    return newEntry.id
   }
 
   async addSeed(keystoreSeed: KeystoreTempSeed) {
     await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed), true)
+  }
+
+  /**
+   * Adds the seeds and keys that were queued while the keystore was not ready to store
+   * them yet (e.g. accounts synced from another device during onboarding, where the
+   * device password is set afterwards).
+   *
+   * Everything runs sequentially, because internal and external keys are persisted
+   * under the same storage key and would otherwise overwrite each other.
+   */
+  async #addQueuedKeysAndSeeds() {
+    const seedsToAdd = this.#seedsToAddOnKeystoreReady
+    const internalKeysToAdd = this.#internalKeysToAddOnKeystoreReady
+    const externalKeysToAdd = this.#externalKeysToAddOnKeystoreReady
+    this.#seedsToAddOnKeystoreReady = []
+    this.#internalKeysToAddOnKeystoreReady = []
+    this.#externalKeysToAddOnKeystoreReady = []
+
+    try {
+      // Seeds first, so the keys can keep pointing to the seed they were derived from
+      for (const seed of seedsToAdd) {
+        await this.#addSeed(seed)
+      }
+      await this.#addKeys(internalKeysToAdd)
+      await this.#addKeysExternallyStored(externalKeysToAdd)
+    } catch (error: any) {
+      this.emitError({
+        level: 'major',
+        message:
+          'Something went wrong when saving your keys. Please try again or contact support if the problem persists.',
+        error: error instanceof Error ? error : new Error('keystore: failed to add queued keys')
+      })
+    }
   }
 
   async #updateSeed({
@@ -1159,6 +1200,123 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     }
 
     await this.addKeys([keyToAdd])
+  }
+
+  /**
+   * Collects everything another Ambire product needs in order to take over the given
+   * keys: the keys themselves and the seeds they were derived from (still encrypted
+   * with this device's main key), plus this device's main key wrapped with its password.
+   * Nothing gets decrypted here, so this works even when the keystore is locked.
+   */
+  async exportForSync(
+    keyAddrs: Key['addr'][]
+  ): Promise<Pick<AccountsSyncPayload, 'secret' | 'keys' | 'seeds'>> {
+    await this.initialLoadPromise
+
+    const secret = this.#keystoreSecrets.find((s) => s.id === 'password')
+    if (!secret)
+      throw new EmittableError({
+        level: 'expected',
+        message: 'Set a password for this device before syncing your accounts.',
+        error: new Error('keystore: no password secret to sync with')
+      })
+
+    if (secret.aesEncrypted.cipherType !== CIPHER)
+      throw new EmittableError({
+        level: 'major',
+        message:
+          'Something went wrong when preparing your accounts for syncing. Please unlock the app again or contact support if the problem persists.',
+        error: new Error('keystore: password secret not migrated to GCM yet')
+      })
+
+    const keys = this.#keystoreKeys.filter((key) => keyAddrs.includes(key.addr))
+    const seedIds = new Set(keys.map((key) => key.meta?.fromSeedId).filter(Boolean))
+    const seeds = this.#keystoreSeeds.filter((seed) => seedIds.has(seed.id))
+
+    return { secret, keys, seeds }
+  }
+
+  /**
+   * Takes over the keys and seeds exported by another Ambire product. The password of
+   * that other device unwraps its main key, which is used only to decrypt the synced
+   * data in memory - everything is then re-encrypted with this device's main key.
+   *
+   * Intentionally not wrapped in `withStatus` and lets errors propagate, because the
+   * MainController orchestrates the whole migration (and must not add the accounts if
+   * this fails).
+   */
+  async importFromSync(payload: AccountsSyncPayload, password: string) {
+    await this.initialLoadPromise
+
+    const { secret, keys, seeds } = payload
+    if (secret.aesEncrypted.cipherType !== CIPHER)
+      throw new Error('keystore: synced main key is not encrypted with GCM')
+
+    const secretKey = await deriveSecret(this.#scryptAdapter, password, secret.scryptParams.salt)
+    // The exporting device's main key. Kept in this scope only, never persisted.
+    const exportedMainKey = await this.#decryptMainKeyWithSecret(secretKey, secret.aesEncrypted)
+
+    // Seeds first, so the keys below can be linked to the seed they were derived from
+    const syncedSeedIds: { [exportedSeedId: string]: StoredKeystoreSeed['id'] } = {}
+    for (const seed of seeds) {
+      const entropy = await decryptWithKey(exportedMainKey, seed.seed)
+      const seedPassphrase = seed.seedPassphrase
+        ? new TextDecoder().decode(await decryptWithKey(exportedMainKey, seed.seedPassphrase))
+        : null
+
+      syncedSeedIds[seed.id] = await this.#storeSyncedSeed({
+        id: seed.id,
+        seed: reconstructSeedFromEntropy(entropy, seedPassphrase),
+        seedPassphrase,
+        hdPathTemplate: seed.hdPathTemplate,
+        notBackedUp: seed.notBackedUp
+      })
+    }
+
+    const internalKeys: ReadyToAddKeys['internal'] = []
+    const externalKeys: ReadyToAddKeys['external'] = []
+
+    for (const key of keys) {
+      if (key.type !== 'internal') {
+        externalKeys.push(key)
+        continue
+      }
+
+      const { fromSeedId, ...restMeta } = key.meta
+      // Drop the reference if the seed didn't come along, so it doesn't dangle
+      const syncedFromSeedId = fromSeedId ? syncedSeedIds[fromSeedId] : undefined
+
+      internalKeys.push({
+        addr: key.addr,
+        type: 'internal',
+        label: key.label,
+        dedicatedToOneSA: key.dedicatedToOneSA,
+        privateKey: hexlify(await decryptWithKey(exportedMainKey, key.privKey)),
+        meta: syncedFromSeedId ? { ...restMeta, fromSeedId: syncedFromSeedId } : restMeta
+      })
+    }
+
+    // Both queue themselves until the keystore is ready to store keys, which is what
+    // makes syncing before the device password is set (onboarding) work
+    await this.#addKeys(internalKeys)
+    await this.#addKeysExternallyStored(externalKeys)
+  }
+
+  /**
+   * Stores a synced seed, or queues it if the device password is not set yet
+   * (onboarding). The keystore holds no seeds in that case, so the requested id is
+   * guaranteed to be the one the seed ends up stored with.
+   */
+  async #storeSyncedSeed(
+    seed: KeystoreTempSeed & { id: StoredKeystoreSeed['id'] }
+  ): Promise<StoredKeystoreSeed['id']> {
+    if (!this.isReadyToStoreKeys || !this.#mainKey) {
+      this.#seedsToAddOnKeystoreReady.push(seed)
+
+      return seed.id
+    }
+
+    return this.#addSeed(seed)
   }
 
   async getSigner(keyAddress: Key['addr'], keyType: Key['type']): Promise<KeystoreSignerInterface> {

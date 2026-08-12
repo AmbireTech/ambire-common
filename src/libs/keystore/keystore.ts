@@ -101,6 +101,35 @@ export const encryptMainKeyWithSecret = async (
 }
 
 /**
+ * The counterpart of `encryptMainKeyWithSecret` - decrypts a main key that was wrapped with a secret.
+ * Throws an `OperationError` if the secret is wrong (or the ciphertext was tampered with).
+ */
+export const decryptMainKeyWithSecret = async (
+  secretKey: Uint8Array<ArrayBuffer>,
+  aesEncrypted: AESGCMEncrypted
+): Promise<MainKey> => {
+  const importedSecretKey = await crypto.subtle.importKey(
+    'raw',
+    // use 256 bits (first 32 bytes)
+    secretKey.slice(0, 32),
+    { name: CIPHER },
+    false,
+    ['encrypt', 'decrypt']
+  )
+
+  const decrypted = await crypto.subtle.decrypt(
+    { name: CIPHER, iv: new Uint8Array(getBytes(aesEncrypted.iv)), tagLength: 128 },
+    importedSecretKey,
+    new Uint8Array(getBytes(aesEncrypted.ciphertext))
+  )
+
+  return crypto.subtle.importKey('raw', decrypted.slice(0, 32), { name: CIPHER }, true, [
+    'encrypt',
+    'decrypt'
+  ])
+}
+
+/**
  * As the type is string | AESGCMEncrypted, we need to check if it's a GCM payload or a legacy string payload
  */
 export const tryParseGcmPayload = (payload: KeystoreEncryptedPayload): AESGCMEncrypted | null => {
