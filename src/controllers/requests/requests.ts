@@ -1028,7 +1028,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       ...waitingUserRequestsToReject
     ].filter((r) => r.kind === 'calls') as CallsUserRequest[]
 
-    await Promise.all(
+    // do not await overrideSimulationResults as the Reject handle becomes slow
+    void Promise.all(
       callsUserRequestsToReject.map((r) =>
         this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
       )
