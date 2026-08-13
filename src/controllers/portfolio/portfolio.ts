@@ -645,6 +645,9 @@ export class PortfolioController
    *
    * If you instead need to remove a specific accountOp from the simulation results, use `discardSimulation`
    * (e.g., after an account op is broadcasted and confirmed)
+   *
+   * If possible, this method shouldn't be awaited as we run the
+   * risks of slowing the extension down unintentionally
    */
   async overrideSimulationResults(accountOp: AccountOp) {
     const { accountAddr, chainId } = accountOp
@@ -1756,7 +1759,8 @@ export class PortfolioController
       acc,
       networkState,
       network,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
     return baseAcc.getNonceId()
   }
@@ -1914,7 +1918,8 @@ export class PortfolioController
                 selectedAccount,
                 state,
                 network,
-                this.#featureFlags.isFeatureEnabled('erc4337')
+                this.#featureFlags.isFeatureEnabled('erc4337'),
+                this.#featureFlags.isFeatureEnabled('eip7702')
               )
             : null
 
