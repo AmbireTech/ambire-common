@@ -1,13 +1,5 @@
 import assert from 'assert'
-import {
-  AbiCoder,
-  concat,
-  getBytes,
-  Interface,
-  JsonRpcProvider,
-  Provider,
-  toQuantity
-} from 'ethers'
+import { AbiCoder, concat, Interface, JsonRpcProvider, Provider, toQuantity } from 'ethers'
 import { decodeFunctionResult, encodeFunctionData } from 'viem'
 
 import DeploylessCompiled from '../../../contracts/compiled/Deployless.json'
@@ -25,6 +17,7 @@ const codeOfContractAbi = ['function codeOf(bytes deployCode) external view']
 // any made up addr would work
 const arbitraryAddr = '0x0000000000000000000000000000000000696969'
 const abiCoder = new AbiCoder()
+const HEX_PREFIX = '0x'
 
 export enum DeploylessMode {
   Detect,
@@ -146,7 +139,8 @@ export class Deployless {
   }
 
   private static checkDataSize(data: string): string {
-    if (getBytes(data).length >= 24576)
+    // Done this way instead of getBytes for performance
+    if ((data.length - HEX_PREFIX.length) / 2 >= 24576)
       throw new Error(
         'Transaction cannot be sent because the 24kb call data size limit has been reached. Please use StateOverride mode instead.'
       )
