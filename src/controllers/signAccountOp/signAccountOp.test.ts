@@ -584,7 +584,7 @@ const init = async (
     ui: uiCtrl
   })
   if (options?.dapps) {
-    await phishing.initialLoadPromise
+    await phishing.init()
     await phishing.updatePhishingInterval.promise
     phishing.updatePhishingInterval.stop()
     continuouslyUpdatePhishingSpy?.mockRestore()
@@ -703,7 +703,7 @@ const init = async (
       ui: uiCtrl,
       selectedAccount: selectedAccountCtrl
     })
-    await realDappsController.initialLoadPromise
+    await realDappsController.init()
 
     // Register any dApp sessions so the real #getFrameContextStatus can read the top frame
     // reported for them (the iframe-in-suspicious-tab scenario).

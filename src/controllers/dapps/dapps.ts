@@ -97,6 +97,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   isReadyToDisplayDapps: boolean = true
 
+  #isReady = false
+
   fetchAndUpdatePromise?: Promise<void>
 
   #shouldRetryFetchAndUpdate: boolean = false
@@ -192,14 +194,23 @@ export class DappsController extends EventEmitter implements IDappsController {
         this.#retryFetchAndUpdateInterval.start()
       }
     })
+  }
 
+  /**
+   * Not called immediately on construction because the data in storage is huge and overwhelming
+   * for the mobile app.
+   */
+  async init() {
+    if (this.initialLoadPromise) return this.initialLoadPromise
+    if (this.#isReady) return
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
+    return this.initialLoadPromise
   }
 
   get isReady() {
-    return !!this.dapps
+    return this.#isReady
   }
 
   get dapps(): Dapp[] {
@@ -290,6 +301,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#recentDapps = storedRecentDapps
     this.#trendingTokens = storedTrending.tokens
     this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
+    this.#isReady = true
+    this.emitUpdate()
 
     void this.fetchAndUpdateDapps()
   }
