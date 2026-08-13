@@ -4,7 +4,6 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
 import { STK_WALLET } from '../../consts/addresses'
-import { AAVE_STATIC_CALL_TIMEOUT_MS } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { getRpcProvider } from '../../services/provider'
 import { NetworkState, PortfolioNetworkResult, TokenResult } from '../portfolio/interfaces'
@@ -24,6 +23,7 @@ import {
   getUniV3Positions
 } from './providers'
 import { AssetType, PositionsByProvider } from './types'
+import { AAVE_STATIC_CALL_TIMEOUT_MS } from './providers/aaveV3'
 
 describe('DeFi positions providers', () => {
   // If this test ever fails because the accounts remove their positions, you can:
