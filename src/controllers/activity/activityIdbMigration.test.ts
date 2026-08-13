@@ -418,7 +418,7 @@ describe('ActivityController — method interactions', () => {
     //
     // This asserts the OUTCOME, not a mechanism, so it needs both defects present to
     // fail: the per-group loaded flag (which stops the repeat lazy-load) and
-    // #mergeOpsIntoCache (which keeps memory-only ops) each independently prevent it.
+    // the persistence-layer merge (which keeps memory-only ops) each independently prevent it.
     // Verified by restoring both the old length heuristic and replace-not-merge.
     await new ActivityIdbStorage(db).putOpsForAccountAndChain(ACC, CHAIN_1, [
       makeOp('existing', 1000) as any
@@ -509,11 +509,11 @@ describe('ActivityController — method interactions', () => {
   })
 
   test('init survives the post-load history checks throwing', async () => {
-    // #recordHistoryLivesInIdb was awaited unguarded at the end of #load, so a storage
+    // recording the migration flag was awaited unguarded at the end of #load, so a storage
     // failure there rejected #initialLoadPromise for the whole session — exactly the
     // failure mode guarded against 20 lines earlier in the same method.
     //
-    // IDB must have ops for this to bite: #recordHistoryLivesInIdb returns early on an
+    // IDB must have ops for this to bite: the flag writer returns early on an
     // empty store, so without seeding, the flag is never read and the test would pass
     // whether or not the guard exists.
     await new ActivityIdbStorage(db).putOpsForAccountAndChain(ACC, CHAIN_1, [
@@ -567,7 +567,7 @@ describe('ActivityController — merge-not-replace on lazy-load', () => {
   const awaitLoadOnly = (controller: ActivityController) => controller.findMessage(ACC, () => true)
 
   test('an op that failed to persist still survives a later lazy-load', async () => {
-    // Isolates #mergeOpsIntoCache. If persisting fails the op exists ONLY in memory,
+    // Isolates the persistence-layer merge. If persisting fails the op exists ONLY in memory,
     // so a lazy-load that replaced the group with IDB content would erase it from the
     // UI on top of having failed to save it.
     await new ActivityIdbStorage(db).putOpsForAccountAndChain(ACC, CHAIN_1, [
@@ -648,6 +648,24 @@ describe('ActivityController — total transaction count', () => {
     expect(controller.getTotalOpsCountForAccount(ACC)).toBe(OVER_WINDOW)
   })
 
+  test('the op counts are warmed after the first update, not before it', async () => {
+    // finalizeInit() exists so counting (one backend query per account) cannot delay the
+    // first paint of the history. Folding it back into init() would reintroduce that.
+    const ops = Array.from({ length: OVER_WINDOW }, (_, i) => makeOp(`op-${i}`, 1000 + i) as any)
+    await new ActivityIdbStorage(db).putOpsForAccountAndChain(ACC, CHAIN_1, ops)
+
+    const controller = makeController(storage, db)
+    const countsAtFirstUpdate: number[] = []
+    controller.onUpdate(() => countsAtFirstUpdate.push(controller.getTotalOpsCountForAccount(ACC)))
+
+    await awaitLoadOnly(controller)
+
+    // The first update fires with the count still unwarmed (the in-memory lower bound)
+    expect(countsAtFirstUpdate[0]).toBeLessThan(OVER_WINDOW)
+    // ...and the warm count is available once load settles
+    expect(controller.getTotalOpsCountForAccount(ACC)).toBe(OVER_WINDOW)
+  })
+
   test('an account with no history reports zero', async () => {
     const controller = makeController(storage, db)
     await awaitLoadOnly(controller)
@@ -669,10 +687,10 @@ describe('ActivityController — total transaction count', () => {
 
   test('the mobile count reflects a newly added op with no refresh in between', async () => {
     // On the key-value backend #accountsOps IS the whole history, so the count reads it
-    // live and #refreshTotalOpsCount is skipped entirely — mobile does no extra work.
+    // live and the count refresh is skipped entirely — mobile does no extra work.
     //
     // NOTE: this asserts the observable guarantee, not the guard that provides it. The
-    // !#isUsingIdb check in getTotalOpsCountForAccount is defensive: because the refresh
+    // loadsPartially check in AccountOpsPersistence.getTotalOpsCount is defensive: because the refresh
     // is gated too, the cache is always empty on this backend, so removing that check
     // still leaves the test passing. It earns its place by keeping the property true if
     // the refresh is ever un-gated.
@@ -707,7 +725,7 @@ describe('ActivityController — bookkeeping around the expansion markers', () =
   const awaitLoadOnly = (controller: ActivityController) => controller.findMessage(ACC, () => true)
 
   test('removing an account clears its expansion markers so a re-add re-reads IDB', async () => {
-    // #fullyLoadedGroups is keyed `${account}:${chainId}`, so removal has to clear by
+    // AccountOpsPersistence keys its expansion markers `${account}:${chainId}`, so removal has to clear by
     // prefix. A stale marker would make a re-added account look already-expanded and
     // permanently skip the lazy-load, showing only the startup window.
     await new ActivityIdbStorage(db).putOpsForAccountAndChain(ACC, CHAIN_1, [
@@ -758,7 +776,7 @@ describe('ActivityController — bookkeeping around the expansion markers', () =
   // NOTE: there is deliberately no test asserting that persistence happens before
   // syncFilteredAccountsOps(). It must NOT — on the key-value backend putSingleOp
   // rewrites the whole blob, so awaiting it before emitUpdate would block the UI on a
-  // full serialization of the history. #mergeOpsIntoCache is what protects the new op,
+  // full serialization of the history. the persistence-layer merge is what protects the new op,
   // and 'a new op is not dropped by a lazy-load triggered from the same call' plus the
   // merge tests cover that.
 })

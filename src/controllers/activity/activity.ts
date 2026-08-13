@@ -6,15 +6,11 @@ import {
   pickBetterPoisoningMatch,
   ScoredAddressPoisoningMatch
 } from '@/libs/transfer/address-poisoning'
-import { ActivityIdbStorage, ActivityKeyValueStorage } from '@/services/storage/activityIdb'
+import { AccountOpsPersistence } from '@/services/storage/accountOpsPersistence'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
-import {
-  IActivityController,
-  IActivityOpsBackend,
-  InternalAccountsOps
-} from '../../interfaces/activity'
+import { IActivityController, InternalAccountsOps } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
@@ -249,27 +245,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #fetch: Fetch
 
-  #persistence!: IActivityOpsBackend
-
-  // (account, chainId) groups whose COMPLETE history has been pulled into
-  // #accountsOps this session, keyed `${accountAddr}:${chainId}`.
-  //
-  // On the IDB path the startup read holds only STARTUP_RECENT_OPS_LIMIT finalized
-  // ops per chain (plus all pending ones), so anything reasoning over the whole
-  // history must expand the cache first. This has to be an explicit flag rather than
-  // an in-memory length check: pending ops are exempt from the cap, so a group can
-  // exceed the window without having been expanded.
-  #fullyLoadedGroups = new Set<string>()
-
-  // Total persisted op count per account, across every chain. IDB-ONLY: the key-value
-  // backend keeps the whole history in memory, so it sums it live instead.
-  //
-  // Cached because the only consumer (BannerController's requirements check, via the
-  // AccountData callback in main.ts) is synchronous and cannot query IDB. Kept in sync
-  // by #refreshTotalOpsCount rather than by arithmetic on writes: putSingleOp evicts the
-  // oldest row on its own when a group passes MAX_IDB_GROUP_SIZE, so a write is not
-  // reliably +1.
-  #totalOpsCountByAccount = new Map<string, number>()
+  #persistence: AccountOpsPersistence
 
   #initialLoadPromise?: Promise<void>
 
@@ -356,9 +332,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // idb is provided only by web/extension environments — the background calls
     // openAmbireIdb() and passes the result through MainController. On mobile,
     // idb is undefined and the controller falls back to chrome.storage / AsyncStorage.
-    this.#persistence = idb
-      ? new ActivityIdbStorage(idb)
-      : new ActivityKeyValueStorage(storage, () => this.#accountsOps)
+    this.#persistence = new AccountOpsPersistence({
+      storage,
+      idb,
+      getCache: () => this.#accountsOps,
+      onError: ({ message, error }) => this.emitError({ level: 'silent', message, error })
+    })
 
     this.#callRelayer = callRelayer
     this.#accounts = accounts
@@ -377,24 +356,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.#accounts.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    // Step 1 — move the legacy accountsOps blob into IDB. This must be the first
-    // await that touches persistence: loadStartupOps() below would otherwise
-    // observe an empty store while the migration is still in flight.
-    // On the key-value backend this is a no-op.
-    const migrated = await this.#migrateOpsToIdb()
-
-    // A failed migration leaves IDB empty while the retained legacy blob still holds
-    // everything, so this session behaves exactly like a pre-migration one: it reads
-    // AND writes the legacy key. Continuing to write to IDB instead would put a row
-    // into the empty store, which makes ensureMigrated's isEmpty() guard skip the
-    // retry on every future startup — permanently stranding the real history.
-    if (!migrated) this.#fallBackToKeyValueForThisSession()
-
-    // Step 2 — read the startup dataset through the backend rather than from the
-    // legacy key, so the IDB path returns pending ops + recent finalized ops per
-    // (account, chain) instead of the whole history.
+    // Persistence owns migration, backend fallback and the bounded startup read. It never
+    // rejects, so #load() cannot break the controller for the session.
     const [accountsOps, externalAccountOps, signedMessages, sentToHistory] = await Promise.all([
-      this.#loadStartupAccountsOps(),
+      this.#persistence.init(),
       this.#storage.get('externalAccountOps', {}),
       this.#storage.get('signedMessages', {}),
       this.#storage.get('sentToHistory', { domains: {}, recipients: {} })
@@ -407,310 +372,20 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     this.emitUpdate()
 
-    // Runs after emitUpdate so the UI renders whatever history was available first, and
-    // is guarded: #load() is launched from the constructor and assigned to
-    // #initialLoadPromise, so letting it reject would break every public method for the
-    // rest of the session AND raise an unhandled rejection.
-    try {
-      await this.#recordHistoryLivesInIdb(accountsOps)
-      // Only accounts that appear in the startup dataset are counted: loadStartupOps()
-      // enumerates every non-empty group, so an absent account has no ops and the
-      // in-memory fallback of 0 is already correct for it.
-      await Promise.all(Object.keys(accountsOps).map((addr) => this.#refreshTotalOpsCount(addr)))
-    } catch (error) {
-      this.emitError({
-        level: 'silent',
-        message: 'Your transaction history could not be checked.',
-        error:
-          error instanceof Error
-            ? error
-            : new Error('ActivityController: post-load history checks failed')
-      })
-    }
+    // After the update on purpose: this warms the op counts and records the migration flag,
+    // and nothing on screen waits for either. It never rejects, so it cannot break #load().
+    await this.#persistence.finalizeInit(accountsOps)
   }
 
   /**
-   * Swap the IDB backend for the key-value one for the remainder of this session.
+   * Total transactions an account has ever made, as far as persistence knows.
    *
-   * Used when the one-time migration failed. The legacy key is still the source of
-   * truth in that case, so reads and writes must both go there — a mixed state where
-   * we read the blob but write to IDB is what poisons the migration guard.
-   */
-  #fallBackToKeyValueForThisSession(): void {
-    if (!this.#isUsingIdb) return
-
-    this.#persistence = new ActivityKeyValueStorage(this.#storage, () => this.#accountsOps)
-  }
-
-  /**
-   * Record that this wallet's history now lives in IDB.
-   *
-   * Nothing reads the flag today — it is bookkeeping kept deliberately, because it can
-   * only be recorded while IDB is working. A session that cannot open IDB has no way to
-   * tell "this user never had any transactions" from "this user's history is in IDB and
-   * unreachable right now", and by then it is too late to write the flag that would have
-   * distinguished them. Keeping the writer means the marker is already in place for
-   * whatever eventually consumes it.
-   *
-   * ensureMigrated only sets it after moving a legacy blob, which never happens for a
-   * user who installed after IDB became the default — hence this second writer. Gated on
-   * there actually being ops, so a brand-new empty wallet is not marked as migrated.
-   */
-  async #recordHistoryLivesInIdb(accountsOps: InternalAccountsOps): Promise<void> {
-    if (!this.#isUsingIdb) return
-    if (!Object.keys(accountsOps).length) return
-    if (await this.#getActivityIdbMigrated()) return
-
-    await this.#setActivityIdbMigrated(true)
-  }
-
-  /**
-   * The startup ops dataset, read through whichever backend is active — which is the
-   * key-value one if the migration failed, see #fallBackToKeyValueForThisSession.
-   *
-   * Never rejects. #load() is launched from the constructor and assigned to
-   * #initialLoadPromise, which every public method awaits, so a single transient read
-   * failure here would make the whole controller reject for the rest of the session
-   * and raise an unhandled rejection. Degrading to an empty in-memory set keeps the
-   * controller usable; the data is untouched on disk and the next startup reads it.
-   */
-  async #loadStartupAccountsOps(): Promise<InternalAccountsOps> {
-    try {
-      return await this.#persistence.loadStartupOps()
-    } catch (error) {
-      this.emitError({
-        level: 'silent',
-        message: 'Your transaction history could not be loaded.',
-        error:
-          error instanceof Error
-            ? error
-            : new Error('ActivityController: failed to read the startup ops dataset')
-      })
-      return {}
-    }
-  }
-
-  /**
-   * One-time migration of the accountsOps blob from key-value storage into IDB.
-   *
-   * The legacy key is intentionally NOT removed for now — it stays as a safety-net
-   * copy while IDB persistence is still new. Only the completion flag is recorded,
-   * so a later session can tell that the history now also lives in IDB.
-   * migrateFromStorage() writes every row in a single transaction, so a failure
-   * leaves IDB empty and the legacy key intact — the next startup simply retries.
-   *
-   * @returns false if the migration was attempted and failed, in which case IDB is
-   *          empty and the caller must not read the startup dataset from it. True
-   *          on success and on the key-value backend, where it is a no-op.
-   */
-  async #migrateOpsToIdb(): Promise<boolean> {
-    try {
-      await this.#persistence.ensureMigrated(
-        () => this.#storage.get('accountsOps', {}),
-        async () => this.#setActivityIdbMigrated(true)
-      )
-      return true
-    } catch (error) {
-      // Non-fatal: the legacy key is still intact, this session reads from it, and
-      // the next startup retries. Reported silently because the fallback means the
-      // user sees their history anyway and has nothing to act on.
-      this.emitError({
-        level: 'silent',
-        message: 'Your transaction history could not be moved to its new location.',
-        error:
-          error instanceof Error
-            ? error
-            : new Error('ActivityController: accountsOps migration to IDB failed')
-      })
-      return false
-    }
-  }
-
-  // 'activityIdbMigrated' is intentionally NOT part of the shared StorageProps
-  // schema (interfaces/storage.ts) — it is a provisional detail of the ongoing
-  // accountsOps → IDB migration, owned by this controller alone. Both get() and
-  // set() on IStorageController are typed against StorageProps, so reading and
-  // writing it needs one narrow, contained cast each.
-  #getActivityIdbMigrated(): Promise<boolean> {
-    return (this.#storage.get as (key: string, defaultValue: boolean) => Promise<boolean>)(
-      'activityIdbMigrated',
-      false
-    )
-  }
-
-  #setActivityIdbMigrated(value: boolean): Promise<void> {
-    return (this.#storage.set as (key: string, value: boolean) => Promise<void>)(
-      'activityIdbMigrated',
-      value
-    )
-  }
-
-  /**
-   * Expand #accountsOps for each of the given accounts from the startup window to
-   * their full history, for callers that must reason over every past op rather
-   * than the recent slice.
-   *
-   * Takes a list rather than a single address because hasAccountOpsSentTo scans
-   * either one account or all of them, and every account it scans needs expanding.
-   *
-   * No-op on the key-value backend, whose startup read already returns everything,
-   * and no-op per (account, chain) group after that group has been expanded.
-   */
-  async #ensureFullHistoryLoaded(accountAddrs: string[]): Promise<void> {
-    if (!this.#isUsingIdb) return
-
-    await Promise.all(accountAddrs.map((addr) => this.#ensureAccountHistoryLoaded(addr)))
-  }
-
-  /**
-   * Whether the row-level IDB backend is in use, rather than the key-value one.
-   * Derived from the backend that was actually constructed so there is a single
-   * source of truth — note it says nothing about whether IDB still *works*, only
-   * that a connection was provided at construction time.
-   */
-  get #isUsingIdb(): boolean {
-    return this.#persistence instanceof ActivityIdbStorage
-  }
-
-  /**
-   * Total number of transactions an account has ever made, as far as persistence knows.
-   *
-   * Synchronous on purpose: BannerController evaluates minTxnsTotal/maxTxnsTotal inside
-   * a sync callback. Do NOT substitute the in-memory group lengths here — on the IDB
-   * backend those hold only the startup window, so a user with thousands of
-   * transactions would report ~20 per chain and land in the wrong targeting bucket.
-   *
-   * Falls back to the in-memory count when no refresh has completed yet, which is
-   * exact on the key-value backend and a lower bound on IDB.
+   * Synchronous because BannerController evaluates minTxnsTotal/maxTxnsTotal in a sync
+   * callback. Do NOT swap this for the in-memory group lengths: with a partially-loading
+   * backend those are just the startup window, so a heavy account would target wrongly.
    */
   getTotalOpsCountForAccount(accountAddr: string): number {
-    // On the key-value backend #accountsOps IS the complete history, so a live sum is
-    // exact and costs nothing. Reading the cache here could only ever be staler.
-    if (!this.#isUsingIdb) return this.#inMemoryOpsCount(accountAddr)
-
-    return this.#totalOpsCountByAccount.get(accountAddr) ?? this.#inMemoryOpsCount(accountAddr)
-  }
-
-  #inMemoryOpsCount(accountAddr: string): number {
-    return Object.values(this.#accountsOps[accountAddr] ?? {}).reduce(
-      (total, ops) => total + (ops?.length ?? 0),
-      0
-    )
-  }
-
-  /**
-   * Recount one account and cache the result. Never throws — the count feeds banner
-   * targeting only, so a failed read must not break the write path that triggered it.
-   */
-  async #refreshTotalOpsCount(accountAddr: string): Promise<void> {
-    // Nothing to cache on the key-value backend: getTotalOpsCountForAccount reads the
-    // in-memory blob directly there, so this would be pure overhead on mobile.
-    if (!this.#isUsingIdb) return
-
-    try {
-      this.#totalOpsCountByAccount.set(
-        accountAddr,
-        await this.#persistence.countOpsForAccount(accountAddr)
-      )
-    } catch (error) {
-      // Leave the previous value in place; getTotalOpsCountForAccount falls back to the
-      // in-memory lower bound if there is none yet.
-      this.emitError({
-        level: 'silent',
-        message: 'The transaction count could not be refreshed.',
-        error:
-          error instanceof Error
-            ? error
-            : new Error('ActivityController: failed to count ops for an account')
-      })
-    }
-  }
-
-  #groupKey(accountAddr: string, chainId: string): string {
-    return `${accountAddr}:${chainId}`
-  }
-
-  #isGroupFullyLoaded(accountAddr: string, chainId: string): boolean {
-    // The key-value backend's startup read already returns everything, so every
-    // group is fully loaded by definition there.
-    if (!this.#isUsingIdb) return true
-
-    return this.#fullyLoadedGroups.has(this.#groupKey(accountAddr, chainId))
-  }
-
-  #markGroupFullyLoaded(accountAddr: string, chainId: string): void {
-    this.#fullyLoadedGroups.add(this.#groupKey(accountAddr, chainId))
-  }
-
-  /**
-   * Merge rows fetched from IDB into whatever is already cached in memory.
-   *
-   * Deliberately a merge and not a replace. The cached array can legitimately hold
-   * ops that IDB does not have yet — a just-broadcast op is pushed into memory before
-   * putSingleOp() writes it — and it can hold op objects that other in-flight work
-   * still holds references to (updateAccountsOpsStatuses mutates ops in place across
-   * long provider awaits). Replacing the array would drop the former and detach the
-   * latter, so the existing object is kept whenever an id appears on both sides.
-   */
-  #mergeOpsIntoCache(
-    cached: SubmittedAccountOp[] | undefined,
-    fromIdb: SubmittedAccountOp[]
-  ): SubmittedAccountOp[] {
-    if (!cached?.length) return [...fromIdb]
-
-    const byId = new Map<string, SubmittedAccountOp>()
-    for (const op of fromIdb) byId.set(op.id, op)
-    // Cached wins on collision, preserving object identity for in-flight mutations
-    for (const op of cached) byId.set(op.id, op)
-
-    return Array.from(byId.values()).sort((a, b) => b.timestamp - a.timestamp)
-  }
-
-  /**
-   * Expand every chain of one account from the startup window to its full history.
-   *
-   * Only chains already present in #accountsOps are fetched: loadStartupOps()
-   * enumerates every non-empty group, so a missing chain key normally means that pair
-   * has no rows. That invariant only holds when the startup read succeeded, which is
-   * why an account with no chains is NOT marked as loaded — otherwise a failed startup
-   * read would permanently convince us there is nothing to expand.
-   *
-   * Failures are non-fatal — the caller falls back to the startup window, which is
-   * a subset rather than wrong data.
-   */
-  async #ensureAccountHistoryLoaded(accountAddr: string): Promise<void> {
-    if (!accountAddr) return
-
-    const chainIds = Object.keys(this.#accountsOps[accountAddr] ?? {}).filter(
-      (chainId) => !this.#isGroupFullyLoaded(accountAddr, chainId)
-    )
-    if (!chainIds.length) return
-
-    try {
-      const fullGroups = await Promise.all(
-        chainIds.map(async (chainId) => ({
-          chainId,
-          ops: await this.#persistence.getOpsForAccountAndChain(accountAddr, chainId)
-        }))
-      )
-
-      const accountOps = this.#accountsOps[accountAddr]
-      if (accountOps) {
-        for (const { chainId, ops } of fullGroups) {
-          if (ops?.length) accountOps[chainId] = this.#mergeOpsIntoCache(accountOps[chainId], ops)
-          this.#markGroupFullyLoaded(accountAddr, chainId)
-        }
-      }
-    } catch (error) {
-      this.emitError({
-        level: 'silent',
-        message: 'Part of your transaction history could not be loaded.',
-        error:
-          error instanceof Error
-            ? error
-            : new Error('ActivityController: failed to expand full history from IDB')
-      })
-    }
+    return this.#persistence.getTotalOpsCount(accountAddr)
   }
 
   /**
@@ -746,7 +421,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // address they used before. Judging either from the startup window alone would
     // under-report — a lookalike of an older recipient would raise no warning.
     const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
-    await this.#ensureFullHistoryLoaded(accounts)
+    await this.#persistence.ensureFullHistory(accounts)
 
     let found = false
     let lastTimestamp: number | null = null
@@ -830,48 +505,11 @@ export class ActivityController extends EventEmitter implements IActivityControl
     let internalAccountOpsByChain = this.#accountsOps[filters.account] || {}
     const externalAccountOpsByChain = this.#externalAccountOps[filters.account] || {}
 
-    // Lazy-load the full history for the filtered chain, so pagination can page past
-    // the startup window. Gated on an explicit per-group flag rather than on the
-    // in-memory length: loadStartupOps() returns STARTUP_RECENT_OPS_LIMIT finalized
-    // ops PLUS every pending op, so a group can legitimately arrive longer than the
-    // window without having been expanded, and a length test would wrongly skip it.
-    const chainIdString = filters.chainId?.toString()
-    if (
-      filters.chainId &&
-      chainIdString &&
-      !this.#isGroupFullyLoaded(filters.account, chainIdString)
-    ) {
-      try {
-        const fullOpsFromIdb = await this.#persistence.getOpsForAccountAndChain(
-          filters.account,
-          filters.chainId
-        )
-        if (fullOpsFromIdb) {
-          internalAccountOpsByChain[chainIdString] = this.#mergeOpsIntoCache(
-            internalAccountOpsByChain[chainIdString],
-            fullOpsFromIdb
-          )
-          this.#accountsOps[filters.account] = internalAccountOpsByChain
-        }
-
-        // Marked even when the read returned nothing: getOpsForAccountAndChain returns
-        // undefined for zero rows, which means this group has no history to expand, not
-        // that expanding failed. Only marking on a non-empty result would re-query IDB
-        // on every single call for any chain the account has never transacted on — and
-        // this runs on each emitUpdate path. A genuine failure throws and is handled
-        // below, so the group correctly stays unmarked there.
-        this.#markGroupFullyLoaded(filters.account, chainIdString)
-      } catch (error) {
-        // Non-fatal: fall through and page over the startup window instead.
-        this.emitError({
-          level: 'silent',
-          message: 'Older transactions could not be loaded.',
-          error:
-            error instanceof Error
-              ? error
-              : new Error('ActivityController: failed to lazy-load history from IDB')
-        })
-      }
+    // Expand the filtered chain so pagination can page past the startup window.
+    // Persistence owns the markers and the merge; a failure there just leaves the window.
+    if (filters.chainId) {
+      await this.#persistence.ensureGroupLoaded(filters.account, filters.chainId)
+      internalAccountOpsByChain = this.#accountsOps[filters.account] || internalAccountOpsByChain
     }
 
     const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(
@@ -1028,11 +666,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
    * Persist changed ops, sync filtered views, and emit an update.
    */
   private async persistAccountsOps(changedOps: SubmittedAccountOp[]) {
-    try {
-      await this.#persistence.updateOps(changedOps)
-    } catch (error) {
-      console.error('ActivityController: Failed to persist updated ops', error)
-    }
+    await this.#persistence.updateOps(changedOps)
     await this.syncFilteredAccountsOps()
     this.emitUpdate()
   }
@@ -1145,14 +779,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (!this.#accountsOps[accountAddr][chainId.toString()])
       this.#accountsOps[accountAddr][chainId.toString()] = []
 
-    // Capture the oldest op's id before mutating — it becomes the trimmed id if the
-    // group is already at capacity (trim() removes exactly one op via .pop()).
-    //
-    // On the IDB path this group usually starts at STARTUP_RECENT_OPS_LIMIT rather
-    // than the full history, so it rarely reaches the in-memory cap and trimmedId
-    // stays undefined. Eviction then falls to putSingleOp's own MAX_IDB_GROUP_SIZE
-    // check, which costs one extra count() per write. The two caps are the same
-    // number but are enforced independently — in-memory here, in IDB there.
+    // Capture the oldest op's id before mutating — it is the one trim() will .pop() if the
+    // group is at capacity. On IDB the group usually starts at the startup window, so this
+    // rarely fires and eviction falls to putSingleOp's own MAX_IDB_GROUP_SIZE check.
     const group = this.#accountsOps[accountAddr][chainId.toString()]!
     const trimmedId = group.length >= 1000 ? group[group.length - 1]?.id : undefined
 
@@ -1168,44 +797,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     this.emitUpdate()
 
-    // Persistence comes LAST, after the in-memory state and the emitted update, per
-    // the storage rule in controllers/AGENTS.md. This is not merely stylistic: on the
-    // key-value backend putSingleOp rewrites the ENTIRE accountsOps blob, so awaiting
-    // it before emitUpdate would block the UI on a full richJson serialization of the
-    // whole history — tens of MB for a heavy account, and worst on mobile, which is
-    // the only place that backend runs.
+    // Persistence LAST, per the storage rule in controllers/AGENTS.md — the key-value
+    // adapter rewrites the whole blob, so awaiting it earlier would block the UI on
+    // serializing the entire history.
     //
-    // syncFilteredAccountsOps() above can lazy-load this group from IDB, which will
-    // not yet contain this op. #mergeOpsIntoCache is what keeps it: the cached array
-    // wins on an id collision and memory-only ops are never dropped. That merge is
-    // the correctness mechanism here — do not "fix" this by persisting first.
-    //
-    // The backend owns persistence: the IDB path writes a single row, the key-value
-    // path rewrites the blob. Writing that blob here as well would undo the per-op
-    // write that IDB exists to provide.
-    try {
-      await this.#persistence.putSingleOp(accountAddr, chainId, accountOp, trimmedId)
-    } catch (error) {
-      this.emitError({
-        level: 'silent',
-        message: 'Your latest transaction could not be saved to your history.',
-        error:
-          error instanceof Error
-            ? error
-            : new Error('ActivityController: failed to persist a new op')
-      })
-    }
-
-    // Recounted after the write rather than incremented, because putSingleOp may have
-    // evicted the oldest row to stay under MAX_IDB_GROUP_SIZE, making the net change 0.
-    //
-    // ACCEPTED LAG: this lands after the emitUpdate above, so a banner gated on
-    // minTxnsTotal/maxTxnsTotal sees the new total only on the NEXT update. Refreshing
-    // before emitUpdate would block the UI on an IDB read, and emitting a second update
-    // just for the count would re-serialize the whole controller state per broadcast.
-    // The thresholds are coarse buckets, so one update of staleness does not change which
-    // bucket an account lands in for any realistic value.
-    await this.#refreshTotalOpsCount(accountAddr)
+    // Do not "fix" this by persisting first: syncFilteredAccountsOps() above may expand this
+    // group from the backend before the op is written, and the merge inside
+    // AccountOpsPersistence is what keeps the memory-only op.
+    await this.#persistence.addOp(accountAddr, chainId, accountOp, trimmedId)
 
     // sentToHistory is a small durable index and always lives in key-value storage,
     // never IDB. Persisting it here is what lets the recipient fast path in
@@ -2005,14 +1604,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // deliberately left alone — it is a global index shared across accounts
     // (see SentToHistory in ./types.ts).
     delete this.#sentToHistory.recipients[address]
-    // Drop the expansion markers too, so re-adding the account re-reads from IDB
-    // instead of trusting a cache that no longer exists.
-    for (const key of this.#fullyLoadedGroups) {
-      if (key.startsWith(`${address}:`)) this.#fullyLoadedGroups.delete(key)
-    }
-    // Same reasoning for the cached total: a stale count would keep reporting the
-    // removed account's transactions to banner targeting after a re-add.
-    this.#totalOpsCountByAccount.delete(address)
 
     await this.syncFilteredAccountsOps()
     await this.syncSignedMessages()
@@ -2021,20 +1612,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.#storage.set('signedMessages', this.#signedMessages)
     await this.#storage.set('sentToHistory', this.#sentToHistory)
 
-    try {
-      await this.#persistence.deleteAccount(address)
-    } catch (error) {
-      // Rows left behind would reappear as history if the account is re-added,
-      // so this needs to reach Sentry rather than only the console.
-      this.emitError({
-        level: 'silent',
-        message: "Some of the removed account's transaction history could not be deleted.",
-        error:
-          error instanceof Error
-            ? error
-            : new Error('ActivityController: failed to delete account from persistence')
-      })
-    }
+    // Also clears this account's expansion markers and cached op count, so a re-add
+    // re-reads from the backend instead of trusting a cache that no longer exists.
+    await this.#persistence.removeAccount(address)
 
     this.emitUpdate()
   }

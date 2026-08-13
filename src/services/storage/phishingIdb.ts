@@ -61,10 +61,9 @@ export interface IPhishingOpsBackend {
 // The 'phishing' store holds a single document keyed by this constant.
 // All reads and writes target this one record.
 //
-// NOTE: the store is deliberately NOT in AMBIRE_IDB_SCHEMA. Adding it would require a
-// dbVersion bump, and a shipped bump cannot be rolled back — so it is not worth
-// carrying for a store nothing reads yet. Add it in the same change that wires
-// PhishingController to this backend, not before.
+// NOTE: deliberately NOT in AMBIRE_IDB_SCHEMA. Adding it needs a dbVersion bump, and a
+// shipped bump cannot be rolled back — not worth carrying for a store nothing reads. Add it
+// in the same change that wires PhishingController.
 const STORE_NAME = 'phishing'
 const SNAPSHOT_KEY = 'snapshot'
 

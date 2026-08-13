@@ -1,24 +1,12 @@
 /**
  * Global IDB initializer for the 'ambire' database.
  *
- * Call openAmbireIdb() once at background/app startup and AWAIT it before
- * constructing any controller. It opens a single IDBPDatabase connection,
- * reconciles structure against AMBIRE_IDB_SCHEMA, runs any pending data-migration
- * handlers, and caches the result — subsequent calls return the same promise.
- * Awaiting it up front is what guarantees every schema migration has completed
- * before a controller can read.
+ * Call openAmbireIdb() once at startup and AWAIT it before constructing any controller —
+ * that await is what guarantees every schema migration finished before a controller reads.
+ * Mobile never calls it and passes undefined instead, so no platform check belongs here.
  *
- * Two distinct kinds of migration meet here, and they are easy to confuse:
- *   - SCHEMA migrations (this file): stores and indexes inside IDB, applied in
- *     onupgradeneeded. Structure comes from the manifest via reconcileSchema();
- *     migrationHandlers only transform existing rows.
- *   - DATA migrations: moving a controller's payload out of key-value storage
- *     into IDB, once, at controller load time. Implemented per-backend as
- *     ensureMigrated() — see ActivityIdbStorage in activityIdb.ts.
- *
- * On mobile, the caller does not invoke openAmbireIdb() — it passes undefined to
- * MainController instead, which propagates it to child controllers, and each falls
- * back to its key-value backend. No platform check is needed inside this module.
+ * Startup order, the schema/data migration distinction, and the rules for writing a
+ * migration handler are documented in ./README.md. Read it before changing this file.
  */
 
 import { IDBPDatabase, IDBPTransaction, openDB } from 'idb'
@@ -30,25 +18,10 @@ export type AmbireIdbDatabase = IDBPDatabase<any>
 /** The versionchange transaction handed to migration handlers. */
 export type AmbireIdbUpgradeTransaction = IDBPTransaction<any, string[], 'versionchange'>
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Structural reconciliation
-//
-// AMBIRE_IDB_SCHEMA is the single source of truth for structure. reconcileSchema
-// creates any store or index in the manifest that does not exist yet, so a
-// purely additive schema change (new store, or new index on an existing store)
-// needs nothing beyond adding it to the manifest and bumping dbVersion.
-//
-// This runs on every upgrade and is idempotent, which closes two gaps that a
-// per-version create-store handler leaves open:
-//   - A fresh install and an upgrading install end up on identical structure.
-//   - An index added to an existing store reaches users who already have that
-//     store, not just fresh installs.
-//
-// It only ever ADDS. Deleting a store or an index from the manifest does not
-// remove it from databases that already have it — that needs an explicit
-// deleteObjectStore/deleteIndex in the handler for the version that drops it.
-// ─────────────────────────────────────────────────────────────────────────────
-
+/**
+ * Create every store and index in the manifest that does not exist yet. Idempotent, runs on
+ * every upgrade, and only ever ADDS — see "Structure is declarative" in ./README.md.
+ */
 export function reconcileSchema(
   db: AmbireIdbDatabase,
   tx: AmbireIdbUpgradeTransaction,
@@ -70,40 +43,18 @@ export function reconcileSchema(
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Migration handlers
-//
-// Each handler is keyed by the version it migrates TO. When a user upgrades
-// from v(n) to v(m), every handler from n+1 to m runs in order inside the
-// single onupgradeneeded transaction.
-//
-// Handlers exist for DATA transformations — rewriting or backfilling existing
-// rows. Structure is handled declaratively by reconcileSchema(), which runs
-// before any handler so a handler may read from and write to stores and indexes
-// introduced by the same upgrade.
-//
-// Rules:
-//   - Use `tx` for every read/write of existing rows. Do not open a new
-//     transaction; only the versionchange transaction is valid here.
-//   - Handlers are SYNCHRONOUS. To transform existing rows, chain off the read
-//     rather than awaiting it — the versionchange transaction stays alive across
-//     microtasks, so further requests issued from a .then() still land inside the
-//     same upgrade. Awaiting anything non-IDB would let the transaction commit:
-//         store.getAll().then((rows) => rows.forEach((r) => store.put(migrate(r))))
-//     Covered by 'a handler can read and transform rows written by an earlier
-//     version' in idbIntegration.test.ts, and verified against 14,000 rows in both
-//     Chrome and Firefox. Do not restructure this into an `await` because it reads
-//     more cleanly — awaiting a non-IDB promise lets the transaction commit, after
-//     which the writes vanish silently and no unit test would catch it.
-//   - Never remove a handler — the chain must stay intact for users upgrading
-//     from any prior version.
-//   - Every version from 1..dbVersion must have an entry, even a no-op one, so
-//     that a version bump is always a deliberate act. This is enforced by a
-//     test in idbIntegration.test.ts.
-//   - A key that has already been migrated out of key-value storage into IDB can
-//     no longer be reached by a StorageController migration — transform it here.
-// ─────────────────────────────────────────────────────────────────────────────
-
+/**
+ * Data-migration handlers, keyed by the version they migrate TO. Upgrading v(n) → v(m) runs
+ * n+1..m in order inside the single onupgradeneeded transaction. Structure is NOT created
+ * here — reconcileSchema() runs first.
+ *
+ * ⚠️ Handlers are SYNCHRONOUS. Chain off the read, never await it:
+ *       store.getAll().then((rows) => rows.forEach((r) => store.put(migrate(r))))
+ * Awaiting a non-IDB promise lets the versionchange transaction commit and the writes vanish
+ * with no error — no unit test catches it, so do not tidy this into an `await`.
+ *
+ * The full rules for adding one are in ./README.md under "Writing a migration handler".
+ */
 export type MigrationHandler = (db: AmbireIdbDatabase, tx: AmbireIdbUpgradeTransaction) => void
 
 export const migrationHandlers: Record<number, MigrationHandler> = {

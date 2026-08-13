@@ -51,16 +51,11 @@ type StorableOp = (SubmittedAccountOp | SubmittedAccountOpLike) & {
 }
 
 /**
- * Bulk-write guard for ops that may have come from legacy blob storage.
+ * Bulk-write guard for ops from legacy blob storage, which may be missing timestamp or
+ * status. Such a row cannot be sorted or indexed, so bulk writes drop it with a warning —
+ * losing one unusable op beats failing the whole migration batch.
  *
- * Blobs written by older app versions can be missing timestamp or status. Such a
- * row is unusable — it cannot be sorted or reached through either index — so bulk
- * writes drop it with a warning instead of failing the whole batch. Dropping one
- * unusable op is always better than losing the rest of the user's history, which
- * is what a mid-batch throw would cost during migration.
- *
- * putSingleOp deliberately does NOT use this: a live op missing these fields is a
- * programming error and must surface loudly rather than vanish.
+ * putSingleOp does NOT use this: a live op missing these fields is a bug and must surface.
  */
 function isStorableOp(op: SubmittedAccountOp | SubmittedAccountOpLike): op is StorableOp {
   if (typeof op.id !== 'string' || !op.id) {
@@ -82,6 +77,9 @@ function isStorableOp(op: SubmittedAccountOp | SubmittedAccountOpLike): op is St
 }
 
 export class ActivityIdbStorage implements IActivityOpsBackend {
+  // Startup reads STARTUP_RECENT_OPS_LIMIT finalized ops per group plus all pending ones.
+  readonly loadsPartially = true
+
   #db: AmbireIdbDatabase
 
   #storeName = STORE_DEF.storeName
@@ -101,18 +99,14 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
   }
 
   /**
-   * Open a transaction, reopening the connection once if the current handle turned
-   * out to be dead.
+   * Open a transaction, reopening once if the handle turned out to be dead.
    *
-   * The handle is captured at construction, but the connection can go away later —
-   * blocking() closes it so a newer version can upgrade, and the browser can
-   * terminate it under storage pressure. The database itself is unaffected, so a
-   * reopen recovers fully; without this every write after such a close would be
-   * lost while the controller kept believing IDB was available.
+   * The handle is captured at construction but can die later — blocking() closes it for an
+   * upgrade, and the browser can terminate it. The database survives, so a reopen recovers
+   * fully; without this, writes after such a close would be silently lost.
    */
-  // Generic over the mode so the returned transaction keeps its precise type —
-  // with a widened 'readonly' | 'readwrite' the write methods come back as
-  // possibly-undefined, since they do not exist on a readonly store.
+  // Generic over the mode so the transaction keeps its precise type — a widened union makes
+  // idb type the write methods as possibly-undefined.
   async #openTx<Mode extends 'readonly' | 'readwrite'>(mode: Mode) {
     try {
       return this.#db.transaction(this.#storeName, mode)
@@ -138,15 +132,12 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
   /**
    * Migrate the legacy blob into IDB, once.
    *
-   * Emptiness is checked against IDB rather than the legacy key, so a completed
-   * migration is cheap to skip on every later startup and a wiped store recovers
-   * from the retained copy on the next restart.
+   * Emptiness is checked against IDB, not the legacy key, so a completed migration is cheap
+   * to skip and a wiped store recovers from the retained copy on the next restart.
    *
-   * KNOWN LIMITATION: this guard cannot distinguish "never migrated" from "migrated,
-   * wiped, then partially repopulated" — one row written after a wipe makes it look
-   * migrated and the legacy copy is never read again. Accepted deliberately; see the
-   * IndexedDB section in src/controllers/AGENTS.md for why, and for the signal to
-   * use if that ever needs closing.
+   * KNOWN LIMITATION: cannot tell "never migrated" from "wiped, then partially
+   * repopulated" — one row written after a wipe looks migrated. Accepted deliberately; see
+   * the IndexedDB section in src/controllers/AGENTS.md.
    */
   async ensureMigrated(
     getStoredOps: () => Promise<InternalAccountsOps>,
@@ -164,14 +155,11 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
    * Load minimal startup dataset: all pending ops + up to STARTUP_RECENT_OPS_LIMIT
    * finalized ops per (account, chain).
    *
-   * Two transactions:
-   *   1. Key-only cursor enumerates (accountAddr, chainId) groups — O(N_groups) reads.
-   *   2. Per-group queries run in parallel within one transaction:
-   *      - 'by-account-chain-timestamp' cursor (prev) → top N finalized, stops early
-   *      - 'by-account-chain-status' getAll × 2 → all pending ops
+   * Two transactions: a key-only cursor enumerates the (account, chainId) groups, then all
+   * per-group queries run in parallel inside one transaction — a timestamp cursor for the
+   * top N finalized, plus getAll on the status index for the pending ones.
    *
-   * All per-group requests are fired before any await resolves, keeping the
-   * transaction open for the duration.
+   * Every per-group request is fired before any await resolves, keeping the tx open.
    */
   async loadStartupOps(): Promise<InternalAccountsOps> {
     // Step 1: enumerate (accountAddr, chainId) groups — key-only cursor, O(N_groups) reads
@@ -540,6 +528,9 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
  * Writes the full in-memory ops blob on every mutation — no row-level granularity.
  */
 export class ActivityKeyValueStorage implements IActivityOpsBackend {
+  // One blob, read whole — there is no window to expand past.
+  readonly loadsPartially = false
+
   #storage: IStorageControllerType
   #getOps: () => InternalAccountsOps
 

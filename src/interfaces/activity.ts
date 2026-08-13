@@ -11,36 +11,36 @@ export interface InternalAccountsOps {
 }
 
 /**
- * Persistence backend for account operations.
- * Implementations: ActivityIdbStorage (IndexedDB) and ActivityKeyValueStorage (chrome.storage.local).
- * ActivityController always holds one of these — there are no conditional IDB checks in the controller.
+ * Persistence backend for account ops: ActivityIdbStorage (IndexedDB) or
+ * ActivityKeyValueStorage (chrome.storage.local). ActivityController always holds one, so
+ * it never branches on IDB availability.
  */
 export interface IActivityOpsBackend {
   /**
-   * One-time migration from legacy chrome.storage.local to IDB.
-   * Called with callbacks so the interface stays decoupled from IStorageController.
-   * IDB backend: migrates if empty; storage backend: no-op.
+   * Whether loadStartupOps() returns only a window rather than the whole history.
    *
-   * isEmpty() and migrateFromStorage() are NOT part of this interface — they are
-   * implementation details of how ActivityIdbStorage decides whether to migrate,
-   * not something callers need polymorphically. Adding them here would force
-   * ActivityKeyValueStorage to carry dead stub methods it never uses.
+   * The capability that drives every behavioural difference between adapters — expansion
+   * markers, cache merging and the total-op count all exist only when this is true. Callers
+   * branch on this, never on the concrete class.
+   */
+  readonly loadsPartially: boolean
+
+  /**
+   * One-time migration of the legacy blob into IDB. No-op on the key-value backend.
+   * Takes callbacks to stay decoupled from IStorageController.
+   *
+   * isEmpty()/migrateFromStorage() stay off this interface — nobody calls them
+   * polymorphically, and declaring them would force dead stubs onto the key-value class.
    */
   ensureMigrated(
     getStoredOps: () => Promise<InternalAccountsOps>,
     removeStoredOps: () => Promise<void>
   ): Promise<void>
 
-  /**
-   * Load the startup dataset.
-   * IDB: returns pending ops + up to 20 finalized per (account, chainId).
-   * Storage: returns the full ops blob.
-   */
+  /** IDB: pending ops + up to 20 finalized per (account, chainId). Key-value: everything. */
   loadStartupOps(): Promise<InternalAccountsOps>
 
-  /**
-   * Write a single new op and optionally delete the op evicted by the in-memory trim.
-   */
+  /** Write one new op, and delete the op the in-memory trim evicted (if any). */
   putSingleOp(
     accountAddr: string,
     chainId: bigint | string,
@@ -48,32 +48,23 @@ export interface IActivityOpsBackend {
     trimmedId?: string
   ): Promise<void>
 
-  /**
-   * Update existing rows in place (e.g. status or balance-change updates).
-   */
+  /** Update existing rows in place (status, balance changes). */
   updateOps(ops: SubmittedAccountOp[]): Promise<void>
 
-  /**
-   * Fetch full history for a specific (account, chainId) pair.
-   * Used for lazy-loading older history during pagination.
-   */
+  /** Full history for one (account, chainId) — the lazy-load behind pagination. */
   getOpsForAccountAndChain(
     accountAddr: string,
     chainId: bigint | string
   ): Promise<SubmittedAccountOp[] | undefined>
 
-  /**
-   * Write ops for a single (account, chainId) pair.
-   */
+  /** Write ops for one (account, chainId) pair. */
   putOpsForAccountAndChain(
     accountAddr: string,
     chainId: bigint | string,
     ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
   ): Promise<void>
 
-  /**
-   * Batch write multiple (account, chainId) records.
-   */
+  /** Batch write across multiple (account, chainId) records. */
   putMultiple(
     records: Array<{
       accountAddr: string
@@ -82,17 +73,12 @@ export interface IActivityOpsBackend {
     }>
   ): Promise<void>
 
-  /**
-   * Delete all ops for an account across all chains.
-   */
+  /** Delete every op for an account, across all chains. */
   deleteAccount(accountAddr: string): Promise<void>
 
   /**
-   * Total number of persisted ops for an account, across every chain.
-   *
-   * Needed because the IDB startup read is a bounded window, so the in-memory group
-   * lengths are NOT a transaction total. Counting in the backend keeps it cheap — IDB
-   * counts a key range without deserializing rows.
+   * Total persisted ops for an account. Needed because the IDB startup read is a bounded
+   * window, so in-memory lengths are not a total.
    */
   countOpsForAccount(accountAddr: string): Promise<number>
 }

@@ -20,8 +20,30 @@ startup read.
 |---|---|
 | `idbSchema.ts` | Declarative manifest: stores, keyPaths, indexes, `dbVersion`. The single source of truth for *structure*. Read by `reconcileSchema()`; contains no logic. |
 | `idbDatabase.ts` | Connection lifecycle (`openAmbireIdb()` singleton, `blocking`, `terminated`, invalidation) and upgrade orchestration (`reconcileSchema()`, `applyMigrations()`). |
-| `activityIdb.ts` | The two interchangeable `ActivityController` backends: `ActivityIdbStorage` (rows) and `ActivityKeyValueStorage` (blob, used on mobile). |
+| `accountOpsPersistence.ts` | **The coordinator `ActivityController` talks to.** Picks an adapter, runs the data migration, falls back on failure, and keeps the in-memory cache coherent with a partially-loaded backend. |
+| `activityIdb.ts` | Two `IActivityOpsBackend` adapters: `ActivityIdbStorage` (rows) and `ActivityKeyValueStorage` (blob, used on mobile). |
 | `phishingIdb.ts` | A second reference implementation. Fully tested, **not wired** — its store is deliberately absent from the manifest. |
+
+## Adapters, and adding a service
+
+`IActivityOpsBackend` is the adapter contract — one implementation per storage service.
+`AccountOpsPersistence` selects one and exposes plain methods (`init`, `ensureFullHistory`,
+`ensureGroupLoaded`, `addOp`, `updateOps`, `removeAccount`, `getTotalOpsCount`), so the
+controller never branches on which backend it got.
+
+One capability drives every behavioural difference:
+
+```ts
+readonly loadsPartially: boolean
+```
+
+`true` for IndexedDB, whose startup read is a window. `false` for key-value, which reads the
+whole blob. Expansion markers, cache merging and the cached op total all exist only when it is
+`true` — and callers test this flag, never the concrete class.
+
+Adding **expo-sqlite** on mobile therefore means: write an `IActivityOpsBackend` adapter with
+`loadsPartially = true`, and select it in `#pickAdapter`. Nothing in `ActivityController`
+changes, and nothing else in this layer does either.
 
 ## Startup order
 
@@ -55,26 +77,65 @@ Keeping these apart avoids most of the confusion in this layer.
 | Runs during | `onupgradeneeded` | controller `#load()` |
 | Frequency | once per `dbVersion` bump | once, ever |
 
+## Structure is declarative
+
+`AMBIRE_IDB_SCHEMA` is the single source of truth for stores and indexes. `reconcileSchema()`
+creates anything in the manifest that does not exist yet, so a purely additive change needs
+only a manifest entry plus a `dbVersion` bump — never a hand-written create-store handler.
+
+It runs on **every** upgrade and is idempotent, which closes two gaps a per-version handler
+leaves open:
+
+- a fresh install and an upgrading install end up on identical structure
+- a new index reaches users who already have the store, not just fresh installs
+
+It only ever **adds**. Removing a store or index from the manifest does not remove it from
+databases that already have it — that needs an explicit `deleteObjectStore`/`deleteIndex` in
+the handler for the version that drops it.
+
+## Writing a migration handler
+
+Handlers live in `migrationHandlers` in `idbDatabase.ts`, keyed by the version they migrate
+**to**. Upgrading v(n) → v(m) runs n+1..m in order, inside the single `onupgradeneeded`
+transaction. They exist for **data** transformations — rewriting or backfilling rows.
+Structure comes from `reconcileSchema()`, which runs first, so a handler can use stores and
+indexes added by the same upgrade.
+
+1. **Use `tx` for everything.** Only the versionchange transaction is valid inside a handler;
+   opening a new one will not participate in the upgrade.
+2. **Handlers are synchronous.** Chain off the read, never `await` it:
+   ```ts
+   store.getAll().then((rows) => rows.forEach((r) => store.put(migrate(r))))
+   ```
+   The versionchange transaction survives microtasks, so requests issued from a `.then()`
+   still land inside the upgrade. Awaiting a non-IDB promise lets it commit and the writes
+   vanish silently. See invariant 1 below — this is the single most dangerous rule here.
+3. **Never remove a handler.** The chain must stay walkable from any prior version.
+4. **Every version `1..dbVersion` needs an entry**, even a no-op, so a bump is always
+   deliberate. A test in `idbIntegration.test.ts` enforces this.
+5. **A key already migrated into IDB is unreachable from a `StorageController` migration.**
+   Transform it with a handler here instead — the legacy blob is a frozen copy nothing reads.
+
 ## Invariants
 
-Breaking any of these is a silent data bug, not a crash.
+Breaking any of these is a silent data bug, not a crash. The handler rules above are the
+other three; these are the ones that bite outside a migration.
 
-1. **Migration handlers are synchronous.** IDB keeps a versionchange transaction alive
-   across microtasks, so chaining off a read (`store.getAll().then(...)`) stays inside the
-   upgrade. `await`ing anything non-IDB lets the transaction commit and the writes vanish
-   with no error. Verified against 14,000 rows in Chrome and Firefox.
-2. **Every version `1..dbVersion` needs a handler entry**, even a no-op. A test enforces it,
-   so a version bump is always deliberate.
-3. **Never remove a handler.** The chain must stay walkable from any prior version.
-4. **A `dbVersion` bump cannot be rolled back.** An older build cannot open an upgraded
+1. **A `dbVersion` bump cannot be rolled back.** An older build cannot open an upgraded
    database — `openDB` rejects with `VersionError` and every controller falls back to
    key-value. Ship bumps alone, and only when something reads the new structure.
-5. **Bulk writes are atomic and tolerate malformed rows.** A legacy blob can be missing
+2. **Bulk writes are atomic and tolerate malformed rows.** A legacy blob can be missing
    fields; those rows are dropped with a warning. A partial commit would make `isEmpty()`
    false and permanently disable the migration retry.
-6. **The startup read is a window, not the history.** Anything reasoning over the *whole*
+3. **The startup read is a window, not the history.** Anything reasoning over the *whole*
    history must expand first. This is the easiest way to introduce a silent bug here — see
    the cost table below.
+4. **Account addresses are case-sensitive keys.** Rows are keyed on the address exactly as
+   written, and an `IDBKeyRange` cannot match case-insensitively — unlike the in-memory
+   `getAccountOpsAccountKey()` helper, which exists precisely because addresses are not
+   always stored checksummed. A lookup with different casing than the stored row silently
+   returns nothing. Pre-existing rather than introduced here; noted so nobody assumes the
+   in-memory workaround extends to the storage layer.
 
 ## The startup window, and who has to care
 
@@ -83,10 +144,10 @@ recent finalized** ones. So in-memory group lengths are *not* totals.
 
 Two mechanisms exist because of that:
 
-- `#fullyLoadedGroups` — a per-`(account, chain)` flag marking groups expanded to full
-  history this session. It must be an explicit flag: pending ops are exempt from the cap, so
+- expansion markers — a per-`(account, chain)` flag marking groups expanded to full history
+  this session. It must be an explicit flag: pending ops are exempt from the cap, so
   a group can exceed 20 without having been expanded, and a length check would be wrong.
-- `#mergeOpsIntoCache()` — expansion **merges** by id and keeps the *cached* object on a
+- the cache merge — expansion **merges** by id and keeps the *cached* object on a
   collision. The cache can hold ops IDB does not have yet (a just-broadcast op is in memory
   before `putSingleOp` writes it), and objects that in-flight work still mutates in place.
   Replacing the array would drop the former and detach the latter.
@@ -105,7 +166,7 @@ Two mechanisms exist because of that:
 
 `hasAccountOpsSentTo()` answers two questions — "have I sent here before?" and "does this
 recipient mimic one I used before?" (address poisoning). Both are properties of the *whole*
-history, so on a miss it calls `#ensureFullHistoryLoaded()` and scans everything. With an
+history, so on a miss it calls `ensureFullHistory()` and scans everything. With an
 empty `accountId` it does this for **every** account.
 
 There is a fast path: `sentToHistory.recipients[accountId][address]`, a small durable map of
@@ -118,7 +179,7 @@ used before — not only genuinely new ones. Once expanded, the memory stays inf
 session.
 
 Backfilling `recipients` from full history once (at data-migration time) would let both
-questions be answered from the small map and remove `#ensureFullHistoryLoaded()` from this
+questions be answered from the small map and remove `ensureFullHistory()` from this
 path. It is the highest-value optimization left in this layer, and is deliberately *not* part
 of the initial IDB change: it alters security-relevant address-poisoning behaviour and
 deserves its own review.
