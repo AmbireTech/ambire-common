@@ -1,3 +1,4 @@
+import { Price } from './assets'
 import { ControllerInterface } from './controller'
 import { Hex } from './hex'
 
@@ -59,6 +60,26 @@ export type RailgunTokenBalance = {
   pendingAmount: bigint
   blockedAmount: bigint
   totalAmount: bigint
+}
+
+/**
+ * What the UI needs in order to render a shielded balance, resolved separately because the pool
+ * reports raw contract addresses and raw amounts and nothing else. Deliberately the same three
+ * pieces the dashboard uses for a public token, so a shielded row can be rendered the same way.
+ *
+ * An entry exists only when `symbol`/`decimals` were actually read from the contract - never with
+ * assumed values, since `decimals` is what user-entered amounts are parsed with. A missing entry
+ * therefore means "unresolved", and the forms refuse to act on such a token.
+ *
+ * `priceIn` may be empty while the entry exists: the token's market simply isn't known (always
+ * the case on testnets, which have no CoinGecko platform). That is a balance shown without a
+ * value, not an unresolved token.
+ */
+export type RailgunTokenData = {
+  address: string
+  symbol: string
+  decimals: number
+  priceIn: Price[]
 }
 
 export type RailgunChainState = {

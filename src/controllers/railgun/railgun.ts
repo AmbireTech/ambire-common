@@ -45,12 +45,18 @@ import {
   RailgunChainState,
   RailgunPoiStatus,
   RailgunShieldedBalance,
+  RailgunTokenData,
   RailgunUnavailableReason
 } from '../../interfaces/railgun'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { Call } from '../../libs/accountOp/types'
+import { Portfolio } from '../../libs/portfolio'
 import { getRailgunTokenBalance } from '../../libs/railgun/balances'
+import {
+  getRailgunTokensDataFromPortfolio,
+  resolveRailgunTokensData
+} from '../../libs/railgun/tokenData'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -686,6 +692,20 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    * Kept per identity rather than cleared on every switch so that switching back shows the last
    * known balances immediately instead of re-scanning for them.
    */
+  /**
+   * Symbol, decimals and price for every token seen in a pool, keyed by chain and then by
+   * lowercased token address.
+   *
+   * Kept outside `#chainStatesByIdentity` on purpose, even though everything else about a pool
+   * lives there: this is a property of the token contract and of its market, so it is identical
+   * for every identity. Keying it per identity would re-read it on every identity switch and
+   * would let one identity's failed lookup present itself as another's unknown token.
+   *
+   * In memory only, like the chain states: a persisted price is a stale price, and symbol/decimals
+   * cost one batched `eth_call` per session to read again.
+   */
+  #tokensDataByChain: { [chainId: string]: { [address: string]: RailgunTokenData } } = {}
+
   #chainStatesByIdentity: { [railgunAddress: string]: { [chainId: string]: RailgunChainState } } =
     {}
 
@@ -972,6 +992,72 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         error: null
       }
     )
+  }
+
+  get tokensData(): { [chainId: string]: { [address: string]: RailgunTokenData } } {
+    return this.#tokensDataByChain
+  }
+
+  /**
+   * Resolves symbol, decimals and price for the tokens this chain's pool holds, in one batch for
+   * all of them, right after a sync has written the balances. Runs there rather than lazily from
+   * the UI because the balances are what reveal which tokens exist: the pool has no token list, so
+   * the scan result IS the discovery.
+   *
+   * The wrapped base token is always included, even at a zero balance, because the unshield form
+   * offers to take shielded ETH out unwrapped and needs its decimals to parse the amount.
+   *
+   * Never throws: the sync it runs at the end of has just produced correct balances of real money,
+   * and a slow price server must not turn that into a failed sync. A token left unresolved shows
+   * as such and is blocked in the forms - see the RailgunTokenData docs.
+   */
+  async #resolveTokensData(chainId: string, tokenAddresses: string[]) {
+    try {
+      const network = this.#networks.networks.find(
+        (someNetwork) => someNetwork.chainId.toString() === chainId
+      )
+      const provider = this.#providers.providers[chainId]
+      if (!network || !provider) return
+
+      const addresses = [...new Set(tokenAddresses.map((address) => address.toLowerCase()))]
+      if (!addresses.length) return
+
+      const { tokensData, errors } = await resolveRailgunTokensData({
+        addresses,
+        // Built per call rather than kept around. It is a plain object graph - constructing it
+        // makes no request - and doing it here means it can never end up holding a provider that
+        // ProvidersController has since destroyed, which is a bug the plugin cache above has to
+        // guard against explicitly.
+        portfolio: new Portfolio(this.#fetch, provider, network),
+        knownTokensData: {
+          // Seeded from the public portfolio so the metadata call can skip - or be avoided
+          // entirely - for tokens it already read. See getRailgunTokensDataFromPortfolio.
+          ...getRailgunTokensDataFromPortfolio(this.#selectedAccount.portfolio.tokens, chainId),
+          // What earlier syncs read from the contracts wins: it was resolved for this pool
+          // specifically and does not depend on which account happens to be selected.
+          ...this.#tokensDataByChain[chainId]
+        }
+      })
+
+      this.#tokensDataByChain = {
+        ...this.#tokensDataByChain,
+        [chainId]: { ...this.#tokensDataByChain[chainId], ...tokensData }
+      }
+      this.emitUpdate()
+
+      // Debug-logged rather than emitted: this runs on every sync, including the periodic
+      // background ones, so a token cena doesn't know would otherwise toast forever.
+      if (errors.length)
+        this.debugLog('sync', 'could not resolve data for every shielded token', {
+          chainId,
+          errors
+        })
+    } catch (error: any) {
+      this.debugLog('sync', 'resolving shielded token data failed', {
+        chainId,
+        error: error?.message
+      })
+    }
   }
 
   /**
@@ -1848,13 +1934,15 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         skippedIdenticalWrites: this.#pluginStorage.skippedWriteCount
       })
 
-      const previousBalances = this.#getChainState(chainId).balances
+      const { balances: previousBalances, wrappedBaseTokenAddress } = this.#getChainState(chainId)
+      const shieldedBalances = balances.filter(isErc20Balance).map((balance) => ({
+        tokenAddress: balance.asset.contract,
+        amount: balance.amount,
+        poiStatus: toRailgunPoiStatus(balance.tag)
+      }))
+
       this.#updateChainStateFor(identityAddress, chainId, {
-        balances: balances.filter(isErc20Balance).map((balance) => ({
-          tokenAddress: balance.asset.contract,
-          amount: balance.amount,
-          poiStatus: toRailgunPoiStatus(balance.tag)
-        })),
+        balances: shieldedBalances,
         lastSyncedAt: Date.now(),
         // This run is what created the identity's persisted entry, so a later one on this chain is
         // a catch-up and gets the short budget.
@@ -1862,6 +1950,11 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       })
 
       this.#resolvePendingShields(chainId, previousBalances)
+
+      await this.#resolveTokensData(chainId, [
+        ...shieldedBalances.map((balance) => balance.tokenAddress),
+        ...(wrappedBaseTokenAddress ? [wrappedBaseTokenAddress] : [])
+      ])
     } catch (error: any) {
       // Compared against the exact message this call site handed to `withTimeout`, which is how
       // it reports a soft timeout - as opposed to an error raised by the scan itself.
@@ -2270,6 +2363,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       isInitialized: this.isInitialized,
       hasSyncedAnyChain: this.hasSyncedAnyChain,
       chains: this.chains,
+      tokensData: this.tokensData,
       activity: this.activity
     }
   }
