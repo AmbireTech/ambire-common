@@ -549,7 +549,8 @@ const init = async (
     storage: storageCtrl,
     accounts: accountsCtrl,
     autoLogin: autoLoginCtrl,
-    banner: bannerCtrl
+    banner: bannerCtrl,
+    ui: uiCtrl
   })
   const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
   await accountsCtrl.initialLoadPromise
