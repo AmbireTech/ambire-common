@@ -1,7 +1,36 @@
+import gasTankFeeTokens from '@/consts/gasTankFeeTokens'
+
 import { Network } from '../../interfaces/network'
 import { GetOptions, SuspectedType, TokenResult } from './interfaces'
-import { getFeeToken, overrideSymbol, ZERO_ADDRESS } from './tokenIndexes'
 import { isSuspectedToken } from './tokenSuspicion'
+
+// Same value as ethers' ZeroAddress, defined locally so this module stays free
+// of ethers — it is reachable from an offloaded task, and a worklet runtime
+// cannot load ethers. See src/libs/offload/README.md.
+export const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+
+// USDC.e is returned with the symbol "USDC" by the deployless BalanceGetter;
+// override it back so the asset the relayer tracks as USDC.e is not confused
+// with native USDC on the same chain.
+const usdcEMapping: { [key: string]: string } = {
+  '43114': '0xa7d7079b0fead91f3e65f86e8915cb59c1a4c664',
+  '1285': '0x748134b5f553f2bcbd78c6826de99a70274bdeb3',
+  '42161': '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
+  '137': '0x2791bca1f2de4661ed88a30c99a7a9449aa84174',
+  '10': '0x7f5c764cbc14f9669b88837ca1490cca17c31607'
+}
+
+export function overrideSymbol(address: string, chainId: bigint, symbol: string) {
+  // Since deployless lib calls contract and USDC.e is returned as USDC, we need to override the symbol
+  if (
+    usdcEMapping[chainId.toString()] &&
+    usdcEMapping[chainId.toString()]!.toLowerCase() === address.toLowerCase()
+  ) {
+    return 'USDC.E'
+  }
+
+  return symbol
+}
 
 // Re-exported so the public surface stays where callers already import it from
 export { isSuspectedToken } from './tokenSuspicion'
