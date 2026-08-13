@@ -37,7 +37,7 @@ import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
-import { IUiController, View } from '../../interfaces/ui'
+import { IUiController, View, isExtensionOverlayView } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
 import {
   formatDappName,
@@ -45,8 +45,10 @@ import {
   getDappIdFromUrl,
   getDappNameFromId,
   getDomainFromUrl,
+  getNormalizedHostnameFromUrl,
   modifyDappPropsIfNeeded,
   normalizeDappConnection,
+  normalizeHostname,
   normalizeTrendingTokens,
   sortDapps,
   unifyDefiLlamaDappUrl
@@ -185,7 +187,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.#ui.uiEvent.on('removeView', (removedView: View) => {
       if (
-        removedView.type === 'popup' &&
+        isExtensionOverlayView(removedView) &&
         this.#shouldRetryFetchAndUpdate &&
         this.#retryFetchAndUpdateAttempts < this.#retryFetchAndUpdateMaxAttempts
       ) {
@@ -284,7 +286,18 @@ export class DappsController extends EventEmitter implements IDappsController {
     ])
     // Normalize on read so a drifted record (e.g. isConnected: true but connectedSources: [])
     // can't show a dapp as connected in the UI while permission checks force a reconnect.
-    this.#dapps = new Map(storedDapps.map((d) => [d.id, normalizeDappConnection(d)]))
+    // Ids are canonicalized as well: a record stored before trailing-dot normalization
+    // ("my-dapp.vercel.app.") is unreachable by any lookup, so it would linger as an orphan
+    // entry in the UI while its permissions can never be resolved again.
+    this.#dapps = new Map()
+    storedDapps.forEach((dapp) => {
+      const id = normalizeHostname(dapp.id)
+      // The canonical record wins over its trailing-dot duplicate - it is the one every lookup
+      // resolves to, and its permissions are the ones the user reviewed for it.
+      if (id !== dapp.id && this.#dapps.has(id)) return
+
+      this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
+    })
     this.#recentDapps = storedRecentDapps
     this.#trendingTokens = storedTrending.tokens
     this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
@@ -306,7 +319,10 @@ export class DappsController extends EventEmitter implements IDappsController {
         this.#shouldRetryFetchAndUpdate = true
 
         // run the interval if the initial fetch failed while the extension is not in use
-        if (!this.#retryFetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
+        if (
+          !this.#retryFetchAndUpdateAttempts &&
+          !this.#ui.views.some((v) => isExtensionOverlayView(v))
+        ) {
           this.#retryFetchAndUpdateInterval.start()
         } else {
           this.#retryFetchAndUpdateInterval.stop()
@@ -676,6 +692,31 @@ export class DappsController extends EventEmitter implements IDappsController {
       delete this.dappSessions[session.sessionId]
       this.emitUpdate()
     }
+  }
+
+  /**
+   * Removes a WalletConnect session terminated by the dApp and, once none of its WC sessions
+   * remain, revokes the `'wc'` connection so the next pairing asks for approval again.
+   */
+  disconnectWcSessionByTopic = (wcTopic: string) => {
+    const session = this.getDappSessionByWcTopic(wcTopic)
+    if (!session) return
+
+    const dappId = session.id
+    delete this.dappSessions[session.sessionId]
+    this.emitUpdate()
+
+    const hasOtherWcSession = Object.values(this.dappSessions).some(
+      (s) => s.id === dappId && !!s.wcTopic
+    )
+    if (hasOtherWcSession) return
+
+    const dapp = this.#dapps.get(dappId)
+    if (!dapp?.connectedSources?.includes('wc')) return
+
+    this.updateDapp(dappId, {
+      connectedSources: dapp.connectedSources.filter((source) => source !== 'wc')
+    })
   }
 
   broadcastDappSessionEvent = async (
@@ -1340,7 +1381,10 @@ export class DappsController extends EventEmitter implements IDappsController {
             : this.initialLoadPromise
               ? 'LOADING'
               : (contextStatus ?? intrinsic),
-        name: dapp?.name || new URL(url).hostname
+        // The canonical hostname, so the banner names the site the user believes they are on
+        // instead of the fully-qualified spelling a phishing page may navigate to. Falls back to
+        // the raw url for inputs the URL parser rejects, which must not throw here.
+        name: dapp?.name || getNormalizedHostnameFromUrl(url) || url
       }
     })
 
@@ -1377,6 +1421,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
         type: 'error',
+        title: 'Potentially harmful app',
         text: withOptionalDappNames(
           "This app didn't pass our safety check. Proceed at your own risk.",
           blacklistedDappNames
@@ -1392,6 +1437,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
         type: 'warning',
+        title: 'Suspicious app hosting',
         text: withOptionalDappNames(
           'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.',
           '' // We explicitly don't append the dApp name, because here what matters is the suspicious hosting URL, but showing the name could confuse the user, so we simply don't
@@ -1405,6 +1451,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
         type: 'warning',
+        title: 'Safety check in progress',
         text: withOptionalDappNames(
           "We're still verifying the app. Please wait, or make sure you trust it before signing requests.",
           loadingDappNames
@@ -1420,6 +1467,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
         type: 'warning',
+        title: "App couldn't be verified",
         text: withOptionalDappNames(
           "We couldn't verify the app. Make sure you trust it before signing requests.",
           failedToVerifyDappNames
@@ -1435,6 +1483,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
         type: 'warning',
+        title: "App not in Ambire's catalog",
         text: withOptionalDappNames(
           'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests.',
           notInCatalogDappNames

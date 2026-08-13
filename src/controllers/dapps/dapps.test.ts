@@ -5,7 +5,7 @@ import wait from '@/utils/wait'
 import { expect } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
-import { makeDapp } from '../../../test/helpers/dapps'
+import { blacklistedDapp, makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
 import { predefinedDapps } from '../../consts/dapps/dapps'
@@ -386,6 +386,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
           type: 'warning',
+          title: 'Safety check in progress',
           text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests: AAVE"
         })
       } finally {
@@ -412,6 +413,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
           type: 'warning',
+          title: 'Safety check in progress',
           text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests: AAVE"
         })
 
@@ -420,6 +422,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
           type: 'warning',
+          title: "App couldn't be verified",
           text: "We couldn't verify the app. Make sure you trust it before signing requests: AAVE"
         })
       } finally {
@@ -442,6 +445,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
           type: 'warning',
+          title: "App couldn't be verified",
           text: "We couldn't verify the app. Make sure you trust it before signing requests: AAVE"
         })
       } finally {
@@ -464,6 +468,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
           type: 'error',
+          title: 'Potentially harmful app',
           text: "This app didn't pass our safety check. Proceed at your own risk: AAVE"
         })
       } finally {
@@ -493,6 +498,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([verifiedCustomDapp.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
           type: 'warning',
+          title: "App not in Ambire's catalog",
           text: 'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: Custom Dapp'
         })
       } finally {
@@ -999,6 +1005,144 @@ describe('DappsController', () => {
       expect(emitCount).toBe(1)
 
       unsubscribe()
+    })
+  })
+
+  // A fully-qualified hostname ("my-dapp.vercel.app.") loads the identical site as its
+  // dotted-free form, so it must resolve to the same dApp identity everywhere - otherwise
+  // appending one dot turns a flagged dApp into an unknown one.
+  describe('fully-qualified (trailing dot) dApp urls', () => {
+    test('a suspicious hosting dApp visited with a trailing dot still shows the SUSPICIOUS_HOSTING banner', async () => {
+      const vercelDapp = makeDapp({
+        id: 'my-dapp.vercel.app',
+        name: 'Fake Uniswap on Vercel',
+        url: 'https://my-dapp.vercel.app',
+        blacklisted: 'LOADING',
+        isCustom: true
+      })
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, vercelDapp])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const banner = controller.getDappVerificationBanner(['https://my-dapp.vercel.app./claim'])
+      expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+      expect(banner?.type).toBe('warning')
+    })
+
+    test('a BLACKLISTED dApp visited with a trailing dot still shows the BLACKLISTED banner', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, blacklistedDapp])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.fetchAndUpdatePromise
+
+      expect(controller.getDappVerificationBanner(['https://blacklisted-dapp.com./'])?.id).toBe(
+        DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED
+      )
+    })
+
+    test('a suspicious hosting top frame written with a trailing dot still poisons the frame context', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      const aave = controller.dapps.find((d) => d.name === 'AAVE')!
+      expect(aave.blacklisted).toBe('VERIFIED')
+
+      const aaveSession = new Session({
+        tabId: 90,
+        windowId: 1,
+        url: aave.url,
+        frameId: 3,
+        topFrameUrl: 'https://sites.google.com./view/fake-aave'
+      })
+      controller.dappSessions[aaveSession.sessionId] = aaveSession
+
+      const banner = controller.getDappVerificationBanner([aave.url], {
+        sessionId: aaveSession.sessionId
+      })
+      expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+    })
+
+    test('getOrCreateDappSession reuses the session of the dotted-free url', async () => {
+      const { controller } = await prepareTest()
+
+      const session = await controller.getOrCreateDappSession({
+        tabId: 91,
+        windowId: 1,
+        url: 'https://app.aave.com',
+        frameId: 0,
+        topFrameUrl: 'https://app.aave.com'
+      })
+      const dottedSession = await controller.getOrCreateDappSession({
+        tabId: 91,
+        windowId: 1,
+        url: 'https://app.aave.com./',
+        frameId: 0,
+        topFrameUrl: 'https://app.aave.com./'
+      })
+
+      expect(dottedSession).toBe(session)
+      expect(dottedSession.id).toBe('app.aave.com')
+    })
+
+    test('a session created from a dotted url keeps the origin the browser reported', async () => {
+      const { controller } = await prepareTest()
+
+      const session = await controller.getOrCreateDappSession({
+        tabId: 92,
+        windowId: 1,
+        url: 'https://app.aave.com./',
+        frameId: 0,
+        topFrameUrl: 'https://app.aave.com./'
+      })
+
+      // The identity is canonical, while the origin stays byte-identical to the page's own
+      // `location.origin` - platform messengers compare against it before delivering data.
+      expect(session.id).toBe('app.aave.com')
+      expect(session.origin).toBe('https://app.aave.com.')
+    })
+
+    test('canonicalizes stored dApp ids on load, dropping a trailing-dot duplicate', async () => {
+      const canonicalDapp = makeDapp({
+        id: 'my-dapp.vercel.app',
+        name: 'Canonical',
+        url: 'https://my-dapp.vercel.app',
+        blacklisted: 'SUSPICIOUS_HOSTING'
+      })
+      const dottedDuplicate = makeDapp({
+        id: 'my-dapp.vercel.app.',
+        name: 'Trailing dot duplicate',
+        url: 'https://my-dapp.vercel.app./',
+        blacklisted: 'VERIFIED',
+        isConnected: true,
+        connectedSources: ['injected']
+      })
+      const dottedOnly = makeDapp({
+        id: 'other-dapp.vercel.app.',
+        name: 'Trailing dot only',
+        url: 'https://other-dapp.vercel.app./',
+        blacklisted: 'VERIFIED'
+      })
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [dottedDuplicate, canonicalDapp, dottedOnly])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+      // The canonical record wins over the duplicate, together with its reviewed permissions.
+      expect(controller.getDapp('my-dapp.vercel.app')!.name).toBe('Canonical')
+      expect(controller.getDapp('my-dapp.vercel.app')!.isConnected).toBe(false)
+      expect(controller.getDapp('my-dapp.vercel.app.')).toBeUndefined()
+
+      // A record that only exists in dotted form is renamed, so it stays reachable.
+      expect(controller.getDapp('other-dapp.vercel.app')!.name).toBe('Trailing dot only')
+      expect(controller.getDapp('other-dapp.vercel.app.')).toBeUndefined()
     })
   })
 
@@ -1741,6 +1885,84 @@ describe('DappsController', () => {
       // Custom dapps that lose their last source are removed from the catalog.
       expect(controller.getDapp('aave.com')).toBeUndefined()
     })
+  })
+
+  describe('disconnectWcSessionByTopic', () => {
+    const wcDapp = (): Dapp =>
+      makeDapp({
+        id: 'aave.com',
+        name: 'Aave',
+        url: 'https://aave.com',
+        isCustom: false,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+
+    const prepareConnectedWcDapp = async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.addDapp(wcDapp(), 'wc')
+
+      return controller
+    }
+
+    test('revokes the wc connection when the dapp terminates its only session', async () => {
+      const controller = await prepareConnectedWcDapp()
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-a'
+      })
+
+      controller.disconnectWcSessionByTopic('topic-a')
+
+      expect(controller.getDappSessionByWcTopic('topic-a')).toBeUndefined()
+      const stored = controller.getDapp('aave.com')!
+      expect(stored.connectedSources).toEqual([])
+      expect(stored.isConnected).toBe(false)
+      // A later pairing must ask the user for approval again instead of auto-connecting.
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(false)
+    })
+
+    test('keeps the wc connection while another session of the same dapp remains', async () => {
+      const controller = await prepareConnectedWcDapp()
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-a'
+      })
+      await controller.getOrCreateDappSession({
+        tabId: 1000002,
+        url: 'https://aave.com',
+        wcTopic: 'topic-b'
+      })
+
+      controller.disconnectWcSessionByTopic('topic-a')
+
+      expect(controller.getDappSessionByWcTopic('topic-b')).toBeDefined()
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc'])
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(true)
+    })
+
+    test('leaves the injected connection intact', async () => {
+      const controller = await prepareConnectedWcDapp()
+      await controller.addDapp(wcDapp(), 'injected')
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-a'
+      })
+
+      controller.disconnectWcSessionByTopic('topic-a')
+
+      const stored = controller.getDapp('aave.com')!
+      expect(stored.connectedSources).toEqual(['injected'])
+      expect(stored.isConnected).toBe(true)
+    })
+
   })
 
   describe('disconnectAllDapps', () => {

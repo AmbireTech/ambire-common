@@ -3,6 +3,7 @@ import { JsonRpcProvider, Provider } from 'ethers'
 import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiAAVEPosition.json'
 import { Network } from '../../../interfaces/network'
 import { generateUuid } from '../../../utils/uuid'
+import { withTimeout } from '../../../utils/with-timeout'
 import { fromDescriptor } from '../../deployless/deployless'
 import { offload } from '../../offload/offload'
 import { AAVE_V3 } from '../defiAddresses'
@@ -14,6 +15,7 @@ const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER =
   115792089237316195423570985008687907853269984665640564039457584007913129639935n
 
 const PAGE_SIZE = 12
+export const AAVE_STATIC_CALL_TIMEOUT_MS = 15 * 1000
 
 export async function getAAVEPositions(
   userAddr: string,

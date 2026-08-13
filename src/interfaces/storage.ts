@@ -94,7 +94,9 @@ export type StorageProps = {
   signAccountOpFeeTokenPreference: {
     [chainId: string]: string | 'gasTank'
   }
-  signAccountOpFeeSpeedPreference: FeeSpeed
+  signAccountOpFeeSpeedPreference: {
+    [chainId: string]: FeeSpeed
+  }
   networks: { [key: string]: Network }
   accounts: Account[]
   networkPreferences: { [key: string]: Partial<Network> }
@@ -102,6 +104,7 @@ export type StorageProps = {
   lastDappsUpdateVersion: string | null
   isPinned: boolean
   isPrivacyModeEnabled: boolean
+  isSidePanelModeEnabled: boolean
   phishing: {
     version: number
     updatedAt: number

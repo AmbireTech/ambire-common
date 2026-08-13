@@ -1,7 +1,16 @@
 import { EventEmitter as UiEventEmitter } from 'events'
 
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-import { IUiController, UiManager, View } from '../../interfaces/ui'
+import {
+  FocusWindowParams,
+  isExtensionOverlayView,
+  IUiController,
+  OpenWindowOptions,
+  UiManager,
+  View,
+  WindowId,
+  WindowProps
+} from '../../interfaces/ui'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 function areSearchParamsEqual(a: View['searchParams'], b: View['searchParams']): boolean {
@@ -14,6 +23,16 @@ function areSearchParamsEqual(a: View['searchParams'], b: View['searchParams']):
   return aKeys.every((key) => a[key] === b[key])
 }
 
+/**
+ * The surface that shows a request: the panel when it is open (nothing to open, focus or close
+ * there), a dedicated request window otherwise. Consumers only open, focus and close.
+ */
+type RequestViewManager = {
+  open: (options?: OpenWindowOptions) => Promise<WindowProps>
+  focus: (windowProps: WindowProps, params?: FocusWindowParams) => Promise<WindowProps>
+  close: (winId: WindowId) => Promise<void>
+}
+
 export class UiController extends EventEmitter implements IUiController {
   uiEvent: UiEventEmitter
 
@@ -21,9 +40,15 @@ export class UiController extends EventEmitter implements IUiController {
 
   window: UiManager['window']
 
+  panel: UiManager['panel']
+
   notification: UiManager['notification']
 
   message: UiManager['message']
+
+  dispatchDappTabFocus?: UiManager['dispatchDappTabFocus']
+
+  requestView: RequestViewManager
 
   constructor({
     eventEmitterRegistry,
@@ -36,16 +61,37 @@ export class UiController extends EventEmitter implements IUiController {
 
     this.uiEvent = new UiEventEmitter()
     this.window = uiManager.window
+    this.panel = uiManager.panel
     this.notification = uiManager.notification
     this.message = uiManager.message
+    this.dispatchDappTabFocus = uiManager.dispatchDappTabFocus
+
+    this.requestView = {
+      open: async (options?: OpenWindowOptions) => {
+        if (this.panel?.isOpen()) return null
+
+        // The popup can't stay open next to a request window
+        await this.window.remove('popup')
+
+        return this.window.open(options)
+      },
+      focus: async (windowProps: WindowProps, params?: FocusWindowParams) => {
+        await this.window.remove('popup')
+
+        return this.window.focus(windowProps, params)
+      },
+      close: (winId: WindowId) => this.window.remove(winId)
+    }
   }
 
   addView(view: View) {
-    const existingPopup = this.views.find((v) => v.type === 'popup')
+    const existingOverlay = this.views.find((v) => isExtensionOverlayView(v))
 
-    // if a popup already exists, just update its id and stop here
-    if (view.type === 'popup' && existingPopup) {
-      existingPopup.id = view.id
+    // if an overlay view already exists, just update its id and stop here
+    if (isExtensionOverlayView(view) && existingOverlay) {
+      existingOverlay.id = view.id
+      existingOverlay.type = view.type
+      if (!existingOverlay.isReady) this.uiEvent.emit('addView', view)
       this.emitUpdate()
       return
     }
@@ -124,8 +170,11 @@ export class UiController extends EventEmitter implements IUiController {
       ...super.toJSON(),
       uiEvent: undefined,
       window: undefined,
+      panel: undefined,
       notification: undefined,
-      message: undefined
+      message: undefined,
+      dispatchDappTabFocus: undefined,
+      requestView: undefined
     }
   }
 }

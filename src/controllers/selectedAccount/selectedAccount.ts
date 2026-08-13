@@ -40,7 +40,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 // Portfolio recalculations fire back-to-back as per-network results stream in.
 // Throttle their UI emit so the state isn't serialized on every partial tick.
-const PORTFOLIO_UPDATE_THROTTLE_MS = 150
+const PORTFOLIO_UPDATE_THROTTLE_MS = 100
 
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
   #storage: IStorageController

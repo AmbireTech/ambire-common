@@ -32,9 +32,7 @@ export default class EventEmitter<DebugFlow extends string = string> {
 
   #errors: ErrorRef[] = []
 
-  // Trailing throttle used by `emitUpdate({ throttleMs })` for high-frequency
-  // background updates (e.g. portfolio ticks). Kept private so subclasses can
-  // only opt in per call site, never leave a dangling timer.
+  // Trailing throttle used by `emitUpdate({ throttleMs })`
   #throttleTimeout: ReturnType<typeof setTimeout> | null = null
 
   #hasTrailingUpdate = false
@@ -137,7 +135,7 @@ export default class EventEmitter<DebugFlow extends string = string> {
    *
    * Pass `throttleMs` for high-frequency background updates (e.g. portfolio
    * ticks) that don't need to reach the UI on every single change. The first
-   * emit fires immediately (leading edge); further throttled emits within the
+   * emit fires immediately, while further throttled emits within the
    * window are coalesced into a single trailing emit that carries the latest
    * state. A plain `emitUpdate()` or `forceEmitUpdate()` in the meantime flushes
    * the pending update instantly, so user interactions are never delayed.

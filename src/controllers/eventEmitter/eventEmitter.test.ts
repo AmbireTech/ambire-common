@@ -120,7 +120,7 @@ describe('EventEmitter', () => {
       // Accessing the protected method for testing
       (eventEmitter as any).emitUpdate(options)
 
-    it('should emit immediately on the leading edge', () => {
+    it('should emit immediately on the first emit', () => {
       const cb = jest.fn()
       eventEmitter.onUpdate(cb)
 

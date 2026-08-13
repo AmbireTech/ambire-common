@@ -307,6 +307,46 @@ describe('RequestsController ', () => {
     expect(controller.userRequests[0]!.kind).toBe('calls')
   })
 
+  test('emits the updated calls when adding another request to a queued batch', async () => {
+    const { controller } = await prepareTest()
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    let emittedCallsCount = 0
+    const buildRequest = () =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [
+              {
+                to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+                value: 1n,
+                data: '0x'
+              }
+            ],
+            meta: {
+              accountAddr,
+              chainId: 1n
+            }
+          }
+        }
+      })
+
+    const unsubscribe = controller.onUpdate(() => {
+      const request = controller.userRequests[0]
+      emittedCallsCount =
+        request?.kind === 'calls' ? request.signAccountOp.accountOp.calls.length : 0
+    })
+
+    await buildRequest()
+    expect(emittedCallsCount).toBe(1)
+
+    await buildRequest()
+    unsubscribe()
+    expect(controller.userRequests).toHaveLength(1)
+    expect(emittedCallsCount).toBe(2)
+  })
+
   test('adds a new Safe request when two partially signed requests occupy earlier nonces', async () => {
     const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -621,6 +661,39 @@ describe('RequestsController ', () => {
     expect(controller.requestWindow.windowProps).not.toBe(null)
     await controller.closeRequestWindow()
     expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('should not open a request window while the panel is open', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: () => true }
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+
+    expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
+    expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('should reject the active request on close when there is no request window', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: () => true }
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+    await controller.closeRequestWindow()
+
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.userRequests.length).toBe(0)
+  })
+  test('should keep transaction requests queued on close when there is no request window', async () => {
+    const { controller, uiCtrl, getCallsRequest } = await prepareTest()
+    uiCtrl.panel = { isOpen: () => true }
+    const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+
+    await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
+    await controller.closeRequestWindow()
+
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.userRequests.length).toBe(1)
   })
   test('removeAccountData', async () => {
     const { controller, getCallsRequest } = await prepareTest()

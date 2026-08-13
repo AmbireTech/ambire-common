@@ -1,64 +1,92 @@
-import { describe, expect, test } from '@jest/globals'
+import { ZeroAddress } from 'ethers'
 
-import { networks } from '../../consts/networks'
-import { toMapTokenHints, toMapTokenNetwork } from './tokenProcessing'
+import { describe, expect, it } from '@jest/globals'
 
-const ethereum = networks.find(({ chainId }) => chainId === 1n)!
+import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
+import { getFeeToken, getFlags } from './tokenProcessing'
 
-// Anything handed to an offloaded task is marked as serialized by the worklet
-// runtime, and the owner mutating it afterwards warns and may not be seen on the
-// other side. Network and the hint lists are both controller-owned and mutated
-// during a session, so these projections must hand over copies, never the
-// originals. See src/libs/offload/README.md.
+const USDT_ETHEREUM = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+const WETH_OPTIMISM = '0x4200000000000000000000000000000000000006'
+const DUPLICATED_ON_AVALANCHE = '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E'
+const NOT_A_FEE_TOKEN = '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
 
-describe('toMapTokenNetwork', () => {
-  test('returns a new object rather than the network it was given', () => {
-    const projected = toMapTokenNetwork(ethereum)
+describe('getFeeToken', () => {
+  it('returns the first of two entries sharing an address and a chain', () => {
+    const duplicates = gasTankFeeTokens.filter(
+      (t) =>
+        t.address.toLowerCase() === DUPLICATED_ON_AVALANCHE.toLowerCase() && t.chainId === 43114n
+    )
 
-    expect(projected).not.toBe(ethereum)
-    expect(projected.chainId).toBe(ethereum.chainId)
-    expect(projected.name).toBe(ethereum.name)
-    expect(projected.nativeAssetName).toBe(ethereum.nativeAssetName)
-    expect(projected.nativeAssetSymbol).toBe(ethereum.nativeAssetSymbol)
+    expect(duplicates.length).toBeGreaterThan(1)
+    expect(getFeeToken(DUPLICATED_ON_AVALANCHE, 43114n)).toBe(duplicates[0])
   })
 
-  test('carries none of the mutable fields the networks controller writes to', () => {
-    const projected = toMapTokenNetwork(ethereum) as Record<string, unknown>
+  it('is case-insensitive on the given address', () => {
+    const usdt = gasTankFeeTokens.find(
+      (t) => t.address.toLowerCase() === USDT_ETHEREUM.toLowerCase() && t.chainId === 1n
+    )
 
-    // features is reassigned by the networks controller after a network is
-    // built, which is exactly what triggered the serialized-object warning
-    expect(projected).not.toHaveProperty('features')
-    expect(Object.keys(projected).sort()).toEqual([
-      'chainId',
-      'name',
-      'nativeAssetName',
-      'nativeAssetSymbol'
-    ])
+    expect(usdt).toBeDefined()
+    expect(getFeeToken(USDT_ETHEREUM.toLowerCase(), 1n)).toBe(usdt)
+    expect(getFeeToken(USDT_ETHEREUM.toUpperCase(), 1n)).toBe(usdt)
+  })
+
+  it('returns undefined for an address that is not a fee token', () => {
+    expect(getFeeToken(NOT_A_FEE_TOKEN, 1n)).toBeUndefined()
+    expect(getFeeToken(NOT_A_FEE_TOKEN, 1n)).toBeUndefined()
+  })
+
+  it('returns undefined when the address is a fee token but on another chain', () => {
+    const wethOnOptimism = gasTankFeeTokens.find(
+      (t) => t.address.toLowerCase() === WETH_OPTIMISM.toLowerCase() && t.chainId === 10n
+    )
+
+    expect(wethOnOptimism).toBeDefined()
+    expect(getFeeToken(WETH_OPTIMISM, 1n)).toBeUndefined()
+    expect(getFeeToken(WETH_OPTIMISM, 1n)).toBeUndefined()
+  })
+
+  it('reuses the index across calls instead of rebuilding it', () => {
+    expect(getFeeToken(USDT_ETHEREUM, 1n)).toBe(getFeeToken(USDT_ETHEREUM, 1n))
   })
 })
 
-describe('toMapTokenHints', () => {
-  test('copies every list instead of sharing the caller arrays', () => {
-    const hints = { custom: ['0xa'], hidden: ['0xb'], learn: ['0xc'] }
-    const projected = toMapTokenHints(hints)!
+describe('getFlags fee token flags', () => {
+  it('marks a gas tank fee token as topped up and usable as a fee', () => {
+    const usdt = gasTankFeeTokens.find(
+      (t) => t.address.toLowerCase() === USDT_ETHEREUM.toLowerCase() && t.chainId === 1n
+    )!
 
-    expect(projected).not.toBe(hints)
-    expect(projected.custom).not.toBe(hints.custom)
-    expect(projected.hidden).not.toBe(hints.hidden)
-    expect(projected.learn).not.toBe(hints.learn)
-    expect(projected).toEqual(hints)
+    expect(usdt.disableGasTankDeposit).toBeFalsy()
+    expect(usdt.disableAsFeeToken).toBeFalsy()
+
+    const flags = getFlags({}, '1', 1n, USDT_ETHEREUM, 'Tether USD', 'USDT')
+
+    expect(flags.canTopUpGasTank).toBe(true)
+    expect(flags.isFeeToken).toBe(true)
+    expect(flags.onGasTank).toBe(false)
   })
 
-  test('a later write to the original list does not reach the copy', () => {
-    const hints = { custom: ['0xa'], hidden: [], learn: [] }
-    const projected = toMapTokenHints(hints)!
+  it('does not mark an unknown token as a fee token', () => {
+    const flags = getFlags({}, '1', 1n, NOT_A_FEE_TOKEN, 'Random', 'RND')
 
-    hints.custom.push('0xlater')
-
-    expect(projected.custom).toEqual(['0xa'])
+    expect(flags.canTopUpGasTank).toBe(false)
+    expect(flags.isFeeToken).toBeFalsy()
   })
 
-  test('passes undefined through, since the hints are optional', () => {
-    expect(toMapTokenHints(undefined)).toBeUndefined()
+  it('treats the native token as a fee token even without a gas tank entry', () => {
+    const flags = getFlags({}, '31337', 31337n, ZeroAddress, 'Ether', 'ETH')
+
+    expect(getFeeToken(ZeroAddress, 31337n)).toBeUndefined()
+    expect(flags.isFeeToken).toBe(true)
+    expect(flags.canTopUpGasTank).toBe(false)
+  })
+
+  it('resolves fee tokens on the gasTank pseudo chain by the token chain id', () => {
+    const flags = getFlags({}, 'gasTank', 1n, USDT_ETHEREUM, 'Tether USD', 'USDT')
+
+    expect(flags.onGasTank).toBe(true)
+    expect(flags.canTopUpGasTank).toBe(true)
+    expect(flags.isFeeToken).toBe(true)
   })
 })
