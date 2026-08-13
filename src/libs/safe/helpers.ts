@@ -7,7 +7,7 @@ import { AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { SafeTx } from '../../interfaces/safe'
 import { CallsUserRequest } from '../../interfaces/userRequest'
-import { AccountOp, getAccountOpNonce, getSignableCalls } from '../accountOp/accountOp'
+import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 
 export const multiCallAbi = [
   { inputs: [], stateMutability: 'nonpayable', type: 'constructor' },
@@ -205,23 +205,6 @@ export function getSameNonceRequests(requests: CallsUserRequest[]) {
 }
 
 /**
- * The transaction picked for the portfolio simulation, per account, chain and nonce.
- * The keys are built by `getSafeSimulationNonceKey`, the values are `CallsUserRequest` ids.
- */
-export type SafeSimulationSelection = { [nonceKey: string]: CallsUserRequest['id'] }
-
-/**
- * The key under which the transaction picked for the simulation of a single nonce is stored.
- */
-export function getSafeSimulationNonceKey(
-  accountAddr: string,
-  chainId: bigint,
-  nonce: bigint
-): string {
-  return `${accountAddr.toLowerCase()}:${chainId.toString()}:${nonce.toString()}`
-}
-
-/**
  * Of several transactions competing for one nonce only one can ever execute. The one closest
  * to execution is preferred for the simulation: the transaction with the most collected
  * signatures, and the most recently created one when the signature counts are equal.
@@ -244,24 +227,4 @@ export function getPreferredSafeRequest(
     // Sorted by id last, so that the same transaction is picked on every run
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
   })[0]
-}
-
-/**
- * The transaction the simulation runs for a single nonce - the one the user picked, or the
- * preferred one while there is no pick (or while the pick no longer exists).
- */
-export function getSimulatedSafeRequest(
-  requests: CallsUserRequest[],
-  simulationSelection: SafeSimulationSelection = {}
-): CallsUserRequest | undefined {
-  if (requests.length <= 1) return requests[0]
-
-  const nonce = getAccountOpNonce(requests[0]!.signAccountOp.accountOp)
-  const { accountAddr, chainId } = requests[0]!.signAccountOp.accountOp
-  const selectedId =
-    nonce === null
-      ? undefined
-      : simulationSelection[getSafeSimulationNonceKey(accountAddr, chainId, nonce)]
-
-  return requests.find((request) => request.id === selectedId) || getPreferredSafeRequest(requests)
 }

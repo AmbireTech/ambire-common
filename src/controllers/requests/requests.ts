@@ -68,7 +68,6 @@ import {
   messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
-import { getSafeSimulationNonceKey, SafeSimulationSelection } from '../../libs/safe/helpers'
 import { getSequentialSafeAccountOps } from '../../libs/safe/safe'
 import {
   AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
@@ -174,13 +173,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #onBroadcastFailed: OnBroadcastFailed
 
   userRequests: UserRequest[] = []
-
-  /**
-   * The Safe transaction the user picked for the portfolio simulation of a single nonce.
-   * Only nonces with more than one competing transaction can have a pick; the rest are
-   * resolved by `getSimulatedSafeRequest`.
-   */
-  safeSimulationSelection: SafeSimulationSelection = {}
 
   userRequestsWaitingAccountSwitch: UserRequest[] = []
 
@@ -594,12 +586,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         ]?.nonce
 
       const accountOps = curR.signAccountOp.account.safeCreation
-        ? getSequentialSafeAccountOps(
-            requests,
-            curR,
-            accountStateNonce,
-            this.safeSimulationSelection
-          )
+        ? getSequentialSafeAccountOps(requests, curR, accountStateNonce)
         : [curR.signAccountOp.accountOp]
 
       // if no accountOps should be simulated, clear the results instead
@@ -616,35 +603,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     } catch (e) {
       console.log('Failed to do #performSimulation', e)
     }
-  }
-
-  /**
-   * Picks which of the transactions competing for one nonce takes part in the portfolio
-   * simulation. Only one of them can ever execute, so only one can be simulated. The pick
-   * has no effect on the transactions themselves - all of them stay signable.
-   */
-  async selectSafeSimulationRequest(requestId: UserRequest['id']) {
-    const request = this.userRequests.find((r) => r.id === requestId)
-    if (!request || request.kind !== 'calls' || !request.signAccountOp.account.safeCreation) return
-
-    const { accountAddr, chainId } = request.signAccountOp.accountOp
-    const nonce = getAccountOpNonce(request.signAccountOp.accountOp)
-    if (nonce === null) return
-
-    const key = getSafeSimulationNonceKey(accountAddr, chainId, nonce)
-    if (this.safeSimulationSelection[key] === requestId) return
-
-    // Picks of transactions that are gone (executed, rejected or replaced) are dropped,
-    // so that the selection does not grow for as long as the app runs
-    const requestIds = new Set(this.userRequests.map((r) => r.id))
-    const liveSelection = Object.fromEntries(
-      Object.entries(this.safeSimulationSelection).filter(([, id]) => requestIds.has(id))
-    )
-
-    this.safeSimulationSelection = { ...liveSelection, [key]: requestId }
-    this.emitUpdate()
-
-    await this.#performSimulation(this.userRequests, request)
   }
 
   async #awaitPendingPromises() {

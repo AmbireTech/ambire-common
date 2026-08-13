@@ -32,10 +32,9 @@ import { AccountOp, getAccountOpNonce } from '../accountOp/accountOp'
 import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
 import {
   decodeMultiSend,
-  getSimulatedSafeRequest,
+  getPreferredSafeRequest,
   multiCallAbi,
-  parseSafeMessageOrigin,
-  SafeSimulationSelection
+  parseSafeMessageOrigin
 } from './helpers'
 
 import type {
@@ -86,8 +85,7 @@ export function getApiKit(chainId: bigint) {
  * - current account nonce 131 and txns with nonces 132, 133 - remove all txns
  *
  * Only one of the txns competing for the same nonce can ever execute, so exactly one of
- * them takes part in the simulation - the one the user picked in `simulationSelection`,
- * or the preferred one while there is no pick.
+ * them takes part in the simulation - the preferred one.
  *
  * Also, the simulation should be run from the current account state nonce.
  * If a txn is missing for it, it should not be shown as the user will
@@ -99,8 +97,7 @@ export function getApiKit(chainId: bigint) {
 export function getSequentialSafeAccountOps(
   userRequests: UserRequest[],
   curR: UserRequest,
-  accountStateNonce: bigint | undefined,
-  simulationSelection: SafeSimulationSelection = {}
+  accountStateNonce: bigint | undefined
 ): AccountOp[] {
   if (curR.kind !== 'calls') return []
 
@@ -130,7 +127,7 @@ export function getSequentialSafeAccountOps(
 
   const accountOps = [
     ...[...requestsByNonce.values()].map(
-      (nonceRequests) => getSimulatedSafeRequest(nonceRequests, simulationSelection)!
+      (nonceRequests) => getPreferredSafeRequest(nonceRequests)!
     ),
     ...requestsWithoutNonce
   ]

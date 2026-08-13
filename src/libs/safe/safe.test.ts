@@ -2,13 +2,7 @@ import { getAddress } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
-import {
-  buildSafeMessageOrigin,
-  getPreferredSafeRequest,
-  getSafeSimulationNonceKey,
-  getSimulatedSafeRequest,
-  parseSafeMessageOrigin
-} from './helpers'
+import { buildSafeMessageOrigin, getPreferredSafeRequest, parseSafeMessageOrigin } from './helpers'
 import {
   getSafeAccountByOwner,
   getSequentialSafeAccountOps,
@@ -171,51 +165,6 @@ describe('getSequentialSafeAccountOps', () => {
     )
   })
 
-  test('keeps the picked account op of a duplicated nonce', () => {
-    const currentRequest = makeCallsRequest({ id: 'one-signature', nonce: 132n, signed: [OWNER] })
-    const requests = [
-      currentRequest,
-      makeCallsRequest({ id: 'two-signatures', nonce: 132n, signed: [OWNER, OTHER_OWNER] })
-    ]
-    const selection = {
-      [getSafeSimulationNonceKey(SAFE_ADDRESS, 1n, 132n)]: 'one-signature'
-    }
-
-    expect(
-      getSequentialSafeAccountOps(requests, currentRequest, 132n, selection).map(({ id }) => id)
-    ).toEqual(['one-signature'])
-  })
-
-  test('falls back to the preferred account op when the picked one is gone', () => {
-    const currentRequest = makeCallsRequest({ id: 'one-signature', nonce: 132n, signed: [OWNER] })
-    const requests = [
-      currentRequest,
-      makeCallsRequest({ id: 'two-signatures', nonce: 132n, signed: [OWNER, OTHER_OWNER] })
-    ]
-    const selection = {
-      [getSafeSimulationNonceKey(SAFE_ADDRESS, 1n, 132n)]: 'executed-transaction'
-    }
-
-    expect(
-      getSequentialSafeAccountOps(requests, currentRequest, 132n, selection).map(({ id }) => id)
-    ).toEqual(['two-signatures'])
-  })
-
-  test('ignores a pick made for another nonce', () => {
-    const currentRequest = makeCallsRequest({ id: 'one-signature', nonce: 132n, signed: [OWNER] })
-    const requests = [
-      currentRequest,
-      makeCallsRequest({ id: 'two-signatures', nonce: 132n, signed: [OWNER, OTHER_OWNER] })
-    ]
-    const selection = {
-      [getSafeSimulationNonceKey(SAFE_ADDRESS, 1n, 133n)]: 'one-signature'
-    }
-
-    expect(
-      getSequentialSafeAccountOps(requests, currentRequest, 132n, selection).map(({ id }) => id)
-    ).toEqual(['two-signatures'])
-  })
-
   test('returns no account ops when there is no transaction for the account state nonce', () => {
     const currentRequest = makeCallsRequest({ id: 'nonce-132', nonce: 132n })
     const requests = [
@@ -345,34 +294,6 @@ describe('getPreferredSafeRequest', () => {
 
   test('returns nothing for an empty list', () => {
     expect(getPreferredSafeRequest([])).toBeUndefined()
-  })
-})
-
-describe('getSimulatedSafeRequest', () => {
-  test('returns the only transaction of a nonce without looking at the picks', () => {
-    const request = makeCallsRequest({ id: 'only', nonce: 1n })
-    const selection = { [getSafeSimulationNonceKey(SAFE_ADDRESS, 1n, 1n)]: 'another' }
-
-    expect(getSimulatedSafeRequest([request], selection)?.id).toBe('only')
-  })
-
-  test('returns the picked transaction', () => {
-    const requests = [
-      makeCallsRequest({ id: 'picked', nonce: 1n }),
-      makeCallsRequest({ id: 'other', nonce: 1n, signed: [OWNER] })
-    ]
-    const selection = { [getSafeSimulationNonceKey(SAFE_ADDRESS, 1n, 1n)]: 'picked' }
-
-    expect(getSimulatedSafeRequest(requests, selection)?.id).toBe('picked')
-  })
-
-  test('returns the preferred transaction while there is no pick', () => {
-    const requests = [
-      makeCallsRequest({ id: 'no-signatures', nonce: 1n }),
-      makeCallsRequest({ id: 'one-signature', nonce: 1n, signed: [OWNER] })
-    ]
-
-    expect(getSimulatedSafeRequest(requests)?.id).toBe('one-signature')
   })
 })
 
