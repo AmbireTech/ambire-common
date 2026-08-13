@@ -300,14 +300,13 @@ export class Portfolio {
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
         paginate(hints.erc20s, opts.simulation ? limits.erc20Simulation : limits.erc20).map(
-          (page, index) =>
+          (page) =>
             getTokens(
               this.network,
               this.deploylessTokens,
               { simulation, blockTag, specialErc20Hints, deployless },
               accountAddr,
-              page,
-              index
+              page
             )
         )
       ),
@@ -615,8 +614,8 @@ export class Portfolio {
       : LIMITS.deploylessStateOverrideMode
 
     const [tokensWithErrResult] = await flattenResults(
-      paginate(uniqueTokenAddrs, limits.erc20).map((page, index) =>
-        getTokens(this.network, this.deploylessTokens, opts, accountAddr, page, index)
+      paginate(uniqueTokenAddrs, limits.erc20).map((page) =>
+        getTokens(this.network, this.deploylessTokens, opts, accountAddr, page)
       )
     )
 
