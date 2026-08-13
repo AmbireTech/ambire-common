@@ -8,6 +8,8 @@ const RECIPIENT = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
 const SELECTED_ACCOUNT = '0xf9D6794F16CDbdC5b4873AEdeF4dC69d8D5edcaD'
 const CHANGED_MESSAGE =
   'This name now resolves to a different address than the last time you sent to it. Verify the new recipient before proceeding.'
+const BLACKLISTED_MESSAGE =
+  'This address is known for stealing funds. Anything you send to it will be lost.'
 
 const networks: Network[] = []
 const accountStates: AccountStates = {}
@@ -18,6 +20,7 @@ const validate = (overrides: {
   isRecipientAddressFirstTimeSend?: boolean
   isRecipientAddressUnknown?: boolean
   isDomain?: boolean
+  isRecipientAddressBlacklisted?: boolean
 }) =>
   validateSendTransferAddress(
     RECIPIENT,
@@ -34,7 +37,8 @@ const validate = (overrides: {
     overrides.isRecipientAddressFirstTimeSend ?? false,
     null,
     null,
-    overrides.recipientDomainAddressChange ?? null
+    overrides.recipientDomainAddressChange ?? null,
+    overrides.isRecipientAddressBlacklisted ?? false
   )
 
 describe('validateSendTransferAddress - recipient domain address change', () => {
@@ -59,5 +63,33 @@ describe('validateSendTransferAddress - recipient domain address change', () => 
     const result = validate({ recipientDomainAddressChange: null })
 
     expect(result.message).not.toBe(CHANGED_MESSAGE)
+  })
+})
+
+describe('validateSendTransferAddress - blacklisted recipient', () => {
+  it('warns when the recipient is in the phishing list', () => {
+    const result = validate({ isRecipientAddressBlacklisted: true })
+
+    expect(result.message).toBe(BLACKLISTED_MESSAGE)
+    // Not 'error', because an error severity disables the buttons of the transfer form. The user is
+    // stopped by the hold-to-proceed step instead.
+    expect(result.severity).toBe('warning')
+  })
+
+  it('takes priority over every other recipient message', () => {
+    const result = validate({
+      isRecipientAddressBlacklisted: true,
+      recipientDomainAddressChange: { previousAddress: SELECTED_ACCOUNT },
+      isRecipientAddressFirstTimeSend: true,
+      isRecipientAddressUnknown: true
+    })
+
+    expect(result.message).toBe(BLACKLISTED_MESSAGE)
+  })
+
+  it('does not warn when the recipient is not in the phishing list', () => {
+    const result = validate({ isRecipientAddressBlacklisted: false })
+
+    expect(result.message).not.toBe(BLACKLISTED_MESSAGE)
   })
 })

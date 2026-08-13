@@ -1,5 +1,6 @@
 import { getDomain } from 'tldts'
-import { zeroAddress } from 'viem'
+
+import { getAddress, zeroAddress } from 'viem'
 
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import {
@@ -537,11 +538,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     })
 
     addresses.forEach((addr) => {
-      const status = this.#addresses.size
-        ? this.#addresses.has(addr)
-          ? 'BLACKLISTED'
-          : 'VERIFIED'
-        : undefined
+      const status = this.getAddressBlacklistedStatus(addr)
       if (status) this.#addressesBlacklistedStatus.set(addr, status)
     })
 
@@ -683,6 +680,29 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     // DB not yet loaded - SUSPICIOUS_HOSTING_DOMAINS still detectable without it.
     if (isSuspiciousHostingDomain(url)) return 'SUSPICIOUS_HOSTING'
     return undefined
+  }
+
+  /**
+   * Resolves the blacklisted status of an address from the locally stored phishing list, without a
+   * network request. Returns undefined while the list is not loaded yet, so that callers can tell
+   * "not blacklisted" apart from "not checked yet".
+   */
+  getAddressBlacklistedStatus(address: string): BlacklistedStatus | undefined {
+    if (!this.#addresses.size) return undefined
+
+    // The list may hold addresses in any casing, while the checked address can come straight from
+    // user input (typed, pasted or resolved from a name). Compare every common form, so that a
+    // lowercase input is never treated as safe only because the list holds it checksummed.
+    if (this.#addresses.has(address) || this.#addresses.has(address.toLowerCase()))
+      return 'BLACKLISTED'
+
+    try {
+      if (this.#addresses.has(getAddress(address))) return 'BLACKLISTED'
+    } catch {
+      // Not a valid address, so it cannot be in the list
+    }
+
+    return 'VERIFIED'
   }
 
   toJSON() {

@@ -140,13 +140,24 @@ const validateSendTransferAddress = (
   isRecipientAddressFirstTimeSend?: boolean,
   lastRecipientTransactionDate?: Date | null,
   addressPoisoningMatch?: AddressPoisoningMatch | null,
-  recipientDomainAddressChange?: { previousAddress: string } | null
+  recipientDomainAddressChange?: { previousAddress: string } | null,
+  isRecipientAddressBlacklisted?: boolean
 ): Validation => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
     return {
       message: '',
       severity: 'success'
+    }
+  }
+
+  // A known scam address is the most severe problem, so it takes priority over every other message.
+  // The severity stays 'warning' because 'error' disables the buttons of the form. The user is
+  // stopped by the hold-to-proceed step instead, which keeps the flow the same as the signing step.
+  if (isRecipientAddressBlacklisted) {
+    return {
+      message: 'This address is known for stealing funds. Anything you send to it will be lost.',
+      severity: 'error'
     }
   }
 
@@ -287,7 +298,7 @@ const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult):
         }
       }
     }
-  } catch (e) {
+  } catch {
     // Keep original behavior but avoid adding new console usage beyond existing
     // callers may log if needed; return a warning indicating invalid amount.
     return {
