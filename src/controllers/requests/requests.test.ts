@@ -1,4 +1,5 @@
 import { describe, expect, test } from '@jest/globals'
+import { ZeroAddress } from 'ethers'
 
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
@@ -405,6 +406,138 @@ describe('RequestsController ', () => {
     expect(nonce120Request.signAccountOp.accountOp.nonce).toBe(120n)
     expect(new Set(controller.userRequests.map((request) => request.id)).size).toBe(3)
   })
+  test('builds an onchain Safe rejection as the current request at the same nonce', async () => {
+    const { accountsCtrl, controller, getCallsRequest, portfolioCtrl } = await prepareTest(
+      false,
+      true
+    )
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    accountsCtrl.accountStates[accountAddr]![1]!.threshold = 2
+    const request = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    controller.userRequests = [request]
+    await controller.setCurrentUserRequestById(request.id)
+    request.signAccountOp.accountOp.nonce = 99n
+    request.signAccountOp.accountOp.safeTx = { nonce: '0x07' } as any
+    request.signAccountOp.accountOp.signature =
+      '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b'
+    request.signAccountOp.accountOp.signed = ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E']
+    request.signAccountOp.accountOp.txnId = `0x${'1'.repeat(64)}`
+    const pauseSpy = jest.spyOn(request.signAccountOp, 'pause')
+    const overrideSimulationSpy = jest
+      .spyOn(portfolioCtrl, 'overrideSimulationResults')
+      .mockResolvedValue()
+    const setSafeNonceSpy = jest.spyOn(SignAccountOpController.prototype, 'setSafeNonce')
+
+    await controller.buildOnchainSafeRejection(request.id)
+
+    expect(controller.userRequests).toHaveLength(2)
+    expect(controller.currentUserRequest).not.toBe(request)
+    expect(controller.currentUserRequest?.kind).toBe('calls')
+    if (controller.currentUserRequest?.kind !== 'calls') throw new Error('Expected calls request')
+
+    expect(controller.currentUserRequest.signAccountOp.accountOp).toMatchObject({
+      accountAddr,
+      chainId: 1n,
+      nonce: 7n,
+      signature: null,
+      calls: [{ to: ZeroAddress, value: 0n, data: '0x' }]
+    })
+    expect(request.signAccountOp.accountOp.signature).toBe(
+      '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b'
+    )
+    expect(request.signAccountOp.accountOp.nonce).toBe(99n)
+    expect(pauseSpy).toHaveBeenCalled()
+    expect(overrideSimulationSpy).toHaveBeenCalledWith(request.signAccountOp.accountOp)
+    expect(pauseSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      overrideSimulationSpy.mock.invocationCallOrder[0]!
+    )
+    expect(setSafeNonceSpy).toHaveBeenCalledWith(7n)
+
+    controller.userRequests.forEach((userRequest) => {
+      if (userRequest.kind === 'calls') userRequest.signAccountOp.destroy()
+    })
+  })
+  test('batches repeated onchain Safe rejections only at the same nonce', async () => {
+    const { accountsCtrl, controller, getCallsRequest, portfolioCtrl } = await prepareTest(
+      false,
+      true
+    )
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    accountsCtrl.accountStates[accountAddr]![1]!.threshold = 2
+    jest.spyOn(portfolioCtrl, 'overrideSimulationResults').mockResolvedValue()
+    const request = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    request.signAccountOp.accountOp.nonce = 7n
+    request.signAccountOp.accountOp.signature = '0x1234'
+    request.signAccountOp.accountOp.signed = ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E']
+    controller.userRequests = [request]
+    await controller.setCurrentUserRequestById(request.id)
+
+    await controller.buildOnchainSafeRejection(request.id)
+    await controller.buildOnchainSafeRejection(request.id)
+
+    expect(controller.userRequests).toHaveLength(2)
+    const rejectionRequest = controller.userRequests.find(
+      (userRequest) => userRequest.id !== request.id
+    )
+    expect(rejectionRequest?.kind).toBe('calls')
+    if (rejectionRequest?.kind !== 'calls') throw new Error('Expected calls request')
+    expect(rejectionRequest.signAccountOp.accountOp.nonce).toBe(7n)
+    expect(rejectionRequest.signAccountOp.accountOp.calls).toHaveLength(2)
+    expect(
+      rejectionRequest.signAccountOp.accountOp.calls.every(
+        (call) => call.to === ZeroAddress && call.value === 0n && call.data === '0x'
+      )
+    ).toBe(true)
+    expect(request.signAccountOp.accountOp.calls).toHaveLength(1)
+    expect(request.signAccountOp.accountOp.signature).toBe('0x1234')
+
+    controller.userRequests.forEach((userRequest) => {
+      if (userRequest.kind === 'calls') userRequest.signAccountOp.destroy()
+    })
+  })
+  test.each([
+    { signature: null, signed: [], threshold: 1 },
+    { signature: '0x', signed: [], threshold: 1 },
+    {
+      signature: '0x1234',
+      signed: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
+      threshold: 1
+    }
+  ])(
+    'does not build an onchain Safe rejection for a non-partial signature',
+    async ({ signature, signed, threshold }) => {
+      const { accountsCtrl, controller, getCallsRequest } = await prepareTest(false, true)
+      const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      accountsCtrl.accountStates[accountAddr]![1]!.threshold = threshold
+      const request = await getCallsRequest({
+        addr: accountAddr,
+        chainId: 1n
+      })
+      request.signAccountOp.accountOp.signature = signature
+      request.signAccountOp.accountOp.signed = signed
+      controller.userRequests = [request]
+
+      await controller.buildOnchainSafeRejection(request.id)
+
+      expect(controller.userRequests).toEqual([request])
+      request.signAccountOp.destroy()
+    }
+  )
+  test('does not build an onchain Safe rejection for a non-Safe account', async () => {
+    const { controller, getCallsRequest } = await prepareTest()
+    const request = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    request.signAccountOp.accountOp.signature = '0x1234'
+    request.signAccountOp.accountOp.signed = ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E']
+    controller.userRequests = [request]
+
+    await controller.buildOnchainSafeRejection(request.id)
+
+    expect(controller.userRequests).toEqual([request])
+    request.signAccountOp.destroy()
+  })
   test('BUG: does not build expired Safe requests, including nonce zero', async () => {
     const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -655,7 +788,6 @@ describe('RequestsController ', () => {
     const nextNonceDestroySpy = jest.spyOn(nextNonceRequest.signAccountOp, 'destroy')
 
     await controller.removeUserRequests([broadcastRequest.id, sameNonceRequest.id], {
-      shouldRejectSafeRequests: false,
       shouldOpenNextRequest: false
     })
 
@@ -668,7 +800,7 @@ describe('RequestsController ', () => {
     nextNonceRequest.signAccountOp.destroy()
   })
   test('silently retires a signed Safe transaction with nonce zero', async () => {
-    const { controller, getCallsRequest, safeCtrl } = await prepareTest(false, true)
+    const { controller, getCallsRequest } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const request = await getCallsRequest({ addr: accountAddr, chainId: 1n })
 
@@ -679,7 +811,6 @@ describe('RequestsController ', () => {
     const destroySpy = jest.spyOn(request.signAccountOp, 'destroy')
 
     await controller.removeUserRequests([request.id], {
-      shouldRejectSafeRequests: false,
       shouldOpenNextRequest: false
     })
 

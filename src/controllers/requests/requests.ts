@@ -1,5 +1,13 @@
 import { ethErrors } from 'eth-rpc-errors'
-import { getAddress, getBigInt, hexlify, isAddress, TypedDataDomain, TypedDataField } from 'ethers'
+import {
+  getAddress,
+  getBigInt,
+  hexlify,
+  isAddress,
+  TypedDataDomain,
+  TypedDataField,
+  ZeroAddress
+} from 'ethers'
 import { v4 as uuidv4 } from 'uuid'
 import { hashTypedData, isHex } from 'viem'
 
@@ -915,14 +923,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     options?: {
       shouldRemoveSwapAndBridgeRoute?: boolean
       shouldOpenNextRequest?: boolean
-      shouldRejectSafeRequests?: boolean
     }
   ) {
-    const {
-      shouldRemoveSwapAndBridgeRoute = true,
-      shouldOpenNextRequest = true,
-      shouldRejectSafeRequests = true
-    } = options || {}
+    const { shouldRemoveSwapAndBridgeRoute = true, shouldOpenNextRequest = true } = options || {}
 
     const userRequestsToAdd: UserRequest[] = []
     const safeRejectIds: string[] = []
@@ -933,29 +936,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const req = this.userRequests.find((uReq) => uReq.id === id)
 
       if (!req) return
-
-      // A safe request could be rejected, but it also could be auto-resolved
-      // when isReject is passed for a signed safe txn, we pause the signAccountOp
-      // and allow the user to restore it at a later time.
-      // If isReject is not passed, it means we're auto-removing an expired nonce
-      // because another same nonce transaction has been broadcast
-      if (
-        shouldRejectSafeRequests &&
-        req.kind === 'calls' &&
-        !!req.signAccountOp.account.safeCreation &&
-        !!req.signAccountOp.accountOp.txnId
-      ) {
-        req.dappPromises = []
-        req.signAccountOp.pause()
-
-        // TODO: think if this logic makes sense
-
-        const simulationAccountChainId = `${req.meta.accountAddr.toLowerCase()}:${req.meta.chainId}`
-        if (!simulationRequestsByAccountChainId.has(simulationAccountChainId)) {
-          simulationRequestsByAccountChainId.set(simulationAccountChainId, req)
-        }
-        return
-      }
 
       this.userRequests.splice(this.userRequests.indexOf(req), 1)
       if (this.currentUserRequest?.id === req.id) didRemoveCurrentUserRequest = true
@@ -1154,6 +1134,46 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (type === 'safeSignMessageRequest') {
       await this.#buildSafeSignMessageUserRequest(params)
+    }
+  }
+
+  /** Builds or batches a Safe transaction that rejects a partially signed transaction onchain. */
+  async buildOnchainSafeRejection(requestId: UserRequest['id']) {
+    const request = this.userRequests.find((userRequest) => userRequest.id === requestId)
+    if (!request || request.kind !== 'calls') return
+
+    const { account, accountOp } = request.signAccountOp
+    const signedCount = accountOp.signed?.length || 0
+    const isPartiallySigned =
+      !!accountOp.signature &&
+      accountOp.signature !== '0x' &&
+      signedCount > 0 &&
+      signedCount < request.signAccountOp.threshold
+    const nonce = getAccountOpNonce(accountOp)
+    if (!account.safeCreation || !isPartiallySigned || nonce === null) return
+
+    try {
+      const rejectionRequest = await this.#createOrUpdateCallsUserRequest(
+        {
+          calls: [{ to: ZeroAddress, value: 0n, data: '0x' }],
+          meta: {
+            accountAddr: accountOp.accountAddr,
+            chainId: accountOp.chainId
+          }
+        },
+        'open-request-window',
+        { accountOpNonce: nonce }
+      )
+
+      if (rejectionRequest) {
+        await this.addUserRequests([rejectionRequest], { executionType: 'open-request-window' })
+      }
+    } catch (e) {
+      this.emitError({
+        level: 'major',
+        message: 'Could not prepare the transaction rejection. Please try again.',
+        error: e instanceof Error ? e : new Error('Failed to build an onchain Safe rejection')
+      })
     }
   }
 
@@ -1914,7 +1934,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       dappPromises?: CallsUserRequest['dappPromises']
       dappSessionId?: string
     },
-    executionType: RequestExecutionType = 'open-request-window'
+    executionType: RequestExecutionType = 'open-request-window',
+    { accountOpNonce }: { accountOpNonce?: bigint } = {}
   ) {
     let callUserRequest: CallsUserRequest | undefined
     const existingUserRequest = this.userRequests.find(
@@ -1922,6 +1943,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         r.kind === 'calls' &&
         r.meta.accountAddr === meta.accountAddr &&
         r.meta.chainId === meta.chainId &&
+        // A Safe rejection may only join an unsigned batch that will execute at the
+        // nonce of the transaction being rejected.
+        (accountOpNonce === undefined ||
+          (!r.signAccountOp.accountOp.signature &&
+            getAccountOpNonce(r.signAccountOp.accountOp) === accountOpNonce)) &&
         // find an accountOp with no txnId, if the meta does not have a Safe
         // txnId. If it has, it should not get the existingUserRequest
         ((!meta.safeTxnProps?.txnId && !r.signAccountOp.accountOp.txnId) ||
@@ -1956,6 +1982,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           await this.#ui.notification.create({ title: 'Rejected!', message: errorMessage })
         }
       } else {
+        if (accountOpNonce !== undefined) {
+          existingUserRequest.signAccountOp.setSafeNonce(accountOpNonce)
+        }
+
         // we're allowing updates only on the signature field for
         // already signed accountOps
         if (meta.safeTxnProps) {
@@ -2076,7 +2106,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                 signingKeyType: null,
                 gasLimit: null,
                 gasFeePayment: null,
-                nonce: meta.safeTxnProps?.nonce ?? accountState.nonce,
+                nonce: accountOpNonce ?? meta.safeTxnProps?.nonce ?? accountState.nonce,
                 signature: meta.safeTxnProps?.signature ?? null,
                 txnId: meta.safeTxnProps?.txnId ?? undefined,
                 calls: [
@@ -2103,6 +2133,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         dappPromises
       } as CallsUserRequest
+
+      if (accountOpNonce !== undefined) callUserRequest.signAccountOp.setSafeNonce(accountOpNonce)
 
       if (executionType !== 'open-request-window') {
         // If the request doesn't open immediately we shouldn't

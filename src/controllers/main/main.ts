@@ -1957,7 +1957,6 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (safeRequests.length) {
       await this.requests.removeUserRequests(safeRequests, {
-        shouldRejectSafeRequests: false,
         shouldOpenNextRequest: false
       })
     }
@@ -1982,8 +1981,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     await this.requests.removeUserRequests([accountOpRequest.id], {
       shouldRemoveSwapAndBridgeRoute: false,
-      shouldOpenNextRequest: false,
-      shouldRejectSafeRequests: false
+      shouldOpenNextRequest: false
     })
 
     this.resolveDappBroadcast(submittedAccountOp, dappHandlers)
