@@ -856,12 +856,69 @@ const resolveFieldReference = (field: Erc7730Field, context: FormatContext): Erc
   }
 }
 
+const ARRAY_SEGMENT = '[]'
+
+// Substitutes the array iterator segment (`[]`) in a path with a concrete
+// index, e.g. "details.[].amount" + 1 -> "details.1.amount".
+const substituteArrayIndex = (path: string, index: number): string =>
+  getPathSegments(path)
+    .map((segment) => (segment === ARRAY_SEGMENT ? String(index) : segment))
+    .join('.')
+
+// Applies substituteArrayIndex to every string param that itself references
+// the same array (e.g. tokenPath, chainIdPath, collectionPath), so a leaf
+// field like `details.[].amount` with `params.tokenPath: details.[].token`
+// resolves both to the same array item instead of collapsing to arrays.
+const substituteArrayIndexInParams = (
+  params: Erc7730Field['params'],
+  index: number
+): Erc7730Field['params'] => {
+  if (!params) return params
+
+  return Object.fromEntries(
+    Object.entries(params).map(([key, value]) => [
+      key,
+      typeof value === 'string' && value.includes(ARRAY_SEGMENT)
+        ? substituteArrayIndex(value, index)
+        : value
+    ])
+  )
+}
+
 const fieldToRows = (
   field: Erc7730Field,
   context: FormatContext,
   base: unknown
 ): HumanizerErc7730Row[] | null => {
   const resolvedField = resolveFieldReference(field, context)
+
+  // A leaf field (no `fields` sub-array) whose own path iterates an array,
+  // e.g. "details.[].amount", means "one row per array element" per the
+  // ERC-7730 spec. Expand it into one indexed field per item so path/params
+  // (e.g. tokenPath) resolve against the same array element instead of each
+  // independently collapsing to the whole array.
+  if (!resolvedField.fields?.length && resolvedField.path?.includes(ARRAY_SEGMENT)) {
+    const arraySegmentEnd = resolvedField.path.indexOf(ARRAY_SEGMENT) + ARRAY_SEGMENT.length
+    const arrayValue = resolvePath(resolvedField.path.slice(0, arraySegmentEnd), context, base)
+
+    if (Array.isArray(arrayValue)) {
+      return arrayValue.reduce<HumanizerErc7730Row[] | null>((acc, _, index) => {
+        if (!acc) return null
+
+        const indexedField: Erc7730Field = {
+          ...resolvedField,
+          path: substituteArrayIndex(resolvedField.path as string, index),
+          params: substituteArrayIndexInParams(resolvedField.params, index)
+        }
+        const rows = fieldToRows(indexedField, context, base)
+        if (!rows) return null
+        acc.push(...rows)
+
+        return acc
+      }, [])
+    }
+  }
+
   const value = getFieldValue(resolvedField, context, base)
   const visibility = getVisibility(resolvedField.visible, value)
 

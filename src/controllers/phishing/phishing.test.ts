@@ -8,18 +8,27 @@ import {
 import { SUSPICIOUS_HOSTING_DOMAINS } from './phishing'
 
 // Seeds the phishing DB (domains + addresses) so #domains and #addresses are populated.
-const prepareTest = async (phishingDomains: string[] = [], phishingAddresses: string[] = []) => {
-  const { mainCtrl } = await makeMainController(async (storageCtrl) => {
-    if (phishingDomains.length || phishingAddresses.length) {
-      await storageCtrl.set('phishing', {
-        version: 1,
-        updatedAt: Date.now(),
-        domains: phishingDomains,
-        addresses: phishingAddresses
-      })
-    }
-  })
-  return { controller: mainCtrl.phishing, ui: mainCtrl.ui }
+const prepareTest = async (
+  phishingDomains: string[] = [],
+  phishingAddresses: string[] = [],
+  // Return the controller before init() so a test can observe the pre-load state.
+  skipInit = false
+) => {
+  const { mainCtrl } = await makeMainController(
+    async (storageCtrl) => {
+      if (phishingDomains.length || phishingAddresses.length) {
+        await storageCtrl.set('phishing', {
+          version: 1,
+          updatedAt: Date.now(),
+          domains: phishingDomains,
+          addresses: phishingAddresses
+        })
+      }
+    },
+    { skipDappsAndPhishingInit: skipInit }
+  )
+
+  return { controller: mainCtrl.phishing, ui: mainCtrl.ui, mainCtrl }
 }
 
 const flushMicrotaskQueue = async () => Promise.resolve()
@@ -32,6 +41,32 @@ describe('PhishingController', () => {
   test('should initialize', async () => {
     const { controller } = await prepareTest()
     expect(controller).toBeDefined()
+  })
+
+  describe('deferred init', () => {
+    test('isReady is false before init() and true after the load completes', async () => {
+      const { controller } = await prepareTest(['foourmemez.com'], [], true)
+
+      expect(controller.isReady).toBe(false)
+
+      await controller.init()
+
+      expect(controller.isReady).toBe(true)
+    })
+
+    test('init() is idempotent: concurrent and repeat calls read storage once', async () => {
+      const { controller, mainCtrl } = await prepareTest(['foourmemez.com'], [], true)
+
+      const storageGetSpy = jest.spyOn(mainCtrl.storage, 'get')
+
+      await Promise.all([controller.init(), controller.init(), controller.init()])
+      await controller.init()
+
+      const phishingReads = storageGetSpy.mock.calls.filter(([key]) => key === 'phishing')
+      expect(phishingReads).toHaveLength(1)
+
+      storageGetSpy.mockRestore()
+    })
   })
 
   test('should get dapps blacklisted status', async () => {

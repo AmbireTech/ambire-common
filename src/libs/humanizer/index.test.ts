@@ -2956,6 +2956,103 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  test('humanizes a Permit2 PermitBatch EIP-712 with a token amount row per detail entry', async () => {
+    const permit2Address = '0x000000000022d473030f116ddee9f6b43ac78ba'
+    const usdtAddress = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+    const permitBatchMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        domain: {
+          name: 'Permit2',
+          chainId: 1,
+          verifyingContract: permit2Address
+        },
+        types: {
+          PermitBatch: [
+            { name: 'details', type: 'PermitDetails[]' },
+            { name: 'spender', type: 'address' },
+            { name: 'sigDeadline', type: 'uint256' }
+          ],
+          PermitDetails: [
+            { name: 'token', type: 'address' },
+            { name: 'amount', type: 'uint160' },
+            { name: 'expiration', type: 'uint48' },
+            { name: 'nonce', type: 'uint48' }
+          ]
+        },
+        primaryType: 'PermitBatch',
+        message: {
+          details: [
+            { token: WETH_ADDRESS, amount: 133700n, expiration: 1999999999n, nonce: 0n },
+            { token: usdtAddress, amount: 500000000n, expiration: 1888888888n, nonce: 1n }
+          ],
+          spender: address2,
+          sigDeadline: ethers.MaxUint256
+        }
+      },
+      signature: null,
+      chainId: 1n
+    }
+
+    const irMessage = humanizeMessage(permitBatchMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'PermitBatch(PermitDetails[] details,address spender,uint256 sigDeadline)PermitDetails(address token,uint160 amount,uint48 expiration,uint48 nonce)':
+                {
+                  intent: 'Authorize spending of tokens',
+                  fields: [
+                    { path: 'spender', label: 'Spender', format: 'raw', visible: 'always' },
+                    {
+                      path: 'details.[].amount',
+                      label: 'Amount allowance',
+                      format: 'tokenAmount',
+                      params: { tokenPath: 'details.[].token' }
+                    },
+                    {
+                      path: 'details.[].expiration',
+                      label: 'Approval expires',
+                      format: 'date',
+                      params: { encoding: 'timestamp' }
+                    },
+                    { label: 'Sig Deadline', path: 'sigDeadline', visible: 'never' }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('Authorize spending of tokens', [
+        {
+          label: 'Spender',
+          value: [getAddressVisualization(address2)]
+        },
+        {
+          label: 'Amount allowance',
+          value: [getToken(WETH_ADDRESS, 133700n, 1n)]
+        },
+        {
+          label: 'Amount allowance',
+          value: [getToken(usdtAddress, 500000000n, 1n)]
+        },
+        {
+          label: 'Approval expires',
+          value: [getText(new Date(1999999999 * 1000).toLocaleString())]
+        },
+        {
+          label: 'Approval expires',
+          value: [getText(new Date(1888888888 * 1000).toLocaleString())]
+        }
+      ])
+    ])
+  })
+
   test('humanizes 1inch Order EIP-712 and hides zero address To row', async () => {
     const aggregationRouter = '0x111111125421ca6dc452d289314280a0f8842a65'
     const makerAsset = '0x350a791bfc2c21f9ed5d10980dad2e2638ffa7f6'
