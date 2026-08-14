@@ -349,10 +349,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   get visibleUserRequests(): UserRequest[] {
     return this.userRequests.filter((r) => {
       if (r.kind === 'calls') {
-        return (
-          r.signAccountOp.accountOp.accountAddr === this.#selectedAccount.account?.addr &&
-          !r.meta.isSafeRejected
-        )
+        return r.signAccountOp.accountOp.accountAddr === this.#selectedAccount.account?.addr
       }
       if (
         r.kind === 'typedMessage' ||
@@ -948,10 +945,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         !!req.signAccountOp.account.safeCreation &&
         !!req.signAccountOp.accountOp.txnId
       ) {
-        req.meta.isSafeRejected = true
         req.dappPromises = []
         req.signAccountOp.pause()
-        safeRejectIds.push(req.signAccountOp.accountOp.txnId)
+
+        // TODO: think if this logic makes sense
 
         const simulationAccountChainId = `${req.meta.accountAddr.toLowerCase()}:${req.meta.chainId}`
         if (!simulationRequestsByAccountChainId.has(simulationAccountChainId)) {
@@ -2209,36 +2206,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         error: new Error(`UserRequest not found. Id: ${requestId}`)
       })
     await this.#setCurrentUserRequest(request, params)
-  }
-
-  async restoreSafeUserRequest(requestId: UserRequest['id']) {
-    try {
-      const request = this.userRequests.find(
-        (r) => r.id === requestId && r.kind === 'calls' && r.meta.isSafeRejected
-      ) as CallsUserRequest | undefined
-      const txnId = request?.signAccountOp.accountOp.txnId
-      const nonce = request ? getAccountOpNonce(request.signAccountOp.accountOp) : null
-
-      if (!request || !txnId || nonce === null || nonce === undefined) return
-
-      const currentNonce =
-        this.#accounts.accountStates[request.meta.accountAddr]?.[request.meta.chainId.toString()]
-          ?.nonce
-      if (currentNonce !== undefined && nonce < currentNonce) return
-
-      await this.#safe.restoreTxnId([txnId])
-      request.meta.isSafeRejected = false
-
-      // on restore, simulate in the dashboard whatever is eligible
-      void this.#performSimulation(this.userRequests, request)
-      this.emitUpdate()
-    } catch (e: any) {
-      this.emitError({
-        level: 'major',
-        message: 'Failed to restore the transaction. Please try again',
-        error: e
-      })
-    }
   }
 
   async setCurrentUserRequestByIndex(requestIndex: number, params?: OpenRequestWindowParams) {

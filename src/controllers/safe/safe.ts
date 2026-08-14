@@ -110,10 +110,6 @@ export class SafeController extends EventEmitter implements ISafeController {
     this.#rejectedSafeTxns = await this.#storage.get('rejectedSafeTxns', [])
   }
 
-  get rejectedSafeTxns() {
-    return [...this.#rejectedSafeTxns]
-  }
-
   /**
    * Check if the passed safeAddr is deployed on any chain that:
    * - the user has enabled in the extension +
@@ -420,8 +416,7 @@ export class SafeController extends EventEmitter implements ISafeController {
   toJSON() {
     return {
       ...this,
-      ...super.toJSON(),
-      rejectedSafeTxns: this.rejectedSafeTxns
+      ...super.toJSON()
     }
   }
 }

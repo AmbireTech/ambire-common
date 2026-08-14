@@ -105,8 +105,7 @@ export function getSequentialSafeAccountOps(
     (r): r is CallsUserRequest =>
       r.kind === 'calls' &&
       r.signAccountOp.account.addr === curR.signAccountOp.account.addr &&
-      r.signAccountOp.accountOp.chainId === curR.signAccountOp.accountOp.chainId &&
-      !r.meta.isSafeRejected
+      r.signAccountOp.accountOp.chainId === curR.signAccountOp.accountOp.chainId
   )
 
   // Requests without a nonce cannot compete for one, so each of them is kept on its own
@@ -468,8 +467,7 @@ export async function fetchAllPending(
 
 export function toCallsUserRequest(
   safeAddr: Hex,
-  response: SafeResults,
-  rejectedSafeTxns: string[] = []
+  response: SafeResults
 ): {
   type: 'calls'
   params: {
@@ -537,7 +535,6 @@ export function toCallsUserRequest(
                 signature,
                 nonce: BigInt(txn.nonce)
               },
-              isSafeRejected: rejectedSafeTxns.includes(txn.safeTxHash),
               safeTx: txn
             }
           },

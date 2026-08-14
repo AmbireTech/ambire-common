@@ -530,35 +530,6 @@ describe('RequestsController ', () => {
     expect(rejectMock).toHaveBeenCalled()
     expect(resolveMock).not.toHaveBeenCalled()
   })
-  test('keeps a rejected Safe transaction available for restore', async () => {
-    const { controller, getCallsRequest, safeCtrl } = await prepareTest(false, true)
-    const req = await getCallsRequest({
-      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
-      chainId: 1n
-    })
-    const txnId = '0x1234' as Hex
-    req.signAccountOp.accountOp.txnId = txnId
-    req.signAccountOp.accountOp.nonce = 3n
-    const destroySpy = jest.spyOn(req.signAccountOp, 'destroy')
-
-    await controller.addUserRequests([req])
-    await controller.rejectUserRequests('User rejected', [req.id])
-
-    expect(controller.userRequests).toHaveLength(1)
-    expect(controller.visibleUserRequests).toHaveLength(0)
-    expect(req.meta.isSafeRejected).toBe(true)
-    expect(safeCtrl.rejectedSafeTxns).toContain(txnId)
-    expect(destroySpy).not.toHaveBeenCalled()
-
-    await controller.restoreSafeUserRequest(req.id)
-
-    expect(req.meta.isSafeRejected).toBe(false)
-    expect(controller.visibleUserRequests).toEqual([req])
-    expect(controller.currentUserRequest).toBe(null)
-    expect(safeCtrl.rejectedSafeTxns).not.toContain(txnId)
-
-    req.signAccountOp.destroy()
-  })
   test('runs one simulation per account and network when rejecting Safe transactions', async () => {
     const { controller, getCallsRequest, portfolioCtrl, accountsCtrl } = await prepareTest(
       false,

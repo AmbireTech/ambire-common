@@ -7,7 +7,6 @@ type RequestParams = {
   id: string
   chainId?: bigint
   isSafe?: boolean
-  isSafeRejected?: boolean
   nonce?: bigint | null
   safeTxNonce?: bigint | number | string
 }
@@ -16,13 +15,11 @@ const makeRequest = ({
   id,
   chainId = 1n,
   isSafe = true,
-  isSafeRejected = false,
   nonce = 0n,
   safeTxNonce
 }: RequestParams): CallsUserRequest =>
   ({
     id,
-    meta: { isSafeRejected },
     signAccountOp: {
       account: {
         safeCreation: isSafe ? {} : undefined

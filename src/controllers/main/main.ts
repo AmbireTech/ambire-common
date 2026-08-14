@@ -87,7 +87,7 @@ import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
 import { ITransfersScannerController } from '@/interfaces/transferScanner'
-import { IUiController, UiManager, View, isExtensionOverlayView } from '@/interfaces/ui'
+import { isExtensionOverlayView, IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
@@ -1767,7 +1767,7 @@ export class MainController extends EventEmitter implements IMainController {
       if (!res) continue
 
       // build txn requests
-      const txnRequest = toCallsUserRequest(safeAddr, res, this.safe.rejectedSafeTxns)
+      const txnRequest = toCallsUserRequest(safeAddr, res)
       for (let i = 0; i < txnRequest.length; i++) {
         // build the requests only if the selected account hasn't changed
         if (this.selectedAccount?.account?.addr === safeAddr)

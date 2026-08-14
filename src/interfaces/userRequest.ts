@@ -63,7 +63,6 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     topUpAmount?: bigint
     safeTxnProps?: { txnId: Hex; signature: Hex; nonce: bigint }
     safeTx?: SafeMultisigTransactionResponse
-    isSafeRejected?: boolean
     swapTxn?: SwapAndBridgeSendTxRequest
     quote?: SwapAndBridgeQuote
   }

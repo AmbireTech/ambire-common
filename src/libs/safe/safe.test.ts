@@ -23,7 +23,6 @@ const makeCallsRequest = ({
   nonce,
   accountAddr = SAFE_ADDRESS,
   chainId = 1n,
-  isSafeRejected = false,
   signed,
   submissionDate
 }: {
@@ -31,7 +30,6 @@ const makeCallsRequest = ({
   nonce: bigint | null
   accountAddr?: string
   chainId?: bigint
-  isSafeRejected?: boolean
   signed?: string[]
   submissionDate?: string
 }): CallsUserRequest => {
@@ -50,7 +48,7 @@ const makeCallsRequest = ({
   return {
     id,
     kind: 'calls',
-    meta: { isSafeRejected, accountAddr, chainId },
+    meta: { accountAddr, chainId },
     dappPromises: [],
     signAccountOp
   }
@@ -193,23 +191,6 @@ describe('getSequentialSafeAccountOps', () => {
     expect(
       getSequentialSafeAccountOps(requests, currentRequest, 131n).map(({ nonce }) => nonce)
     ).toEqual([131n, 132n])
-  })
-
-  test('only includes non-rejected calls for the current account and network', () => {
-    const currentRequest = makeCallsRequest({ id: 'current', nonce: 10n })
-    const requests: UserRequest[] = [
-      currentRequest,
-      makeCallsRequest({ id: 'matching', nonce: 11n }),
-      makeCallsRequest({ id: 'rejected', nonce: 12n, isSafeRejected: true }),
-      makeCallsRequest({ id: 'other-account', nonce: 12n, accountAddr: OTHER_OWNER }),
-      makeCallsRequest({ id: 'other-network', nonce: 12n, chainId: 10n }),
-      { id: 'transfer', kind: 'transfer', meta: {}, dappPromises: [] }
-    ]
-
-    expect(getSequentialSafeAccountOps(requests, currentRequest, 10n).map(({ id }) => id)).toEqual([
-      'current',
-      'matching'
-    ])
   })
 
   test('returns no account ops for a current request without an account op', () => {

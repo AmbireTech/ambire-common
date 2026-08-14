@@ -512,9 +512,7 @@ export class ContinuousUpdatesController extends EventEmitter {
           r.kind === 'calls' &&
           !!r.signAccountOp.account.safeCreation &&
           r.signAccountOp.accountOp.txnId &&
-          r.signAccountOp.accountOp.signed?.length &&
-          // do not fetch updates for locally rejected txns
-          !r.meta.isSafeRejected
+          r.signAccountOp.accountOp.signed?.length
       )
       .map((r) => {
         const accountOp = (r as CallsUserRequest).signAccountOp.accountOp
