@@ -1695,8 +1695,15 @@ export class MainController extends EventEmitter implements IMainController {
    * Prepares the selected accounts and the keys controlling them for the other Ambire
    * product and returns the payload, which the UI displays as animated QR codes.
    * Everything sensitive leaves this device encrypted, see `keystore.exportForSync`.
+   *
+   * `includeSeeds` lets the user leave the recovery phrases of the selected accounts
+   * behind, in which case only the accounts and their keys are sent over.
    */
-  async exportAccountsForSync(addrs: Account['addr'][], requestId?: string) {
+  async exportAccountsForSync(
+    addrs: Account['addr'][],
+    includeSeeds: boolean = true,
+    requestId?: string
+  ) {
     await this.#withSyncResponse('exportAccountsForSync', requestId, async () => {
       const accounts = this.accounts.getAccountsForSync(addrs)
 
@@ -1708,7 +1715,7 @@ export class MainController extends EventEmitter implements IMainController {
         })
 
       const keyAddrs = Array.from(new Set(accounts.flatMap((account) => account.associatedKeys)))
-      const { secret, keys, seeds } = await this.keystore.exportForSync(keyAddrs)
+      const { secret, keys, seeds } = await this.keystore.exportForSync(keyAddrs, includeSeeds)
 
       return serializeAccountsSyncPayload({
         v: ACCOUNTS_SYNC_PAYLOAD_VERSION,

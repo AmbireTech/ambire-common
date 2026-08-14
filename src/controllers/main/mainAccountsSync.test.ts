@@ -79,7 +79,7 @@ const makeImportingDevice = async ({ withPassword }: { withPassword: boolean }) 
 const exportPayload = async (mainCtrl: MainController, addrs: string[]) => {
   const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
 
-  await mainCtrl.exportAccountsForSync(addrs, 'request-1')
+  await mainCtrl.exportAccountsForSync(addrs, true, 'request-1')
 
   const response = (sendUiMessage.mock.calls[0]?.[0] || {}) as { ok?: boolean; res?: string }
   sendUiMessage.mockRestore()
@@ -201,7 +201,7 @@ describe('MainController accounts sync', () => {
       const exportingDevice = await makeExportingDevice()
       const sendUiMessage = jest.spyOn(exportingDevice.ui.message, 'sendUiMessage')
 
-      await exportingDevice.exportAccountsForSync([], 'request-1')
+      await exportingDevice.exportAccountsForSync([], true, 'request-1')
 
       expect(exportingDevice.emittedErrors.at(-1)?.message).toBe(
         'Select at least one account to sync.'

@@ -1212,9 +1212,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * keys: the keys themselves and the seeds they were derived from (still encrypted
    * with this device's main key), plus this device's main key wrapped with its password.
    * Nothing gets decrypted here, so this works even when the keystore is locked.
+   *
+   * `includeSeeds` is what the user chose on the confirmation screen: with it off the
+   * keys still travel (so the accounts can sign on the other device), but the recovery
+   * phrases they were derived from stay on this device.
    */
   async exportForSync(
-    keyAddrs: Key['addr'][]
+    keyAddrs: Key['addr'][],
+    includeSeeds: boolean = true
   ): Promise<Pick<AccountsSyncPayload, 'secret' | 'keys' | 'seeds'>> {
     await this.initialLoadPromise
 
@@ -1236,7 +1241,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     const keys = this.#keystoreKeys.filter((key) => keyAddrs.includes(key.addr))
     const seedIds = new Set(keys.map((key) => key.meta?.fromSeedId).filter(Boolean))
-    const seeds = this.#keystoreSeeds.filter((seed) => seedIds.has(seed.id))
+    const seeds = includeSeeds ? this.#keystoreSeeds.filter((seed) => seedIds.has(seed.id)) : []
 
     // Keys and seeds are migrated to GCM on unlock, so this should never happen. If it
     // does, fail here rather than on the other device, which would reject the payload

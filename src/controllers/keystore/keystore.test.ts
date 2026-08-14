@@ -629,6 +629,23 @@ describe('accounts sync between two devices', () => {
     expect(exported.seeds).toHaveLength(0)
   })
 
+  test('leaves the seed behind when the user opted out of exporting it', async () => {
+    const exported = await exportingKeystore.exportForSync([keyPublicAddress], false)
+
+    expect(exported.keys.map((k) => k.addr)).toEqual([keyPublicAddress])
+    expect(exported.seeds).toHaveLength(0)
+
+    // The key still signs on the other device, it is just no longer tied to a seed
+    await importingKeystore.addSecret('password', importingPass, '', true)
+    await importingKeystore.importFromSync(
+      { v: 1 as const, accounts: [], ...exported },
+      exportingPass
+    )
+
+    expect(importingKeystore.seeds).toHaveLength(0)
+    expect(importingKeystore.keys[0]!.meta.fromSeedId).toBeUndefined()
+  })
+
   describe('Negative cases', () => {
     suppressConsoleBeforeEach()
 
