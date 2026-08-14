@@ -156,4 +156,36 @@ describe('fallbackHumanizer', () => {
       })
     })
   })
+
+  test('humanizes an onchain Safe cancellation with its signed nonce', () => {
+    const result = fallbackHumanizer(
+      {
+        ...accountOp,
+        nonce: 99n,
+        safeTx: { nonce: '7' } as any,
+        meta: { isOnchainSafeRejection: true }
+      },
+      { to: ZeroAddress, value: 0n, data: '0x' } as IrCall
+    )
+
+    expect(result.fullVisualization).toEqual([
+      expect.objectContaining({
+        type: 'action',
+        content: 'Cancel transaction with nonce 7'
+      })
+    ])
+  })
+
+  test('keeps an unmarked empty zero-address call generic', () => {
+    const result = fallbackHumanizer({ ...accountOp, nonce: 7n }, {
+      to: ZeroAddress,
+      value: 0n,
+      data: '0x'
+    } as IrCall)
+
+    expect(result.fullVisualization?.[0]).toMatchObject({
+      type: 'action',
+      content: 'Empty call to'
+    })
+  })
 })

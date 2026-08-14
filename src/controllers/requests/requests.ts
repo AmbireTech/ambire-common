@@ -76,7 +76,6 @@ import {
   messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
-import { getSequentialSafeAccountOps } from '../../libs/safe/safe'
 import {
   AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
   isAmbireOperationTypedData
@@ -507,7 +506,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
         // It's necessary to continue operating with the token `amountPostSimulation` amount.
         if (this.shouldSimulateAccountOps) {
-          void this.#performSimulation([...this.userRequests, req], req)
+          void this.#performSimulation(req)
         }
       } else if (req.kind === 'typedMessage' || req.kind === 'message' || req.kind === 'siwe') {
         const existingMessageRequest = this.userRequests.find(
@@ -578,29 +577,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
-  /**
-   * We create a wrapper for performing simulations in the requests controller as
-   * we might need to pass multiple accountOps for simulation if the
-   * account is a Safe
-   */
-  async #performSimulation(requests: UserRequest[], curR: CallsUserRequest) {
+  async #performSimulation(curR: CallsUserRequest) {
     try {
-      const accountStateNonce =
-        this.#accounts.accountStates[curR.signAccountOp.account.addr]?.[
-          curR.signAccountOp.accountOp.chainId.toString()
-        ]?.nonce
-
-      const accountOps = curR.signAccountOp.account.safeCreation
-        ? getSequentialSafeAccountOps(requests, curR, accountStateNonce)
-        : [curR.signAccountOp.accountOp]
-
-      // if no accountOps should be simulated, clear the results instead
-      if (accountOps.length === 0) {
-        this.#portfolio
-          .overrideSimulationResults(curR.signAccountOp.accountOp)
-          .catch((e) => console.log('Failed to do overrideSimulationResults', e))
+      // we don't perform a dashboard simulation on partially signed Safe txns
+      // until they are opened on the SignAccountOp screen
+      if (
+        !!curR.signAccountOp.account.safeCreation &&
+        (curR.signAccountOp.accountOp.signed || []).length > 0
+      )
         return
-      }
+
+      const accountOps = [curR.signAccountOp.accountOp]
 
       this.#portfolio
         .simulateAccountOp(accountOps)
@@ -634,23 +621,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // Resume the signAccountOp of the incoming request
     if (nextRequest && nextRequest.kind === 'calls' && nextRequest.signAccountOp) {
       nextRequest.signAccountOp.resume()
-    }
-
-    // if there's no nextRequest and the current request is a safe account,
-    // collect all safe requests for the network and start a portfolio sim
-    // so the user can work with the latest snapshot from the dashboard
-    //
-    // the same applies if the nextRequest is for another chain
-    const curR = this.currentUserRequest
-    if (
-      curR &&
-      curR.kind === 'calls' &&
-      !!curR.signAccountOp.account.safeCreation &&
-      (!nextRequest ||
-        (nextRequest.kind === 'calls' &&
-          nextRequest.signAccountOp.accountOp.chainId !== curR.signAccountOp.accountOp.chainId))
-    ) {
-      void this.#performSimulation(this.userRequests, curR)
     }
 
     this.currentUserRequest = nextRequest
@@ -929,7 +899,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     const userRequestsToAdd: UserRequest[] = []
     const safeRejectIds: string[] = []
-    const simulationRequestsByAccountChainId = new Map<string, CallsUserRequest>()
     let didRemoveCurrentUserRequest = false
 
     ids.forEach((id) => {
@@ -988,12 +957,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         safeRejectIds.push(`${meta.hash}`)
       }
     })
-
-    const performSimulationPromises = [...simulationRequestsByAccountChainId.values()].map((req) =>
-      this.#performSimulation(this.userRequests, req)
-    )
-    // not attaching .catch() here as each promise is in a try/catch block
-    void Promise.all(performSimulationPromises)
 
     // reject all Safe txns so they do not appear by accident again
     if (safeRejectIds.length) await this.#safe.rejectTxnId(safeRejectIds)
@@ -1145,20 +1108,38 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const { account, accountOp } = request.signAccountOp
     const signedCount = accountOp.signed?.length || 0
     const isPartiallySigned =
-      !!accountOp.signature &&
-      accountOp.signature !== '0x' &&
-      signedCount > 0 &&
-      signedCount < request.signAccountOp.threshold
+      !!accountOp.signature && accountOp.signature !== '0x' && signedCount > 0
     const nonce = getAccountOpNonce(accountOp)
     if (!account.safeCreation || !isPartiallySigned || nonce === null) return
 
     try {
+      const existingSafeRejectionRequest = this.visibleUserRequests.find(
+        (userRequest) =>
+          userRequest.id !== request.id &&
+          userRequest.kind === 'calls' &&
+          !!userRequest.signAccountOp.account.safeCreation &&
+          userRequest.meta.accountAddr === accountOp.accountAddr &&
+          userRequest.meta.chainId === accountOp.chainId &&
+          getAccountOpNonce(userRequest.signAccountOp.accountOp) === nonce &&
+          userRequest.signAccountOp.accountOp.calls.some(
+            (call) => call.to === ZeroAddress && call.value === 0n && call.data === '0x'
+          )
+      )
+
+      if (existingSafeRejectionRequest) {
+        if (this.currentUserRequest?.id !== existingSafeRejectionRequest.id) {
+          await this.#setCurrentUserRequest(existingSafeRejectionRequest)
+        }
+        return
+      }
+
       const rejectionRequest = await this.#createOrUpdateCallsUserRequest(
         {
           calls: [{ to: ZeroAddress, value: 0n, data: '0x' }],
           meta: {
             accountAddr: accountOp.accountAddr,
-            chainId: accountOp.chainId
+            chainId: accountOp.chainId,
+            isOnchainSafeRejection: true
           }
         },
         'open-request-window',

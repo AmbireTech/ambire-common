@@ -81,6 +81,8 @@ export interface AccountOp {
   safeTx?: SafeMultisigTransactionResponse
   // all kinds of custom accountOp properties that are needed in specific cases
   meta?: {
+    /** Marks a Safe transaction created to cancel another transaction at the same nonce. */
+    isOnchainSafeRejection?: boolean
     // pass the entry point authorization signature for the deploy 4337 txn
     entryPointAuthorization?: string
     paymasterService?: PaymasterService

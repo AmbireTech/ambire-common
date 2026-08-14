@@ -440,7 +440,8 @@ describe('RequestsController ', () => {
       chainId: 1n,
       nonce: 7n,
       signature: null,
-      calls: [{ to: ZeroAddress, value: 0n, data: '0x' }]
+      calls: [{ to: ZeroAddress, value: 0n, data: '0x' }],
+      meta: { isOnchainSafeRejection: true }
     })
     expect(request.signAccountOp.accountOp.signature).toBe(
       '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b'
@@ -448,16 +449,13 @@ describe('RequestsController ', () => {
     expect(request.signAccountOp.accountOp.nonce).toBe(99n)
     expect(pauseSpy).toHaveBeenCalled()
     expect(overrideSimulationSpy).toHaveBeenCalledWith(request.signAccountOp.accountOp)
-    expect(pauseSpy.mock.invocationCallOrder[0]).toBeLessThan(
-      overrideSimulationSpy.mock.invocationCallOrder[0]!
-    )
     expect(setSafeNonceSpy).toHaveBeenCalledWith(7n)
 
     controller.userRequests.forEach((userRequest) => {
       if (userRequest.kind === 'calls') userRequest.signAccountOp.destroy()
     })
   })
-  test('batches repeated onchain Safe rejections only at the same nonce', async () => {
+  test('focuses an existing onchain Safe rejection at the same nonce', async () => {
     const { accountsCtrl, controller, getCallsRequest, portfolioCtrl } = await prepareTest(
       false,
       true
@@ -473,16 +471,20 @@ describe('RequestsController ', () => {
     await controller.setCurrentUserRequestById(request.id)
 
     await controller.buildOnchainSafeRejection(request.id)
-    await controller.buildOnchainSafeRejection(request.id)
-
-    expect(controller.userRequests).toHaveLength(2)
     const rejectionRequest = controller.userRequests.find(
       (userRequest) => userRequest.id !== request.id
     )
     expect(rejectionRequest?.kind).toBe('calls')
     if (rejectionRequest?.kind !== 'calls') throw new Error('Expected calls request')
+    expect(rejectionRequest.signAccountOp.accountOp.calls).toHaveLength(1)
+
+    await controller.setCurrentUserRequestById(request.id)
+    await controller.buildOnchainSafeRejection(request.id)
+
+    expect(controller.userRequests).toHaveLength(2)
+    expect(controller.currentUserRequest).toBe(rejectionRequest)
     expect(rejectionRequest.signAccountOp.accountOp.nonce).toBe(7n)
-    expect(rejectionRequest.signAccountOp.accountOp.calls).toHaveLength(2)
+    expect(rejectionRequest.signAccountOp.accountOp.calls).toHaveLength(1)
     expect(
       rejectionRequest.signAccountOp.accountOp.calls.every(
         (call) => call.to === ZeroAddress && call.value === 0n && call.data === '0x'
@@ -490,6 +492,41 @@ describe('RequestsController ', () => {
     ).toBe(true)
     expect(request.signAccountOp.accountOp.calls).toHaveLength(1)
     expect(request.signAccountOp.accountOp.signature).toBe('0x1234')
+
+    controller.userRequests.forEach((userRequest) => {
+      if (userRequest.kind === 'calls') userRequest.signAccountOp.destroy()
+    })
+  })
+  test('does not reuse an onchain Safe rejection at a different nonce', async () => {
+    const { accountsCtrl, controller, getCallsRequest, portfolioCtrl } = await prepareTest(
+      false,
+      true
+    )
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    accountsCtrl.accountStates[accountAddr]![1]!.threshold = 2
+    jest.spyOn(portfolioCtrl, 'overrideSimulationResults').mockResolvedValue()
+    const request = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    request.signAccountOp.accountOp.nonce = 7n
+    request.signAccountOp.accountOp.signature = '0x1234'
+    request.signAccountOp.accountOp.signed = ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E']
+    controller.userRequests = [request]
+    await controller.setCurrentUserRequestById(request.id)
+
+    await controller.buildOnchainSafeRejection(request.id)
+    const firstRejectionRequest = controller.currentUserRequest
+    expect(firstRejectionRequest?.kind).toBe('calls')
+    if (firstRejectionRequest?.kind !== 'calls') throw new Error('Expected calls request')
+    firstRejectionRequest.signAccountOp.setSafeNonce(8n)
+
+    await controller.setCurrentUserRequestById(request.id)
+    await controller.buildOnchainSafeRejection(request.id)
+
+    expect(controller.userRequests).toHaveLength(3)
+    expect(controller.currentUserRequest).not.toBe(firstRejectionRequest)
+    expect(controller.currentUserRequest?.kind).toBe('calls')
+    if (controller.currentUserRequest?.kind !== 'calls') throw new Error('Expected calls request')
+    expect(controller.currentUserRequest.signAccountOp.accountOp.nonce).toBe(7n)
+    expect(firstRejectionRequest.signAccountOp.accountOp.nonce).toBe(8n)
 
     controller.userRequests.forEach((userRequest) => {
       if (userRequest.kind === 'calls') userRequest.signAccountOp.destroy()

@@ -1,7 +1,7 @@
 import { ZeroAddress } from 'ethers'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
-import { AccountOp } from '../../../accountOp/accountOp'
+import { AccountOp, getAccountOpNonce } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
 import {
   getAction,
@@ -36,6 +36,13 @@ export const fallbackHumanizer: HumanizerCallModule = (
         ]
       }
     case 'has-to:no-value:no-data':
+      const safeNonce = getAccountOpNonce(accountOp)
+      if (accountOp.meta?.isOnchainSafeRejection && call.to === ZeroAddress && safeNonce !== null) {
+        return {
+          ...call,
+          fullVisualization: [getAction(`Cancel transaction with nonce ${safeNonce.toString()}`)]
+        }
+      }
       // preserve a visualization already set by an earlier, more specific module (e.g. a
       // Safe{WALLET} "reject queued transaction" call), instead of unconditionally
       // overwriting it with a generic "Empty call to" label below

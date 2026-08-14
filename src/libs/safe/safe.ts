@@ -10,6 +10,7 @@ import {
   recoverAddress,
   toBeHex,
   toUtf8Bytes,
+  ZeroAddress,
   zeroPadValue
 } from 'ethers'
 
@@ -514,6 +515,12 @@ export function toCallsUserRequest(
         calls = [{ to: txn.to, value: BigInt(txn.value), data: txn.data || '0x' }]
       }
 
+      const isOnchainSafeRejection =
+        calls.length === 1 &&
+        calls[0]!.to === ZeroAddress &&
+        calls[0]!.value === 0n &&
+        calls[0]!.data === '0x'
+
       const signature = txn.confirmations
         ? sortSigs(
             txn.confirmations.map((c) => c.signature as Hex),
@@ -530,6 +537,7 @@ export function toCallsUserRequest(
             meta: {
               accountAddr: safeAddr,
               chainId: BigInt(chainId),
+              ...(isOnchainSafeRejection && { isOnchainSafeRejection: true }),
               safeTxnProps: {
                 txnId: txn.safeTxHash as Hex,
                 signature,

@@ -1,4 +1,4 @@
-import { getAddress } from 'ethers'
+import { concat, getAddress, getBytes, Interface, solidityPacked, ZeroAddress } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
@@ -6,17 +6,60 @@ import { buildSafeMessageOrigin, getPreferredSafeRequest, parseSafeMessageOrigin
 import {
   getSafeAccountByOwner,
   getSequentialSafeAccountOps,
-  normalizeSafeGlobalMessage
+  normalizeSafeGlobalMessage,
+  toCallsUserRequest
 } from './safe'
 
 import type { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
-import type { EIP712TypedData } from '@safe-global/types-kit'
+import type { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 import type { Hex } from '../../interfaces/hex'
 import type { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 
 const OWNER: Hex = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
 const OTHER_OWNER = '0x94b0080A00579C1307B0eF2C499AD98A8ce58e58'
-const SAFE_ADDRESS = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+const SAFE_ADDRESS: Hex = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+
+const buildSafeTransaction = (
+  overrides: Partial<SafeMultisigTransactionResponse>
+): SafeMultisigTransactionResponse => ({
+  safe: SAFE_ADDRESS,
+  to: ZeroAddress,
+  value: '0',
+  data: '0x',
+  operation: 0,
+  gasToken: ZeroAddress,
+  safeTxGas: '0',
+  baseGas: '0',
+  gasPrice: '0',
+  nonce: '7',
+  executionDate: null,
+  submissionDate: '2026-08-14T00:00:00Z',
+  modified: '2026-08-14T00:00:00Z',
+  blockNumber: null,
+  transactionHash: null,
+  safeTxHash: `0x${'1'.repeat(64)}`,
+  executor: null,
+  proposer: null,
+  proposedByDelegate: null,
+  isExecuted: false,
+  isSuccessful: null,
+  ethGasPrice: null,
+  maxFeePerGas: null,
+  maxPriorityFeePerGas: null,
+  gasUsed: null,
+  fee: null,
+  origin: '',
+  confirmationsRequired: 2,
+  confirmations: [],
+  trusted: true,
+  signatures: null,
+  ...overrides
+})
+
+const getCallsRequestMeta = (transaction: SafeMultisigTransactionResponse) =>
+  toCallsUserRequest(SAFE_ADDRESS, {
+    '1': { txns: [transaction], messages: [] }
+  })[0]!.params.userRequestParams.meta
 
 const makeCallsRequest = ({
   id,
@@ -80,6 +123,47 @@ const getSafeCreationInfo = (): SafeCreationInfoResponse => ({
 const createApi = (owners: string[] = [OWNER]) => ({
   getSafeCreationInfo: jest.fn(async () => getSafeCreationInfo()),
   getSafeInfo: jest.fn(async () => getSafeInfo(owners))
+})
+
+describe('toCallsUserRequest', () => {
+  test('marks a single empty call to the zero address as an onchain Safe rejection', () => {
+    const meta = getCallsRequestMeta(buildSafeTransaction({}))
+
+    expect(meta.isOnchainSafeRejection).toBe(true)
+  })
+
+  test.each([
+    { to: OWNER, value: '0', data: '0x' },
+    { to: ZeroAddress, value: '1', data: '0x' },
+    { to: ZeroAddress, value: '0', data: '0x01' }
+  ])('does not mark a non-rejection single call (%o)', ({ to, value, data }) => {
+    const meta = getCallsRequestMeta(buildSafeTransaction({ to, value, data }))
+
+    expect(meta.isOnchainSafeRejection).toBeUndefined()
+  })
+
+  test('does not mark a batch that contains an empty call to the zero address', () => {
+    const calls = [
+      { to: ZeroAddress, value: 0n, data: '0x' },
+      { to: OWNER, value: 0n, data: '0x' }
+    ]
+    const encodedCalls = concat(
+      calls.map((call) =>
+        solidityPacked(
+          ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+          [0, call.to, call.value, BigInt(getBytes(call.data).length), call.data]
+        )
+      )
+    )
+    const data = new Interface(['function multiSend(bytes transactions)']).encodeFunctionData(
+      'multiSend',
+      [encodedCalls]
+    )
+
+    const meta = getCallsRequestMeta(buildSafeTransaction({ data }))
+
+    expect(meta.isOnchainSafeRejection).toBeUndefined()
+  })
 })
 
 describe('getSequentialSafeAccountOps', () => {
