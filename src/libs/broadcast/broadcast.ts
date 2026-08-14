@@ -26,8 +26,17 @@ export const BROADCAST_OPTIONS = {
 }
 
 async function waitBeforeRetry(chainId: bigint) {
-  // block time at ethereum is bigger, so we wait 3s per failures
-  await wait(chainId === 1n ? 3000 : 1500)
+  // wait a bit longer on ethereum as txn confirmations are slower
+  await wait(chainId === 1n ? 2000 : 1000)
+}
+
+/**
+ * The default gas limit overhead for all chains is 10%.
+ * Robinhood uses 20% because transactions there frequently run out of gas.
+ */
+function getGasLimitOverhead(gasLimit: bigint, chainId: bigint) {
+  if (chainId === 4663n) return gasLimit / 5n
+  return gasLimit / 10n
 }
 
 export function getByOtherEOATxnData(
@@ -64,6 +73,8 @@ async function estimateGas(
   call: Call,
   nonce: number,
   chainId: bigint,
+  broadcastOption: string,
+  op: AccountOp,
   error?: Error,
   counter: number = 0
 ): Promise<bigint> {
@@ -109,20 +120,28 @@ async function estimateGas(
     }
   }
 
-  // if there's an error, wait a bit and retry
-  // the error is most likely because of an incorrect RPC pending state
+  // Sequential EOA calls can fail temporarily if the RPC pending state is stale.
   if (gasLimit instanceof Error || hasNonceDiscrepancyOnApproval) {
-    // if the gasLimit is throwing because the smart account is returning INSUFFICIENT_PRIVILEGE,
-    // return the error without retrying
-    if (gasLimit instanceof Error && gasLimit.message.includes('INSUFFICIENT_PRIVILEGE'))
-      throw gasLimit
+    // Other estimation errors are deterministic, so return them immediately.
+    const isEoaBatch = broadcastOption === BROADCAST_OPTIONS.bySelf && op.calls.length > 1
+    if (gasLimit instanceof Error && !isEoaBatch) throw gasLimit
 
     await waitBeforeRetry(chainId)
-    return estimateGas(provider, from, call, nonce, chainId, gasLimit, counter + 1)
+    return estimateGas(
+      provider,
+      from,
+      call,
+      nonce,
+      chainId,
+      broadcastOption,
+      op,
+      gasLimit,
+      counter + 1
+    )
   }
 
-  // add a 10% overhead to prevent OOG
-  return BigInt(gasLimit) + BigInt(gasLimit) / 10n
+  // add gas overhead to prevent OOG
+  return BigInt(gasLimit) + getGasLimitOverhead(BigInt(gasLimit), chainId)
 }
 
 export async function getTxnData(
@@ -151,7 +170,9 @@ export async function getTxnData(
       gasFeePayment.paidBy,
       safeData,
       nonce,
-      op.chainId
+      op.chainId,
+      broadcastOption,
+      op
     )
 
     return {
@@ -187,7 +208,15 @@ export async function getTxnData(
     // for each one seperately
     let gasLimit: bigint | undefined = (op.gasFeePayment as GasFeePayment).simulatedGasLimit
     if (op.calls.length > 1) {
-      gasLimit = await estimateGas(provider, account.addr, call, nonce, op.chainId)
+      gasLimit = await estimateGas(
+        provider,
+        account.addr,
+        call,
+        nonce,
+        op.chainId,
+        broadcastOption,
+        op
+      )
     }
 
     const singleCallTxn = {
@@ -207,7 +236,9 @@ export async function getTxnData(
       (op.gasFeePayment as GasFeePayment).paidBy,
       otherEOACall,
       nonce,
-      op.chainId
+      op.chainId,
+      broadcastOption,
+      op
     )
     return { ...otherEOACall, gasLimit }
   }

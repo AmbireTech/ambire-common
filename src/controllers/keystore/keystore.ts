@@ -673,15 +673,18 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   get seeds() {
-    return this.#keystoreSeeds.map(({ id, label, hdPathTemplate, seedPassphrase }) => ({
-      id,
-      label: label || 'Unnamed Recovery Seed',
-      hdPathTemplate,
-      withPassphrase: !!seedPassphrase
-    }))
+    return this.#keystoreSeeds.map(
+      ({ id, label, hdPathTemplate, seedPassphrase, notBackedUp }) => ({
+        id,
+        label: label || 'Unnamed Recovery Seed',
+        hdPathTemplate,
+        withPassphrase: !!seedPassphrase,
+        notBackedUp
+      })
+    )
   }
 
-  async addTempSeed({ seed, seedPassphrase, hdPathTemplate }: KeystoreTempSeed) {
+  async addTempSeed({ seed, seedPassphrase, hdPathTemplate, notBackedUp }: KeystoreTempSeed) {
     const validHdPath = DERIVATION_OPTIONS.some((o) => o.value === hdPathTemplate)
     if (!validHdPath)
       throw new EmittableError({
@@ -691,18 +694,30 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         error: new Error('keystore: hd path to temp seed incorrect')
       })
 
-    this.#tempSeed = { seed, seedPassphrase, hdPathTemplate }
+    this.#tempSeed = { seed, seedPassphrase, hdPathTemplate, notBackedUp }
 
     this.emitUpdate()
   }
 
-  async generateTempSeed({ extraEntropy }: { extraEntropy?: string }) {
+  /**
+   * Generates a brand new phrase without revealing it to the user. It is marked as
+   * not backed up, so the app can prompt for a backup once the account holds funds.
+   * Returns the generated temp seed, so the background can derive accounts from it
+   * without the phrase ever reaching the UI.
+   */
+  async generateTempSeed({ extraEntropy }: { extraEntropy?: string }): Promise<KeystoreTempSeed> {
     const entropyGenerator = new EntropyGenerator()
     const seed = entropyGenerator.generateRandomMnemonic(12, extraEntropy || '').phrase
 
-    this.#tempSeed = { seed, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE }
+    this.#tempSeed = {
+      seed,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      notBackedUp: true
+    }
 
     this.emitUpdate()
+
+    return this.#tempSeed
   }
 
   deleteTempSeed(shouldUpdate = true) {
@@ -720,7 +735,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     return persistedSeed
   }
 
-  async #addSeed({ seed, seedPassphrase, hdPathTemplate }: KeystoreTempSeed) {
+  async #addSeed({ seed, seedPassphrase, hdPathTemplate, notBackedUp }: KeystoreTempSeed) {
     await this.initialLoadPromise
 
     if (this.#mainKey === null)
@@ -759,7 +774,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       seedPassphrase: seedPassphrase
         ? await encryptWithKey(this.#mainKey, new TextEncoder().encode(seedPassphrase))
         : null,
-      hdPathTemplate
+      hdPathTemplate,
+      notBackedUp
     }
 
     this.#keystoreSeeds.push(newEntry)
@@ -783,13 +799,15 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   async #updateSeed({
     id,
     label,
-    hdPathTemplate
+    hdPathTemplate,
+    notBackedUp
   }: {
     id: KeystoreSeed['id']
     label?: KeystoreSeed['label']
     hdPathTemplate?: KeystoreSeed['hdPathTemplate']
+    notBackedUp?: KeystoreSeed['notBackedUp']
   }) {
-    if (!label && !hdPathTemplate) return
+    if (!label && !hdPathTemplate && notBackedUp === undefined) return
 
     const keystoreSeed = this.#keystoreSeeds.find((s) => s.id === id)
     if (!keystoreSeed) return
@@ -797,6 +815,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     if (label) keystoreSeed.label = label
 
     if (hdPathTemplate) keystoreSeed.hdPathTemplate = hdPathTemplate
+
+    if (notBackedUp !== undefined) keystoreSeed.notBackedUp = notBackedUp
 
     const updatedKeystoreSeeds = this.#keystoreSeeds.map((s) =>
       s.id === keystoreSeed.id ? keystoreSeed : s
@@ -811,13 +831,27 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   async updateSeed({
     id,
     label,
-    hdPathTemplate
+    hdPathTemplate,
+    notBackedUp
   }: {
     id: KeystoreSeed['id']
     label?: KeystoreSeed['label']
     hdPathTemplate?: KeystoreSeed['hdPathTemplate']
+    notBackedUp?: KeystoreSeed['notBackedUp']
   }) {
-    await this.withStatus('updateSeed', () => this.#updateSeed({ id, label, hdPathTemplate }), true)
+    await this.withStatus(
+      'updateSeed',
+      () => this.#updateSeed({ id, label, hdPathTemplate, notBackedUp }),
+      true
+    )
+  }
+
+  /**
+   * Called once the user has gone through the reveal + confirm-words backup flow,
+   * so the app stops prompting them to back this phrase up.
+   */
+  async markSeedAsBackedUp(id: KeystoreSeed['id']) {
+    await this.updateSeed({ id, notBackedUp: false })
   }
 
   async deleteSeed(id: KeystoreSeed['id']) {

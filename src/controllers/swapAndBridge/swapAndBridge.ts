@@ -15,6 +15,7 @@ import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IDappsController } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -37,7 +38,7 @@ import {
   SwapAndBridgeToToken,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
-import { IUiController, View } from '../../interfaces/ui'
+import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -265,6 +266,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #signAccountOpPreference: SignAccountOpPreferenceController
 
+  #featureFlags: IFeatureFlagsController
+
   #serviceProviderAPI: SwapProvider
 
   #activeRoutes: SwapAndBridgeActiveRoute[] = []
@@ -332,6 +335,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    * calls to fetch the supported chains from our service provider.
    */
   #cachedSupportedChains: CachedSupportedChains = { lastFetched: 0, data: [] }
+
+  /**
+   * A "to" token preselected from outside Swap & Bridge (e.g. from the trending tokens list).
+   * Kept so it can be re-selected after the automatic "to" token list reset (which happens on
+   * every "from" network change), until the user changes the "to" token or network themselves.
+   */
+  #preselectedToToken: { address: string; chainId: number } | null = null
 
   routePriority: 'output' | 'time' = 'output'
 
@@ -415,6 +425,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     activity,
     storage,
     signAccountOpPreference,
+    featureFlags,
     phishing,
     dapps,
     portfolioUpdate,
@@ -439,6 +450,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     activity: IActivityController
     storage: IStorageController
     signAccountOpPreference: SignAccountOpPreferenceController
+    featureFlags: IFeatureFlagsController
     phishing: IPhishingController
     dapps: IDappsController
     relayerUrl: string
@@ -468,6 +480,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#serviceProviderAPI = swapProvider
     this.#storage = storage
     this.#signAccountOpPreference = signAccountOpPreference
+    this.#featureFlags = featureFlags
     this.#phishing = phishing
     this.#dapps = dapps
     this.#relayerUrl = relayerUrl
@@ -514,6 +527,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       if (!isSwapAndBridge(view.currentRoute)) return
       this.#isOnSwapAndBridgeRoute = false
       this.updateQuoteInterval.stop()
+
+      // A closing panel destroys its screens without unmounting them, so the session has to be
+      // unloaded here for the form to start fresh next time.
+      if (isSidePanelView(view)) this.unloadScreen(view.type, true)
     })
   }
 
@@ -979,6 +996,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       emitUpdate?: boolean
       updateQuote?: boolean
       shouldIncrementFromAmountUpdateCounter?: boolean
+      /**
+       * Set it when the user changes the "to" token or network from the UI, so a "to" token
+       * preselected from outside Swap & Bridge stops being restored on "from" network changes.
+       */
+      isToSelectionByUser?: boolean
     }
   ) {
     const {
@@ -1001,8 +1023,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const {
       emitUpdate = true,
       updateQuote = true,
-      shouldIncrementFromAmountUpdateCounter = false
+      shouldIncrementFromAmountUpdateCounter = false,
+      isToSelectionByUser = false
     } = updateProps || {}
+
+    if (isToSelectionByUser) this.#preselectedToToken = null
 
     const chainId = toChainId ?? this.toChainId
     let toSelectedTokenAddr: string | undefined
@@ -1082,13 +1107,27 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
+    // Only valid while the "to" network is still the one the token was preselected on
+    const preselectedToTokenAddrToRestore =
+      this.#preselectedToToken?.chainId === this.toChainId
+        ? this.#preselectedToToken.address
+        : undefined
+
     const toTokensKey = this.#toTokenListKey
     const toTokenList = toTokensKey ? this.#toTokenList[toTokensKey] : undefined
+    // Addresses passed from outside Swap & Bridge (e.g. a trending token, which comes lowercased
+    // from CoinGecko) may be in a different case than the service provider's, so compare lowercased.
     const nextToToken = toTokenList
-      ? toTokenList.tokens.find((t) => t.address === toSelectedTokenAddr)
+      ? toTokenList.tokens.find(
+          (t) => t.address.toLowerCase() === toSelectedTokenAddr?.toLowerCase()
+        )
       : null
 
     if (nextToToken) this.toSelectedToken = { ...nextToToken }
+
+    // The requested token isn't in the (possibly not yet fetched) list. Let updateToTokenList
+    // select it once the list is there, instead of dropping the request silently.
+    const shouldSelectToTokenFromList = !nextToToken && !!toSelectedTokenAddr
 
     if (routePriority) {
       this.routePriority = routePriority
@@ -1105,9 +1144,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (emitUpdate) this.#emitUpdateIfNeeded()
 
     await Promise.all([
-      shouldUpdateToTokenList
+      shouldUpdateToTokenList || shouldSelectToTokenFromList
         ? // we put toSelectedTokenAddr so that "retry" btn functionality works
-          this.updateToTokenList(true, nextToToken?.address || toSelectedTokenAddr)
+          this.updateToTokenList(
+            shouldUpdateToTokenList,
+            nextToToken?.address || toSelectedTokenAddr || preselectedToTokenAddrToRestore
+          )
         : undefined,
       updateQuote
         ? this.updateQuote({
@@ -1125,6 +1167,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#setFromAmountAndNotifyUI('')
     this.#setFromAmountInFiatAndNotifyUI('')
     this.toSelectedToken = null
+    this.#preselectedToToken = null
     this.quote = null
     this.updateQuoteStatus = 'INITIAL'
     this.quoteRoutesStatuses = {}
@@ -1168,6 +1211,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // until the user manually selects a new token
     const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
+
+    if (preselectedToToken) {
+      this.#preselectedToToken = {
+        address: preselectedToToken.address,
+        chainId: Number(preselectedToToken.chainId)
+      }
+    }
 
     // When the price endpoint is down, tokens come back without a USD price. We must
     // not exclude them as "priceless" in that case, otherwise switching to an account
@@ -1343,13 +1393,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       throw new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
     }
 
-    if (toTokenListKeyAtStart === this.#toTokenListKey && !this.toSelectedToken) {
-      if (addressToSelect) {
-        const token = toTokenList.tokens.find((t) => t.address === addressToSelect)
-        if (token) {
-          await this.updateForm({ toSelectedTokenAddr: token.address }, { emitUpdate: false })
-          this.#emitUpdateIfNeeded()
-        }
+    if (
+      toTokenListKeyAtStart === this.#toTokenListKey &&
+      !this.toSelectedToken &&
+      addressToSelect
+    ) {
+      // Compare lowercased, as the address may come from outside Swap & Bridge (e.g. a trending
+      // token) in a different case than the service provider's.
+      const token =
+        toTokenList.tokens.find((t) => t.address.toLowerCase() === addressToSelect.toLowerCase()) ||
+        (await this.#fetchAndCacheToTokenToSelect(addressToSelect))
+
+      if (token) {
+        await this.updateForm({ toSelectedTokenAddr: token.address }, { emitUpdate: false })
+        this.#emitUpdateIfNeeded()
       }
     }
 
@@ -1419,6 +1476,38 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!toTokenList) return 'INITIAL'
 
     return toTokenList.status
+  }
+
+  /**
+   * Fetches a single token that the service provider left out of its "to" token list and caches it,
+   * so a token preselected from outside Swap & Bridge (e.g. from the trending tokens list) can
+   * still be selected. Fails silently, because the selection is not user-initiated.
+   */
+  async #fetchAndCacheToTokenToSelect(address: string) {
+    if (!this.toChainId || !isAddress(address)) return null
+
+    const toTokenListKey = this.#toTokenListKey
+    const tokenList = toTokenListKey ? this.#toTokenList[toTokenListKey] : undefined
+
+    if (!tokenList) return null
+
+    try {
+      const token = await this.#serviceProviderAPI.getToken({ address, chainId: this.toChainId })
+
+      if (!token) return null
+
+      // Cache it the same way tokens added by address are cached
+      tokenList.apiTokens.push(token)
+      tokenList.tokens.push(token)
+
+      return token
+    } catch (error: any) {
+      const { message } = getHumanReadableSwapAndBridgeError(error)
+
+      this.emitError({ error, level: 'silent', message })
+
+      return null
+    }
   }
 
   async #addToTokenByAddress(address: string) {
@@ -1594,6 +1683,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   async switchFromAndToTokens() {
     this.switchTokensStatus = 'LOADING'
+    // The user takes over the "to" token by switching the sides
+    this.#preselectedToToken = null
     this.#emitUpdateIfNeeded()
 
     const prevFromSelectedToken = this.fromSelectedToken ? { ...this.fromSelectedToken } : null
@@ -2641,8 +2732,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       .getAccountPortfolioState(this.#selectedAccount.account.addr)
       [network.chainId.toString()]?.result?.tokens.find((token) => token.address === ZeroAddress)
     const nativePrice = native?.priceIn.find((price) => price.baseCurrency === 'usd')?.price
-    const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
+    const baseAcc = getBaseAccount(
+      this.#selectedAccount.account,
+      accountState,
+      network,
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
+    )
     const swapSponsorship = getSwapSponsorship({
+      isErc4337Enabled: this.#featureFlags.isFeatureEnabled('erc4337'),
       hasConvinienceFee: this.quote?.selectedRoute?.withConvenienceFee || false,
       nativePrice,
       fromAmountInUsd: Number(this.fromAmountInFiat),
@@ -2704,6 +2802,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       networks: this.#networks,
       keystore: this.#keystore,
       portfolio: this.#portfolio,
+      featureFlags: this.#featureFlags,
       signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
@@ -2837,7 +2936,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     // Swap banners aren't generated because swaps are completed instantly,
     // thus the activity banner on broadcast is sufficient
-    return getBridgeBanners(activeRoutesForSelectedAccount, callsUserRequests)
+    return getBridgeBanners(
+      activeRoutesForSelectedAccount,
+      callsUserRequests,
+      this.#selectedAccount.account.addr
+    )
   }
 
   get #shouldAutoUpdateQuote() {

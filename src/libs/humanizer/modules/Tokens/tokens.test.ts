@@ -159,6 +159,41 @@ const transactions = {
   ]
 }
 
+// pre solidity 0.5.0 tokens accept calldata shorter than the abi args and treat the
+// missing bytes as zeroes. The humanizer pads such calldata to decode it the same way.
+const truncatedTransactions = {
+  erc20: [
+    // approve with the value word missing entirely
+    {
+      to: USDT,
+      value: BigInt(0),
+      data: `0x095ea7b3000000000000000000000000${spender.substring(2)}`
+    },
+    // transfer with the value word missing entirely
+    {
+      to: USDT,
+      value: BigInt(0),
+      data: `0xa9059cbb000000000000000000000000${spender.substring(2)}`
+    }
+  ],
+  erc721: [
+    // approve with the tokenId word missing entirely
+    {
+      to: '0x59468516a8259058baD1cA5F8f4BFF190d30E066',
+      value: BigInt(0),
+      data: `0x095ea7b3000000000000000000000000${spender.substring(2)}`
+    },
+    // transferFrom with the tokenId word missing entirely
+    {
+      to: '0x59468516a8259058baD1cA5F8f4BFF190d30E066',
+      value: BigInt(0),
+      data: `0x23b872dd000000000000000000000000${accountOp.accountAddr.substring(
+        2
+      )}000000000000000000000000${spender.substring(2)}`
+    }
+  ]
+}
+
 describe('Tokens', () => {
   beforeEach(async () => {
     accountOp.calls = []
@@ -166,9 +201,8 @@ describe('Tokens', () => {
 
   test('genericErc20Humanizer', () => {
     accountOp.calls = [...transactions.erc20]
-    const irCalls: IrCall[] = genericErc20Humanizer(
-      { accountAddr: accountOp.accountAddr },
-      accountOp.calls
+    const irCalls: IrCall[] = accountOp.calls.map((c) =>
+      genericErc20Humanizer({ accountAddr: accountOp.accountAddr }, c)
     )
     const addedValue = 1000000000n
 
@@ -245,9 +279,26 @@ describe('Tokens', () => {
     compareHumanizerVisualizations(irCalls, expectedHumanization)
   })
 
+  test('genericErc20Humanizer with truncated calldata', () => {
+    accountOp.calls = [...truncatedTransactions.erc20]
+    const irCalls: IrCall[] = accountOp.calls.map((c) =>
+      genericErc20Humanizer({ accountAddr: accountOp.accountAddr }, c)
+    )
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('Revoke approval'),
+        getToken(USDT, 0n),
+        getLabel('for'),
+        getAddressVisualization(spender)
+      ],
+      [getAction('Send'), getToken(USDT, 0n), getLabel('to'), getAddressVisualization(spender)]
+    ])
+  })
+
   test('genericErc721Humanizer', () => {
     accountOp.calls = [...transactions.erc721]
-    const irCalls = genericErc721Humanizer(accountOp, accountOp.calls)
+    const irCalls = accountOp.calls.map((c) => genericErc721Humanizer(accountOp, c))
 
     compareHumanizerVisualizations(irCalls, [
       [
@@ -295,6 +346,27 @@ describe('Tokens', () => {
         getToken('0x59468516a8259058bad1ca5f8f4bff190d30e066', 0n),
         getLabel('from'),
         getAddressVisualization('0xC89B38119C58536d818f3Bf19a9E3870828C1994'),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ]
+    ])
+  })
+
+  test('genericErc721Humanizer with truncated calldata', () => {
+    accountOp.calls = [...truncatedTransactions.erc721]
+    const irCalls = accountOp.calls.map((c) => genericErc721Humanizer(accountOp, c))
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken('0x59468516a8259058bad1ca5f8f4bff190d30e066', 0n),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ],
+      [
+        getAction('Send'),
+        getToken('0x59468516a8259058bad1ca5f8f4bff190d30e066', 0n),
         getLabel('to'),
         getAddressVisualization(spender)
       ]

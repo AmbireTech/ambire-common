@@ -57,7 +57,7 @@ describe('bundler switcher: switch cases', () => {
   it('should switch when sign account op is in a ready to sign state and there are extra bundlers to switch to', async () => {
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr]![base.chainId.toString()]!
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, base)
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, base, true, true)
     const switcher = new BundlerSwitcher(base, () => {
       return false
     })
@@ -70,7 +70,7 @@ describe('bundler switcher: no switch cases', () => {
   it('should not switch when sign account op is in a signing state', async () => {
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr]![base.chainId.toString()]!
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, base)
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, base, true, true)
     const switcher = new BundlerSwitcher(base, () => {
       return true
     })
@@ -80,7 +80,7 @@ describe('bundler switcher: no switch cases', () => {
   it('should not switch when there is no extra bundler to switch to', async () => {
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr]![base.chainId.toString()]!
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, base)
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, base, true, true)
     const switcher = new BundlerSwitcher(avalanche, () => {
       return false
     })
@@ -90,7 +90,7 @@ describe('bundler switcher: no switch cases', () => {
   it('should not switch when there is no available bundler to switch to', async () => {
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr]![base.chainId.toString()]!
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, base)
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, base, true, true)
     const switcher = new DevBundlerSwitcher(
       base,
       () => {
@@ -104,7 +104,7 @@ describe('bundler switcher: no switch cases', () => {
   it('should switch on an estimation error if there is a bundler available', async () => {
     const accountStates = await getAccountsInfo([smartAccDeployed])
     const accountState = accountStates[smartAccDeployed.addr]![base.chainId.toString()]!
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, base)
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, base, true, true)
     const switcher = new DevBundlerSwitcher(base, () => {
       return false
     })

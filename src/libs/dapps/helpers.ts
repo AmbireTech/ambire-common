@@ -1,7 +1,45 @@
 import { getDomain } from 'tldts'
 
 import { predefinedDapps } from '../../consts/dapps/dapps'
-import { ConnectionSource, Dapp, DefiLlamaProtocol } from '../../interfaces/dapp'
+import {
+  ConnectionSource,
+  Dapp,
+  DefiLlamaProtocol,
+  RawTrendingToken,
+  TrendingToken
+} from '../../interfaces/dapp'
+
+/**
+ * Strips the trailing dot(s) a hostname may carry when written in fully-qualified form
+ * ("app.example.com."). DNS, TLS and the browser resolve such a host to the exact same site as the
+ * dotted-free form, but the WHATWG URL parser keeps the dot, so the resulting string matches none
+ * of the canonical forms the wallet compares against - the phishing blacklist, the suspicious
+ * hosting list and the stored dApp records. Left unnormalized, appending a single dot is enough to
+ * turn a known-malicious dApp into an unknown one.
+ */
+const normalizeHostname = (hostname: string): string => {
+  let end = hostname.length
+  while (end > 0 && hostname[end - 1] === '.') end -= 1
+
+  return hostname.slice(0, end)
+}
+
+/**
+ * The dApp's canonical hostname, or `null` when the url is not parsable.
+ *
+ * Normalization deliberately starts from `new URL().hostname` - the parser already lowercases the
+ * host and converts internationalized ones to punycode, which is the form the phishing blacklist
+ * and the stored dApp records use. `tldts.getHostname()` also drops the trailing dot, but returns
+ * the unicode form of internationalized hostnames, so using it here would silently change the
+ * identity of every non-ASCII dApp.
+ */
+const getNormalizedHostnameFromUrl = (url: string): string | null => {
+  try {
+    return normalizeHostname(new URL(url).hostname)
+  } catch {
+    return null
+  }
+}
 
 const getDappIdFromUrl = (url: string): string => {
   if (!url || url === 'internal') return 'internal'
@@ -9,12 +47,10 @@ const getDappIdFromUrl = (url: string): string => {
   const predefinedDapp = predefinedDapps.find((d) => d.url === url)
   if (predefinedDapp) return predefinedDapp.id
 
-  try {
-    const { hostname } = new URL(url)
-    return hostname.startsWith('www.') ? hostname.slice(4) : hostname
-  } catch {
-    return url
-  }
+  const hostname = getNormalizedHostnameFromUrl(url)
+  if (hostname === null) return url
+
+  return hostname.startsWith('www.') ? hostname.slice(4) : hostname
 }
 
 // Safe messages co-signed from another device carry only the dapp name and url
@@ -154,7 +190,42 @@ function normalizeDappConnection(dapp: Dapp): Dapp {
   return { ...dapp, connectedSources, isConnected: connectedSources.length > 0 }
 }
 
+// Maps the raw cena trending response to the UI-ready shape kept in state.
+// Items without a usable id or price are dropped — they can't be keyed or displayed meaningfully.
+function normalizeTrendingTokens(raw: RawTrendingToken[]): TrendingToken[] {
+  return raw
+    .filter((token) => !!token?.id && typeof token.usd === 'number')
+    .map((token) => {
+      const platformId = token.asset_platform_id ?? null
+      const address =
+        token.contract_address ?? (platformId ? token.platforms?.[platformId] : undefined) ?? null
+      const decimals = (platformId ? token.decimals?.[platformId] : undefined) ?? null
+
+      return {
+        id: token.id,
+        name: token.name,
+        symbol: token.symbol,
+        icon: token.image?.large || token.image?.small || token.image?.thumb || '',
+        priceUSD: token.usd ?? 0,
+        priceChange24hUSD: typeof token.usd_24h_change === 'number' ? token.usd_24h_change : null,
+        marketCapRank: token.market_cap_rank ?? null,
+        description: token.description?.en ?? null,
+        address,
+        platformId,
+        decimals,
+        marketCapUSD: token.usd_market_cap ?? null,
+        totalVolumeUSD: token.usd_24h_vol ?? null,
+        fullyDilutedValuationUSD: token.usd_fully_diluted_valuation ?? null,
+        totalSupply: token.total_supply ?? null,
+        website: token.homepage?.find((url) => !!url) ?? null,
+        exchangeIds: (token.exchanges ?? []).filter((id): id is string => !!id)
+      }
+    })
+}
+
 export {
+  normalizeHostname,
+  getNormalizedHostnameFromUrl,
   getDappIdFromUrl,
   getDappIconFromUrl,
   getDomainFromUrl,
@@ -163,5 +234,6 @@ export {
   modifyDappPropsIfNeeded,
   getDappNameFromId,
   unifyDefiLlamaDappUrl,
-  normalizeDappConnection
+  normalizeDappConnection,
+  normalizeTrendingTokens
 }

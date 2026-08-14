@@ -8,7 +8,8 @@ import {
   calculateAmountWarnings,
   enrichRouteWithOutputUsdPrice,
   getFeeTokenForSponsorship,
-  getIsBridgeRoute
+  getIsBridgeRoute,
+  getSwapSponsorship
 } from './swapAndBridge'
 
 // Helper function to create a mock route for testing
@@ -254,6 +255,23 @@ describe('swapAndBridge lib', () => {
         feeTokenPriceInUsd: undefined,
         decimals: 18
       })
+    })
+  })
+
+  describe('getSwapSponsorship', () => {
+    test('returns undefined when ERC-4337 is disabled', () => {
+      expect(
+        getSwapSponsorship({
+          isErc4337Enabled: false,
+          hasConvinienceFee: true,
+          nativePrice: 3000,
+          fromAmountInUsd: 100,
+          feeTokenPriceInUsd: 1,
+          feeTokenDecimals: 6,
+          providerId: 'lifi',
+          isBridge: false
+        })
+      ).toBeUndefined()
     })
   })
 

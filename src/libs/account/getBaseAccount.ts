@@ -11,18 +11,23 @@ import { V2 } from './V2'
 export function getBaseAccount(
   account: Account,
   accountState: AccountOnchainState,
-  network: Network
+  network: Network,
+  isErc4337Enabled: boolean,
+  isErc7702Enabled: boolean
 ): BaseAccount {
-  if (account.safeCreation) return new Safe(account, network, accountState)
+  if (account.safeCreation) return new Safe(account, network, accountState, isErc4337Enabled)
   if (accountState.isEOA) {
-    if (accountState.isSmarterEoa || canBecomeSmarterOnChain(network, account, accountState)) {
-      return new EOA7702(account, network, accountState)
+    if (
+      isErc7702Enabled &&
+      (accountState.isSmarterEoa || canBecomeSmarterOnChain(network, account, accountState))
+    ) {
+      return new EOA7702(account, network, accountState, isErc4337Enabled)
     }
 
-    return new EOA(account, network, accountState)
+    return new EOA(account, network, accountState, isErc4337Enabled)
   }
 
   return accountState.isV2
-    ? new V2(account, network, accountState)
-    : new V1(account, network, accountState)
+    ? new V2(account, network, accountState, isErc4337Enabled)
+    : new V1(account, network, accountState, isErc4337Enabled)
 }
