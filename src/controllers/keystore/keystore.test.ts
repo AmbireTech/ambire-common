@@ -15,6 +15,7 @@ import {
 import { ExternalKey, IKeystoreController, InternalKey } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
+import wait from '../../utils/wait'
 import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
 import { KeystoreController } from './keystore'
@@ -562,6 +563,17 @@ describe('accounts sync between two devices', () => {
       uiCtrl
     )
 
+  // The in-memory store resolves writes immediately, which hides ordering a real
+  // (async) device store would expose
+  const withSlowWrites = (store: ReturnType<typeof produceMemoryStore>) => ({
+    ...store,
+    set: async (key: any, value: any) => {
+      await wait(10)
+
+      return store.set(key, value)
+    }
+  })
+
   const buildPayload = (keyAddrs: string[]) =>
     exportingKeystore
       .exportForSync(keyAddrs)
@@ -710,6 +722,47 @@ describe('accounts sync between two devices', () => {
     )
     const signer = await importingKeystore.getSigner(keyPublicAddress, 'internal')
     expect(signer.key.addr).toBe(keyPublicAddress)
+  })
+
+  test('tells the UI about the synced keys right after the import', async () => {
+    const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
+    await importingKeystore.addSecret('password', importingPass, '', true)
+
+    // Without an update the UI keeps the keystore state it had before the sync, which
+    // makes every imported account look view-only
+    const keyCountsSeenByTheUi: number[] = []
+    importingKeystore.onUpdate(() => keyCountsSeenByTheUi.push(importingKeystore.keys.length))
+
+    await importingKeystore.importFromSync(payload, exportingPass)
+
+    expect(importingKeystore.keys).toHaveLength(2)
+    expect(keyCountsSeenByTheUi.at(-1)).toBe(2)
+  })
+
+  test('tells the UI about the synced keys once the onboarding password stores them', async () => {
+    const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
+    // Storing the queued keys is detached from `addSecret`, so on a real device (where
+    // writes take a moment) it finishes after `addSecret` has already emitted. Without an
+    // update of its own the UI keeps rendering the synced accounts as if they had no keys.
+    const slowKeystore = new KeystoreController(
+      'default',
+      new StorageController(withSlowWrites(produceMemoryStore())),
+      keystoreSigners,
+      uiCtrl
+    )
+    await slowKeystore.importFromSync(payload, exportingPass)
+
+    const keyCountsSeenByTheUi: number[] = []
+    slowKeystore.onUpdate(() => keyCountsSeenByTheUi.push(slowKeystore.keys.length))
+
+    await slowKeystore.addSecret('password', importingPass, '', true)
+    // The detached storing is still in flight here, so give it room to finish and emit
+    for (let i = 0; i < 100 && keyCountsSeenByTheUi.at(-1) !== 2; i++) {
+      await wait(20)
+    }
+
+    expect(slowKeystore.keys).toHaveLength(2)
+    expect(keyCountsSeenByTheUi.at(-1)).toBe(2)
   })
 
   test('links the synced keys to a seed the device already has', async () => {

@@ -813,6 +813,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
           'Something went wrong when saving your keys. Please try again or contact support if the problem persists.',
         error: error instanceof Error ? error : new Error('keystore: failed to add queued keys')
       })
+    } finally {
+      this.emitUpdate()
     }
   }
 
@@ -1325,10 +1327,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       })
     }
 
-    // Both queue themselves until the keystore is ready to store keys, which is what
-    // makes syncing before the device password is set (onboarding) work
-    await this.#addKeys(internalKeys)
-    await this.#addKeysExternallyStored(externalKeys)
+    try {
+      // Both queue themselves until the keystore is ready to store keys, which is what
+      // makes syncing before the device password is set (onboarding) work
+      await this.#addKeys(internalKeys)
+      await this.#addKeysExternallyStored(externalKeys)
+    } finally {
+      this.emitUpdate()
+    }
   }
 
   /**
