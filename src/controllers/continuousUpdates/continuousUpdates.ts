@@ -16,6 +16,7 @@ import { Hex } from '../../interfaces/hex'
 import { IMainController } from '../../interfaces/main'
 import { Network } from '../../interfaces/network'
 import { CallsUserRequest } from '../../interfaces/userRequest'
+import { getAccountOpNonce } from '../../libs/accountOp/accountOp'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { getNetworksWithFailedRPC } from '../../libs/networks/networks'
@@ -505,33 +506,46 @@ export class ContinuousUpdatesController extends EventEmitter {
     // do not make Safe requests if the extension is locked
     if (!this.#main.keystore.isUnlocked) return
 
-    const pendingSafeTxns = this.#main.requests.userRequests
-      .filter(
-        (r) =>
-          r.meta.accountAddr === this.#main.selectedAccount.account?.addr &&
-          r.kind === 'calls' &&
-          !!r.signAccountOp.account.safeCreation &&
-          r.signAccountOp.accountOp.txnId &&
-          r.signAccountOp.accountOp.signed?.length
-      )
-      .map((r) => {
-        const accountOp = (r as CallsUserRequest).signAccountOp.accountOp
-        return {
-          chainId: accountOp.chainId,
-          safeTxnHash: accountOp.txnId as Hex
-        }
-      })
-    if (!pendingSafeTxns.length) return
+    const safeAddr = this.#main.selectedAccount.account.addr as Hex
+    if (!safeAddr) return
 
-    const confirmed = await this.#main.safe.fetchExecuted(pendingSafeTxns).catch((e) => {
+    // Ask each chain only for the transactions that can still resolve a request we
+    // are waiting on, which is everything from the smallest pending nonce upwards
+    const minNonceByChainId = new Map<bigint, bigint>()
+    this.#main.requests.userRequests.forEach((r) => {
+      if (
+        r.meta.accountAddr !== safeAddr ||
+        r.kind !== 'calls' ||
+        !r.signAccountOp.account.safeCreation ||
+        !r.signAccountOp.accountOp.txnId ||
+        !r.signAccountOp.accountOp.signed?.length
+      )
+        return
+
+      const { accountOp } = r.signAccountOp
+      // A request with no nonce cannot narrow the range, so fetch the chain in full
+      const nonce = getAccountOpNonce(accountOp) ?? 0n
+
+      const currentMin = minNonceByChainId.get(accountOp.chainId)
+      if (currentMin === undefined || nonce < currentMin)
+        minNonceByChainId.set(accountOp.chainId, nonce)
+    })
+
+    if (!minNonceByChainId.size) return
+
+    const chains = [...minNonceByChainId].map(([chainId, minNonce]) => ({
+      chainId,
+      minNonce: Number(minNonce)
+    }))
+
+    const confirmed = await this.#main.safe.fetchExecuted(safeAddr, chains).catch((e) => {
       console.log('failed to retrieve executed Safe txns', e)
       return []
     })
     if (!confirmed.length) return
 
     // resolve each request
-    for (let i = 0; i < confirmed.length; i++) {
-      const oneConfirmed = confirmed[i]!
+    for (const oneConfirmed of confirmed) {
       const userR = this.#main.requests.userRequests.find(
         (r) =>
           r.kind === 'calls' &&

@@ -379,7 +379,10 @@ export class SafeController extends EventEmitter implements ISafeController {
     return this.#filterOutHidden(pending, safeAddr)
   }
 
-  async fetchExecuted(txns: { chainId: bigint; safeTxnHash: Hex }[]): Promise<
+  async fetchExecuted(
+    safeAddr: Hex,
+    chains: { chainId: bigint; minNonce: number }[]
+  ): Promise<
     {
       safeTxnHash: Hex
       nonce: string
@@ -387,7 +390,7 @@ export class SafeController extends EventEmitter implements ISafeController {
       confirmations?: SafeMultisigConfirmationResponse[]
     }[]
   > {
-    return fetchExecutedTransactions(txns)
+    return fetchExecutedTransactions(safeAddr, chains)
   }
 
   async rejectTxnId(safeTxnIds: string[]) {

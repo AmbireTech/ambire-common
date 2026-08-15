@@ -37,7 +37,8 @@ import {
   TokenError,
   TokenResult
 } from './interfaces'
-import { flattenResults, paginate } from './pagination'
+import { paginate } from '../../utils/paginate'
+import { flattenResults } from './pagination'
 
 export const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
