@@ -406,11 +406,6 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     return this.accountStates[addr]?.[chainId.toString()]
   }
 
-  /**
-   * The account records another Ambire product needs in order to take over the given
-   * accounts (accounts sync). Preferences travel along, so that the accounts look the
-   * same on both devices.
-   */
   getAccountsForSync(addrs: Account['addr'][]): Account[] {
     return this.accounts.filter((account) => addrs.includes(account.addr))
   }
