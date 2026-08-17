@@ -5,8 +5,26 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 
 export type SignAccountOpFeeTokenPreference = StorageProps['signAccountOpFeeTokenPreference']
 
+export type SignAccountOpFeeSpeedPreference = StorageProps['signAccountOpFeeSpeedPreference']
+
 export const FEE_TOKEN_PREFERENCE_STORAGE_KEY = 'signAccountOpFeeTokenPreference'
 export const FEE_SPEED_PREFERENCE_STORAGE_KEY = 'signAccountOpFeeSpeedPreference'
+
+/**
+ * Keeps only valid per-chain fee speeds. Values stored before the preference
+ * became per-network were a single FeeSpeed string and are dropped here, so
+ * those users fall back to the default speed instead of a corrupt map.
+ */
+const sanitizeFeeSpeedPreference = (stored: unknown): SignAccountOpFeeSpeedPreference => {
+  if (typeof stored !== 'object' || stored === null || Array.isArray(stored)) return {}
+
+  const sanitized: SignAccountOpFeeSpeedPreference = {}
+  Object.entries(stored).forEach(([chainId, speed]) => {
+    if (Object.values(FeeSpeed).includes(speed as FeeSpeed)) sanitized[chainId] = speed as FeeSpeed
+  })
+
+  return sanitized
+}
 
 export class SignAccountOpPreferenceController extends EventEmitter {
   #storage: IStorageController
@@ -15,7 +33,7 @@ export class SignAccountOpPreferenceController extends EventEmitter {
 
   feeTokenPreference: SignAccountOpFeeTokenPreference = {}
 
-  feeSpeedPreference: FeeSpeed = FeeSpeed.Fast
+  feeSpeedPreference: SignAccountOpFeeSpeedPreference = {}
 
   initialLoadPromise?: Promise<void>
 
@@ -37,13 +55,9 @@ export class SignAccountOpPreferenceController extends EventEmitter {
   async #load() {
     try {
       this.feeTokenPreference = await this.#storage.get(FEE_TOKEN_PREFERENCE_STORAGE_KEY, {})
-      const feeSpeedPreference = await this.#storage.get(
-        FEE_SPEED_PREFERENCE_STORAGE_KEY,
-        FeeSpeed.Fast
+      this.feeSpeedPreference = sanitizeFeeSpeedPreference(
+        await this.#storage.get(FEE_SPEED_PREFERENCE_STORAGE_KEY, {})
       )
-      this.feeSpeedPreference = Object.values(FeeSpeed).includes(feeSpeedPreference)
-        ? feeSpeedPreference
-        : FeeSpeed.Fast
       this.emitUpdate()
     } catch (error) {
       this.emitError({
@@ -74,7 +88,7 @@ export class SignAccountOpPreferenceController extends EventEmitter {
     await update
   }
 
-  async setFeeSpeedPreference(feeSpeedPreference: FeeSpeed) {
+  async setFeeSpeedPreference(feeSpeedPreference: SignAccountOpFeeSpeedPreference) {
     this.feeSpeedPreference = feeSpeedPreference
     this.emitUpdate()
 

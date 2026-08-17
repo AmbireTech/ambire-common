@@ -15,6 +15,11 @@ import {
 
 export const AMBIRE_SWAP_POLICY = 'ambireSwapSponsorship'
 
+/**
+ * Currently, only the Gnosis chain is sponsored unconditionally
+ */
+export const AMBIRE_NETWORK_WIDE_SPONSORSHIP_POLICY = 'ambireGnosisSponsorship'
+
 export function getPaymasterService(
   chainId: bigint,
   capabilities?: { paymasterService?: PaymasterCapabilities | PaymasterService }
@@ -54,7 +59,10 @@ export function getAmbirePaymasterService(
 
   return {
     url: getAmbireSponsorshipUrl(relayerUrl),
-    id: new Date().getTime()
+    id: new Date().getTime(),
+    context: {
+      policyId: AMBIRE_NETWORK_WIDE_SPONSORSHIP_POLICY
+    }
   }
 }
 

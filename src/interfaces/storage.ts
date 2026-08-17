@@ -17,7 +17,7 @@ import { Account, AccountId, AccountPreferences } from './account'
 import { AutoLoginPoliciesByAccount, AutoLoginSettings } from './autoLogin'
 import { Selectors } from './contractInfo'
 import { ControllerInterface } from './controller'
-import { Dapp, RecentDappEntry } from './dapp'
+import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
@@ -57,6 +57,10 @@ export type StorageProps = {
   dappsV2: Dapp[]
   dapps: Dapp[]
   recentDapps: RecentDappEntry[]
+  trending: {
+    updatedAt: number
+    tokens: TrendingToken[]
+  }
   // Selected account
   dismissedBanners: (string | number)[]
   selectedAccount: string | null
@@ -90,7 +94,9 @@ export type StorageProps = {
   signAccountOpFeeTokenPreference: {
     [chainId: string]: string | 'gasTank'
   }
-  signAccountOpFeeSpeedPreference: FeeSpeed
+  signAccountOpFeeSpeedPreference: {
+    [chainId: string]: FeeSpeed
+  }
   networks: { [key: string]: Network }
   accounts: Account[]
   networkPreferences: { [key: string]: Partial<Network> }
