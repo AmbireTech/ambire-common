@@ -2073,6 +2073,17 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
+   * Fresh, single-use key that signs one private operation's UserOp - never derived from the
+   * wallet's seeds and never persisted. Its address is also the smart account's address (the
+   * UserOp sender, upgraded via EIP-7702 on the fly), which is why a native unshield has to
+   * create it before *building* the operation: the pool must send the WETH to that very
+   * account, since `WETH.withdraw` burns from `msg.sender`.
+   */
+  #createDisposableBroadcastSigner() {
+    return EthSigner.privateKey(Wallet.createRandom().privateKey as `0x${string}`)
+  }
+
+  /**
    * Broadcasts a proved private operation (unshield/transfer) via an ERC-4337 UserOp,
    * signed by a fresh disposable key generated per operation and never persisted. This is
    * what gives unshield/transfer real unlinkability: the bundler fee is paid from the
@@ -2085,11 +2096,16 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    * was unverified and wrong. The disposable account is expected to be upgraded to a smart
    * account via EIP-7702 on the fly inside the UserOp, so a fresh, zero-balance,
    * never-delegated key should broadcast with no pre-funding.
+   *
+   * `disposableSigner` may be passed in by the caller when the operation had to be *built*
+   * against the smart account's address - native unshields do, see
+   * `#createDisposableBroadcastSigner`.
    */
   async #broadcastPrivateOperation(
     chainId: string,
     plugin: RailgunPlugin,
-    op: Parameters<RailgunPlugin['broadcast']>[0]
+    op: Parameters<RailgunPlugin['broadcast']>[0],
+    disposableSigner: EthSigner = this.#createDisposableBroadcastSigner()
   ) {
     if (!this.#pimlicoApiKey)
       throw new EmittableError({
@@ -2106,8 +2122,6 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         error: new Error(`railgun: missing provider for chain ${chainId}`)
       })
 
-    // Fresh, single-use key - never derived from the wallet's seeds and never persisted.
-    const disposableSigner = EthSigner.privateKey(Wallet.createRandom().privateKey as `0x${string}`)
     const ethersProvider = provider as JsonRpcProvider
     const eip1193Provider = new RailgunEip1193ProviderAdapter(ethersProvider)
     const smartAccount = new SimpleSmartAccount(
@@ -2282,8 +2296,41 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       const asset: AssetId = isNative
         ? { __type: 'native' }
         : { __type: 'erc20', contract: tokenAddress }
-      const op = await plugin.prepareUnshield({ asset, amount }, toAddress)
-      await this.#broadcastPrivateOperation(chainId, plugin, op)
+
+      // The pool holds no ETH, so a native unshield is really a WETH unshield followed by
+      // `WETH.withdraw`, which burns from `msg.sender` - the smart account that runs the UserOp.
+      // Unshielding straight to the user's recipient therefore cannot work (the WETH would sit on
+      // an address the UserOp can't spend from, and the unwrap would revert): the pool must pay
+      // the smart account, and a tail call appended to the same UserOp forwards the unwrapped ETH
+      // on to the recipient. Ambire's broadcaster is a fresh disposable key, so it can never be
+      // the recipient itself - which is what makes the tail call necessary rather than optional.
+      // ERC-20 unshields need none of this and go straight to the recipient.
+      const disposableSigner = isNative ? this.#createDisposableBroadcastSigner() : undefined
+      const unshieldToAddress = disposableSigner ? disposableSigner.address : toAddress
+      if (disposableSigner)
+        this.debugLog('broadcast', 'native unshield routed through the smart account', {
+          chainId,
+          smartAccountAddress: unshieldToAddress,
+          recipient: toAddress,
+          amount
+        })
+
+      const op = await plugin.prepareUnshield({ asset, amount }, unshieldToAddress, {
+        tailCalls: disposableSigner
+          ? async (smartAccountAddress) => {
+              // Guards against the SDK resolving the tails against a different address than the
+              // one the WETH was unshielded to - that would forward ETH the account doesn't hold
+              // (reverting the whole UserOp at best, stranding the funds at worst).
+              if (smartAccountAddress.toLowerCase() !== unshieldToAddress.toLowerCase())
+                throw new Error(
+                  `railgun: unshield tail call address mismatch (built for ${unshieldToAddress}, resolved ${smartAccountAddress})`
+                )
+
+              return [{ to: toAddress, data: '0x', value: amount }]
+            }
+          : undefined
+      })
+      await this.#broadcastPrivateOperation(chainId, plugin, op, disposableSigner)
 
       this.#updateActivityEntry(activityId, { status: 'success' })
     } catch (error: any) {
