@@ -1,4 +1,5 @@
-import { getBytes } from 'ethers'
+import { getBytes, toUtf8Bytes } from 'ethers'
+import { gzip } from 'pako'
 
 import { CIPHER } from '@/libs/keystore/keystore'
 
@@ -86,10 +87,39 @@ describe('accountsSync payload', () => {
     expect(serializeAndParse(payload)).toEqual(payload)
   })
 
-  it('rejects data that is not a sync payload', () => {
+  it('rejects data that is not compressed at all', () => {
     expect(() => parseAccountsSyncPayload(new Uint8Array([1, 2, 3]))).toThrow(
+      'failed to decompress the payload'
+    )
+  })
+
+  it('rejects an uncompressed payload, which no Ambire product produces', () => {
+    const uncompressed = toUtf8Bytes(JSON.stringify(buildPayload()))
+
+    expect(() => parseAccountsSyncPayload(uncompressed)).toThrow('failed to decompress the payload')
+  })
+
+  it('rejects compressed data that is not a sync payload', () => {
+    expect(() => parseAccountsSyncPayload(gzip(toUtf8Bytes('not json')))).toThrow(
       'not a valid sync payload'
     )
+  })
+
+  it('rejects a payload that decompresses to more than a sync payload could ever be', () => {
+    // Compresses to a few KB but inflates past the 2MB limit, which is how a hostile QR
+    // code would try to exhaust the memory of the device scanning it
+    const bomb = gzip(new Uint8Array(3 * 1024 * 1024))
+
+    expect(() => parseAccountsSyncPayload(bomb)).toThrow('too large to be a sync payload')
+  })
+
+  it('compresses the payload well below its JSON size', () => {
+    const payload = buildPayload()
+    const jsonSize = toUtf8Bytes(JSON.stringify(payload)).length
+    // `serializeAccountsSyncPayload` returns a hex string, so 2 chars per wire byte
+    const wireSize = (serializeAccountsSyncPayload(payload).length - 2) / 2
+
+    expect(wireSize).toBeLessThan(jsonSize / 2)
   })
 
   it('rejects an unsupported payload version', () => {

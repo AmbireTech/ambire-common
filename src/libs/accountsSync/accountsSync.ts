@@ -1,4 +1,5 @@
 import { hexlify, isAddress, toUtf8Bytes, toUtf8String } from 'ethers'
+import { gzip, Inflate } from 'pako'
 
 import { Account } from '../../interfaces/account'
 import {
@@ -89,10 +90,51 @@ const validateSeeds = (seeds: any) => {
 }
 
 /**
+ * A payload takes a few hundred bytes per account, so this leaves room for far more
+ * accounts than anyone holds, while keeping a hostile QR code from inflating into
+ * gigabytes of memory in the background.
+ */
+const MAX_DECOMPRESSED_PAYLOAD_SIZE = 2 * 1024 * 1024
+
+/**
+ * Inflates the scanned bytes, giving up as soon as they expand past what a sync payload
+ * could ever be, instead of allocating whatever the compressed data asks for.
+ */
+const decompress = (bytes: Uint8Array): Uint8Array => {
+  const inflate = new Inflate()
+  const chunks: Uint8Array[] = []
+  let size = 0
+
+  // pako has no way to abort a stream, so oversized chunks are counted and dropped
+  // (which keeps the memory flat) and the whole stream is rejected afterwards
+  inflate.onData = (chunk: Uint8Array) => {
+    size += chunk.length
+    if (size <= MAX_DECOMPRESSED_PAYLOAD_SIZE) chunks.push(chunk)
+  }
+
+  inflate.push(bytes, true)
+
+  if (inflate.err) throw new Error(`accountsSync: failed to decompress the payload: ${inflate.msg}`)
+  if (size > MAX_DECOMPRESSED_PAYLOAD_SIZE)
+    throw new Error('accountsSync: the payload is too large to be a sync payload')
+
+  const decompressed = new Uint8Array(size)
+  let offset = 0
+  chunks.forEach((chunk) => {
+    decompressed.set(chunk, offset)
+    offset += chunk.length
+  })
+
+  return decompressed
+}
+
+/**
  * Serializes the payload to the hex encoded bytes carried by the animated QR codes.
+ * Gzipped first, because JSON full of hex strings compresses 3x or better, and every
+ * byte saved is one less QR frame the other device has to catch.
  */
 export const serializeAccountsSyncPayload = (payload: AccountsSyncPayload): string =>
-  hexlify(toUtf8Bytes(JSON.stringify(payload)))
+  hexlify(gzip(toUtf8Bytes(JSON.stringify(payload))))
 
 /**
  * Parses and validates the bytes assembled from the scanned animated QR codes.
@@ -100,9 +142,13 @@ export const serializeAccountsSyncPayload = (payload: AccountsSyncPayload): stri
  * incompatible (newer) app version.
  */
 export const parseAccountsSyncPayload = (bytes: Uint8Array): AccountsSyncPayload => {
+  // Left to throw on its own, so that a corrupt stream and an oversized one stay
+  // distinguishable from data that decompressed fine but isn't a sync payload
+  const decompressed = decompress(bytes)
+
   let payload: any
   try {
-    payload = JSON.parse(toUtf8String(bytes))
+    payload = JSON.parse(toUtf8String(decompressed))
   } catch {
     throw new Error('accountsSync: the scanned data is not a valid sync payload')
   }
