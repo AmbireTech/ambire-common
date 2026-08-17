@@ -202,8 +202,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   lock() {
     this.#mainKey = null
     if (this.#tempSeed) this.deleteTempSeed(false)
-    // Anything still queued holds decrypted keys and seed phrases (a sync that happened
-    // before the device password was set), so it must not outlive a lock
+
     this.#seedsToAddOnKeystoreReady = []
     this.#internalKeysToAddOnKeystoreReady = []
     this.emitUpdate()
