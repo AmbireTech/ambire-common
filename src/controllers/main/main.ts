@@ -1751,50 +1751,58 @@ export class MainController extends EventEmitter implements IMainController {
       threshold: accountState[c.toString()]?.threshold || 0
     }))
 
-    for (let i = 0; i < networksAndThresholds.length; i++) {
-      // wait a second to not hit 5 request per minute API limit
-      if (i !== 0) await wait(600)
+    if (!networksAndThresholds.length) return
 
-      const firstBatch = networksAndThresholds[i]!
-      const res: SafeResults | null = await this.safe
-        .fetchPending(safeAddr, [firstBatch])
-        .catch((e) => {
-          console.log(e)
-          console.log('failed to retrieve pending Safe txns')
-          return null
-        })
+    await this.withStatus(
+      'fetchSafeTxns',
+      async () => {
+        for (let i = 0; i < networksAndThresholds.length; i++) {
+          // wait a second to not hit 5 request per minute API limit
+          if (i !== 0) await wait(600)
 
-      if (!res) continue
+          const firstBatch = networksAndThresholds[i]!
+          const res: SafeResults | null = await this.safe
+            .fetchPending(safeAddr, [firstBatch])
+            .catch((e) => {
+              console.log(e)
+              console.log('failed to retrieve pending Safe txns')
+              return null
+            })
 
-      // build txn requests
-      const txnRequest = toCallsUserRequest(safeAddr, res)
-      for (let i = 0; i < txnRequest.length; i++) {
-        // build the requests only if the selected account hasn't changed
-        if (this.selectedAccount?.account?.addr === safeAddr)
-          await this.requests.build(txnRequest[i]!).catch((e) => e)
-      }
+          if (!res) continue
 
-      // build and resolve message requests
-      const messageRequests = toSigMessageUserRequests(res)
-      for (let i = 0; i < messageRequests.length; i++) {
-        const req = messageRequests[i]!
-        const userRequest = this.requests.userRequests.find(
-          (u) =>
-            u.meta.accountAddr === safeAddr &&
-            u.meta.chainId === req.params.chainId &&
-            (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
-            u.meta.hash === req.params.messageHash
-        )
-        if (!userRequest && !req.isConfirmed) {
-          // build the requests only if the selected account hasn't changed
-          if (this.selectedAccount?.account?.addr === safeAddr)
-            await this.requests.build(req).catch((e) => e)
+          // build txn requests
+          const txnRequest = toCallsUserRequest(safeAddr, res)
+          for (let i = 0; i < txnRequest.length; i++) {
+            // build the requests only if the selected account hasn't changed
+            if (this.selectedAccount?.account?.addr === safeAddr)
+              await this.requests.build(txnRequest[i]!).catch((e) => e)
+          }
+
+          // build and resolve message requests
+          const messageRequests = toSigMessageUserRequests(res)
+          for (let i = 0; i < messageRequests.length; i++) {
+            const req = messageRequests[i]!
+            const userRequest = this.requests.userRequests.find(
+              (u) =>
+                u.meta.accountAddr === safeAddr &&
+                u.meta.chainId === req.params.chainId &&
+                (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
+                u.meta.hash === req.params.messageHash
+            )
+            if (!userRequest && !req.isConfirmed) {
+              // build the requests only if the selected account hasn't changed
+              if (this.selectedAccount?.account?.addr === safeAddr)
+                await this.requests.build(req).catch((e) => e)
+            }
+            if (userRequest && req.isConfirmed) {
+              await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
+            }
+          }
         }
-        if (userRequest && req.isConfirmed) {
-          await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
-        }
-      }
-    }
+      },
+      true
+    )
   }
 
   #updateIsOffline() {
