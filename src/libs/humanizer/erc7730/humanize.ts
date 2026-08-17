@@ -1,6 +1,7 @@
 import {
   formatUnits,
   FunctionFragment,
+  getAddress,
   Interface,
   isAddress,
   isHexString,
@@ -32,6 +33,7 @@ import { genericErc20Humanizer } from '../modules/Tokens'
 import {
   eToNative,
   flattenHumanizerVisualizations,
+  getAction,
   getAddressVisualization,
   getChain,
   getErc7730Visualization,
@@ -969,8 +971,62 @@ const fieldsToRows = (
   }, [])
 }
 
+// Per the ERC-7730 spec's interpolation algorithm, each `{path}` placeholder
+// must be resolved against the matching entry in the format's `fields` array
+// (by path, after resolving `$ref`) so its declared `format`/`params` control
+// how the value is rendered - not just the raw value. Only leaf fields are
+// searched: interpolated intents may only reference always-visible paths, and
+// those never live under a grouped/array `fields` sub-list.
+const findInterpolationField = (
+  fields: Erc7730Field[] | undefined,
+  path: string,
+  context: FormatContext
+): Erc7730Field | null => {
+  if (!fields) return null
+
+  for (const field of fields) {
+    const resolvedField = resolveFieldReference(field, context)
+    if (resolvedField.path === path) return resolvedField
+  }
+
+  return null
+}
+
+// Known ERC-20 decimals/symbol are only available for tokens listed in the
+// static humanizerInfo registry - there is no async portfolio/token lookup
+// available at this (pure, synchronous) humanization stage. Native ETH is
+// always 18 decimals so it can be formatted unconditionally.
+const getKnownTokenAmountText = (tokenAddress: string, amount: bigint): string | null => {
+  if (tokenAddress.toLowerCase() === ZeroAddress.toLowerCase()) return formatUnits(amount, 18)
+
+  const knownToken = (humanizerInfo as HumanizerMeta).knownAddresses?.[getAddress(tokenAddress)]
+    ?.token
+  if (!knownToken?.decimals) return null
+
+  return knownToken.symbol
+    ? `${formatUnits(amount, knownToken.decimals)} ${knownToken.symbol}`
+    : formatUnits(amount, knownToken.decimals)
+}
+
+const formatInterpolatedAmount = (
+  field: Erc7730Field,
+  value: unknown,
+  context: FormatContext,
+  base: unknown
+): string | null => {
+  const amount = toBigIntOrNull(value)
+  if (amount === null) return null
+
+  const tokenAddress = getTokenAddressFromField(field, context, base)
+  const resolvedTokenAddress = tokenAddress ?? (field.format === 'amount' ? ZeroAddress : null)
+  if (!resolvedTokenAddress) return null
+
+  return getKnownTokenAmountText(resolvedTokenAddress, amount)
+}
+
 const interpolateIntent = (
   template: string,
+  fields: Erc7730Field[] | undefined,
   context: FormatContext,
   base: unknown
 ): string | null => {
@@ -996,11 +1052,120 @@ const interpolateIntent = (
     const value = resolvePath(path, context, base)
     if (value === undefined) return null
 
-    interpolated += interpolatedValueToText(path, value)
+    const matchingField = findInterpolationField(fields, path, context)
+    if (matchingField?.format === 'amount' || matchingField?.format === 'tokenAmount') {
+      const formattedAmount = formatInterpolatedAmount(matchingField, value, context, base)
+      // A field explicitly declares this placeholder as a token/native amount,
+      // but its token couldn't be resolved to known decimals - per the spec,
+      // a failed interpolation falls back to the plain `intent` entirely
+      // rather than leaking a wrong or unformatted value into the title.
+      if (formattedAmount === null) return null
+      interpolated += formattedAmount
+    } else {
+      interpolated += interpolatedValueToText(path, value)
+    }
+
     currentIndex = closingBraceIndex + 1
   }
 
   return interpolated
+}
+
+// Structured counterpart to interpolateIntent(): instead of collapsing an
+// amount/tokenAmount placeholder to formatted text (which needs decimals to be
+// statically known at humanization time, e.g. via humanizerInfo), it emits a
+// `type: 'token'` part carrying the raw address/amount. The UI renders that
+// part with the same live decimals/symbol/price lookup it already uses for row
+// values (TokenOrNft), so this doesn't depend on a static token registry being
+// exhaustive. Every other placeholder still renders as plain text.
+const interpolateIntentParts = (
+  template: string,
+  fields: Erc7730Field[] | undefined,
+  context: FormatContext,
+  base: unknown
+): HumanizerVisualization[] | null => {
+  const parts: HumanizerVisualization[] = []
+  let currentIndex = 0
+
+  // The leading word(s) of an interpolated intent are the verb ("Swap ",
+  // "Stake ", ...), so render them as an `action` part - same styling as the
+  // rest of the app's action verbs (e.g. getAction('Swap') in the Uniswap/
+  // CowSwap/etc. modules) - instead of plain text.
+  const pushText = (text: string) => {
+    if (!text) return
+    parts.push(parts.length === 0 ? getAction(text) : getText(text))
+  }
+
+  while (currentIndex < template.length) {
+    const openingBraceIndex = template.indexOf('{', currentIndex)
+    if (openingBraceIndex === -1) {
+      pushText(template.slice(currentIndex))
+      break
+    }
+
+    const closingBraceIndex = template.indexOf('}', openingBraceIndex + 1)
+    if (closingBraceIndex === -1) {
+      pushText(template.slice(currentIndex))
+      break
+    }
+
+    pushText(template.slice(currentIndex, openingBraceIndex))
+
+    const path = template.slice(openingBraceIndex + 1, closingBraceIndex).trim()
+    const value = resolvePath(path, context, base)
+    if (value === undefined) return null
+
+    const matchingField = findInterpolationField(fields, path, context)
+    const tokenPart =
+      matchingField?.format === 'amount' || matchingField?.format === 'tokenAmount'
+        ? getInterpolatedTokenPart(matchingField, value, context, base)
+        : null
+    const addressPart =
+      !tokenPart &&
+      (matchingField?.format === 'addressName' ||
+        matchingField?.format === 'interoperableAddressName')
+        ? getInterpolatedAddressPart(value)
+        : null
+
+    if (tokenPart) {
+      parts.push(tokenPart)
+    } else if (addressPart) {
+      parts.push(addressPart)
+    } else {
+      pushText(interpolatedValueToText(path, value))
+    }
+
+    currentIndex = closingBraceIndex + 1
+  }
+
+  return parts
+}
+
+const getInterpolatedTokenPart = (
+  field: Erc7730Field,
+  value: unknown,
+  context: FormatContext,
+  base: unknown
+): HumanizerVisualization | null => {
+  const amount = toBigIntOrNull(value)
+  if (amount === null) return null
+
+  const tokenAddress = getTokenAddressFromField(field, context, base)
+  const resolvedTokenAddress = tokenAddress ?? (field.format === 'amount' ? ZeroAddress : null)
+  if (!resolvedTokenAddress) return null
+
+  return getToken(resolvedTokenAddress, amount, getChainIdFromField(field, context, base))
+}
+
+// Same reasoning as getInterpolatedTokenPart(): an addressName placeholder
+// renders as a `type: 'address'` part so the UI resolves/displays it the same
+// way as row values (ENS lookup, blacklist check, etc.) instead of a raw hex
+// string baked into the title text.
+const getInterpolatedAddressPart = (value: unknown): HumanizerVisualization | null => {
+  if (typeof value === 'bigint') return getAddressVisualization(uintToAddress(value))
+  if (typeof value === 'string' && isAddress(value)) return getAddressVisualization(value)
+
+  return null
 }
 
 const formatToVisualizations = (
@@ -1008,14 +1173,17 @@ const formatToVisualizations = (
   context: FormatContext,
   dapp?: Call['dapp']
 ): HumanizerVisualization[] | null => {
+  const titleParts = format.interpolatedIntent
+    ? interpolateIntentParts(format.interpolatedIntent, format.fields, context, context.root)
+    : null
   const intent =
     (format.interpolatedIntent &&
-      interpolateIntent(format.interpolatedIntent, context, context.root)) ||
+      interpolateIntent(format.interpolatedIntent, format.fields, context, context.root)) ||
     format.intent
   const rows = fieldsToRows(format.fields || [], context, context.root)
   if (!rows) return null
 
-  return [getErc7730Visualization(intent, rows, dapp)]
+  return [getErc7730Visualization(intent, rows, dapp, titleParts ?? undefined)]
 }
 
 const isOneInchFillOrderFormat = (formatKey: string, descriptorPath?: string) =>

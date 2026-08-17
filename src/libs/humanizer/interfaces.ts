@@ -11,7 +11,17 @@ export interface HumanizerErc7730Row {
 
 export interface HumanizerErc7730Visualization {
   type: 'erc7730'
+  // Plain-text title, always populated when there's a title at all. Kept around
+  // for logic that needs a string (label comparisons, heuristics, non-rich
+  // surfaces) - when a token/native amount can't be statically decimal-formatted
+  // it's rendered as a raw integer here, so prefer `titleParts` for display.
   title?: string
+  // Same title, but split into renderable parts (text/token/address/...) so the
+  // UI can render an interpolated token amount with the same live decimals/price
+  // lookup used for row values (e.g. via a `type: 'token'` item), instead of
+  // requiring decimals to be statically known at humanization time. Present
+  // only when the format used `interpolatedIntent`.
+  titleParts?: HumanizerVisualization[]
   dapp?: Call['dapp']
   rows: HumanizerErc7730Row[]
 }

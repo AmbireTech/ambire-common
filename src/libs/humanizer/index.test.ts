@@ -611,6 +611,115 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  // Real world tx (mainnet) calling LI.FI Diamond's swapTokensSingleV3NativeToERC20
+  // (selector 0xaf7060fd - confirmed via 4byte.directory). Descriptor fields below
+  // are copied verbatim from the LI.FI entry in the ERC-7730 registry:
+  // https://github.com/ethereum/clear-signing-erc7730-registry/blob/master/registry/lifi/calldata-LIFIDiamond.json
+  // The descriptor's "interpolatedIntent" - "Swap {@.value} for at least
+  // {_minAmountOut} to {_receiver}" - exercises interpolateIntent()'s per-spec
+  // field lookup: {_minAmountOut} resolves through the "Minimum to Receive"
+  // field's tokenAmount format/tokenPath, so it renders as a decimal WETH
+  // amount with its symbol, matching the "Minimum to Receive" row below.
+  test('humanizes a LI.FI swapTokensSingleV3NativeToERC20 call with its ERC-7730 registry descriptor', () => {
+    accountOp.calls = [
+      {
+        to: '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE',
+        value: 5837776470906329n,
+        data: '0xaf7060fdedbb23ef4269219df4d4d0183bea7af79cc46298a7df01a4e949e02b9384f19b00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001000000000000000000000000006969174fd72466430a46e18234d0b530c9fd5f490000000000000000000000000000000000000000000000000014bd6d40d395d900000000000000000000000000000000000000000000000000000000000001600000000000000000000000000000000000000000000000000000000000000015616d626972652d657874656e73696f6e2d70726f640000000000000000000000000000000000000000000000000000000000000000000000000000000000002a307830303030303030303030303030303030303030303030303030303030303030303030303030303030000000000000000000000000000000000000000000000000000000000000000000005c57cf61e473ae865e733a3a23fbb7618b4621f60000000000000000000000005c57cf61e473ae865e733a3a23fbb7618b4621f60000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000000000000000000000000000000014bd6d40d395d900000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000004d0e30db000000000000000000000000000000000000000000000000000000000'
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: {
+          path: 'registry/lifi/calldata-LIFIDiamond.json',
+          descriptor: {
+            display: {
+              formats: {
+                'swapTokensSingleV3NativeToERC20(bytes32 _transactionId, string _integrator, string _referrer, address _receiver, uint256 _minAmountOut, (address callTo, address approveTo, address sendingAssetId, address receivingAssetId, uint256 fromAmount, bytes callData, bool requiresDeposit) _swapData)':
+                  {
+                    intent: 'Swap',
+                    interpolatedIntent:
+                      'Swap {@.value} for at least {_minAmountOut} to {_receiver}',
+                    fields: [
+                      { path: '@.value', label: 'Amount to send', format: 'amount' },
+                      {
+                        path: '_minAmountOut',
+                        label: 'Minimum to Receive',
+                        format: 'tokenAmount',
+                        params: { tokenPath: '_swapData.receivingAssetId' },
+                        visible: 'always'
+                      },
+                      {
+                        path: '_receiver',
+                        label: 'Recipient',
+                        format: 'addressName',
+                        params: { types: ['eoa', 'contract'], sources: ['local', 'ens'] },
+                        visible: 'always'
+                      },
+                      { path: '_transactionId', label: 'Transaction Id', visible: 'never' },
+                      { path: '_integrator', label: 'Integrator', visible: 'never' },
+                      { path: '_referrer', label: 'Referrer', visible: 'never' },
+                      {
+                        path: '_swapData.callData',
+                        label: 'Swap Data Call Data',
+                        visible: 'never'
+                      },
+                      { path: '_swapData.callTo', label: 'Swap Data Call To', visible: 'never' },
+                      {
+                        path: '_swapData.approveTo',
+                        label: 'Swap Data Approve To',
+                        visible: 'never'
+                      },
+                      {
+                        path: '_swapData.requiresDeposit',
+                        label: 'Swap Data Requires Deposit',
+                        visible: 'never'
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization(
+          'Swap 0.005837776470906329 for at least 0.005837776470906329 WETH to 0x6969174FD72466430a46e18234D0b530c9FD5f49',
+          [
+            {
+              label: 'Amount to send',
+              value: [getToken(ZeroAddress, 5837776470906329n, 1n)]
+            },
+            {
+              label: 'Minimum to Receive',
+              value: [getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n)]
+            },
+            {
+              label: 'Recipient',
+              value: [getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')]
+            }
+          ],
+          undefined,
+          // Structured title parts, so the UI can render the two amounts as
+          // `type: 'token'` items (live decimals/symbol lookup via TokenOrNft)
+          // instead of relying on a static, possibly incomplete token registry.
+          [
+            getAction('Swap '),
+            getToken(ZeroAddress, 5837776470906329n, 1n),
+            getText(' for at least '),
+            getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n),
+            getText(' to '),
+            getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')
+          ]
+        )
+      ]
+    ])
+  })
+
   test('adds the native transaction value when it is not already displayed', async () => {
     const call = {
       ...transactions.erc20[1]!,
@@ -1168,12 +1277,17 @@ describe('ERC-7730 descriptors', () => {
 
     compareHumanizerVisualizations(irCalls, [
       [
-        getErc7730Visualization('Stake 0.001 ETH', [
-          {
-            label: 'Amount',
-            value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
-          }
-        ])
+        getErc7730Visualization(
+          'Stake 0.001 ETH',
+          [
+            {
+              label: 'Amount',
+              value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
+            }
+          ],
+          undefined,
+          [getAction('Stake '), getToken(ZeroAddress, 1000000000000000n, 1n), getText(' ETH')]
+        )
       ]
     ])
     expect(irCalls[0]!.warnings).toEqual([])
@@ -4320,11 +4434,7 @@ describe('ERC-7730 descriptors', () => {
               {
                 label: 'For at least',
                 value: [
-                  getToken(
-                    '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-                    915124135802242n,
-                    8453n
-                  )
+                  getToken('0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', 915124135802242n, 8453n)
                 ]
               },
               {
