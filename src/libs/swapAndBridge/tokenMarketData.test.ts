@@ -1,6 +1,6 @@
 import { ZeroAddress } from 'ethers'
 
-import { QueueElement } from '../portfolio/batcher'
+import { QueueElement } from '../../utils/batcher'
 import { getTokenMarketDataKey, marketDataRequestBatcher } from './tokenMarketData'
 
 const buildQueueElement = (address: string, platformId: string): QueueElement =>

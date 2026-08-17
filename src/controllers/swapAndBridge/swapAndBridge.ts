@@ -51,7 +51,6 @@ import { getBridgeBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
-import batcher from '../../libs/portfolio/batcher'
 import { convertApiTokenDataToTokenDataCache, getTokenAmount } from '../../libs/portfolio/helpers'
 import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
@@ -81,6 +80,7 @@ import {
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { NULL_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount, Validation } from '../../services/validations/validate'
+import batcher from '../../utils/batcher'
 import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
