@@ -1475,17 +1475,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#fetchToTokenMarketData(this.toTokenShortList)
   }
 
-  #isMarketDataRecordStale(record: ToTokenMarketDataRecord): boolean {
-    return Date.now() - record.updatedAt > MARKET_DATA_THRESHOLD_BY_STATUS[record.status]
-  }
-
   #getMarketDataRecord(
     chainId: number,
     address: string
   ): { record?: ToTokenMarketDataRecord; isStale: boolean } {
     const record = this.#toTokenMarketData[chainId]?.get(address.toLowerCase())
+    const isStale =
+      !record || Date.now() - record.updatedAt > MARKET_DATA_THRESHOLD_BY_STATUS[record.status]
 
-    return { record, isStale: !record || this.#isMarketDataRecordStale(record) }
+    return { record, isStale }
   }
 
   #setMarketDataRecord(chainId: number, address: string, record: ToTokenMarketDataRecord) {
