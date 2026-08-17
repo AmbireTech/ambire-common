@@ -658,7 +658,7 @@ describe('balanceChanges', () => {
     expect(getTokenBalancesOnBlock).toHaveBeenCalledWith(
       accountAddr,
       999n,
-      [ZeroAddress, usdcAddr],
+      [ZeroAddress, usdcAddr, NATIVE_TOKEN_TRANSFER_LOG_ADDRESS],
       'latest',
       accountAddr
     )
