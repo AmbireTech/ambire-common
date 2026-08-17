@@ -799,6 +799,120 @@ describe('RequestsController ', () => {
       if (request.kind === 'calls') request.signAccountOp.destroy()
     })
   })
+  test('finds the next available Safe nonce in the current request queue', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const currentRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    const sameNonceRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    const nonce46Request = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    const nonce47Request = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    const otherNetworkRequest = await getCallsRequest({ addr: accountAddr, chainId: 10n })
+
+    currentRequest.id = 'current-request'
+    sameNonceRequest.id = 'same-nonce-request'
+    nonce46Request.id = 'nonce-46-request'
+    nonce47Request.id = 'nonce-47-request'
+    otherNetworkRequest.id = 'other-network-request'
+    currentRequest.signAccountOp.accountOp.nonce = 45n
+    sameNonceRequest.signAccountOp.accountOp.nonce = 45n
+    nonce46Request.signAccountOp.accountOp.nonce = 46n
+    nonce47Request.signAccountOp.accountOp.nonce = 47n
+    otherNetworkRequest.signAccountOp.accountOp.nonce = 99n
+    controller.userRequests = [
+      currentRequest,
+      sameNonceRequest,
+      nonce46Request,
+      nonce47Request,
+      otherNetworkRequest
+    ]
+    controller.currentUserRequest = currentRequest
+
+    expect(controller.currentSafeNonceConflict).toEqual({
+      requestId: currentRequest.id,
+      chainId: 1n,
+      nonce: 45n,
+      nextNonce: 48n
+    })
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
+
+  test('does not report a Safe nonce conflict after an owner has signed', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const currentRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    const sameNonceRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+
+    currentRequest.id = 'current-request'
+    sameNonceRequest.id = 'same-nonce-request'
+    currentRequest.signAccountOp.accountOp.nonce = 45n
+    sameNonceRequest.signAccountOp.accountOp.nonce = 45n
+    controller.userRequests = [currentRequest, sameNonceRequest]
+    controller.currentUserRequest = currentRequest
+
+    currentRequest.signAccountOp.accountOp.signed = ['0x1234' as Hex]
+    expect(controller.currentSafeNonceConflict).toBe(null)
+
+    currentRequest.signAccountOp.accountOp.signed = []
+    currentRequest.signAccountOp.accountOp.safeTx = {
+      nonce: '45',
+      confirmations: [{}]
+    } as any
+    expect(controller.currentSafeNonceConflict).toBe(null)
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
+
+  test('does not report a Safe nonce conflict for an onchain cancellation', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const cancellationRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    const pendingRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+
+    cancellationRequest.id = 'cancellation-request'
+    pendingRequest.id = 'pending-request'
+    cancellationRequest.signAccountOp.accountOp.nonce = 45n
+    cancellationRequest.signAccountOp.accountOp.meta = { isOnchainSafeRejection: true }
+    pendingRequest.signAccountOp.accountOp.nonce = 45n
+    controller.userRequests = [cancellationRequest, pendingRequest]
+    controller.currentUserRequest = cancellationRequest
+
+    expect(controller.currentSafeNonceConflict).toBe(null)
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
+
+  test('sets or keeps the current Safe nonce based on the selected conflict action', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const currentRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    const sameNonceRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+
+    currentRequest.id = 'current-request'
+    sameNonceRequest.id = 'same-nonce-request'
+    currentRequest.signAccountOp.accountOp.nonce = 45n
+    sameNonceRequest.signAccountOp.accountOp.nonce = 45n
+    controller.userRequests = [currentRequest, sameNonceRequest]
+    controller.currentUserRequest = currentRequest
+
+    controller.setCurrentRequestSafeNonceToNextAvailable()
+    expect(currentRequest.signAccountOp.accountOp.nonce).toBe(46n)
+    expect(controller.currentSafeNonceConflict).toBe(null)
+
+    currentRequest.signAccountOp.setSafeNonce(45n)
+    controller.dismissCurrentSafeNonceConflict()
+    expect(controller.currentSafeNonceConflict).toBe(null)
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
   test('silently retires all same-nonce Safe alternatives with their immutable nonce', async () => {
     const { controller, getCallsRequest, safeCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'

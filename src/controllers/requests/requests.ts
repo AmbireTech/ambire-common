@@ -72,8 +72,10 @@ import {
   buildSwitchAccountUserRequest,
   dappRequestMethodToRequestKind,
   getCallsUserRequestsByNetwork,
+  getSafeNonceConflict,
   isSignRequest,
-  messageOnNewRequest
+  messageOnNewRequest,
+  type SafeNonceConflict
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
 import {
@@ -205,6 +207,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #currentUserRequest: UserRequest | null = null
 
+  #dismissedSafeNonceConflicts: SafeNonceConflict[] = []
+
   private shouldSimulateAccountOps = true
 
   get currentUserRequest() {
@@ -214,6 +218,42 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   set currentUserRequest(val: UserRequest | null) {
     this.#currentUserRequest = val
     this.#onSetCurrentUserRequest(val)
+  }
+
+  #getCurrentSafeNonceConflict(): SafeNonceConflict | null {
+    if (!this.currentUserRequest || this.currentUserRequest.kind !== 'calls') return null
+
+    return getSafeNonceConflict(this.currentUserRequest, this.userRequests)
+  }
+
+  /** The current unsigned Safe request's nonce conflict, unless the user chose to replace it. */
+  get currentSafeNonceConflict(): SafeNonceConflict | null {
+    const conflict = this.#getCurrentSafeNonceConflict()
+    if (!conflict) return null
+
+    const isDismissed = this.#dismissedSafeNonceConflicts.some(
+      ({ requestId, chainId, nonce }) =>
+        requestId === conflict.requestId && chainId === conflict.chainId && nonce === conflict.nonce
+    )
+
+    return isDismissed ? null : conflict
+  }
+
+  /** Moves the current Safe request after the highest nonce already present in its queue. */
+  setCurrentRequestSafeNonceToNextAvailable() {
+    const conflict = this.currentSafeNonceConflict
+    if (!conflict || !this.currentUserRequest || this.currentUserRequest.kind !== 'calls') return
+
+    this.currentUserRequest.signAccountOp.setSafeNonce(conflict.nextNonce)
+  }
+
+  /** Keeps the current Safe nonce so signing it can replace the queued transaction. */
+  dismissCurrentSafeNonceConflict() {
+    const conflict = this.currentSafeNonceConflict
+    if (!conflict) return
+
+    this.#dismissedSafeNonceConflicts.push(conflict)
+    this.emitUpdate()
   }
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
@@ -907,6 +947,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       if (!req) return
 
       this.userRequests.splice(this.userRequests.indexOf(req), 1)
+      this.#dismissedSafeNonceConflicts = this.#dismissedSafeNonceConflicts.filter(
+        ({ requestId }) => requestId !== req.id
+      )
       if (this.currentUserRequest?.id === req.id) didRemoveCurrentUserRequest = true
 
       // update the pending stuff to be signed
@@ -2124,6 +2167,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         callUserRequest.signAccountOp.pause()
       }
 
+      let lastSafeNonce = getAccountOpNonce(callUserRequest.signAccountOp.accountOp)
+      let wasSignedBySafeOwner = !!(
+        callUserRequest.signAccountOp.accountOp.signed?.length ||
+        callUserRequest.signAccountOp.accountOp.safeTx?.confirmations?.length
+      )
+
       callUserRequest.signAccountOp.onUpdate((forceEmit) => {
         const callsReq = this.userRequests.find(
           (r) => r.kind === 'calls' && r.signAccountOp.fromRequestId === requestId
@@ -2131,9 +2180,22 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         if (!callsReq) return
 
+        const safeNonce = getAccountOpNonce(callsReq.signAccountOp.accountOp)
+        const isSignedBySafeOwner = !!(
+          callsReq.signAccountOp.accountOp.signed?.length ||
+          callsReq.signAccountOp.accountOp.safeTx?.confirmations?.length
+        )
+        const hasSafeNonceStateChanged =
+          !!callsReq.signAccountOp.account.safeCreation &&
+          (safeNonce !== lastSafeNonce || isSignedBySafeOwner !== wasSignedBySafeOwner)
+
+        lastSafeNonce = safeNonce
+        wasSignedBySafeOwner = isSignedBySafeOwner
+
         if (
           callsReq.signAccountOp.isSignAndBroadcastInProgress ||
-          callsReq.signAccountOp.gasFeeChangedConfirmationRequired
+          callsReq.signAccountOp.gasFeeChangedConfirmationRequired ||
+          hasSafeNonceStateChanged
         ) {
           this.propagateUpdate(forceEmit)
         }
@@ -2296,6 +2358,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       return true
     })
+    this.#dismissedSafeNonceConflicts = this.#dismissedSafeNonceConflicts.filter(({ requestId }) =>
+      this.userRequests.some((request) => request.id === requestId)
+    )
 
     this.emitUpdate()
   }
@@ -2336,6 +2401,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       ...this,
       ...super.toJSON(),
       banners: this.banners,
+      currentSafeNonceConflict: this.currentSafeNonceConflict,
       visibleUserRequests: this.visibleUserRequests,
       currentUserRequest: this.currentUserRequest
     }
