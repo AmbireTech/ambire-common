@@ -1,6 +1,6 @@
 import { getDomain } from 'tldts'
 
-import { getAddress, zeroAddress } from 'viem'
+import { zeroAddress } from 'viem'
 
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import {
@@ -285,7 +285,9 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#version = phishing.version
     this.#updatedAt = phishing.updatedAt
     this.#domains = new Set(phishing.domains)
-    this.#addresses = new Set(phishing.addresses)
+    // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup, regardless of
+    // the casing the relayer (or, for pre-normalization storage, an older app version) used.
+    this.#addresses = new Set(phishing.addresses.map((address: string) => address.toLowerCase()))
 
     this.updatePhishingInterval.start({ runImmediately: true })
 
@@ -369,15 +371,22 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       )
       ;(phishing.addresses || []).forEach(
         ({ op, address }: { op: 'add' | 'remove'; address: string }) => {
-          if (op === 'add') this.#addresses.add(address)
-          if (op === 'remove') this.#addresses.delete(address)
+          // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup,
+          // regardless of the casing the relayer used.
+          const normalizedAddress = address.toLowerCase()
+          if (op === 'add') this.#addresses.add(normalizedAddress)
+          if (op === 'remove') this.#addresses.delete(normalizedAddress)
         }
       )
     } else {
       // Initial/full update: replace local sets with the server snapshot.
       this.#version = phishing.version || 0
       this.#domains = new Set(phishing.domains || [])
-      this.#addresses = new Set(phishing.addresses || [])
+      // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup, regardless
+      // of the casing the relayer used.
+      this.#addresses = new Set(
+        (phishing.addresses || []).map((address: string) => address.toLowerCase())
+      )
     }
 
     this.#shouldSyncDapps = true
@@ -690,19 +699,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   getAddressBlacklistedStatus(address: string): BlacklistedStatus | undefined {
     if (!this.#addresses.size) return undefined
 
-    // The list may hold addresses in any casing, while the checked address can come straight from
-    // user input (typed, pasted or resolved from a name). Compare every common form, so that a
-    // lowercase input is never treated as safe only because the list holds it checksummed.
-    if (this.#addresses.has(address) || this.#addresses.has(address.toLowerCase()))
-      return 'BLACKLISTED'
-
-    try {
-      if (this.#addresses.has(getAddress(address))) return 'BLACKLISTED'
-    } catch {
-      // Not a valid address, so it cannot be in the list
-    }
-
-    return 'VERIFIED'
+    return this.#addresses.has(address.toLowerCase()) ? 'BLACKLISTED' : 'VERIFIED'
   }
 
   toJSON() {
