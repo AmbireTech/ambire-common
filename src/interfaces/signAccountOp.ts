@@ -55,6 +55,7 @@ type Warning = {
   id: string
   title: string
   text?: string
+  secondaryText?: string
   promptBefore?: ('sign' | 'one-click-sign')[]
   type?: Type
 }
@@ -71,7 +72,9 @@ type SignAccountOpError = {
 type SignAccountOpBanner = {
   id: string
   type: 'error' | 'warning'
+  title?: string
   text: string
+  secondaryText?: string
 }
 
 type HardwareWalletSigningRequest = {
@@ -82,10 +85,9 @@ type HardwareWalletSigningRequest = {
 enum TraceCallDiscoveryStatus {
   NotStarted = 'not-started',
   InProgress = 'in-progress',
-  SlowPendingResponse = 'slow-pending-response',
   Done = 'done',
   Failed = 'failed'
 }
 
 export { TraceCallDiscoveryStatus }
-export type { Warning, SignAccountOpError, SignAccountOpBanner, HardwareWalletSigningRequest }
+export type { HardwareWalletSigningRequest, SignAccountOpBanner, SignAccountOpError, Warning }

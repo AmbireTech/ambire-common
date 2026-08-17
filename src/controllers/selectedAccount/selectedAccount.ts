@@ -36,6 +36,10 @@ import {
 import { getProjectedRewardsStatsAndToken } from '../../utils/rewards'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+// Portfolio recalculations fire back-to-back as per-network results stream in.
+// Throttle their UI emit so the state isn't serialized on every partial tick.
+const PORTFOLIO_UPDATE_THROTTLE_MS = 100
+
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
   #storage: IStorageController
 
@@ -327,8 +331,11 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       })
     }
 
+    let justLoaded = false
+
     // Reset the loading timestamp if the portfolio is ready
     if (this.#portfolioLoadingTimeout && newSelectedAccountPortfolio.isAllReady) {
+      justLoaded = true
       clearTimeout(this.#portfolioLoadingTimeout)
       this.#portfolioLoadingTimeout = null
     }
@@ -365,7 +372,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#updatePortfolioErrors(true)
 
     if (!skipUpdate) {
-      this.emitUpdate()
+      this.emitUpdate({ throttleMs: justLoaded ? 0 : PORTFOLIO_UPDATE_THROTTLE_MS })
     }
   }
 

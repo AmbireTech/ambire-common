@@ -218,19 +218,27 @@ export async function getNFTs(
   // simulation was performed if the nonce is changed
   const hasSimulation = afterNonce !== beforeNonce
 
-  const simulationTokens: (CollectionResult & { addr: any })[] | null = hasSimulation
-    ? after.collections.map((simulationToken: any, tokenIndex: number) => ({
-        ...mapNft(simulationToken, deltaAddressesMapping[tokenIndex]),
-        addr: deltaAddressesMapping[tokenIndex]
-      }))
-    : null
+  // Index all to prevent nested loops
+  const simulationTokensByAddr = new Map<string, any>()
+
+  if (hasSimulation) {
+    after.collections.forEach((simulationToken: any, tokenIndex: number) => {
+      const addr = deltaAddressesMapping[tokenIndex]
+
+      if (addr === undefined) return
+
+      const key = addr.toLowerCase()
+
+      if (simulationTokensByAddr.has(key)) return
+
+      simulationTokensByAddr.set(key, { ...mapNft(simulationToken, addr), addr })
+    })
+  }
 
   return [
     before.collections.map((beforeToken: any, i: number) => {
-      const simulationToken = simulationTokens
-        ? simulationTokens.find(
-            (token: any) => token.addr.toLowerCase() === tokenAddrs[i]![0].toLowerCase()
-          )
+      const simulationToken = hasSimulation
+        ? simulationTokensByAddr.get(tokenAddrs[i]![0].toLowerCase())
         : null
 
       const token = mapNft(beforeToken, tokenAddrs[i]![0])
@@ -350,18 +358,22 @@ export async function getTokens(
   // simulation was performed if the nonce is changed
   const hasSimulation = afterNonce !== beforeNonce
 
-  const simulationTokens = hasSimulation
-    ? after.balances.map((simulationToken: any, tokenIndex: number) => ({
-        ...simulationToken,
-        amount: simulationToken.amount,
-        addr: deltaAddressesMapping[tokenIndex]
-      }))
-    : null
+  // Index all to prevent nested loops
+  const simulationTokensByAddr = new Map<string, any>()
+
+  if (hasSimulation) {
+    after.balances.forEach((simulationToken: any, tokenIndex: number) => {
+      const addr = deltaAddressesMapping[tokenIndex]
+
+      if (addr === undefined || simulationTokensByAddr.has(addr)) return
+
+      simulationTokensByAddr.set(addr, { ...simulationToken, addr })
+    })
+  }
+
   return [
     before.balances.map((token: any, i: number) => {
-      const simulation = simulationTokens
-        ? simulationTokens.find((simulationToken: any) => simulationToken.addr === tokenAddrs[i])
-        : null
+      const simulation = hasSimulation ? (simulationTokensByAddr.get(tokenAddrs[i]!) ?? null) : null
 
       const simulationAmount = simulation ? simulation.amount - token.amount : undefined
       const amountPostSimulation = simulation ? simulation.amount : token.amount

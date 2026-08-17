@@ -13,6 +13,11 @@ export interface FeatureFlags {
    */
   erc4337: boolean
   /**
+   * Allow the user to opt out of upgrading EOA accounts through ERC-7702.
+   * Existing onchain delegations are not revoked when this is disabled.
+   */
+  eip7702: boolean
+  /**
    * Off by default for privacy: passively bulk-resolving ENS/Namoshi for all
    * accounts links them together. When enabled, the wallet keeps every account's
    * ENS profile fresh in the background (the pre-privacy behaviour).
@@ -38,6 +43,7 @@ export const defaultFeatureFlags: FeatureFlags = {
   tokenAndDefiAutoDiscovery: true,
   apiForFunctionSelectors: true,
   erc4337: true,
+  eip7702: true,
   keepEnsProfilesUpToDate: false,
   swapAndBridgeTokenInfo: true,
   // @TODO: Introduce a setting and flip to false
