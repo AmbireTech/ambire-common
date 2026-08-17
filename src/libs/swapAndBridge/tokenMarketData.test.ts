@@ -1,3 +1,5 @@
+import { ZeroAddress } from 'ethers'
+
 import { QueueElement } from '../portfolio/batcher'
 import { getTokenMarketDataKey, marketDataRequestBatcher } from './tokenMarketData'
 
@@ -7,6 +9,19 @@ const buildQueueElement = (address: string, platformId: string): QueueElement =>
     reject: () => {},
     fetch: (() => {}) as any,
     data: { address, platformId, responseIdentifier: address.toLowerCase() }
+  }) as QueueElement
+
+const buildNativeQueueElement = (nativeAssetId: string, platformId: string): QueueElement =>
+  ({
+    resolve: () => {},
+    reject: () => {},
+    fetch: (() => {}) as any,
+    data: {
+      address: ZeroAddress,
+      platformId,
+      nativeAssetId,
+      responseIdentifier: nativeAssetId
+    }
   }) as QueueElement
 
 describe('getTokenMarketDataKey', () => {
@@ -77,6 +92,38 @@ describe('marketDataRequestBatcher', () => {
 
     expect(requests).toHaveLength(1)
     expect(requests[0]!.url).toContain('contract_addresses=0xaaa&')
+    // Both queue elements are still resolved, only the url is deduplicated
+    expect(requests[0]!.queueSegment).toHaveLength(2)
+  })
+
+  test('routes native tokens to the coin price route, keyed by CoinGecko coin id instead of contract address', () => {
+    const requests = marketDataRequestBatcher([
+      buildQueueElement('0xaaa', 'ethereum'),
+      buildNativeQueueElement('ethereum', 'ethereum'),
+      buildNativeQueueElement('matic-network', 'polygon-pos')
+    ])
+
+    expect(requests).toHaveLength(2)
+
+    const contractRequest = requests.find((r) => r.url.includes('/token_price/'))
+    expect(contractRequest?.queueSegment).toHaveLength(1)
+
+    const nativeRequest = requests.find((r) => r.url.includes('/simple/price?'))
+    expect(nativeRequest?.queueSegment).toHaveLength(2)
+    expect(nativeRequest?.url).toContain('ids=ethereum%2Cmatic-network')
+    expect(nativeRequest?.url).toContain('vs_currencies=usd')
+    // Never mixed into the contract-address route, as ZeroAddress isn't a real contract
+    expect(nativeRequest?.url).not.toContain('contract_addresses')
+  })
+
+  test('dedupes native tokens that share the same CoinGecko coin id across chains', () => {
+    const requests = marketDataRequestBatcher([
+      buildNativeQueueElement('ethereum', 'ethereum'),
+      buildNativeQueueElement('ethereum', 'arbitrum-one')
+    ])
+
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.url).toContain('ids=ethereum&')
     // Both queue elements are still resolved, only the url is deduplicated
     expect(requests[0]!.queueSegment).toHaveLength(2)
   })

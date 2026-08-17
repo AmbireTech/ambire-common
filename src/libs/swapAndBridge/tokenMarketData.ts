@@ -1,3 +1,5 @@
+import { ZeroAddress } from 'ethers'
+
 import { QueueElement, Request } from '../portfolio/batcher'
 import { paginate } from '../portfolio/pagination'
 
@@ -16,22 +18,33 @@ export function getTokenMarketDataKey(chainId: number | bigint, address: string)
 }
 
 /**
- * Splits the queued tokens into one request per CoinGecko platform (and per page
- * of BATCH_LIMIT tokens within it), because the cena token price route is keyed
- * by platform. Tokens on chains without a platform id must never reach the queue,
- * as the batcher leaves the promises of queue elements dropped here unresolved.
+ * Splits the queued tokens into one request per CoinGecko platform (and per page of
+ * BATCH_LIMIT tokens within it), because the cena token price route is keyed by
+ * platform. Tokens on chains without a platform id must never reach the queue, as the
+ * batcher leaves the promises of queue elements dropped here unresolved.
+ *
+ * Native tokens aren't real contracts, so CoinGecko can't look them up by address on
+ * that same route - they are routed to the coin price route instead, grouped by
+ * `nativeAssetId` (their CoinGecko coin id) rather than by platform, since the same
+ * native asset (e.g. ETH) is shared across multiple chains.
  */
 export function marketDataRequestBatcher(queue: QueueElement[]): Request[] {
-  const segments: { [platformId: string]: QueueElement[] } = {}
+  const nativeQueue: QueueElement[] = []
+  const platformSegments: { [platformId: string]: QueueElement[] } = {}
 
   queue.forEach((queueItem) => {
-    const { platformId } = queueItem.data
+    const { address, platformId } = queueItem.data
 
-    if (!segments[platformId]) segments[platformId] = []
-    segments[platformId]!.push(queueItem)
+    if (address === ZeroAddress) {
+      nativeQueue.push(queueItem)
+      return
+    }
+
+    if (!platformSegments[platformId]) platformSegments[platformId] = []
+    platformSegments[platformId]!.push(queueItem)
   })
 
-  return Object.entries(segments)
+  const contractRequests = Object.entries(platformSegments)
     .map(([platformId, queueSegment]) =>
       paginate(queueSegment, BATCH_LIMIT).map((page) => ({ platformId, queueSegment: page }))
     )
@@ -44,4 +57,13 @@ export function marketDataRequestBatcher(queue: QueueElement[]): Request[] {
 
       return { url, queueSegment }
     })
+
+  const nativeRequests = paginate(nativeQueue, BATCH_LIMIT).map((queueSegment) => {
+    const ids = [...new Set<string>(queueSegment.map((x) => x.data.nativeAssetId))]
+    const url = `${CENA_API_URL}/api/v3/simple/price?ids=${ids.join('%2C')}&vs_currencies=usd`
+
+    return { url, queueSegment }
+  })
+
+  return [...contractRequests, ...nativeRequests]
 }

@@ -1510,6 +1510,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       // the case for custom networks, which are simply left without market data.
       if (!network?.platformId) return false
 
+      // Native tokens aren't real contracts, so the contract-address route can't look
+      // them up either. Without a recognized CoinGecko coin id there is nothing to fall
+      // back to, so they are left without market data too.
+      const isNative = token.address === ZeroAddress
+      if (isNative && (!network.nativeAssetId || network.nativeAssetId === 'LOADING')) return false
+
       return this.#getMarketDataRecord(token.chainId, token.address).isStale
     })
 
@@ -1527,16 +1533,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const results = await Promise.allSettled(
       tokensToFetch.map((token) => {
-        const platformId = this.#networks.networks.find(
-          (n) => Number(n.chainId) === token.chainId
-        )?.platformId
+        const network = this.#networks.networks.find((n) => Number(n.chainId) === token.chainId)
+        const isNative = token.address === ZeroAddress
 
         return this.#batchedTokenMarketData({
           address: token.address,
           chainId: token.chainId,
-          platformId,
-          // This is what to look for in the response of our price API
-          responseIdentifier: token.address.toLowerCase()
+          platformId: network?.platformId,
+          nativeAssetId: network?.nativeAssetId,
+          // Native tokens are looked up by their CoinGecko coin id (e.g. "ethereum")
+          // instead, as the contract-address route doesn't support them
+          responseIdentifier: isNative ? network?.nativeAssetId : token.address.toLowerCase()
         })
       })
     )
