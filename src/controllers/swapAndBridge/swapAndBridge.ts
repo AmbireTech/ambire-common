@@ -1596,7 +1596,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    * `#toTokenMarketData` is far too large to be sent to the UI on every update.
    * Records that went stale are reported as loading - they are hidden until the
    * refresh triggered alongside this list completes, so that the UI never displays
-   * an outdated price movement.
+   * an outdated exchange list.
    */
   get toTokenMarketData(): ToTokenMarketDataByToken {
     // Whatever was fetched before the user opted out stays out of the UI state too
@@ -1624,14 +1624,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         return acc
       }
 
-      const marketData = record.data?.marketDataIn.find(
-        (m) => m.baseCurrency === HARD_CODED_CURRENCY
-      )
-
       acc[key] = {
         status: 'DONE',
-        change24h: marketData?.change24h,
-        marketCap: marketData?.marketCap,
         exchanges: record.data?.meta?.exchanges
       }
 

@@ -42,10 +42,6 @@ export type ToTokenMarketDataStatus = 'LOADING' | 'DONE' | 'NOT_FOUND' | 'FAIL'
 
 export interface ToTokenMarketData {
   status: ToTokenMarketDataStatus
-  /** Percentage change in price over the last 24 hours. Only set on DONE. */
-  change24h?: number
-  /** Market capitalization of the token in USD. Only set on DONE. */
-  marketCap?: number
   /** Ids of the exchanges the token is traded on. Only set on DONE. */
   exchanges?: string[]
 }

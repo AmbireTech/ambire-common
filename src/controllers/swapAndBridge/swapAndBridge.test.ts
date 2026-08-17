@@ -1041,8 +1041,6 @@ describe('SwapAndBridge Controller: to token market data', () => {
 
     expect(marketData).toEqual({
       status: 'DONE',
-      change24h: -2.5,
-      marketCap: 1200000000,
       exchanges: ['binance', 'uniswap']
     })
   })
