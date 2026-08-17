@@ -616,10 +616,11 @@ describe('ERC-7730 descriptors', () => {
   // are copied verbatim from the LI.FI entry in the ERC-7730 registry:
   // https://github.com/ethereum/clear-signing-erc7730-registry/blob/master/registry/lifi/calldata-LIFIDiamond.json
   // The descriptor's "interpolatedIntent" - "Swap {@.value} for at least
-  // {_minAmountOut} to {_receiver}" - exercises interpolateIntent()'s per-spec
-  // field lookup: {_minAmountOut} resolves through the "Minimum to Receive"
-  // field's tokenAmount format/tokenPath, so it renders as a decimal WETH
-  // amount with its symbol, matching the "Minimum to Receive" row below.
+  // {_minAmountOut} to {_receiver}" - exercises interpolateIntentParts()'s
+  // per-spec field lookup: {_minAmountOut} resolves through the "Minimum to
+  // Receive" field's tokenAmount format/tokenPath, so it renders as a `type:
+  // 'token'` titleParts item, matching the "Minimum to Receive" row below.
+  // `title` itself stays the plain, non-interpolated "Swap" intent.
   test('humanizes a LI.FI swapTokensSingleV3NativeToERC20 call with its ERC-7730 registry descriptor', () => {
     accountOp.calls = [
       {
@@ -688,7 +689,7 @@ describe('ERC-7730 descriptors', () => {
     compareHumanizerVisualizations(irCalls, [
       [
         getErc7730Visualization(
-          'Swap 0.005837776470906329 for at least 0.005837776470906329 WETH to 0x6969174FD72466430a46e18234D0b530c9FD5f49',
+          'Swap',
           [
             {
               label: 'Amount to send',
@@ -1278,7 +1279,7 @@ describe('ERC-7730 descriptors', () => {
     compareHumanizerVisualizations(irCalls, [
       [
         getErc7730Visualization(
-          'Stake 0.001 ETH',
+          'Stake ETH',
           [
             {
               label: 'Amount',

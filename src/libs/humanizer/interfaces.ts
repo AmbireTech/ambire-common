@@ -11,16 +11,20 @@ export interface HumanizerErc7730Row {
 
 export interface HumanizerErc7730Visualization {
   type: 'erc7730'
-  // Plain-text title, always populated when there's a title at all. Kept around
-  // for logic that needs a string (label comparisons, heuristics, non-rich
-  // surfaces) - when a token/native amount can't be statically decimal-formatted
-  // it's rendered as a raw integer here, so prefer `titleParts` for display.
+  // The format's plain, non-interpolated short title (e.g. "Swap") per the
+  // ERC-7730 spec's `intent`. It never needs a token/decimals lookup, so it's
+  // always safe to use as-is - this is the string other logic reads (label
+  // comparisons, heuristics, non-rich surfaces) and the fallback text when
+  // `titleParts` is absent. Prefer `titleParts` for display when present.
   title?: string
-  // Same title, but split into renderable parts (text/token/address/...) so the
-  // UI can render an interpolated token amount with the same live decimals/price
-  // lookup used for row values (e.g. via a `type: 'token'` item), instead of
-  // requiring decimals to be statically known at humanization time. Present
-  // only when the format used `interpolatedIntent`.
+  // The interpolated title (per the format's `interpolatedIntent`), split into
+  // renderable parts (text/token/address/...) so the UI can render a token
+  // amount with the same live decimals/symbol/price lookup used for row values
+  // (e.g. via a `type: 'token'` item), instead of requiring decimals to be
+  // statically known at humanization time. Present only when the format used
+  // `interpolatedIntent` AND every placeholder resolved successfully - per the
+  // spec, a failed interpolation falls back entirely to `title` above rather
+  // than leaking a raw/unformatted value into the UI.
   titleParts?: HumanizerVisualization[]
   dapp?: Call['dapp']
   rows: HumanizerErc7730Row[]
