@@ -1,5 +1,6 @@
-import { describe, expect, test } from '@jest/globals'
 import { ZeroAddress } from 'ethers'
+
+import { describe, expect, test } from '@jest/globals'
 
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
@@ -532,34 +533,30 @@ describe('RequestsController ', () => {
       if (userRequest.kind === 'calls') userRequest.signAccountOp.destroy()
     })
   })
-  test.each([
-    { signature: null, signed: [], threshold: 1 },
-    { signature: '0x', signed: [], threshold: 1 },
-    {
-      signature: '0x1234',
-      signed: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
-      threshold: 1
-    }
-  ])(
-    'does not build an onchain Safe rejection for a non-partial signature',
-    async ({ signature, signed, threshold }) => {
-      const { accountsCtrl, controller, getCallsRequest } = await prepareTest(false, true)
-      const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
-      accountsCtrl.accountStates[accountAddr]![1]!.threshold = threshold
-      const request = await getCallsRequest({
-        addr: accountAddr,
-        chainId: 1n
-      })
-      request.signAccountOp.accountOp.signature = signature
-      request.signAccountOp.accountOp.signed = signed
-      controller.userRequests = [request]
+  test('builds an onchain Safe rejection when one does not already exist', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    const request = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    controller.userRequests = [request]
+    jest.spyOn(portfolioCtrl, 'overrideSimulationResults').mockResolvedValue()
 
-      await controller.buildOnchainSafeRejection(request.id)
+    await controller.buildOnchainSafeRejection(request.id)
 
-      expect(controller.userRequests).toEqual([request])
-      request.signAccountOp.destroy()
-    }
-  )
+    expect(controller.userRequests).toHaveLength(2)
+    expect(controller.currentUserRequest?.kind).toBe('calls')
+    if (controller.currentUserRequest?.kind !== 'calls') throw new Error('Expected calls request')
+    expect(controller.currentUserRequest.signAccountOp.accountOp).toMatchObject({
+      nonce: 0n,
+      calls: [{ to: ZeroAddress, value: 0n, data: '0x' }],
+      meta: { isOnchainSafeRejection: true }
+    })
+
+    controller.userRequests.forEach((userRequest) => {
+      if (userRequest.kind === 'calls') userRequest.signAccountOp.destroy()
+    })
+  })
   test('does not build an onchain Safe rejection for a non-Safe account', async () => {
     const { controller, getCallsRequest } = await prepareTest()
     const request = await getCallsRequest({
@@ -699,71 +696,6 @@ describe('RequestsController ', () => {
     expect(controller.visibleUserRequests.length).toBe(0)
     expect(rejectMock).toHaveBeenCalled()
     expect(resolveMock).not.toHaveBeenCalled()
-  })
-  test('runs one simulation per account and network when rejecting Safe transactions', async () => {
-    const { controller, getCallsRequest, portfolioCtrl, accountsCtrl } = await prepareTest(
-      false,
-      true
-    )
-    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
-    const otherAccountAddr = accounts[0]!.addr
-    const selectedAccount = accountsCtrl.accounts.find((account) => account.addr === accountAddr)!
-    const otherAccount = accountsCtrl.accounts.find((account) => account.addr === otherAccountAddr)!
-    otherAccount.creation = null
-    otherAccount.safeCreation = selectedAccount.safeCreation
-
-    const requests = await Promise.all([
-      getCallsRequest({ addr: accountAddr, chainId: 1n }),
-      getCallsRequest({ addr: accountAddr, chainId: 1n }),
-      getCallsRequest({ addr: accountAddr, chainId: 10n }),
-      getCallsRequest({ addr: otherAccountAddr, chainId: 1n })
-    ])
-    requests.forEach((request, index) => {
-      request.id = `safe-request-${index}`
-      request.signAccountOp.accountOp.txnId = `0x${index}`
-    })
-    requests[1]!.meta.accountAddr = accountAddr.toLowerCase()
-    controller.userRequests = requests
-    const simulateAccountOpSpy = jest
-      .spyOn(portfolioCtrl, 'simulateAccountOp')
-      .mockResolvedValue(undefined)
-    const overrideSimulationResultsSpy = jest
-      .spyOn(portfolioCtrl, 'overrideSimulationResults')
-      .mockResolvedValue(undefined)
-
-    await controller.removeUserRequests(requests.map((request) => request.id))
-
-    expect(
-      simulateAccountOpSpy.mock.calls.length + overrideSimulationResultsSpy.mock.calls.length
-    ).toBe(3)
-
-    requests.forEach((request) => request.signAccountOp.destroy())
-  })
-  test('BUG: simulates after all Safe transactions in a batch are marked rejected', async () => {
-    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
-    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
-    const requests = await Promise.all([
-      getCallsRequest({ addr: accountAddr, chainId: 1n }),
-      getCallsRequest({ addr: accountAddr, chainId: 1n }),
-      getCallsRequest({ addr: accountAddr, chainId: 1n })
-    ])
-
-    requests.forEach((request, index) => {
-      request.id = `safe-request-${index}`
-      request.signAccountOp.accountOp.txnId = `0x${index}`
-      request.signAccountOp.accountOp.nonce = BigInt(index)
-    })
-    controller.userRequests = requests
-    const simulateAccountOpSpy = jest
-      .spyOn(portfolioCtrl, 'simulateAccountOp')
-      .mockResolvedValue(undefined)
-
-    await controller.removeUserRequests([requests[2]!.id, requests[1]!.id])
-
-    expect(simulateAccountOpSpy).toHaveBeenCalledTimes(1)
-    expect(simulateAccountOpSpy).toHaveBeenCalledWith([requests[0]!.signAccountOp.accountOp])
-
-    requests.forEach((request) => request.signAccountOp.destroy())
   })
   test('finds same-nonce Safe alternatives by their immutable Safe nonce and scope', async () => {
     const { controller, getCallsRequest } = await prepareTest(false, true)

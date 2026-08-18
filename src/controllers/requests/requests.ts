@@ -1143,17 +1143,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
-  /** Builds or batches a Safe transaction that rejects a partially signed transaction onchain. */
+  /** Builds or focuses a Safe transaction that rejects another transaction onchain. */
   async buildOnchainSafeRejection(requestId: UserRequest['id']) {
     const request = this.userRequests.find((userRequest) => userRequest.id === requestId)
     if (!request || request.kind !== 'calls') return
 
     const { account, accountOp } = request.signAccountOp
-    const signedCount = accountOp.signed?.length || 0
-    const isPartiallySigned =
-      !!accountOp.signature && accountOp.signature !== '0x' && signedCount > 0
     const nonce = getAccountOpNonce(accountOp)
-    if (!account.safeCreation || !isPartiallySigned || nonce === null) return
+    if (!account.safeCreation || nonce === null) return
 
     try {
       const existingSafeRejectionRequest = this.visibleUserRequests.find(
@@ -1964,11 +1961,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     let callUserRequest: CallsUserRequest | undefined
     const existingUserRequest = this.userRequests.find(
       (r) =>
+        // A Safe rejection must be a separate account operation.
+        !meta.isOnchainSafeRejection &&
         r.kind === 'calls' &&
         r.meta.accountAddr === meta.accountAddr &&
         r.meta.chainId === meta.chainId &&
-        // A Safe rejection may only join an unsigned batch that will execute at the
-        // nonce of the transaction being rejected.
         (accountOpNonce === undefined ||
           (!r.signAccountOp.accountOp.signature &&
             getAccountOpNonce(r.signAccountOp.accountOp) === accountOpNonce)) &&

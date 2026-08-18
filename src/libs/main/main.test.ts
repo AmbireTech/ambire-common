@@ -9,6 +9,7 @@ type RequestParams = {
   isSafe?: boolean
   nonce?: bigint | null
   safeTxNonce?: bigint | number | string
+  signed?: string[]
 }
 
 const makeRequest = ({
@@ -16,7 +17,8 @@ const makeRequest = ({
   chainId = 1n,
   isSafe = true,
   nonce = 0n,
-  safeTxNonce
+  safeTxNonce,
+  signed
 }: RequestParams): CallsUserRequest =>
   ({
     id,
@@ -27,6 +29,7 @@ const makeRequest = ({
       accountOp: {
         chainId,
         nonce,
+        signed,
         safeTx:
           typeof safeTxNonce === 'undefined'
             ? undefined
@@ -44,9 +47,20 @@ describe('getShouldSimulateInTheBackground', () => {
     expect(getShouldSimulateInTheBackground(currentRequest)).toBe(true)
   })
 
-  test('blocks background simulation for a Safe request', () => {
-    const currentRequest = makeRequest({ id: 'current', isSafe: true, nonce: 2n })
+  test('blocks background simulation for a signed Safe request', () => {
+    const currentRequest = makeRequest({
+      id: 'current',
+      isSafe: true,
+      nonce: 2n,
+      signed: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E']
+    })
 
     expect(getShouldSimulateInTheBackground(currentRequest)).toBe(false)
+  })
+
+  test('allows background simulation for a not signed Safe request', () => {
+    const currentRequest = makeRequest({ id: 'current', isSafe: true, nonce: 2n, signed: [] })
+
+    expect(getShouldSimulateInTheBackground(currentRequest)).toBe(true)
   })
 })
