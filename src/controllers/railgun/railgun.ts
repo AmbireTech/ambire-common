@@ -43,7 +43,10 @@ import {
   RailgunActivityEntry,
   RailgunActivityStatus,
   RailgunChainState,
+  RailgunNetworkFeeEstimate,
   RailgunPoiStatus,
+  RailgunPrivateOperation,
+  RailgunPrivateOperationPhase,
   RailgunShieldedBalance,
   RailgunTokenData,
   RailgunUnavailableReason
@@ -53,6 +56,7 @@ import { IStorageController } from '../../interfaces/storage'
 import { Call } from '../../libs/accountOp/types'
 import { Portfolio } from '../../libs/portfolio'
 import { getRailgunTokenBalance } from '../../libs/railgun/balances'
+import { getRailgunUnshieldAmounts, RAILGUN_FEE_BPS } from '../../libs/railgun/protocolFee'
 import {
   getRailgunTokensDataFromPortfolio,
   resolveRailgunTokensData
@@ -116,6 +120,23 @@ const MAX_QUIET_BACKGROUND_SYNC_FAILURES = 3
 // this the first thing that happens after a (potentially very long) mainnet cold sync is the
 // exact same sync again.
 const MIN_BACKGROUND_SYNC_AGE_IN_MS = 60 * 1000
+/**
+ * What one private operation's UserOperation costs in gas, all limits included (execution, account
+ * verification, and the paymaster's own verification of the proof).
+ *
+ * A single conservative figure rather than a model: the real number is only produced once the proof
+ * exists, and erring high here is the safe direction - the estimate is labelled as one, and an
+ * operation that turns out cheaper is a pleasant surprise, while one that turns out dearer than
+ * promised is not.
+ *
+ * TODO(calibration): replace with a measurement once a few real operations have been observed - the
+ * broadcast debug log records every UserOperation's gas fields.
+ */
+const PRIVATE_OPERATION_GAS_ESTIMATE = 1_800_000n
+// How much room on top of the estimate the shielded WETH balance is checked against, since the fee
+// is sized minutes later against a gas price that has moved by then.
+const NETWORK_FEE_HEADROOM_MULTIPLIER = 3n
+const NETWORK_FEE_HEADROOM_DIVISOR = 2n
 
 /**
  * The Privacy Paymaster fronts the gas for a private operation (which is why the disposable
@@ -712,6 +733,13 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   activity: RailgunActivityEntry[] = []
 
   /**
+   * The private operation on screen: the one running, or the last one until the user dismisses it.
+   * A broadcast takes minutes and never opens the signing screen, so "it is running, this is how far
+   * it got, this is how it ended" has to be state the UI can render - not a toast at the end.
+   */
+  privateOperation: RailgunPrivateOperation | null = null
+
+  /**
    * Serializes everything that reaches into the SDK's WASM objects.
    *
    * wasm-bindgen keeps those objects behind a Rust RefCell, and every method the plugin drives
@@ -1182,6 +1210,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    */
   #teardown({ wipeBalances }: { wipeBalances: boolean }) {
     this.#abortInFlightOperations()
+    // Whatever the sheet was showing belonged to the identity being dropped, so it must not be
+    // presented as the next one's - even a run that is still finishing inside the WASM, whose result
+    // can no longer be attributed to what is now on screen.
+    this.privateOperation = null
     // Same reason as in #teardownChain, for every chain at once.
     this.#plugins.forEach((_, chainId) =>
       this.#chainPluginGenerations.set(chainId, this.#getChainPluginGeneration(chainId) + 1)
@@ -1268,11 +1300,18 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    * after a background restart.
    */
   async initIdentity() {
-    await this.withStatus(
-      'initIdentity',
-      () => this.#queueWasmOperation(() => this.#resolveIdentity()),
-      true
-    )
+    /**
+     * Deliberately NOT queued behind #wasmQueue, unlike everything else that reaches into the SDK.
+     * That queue exists because two concurrent calls on the *same* plugin abort the module, and
+     * deriving an identity touches no plugin at all: it initializes the module (a no-op after the
+     * first time), derives two keys through the keystore's own cache, builds fresh `RailgunSigner`
+     * objects and reads the persisted blob.
+     *
+     * Queueing it meant that switching accounts while a private operation was proving left the new
+     * account with no address and no screen state for minutes, waiting on work that had nothing to do
+     * with it.
+     */
+    await this.withStatus('initIdentity', () => this.#resolveIdentity(), true)
 
     const chainIdsToCatchUp = this.supportedChainIds.filter(
       (chainId) => this.#getChainState(chainId).hasIdentityData
@@ -1670,6 +1709,123 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
+   * Starts narrating a private operation, replacing whatever the sheet was showing: only one can run
+   * at a time (the WASM module is single-threaded), so a new one always supersedes the last result.
+   */
+  #startPrivateOperation(
+    operation: Omit<RailgunPrivateOperation, 'status' | 'phase' | 'startedAt' | 'error'>
+  ) {
+    this.privateOperation = {
+      ...operation,
+      status: 'pending',
+      phase: 'preparing',
+      startedAt: Date.now(),
+      error: null
+    }
+    this.emitUpdate()
+  }
+
+  /**
+   * Moves the operation on screen forward. Ignores anything for an operation that is no longer the
+   * current one, so a late callback from an abandoned run can't rewrite what the user is looking at.
+   */
+  #updatePrivateOperation(id: string, update: Partial<RailgunPrivateOperation>) {
+    if (this.privateOperation?.id !== id) return
+
+    this.privateOperation = { ...this.privateOperation, ...update }
+    this.emitUpdate()
+  }
+
+  #setPrivateOperationPhase(id: string, phase: RailgunPrivateOperationPhase) {
+    this.#updatePrivateOperation(id, { phase })
+  }
+
+  /** Called by the UI when the user closes the operation sheet, so the next one starts clean. */
+  dismissPrivateOperation() {
+    // A running operation keeps going: the sheet can be closed and reopened, and closing it must not
+    // (and does not) cancel a broadcast that is already paying a fee.
+    if (!this.privateOperation || this.privateOperation.status === 'pending') return
+
+    this.privateOperation = null
+    this.emitUpdate()
+  }
+
+  /**
+   * What broadcasting an unshield or a private transfer is expected to cost, for the form to show
+   * before the user commits to it.
+   *
+   * Only the network fee: Railgun's own fee is arithmetic on the amount and a fixed rate, which the
+   * UI does itself (see getPrivacyProtocolFee) so that no figure in the form ever waits on - or is
+   * lost to - a round trip. This one needs the background for the gas price and the shielded balance.
+   *
+   * Bounded and cheap (one gas-price read), hence `#sendUiMessage` rather than a status - see
+   * buildShieldCalls for the same pattern.
+   */
+  async estimateNetworkFee(
+    {
+      chainId,
+      tokenAddress,
+      isNative,
+      spentAmount
+    }: {
+      chainId: string
+      tokenAddress: string
+      isNative: boolean
+      // What the operation takes out of the pool for the asset itself, so the balance left over for
+      // the fee is judged against what will actually remain
+      spentAmount: bigint
+    },
+    requestId: string
+  ) {
+    try {
+      const provider = this.#providers.providers[chainId]
+      const { wrappedBaseTokenAddress, balances } = this.#getChainState(chainId)
+      if (!provider || !wrappedBaseTokenAddress) {
+        this.#sendUiMessage({ requestId, ok: true, res: null })
+
+        return
+      }
+
+      const { maxFeePerGas, gasPrice } = await provider.getFeeData()
+      const pricePerGas = maxFeePerGas || gasPrice
+      if (!pricePerGas) {
+        this.#sendUiMessage({ requestId, ok: true, res: null })
+
+        return
+      }
+
+      const amount = PRIVATE_OPERATION_GAS_ESTIMATE * pricePerGas
+      const maxAmount = (amount * NETWORK_FEE_HEADROOM_MULTIPLIER) / NETWORK_FEE_HEADROOM_DIVISOR
+      const shieldedWrappedBaseTokenAmount =
+        getRailgunTokenBalance(balances, wrappedBaseTokenAddress)?.spendableAmount || 0n
+      // Only what the operation itself spends of the fee token is unavailable to pay with - for any
+      // other asset the whole shielded WETH balance is.
+      const isWrappedBaseToken =
+        isNative || tokenAddress.toLowerCase() === wrappedBaseTokenAddress.toLowerCase()
+      const remaining = shieldedWrappedBaseTokenAmount - (isWrappedBaseToken ? spentAmount : 0n)
+
+      const estimate: RailgunNetworkFeeEstimate = {
+        amount,
+        maxAmount,
+        tokenAddress: wrappedBaseTokenAddress,
+        hasEnough: remaining >= maxAmount,
+        shieldedWrappedBaseTokenAmount
+      }
+
+      this.#sendUiMessage({ requestId, ok: true, res: estimate })
+    } catch (error: any) {
+      // Silent: a missing estimate is shown in the form as "not known yet", and a toast per
+      // keystroke would be worse than the missing figure.
+      this.emitError({
+        error,
+        message: 'Could not estimate the network fee for this operation.',
+        level: 'silent'
+      })
+      this.#sendUiMessage({ requestId, ok: false, error: error?.message })
+    }
+  }
+
+  /**
    * Marks pending shields as successful once their token's shielded balance grows. Shields are
    * broadcast through the regular sign & broadcast flow, so this controller never sees their
    * receipt - the balance is the only signal it gets. Deliberately a heuristic: an incoming
@@ -2052,7 +2208,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       // this controller is part of - from here the calls travel through RequestsController, and
       // whether they get signed and mined is only observable as a balance change on the next
       // sync (see #resolvePendingShields).
-      this.#addActivityEntry({
+      const activityId = this.#addActivityEntry({
         chainId,
         type: 'shield',
         tokenAddress,
@@ -2061,7 +2217,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         recipient: null
       })
 
-      this.#sendUiMessage({ requestId, ok: true, res: calls })
+      // The activity entry travels back with the calls so the UI can follow this shield to its end:
+      // the entry is what a later sync resolves once the shielded balance grows, which is the only
+      // signal that the funds actually arrived (this controller never sees the signing flow).
+      this.#sendUiMessage({ requestId, ok: true, res: { calls, activityId } })
     } catch (error: any) {
       this.emitError({
         error,
@@ -2223,6 +2382,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     } finally {
       // Restore the original fetch before anything else, even if the broadcast threw.
       if (originalFetch) globalThis.fetch = originalFetch
+      // The sheet's last step: the re-sync below is what confirms the result, since it is the
+      // shielded balance - not the bundler's receipt - that tells the user what actually happened.
+      if (this.privateOperation)
+        this.#setPrivateOperationPhase(this.privateOperation.id, 'finalizing')
       // Re-sync regardless of outcome, and not only to refresh balances: with POI enabled the
       // SDK generates and submits the transact proof for this operation's outputs during a
       // sync, so skipping it can leave the recipient's (and the change) note without a POI,
@@ -2286,6 +2449,19 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       tokenAddress,
       isNative,
       amount,
+      recipient: toAddress,
+      // Railgun's cut is arithmetic on the amount, so it is recorded up front: the operation spends
+      // the grossed-up amount, and this is the part of it the recipient never sees.
+      protocolFee: getRailgunUnshieldAmounts(amount, RAILGUN_FEE_BPS).feeAmount
+    })
+
+    this.#startPrivateOperation({
+      id: activityId,
+      chainId,
+      type: 'unshield',
+      tokenAddress,
+      isNative,
+      amount,
       recipient: toAddress
     })
 
@@ -2330,12 +2506,17 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
             }
           : undefined
       })
+      // The notes are picked at this point, so what is left is the long part: proving, submitting
+      // and waiting for the bundler.
+      this.#setPrivateOperationPhase(activityId, 'proving')
       await this.#broadcastPrivateOperation(chainId, plugin, op, disposableSigner)
 
       this.#updateActivityEntry(activityId, { status: 'success' })
+      this.#updatePrivateOperation(activityId, { status: 'success' })
     } catch (error: any) {
       const message = getPrivateOperationErrorMessage(error, 'Failed to unshield.')
       this.#updateActivityEntry(activityId, { status: 'failed', error: message })
+      this.#updatePrivateOperation(activityId, { status: 'failed', error: message })
 
       throw new EmittableError({ message, level: 'major', error })
     } finally {
@@ -2376,6 +2557,18 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       // Private transfers never involve the native asset - the pool holds none
       isNative: false,
       amount,
+      recipient: toZkAddress,
+      // Nothing crosses the pool's boundary, which is the only place Railgun charges
+      protocolFee: 0n
+    })
+
+    this.#startPrivateOperation({
+      id: activityId,
+      chainId,
+      type: 'transfer',
+      tokenAddress,
+      isNative: false,
+      amount,
       recipient: toZkAddress
     })
 
@@ -2384,12 +2577,16 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     try {
       const asset: ERC20AssetId = { __type: 'erc20', contract: tokenAddress }
       const op = await plugin.prepareTransfer({ asset, amount }, toZkAddress as RailgunAddress)
+      // See the note in #buildAndBroadcastUnshield - from here on it is proving and broadcasting.
+      this.#setPrivateOperationPhase(activityId, 'proving')
       await this.#broadcastPrivateOperation(chainId, plugin, op)
 
       this.#updateActivityEntry(activityId, { status: 'success' })
+      this.#updatePrivateOperation(activityId, { status: 'success' })
     } catch (error: any) {
       const message = getPrivateOperationErrorMessage(error, 'Failed to send privately.')
       this.#updateActivityEntry(activityId, { status: 'failed', error: message })
+      this.#updatePrivateOperation(activityId, { status: 'failed', error: message })
 
       throw new EmittableError({ message, level: 'major', error })
     } finally {

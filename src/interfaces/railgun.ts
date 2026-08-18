@@ -119,6 +119,57 @@ export type RailgunChainState = {
   error: string | null
 }
 
+/**
+ * What broadcasting an unshield or a private transfer is expected to cost, in the chain's wrapped
+ * base token (WETH) - the only asset the SDK will pay the relayer with, so this fee always comes out
+ * of the user's shielded WETH and never out of the asset being sent.
+ *
+ * An estimate by nature: the fee is gas x gas price, the gas is only known once the proof exists,
+ * and the price is whatever it is minutes later when the operation actually goes out. `maxAmount`
+ * carries the headroom the shielded WETH balance is checked against, so an operation isn't started
+ * with a balance that only just covers the middle of the range.
+ */
+export type RailgunNetworkFeeEstimate = {
+  amount: bigint
+  maxAmount: bigint
+  tokenAddress: string
+  // Whether the spendable shielded WETH covers `maxAmount` after what the operation itself spends
+  hasEnough: boolean
+  shieldedWrappedBaseTokenAmount: bigint
+}
+
+/**
+ * How far along a private operation is. There is no percentage to be had - the SDK reports nothing
+ * while it works - so these are the points the controller can actually observe:
+ * - 'preparing' - picking which shielded notes to spend. Seconds
+ * - 'proving' - building the proof and sending it. Minutes, and the bulk of the wait
+ * - 'finalizing' - refreshing the shielded balance, which is also what confirms the result
+ */
+export type RailgunPrivateOperationPhase = 'preparing' | 'proving' | 'finalizing'
+
+/**
+ * The private operation on screen: the one in flight, or the last one until the user dismisses it,
+ * so its result can be shown rather than toasted away.
+ *
+ * Shields are absent on purpose - they are signed and broadcast through the regular transaction
+ * flow, which has its own progress UI.
+ */
+export type RailgunPrivateOperation = {
+  // The id of the matching activity entry, so the two can never drift apart
+  id: string
+  chainId: string
+  type: Exclude<RailgunActivityType, 'shield'>
+  tokenAddress: string
+  isNative: boolean
+  amount: bigint
+  recipient: string
+  status: RailgunActivityStatus
+  phase: RailgunPrivateOperationPhase
+  startedAt: number
+  // Set when `status` is 'failed', in the same plain language the toast would have used
+  error: string | null
+}
+
 export type RailgunActivityType = 'shield' | 'unshield' | 'transfer'
 
 /**
@@ -142,6 +193,11 @@ export type RailgunActivityEntry = {
   createdAt: number
   // Set when `status` is 'failed', to surface why without digging through logs
   error?: string
+  /**
+   * What Railgun's treasury took for this operation, in the token the entry is about. Recorded
+   * rather than recomputed, so the log stays accurate if the rate ever changes.
+   */
+  protocolFee?: bigint
 }
 
 /**
