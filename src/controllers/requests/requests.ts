@@ -375,12 +375,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       position = 'last',
       executionType = 'open-request-window',
       allowAccountSwitch = false,
-      skipFocus = false
+      skipFocus = false,
+      shouldRefreshAccountState = true
     }: {
       position?: RequestPosition
       executionType?: RequestExecutionType
       allowAccountSwitch?: boolean
       skipFocus?: boolean
+      shouldRefreshAccountState?: boolean
     } = {}
   ) {
     await this.initialLoadPromise
@@ -460,37 +462,39 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           return
         }
 
-        const accountStateBefore =
-          this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
+        if (shouldRefreshAccountState) {
+          const accountStateBefore =
+            this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
-        // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
-        // otherwise wait for the fetch to complete (no matter how long it takes).
-        // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
-        const accountState = await Promise.race([
-          this.#accounts.forceFetchPendingState(meta.accountAddr, meta.chainId),
-          // Fallback to the old account state if it exists and the fetch takes too long
-          accountStateBefore
-            ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
-              new Promise<AccountOnchainState | undefined>((res) => {
-                setTimeout(() => res(accountStateBefore), 2000)
-              })
-            : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
-        ])
+          // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
+          // otherwise wait for the fetch to complete (no matter how long it takes).
+          // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
+          const accountState = await Promise.race([
+            this.#accounts.forceFetchPendingState(meta.accountAddr, meta.chainId),
+            // Fallback to the old account state if it exists and the fetch takes too long
+            accountStateBefore
+              ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
+                new Promise<AccountOnchainState | undefined>((res) => {
+                  setTimeout(() => res(accountStateBefore), 2000)
+                })
+              : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
+          ])
 
-        if (!accountState) {
-          const message =
-            "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support."
-          const error = new Error(
-            `requestsController error: accountState for ${meta.accountAddr} is undefined on network with id ${meta.chainId}`
-          )
-          this.emitError({ level: 'major', message, error })
+          if (!accountState) {
+            const message =
+              "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support."
+            const error = new Error(
+              `requestsController error: accountState for ${meta.accountAddr} is undefined on network with id ${meta.chainId}`
+            )
+            this.emitError({ level: 'major', message, error })
 
-          req.dappPromises.forEach((p) => {
-            p.reject(ethErrors.rpc.internal())
-          })
-          await this.#ui.notification.create({ title: "Couldn't Process Request", message })
+            req.dappPromises.forEach((p) => {
+              p.reject(ethErrors.rpc.internal())
+            })
+            await this.#ui.notification.create({ title: "Couldn't Process Request", message })
 
-          return
+            return
+          }
         }
 
         userRequestsToAdd.push(req)
@@ -962,7 +966,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (safeResolveIds.length) await this.#safe.resolveTxnId(safeResolveIds)
 
     if (userRequestsToAdd.length) {
-      await this.addUserRequests(userRequestsToAdd, { skipFocus: true })
+      await this.addUserRequests(userRequestsToAdd, {
+        skipFocus: true,
+        shouldRefreshAccountState: false
+      })
     }
 
     if (!this.visibleUserRequests.length) {

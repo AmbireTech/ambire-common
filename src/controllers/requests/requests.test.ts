@@ -520,6 +520,83 @@ describe('RequestsController ', () => {
     expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
     expect(controller.userRequests).toHaveLength(0)
   })
+  test('resolving an account switch continues with the already built transaction request', async () => {
+    const { controller, getCallsRequest, selectedAccountCtrl, accountsCtrl } = await prepareTest()
+    const req = await getCallsRequest({
+      addr: accounts[0]!.addr,
+      chainId: 1n
+    })
+    const resolveMock = jest.fn()
+    const rejectMock = jest.fn()
+    req.dappPromises = [
+      {
+        id: 'account-switch-request',
+        resolve: resolveMock,
+        reject: rejectMock,
+        session: MOCK_SESSION,
+        meta: {}
+      }
+    ]
+    const forceFetchPendingStateSpy = jest
+      .spyOn(accountsCtrl, 'forceFetchPendingState')
+      .mockImplementation(() => Promise.resolve(undefined!))
+
+    await controller.addUserRequests([req], { allowAccountSwitch: true })
+
+    const switchAccountRequest = controller.userRequests[0]!
+    expect(switchAccountRequest.kind).toBe('switchAccount')
+
+    await selectedAccountCtrl.setAccount(accounts[0]!)
+    await controller.resolveUserRequest(null, switchAccountRequest.id)
+
+    expect(forceFetchPendingStateSpy).not.toHaveBeenCalled()
+    expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+    expect(controller.userRequests).toStrictEqual([req])
+    expect(resolveMock).not.toHaveBeenCalled()
+    expect(rejectMock).not.toHaveBeenCalled()
+  })
+  test('resolving an account switch does not continue before the requested account is selected', async () => {
+    const { controller, getCallsRequest } = await prepareTest()
+    const req = await getCallsRequest({
+      addr: accounts[0]!.addr,
+      chainId: 1n
+    })
+
+    await controller.addUserRequests([req], { allowAccountSwitch: true })
+
+    const switchAccountRequest = controller.userRequests[0]!
+    expect(switchAccountRequest.kind).toBe('switchAccount')
+
+    await controller.resolveUserRequest(null, switchAccountRequest.id)
+
+    expect(controller.userRequests).toHaveLength(0)
+    expect(controller.userRequestsWaitingAccountSwitch).toStrictEqual([req])
+  })
+  test('a new transaction request still requires current account state', async () => {
+    const { controller, getCallsRequest, accountsCtrl } = await prepareTest()
+    const req = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const rejectMock = jest.fn()
+    req.dappPromises = [
+      {
+        id: 'transaction-request',
+        resolve: jest.fn(),
+        reject: rejectMock,
+        session: MOCK_SESSION,
+        meta: {}
+      }
+    ]
+    jest
+      .spyOn(accountsCtrl, 'forceFetchPendingState')
+      .mockImplementation(() => Promise.resolve(undefined!))
+
+    await controller.addUserRequests([req])
+
+    expect(controller.userRequests).toHaveLength(0)
+    expect(rejectMock).toHaveBeenCalledWith(expect.objectContaining({ code: -32603 }))
+  })
   test('add multiple user requests', async () => {
     const { controller, getCallsRequest } = await prepareTest()
     const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
