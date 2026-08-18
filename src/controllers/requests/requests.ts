@@ -2169,6 +2169,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         callUserRequest.signAccountOp.accountOp.signed?.length ||
         callUserRequest.signAccountOp.accountOp.safeTx?.confirmations?.length
       )
+      let lastSafeSignature = callUserRequest.signAccountOp.accountOp.signature
 
       callUserRequest.signAccountOp.onUpdate((forceEmit) => {
         const callsReq = this.userRequests.find(
@@ -2182,17 +2183,21 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           callsReq.signAccountOp.accountOp.signed?.length ||
           callsReq.signAccountOp.accountOp.safeTx?.confirmations?.length
         )
-        const hasSafeNonceStateChanged =
+        const safeSignature = callsReq.signAccountOp.accountOp.signature
+        const hasSafeQueueStateChanged =
           !!callsReq.signAccountOp.account.safeCreation &&
-          (safeNonce !== lastSafeNonce || isSignedBySafeOwner !== wasSignedBySafeOwner)
+          (safeNonce !== lastSafeNonce ||
+            isSignedBySafeOwner !== wasSignedBySafeOwner ||
+            safeSignature !== lastSafeSignature)
 
         lastSafeNonce = safeNonce
         wasSignedBySafeOwner = isSignedBySafeOwner
+        lastSafeSignature = safeSignature
 
         if (
           callsReq.signAccountOp.isSignAndBroadcastInProgress ||
           callsReq.signAccountOp.gasFeeChangedConfirmationRequired ||
-          hasSafeNonceStateChanged
+          hasSafeQueueStateChanged
         ) {
           this.propagateUpdate(forceEmit)
         }
