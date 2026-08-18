@@ -27,7 +27,9 @@ import {
   GetCurrentDappRes,
   HasUnverifiedDappsRes,
   IDappsController,
-  RecentDappEntry
+  RawTrendingToken,
+  RecentDappEntry,
+  TrendingToken
 } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
@@ -35,7 +37,7 @@ import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
-import { IUiController, View } from '../../interfaces/ui'
+import { IUiController, View, isExtensionOverlayView } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
 import {
   formatDappName,
@@ -43,14 +45,19 @@ import {
   getDappIdFromUrl,
   getDappNameFromId,
   getDomainFromUrl,
+  getNormalizedHostnameFromUrl,
   modifyDappPropsIfNeeded,
   normalizeDappConnection,
+  normalizeHostname,
+  normalizeTrendingTokens,
   sortDapps,
   unifyDefiLlamaDappUrl
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
 
 const mergeSource = (
   existing: ConnectionSource[] | undefined,
@@ -90,6 +97,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   isReadyToDisplayDapps: boolean = true
 
+  #isReady = false
+
   fetchAndUpdatePromise?: Promise<void>
 
   #shouldRetryFetchAndUpdate: boolean = false
@@ -101,6 +110,20 @@ export class DappsController extends EventEmitter implements IDappsController {
   #retryFetchAndUpdateMaxAttempts: number = 3
 
   #selectedAccount: ISelectedAccountController
+
+  #trendingTokens: TrendingToken[] = []
+
+  #trendingTokensUpdatedAt: number | null = null
+
+  get trendingTokens(): TrendingToken[] {
+    return this.#trendingTokens
+  }
+
+  // Timestamp of the last successful trending-tokens fetch. Read by the
+  // ContinuousUpdatesController which owns the trending update interval.
+  get trendingTokensUpdatedAt(): number | null {
+    return this.#trendingTokensUpdatedAt
+  }
 
   get shouldRetryFetchAndUpdate() {
     return this.#shouldRetryFetchAndUpdate
@@ -164,21 +187,30 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.#ui.uiEvent.on('removeView', (removedView: View) => {
       if (
-        removedView.type === 'popup' &&
+        isExtensionOverlayView(removedView) &&
         this.#shouldRetryFetchAndUpdate &&
         this.#retryFetchAndUpdateAttempts < this.#retryFetchAndUpdateMaxAttempts
       ) {
         this.#retryFetchAndUpdateInterval.start()
       }
     })
+  }
 
+  /**
+   * Not called immediately on construction because the data in storage is huge and overwhelming
+   * for the mobile app.
+   */
+  async init() {
+    if (this.initialLoadPromise) return this.initialLoadPromise
+    if (this.#isReady) return
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
+    return this.initialLoadPromise
   }
 
   get isReady() {
-    return !!this.dapps
+    return this.#isReady
   }
 
   get dapps(): Dapp[] {
@@ -247,14 +279,30 @@ export class DappsController extends EventEmitter implements IDappsController {
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    const [storedDapps, storedRecentDapps] = await Promise.all([
+    const [storedDapps, storedRecentDapps, storedTrending] = await Promise.all([
       this.#storage.get('dappsV2', predefinedDapps),
-      this.#storage.get('recentDapps', [] as RecentDappEntry[])
+      this.#storage.get('recentDapps', [] as RecentDappEntry[]),
+      this.#storage.get('trending', { updatedAt: 0, tokens: [] as TrendingToken[] })
     ])
     // Normalize on read so a drifted record (e.g. isConnected: true but connectedSources: [])
     // can't show a dapp as connected in the UI while permission checks force a reconnect.
-    this.#dapps = new Map(storedDapps.map((d) => [d.id, normalizeDappConnection(d)]))
+    // Ids are canonicalized as well: a record stored before trailing-dot normalization
+    // ("my-dapp.vercel.app.") is unreachable by any lookup, so it would linger as an orphan
+    // entry in the UI while its permissions can never be resolved again.
+    this.#dapps = new Map()
+    storedDapps.forEach((dapp) => {
+      const id = normalizeHostname(dapp.id)
+      // The canonical record wins over its trailing-dot duplicate - it is the one every lookup
+      // resolves to, and its permissions are the ones the user reviewed for it.
+      if (id !== dapp.id && this.#dapps.has(id)) return
+
+      this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
+    })
     this.#recentDapps = storedRecentDapps
+    this.#trendingTokens = storedTrending.tokens
+    this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
+    this.#isReady = true
+    this.emitUpdate()
 
     void this.fetchAndUpdateDapps()
   }
@@ -271,7 +319,10 @@ export class DappsController extends EventEmitter implements IDappsController {
         this.#shouldRetryFetchAndUpdate = true
 
         // run the interval if the initial fetch failed while the extension is not in use
-        if (!this.#retryFetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
+        if (
+          !this.#retryFetchAndUpdateAttempts &&
+          !this.#ui.views.some((v) => isExtensionOverlayView(v))
+        ) {
           this.#retryFetchAndUpdateInterval.start()
         } else {
           this.#retryFetchAndUpdateInterval.stop()
@@ -511,6 +562,34 @@ export class DappsController extends EventEmitter implements IDappsController {
     void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
   }
 
+  /**
+   * Fetches, normalizes and persists the trending tokens. Throws on a failed fetch or a
+   * malformed response so the caller can react (e.g. back off its retry cadence). The update
+   * interval and its lifecycle are owned by the ContinuousUpdatesController.
+   */
+  async updateTrendingTokens() {
+    await this.initialLoadPromise
+
+    const res = await fetchWithTimeout(this.#fetch, TRENDING_TOKENS_URL, {}, 30000)
+
+    if (!res.ok || res.status !== 200) {
+      throw new Error(`Failed to update trending tokens (status: ${res.status}, url: ${res.url})`)
+    }
+
+    const json = await res.json()
+    const raw: RawTrendingToken[] = json?.tokens
+    if (!Array.isArray(raw)) {
+      throw new Error('Trending tokens response does not contain a tokens array')
+    }
+
+    this.#trendingTokens = normalizeTrendingTokens(raw)
+    const updatedAt = Date.now()
+    this.#trendingTokensUpdatedAt = updatedAt
+    this.emitUpdate()
+
+    await this.#storage.set('trending', { updatedAt, tokens: this.#trendingTokens })
+  }
+
   async #createDappSession(initProps: SessionInitProps) {
     await this.initialLoadPromise
     const dappSession = new Session(initProps)
@@ -521,15 +600,28 @@ export class DappsController extends EventEmitter implements IDappsController {
     return dappSession
   }
 
-  async getOrCreateDappSession({ windowId, tabId, url, wcTopic }: SessionInitProps) {
+  async getOrCreateDappSession({
+    windowId,
+    tabId,
+    url,
+    wcTopic,
+    frameId,
+    topFrameUrl
+  }: SessionInitProps) {
     if (!tabId || !url) throw new Error('Invalid props passed to getOrCreateDappSession')
 
     const dappId = getDappIdFromUrl(new URL(url).origin)
     const sessionId = getSessionId({ windowId, tabId, dappId })
 
-    if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
+    const existingSession = this.dappSessions[sessionId]
+    if (existingSession) {
+      // The session id has no per-document component, so a reused session may come from an
+      // earlier visit. Refresh the frame context instead of trusting what it was created with.
+      existingSession.updateFrameContext({ frameId, topFrameUrl })
+      return existingSession
+    }
 
-    return this.#createDappSession({ windowId, tabId, url, wcTopic })
+    return this.#createDappSession({ windowId, tabId, url, wcTopic, frameId, topFrameUrl })
   }
 
   getDappSessionByWcTopic(wcTopic: string): Session | undefined {
@@ -577,12 +669,54 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.emitUpdate()
   }
 
+  /**
+   * Removes every session of a closed tab, including those of the iframes it hosted. Sessions are
+   * only created by an incoming dApp request, so nothing recreates them for a tab that is gone.
+   */
+  deleteDappSessionsForTab = (tabId: number) => {
+    let hasDeletedSession = false
+
+    Object.entries(this.dappSessions).forEach(([sessionId, session]) => {
+      if (session.tabId !== tabId) return
+
+      delete this.dappSessions[sessionId]
+      hasDeletedSession = true
+    })
+
+    if (hasDeletedSession) this.emitUpdate()
+  }
+
   deleteDappSessionByWcTopic = (wcTopic: string) => {
     const session = this.getDappSessionByWcTopic(wcTopic)
     if (session) {
       delete this.dappSessions[session.sessionId]
       this.emitUpdate()
     }
+  }
+
+  /**
+   * Removes a WalletConnect session terminated by the dApp and, once none of its WC sessions
+   * remain, revokes the `'wc'` connection so the next pairing asks for approval again.
+   */
+  disconnectWcSessionByTopic = (wcTopic: string) => {
+    const session = this.getDappSessionByWcTopic(wcTopic)
+    if (!session) return
+
+    const dappId = session.id
+    delete this.dappSessions[session.sessionId]
+    this.emitUpdate()
+
+    const hasOtherWcSession = Object.values(this.dappSessions).some(
+      (s) => s.id === dappId && !!s.wcTopic
+    )
+    if (hasOtherWcSession) return
+
+    const dapp = this.#dapps.get(dappId)
+    if (!dapp?.connectedSources?.includes('wc')) return
+
+    this.updateDapp(dappId, {
+      connectedSources: dapp.connectedSources.filter((source) => source !== 'wc')
+    })
   }
 
   broadcastDappSessionEvent = async (
@@ -761,7 +895,10 @@ export class DappsController extends EventEmitter implements IDappsController {
         isConnected: mergedSources.length > 0
       }
 
-      if (dapp.accountPreferences) dappUpdate.accountPreferences = dapp.accountPreferences
+      // An explicit undefined clears preferences; an omitted property preserves them on source merges.
+      if ('accountPreferences' in dapp) {
+        dappUpdate.accountPreferences = dapp.accountPreferences
+      }
 
       this.updateDapp(dapp.id, dappUpdate)
       return
@@ -1090,10 +1227,10 @@ export class DappsController extends EventEmitter implements IDappsController {
           this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
             const intrinsicStatus = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
 
-            // Check all other sessions in the same tab/window for a dangerous context
+            // Check whether the dApp is embedded in a dangerous top-level document
             // (e.g. a phishing page hosting the dApp in an iframe). Context status is
             // not stored in #dapps so the dApp's global status stays uncontaminated.
-            const contextStatus = this.#getTabContextStatus(session)
+            const contextStatus = this.#getFrameContextStatus(session)
             // BLACKLISTED on the dApp itself always wins over any session context status.
             const effectiveStatus =
               intrinsicStatus === 'BLACKLISTED' ? 'BLACKLISTED' : (contextStatus ?? intrinsicStatus)
@@ -1179,31 +1316,23 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   /**
-   * Returns the highest-priority dangerous status from any OTHER session sharing the same
-   * tab/window as `session`. BLACKLISTED takes priority over SUSPICIOUS_HOSTING.
+   * Returns SUSPICIOUS_HOSTING when the dApp runs in a tab whose top-level document is dangerous -
+   * a phishing page embedding a legitimate dApp in an iframe, where the dApp's own status looks
+   * clean. `topFrameOrigin` comes from the browser on every request, so the page cannot spoof it.
    *
-   * This detects phishing pages that host a legitimate dApp in an iframe: the legitimate
-   * dApp's own session looks clean, but the phishing page's session (e.g. sites.google.com)
-   * is in the same tab and has SUSPICIOUS_HOSTING status.
-   *
-   * Returns `undefined` if no dangerous co-session is found, or if the status cannot yet
-   * be determined (phishing DB not loaded and domain not in the static list).
+   * `undefined` means no verdict: the dApp is the top frame itself, the platform reports no frame
+   * context (mobile WebViews, WalletConnect), or the top frame is not dangerous. Frames between
+   * the top one and the dApp are not visible without the `webNavigation` permission - not checked.
    */
-  #getTabContextStatus(session: Session): BlacklistedStatus | undefined {
-    for (const s of Object.values(this.dappSessions)) {
-      if (
-        s.sessionId === session.sessionId ||
-        s.tabId !== session.tabId ||
-        s.windowId !== session.windowId
-      ) {
-        continue
-      }
-      const status = this.#phishing.getDomainBlacklistedStatus(s.origin)
-      // Whether the co-session's domain is BLACKLISTED or SUSPICIOUS_HOSTING, the threat
-      // is the same for this session: dangerous hosting context. Always return SUSPICIOUS_HOSTING
-      // — BLACKLISTED belongs to the co-session's own domain, not to this dApp.
-      if (status === 'BLACKLISTED' || status === 'SUSPICIOUS_HOSTING') return 'SUSPICIOUS_HOSTING'
-    }
+  #getFrameContextStatus(session: Session): BlacklistedStatus | undefined {
+    const { topFrameOrigin } = session
+    if (!topFrameOrigin || topFrameOrigin === session.origin) return undefined
+
+    const status = this.#phishing.getDomainBlacklistedStatus(topFrameOrigin)
+    // A BLACKLISTED top frame is still only a dangerous context for this dApp, so it maps to
+    // SUSPICIOUS_HOSTING - BLACKLISTED belongs to the top frame's own domain, not to this dApp.
+    if (status === 'BLACKLISTED' || status === 'SUSPICIOUS_HOSTING') return 'SUSPICIOUS_HOSTING'
+
     return undefined
   }
 
@@ -1233,7 +1362,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (!validDappUrls.length) return null
 
     const sessionForId = sessionId ? this.dappSessions[sessionId] : undefined
-    const contextStatus = sessionForId ? this.#getTabContextStatus(sessionForId) : undefined
+    const contextStatus = sessionForId ? this.#getFrameContextStatus(sessionForId) : undefined
 
     const dappVerificationData = validDappUrls.map((url) => {
       const id = getDappIdFromUrl(url)
@@ -1252,7 +1381,10 @@ export class DappsController extends EventEmitter implements IDappsController {
             : this.initialLoadPromise
               ? 'LOADING'
               : (contextStatus ?? intrinsic),
-        name: dapp?.name || new URL(url).hostname
+        // The canonical hostname, so the banner names the site the user believes they are on
+        // instead of the fully-qualified spelling a phishing page may navigate to. Falls back to
+        // the raw url for inputs the URL parser rejects, which must not throw here.
+        name: dapp?.name || getNormalizedHostnameFromUrl(url) || url
       }
     })
 
@@ -1289,6 +1421,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
         type: 'error',
+        title: 'Potentially harmful app',
         text: withOptionalDappNames(
           "This app didn't pass our safety check. Proceed at your own risk.",
           blacklistedDappNames
@@ -1304,6 +1437,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
         type: 'warning',
+        title: 'Suspicious app hosting',
         text: withOptionalDappNames(
           'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.',
           '' // We explicitly don't append the dApp name, because here what matters is the suspicious hosting URL, but showing the name could confuse the user, so we simply don't
@@ -1317,6 +1451,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
         type: 'warning',
+        title: 'Safety check in progress',
         text: withOptionalDappNames(
           "We're still verifying the app. Please wait, or make sure you trust it before signing requests.",
           loadingDappNames
@@ -1332,6 +1467,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
         type: 'warning',
+        title: "App couldn't be verified",
         text: withOptionalDappNames(
           "We couldn't verify the app. Make sure you trust it before signing requests.",
           failedToVerifyDappNames
@@ -1347,6 +1483,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
         type: 'warning',
+        title: "App not in Ambire's catalog",
         text: withOptionalDappNames(
           'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests.',
           notInCatalogDappNames
@@ -1365,6 +1502,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       recentDapps: this.recentDapps,
       categories: this.categories,
       isReady: this.isReady,
+      trendingTokens: this.trendingTokens,
       shouldRetryFetchAndUpdate: this.shouldRetryFetchAndUpdate,
       retryFetchAndUpdateInterval: this.retryFetchAndUpdateInterval,
       retryFetchAndUpdateAttempts: this.retryFetchAndUpdateAttempts

@@ -87,7 +87,7 @@ import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
 import { ITransfersScannerController } from '@/interfaces/transferScanner'
-import { IUiController, UiManager, View } from '@/interfaces/ui'
+import { IUiController, UiManager, View, isExtensionOverlayView } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
@@ -112,6 +112,11 @@ import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapPro
 import { UniswapAPI } from '@/services/uniswap/api'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
 import wait from '@/utils/wait'
+
+type AccountsUpdate = {
+  accountsToAdd: Account[]
+  accountAddressesToRemove: Account['addr'][]
+}
 
 export class MainController extends EventEmitter implements IMainController {
   #storageAPI: Storage
@@ -699,15 +704,10 @@ export class MainController extends EventEmitter implements IMainController {
         })
       })
     }
-    paymasterFactory.init(
-      relayerUrl,
-      fetch,
-      (e: ErrorRef) => {
-        if (this.requests.currentUserRequest?.kind !== 'calls') return
-        this.emitError(e)
-      },
-      () => this.featureFlags.isFeatureEnabled('erc4337')
-    )
+    paymasterFactory.init(relayerUrl, fetch, (e: ErrorRef) => {
+      if (this.requests.currentUserRequest?.kind !== 'calls') return
+      this.emitError(e)
+    })
 
     this.keystore.onUpdate(() => {
       if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
@@ -735,7 +735,7 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     this.ui.uiEvent.on('addView', async (view: View) => {
-      if (view.type === 'popup') await this.onPopupOpen(view.id)
+      if (isExtensionOverlayView(view)) await this.onPopupOpen(view.id)
     })
 
     this.ui.uiEvent.on('viewFocus', () => {
@@ -931,14 +931,12 @@ export class MainController extends EventEmitter implements IMainController {
     await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
     await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
 
-    if (this.accountPicker.readyToRemoveAccounts) {
-      for (const acc of this.accountPicker.readyToRemoveAccounts) {
-        await this.#removeAccount(acc.addr)
-      }
-    }
-
-    // Add accounts as a final step, because some of the next steps check if accounts have keys.
-    await this.accounts.addAccounts(this.accountPicker.readyToAddAccounts)
+    await this.#updateAccounts({
+      accountsToAdd: this.accountPicker.readyToAddAccounts,
+      accountAddressesToRemove: this.accountPicker.readyToRemoveAccounts.map(
+        (account) => account.addr
+      )
+    })
   }
 
   async commonHandlerForBroadcastSuccess({
@@ -1425,6 +1423,49 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  async #handleAccountPickerInitNfc(
+    NfcKeyIterator: any, // TODO: KeyIterator type mismatch
+    payload: { extendedPublicKey: string; hdPath: string }
+  ) {
+    try {
+      const nfcCtrl = this.#externalSignerControllers.nfc
+
+      if (!nfcCtrl) {
+        const message =
+          'Could not initialize connection with your card. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      const keyIterator = new NfcKeyIterator({ controller: nfcCtrl })
+      // Initialize the iterator from the extended public key exported by the card
+      // before the AccountPicker init, so it can derive addresses on its own
+      // (the card is tapped only once, not per address).
+      keyIterator.initFromExportedKey(payload)
+
+      // v1 accounts have never supported NFC cards, so there is nothing to look
+      // for on the relayer (same reasoning as the QR flow).
+      this.accountPicker.setInitParams({
+        keyIterator,
+        hdPathTemplate: keyIterator.hdPathTemplate,
+        pageSize: 5,
+        shouldAddNextAccountAutomatically: false,
+        shouldSearchForLinkedAccounts: false
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not import the card account. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountPickerInitNfc(
+    NfcKeyIterator: any, // TODO: KeyIterator type mismatch
+    payload: { extendedPublicKey: string; hdPath: string }
+  ) {
+    await this.withStatus('handleAccountPickerInitNfc', async () =>
+      this.#handleAccountPickerInitNfc(NfcKeyIterator, payload)
+    )
+  }
+
   async updateAccountsOpsStatuses() {
     await this.initialLoadPromise
 
@@ -1596,6 +1637,30 @@ export class MainController extends EventEmitter implements IMainController {
 
   async removeAccount(address: Account['addr']) {
     await this.withStatus('removeAccount', async () => this.#removeAccount(address))
+  }
+
+  async #updateAccounts({ accountsToAdd, accountAddressesToRemove }: AccountsUpdate) {
+    const addressesToAdd = new Set(accountsToAdd.map((account) => account.addr.toLowerCase()))
+    const importedAddresses = new Set(
+      this.accounts.accounts.map((account) => account.addr.toLowerCase())
+    )
+    const uniqueAddressesToRemove = Array.from(
+      new Map(accountAddressesToRemove.map((address) => [address.toLowerCase(), address])).values()
+    )
+
+    for (const address of uniqueAddressesToRemove) {
+      const normalizedAddress = address.toLowerCase()
+      if (!importedAddresses.has(normalizedAddress) || addressesToAdd.has(normalizedAddress))
+        continue
+      await this.#removeAccount(address)
+    }
+
+    // Add accounts as a final step, because some of the next steps check if accounts have keys.
+    await this.accounts.addAccounts(accountsToAdd)
+  }
+
+  async updateAccounts(accountsUpdate: AccountsUpdate) {
+    await this.withStatus('updateAccounts', async () => this.#updateAccounts(accountsUpdate))
   }
 
   async reloadSelectedAccount(options?: {
@@ -1973,6 +2038,25 @@ export class MainController extends EventEmitter implements IMainController {
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
     const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase)
     await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+  }
+
+  /**
+   * Creates a brand new recovery phrase and prepares the account picker with it, all
+   * in the background. The phrase is never sent to the UI - the user gets prompted to
+   * write it down later, once the account holds funds.
+   */
+  async accountPickerSetInitParamsFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+    await this.withStatus(
+      'accountPickerSetInitParamsFromNewSeed',
+      async () => {
+        const tempSeed = await this.keystore.generateTempSeed({ extraEntropy })
+
+        await this.accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({
+          privKeyOrSeed: tempSeed.seed
+        })
+      },
+      true
+    )
   }
 
   // includes the getters in the stringified instance

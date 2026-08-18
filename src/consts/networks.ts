@@ -49,7 +49,7 @@ const networks: Network[] = [
     nativeAssetId: 'matic-network',
     hasSingleton: true,
     features: [],
-    feeOptions: { is1559: false, feeIncrease: 10n },
+    feeOptions: { is1559: false },
     predefined: true,
     wrappedAddr: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270',
     oldNativeAssetSymbols: ['MATIC'],

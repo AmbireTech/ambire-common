@@ -1,6 +1,8 @@
 import { ZeroAddress } from 'ethers'
 import { getAddress } from 'viem'
 
+import { getFeeToken } from '@/libs/portfolio/tokenProcessing'
+
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
@@ -249,17 +251,26 @@ export class Portfolio {
       ...Object.values(specialErc721Hints || {})
     ])
 
-    const checksummedErc20Hints = hints.erc20s
-      .map((address) => {
-        try {
-          // getAddress may throw an error. This will break the portfolio
-          // if the error isn't caught
-          return getAddress(address)
-        } catch {
-          return null
-        }
-      })
-      .filter(Boolean) as string[]
+    // Deduped before checksumming for performance
+    const seenErc20Hints = new Set<string>()
+    const checksummedErc20Hints: string[] = []
+
+    hints.erc20s.forEach((address) => {
+      try {
+        const lowercasedAddress = address.toLowerCase()
+
+        if (seenErc20Hints.has(lowercasedAddress)) return
+
+        // getAddress may throw an error. This will break the portfolio
+        // if the error isn't caught
+        const checksummedAddress = getAddress(address)
+
+        seenErc20Hints.add(lowercasedAddress)
+        checksummedErc20Hints.push(checksummedAddress)
+      } catch {
+        // Not an address, so it can't be a token
+      }
+    })
 
     // Merge static and dynamic blacklisted addresses for this chain
     const chainIdStr = this.network.chainId.toString()
@@ -579,11 +590,7 @@ export class Portfolio {
         // return the native token
         if (t.address === ZeroAddress && t.chainId === this.network.chainId) return true
 
-        return gasTankFeeTokens.find(
-          (gasTankT) =>
-            gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
-            gasTankT.chainId === t.chainId
-        )
+        return getFeeToken(t.address, t.chainId)
       }),
       beforeNonce,
       afterNonce,

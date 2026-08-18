@@ -29,7 +29,7 @@ Note: This package does not include compiled JS and TS output in the repository.
 
 ### Code quality:
 - Code usually runs continuously for long periods of time (especially in browser extension environments), so memory leaks, listeners, and orphaned async processes can accumulate and cause performance, stability, or reliability issues over time.
-- Always ensure subscriptions, event listeners, timers and other side effects are properly cleaned up
+- Always ensure subscriptions, event listeners, timers and other side effects are properly cleaned up. Even if it's a simple `setTimeout` used to reject a promise, it should be cleared.
 - NEVER delete existing comments when updating a code block; update inaccurate comments instead. Delete a comment only if the logic it describes is completely removed or the new logic is entirely self-explanatory
 - NEVER swallow errors; log them and handle appropriately.
 - NEVER modify git config or run destructive git operations
@@ -37,6 +37,8 @@ Note: This package does not include compiled JS and TS output in the repository.
 - NEVER stage changes unless explicitly requested by user
 - Avoid TypeScript casts when possible. Prefer narrowing with if statements, discriminated unions, assertion functions, and type guards. Cast only at trusted boundaries, and keep it local
 - Avoid regex for parsing strings or business logic. Prefer explicit parsing, small helper functions, existing parsers or available library functions.
+- All warnings, errors, and other user-facing strings (controller `errors`/banners, e.g. `signAccountOp.ts`, `swapAndBridge.ts`; humanized strings in `src/libs/humanizer`, `src/libs/errorHumanizer`) must be phrased in plain language a non-technical user can understand. NEVER assume Web3/blockchain knowledge — avoid unexplained jargon (e.g. "RPC", "nonce", "gas limit", "Paymaster", "Bundler", "EOA", "Smart Account", "delegatecall", "calldata", "simulation failed") and instead describe the real-world action, cause, or risk in plain terms (e.g. "a pending transaction" instead of "nonce too low", "insufficient funds to cover the fee" instead of "low gas")
+- Comments of reusable functions, types and constants should be public to allow reading them on hover (but don't edit existing comments that are outside of the scope of the task).
 
 ## Tests:
 - ALWAYS write test cases that cover positive, negative, edge cases and security implications of the code you change or add.

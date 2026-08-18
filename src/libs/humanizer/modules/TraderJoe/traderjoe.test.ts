@@ -120,7 +120,7 @@ describe('trader joe', () => {
         getDeadline(1718636208n)
       ]
     ]
-    const irCalls = traderJoe(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    const irCalls = transactions.map((c) => traderJoe(accountOp, c, humanizerInfo as HumanizerMeta))
 
     compareHumanizerVisualizations(irCalls, expectedVisualization)
   })

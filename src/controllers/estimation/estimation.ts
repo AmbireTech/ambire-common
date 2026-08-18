@@ -121,7 +121,8 @@ export class EstimationController extends EventEmitter {
       account,
       accountState,
       network,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
 
     // Take the fee tokens from two places: the user's tokens and his gasTank

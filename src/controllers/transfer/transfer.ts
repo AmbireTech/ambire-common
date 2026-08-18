@@ -23,7 +23,7 @@ import {
   ITransferController,
   TransferUpdate
 } from '../../interfaces/transfer'
-import { IUiController, View } from '../../interfaces/ui'
+import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
@@ -296,7 +296,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     const isSameMode = this.isTopUp === nextIsTopUp
     const hasNoSearchParams = Object.keys(searchParams || {}).length === 0
 
-    const shouldKeepExistingForm = isFormInitialized && isSameMode && hasNoSearchParams
+    const shouldKeepExistingForm =
+      isFormInitialized && isSameMode && hasNoSearchParams && !isSidePanelView(view)
 
     if (shouldKeepExistingForm) {
       if (!this.areDefaultsSet) {
@@ -1121,7 +1122,13 @@ export class TransferController extends EventEmitter implements ITransferControl
       return
     }
 
-    const baseAcc = getBaseAccount(this.#selectedAccount.account, accountState, network)
+    const baseAcc = getBaseAccount(
+      this.#selectedAccount.account,
+      accountState,
+      network,
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
+    )
     const accountOp = {
       id: generateUuid(),
       accountAddr: this.#selectedAccount.account.addr,
@@ -1241,6 +1248,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     // Always reset the session id
     this.#currentTransferSessionId = null
 
+    // Popup keeps in-progress forms when closed; side panel should start fresh on reopen.
     if (this.hasPersistedState && !isNavigateOut && viewType === 'popup') return
 
     this.reset({ destroyAccountOp: true })

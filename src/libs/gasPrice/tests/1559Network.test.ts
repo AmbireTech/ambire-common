@@ -58,7 +58,7 @@ describe('1559 Network gas price tests', () => {
     })
     expect(getByName(gasPrice, 'ape')).toEqual({
       name: 'ape',
-      baseFeePerGas: ethers.parseUnits('1.236', 'gwei'),
+      baseFeePerGas: ethers.parseUnits('1.26', 'gwei'),
       maxPriorityFeePerGas: ethers.parseUnits('2', 'gwei')
     })
     provider.destroy()
@@ -91,7 +91,7 @@ describe('1559 Network gas price tests', () => {
     })
     expect(getByName(gasPrice, 'ape')).toEqual({
       name: 'ape',
-      baseFeePerGas: ethers.parseUnits('1.236', 'gwei'),
+      baseFeePerGas: ethers.parseUnits('1.26', 'gwei'),
       maxPriorityFeePerGas: ethers.parseUnits('1.5', 'gwei')
     })
     provider.destroy()
@@ -119,7 +119,7 @@ describe('1559 Network gas price tests', () => {
     expect(getByName(gasPrice, 'slow').baseFeePerGas).toBe(ethers.parseUnits('1', 'gwei'))
     expect(getByName(gasPrice, 'medium').baseFeePerGas).toBe(ethers.parseUnits('1.01', 'gwei'))
     expect(getByName(gasPrice, 'fast').baseFeePerGas).toBe(ethers.parseUnits('1.02', 'gwei'))
-    expect(getByName(gasPrice, 'ape').baseFeePerGas).toBe(ethers.parseUnits('1.03', 'gwei'))
+    expect(getByName(gasPrice, 'ape').baseFeePerGas).toBe(ethers.parseUnits('1.05', 'gwei'))
     provider.destroy()
   })
 

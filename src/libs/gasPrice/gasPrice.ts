@@ -34,7 +34,7 @@ const speeds = [
   },
   {
     name: 'ape',
-    baseFeeAddBps: 300n,
+    baseFeeAddBps: 500n,
     priorityFeeMinAddBps: 5000n,
     priorityFeeMaxAddBps: 10000n
   }
@@ -75,11 +75,6 @@ function clamp(value: bigint, min: bigint, max: bigint): bigint {
   if (value < min) return min
   if (value > max) return max
   return value
-}
-
-function increaseByPercent(value: bigint, percent?: bigint): bigint {
-  if (!percent) return value
-  return value + (value * percent) / 100n
 }
 
 function getMedianPriorityFeesFromHistory(rewards: bigint[][]): bigint[] {
@@ -157,14 +152,10 @@ async function get1559GasPriceRecommendations(
 }
 
 async function getLegacyGasPriceRecommendations(
-  client: PublicClient,
-  network: Network
+  client: PublicClient
 ): Promise<GasPriceRecommendation[]> {
   const { gasPrice } = await getLegacyViemFees(client)
-  const minGasPrice = increaseByPercent(
-    gasPrice > MIN_GAS_PRICE ? gasPrice : MIN_GAS_PRICE,
-    network.feeOptions.feeIncrease
-  )
+  const minGasPrice = gasPrice > MIN_GAS_PRICE ? gasPrice : MIN_GAS_PRICE
 
   return speeds.map(({ name, baseFeeAddBps }) => ({
     name,
@@ -188,7 +179,7 @@ export async function getGasPriceRecommendations(
     return { gasPrice: await get1559GasPriceRecommendations(client) }
   }
 
-  return { gasPrice: await getLegacyGasPriceRecommendations(client, network) }
+  return { gasPrice: await getLegacyGasPriceRecommendations(client) }
 }
 
 export function getProbableCallData(

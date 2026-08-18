@@ -740,6 +740,7 @@ describe('SignMessageController', () => {
         {
           id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
           type: 'warning',
+          title: 'Safety check in progress',
           text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests."
         }
       ])
@@ -752,6 +753,7 @@ describe('SignMessageController', () => {
         {
           id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
           type: 'warning',
+          title: "App couldn't be verified",
           text: "We couldn't verify the app. Make sure you trust it before signing requests."
         }
       ])
@@ -764,6 +766,7 @@ describe('SignMessageController', () => {
         {
           id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
           type: 'error',
+          title: 'Potentially harmful app',
           text: "This app didn't pass our safety check. Proceed at your own risk."
         }
       ])
@@ -790,6 +793,7 @@ describe('SignMessageController', () => {
         {
           id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
           type: 'warning',
+          title: 'Suspicious app hosting',
           text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
         }
       ])
@@ -797,15 +801,17 @@ describe('SignMessageController', () => {
 
     // Scenario: VERIFIED dApp loaded as iframe inside a sites.google.com tab
     // intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
-    test('should return SUSPICIOUS_HOSTING banner from session context when dApp is an iframe in a suspicious hosting tab', () => {
-      const verifiedDappSession = new Session({ tabId: 200, windowId: 1, url: verifiedDapp.url })
-      const googleSession = new Session({
+    // The context comes from the session's own top frame, which the browser reports on every
+    // request, so the hosting page does not need a session of its own.
+    test('should return SUSPICIOUS_HOSTING banner from frame context when dApp is an iframe in a suspicious hosting tab', () => {
+      const verifiedDappSession = new Session({
         tabId: 200,
         windowId: 1,
-        url: 'https://sites.google.com'
+        url: verifiedDapp.url,
+        frameId: 2,
+        topFrameUrl: 'https://sites.google.com/view/fake-dapp'
       })
       dappsCtrl.dappSessions[verifiedDappSession.sessionId] = verifiedDappSession
-      dappsCtrl.dappSessions[googleSession.sessionId] = googleSession
 
       signMessageController.dapp = {
         ...getDappRequestData(verifiedDapp),
@@ -819,7 +825,6 @@ describe('SignMessageController', () => {
         expect(signMessageController.banners[0]?.type).toBe('warning')
       } finally {
         delete dappsCtrl.dappSessions[verifiedDappSession.sessionId]
-        delete dappsCtrl.dappSessions[googleSession.sessionId]
       }
     })
 
@@ -850,6 +855,7 @@ describe('SignMessageController', () => {
           {
             id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
             type: 'warning',
+            title: 'Safety check in progress',
             text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests."
           }
         ])

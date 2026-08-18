@@ -7,9 +7,8 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { TokenResult } from '../../libs/portfolio'
-import * as ensDomainsModule from '../../services/ensDomains'
+import * as ensDomainsModule from '../../services/ensDomains/ensDomains'
 import { DomainsController } from '../domains/domains'
-import { TransferController } from './transfer'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
 const polygon = networks.find((x) => x.chainId === 137n)
@@ -544,6 +543,46 @@ describe('Transfer Controller defaults logic', () => {
     expect(transferController.amount).toBe('1')
     expect(transferController.recipientAddress).toBe(PLACEHOLDER_RECIPIENT)
     expect(transferController.areDefaultsSet).toBe(true)
+  })
+
+  test('should reset transfer state on side-panel removeView even when form is persisted', async () => {
+    const { transferController, uiCtrl, selectedAccountCtrl } = await prepareTest()
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      ...getDefaultPortfolioState()
+    }
+
+    uiCtrl.addView({
+      id: 'side-panel',
+      type: 'side-panel',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('side-panel', {
+      currentRoute: 'transfer',
+      isReady: true,
+      searchParams: {}
+    })
+
+    await transferController.update({
+      amount: '1',
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    uiCtrl.removeView('side-panel')
+
+    expect(transferController.transferSessionId).toBe(null)
+    expect(transferController.areDefaultsSet).toBe(false)
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.amount).toBe('')
+    expect(transferController.recipientAddress).toBe('')
   })
 
   test('should reset transfer state on popup removeView when form is not persisted', async () => {

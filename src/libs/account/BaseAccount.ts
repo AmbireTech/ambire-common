@@ -23,11 +23,18 @@ export abstract class BaseAccount {
 
   protected isErc4337Enabled: boolean
 
+  // when doing the 7702 activator/revoke, we should add the additional gas required
+  // for the authorization list:
+  // PER_EMPTY_ACCOUNT_COST: 25000
+  // access list storage key: 1900
+  // access list address: 2400
+  ACTIVATOR_GAS_USED = 29300n
+
   constructor(
     account: Account,
     network: Network,
     accountState: AccountOnchainState,
-    isErc4337Enabled = true
+    isErc4337Enabled: boolean
   ) {
     this.account = account
     this.network = network

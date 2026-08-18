@@ -1,4 +1,4 @@
-import { parseAbi, decodeFunctionData, toFunctionSelector, zeroAddress } from 'viem'
+import { parseAbi, decodeFunctionData, toFunctionSelector, zeroAddress, Hex } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
@@ -44,16 +44,23 @@ const erc20DecreaseApprovalAbi = parseAbi([
   'function decreaseApproval(address _spender, uint256 _subtractedValue) returns (bool)'
 ])
 
-export const genericErc721Humanizer: HumanizerCallModule = (
-  accountOp: AccountOp,
-  currentIrCalls: IrCall[]
-) => {
+// tokens before solidity 0.5.0 would accept calldata that is shorter then the specified
+// args in the abi and assume they are 0s
+// other tokens fail onchain, so there is no real danger in padding to the end
+// as long as it is kept in the humanizer
+// applicable only to functions whose args are all static (one 32 byte word each)
+const padCallData = (data: Hex, staticArgsCount: number): Hex => {
+  const expectedCallLength = 2 + 8 + staticArgsCount * 64
+  return data.padEnd(expectedCallLength, '0') as Hex
+}
+
+export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const nftTransferVisualization = (
     call: HexIrCall,
     abi: typeof erc721SafeTransferFromAbi | typeof erc721TransferFromAbi
   ) => {
     if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-    const { args } = decodeFunctionData({ abi, data: call.data })
+    const { args } = decodeFunctionData({ abi, data: padCallData(call.data, 3) })
     const [from, to, tokenId] = args
     return from === accountOp.accountAddr
       ? [getAction('Send'), getToken(call.to, tokenId), getLabel('to'), getAddressVisualization(to)]
@@ -70,7 +77,10 @@ export const genericErc721Humanizer: HumanizerCallModule = (
   const matcher: Record<string, (call: HexIrCall) => any> = {
     [toFunctionSelector(erc721ApproveAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-      const { args } = decodeFunctionData({ abi: erc721ApproveAbi, data: call.data })
+      const { args } = decodeFunctionData({
+        abi: erc721ApproveAbi,
+        data: padCallData(call.data, 2)
+      })
       const [to, tokenId] = args
       return to === zeroAddress
         ? [getAction('Revoke approval'), getLabel('for'), getToken(call.to, tokenId)]
@@ -86,7 +96,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc721SetApprovalForAllAbi,
-        data: call.data
+        data: padCallData(call.data, 2)
       })
       const [operator, approved] = args
       return approved
@@ -111,22 +121,24 @@ export const genericErc721Humanizer: HumanizerCallModule = (
       nftTransferVisualization(call, erc721TransferFromAbi)
   }
 
-  return currentIrCalls.map((call) => {
-    if (!call.to) return call
-    if (!isHexCall(call)) return call
-    const selector = call.data.substring(0, 10)
-    return matcher[selector] ? { ...call, fullVisualization: matcher[selector](call) } : call
-  })
+  if (!call.to) return call
+  if (!isHexCall(call)) return call
+  const selector = call.data.substring(0, 10)
+  return matcher[selector] ? { ...call, fullVisualization: matcher[selector](call) } : call
 }
 
 export const genericErc20Humanizer = (
   { accountAddr }: { accountAddr: string },
-  currentIrCalls: IrCall[]
-): IrCall[] => {
+  call: IrCall
+): IrCall => {
   const matcher: Record<string, (call: HexIrCall) => any> = {
     [toFunctionSelector(erc20ApproveAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-      const { args } = decodeFunctionData({ abi: erc20ApproveAbi, data: call.data })
+
+      const { args } = decodeFunctionData({
+        abi: erc20ApproveAbi,
+        data: padCallData(call.data, 2)
+      })
       const [spender, value] = args
       return value !== 0n
         ? [
@@ -147,7 +159,7 @@ export const genericErc20Humanizer = (
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc20IncreaseAllowanceAbi,
-        data: call.data
+        data: padCallData(call.data, 2)
       })
       const [spender, addedValue] = args
       return [
@@ -162,7 +174,7 @@ export const genericErc20Humanizer = (
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc20DecreaseAllowanceAbi,
-        data: call.data
+        data: padCallData(call.data, 2)
       })
       const [spender, subtractedValue] = args
       return [
@@ -177,7 +189,7 @@ export const genericErc20Humanizer = (
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc20IncreaseApprovalAbi,
-        data: call.data
+        data: padCallData(call.data, 2)
       })
       const [spender, addedValue] = args
       return [
@@ -192,7 +204,7 @@ export const genericErc20Humanizer = (
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc20DecreaseApprovalAbi,
-        data: call.data
+        data: padCallData(call.data, 2)
       })
       const [spender, subtractedValue] = args
       return [
@@ -205,7 +217,10 @@ export const genericErc20Humanizer = (
     },
     [toFunctionSelector(erc20TransferAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-      const { args } = decodeFunctionData({ abi: erc20TransferAbi, data: call.data })
+      const { args } = decodeFunctionData({
+        abi: erc20TransferAbi,
+        data: padCallData(call.data, 2)
+      })
       const [to, value] = args
       return [
         getAction('Send'),
@@ -216,7 +231,10 @@ export const genericErc20Humanizer = (
     },
     [toFunctionSelector(erc20TransferFromAbi[0])]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
-      const { args } = decodeFunctionData({ abi: erc20TransferFromAbi, data: call.data })
+      const { args } = decodeFunctionData({
+        abi: erc20TransferFromAbi,
+        data: padCallData(call.data, 3)
+      })
       const [from, to, value] = args
       if (from === accountAddr)
         return [
@@ -243,10 +261,8 @@ export const genericErc20Humanizer = (
     }
   }
 
-  return currentIrCalls.map((call) => {
-    if (!call.to) return call
-    if (!isHexCall(call)) return call
-    const sigHash = call.data.substring(0, 10)
-    return matcher[sigHash] ? { ...call, fullVisualization: matcher[sigHash](call) } : call
-  })
+  if (!call.to) return call
+  if (!isHexCall(call)) return call
+  const sigHash = call.data.substring(0, 10)
+  return matcher[sigHash] ? { ...call, fullVisualization: matcher[sigHash](call) } : call
 }

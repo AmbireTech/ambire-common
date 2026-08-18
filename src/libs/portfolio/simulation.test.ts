@@ -100,7 +100,7 @@ describe('Portfolio simulation', () => {
 
     try {
       return await accountContract.nonce!()
-    } catch (e) {
+    } catch {
       return 0n
     }
   }
@@ -160,7 +160,7 @@ describe('Portfolio simulation', () => {
       fetchPinned: false,
       simulation: {
         accountOps: [accountOp],
-        baseAccount: getBaseAccount(account, accountState, ethereum),
+        baseAccount: getBaseAccount(account, accountState, ethereum, true, true),
         state: accountState
       }
     })

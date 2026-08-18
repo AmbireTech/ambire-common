@@ -40,7 +40,7 @@ const claimXpFromFeedbackAbi = parseAbi(['function claimXpFromFeedback(string)']
 const claimBitrefillCodeAbi = parseAbi(['function claimBitrefillCode()'])
 const revealMascotLetterAbi = parseAbi(['function revealMascotLetter()'])
 
-const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
+const legendsModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const characterTypes: { [season: number]: string[] } = {
     '0': [
       'https://relayer.ambire.com/legends/nft-image/avatar/unknown.png',
@@ -126,22 +126,18 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       return [getAction('Reveal'), getLabel('a letter from'), getLabel('SHI_T_', true)]
     }
   }
-  const newCalls = calls.map((call) => {
-    if (
-      (call.to &&
-        isAddress(call.to) &&
-        ![ONCHAIN_TXNS_LEGENDS_ADDRESS, ...OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES].includes(
-          getAddress(call.to)
-        )) ||
-      !isHexCall(call)
-    )
-      return call
-    const match = matcher[call.data.slice(0, 10)]
-    if (!match) return call
-    return { ...call, fullVisualization: match(call) }
-  })
-
-  return newCalls
+  if (
+    (call.to &&
+      isAddress(call.to) &&
+      ![ONCHAIN_TXNS_LEGENDS_ADDRESS, ...OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES].includes(
+        getAddress(call.to)
+      )) ||
+    !isHexCall(call)
+  )
+    return call
+  const match = matcher[call.data.slice(0, 10)]
+  if (!match) return call
+  return { ...call, fullVisualization: match(call) }
 }
 
 export default legendsModule

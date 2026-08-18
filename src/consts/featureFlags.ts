@@ -12,10 +12,15 @@ export interface FeatureFlags {
   /**
    * Allow the user to opt out of erc4337 which will automatically
    * disable paying gas in different tokens & gas tank.
-   * For Ambire v2 accounts, it will also disalbe ETH payments (the user
+   * For Ambire v2 accounts, it will also disable ETH payments (the user
    * will need an EOA account just like using a Safe)
    */
   erc4337: boolean
+  /**
+   * Allow the user to opt out of upgrading EOA accounts through ERC-7702.
+   * Existing onchain delegations are not revoked when this is disabled.
+   */
+  eip7702: boolean
   /**
    * Off by default for privacy: passively bulk-resolving ENS/Namoshi for all
    * accounts links them together. When enabled, the wallet keeps every account's
@@ -40,6 +45,7 @@ export const defaultFeatureFlags: FeatureFlags = {
   ambireSmartAccounts: true,
   tokenPrices: true,
   erc4337: true,
+  eip7702: true,
   keepEnsProfilesUpToDate: false,
   // @TODO: Introduce a setting and flip to false
   namoshiDomains: true,

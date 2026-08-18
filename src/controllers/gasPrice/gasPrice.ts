@@ -17,8 +17,6 @@ export class GasPriceController extends EventEmitter {
 
   #baseAccount: BaseAccount
 
-  #getIsErc4337Enabled: () => boolean
-
   #getSignAccountOpState: () => {
     estimation: EstimationController
     readyToSign: boolean
@@ -52,14 +50,12 @@ export class GasPriceController extends EventEmitter {
       estimation: EstimationController
       readyToSign: boolean
       stopRefetching: boolean
-    },
-    getIsErc4337Enabled: () => boolean = () => true
+    }
   ) {
     super()
     this.#network = network
     this.#provider = provider
     this.#baseAccount = baseAccount
-    this.#getIsErc4337Enabled = getIsErc4337Enabled
     this.#getSignAccountOpState = getSignAccountOpState
   }
 
@@ -76,11 +72,7 @@ export class GasPriceController extends EventEmitter {
     // estimate, it would fetch the gas price from the bundler estimation itself,
     // therefore not being required here
     const availableBundlers = getAvailableBunlders(this.#network)
-    if (
-      this.#getIsErc4337Enabled() &&
-      availableBundlers.length &&
-      !this.#baseAccount.supportsBundlerEstimation()
-    ) {
+    if (availableBundlers.length && !this.#baseAccount.supportsBundlerEstimation()) {
       let timeoutId
       const bundlerGasPrices = await Promise.race([
         // Promise.any because we want the first success, ignoring errors

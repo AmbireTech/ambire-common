@@ -3,6 +3,7 @@ import { describe, expect, test } from '@jest/globals'
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
+import { Hex } from '../../interfaces/hex'
 import {
   BenzinUserRequest,
   CallsUserRequest,
@@ -69,7 +70,7 @@ const accounts = [
   }
 ]
 
-const prepareTest = async (seedTestDapp = false) => {
+const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) => {
   const { mainCtrl, eventEmitterRegistry, getWindowId, eventEmitter } = await makeMainController(
     async (storageCtrl) => {
       await storageCtrl.set('accounts', accounts)
@@ -77,6 +78,20 @@ const prepareTest = async (seedTestDapp = false) => {
       if (seedTestDapp) await storageCtrl.set('dappsV2', [TEST_DAPP])
     }
   )
+
+  if (isSelectedAccountSafe) {
+    const selectedAccount = mainCtrl.accounts.accounts.find(
+      (account) => account.addr === '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    )!
+    selectedAccount.creation = null
+    selectedAccount.safeCreation = {
+      factoryAddr: selectedAccount.addr as Hex,
+      singleton: selectedAccount.addr as Hex,
+      saltNonce: '0x00',
+      setupData: '0x',
+      version: '1.4.1'
+    }
+  }
 
   // Mock account states for all accounts
   for (const account of mainCtrl.accounts.accounts) {
@@ -194,6 +209,7 @@ const prepareTest = async (seedTestDapp = false) => {
 
   return {
     selectedAccountCtrl: mainCtrl.selectedAccount,
+    accountsCtrl: mainCtrl.accounts,
     portfolioCtrl: mainCtrl.portfolio,
     controller: mainCtrl.requests,
     getSignAccountOp,
@@ -289,6 +305,103 @@ describe('RequestsController ', () => {
 
     expect(controller.userRequests.length).toBe(1)
     expect(controller.userRequests[0]!.kind).toBe('calls')
+  })
+
+  test('emits the updated calls when adding another request to a queued batch', async () => {
+    const { controller } = await prepareTest()
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    let emittedCallsCount = 0
+    const buildRequest = () =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [
+              {
+                to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+                value: 1n,
+                data: '0x'
+              }
+            ],
+            meta: {
+              accountAddr,
+              chainId: 1n
+            }
+          }
+        }
+      })
+
+    const unsubscribe = controller.onUpdate(() => {
+      const request = controller.userRequests[0]
+      emittedCallsCount =
+        request?.kind === 'calls' ? request.signAccountOp.accountOp.calls.length : 0
+    })
+
+    await buildRequest()
+    expect(emittedCallsCount).toBe(1)
+
+    await buildRequest()
+    unsubscribe()
+    expect(controller.userRequests).toHaveLength(1)
+    expect(emittedCallsCount).toBe(2)
+  })
+
+  test('adds a new Safe request when two partially signed requests occupy earlier nonces', async () => {
+    const { controller, accountsCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+    const buildRequest = () =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [
+              {
+                to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+                value: 1n,
+                data: '0x'
+              }
+            ],
+            meta: {
+              accountAddr,
+              chainId
+            }
+          }
+        }
+      })
+
+    await buildRequest()
+    const nonce119Request = controller.userRequests[0] as CallsUserRequest
+    nonce119Request.signAccountOp.update({
+      accountOpData: {
+        signed: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
+        txnId: `0x${'1'.repeat(64)}`
+      }
+    })
+
+    await buildRequest()
+    const nonce120Request = controller.userRequests.find(
+      (request) => request !== nonce119Request
+    ) as CallsUserRequest
+    nonce120Request.signAccountOp.setSafeNonce(120n)
+    nonce120Request.signAccountOp.update({
+      accountOpData: {
+        signed: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
+        txnId: `0x${'2'.repeat(64)}`
+      }
+    })
+
+    await buildRequest()
+
+    expect(controller.userRequests).toHaveLength(3)
+    expect(controller.userRequests).toContain(nonce119Request)
+    expect(controller.userRequests).toContain(nonce120Request)
+    expect(nonce119Request.signAccountOp.accountOp.nonce).toBe(119n)
+    expect(nonce120Request.signAccountOp.accountOp.nonce).toBe(120n)
+    expect(new Set(controller.userRequests.map((request) => request.id)).size).toBe(3)
   })
   test('build contract deployment dapp request', async () => {
     const { controller } = await prepareTest(true)
@@ -472,6 +585,9 @@ describe('RequestsController ', () => {
     await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
 
     expect(controller.banners).toHaveLength(2)
+    controller.banners.forEach((banner) => {
+      expect(banner.meta?.accountAddr).toEqual('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
+    })
   })
   test('should update visible requests on account change', async () => {
     const { controller, selectedAccountCtrl, getCallsRequest } = await prepareTest()
@@ -545,6 +661,39 @@ describe('RequestsController ', () => {
     expect(controller.requestWindow.windowProps).not.toBe(null)
     await controller.closeRequestWindow()
     expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('should not open a request window while the panel is open', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: () => true }
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+
+    expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
+    expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('should reject the active request on close when there is no request window', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: () => true }
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+    await controller.closeRequestWindow()
+
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.userRequests.length).toBe(0)
+  })
+  test('should keep transaction requests queued on close when there is no request window', async () => {
+    const { controller, uiCtrl, getCallsRequest } = await prepareTest()
+    uiCtrl.panel = { isOpen: () => true }
+    const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+
+    await controller.addUserRequests([SIGN_ACCOUNT_OP_REQUEST])
+    await controller.closeRequestWindow()
+
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.userRequests.length).toBe(1)
   })
   test('removeAccountData', async () => {
     const { controller, getCallsRequest } = await prepareTest()
