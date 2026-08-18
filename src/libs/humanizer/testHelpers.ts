@@ -7,6 +7,7 @@ const stripVisualizationIds = (visualization: HumanizerVisualization): Humanizer
 
   return {
     ...strippedVisualization,
+    titleParts: strippedVisualization.titleParts?.map(stripVisualizationIds),
     rows: strippedVisualization.rows.map((row) => ({
       ...row,
       value: row.value.map(stripVisualizationIds)
