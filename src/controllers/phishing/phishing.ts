@@ -285,10 +285,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#version = phishing.version
     this.#updatedAt = phishing.updatedAt
     this.#domains = new Set(phishing.domains)
-    // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup, regardless of
-    // the casing the relayer (or, for pre-normalization storage, an older app version) used.
-    this.#addresses = new Set(phishing.addresses.map((address: string) => address.toLowerCase()))
-
+    this.#addresses = new Set(phishing.addresses)
     this.updatePhishingInterval.start({ runImmediately: true })
 
     this.isReady = true
