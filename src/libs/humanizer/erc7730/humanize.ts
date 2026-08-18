@@ -298,15 +298,6 @@ const valueToText = (value: unknown): string => {
   }
 }
 
-const interpolatedValueToText = (path: string, value: unknown): string => {
-  const amount = toBigIntOrNull(value)
-  if ((path === '@.value' || path === '#.@.value') && amount !== null) {
-    return formatUnits(amount, 18)
-  }
-
-  return valueToText(value)
-}
-
 const normalizeDecodedParam = (value: unknown, param: ParamType): unknown => {
   if (param.baseType === 'array' && param.arrayChildren) {
     return Array.from(value as ArrayLike<unknown>).map((item) =>
@@ -991,16 +982,11 @@ const findInterpolationField = (
   return null
 }
 
-// Builds the ERC-7730 `interpolatedIntent` title as structured parts instead
-// of plain text: an amount/tokenAmount placeholder becomes a `type: 'token'`
-// part carrying the raw address/amount, and an addressName/interoperableAddressName
-// placeholder becomes a `type: 'address'` part. The UI renders those parts with
-// the same live decimals/symbol/price/ENS lookup it already uses for row values
-// (TokenOrNft, address resolution), so unlike the old text-only interpolation
-// this never needs decimals to be statically known at humanization time (e.g.
-// via the static humanizerInfo registry) - there is no async portfolio/token
-// lookup available at this (pure, synchronous) humanization stage anyway.
-// Every other placeholder still renders as plain text.
+// Builds the ERC-7730 `interpolatedIntent` title as structured parts. Every
+// placeholder uses the same field formatter as its corresponding detail row.
+// Interpolation is all-or-nothing: malformed templates, unresolved paths,
+// fields that are not always visible, or missing formatters return null so the
+// UI can fall back to the static `intent` and its rows.
 const interpolateIntentParts = (
   template: string,
   fields: Erc7730Field[] | undefined,
@@ -1021,80 +1007,71 @@ const interpolateIntentParts = (
 
   while (currentIndex < template.length) {
     const openingBraceIndex = template.indexOf('{', currentIndex)
-    if (openingBraceIndex === -1) {
+    const closingBraceIndex = template.indexOf('}', currentIndex)
+    const nextBraceIndex =
+      openingBraceIndex === -1
+        ? closingBraceIndex
+        : closingBraceIndex === -1
+          ? openingBraceIndex
+          : Math.min(openingBraceIndex, closingBraceIndex)
+
+    if (nextBraceIndex === -1) {
       pushText(template.slice(currentIndex))
       break
     }
 
-    const closingBraceIndex = template.indexOf('}', openingBraceIndex + 1)
-    if (closingBraceIndex === -1) {
-      pushText(template.slice(currentIndex))
-      break
+    pushText(template.slice(currentIndex, nextBraceIndex))
+
+    const brace = template.charAt(nextBraceIndex)
+    const isEscapedBrace = template.charAt(nextBraceIndex + 1) === brace
+    if (isEscapedBrace) {
+      pushText(brace)
+      currentIndex = nextBraceIndex + 2
+      continue
     }
 
-    pushText(template.slice(currentIndex, openingBraceIndex))
+    if (brace === '}') return null
 
-    const path = template.slice(openingBraceIndex + 1, closingBraceIndex).trim()
+    const placeholderEndIndex = template.indexOf('}', nextBraceIndex + 1)
+    if (placeholderEndIndex === -1) return null
+
+    const path = template.slice(nextBraceIndex + 1, placeholderEndIndex).trim()
+    if (!path || path.includes('{')) return null
+
+    const matchingField = findInterpolationField(fields, path, context)
+    if (
+      !matchingField ||
+      (matchingField.visible !== undefined && matchingField.visible !== 'always') ||
+      matchingField.fields?.length ||
+      matchingField.format === 'calldata'
+    ) {
+      return null
+    }
+
     const value = resolvePath(path, context, base)
     if (value === undefined) return null
 
-    const matchingField = findInterpolationField(fields, path, context)
-    const isTokenField =
-      matchingField?.format === 'amount' || matchingField?.format === 'tokenAmount'
-    const isAddressField =
-      matchingField?.format === 'addressName' ||
-      matchingField?.format === 'interoperableAddressName'
-
-    if (isTokenField) {
-      const tokenPart = getInterpolatedTokenPart(matchingField, value, context, base)
-      // A field explicitly declares this placeholder as a token/native amount,
-      // but its token couldn't be resolved - per the spec, a failed
-      // interpolation falls back to the plain `intent` entirely rather than
-      // leaking a raw/unformatted value into the title.
-      if (!tokenPart) return null
-      parts.push(tokenPart)
-    } else if (isAddressField) {
-      const addressPart = getInterpolatedAddressPart(value)
-      // Same reasoning as the token case above: an explicitly declared
-      // address placeholder that fails to resolve must fail the whole
-      // interpolation, not leak a raw hex value into the title.
-      if (!addressPart) return null
-      parts.push(addressPart)
-    } else {
-      pushText(interpolatedValueToText(path, value))
+    const formattedValue = formatFieldValue(matchingField, value, context, base)
+    if (!formattedValue.length) return null
+    if (
+      (matchingField.format === 'amount' || matchingField.format === 'tokenAmount') &&
+      !formattedValue.some((item) => item.type === 'token')
+    ) {
+      return null
     }
+    if (
+      (matchingField.format === 'addressName' ||
+        matchingField.format === 'interoperableAddressName') &&
+      !formattedValue.some((item) => item.type === 'address')
+    ) {
+      return null
+    }
+    parts.push(...formattedValue)
 
-    currentIndex = closingBraceIndex + 1
+    currentIndex = placeholderEndIndex + 1
   }
 
-  return parts
-}
-
-const getInterpolatedTokenPart = (
-  field: Erc7730Field,
-  value: unknown,
-  context: FormatContext,
-  base: unknown
-): HumanizerVisualization | null => {
-  const amount = toBigIntOrNull(value)
-  if (amount === null) return null
-
-  const tokenAddress = getTokenAddressFromField(field, context, base)
-  const resolvedTokenAddress = tokenAddress ?? (field.format === 'amount' ? ZeroAddress : null)
-  if (!resolvedTokenAddress) return null
-
-  return getToken(resolvedTokenAddress, amount, getChainIdFromField(field, context, base))
-}
-
-// Same reasoning as getInterpolatedTokenPart(): an addressName placeholder
-// renders as a `type: 'address'` part so the UI resolves/displays it the same
-// way as row values (ENS lookup, blacklist check, etc.) instead of a raw hex
-// string baked into the title text.
-const getInterpolatedAddressPart = (value: unknown): HumanizerVisualization | null => {
-  if (typeof value === 'bigint') return getAddressVisualization(uintToAddress(value))
-  if (typeof value === 'string' && isAddress(value)) return getAddressVisualization(value)
-
-  return null
+  return parts.length ? parts : null
 }
 
 const formatToVisualizations = (

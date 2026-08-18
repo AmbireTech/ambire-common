@@ -1294,6 +1294,109 @@ describe('ERC-7730 descriptors', () => {
     expect(irCalls[0]!.warnings).toEqual([])
   })
 
+  test.each([
+    {
+      name: 'malformed braces',
+      interpolatedIntent: 'Stake {@.value ETH',
+      fields: [{ label: 'Amount', format: 'amount', path: '@.value' }]
+    },
+    {
+      name: 'a missing field formatter',
+      interpolatedIntent: 'Stake {_referral}',
+      fields: [{ label: 'Amount', format: 'amount', path: '@.value' }]
+    },
+    {
+      name: 'a field that is not always visible',
+      interpolatedIntent: 'Stake {@.value} ETH',
+      fields: [{ label: 'Amount', format: 'amount', path: '@.value', visible: 'optional' as const }]
+    },
+    {
+      name: 'a token amount with an invalid token reference',
+      interpolatedIntent: 'Stake {_referral}',
+      fields: [
+        {
+          label: 'Amount',
+          format: 'tokenAmount',
+          path: '_referral',
+          params: { token: 'not-an-address' }
+        }
+      ]
+    }
+  ])(
+    'falls back to the static intent when interpolation has $name',
+    ({ interpolatedIntent, fields }) => {
+      accountOp.calls = [
+        {
+          to: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
+          value: ethers.parseEther('0.001'),
+          data: '0xa1903eab00000000000000000000000011d00000000000000000000000000000000011d0'
+        }
+      ]
+
+      const irCalls = humanizeAccountOp(accountOp, {
+        erc7730Descriptors: {
+          0: {
+            descriptor: {
+              display: {
+                formats: {
+                  'submit(address _referral)': {
+                    intent: 'Stake ETH',
+                    interpolatedIntent,
+                    fields
+                  }
+                }
+              }
+            }
+          }
+        }
+      })
+      const visualization = irCalls[0]!.fullVisualization?.find((item) => item.type === 'erc7730')
+
+      expect(visualization).toMatchObject({ type: 'erc7730', title: 'Stake ETH' })
+      if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
+      expect(visualization.titleParts).toBeUndefined()
+    }
+  )
+
+  test('supports escaped braces in an interpolated intent', () => {
+    accountOp.calls = [
+      {
+        to: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
+        value: ethers.parseEther('0.001'),
+        data: '0xa1903eab00000000000000000000000011d00000000000000000000000000000000011d0'
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'submit(address _referral)': {
+                  intent: 'Stake ETH',
+                  interpolatedIntent: 'Stake {{ETH}} {@.value}',
+                  fields: [{ label: 'Amount', format: 'amount', path: '@.value' }]
+                }
+              }
+            }
+          }
+        }
+      }
+    })
+    const visualization = irCalls[0]!.fullVisualization?.find((item) => item.type === 'erc7730')
+
+    if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
+    expect(visualization.titleParts?.map((item) => item.content || item.type)).toEqual([
+      'Stake ',
+      '{',
+      'ETH',
+      '}',
+      ' ',
+      'token'
+    ])
+  })
+
   test('does not warn when an ERC-7730 descriptor displays the native transaction value', () => {
     accountOp.calls = [
       {
