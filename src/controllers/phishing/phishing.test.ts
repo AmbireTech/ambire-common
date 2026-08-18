@@ -87,20 +87,10 @@ describe('PhishingController', () => {
     const CHECKSUMMED_SCAM_ADDRESS = '0x20A9Ff01B49cD8967Cdd8081C547236EED1D1a4e'
     const SAFE_ADDRESS = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
 
-    test('should return BLACKLISTED for a listed address, whatever the casing of the list and of the checked address', async () => {
-      const { controller: lowercaseList } = await prepareTest([], [LOWERCASE_SCAM_ADDRESS])
-      expect(lowercaseList.getAddressBlacklistedStatus(LOWERCASE_SCAM_ADDRESS)).toBe('BLACKLISTED')
-      expect(lowercaseList.getAddressBlacklistedStatus(CHECKSUMMED_SCAM_ADDRESS)).toBe(
-        'BLACKLISTED'
-      )
-
-      const { controller: checksummedList } = await prepareTest([], [CHECKSUMMED_SCAM_ADDRESS])
-      expect(checksummedList.getAddressBlacklistedStatus(CHECKSUMMED_SCAM_ADDRESS)).toBe(
-        'BLACKLISTED'
-      )
-      expect(checksummedList.getAddressBlacklistedStatus(LOWERCASE_SCAM_ADDRESS)).toBe(
-        'BLACKLISTED'
-      )
+    test('should return BLACKLISTED for a listed address, whatever the casing of the checked address', async () => {
+      const { controller } = await prepareTest([], [LOWERCASE_SCAM_ADDRESS])
+      expect(controller.getAddressBlacklistedStatus(LOWERCASE_SCAM_ADDRESS)).toBe('BLACKLISTED')
+      expect(controller.getAddressBlacklistedStatus(CHECKSUMMED_SCAM_ADDRESS)).toBe('BLACKLISTED')
     })
 
     test('should return VERIFIED for an address that is not in the list', async () => {

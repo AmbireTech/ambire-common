@@ -152,8 +152,8 @@ const validateSendTransferAddress = (
   }
 
   // A known scam address is the most severe problem, so it takes priority over every other message.
-  // The severity stays 'warning' because 'error' disables the buttons of the form. The user is
-  // stopped by the hold-to-proceed step instead, which keeps the flow the same as the signing step.
+  // The severity is 'error' so that the buttons of the form stay disabled - sending to a known scam
+  // address is never something we let the user proceed with.
   if (isRecipientAddressBlacklisted) {
     return {
       message: 'This address is known for stealing funds. Anything you send to it will be lost.',

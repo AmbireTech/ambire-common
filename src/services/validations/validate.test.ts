@@ -67,13 +67,12 @@ describe('validateSendTransferAddress - recipient domain address change', () => 
 })
 
 describe('validateSendTransferAddress - blacklisted recipient', () => {
-  it('warns when the recipient is in the phishing list', () => {
+  it('errors when the recipient is in the phishing list', () => {
     const result = validate({ isRecipientAddressBlacklisted: true })
 
     expect(result.message).toBe(BLACKLISTED_MESSAGE)
-    // Not 'error', because an error severity disables the buttons of the transfer form. The user is
-    // stopped by the hold-to-proceed step instead.
-    expect(result.severity).toBe('warning')
+    // 'error' keeps the buttons of the transfer form disabled, so the user cannot proceed.
+    expect(result.severity).toBe('error')
   })
 
   it('takes priority over every other recipient message', () => {
