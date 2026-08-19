@@ -611,6 +611,116 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  // Real world tx (mainnet) calling LI.FI Diamond's swapTokensSingleV3NativeToERC20
+  // (selector 0xaf7060fd - confirmed via 4byte.directory). Descriptor fields below
+  // are copied verbatim from the LI.FI entry in the ERC-7730 registry:
+  // https://github.com/ethereum/clear-signing-erc7730-registry/blob/master/registry/lifi/calldata-LIFIDiamond.json
+  // The descriptor's "interpolatedIntent" - "Swap {@.value} for at least
+  // {_minAmountOut} to {_receiver}" - exercises interpolateIntentParts()'s
+  // per-spec field lookup: {_minAmountOut} resolves through the "Minimum to
+  // Receive" field's tokenAmount format/tokenPath, so it renders as a `type:
+  // 'token'` titleParts item, matching the "Minimum to Receive" row below.
+  // `title` itself stays the plain, non-interpolated "Swap" intent.
+  test('humanizes a LI.FI swapTokensSingleV3NativeToERC20 call with its ERC-7730 registry descriptor', () => {
+    accountOp.calls = [
+      {
+        to: '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE',
+        value: 5837776470906329n,
+        data: '0xaf7060fdedbb23ef4269219df4d4d0183bea7af79cc46298a7df01a4e949e02b9384f19b00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001000000000000000000000000006969174fd72466430a46e18234d0b530c9fd5f490000000000000000000000000000000000000000000000000014bd6d40d395d900000000000000000000000000000000000000000000000000000000000001600000000000000000000000000000000000000000000000000000000000000015616d626972652d657874656e73696f6e2d70726f640000000000000000000000000000000000000000000000000000000000000000000000000000000000002a307830303030303030303030303030303030303030303030303030303030303030303030303030303030000000000000000000000000000000000000000000000000000000000000000000005c57cf61e473ae865e733a3a23fbb7618b4621f60000000000000000000000005c57cf61e473ae865e733a3a23fbb7618b4621f60000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000000000000000000000000000000014bd6d40d395d900000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000004d0e30db000000000000000000000000000000000000000000000000000000000'
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: {
+          path: 'registry/lifi/calldata-LIFIDiamond.json',
+          descriptor: {
+            display: {
+              formats: {
+                'swapTokensSingleV3NativeToERC20(bytes32 _transactionId, string _integrator, string _referrer, address _receiver, uint256 _minAmountOut, (address callTo, address approveTo, address sendingAssetId, address receivingAssetId, uint256 fromAmount, bytes callData, bool requiresDeposit) _swapData)':
+                  {
+                    intent: 'Swap',
+                    interpolatedIntent:
+                      'Swap {@.value} for at least {_minAmountOut} to {_receiver}',
+                    fields: [
+                      { path: '@.value', label: 'Amount to send', format: 'amount' },
+                      {
+                        path: '_minAmountOut',
+                        label: 'Minimum to Receive',
+                        format: 'tokenAmount',
+                        params: { tokenPath: '_swapData.receivingAssetId' },
+                        visible: 'always'
+                      },
+                      {
+                        path: '_receiver',
+                        label: 'Recipient',
+                        format: 'addressName',
+                        params: { types: ['eoa', 'contract'], sources: ['local', 'ens'] },
+                        visible: 'always'
+                      },
+                      { path: '_transactionId', label: 'Transaction Id', visible: 'never' },
+                      { path: '_integrator', label: 'Integrator', visible: 'never' },
+                      { path: '_referrer', label: 'Referrer', visible: 'never' },
+                      {
+                        path: '_swapData.callData',
+                        label: 'Swap Data Call Data',
+                        visible: 'never'
+                      },
+                      { path: '_swapData.callTo', label: 'Swap Data Call To', visible: 'never' },
+                      {
+                        path: '_swapData.approveTo',
+                        label: 'Swap Data Approve To',
+                        visible: 'never'
+                      },
+                      {
+                        path: '_swapData.requiresDeposit',
+                        label: 'Swap Data Requires Deposit',
+                        visible: 'never'
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization(
+          'Swap',
+          [
+            {
+              label: 'Amount to send',
+              value: [getToken(ZeroAddress, 5837776470906329n, 1n)]
+            },
+            {
+              label: 'Minimum to Receive',
+              value: [getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n)]
+            },
+            {
+              label: 'Recipient',
+              value: [getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')]
+            }
+          ],
+          undefined,
+          // Structured title parts, so the UI can render the two amounts as
+          // `type: 'token'` items (live decimals/symbol lookup via TokenOrNft)
+          // instead of relying on a static, possibly incomplete token registry.
+          [
+            getAction('Swap '),
+            getToken(ZeroAddress, 5837776470906329n, 1n),
+            getText(' for at least '),
+            getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n),
+            getText(' to '),
+            getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')
+          ]
+        )
+      ]
+    ])
+  })
+
   test('adds the native transaction value when it is not already displayed', async () => {
     const call = {
       ...transactions.erc20[1]!,
@@ -1168,15 +1278,123 @@ describe('ERC-7730 descriptors', () => {
 
     compareHumanizerVisualizations(irCalls, [
       [
-        getErc7730Visualization('Stake 0.001 ETH', [
-          {
-            label: 'Amount',
-            value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
-          }
-        ])
+        getErc7730Visualization(
+          'Stake ETH',
+          [
+            {
+              label: 'Amount',
+              value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
+            }
+          ],
+          undefined,
+          [getAction('Stake '), getToken(ZeroAddress, 1000000000000000n, 1n), getText(' ETH')]
+        )
       ]
     ])
     expect(irCalls[0]!.warnings).toEqual([])
+  })
+
+  test.each([
+    {
+      name: 'malformed braces',
+      interpolatedIntent: 'Stake {@.value ETH',
+      fields: [{ label: 'Amount', format: 'amount', path: '@.value' }]
+    },
+    {
+      name: 'a missing field formatter',
+      interpolatedIntent: 'Stake {_referral}',
+      fields: [{ label: 'Amount', format: 'amount', path: '@.value' }]
+    },
+    {
+      name: 'a field that is not always visible',
+      interpolatedIntent: 'Stake {@.value} ETH',
+      fields: [{ label: 'Amount', format: 'amount', path: '@.value', visible: 'optional' as const }]
+    },
+    {
+      name: 'a token amount with an invalid token reference',
+      interpolatedIntent: 'Stake {_referral}',
+      fields: [
+        {
+          label: 'Amount',
+          format: 'tokenAmount',
+          path: '_referral',
+          params: { token: 'not-an-address' }
+        }
+      ]
+    }
+  ])(
+    'falls back to the static intent when interpolation has $name',
+    ({ interpolatedIntent, fields }) => {
+      accountOp.calls = [
+        {
+          to: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
+          value: ethers.parseEther('0.001'),
+          data: '0xa1903eab00000000000000000000000011d00000000000000000000000000000000011d0'
+        }
+      ]
+
+      const irCalls = humanizeAccountOp(accountOp, {
+        erc7730Descriptors: {
+          0: {
+            descriptor: {
+              display: {
+                formats: {
+                  'submit(address _referral)': {
+                    intent: 'Stake ETH',
+                    interpolatedIntent,
+                    fields
+                  }
+                }
+              }
+            }
+          }
+        }
+      })
+      const visualization = irCalls[0]!.fullVisualization?.find((item) => item.type === 'erc7730')
+
+      expect(visualization).toMatchObject({ type: 'erc7730', title: 'Stake ETH' })
+      if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
+      expect(visualization.titleParts).toBeUndefined()
+    }
+  )
+
+  test('supports escaped braces in an interpolated intent', () => {
+    accountOp.calls = [
+      {
+        to: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
+        value: ethers.parseEther('0.001'),
+        data: '0xa1903eab00000000000000000000000011d00000000000000000000000000000000011d0'
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'submit(address _referral)': {
+                  intent: 'Stake ETH',
+                  interpolatedIntent: 'Stake {{ETH}} {@.value}',
+                  fields: [{ label: 'Amount', format: 'amount', path: '@.value' }]
+                }
+              }
+            }
+          }
+        }
+      }
+    })
+    const visualization = irCalls[0]!.fullVisualization?.find((item) => item.type === 'erc7730')
+
+    if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
+    expect(visualization.titleParts?.map((item) => item.content || item.type)).toEqual([
+      'Stake ',
+      '{',
+      'ETH',
+      '}',
+      ' ',
+      'token'
+    ])
   })
 
   test('does not warn when an ERC-7730 descriptor displays the native transaction value', () => {
@@ -4196,17 +4414,19 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
-  // Real Base mainnet SafeTx multisend (4 calls: Safe self-setup x2, an ERC-20 approval and an
-  // unrecognized settlement call) captured to catch a regression where calls that no humanizer
-  // module could recognize were silently dropped instead of falling back to an address+selector row.
+  // Real Base mainnet SafeTx multisend (4 calls: Safe self-setup x2 and an ERC-20 approval), with
+  // the last call swapped for a call to an unknown contract with an unknown selector, to catch a
+  // regression where calls that no humanizer module could recognize were silently dropped instead
+  // of falling back to an address+selector row.
   test('keeps all 4 calls of a real SafeTx multisend after humanization', async () => {
     const safeAddress = '0x2c5d356f2244b942c72ddfccbfa2e61529dc9c8d'
     const multiSend = '0x9641d764fc13c8b624c04430c7356c1c7c8102e2'
     const usdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
     const spender = '0xc92e8bdf79f0507f65a392b0ab4667716bfe0110'
     const settlementContract = '0xfdafc9d1902f4e0b84f65f49f244b32b31013b74'
+    const undecodableContract = '0xa1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
     const multiSendData =
-      '0x8d80ff0a00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000464002c5d356f2244b942c72ddfccbfa2e61529dc9c8d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000024f08a03230000000000000000000000002f55e8b20d0b9fefa187aa7d00b6cbe563605bf5002c5d356f2244b942c72ddfccbfa2e61529dc9c8d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000443365582cd72ffa789b6fae41254d0b5a13e6e1e92ed947ec6a251edf1cf0b6c02c257b4b000000000000000000000000fdafc9d1902f4e0b84f65f49f244b32b31013b7400833589fcd6edb6e08f4c7c32d4f71b54bda0291300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe0110ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00fdafc9d1902f4e0b84f65f49f244b32b31013b74000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002640d0d9800000000000000000000000000000000000000000000000000000000000000008000000000000000000000000052ed56da04309aca4c3fecc595298d80c2f16bac000000000000000000000000000000000000000000000000000000000000024000000000000000000000000000000000000000000000000000000000000000010000000000000000000000006cf1e9ca41f7611def408122793c358a3d11e5a50000000000000000000000000000000000000000000000000000019fa3b9fe0100000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000140000000000000000000000000833589fcd6edb6e08f4c7c32d4f71b54bda02913000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000002c5d356f2244b942c72ddfccbfa2e61529dc9c8d00000000000000000000000000000000000000000000000000000000000f55c80000000000000000000000000000000000000000000000000001a02678851ac10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000007080000000000000000000000000000000000000000000000000000000000000000d1735c8b769e3b06acd45b0c09c76b4961b8215a15d6eaeefa05593ab382156500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+      '0x8d80ff0a00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000244002c5d356f2244b942c72ddfccbfa2e61529dc9c8d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000024f08a03230000000000000000000000002f55e8b20d0b9fefa187aa7d00b6cbe563605bf5002c5d356f2244b942c72ddfccbfa2e61529dc9c8d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000443365582cd72ffa789b6fae41254d0b5a13e6e1e92ed947ec6a251edf1cf0b6c02c257b4b000000000000000000000000fdafc9d1902f4e0b84f65f49f244b32b31013b7400833589fcd6edb6e08f4c7c32d4f71b54bda0291300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe0110ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00a1b2c3d4e5f60718293a4b5c6d7e8f901234567800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044b0f3f1c2000000000000000000000000000000000000000000000000000000000000002a0000000000000000000000006cf1e9ca41f7611def408122793c358a3d11e5a500000000000000000000000000000000000000000000000000000000'
 
     const safeTxMessage = {
       fromRequestId: 1,
@@ -4312,24 +4532,11 @@ describe('ERC-7730 descriptors', () => {
                 value: [getAddressVisualization(spender)]
               }
             ]),
-            getErc7730Visualization('Create CoW TWAP order', [
+            // The call no humanizer module can decode falls back to a plain "Interacting with" row
+            getErc7730Visualization('Interacting', [
               {
-                label: 'Create CoW TWAP order',
-                value: [getToken(usdc, 2010000n, 8453n)]
-              },
-              {
-                label: 'For at least',
-                value: [
-                  getToken(
-                    '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-                    915124135802242n,
-                    8453n
-                  )
-                ]
-              },
-              {
-                label: 'And send it to',
-                value: [getAddressVisualization(safeAddress)]
+                label: 'With',
+                value: [getAddressVisualization(undecodableContract)]
               }
             ])
           ]

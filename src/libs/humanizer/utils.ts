@@ -82,9 +82,10 @@ export function getText(text: string, mlMi?: boolean): HumanizerVisualization {
 export function getErc7730Visualization(
   title: string | undefined,
   rows: HumanizerErc7730Row[],
-  dapp?: IrCall['dapp']
+  dapp?: IrCall['dapp'],
+  titleParts?: HumanizerVisualization[]
 ): HumanizerVisualization {
-  return { type: 'erc7730', title, dapp, rows, id: randomId() }
+  return { type: 'erc7730', title, titleParts, dapp, rows, id: randomId() }
 }
 
 export function flattenHumanizerVisualizations(

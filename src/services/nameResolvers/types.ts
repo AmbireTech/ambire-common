@@ -45,6 +45,12 @@ export interface NameResolver {
   readonly capabilities: { reverse: boolean; avatar: boolean; expiry: boolean }
   matches(domain: string): boolean
   /**
+   * Normalizes a name to this service's own canonical form. Returns null when the input isn't a valid
+   * name for the service. Each service owns its own normalization rules (ENS-compatible services use
+   * ENSIP-15); this keeps the controller and UI provider-agnostic rather than assuming ENS everywhere.
+   */
+  normalize(domain: string): string | null
+  /**
    * The chain this service resolves on for the given network mode, or undefined for a chain-agnostic
    * service. Lets the controller (which owns the enabled-networks list) detect a disabled network
    * before attempting resolution, without learning anything provider-specific.

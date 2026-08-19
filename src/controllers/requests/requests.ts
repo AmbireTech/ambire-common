@@ -1146,7 +1146,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.#selectedAccount.account,
         accountState,
         network,
-        this.#featureFlags.isFeatureEnabled('erc4337')
+        this.#featureFlags.isFeatureEnabled('erc4337'),
+        this.#featureFlags.isFeatureEnabled('eip7702')
       )
       const accountAddr = getAddress(request.params[0].from)
 
@@ -1215,7 +1216,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       userRequest = {
-        id: new Date().getTime(),
+        id: generateUuid(),
         kind: 'message',
         meta: { params: { message: msg[0] }, accountAddr: msgAddress, chainId: network.chainId },
         dappPromises: [
@@ -1366,7 +1367,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       userRequest = {
-        id: new Date().getTime(),
+        id: generateUuid(),
         kind: 'typedMessage',
         meta: {
           params: {
@@ -1382,7 +1383,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       } as TypedMessageUserRequest
     } else {
       userRequest = {
-        id: new Date().getTime(),
+        id: generateUuid(),
         kind,
         meta: { params: request.params },
         dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
@@ -1470,7 +1471,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.#selectedAccount.account,
       accountState,
       this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
 
     const requestParams = getIntentRequestParams({
@@ -1620,7 +1622,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.#selectedAccount.account,
       accountState,
       this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
 
     const callsRequestParams = getTransferRequestParams({
@@ -1705,7 +1708,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.#selectedAccount.account,
           accountState,
           network,
-          this.#featureFlags.isFeatureEnabled('erc4337')
+          this.#featureFlags.isFeatureEnabled('erc4337'),
+          this.#featureFlags.isFeatureEnabled('eip7702')
         )
         const swapAndBridgeRequestParams = await getSwapAndBridgeRequestParams(
           transaction,
