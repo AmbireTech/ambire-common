@@ -217,6 +217,32 @@ export const decryptStoredSeed = async (
 }
 
 /**
+ * Unwraps the main key of another device from a scanned accounts sync payload. Imported
+ * as non-extractable and for decryption only, so that its raw bytes never reach the
+ * importing app and it cannot be used to encrypt anything - decrypting the synced keys
+ * and seeds is all it is ever needed for.
+ */
+export const decryptSyncedMainKeyWithSecret = async (
+  secretKey: Uint8Array<ArrayBuffer>,
+  aesEncrypted: AESGCMEncrypted
+): Promise<MainKey> => {
+  const importedSecretKey = await crypto.subtle.importKey(
+    'raw',
+    // use 256 bits (first 32 bytes)
+    secretKey.slice(0, 32),
+    { name: CIPHER },
+    false,
+    ['decrypt']
+  )
+
+  const decrypted = await decryptWithKey(importedSecretKey, aesEncrypted)
+
+  return crypto.subtle.importKey('raw', decrypted.slice(0, 32), { name: CIPHER }, false, [
+    'decrypt'
+  ])
+}
+
+/**
  * Used during migration to read legacy payloads
  */
 export const decryptWithKeyOld = async (

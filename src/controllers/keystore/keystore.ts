@@ -12,6 +12,7 @@ import {
   CIPHER_OLD,
   decryptMainKeyWithSecret,
   decryptStoredSeed,
+  decryptSyncedMainKeyWithSecret,
   decryptWithKey,
   deriveSecret,
   encryptMainKeyWithSecret,
@@ -398,6 +399,17 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
+   * Unwraps the main key of another device from a scanned accounts sync payload, with the
+   * same wrong password handling as unlocking this device.
+   */
+  async #unwrapSyncedMainKey(
+    secretKey: Uint8Array<ArrayBuffer>,
+    aesEncrypted: AESGCMEncrypted
+  ): Promise<MainKey> {
+    return this.#decryptMainKeyWithSecret(secretKey, aesEncrypted, decryptSyncedMainKeyWithSecret)
+  }
+
+  /**
    * Decrypts a main key wrapped with the provided secret, translating a wrong
    * secret into the user facing "Incorrect password" error. Used both when
    * unlocking this device and when importing keys synced from another device
@@ -405,10 +417,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    */
   async #decryptMainKeyWithSecret(
     secretKey: Uint8Array<ArrayBuffer>,
-    aesEncrypted: AESGCMEncrypted
+    aesEncrypted: AESGCMEncrypted,
+    decrypt: typeof decryptMainKeyWithSecret = decryptMainKeyWithSecret
   ): Promise<MainKey> {
     try {
-      return await decryptMainKeyWithSecret(secretKey, aesEncrypted)
+      return await decrypt(secretKey, aesEncrypted)
     } catch (error: any) {
       // Either wrong password or corrupted/tampered ciphertext
       if (error?.name === 'OperationError') {
@@ -1294,52 +1307,61 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       throw new Error('keystore: synced main key is not encrypted with GCM')
 
     const secretKey = await deriveSecret(this.#scryptAdapter, password, secret.scryptParams.salt)
-    // The exporting device's main key. Kept in this scope only, never persisted.
-    const exportedMainKey = await this.#decryptMainKeyWithSecret(secretKey, secret.aesEncrypted)
-
-    // Seeds first, so the keys below can be linked to the seed they were derived from
-    const syncedSeedIds: { [exportedSeedId: string]: StoredKeystoreSeed['id'] } = {}
-    for (const seed of seeds) {
-      const { seed: decryptedSeed, seedPassphrase } = await decryptStoredSeed(exportedMainKey, seed)
-
-      syncedSeedIds[seed.id] = await this.#storeSyncedSeed({
-        id: seed.id,
-        seed: decryptedSeed,
-        seedPassphrase,
-        hdPathTemplate: seed.hdPathTemplate,
-        notBackedUp: seed.notBackedUp
-      })
-    }
-
-    const internalKeys: ReadyToAddKeys['internal'] = []
-    const externalKeys: ReadyToAddKeys['external'] = []
-
-    for (const key of keys) {
-      if (key.type !== 'internal') {
-        externalKeys.push(key)
-        continue
-      }
-
-      const { fromSeedId, ...restMeta } = key.meta
-      // Drop the reference if the seed didn't come along, so it doesn't dangle
-      const syncedFromSeedId = fromSeedId ? syncedSeedIds[fromSeedId] : undefined
-
-      internalKeys.push({
-        addr: key.addr,
-        type: 'internal',
-        label: key.label,
-        dedicatedToOneSA: key.dedicatedToOneSA,
-        privateKey: hexlify(await decryptWithKey(exportedMainKey, key.privKey)),
-        meta: syncedFromSeedId ? { ...restMeta, fromSeedId: syncedFromSeedId } : restMeta
-      })
-    }
+    // The exporting device's main key. Kept in this scope only, never persisted, and only
+    // able to decrypt, so its bytes never reach this app.
+    const exportedMainKey = await this.#unwrapSyncedMainKey(secretKey, secret.aesEncrypted)
 
     try {
+      // Seeds first, so the keys below can be linked to the seed they were derived from
+      const syncedSeedIds: { [exportedSeedId: string]: StoredKeystoreSeed['id'] } = {}
+      for (const seed of seeds) {
+        const { seed: decryptedSeed, seedPassphrase } = await decryptStoredSeed(
+          exportedMainKey,
+          seed
+        )
+
+        syncedSeedIds[seed.id] = await this.#storeSyncedSeed({
+          id: seed.id,
+          seed: decryptedSeed,
+          seedPassphrase,
+          hdPathTemplate: seed.hdPathTemplate,
+          notBackedUp: seed.notBackedUp
+        })
+      }
+
+      const internalKeys: ReadyToAddKeys['internal'] = []
+      const externalKeys: ReadyToAddKeys['external'] = []
+
+      for (const key of keys) {
+        if (key.type !== 'internal') {
+          externalKeys.push(key)
+          continue
+        }
+
+        const { fromSeedId, ...restMeta } = key.meta
+        // Drop the reference if the seed didn't come along, so it doesn't dangle
+        const syncedFromSeedId = fromSeedId ? syncedSeedIds[fromSeedId] : undefined
+
+        internalKeys.push({
+          addr: key.addr,
+          type: 'internal',
+          label: key.label,
+          dedicatedToOneSA: key.dedicatedToOneSA,
+          privateKey: hexlify(await decryptWithKey(exportedMainKey, key.privKey)),
+          meta: syncedFromSeedId ? { ...restMeta, fromSeedId: syncedFromSeedId } : restMeta
+        })
+      }
+
       // Both queue themselves until the keystore is ready to store keys, which is what
       // makes syncing before the device password is set (onboarding) work
       await this.#addKeys(internalKeys)
       await this.#addKeysExternallyStored(externalKeys)
     } finally {
+      // Everything is re-encrypted with this device's main key by now, so the key derived
+      // from the other device's password is of no further use and gets wiped. Its main key
+      // itself is a non-extractable handle that goes out of scope with this method, so
+      // there are no bytes of it left to wipe
+      secretKey.fill(0)
       this.emitUpdate()
     }
   }
