@@ -2,8 +2,6 @@ import { Wallet, ZeroAddress } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
-import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
-
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
@@ -16,6 +14,8 @@ import {
 } from '../../interfaces/userRequest'
 import { generateUuid } from '../../utils/uuid'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+
+import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 import type { AccountOp } from '../../libs/accountOp/accountOp'
 
@@ -509,7 +509,7 @@ describe('RequestsController ', () => {
     await request.signAccountOp.forceEmitUpdate()
     unsubscribe()
 
-    expect(emittedHumanizationLabels).toEqual(['Transaction details'])
+    expect(emittedHumanizationLabels).toEqual(['Empty call to'])
     request.signAccountOp.destroy()
   })
 
