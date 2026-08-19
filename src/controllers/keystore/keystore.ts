@@ -715,24 +715,24 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   async persistTempSeed() {
     if (!this.#tempSeed) return
 
-    await this.#addSeed(this.#tempSeed)
+    await this.#addSeeds([this.#tempSeed])
     this.#tempSeed = null
     this.emitUpdate()
   }
 
   /**
-   * Adds a seed to the keystore and returns the id it is stored with. An `id` can be
-   * passed to preserve the id a seed already had on another device (accounts sync),
-   * so that the synced keys' `meta.fromSeedId` keeps pointing to it.
+   * Adds seeds to the keystore in a single storage write and returns the ids they are
+   * stored with, in the order they were passed. An `id` can be passed per seed to
+   * preserve the id it already had on another device (accounts sync), so that the
+   * synced keys' `meta.fromSeedId` keeps pointing to it.
    */
-  async #addSeed({
-    seed,
-    seedPassphrase,
-    hdPathTemplate,
-    notBackedUp,
-    id
-  }: KeystoreTempSeed & { id?: StoredKeystoreSeed['id'] }): Promise<StoredKeystoreSeed['id']> {
+  async #addSeeds(
+    seedsToAdd: (KeystoreTempSeed & { id?: StoredKeystoreSeed['id'] })[],
+    shouldEmitUpdate: boolean = true
+  ): Promise<StoredKeystoreSeed['id'][]> {
     await this.initialLoadPromise
+
+    if (!seedsToAdd.length) return []
 
     if (this.#mainKey === null)
       throw new EmittableError({
@@ -741,7 +741,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         error: new Error('keystore: needs to be unlocked')
       })
 
-    if (!Mnemonic.isValidMnemonic(seed)) {
+    if (seedsToAdd.some(({ seed }) => !Mnemonic.isValidMnemonic(seed))) {
       throw new EmittableError({
         message:
           'The provided seed phrase is invalid. Try again with a valid seed or contact support if you think this is a mistake.',
@@ -750,35 +750,49 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       })
     }
 
-    const existingEntry = await this.#findStoredSeed(seed, seedPassphrase)
-    if (existingEntry) return existingEntry.id
+    const seedsBeforeAdd = [...this.#keystoreSeeds]
+    const ids: StoredKeystoreSeed['id'][] = []
 
-    const entropy = extractEntropyFromSeed(seed)
+    try {
+      // Entries are pushed as they are built, so that duplicates and labels are
+      // resolved against the seeds added earlier in the same batch as well
+      for (const { seed, seedPassphrase, hdPathTemplate, notBackedUp, id } of seedsToAdd) {
+        const existingEntry = await this.#findStoredSeed(seed, seedPassphrase)
+        if (existingEntry) {
+          ids.push(existingEntry.id)
+          continue
+        }
 
-    const label = `Recovery Phrase ${this.#keystoreSeeds.length + 1}`
+        const newEntry: StoredKeystoreSeed = {
+          id: id || generateUuid(),
+          label: `Recovery Phrase ${this.#keystoreSeeds.length + 1}`,
+          seed: await encryptWithKey(this.#mainKey, extractEntropyFromSeed(seed)),
+          seedPassphrase: seedPassphrase
+            ? await encryptWithKey(this.#mainKey, new TextEncoder().encode(seedPassphrase))
+            : null,
+          hdPathTemplate,
+          notBackedUp
+        }
 
-    const newEntry: StoredKeystoreSeed = {
-      id: id || generateUuid(),
-      label,
-      seed: await encryptWithKey(this.#mainKey, entropy),
-      seedPassphrase: seedPassphrase
-        ? await encryptWithKey(this.#mainKey, new TextEncoder().encode(seedPassphrase))
-        : null,
-      hdPathTemplate,
-      notBackedUp
+        this.#keystoreSeeds.push(newEntry)
+        ids.push(newEntry.id)
+      }
+    } catch (error) {
+      // Nothing has been persisted yet, so the in-memory seeds are rolled back to
+      // keep them in sync with storage
+      this.#keystoreSeeds = seedsBeforeAdd
+      throw error
     }
-
-    this.#keystoreSeeds.push(newEntry)
 
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
-    this.emitUpdate()
+    if (shouldEmitUpdate) this.emitUpdate()
 
-    return newEntry.id
+    return ids
   }
 
   async addSeed(keystoreSeed: KeystoreTempSeed) {
-    await this.withStatus('addSeed', () => this.#addSeed(keystoreSeed), true)
+    await this.withStatus('addSeed', () => this.#addSeeds([keystoreSeed]), true)
   }
 
   /**
@@ -799,9 +813,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     try {
       // Seeds first, so the keys can keep pointing to the seed they were derived from
-      for (const seed of seedsToAdd) {
-        await this.#addSeed(seed)
-      }
+      await this.#addSeeds(seedsToAdd, false)
       await this.#addKeys(internalKeysToAdd)
       await this.#addKeysExternallyStored(externalKeysToAdd)
     } catch (error: any) {
@@ -1349,7 +1361,9 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       return seed.id
     }
 
-    return this.#addSeed(seed)
+    const [storedSeedId] = await this.#addSeeds([seed])
+
+    return storedSeedId
   }
 
   async getSigner(keyAddress: Key['addr'], keyType: Key['type']): Promise<KeystoreSignerInterface> {
