@@ -550,18 +550,14 @@ describe('accounts sync between two devices', () => {
   const importingPass = 'importingDevicePass'
 
   let exportingKeystore: IKeystoreController
+  let exportingStore: ReturnType<typeof produceMemoryStore>
   let importingKeystore: IKeystoreController
   let exportedSeedId: string
 
   const uiCtrl = new UiController({ uiManager })
 
-  const createKeystore = () =>
-    new KeystoreController(
-      'default',
-      new StorageController(produceMemoryStore()),
-      keystoreSigners,
-      uiCtrl
-    )
+  const createKeystore = (store = produceMemoryStore()) =>
+    new KeystoreController('default', new StorageController(store), keystoreSigners, uiCtrl)
 
   // The in-memory store resolves writes immediately, which hides ordering a real
   // (async) device store would expose
@@ -580,7 +576,8 @@ describe('accounts sync between two devices', () => {
       .then((exported) => ({ v: 1 as const, accounts: [], ...exported }))
 
   beforeEach(async () => {
-    exportingKeystore = createKeystore()
+    exportingStore = produceMemoryStore()
+    exportingKeystore = createKeystore(exportingStore)
     await exportingKeystore.addSecret('password', exportingPass, '', false)
     await exportingKeystore.unlockWithSecret('password', exportingPass)
 
@@ -620,18 +617,42 @@ describe('accounts sync between two devices', () => {
     importingKeystore = createKeystore()
   })
 
-  test('exports the selected keys, their seed and the password wrapped main key', async () => {
+  test('exports the selected keys, their seed and the password wrapped transfer key', async () => {
     const exported = await exportingKeystore.exportForSync([keyPublicAddress])
 
-    expect(exported.secret.id).toBe('password')
-    expect(exported.secret.aesEncrypted.cipherType).toBe('AES-GCM')
-    // The private key must leave the device encrypted, exactly as it is stored
+    expect(exported.transferKey.aesEncrypted.cipherType).toBe('AES-GCM')
+    expect(typeof exported.transferKey.scryptParams.salt).toBe('string')
+    // The private key must leave the device encrypted
     expect(exported.keys).toHaveLength(1)
     expect(exported.keys[0]!.addr).toBe(keyPublicAddress)
     expect(exported.keys[0]!.privKey).toMatchObject({ cipherType: 'AES-GCM' })
     expect(JSON.stringify(exported)).not.toContain(privKey)
     // Only the seed the exported key was derived from
     expect(exported.seeds.map((s) => s.id)).toEqual([exportedSeedId])
+  })
+
+  test('never lets the main key of the exporting device travel', async () => {
+    const exported = await exportingKeystore.exportForSync([keyPublicAddress])
+
+    // Whoever films the QR codes and cracks the password must not end up with the key
+    // that decrypts everything this device stores, now and in the future
+    const storedSecrets: any = await exportingStore.get('keystoreSecrets')
+    expect(JSON.stringify(exported)).not.toContain(storedSecrets[0].aesEncrypted.ciphertext)
+
+    // The payload is keyed per export, so two exports share no ciphertext either
+    const secondExport = await exportingKeystore.exportForSync([keyPublicAddress])
+    expect(secondExport.transferKey.aesEncrypted.ciphertext).not.toBe(
+      exported.transferKey.aesEncrypted.ciphertext
+    )
+    expect(secondExport.keys[0]!.privKey).not.toEqual(exported.keys[0]!.privKey)
+  })
+
+  test('re-encrypts the exported keys away from how they are stored', async () => {
+    const exported = await exportingKeystore.exportForSync([keyPublicAddress])
+    const storedKeys: any = await exportingStore.get('keystoreKeys')
+    const storedKey = storedKeys.find((k: any) => k.addr === keyPublicAddress)
+
+    expect(exported.keys[0]!.privKey).not.toEqual(storedKey.privKey)
   })
 
   test('does not export keys that were not selected', async () => {
@@ -668,6 +689,25 @@ describe('accounts sync between two devices', () => {
       await expect(biometricsOnlyKeystore.exportForSync([keyPublicAddress])).rejects.toThrow(
         'Set a password for this device before syncing your accounts.'
       )
+    })
+
+    test('asks for the password once when it was never typed on this device', async () => {
+      await exportingKeystore.addSecret('biometrics', 'biometricsSecret', '', true)
+      // A device that last unlocked with biometrics has no stored password derived key,
+      // so there is nothing to wrap the transfer key with
+      await exportingStore.set('keystorePasswordSecretKey', null)
+
+      const biometricsSession = createKeystore(exportingStore)
+      await biometricsSession.unlockWithSecret('biometrics', 'biometricsSecret')
+
+      await expect(biometricsSession.exportForSync([keyPublicAddress])).rejects.toThrow(
+        'Unlock the app with your password once before syncing your accounts.'
+      )
+
+      // Typing the password once stores it, and the export works from then on
+      await biometricsSession.unlockWithSecret('password', exportingPass)
+
+      await expect(biometricsSession.exportForSync([keyPublicAddress])).resolves.toBeDefined()
     })
 
     test('does not import anything when the password of the other device is wrong', async () => {

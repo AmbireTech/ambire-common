@@ -2,11 +2,7 @@ import { hexlify, isAddress, toUtf8Bytes, toUtf8String } from 'ethers'
 import { gzip, Inflate } from 'pako'
 
 import { Account } from '../../interfaces/account'
-import {
-  MainKeyEncryptedWithSecret,
-  StoredKey,
-  StoredKeystoreSeed
-} from '../../interfaces/keystore'
+import { AccountsSyncTransferKey, StoredKey, StoredKeystoreSeed } from '../../interfaces/keystore'
 import { CIPHER, tryParseGcmPayload } from '../keystore/keystore'
 
 /**
@@ -18,15 +14,17 @@ export const ACCOUNTS_SYNC_PAYLOAD_VERSION = 1
 
 /**
  * Everything needed to move accounts (and the keys controlling them) from one
- * Ambire product to another. Sensitive data travels exactly as it is stored:
- * private keys and seeds stay encrypted with the exporting device's main key,
- * which itself travels wrapped with the exporting device's password (`secret`).
- * The importing device unwraps the main key with that password, decrypts and
- * re-encrypts everything with its own main key.
+ * Ambire product to another. Private keys and seeds are re-encrypted with a one-time
+ * transfer key generated for this export alone, which itself travels wrapped with the
+ * exporting device's password. The importing device unwraps the transfer key with that
+ * password, decrypts everything and re-encrypts it with its own main key.
+ *
+ * The exporting device's main key never travels, so a leaked payload exposes only the
+ * accounts inside it, and never the device it came from.
  */
 export type AccountsSyncPayload = {
   v: typeof ACCOUNTS_SYNC_PAYLOAD_VERSION
-  secret: MainKeyEncryptedWithSecret
+  transferKey: AccountsSyncTransferKey
   accounts: Account[]
   keys: StoredKey[]
   seeds: StoredKeystoreSeed[]
@@ -37,11 +35,10 @@ const requireGcmPayload = (payload: any, what: string) => {
     throw new Error(`accountsSync: ${what} is not encrypted with ${CIPHER}`)
 }
 
-const validateSecret = (secret: any) => {
-  if (!secret || secret.id !== 'password')
-    throw new Error('accountsSync: missing the password protected main key')
+const validateTransferKey = (transferKey: any) => {
+  if (!transferKey) throw new Error('accountsSync: missing the password protected transfer key')
 
-  const { salt, N, r, p, dkLen } = secret.scryptParams || {}
+  const { salt, N, r, p, dkLen } = transferKey.scryptParams || {}
   const hasValidScryptParams =
     typeof salt === 'string' &&
     typeof N === 'number' &&
@@ -50,7 +47,7 @@ const validateSecret = (secret: any) => {
     typeof dkLen === 'number'
   if (!hasValidScryptParams) throw new Error('accountsSync: invalid scrypt params')
 
-  requireGcmPayload(secret.aesEncrypted, 'the main key')
+  requireGcmPayload(transferKey.aesEncrypted, 'the transfer key')
 }
 
 const validateAccounts = (accounts: any) => {
@@ -156,7 +153,7 @@ export const parseAccountsSyncPayload = (bytes: Uint8Array): AccountsSyncPayload
   if (payload?.v !== ACCOUNTS_SYNC_PAYLOAD_VERSION)
     throw new Error(`accountsSync: unsupported payload version ${payload?.v}`)
 
-  validateSecret(payload.secret)
+  validateTransferKey(payload.transferKey)
   validateAccounts(payload.accounts)
   validateKeys(payload.keys)
   validateSeeds(payload.seeds)

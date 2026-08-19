@@ -136,6 +136,22 @@ export type MainKeyEncryptedWithSecret = {
   aesEncrypted: AESEncryptedOld | AESGCMEncrypted
 }
 
+/**
+ * The key derived from the device password, encrypted with the main key. Persisted so
+ * that the accounts sync export can wrap its one-time transfer key for the importing
+ * device without asking for the password again (and without ever sending the main key).
+ */
+export type StoredPasswordSecretKey = AESGCMEncrypted
+
+/**
+ * The one-time key an accounts sync payload is encrypted with, wrapped with the key
+ * derived from the exporting device's password.
+ */
+export type AccountsSyncTransferKey = {
+  scryptParams: ScryptParams
+  aesEncrypted: AESGCMEncrypted
+}
+
 export type MainKeyOld = {
   key: Uint8Array
   iv: Uint8Array

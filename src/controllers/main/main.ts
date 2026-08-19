@@ -1715,11 +1715,11 @@ export class MainController extends EventEmitter implements IMainController {
         })
 
       const keyAddrs = Array.from(new Set(accounts.flatMap((account) => account.associatedKeys)))
-      const { secret, keys, seeds } = await this.keystore.exportForSync(keyAddrs, includeSeeds)
+      const { transferKey, keys, seeds } = await this.keystore.exportForSync(keyAddrs, includeSeeds)
 
       return serializeAccountsSyncPayload({
         v: ACCOUNTS_SYNC_PAYLOAD_VERSION,
-        secret,
+        transferKey,
         accounts,
         keys,
         seeds

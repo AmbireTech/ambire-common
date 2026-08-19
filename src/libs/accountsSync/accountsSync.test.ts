@@ -22,8 +22,7 @@ const gcmPayload = (byteLength: number) => ({
 
 const buildPayload = (): AccountsSyncPayload => ({
   v: ACCOUNTS_SYNC_PAYLOAD_VERSION,
-  secret: {
-    id: 'password',
+  transferKey: {
     scryptParams: { salt: `0x${'ef'.repeat(32)}`, N: 131072, r: 8, p: 1, dkLen: 64 },
     aesEncrypted: gcmPayload(48)
   },
@@ -128,25 +127,23 @@ describe('accountsSync payload', () => {
     )
   })
 
-  it('rejects a payload without the password protected main key', () => {
-    const withBiometricsSecret = buildPayload()
-    withBiometricsSecret.secret.id = 'biometrics'
+  it('rejects a payload without the password protected transfer key', () => {
+    const payload: any = buildPayload()
+    delete payload.transferKey
 
-    expect(() => serializeAndParse(withBiometricsSecret)).toThrow(
-      'missing the password protected main key'
-    )
+    expect(() => serializeAndParse(payload)).toThrow('missing the password protected transfer key')
   })
 
   it('rejects invalid scrypt params', () => {
     const payload: any = buildPayload()
-    delete payload.secret.scryptParams.N
+    delete payload.transferKey.scryptParams.N
 
     expect(() => serializeAndParse(payload)).toThrow('invalid scrypt params')
   })
 
-  it('rejects a main key that is not AES-GCM encrypted', () => {
+  it('rejects a transfer key that is not AES-GCM encrypted', () => {
     const payload: any = buildPayload()
-    payload.secret.aesEncrypted = {
+    payload.transferKey.aesEncrypted = {
       cipherType: 'aes-128-ctr',
       ciphertext: '0xabab',
       iv: '0xcdcd',

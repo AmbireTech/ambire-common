@@ -19,7 +19,13 @@ import { Selectors } from './contractInfo'
 import { ControllerInterface } from './controller'
 import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
-import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
+import {
+  Key,
+  MainKeyEncryptedWithSecret,
+  StoredKey,
+  StoredKeystoreSeed,
+  StoredPasswordSecretKey
+} from './keystore'
 import { Network } from './network'
 import type { FeeSpeed } from './signAccountOp'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
@@ -50,6 +56,7 @@ export type StorageProps = {
   // Keystore
   keyStoreUid: string | null
   keystoreSecrets: MainKeyEncryptedWithSecret[]
+  keystorePasswordSecretKey: StoredPasswordSecretKey | null
   keyPreferences: { addr: Key['addr']; type: Key['type']; label: string }[]
   keystoreKeys: StoredKey[]
   keystoreSeeds: StoredKeystoreSeed[]

@@ -188,6 +188,56 @@ export const decryptWithKey = async (
 }
 
 /**
+ * Imports a raw scrypt output as the AES key it was derived to be. Only the first 32
+ * bytes (256 bits) are used, matching how the main key is wrapped with a secret.
+ */
+export const importSecretKey = async (
+  secretKey: Uint8Array<ArrayBuffer>,
+  usages: KeyUsage[]
+): Promise<CryptoKey> =>
+  crypto.subtle.importKey('raw', secretKey.slice(0, 32), { name: CIPHER }, false, usages)
+
+/**
+ * The one-time key an accounts sync payload is encrypted with. Generated per export and
+ * never persisted, so that the exporting device's main key never leaves it.
+ */
+export const generateTransferKey = (): Promise<CryptoKey> =>
+  crypto.subtle.generateKey({ name: CIPHER, length: 256 }, true, ['encrypt', 'decrypt'])
+
+/**
+ * Wraps the one-time transfer key of an accounts sync payload with the key derived from
+ * the exporting device's password, which is the only thing the importing device can
+ * derive from what its user types.
+ */
+export const encryptTransferKeyWithSecret = async (
+  transferKey: CryptoKey,
+  secretKey: Uint8Array<ArrayBuffer>
+): Promise<AESGCMEncrypted> => {
+  const importedSecretKey = await importSecretKey(secretKey, ['encrypt'])
+  const exportedTransferKey = new Uint8Array(await crypto.subtle.exportKey('raw', transferKey))
+
+  return encryptWithKey(importedSecretKey, exportedTransferKey)
+}
+
+/**
+ * Unwraps the transfer key of a scanned accounts sync payload. Imported as
+ * non-extractable and for decryption only, because that is all the importing device
+ * ever does with it.
+ */
+export const decryptTransferKeyWithSecret = async (
+  secretKey: Uint8Array<ArrayBuffer>,
+  aesEncrypted: AESGCMEncrypted
+): Promise<CryptoKey> => {
+  const importedSecretKey = await importSecretKey(secretKey, ['decrypt'])
+
+  const decrypted = await decryptWithKey(importedSecretKey, aesEncrypted)
+
+  return crypto.subtle.importKey('raw', decrypted.slice(0, 32), { name: CIPHER }, false, [
+    'decrypt'
+  ])
+}
+
+/**
  * Decrypts a stored seed entry with the main key it was encrypted with. Handles both
  * the entropy bytes seeds are stored as after the GCM migration and the plain mnemonic
  * legacy ones stored before it.

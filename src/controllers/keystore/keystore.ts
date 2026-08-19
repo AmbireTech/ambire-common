@@ -12,11 +12,14 @@ import {
   CIPHER_OLD,
   decryptMainKeyWithSecret,
   decryptStoredSeed,
+  decryptTransferKeyWithSecret,
   decryptWithKey,
   deriveSecret,
   encryptMainKeyWithSecret,
+  encryptTransferKeyWithSecret,
   encryptWithKey,
   extractEntropyFromSeed,
+  generateTransferKey,
   getBytesForSecret,
   migrateStoredPayloadsToGCM,
   SCRYPT_PARAMS
@@ -32,7 +35,6 @@ import { Account } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
-  AESGCMEncrypted,
   ExternalKey,
   IKeystoreController,
   InternalKey,
@@ -341,6 +343,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         })
       }
     }
+
+    // Kept for the accounts sync export, which has to wrap its one-time transfer key
+    // with the password of this device without asking the user for it again. Written on
+    // every password unlock (both ciphers keep the same salt, so the key stays valid)
+    if (secretId === 'password' && this.#mainKey)
+      await this.#storePasswordSecretKey(this.#mainKey, secretKey)
   }
 
   /**
@@ -388,27 +396,55 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     secretKey: Uint8Array<ArrayBuffer>,
     secretEntry: MainKeyEncryptedWithSecret
   ) {
-    if (secretEntry.aesEncrypted.cipherType !== CIPHER) {
+    const aesEncrypted = secretEntry.aesEncrypted
+    if (aesEncrypted.cipherType !== CIPHER) {
       throw new Error('keystore: invalid gcm secret cipher type')
     }
 
-    this.#mainKey = await this.#decryptMainKeyWithSecret(secretKey, secretEntry.aesEncrypted)
+    this.#mainKey = await this.#unwrapKeyWithSecret(() =>
+      decryptMainKeyWithSecret(secretKey, aesEncrypted)
+    )
 
     this.errorMessage = ''
   }
 
   /**
-   * Decrypts a main key wrapped with the provided secret, translating a wrong
-   * secret into the user facing "Incorrect password" error. Used both when
-   * unlocking this device and when importing keys synced from another device
-   * (where the main key of the other device gets unwrapped with its password).
+   * Persists the key derived from the device password, encrypted with the main key. It
+   * is what lets the accounts sync export wrap a one-time transfer key for the other
+   * device without the password being typed again, and without the main key ever
+   * leaving this device. Knowing it grants nothing the main key does not already grant.
    */
-  async #decryptMainKeyWithSecret(
-    secretKey: Uint8Array<ArrayBuffer>,
-    aesEncrypted: AESGCMEncrypted
-  ): Promise<MainKey> {
+  async #storePasswordSecretKey(mainKey: MainKey, secretKey: Uint8Array<ArrayBuffer>) {
+    await this.#storage.set(
+      'keystorePasswordSecretKey',
+      await encryptWithKey(mainKey, secretKey.slice(0, 32))
+    )
+  }
+
+  /**
+   * The stored password derived key, or null when this device has not been unlocked with
+   * its password since the key started being stored (e.g. biometrics only sessions).
+   */
+  async #getPasswordSecretKey(): Promise<Uint8Array<ArrayBuffer> | null> {
+    if (!this.#mainKey) return null
+
+    const encryptedSecretKey = await this.#storage.get('keystorePasswordSecretKey', null)
+    if (!encryptedSecretKey) return null
+
+    const secretKey = await decryptWithKey(this.#mainKey, encryptedSecretKey)
+
+    return secretKey as Uint8Array<ArrayBuffer>
+  }
+
+  /**
+   * Unwraps a key that was wrapped with a secret derived from a password, translating a
+   * wrong password into the user facing "Incorrect password" error. Used both when
+   * unlocking this device and when importing accounts synced from another device (where
+   * the one time transfer key gets unwrapped with the other device's password).
+   */
+  async #unwrapKeyWithSecret(unwrap: () => Promise<CryptoKey>): Promise<CryptoKey> {
     try {
-      return await decryptMainKeyWithSecret(secretKey, aesEncrypted)
+      return await unwrap()
     } catch (error: any) {
       // Either wrong password or corrupted/tampered ciphertext
       if (error?.name === 'OperationError') {
@@ -592,6 +628,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     // Persist the new secrets
     await this.#storage.set('keystoreSecrets', this.#keystoreSecrets)
 
+    // Kept for the accounts sync export, which has to wrap its one-time transfer key
+    // with the password of this device without asking the user for it again
+    if (secretId === 'password') await this.#storePasswordSecretKey(mainKey, secretKey)
+
     // produce uid if one doesn't exist (should be created when the first secret is added)
     if (!this.keyStoreUid) {
       const exportedMainKeyUint8Array = new Uint8Array(
@@ -626,6 +666,9 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     this.#keystoreSecrets = this.#keystoreSecrets.filter((x) => x.id !== secretId)
     await this.#storage.set('keystoreSecrets', this.#keystoreSecrets)
+
+    // The stored derived key belongs to the removed password, so it must not outlive it
+    if (secretId === 'password') await this.#storage.set('keystorePasswordSecretKey', null)
   }
 
   async removeSecret(secretId: string) {
@@ -1221,9 +1264,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   /**
    * Collects everything another Ambire product needs in order to take over the given
-   * keys: the keys themselves and the seeds they were derived from (still encrypted
-   * with this device's main key), plus this device's main key wrapped with its password.
-   * Nothing gets decrypted here, so this works even when the keystore is locked.
+   * keys: the keys themselves and the seeds they were derived from, re-encrypted with a
+   * one-time transfer key, plus that transfer key wrapped with this device's password.
+   * This device's main key never travels, so a leaked payload exposes only the accounts
+   * inside it. Requires the keystore to be unlocked, since the data gets re-encrypted.
    *
    * `includeSeeds` is what the user chose on the confirmation screen: with it off the
    * keys still travel (so the accounts can sign on the other device), but the recovery
@@ -1232,8 +1276,16 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   async exportForSync(
     keyAddrs: Key['addr'][],
     includeSeeds: boolean = true
-  ): Promise<Pick<AccountsSyncPayload, 'secret' | 'keys' | 'seeds'>> {
+  ): Promise<Pick<AccountsSyncPayload, 'transferKey' | 'keys' | 'seeds'>> {
     await this.initialLoadPromise
+
+    const mainKey = this.#mainKey
+    if (!mainKey)
+      throw new EmittableError({
+        level: 'expected',
+        message: 'Unlock the app before syncing your accounts.',
+        error: new Error('keystore: needs to be unlocked')
+      })
 
     const secret = this.#keystoreSecrets.find((s) => s.id === 'password')
     if (!secret)
@@ -1249,6 +1301,16 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         message:
           'Something went wrong when preparing your accounts for syncing. Please unlock the app again or contact support if the problem persists.',
         error: new Error('keystore: password secret not migrated to GCM yet')
+      })
+
+    // Missing only for devices that have not been unlocked with their password since the
+    // key started being stored, so asking for it once is enough to have it from then on
+    const passwordSecretKey = await this.#getPasswordSecretKey()
+    if (!passwordSecretKey)
+      throw new EmittableError({
+        level: 'expected',
+        message: 'Unlock the app with your password once before syncing your accounts.',
+        error: new Error('keystore: no stored password secret key to sync with')
       })
 
     const keys = this.#keystoreKeys.filter((key) => keyAddrs.includes(key.addr))
@@ -1274,13 +1336,42 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         error: new Error('keystore: keys or seeds not migrated to GCM yet')
       })
 
-    return { secret, keys, seeds }
+    // Generated for this export alone and never persisted, so that the main key of this
+    // device stays on it. A leaked payload then exposes only the accounts inside it
+    const transferKey = await generateTransferKey()
+    const reEncryptForTransfer = async (payload: KeystoreEncryptedPayload) =>
+      encryptWithKey(transferKey, await decryptWithKey(mainKey, payload))
+
+    const keysForTransfer = await Promise.all(
+      keys.map(async (key) =>
+        key.type === 'internal' ? { ...key, privKey: await reEncryptForTransfer(key.privKey) } : key
+      )
+    )
+    const seedsForTransfer = await Promise.all(
+      seeds.map(async (seed) => ({
+        ...seed,
+        seed: await reEncryptForTransfer(seed.seed),
+        seedPassphrase: seed.seedPassphrase ? await reEncryptForTransfer(seed.seedPassphrase) : null
+      }))
+    )
+
+    return {
+      // The salt of this device's password is reused, because the transfer key has to be
+      // wrapped without the password itself, which is never stored
+      transferKey: {
+        scryptParams: secret.scryptParams,
+        aesEncrypted: await encryptTransferKeyWithSecret(transferKey, passwordSecretKey)
+      },
+      keys: keysForTransfer,
+      seeds: seedsForTransfer
+    }
   }
 
   /**
    * Takes over the keys and seeds exported by another Ambire product. The password of
-   * that other device unwraps its main key, which is used only to decrypt the synced
-   * data in memory - everything is then re-encrypted with this device's main key.
+   * that other device unwraps the one-time key its payload was encrypted with, which is
+   * used only to decrypt the synced data in memory - everything is then re-encrypted
+   * with this device's main key.
    *
    * Intentionally not wrapped in `withStatus` and lets errors propagate, because the
    * MainController orchestrates the whole migration (and must not add the accounts if
@@ -1289,18 +1380,25 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   async importFromSync(payload: AccountsSyncPayload, password: string) {
     await this.initialLoadPromise
 
-    const { secret, keys, seeds } = payload
-    if (secret.aesEncrypted.cipherType !== CIPHER)
-      throw new Error('keystore: synced main key is not encrypted with GCM')
+    const { transferKey, keys, seeds } = payload
+    if (transferKey.aesEncrypted.cipherType !== CIPHER)
+      throw new Error('keystore: synced transfer key is not encrypted with GCM')
 
-    const secretKey = await deriveSecret(this.#scryptAdapter, password, secret.scryptParams.salt)
-    // The exporting device's main key. Kept in this scope only, never persisted.
-    const exportedMainKey = await this.#decryptMainKeyWithSecret(secretKey, secret.aesEncrypted)
+    const secretKey = await deriveSecret(
+      this.#scryptAdapter,
+      password,
+      transferKey.scryptParams.salt
+    )
+    // The one-time key the payload was encrypted with on the other device. Kept in this
+    // scope only, never persisted, and imported so that it can only ever decrypt.
+    const payloadKey = await this.#unwrapKeyWithSecret(() =>
+      decryptTransferKeyWithSecret(secretKey, transferKey.aesEncrypted)
+    )
 
     // Seeds first, so the keys below can be linked to the seed they were derived from
     const syncedSeedIds: { [exportedSeedId: string]: StoredKeystoreSeed['id'] } = {}
     for (const seed of seeds) {
-      const { seed: decryptedSeed, seedPassphrase } = await decryptStoredSeed(exportedMainKey, seed)
+      const { seed: decryptedSeed, seedPassphrase } = await decryptStoredSeed(payloadKey, seed)
 
       syncedSeedIds[seed.id] = await this.#storeSyncedSeed({
         id: seed.id,
@@ -1329,7 +1427,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         type: 'internal',
         label: key.label,
         dedicatedToOneSA: key.dedicatedToOneSA,
-        privateKey: hexlify(await decryptWithKey(exportedMainKey, key.privKey)),
+        privateKey: hexlify(await decryptWithKey(payloadKey, key.privKey)),
         meta: syncedFromSeedId ? { ...restMeta, fromSeedId: syncedFromSeedId } : restMeta
       })
     }
