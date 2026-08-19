@@ -757,9 +757,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     const label = `Recovery Phrase ${this.#keystoreSeeds.length + 1}`
 
-    const isIdTaken = !!id && this.#keystoreSeeds.some((s) => s.id === id)
     const newEntry: StoredKeystoreSeed = {
-      id: isIdTaken || !id ? generateUuid() : id,
+      id: id || generateUuid(),
       label,
       seed: await encryptWithKey(this.#mainKey, entropy),
       seedPassphrase: seedPassphrase

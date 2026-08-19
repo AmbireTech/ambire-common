@@ -1705,7 +1705,7 @@ export class MainController extends EventEmitter implements IMainController {
     requestId?: string
   ) {
     await this.#withSyncResponse('exportAccountsForSync', requestId, async () => {
-      const accounts = this.accounts.getAccountsForSync(addrs)
+      const accounts = this.accounts.accounts.filter((account) => addrs.includes(account.addr))
 
       if (!accounts.length)
         throw new EmittableError({
