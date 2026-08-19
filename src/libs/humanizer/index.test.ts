@@ -4567,6 +4567,112 @@ describe('ERC-7730 descriptors', () => {
     )
     expect(transactionsRow?.value).toHaveLength(4)
   })
+  test('humanizes calls nested deeper than the displayed depth and warns about it', async () => {
+    const router = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5'
+    const beneficiary = '0x0012b7C5D4310915bB2d58C0b14C72546D320C05'
+    const routerInterface = new ethers.Interface([
+      'function multicall(bytes[] data)',
+      'function deepestCall(address beneficiary)'
+    ])
+    const getNestedMulticallData = (nestingLevels: number) => {
+      let data = routerInterface.encodeFunctionData('deepestCall', [beneficiary])
+
+      for (let level = 0; level < nestingLevels; level += 1) {
+        data = routerInterface.encodeFunctionData('multicall', [[data]])
+      }
+
+      return data
+    }
+    const humanizeNestedMulticall = (nestingLevels: number) =>
+      humanizeAccountOp(
+        {
+          ...accountOp,
+          chainId: 8453n,
+          calls: [{ to: router, value: 0n, data: getNestedMulticallData(nestingLevels) }]
+        },
+        {
+          erc7730Descriptors: {
+            0: {
+              descriptor: {
+                display: {
+                  formats: {
+                    'multicall(bytes[] data)': {
+                      intent: 'Multicall',
+                      fields: [
+                        {
+                          path: 'data',
+                          label: 'Call',
+                          format: 'calldata',
+                          params: { calleePath: '@.to' },
+                          visible: 'always'
+                        }
+                      ]
+                    },
+                    'deepestCall(address beneficiary)': {
+                      intent: 'Deepest call',
+                      fields: [
+                        {
+                          path: 'beneficiary',
+                          label: 'Beneficiary',
+                          format: 'addressName',
+                          visible: 'always'
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      )
+    const getErc7730Titles = (visualization: any): string[] => [
+      visualization.title,
+      ...(visualization.rows || []).flatMap((row: any) =>
+        (row.value || [])
+          .filter((rowValue: any) => rowValue.type === 'erc7730')
+          .flatMap((nestedVisualization: any) => getErc7730Titles(nestedVisualization))
+      )
+    ]
+    const depthWarning = getWarning(
+      'This transaction hides many other transactions one inside another. This is unusual - continue only if you fully trust this app.',
+      'ERC7730_SUSPICIOUS_NESTED_CALLDATA_DEPTH'
+    )
+
+    // 6 multicalls one inside another - the innermost call is 6 levels deep, way past
+    // the depth the UI shows, but the humanizer still decodes it so its warnings are kept
+    const deeplyNestedCalls = humanizeNestedMulticall(6)
+    expect(getErc7730Titles(deeplyNestedCalls[0]!.fullVisualization?.[0])).toEqual([
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Deepest call'
+    ])
+    expect(deeplyNestedCalls[0]!.warnings).toContainEqual(depthWarning)
+
+    // exactly at the depth the UI stops showing calls
+    const nestedCallsAtTheDisplayLimit = humanizeNestedMulticall(4)
+    expect(getErc7730Titles(nestedCallsAtTheDisplayLimit[0]!.fullVisualization?.[0])).toEqual([
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Deepest call'
+    ])
+    expect(nestedCallsAtTheDisplayLimit[0]!.warnings).toContainEqual(depthWarning)
+
+    // shallow nesting is normal and should not warn
+    const shallowNestedCalls = humanizeNestedMulticall(2)
+    expect(getErc7730Titles(shallowNestedCalls[0]!.fullVisualization?.[0])).toEqual([
+      'Multicall',
+      'Multicall',
+      'Deepest call'
+    ])
+    expect(shallowNestedCalls[0]!.warnings).not.toContainEqual(depthWarning)
+  })
 })
 
 // Non-strict / dirty-bytes ABI encoding: the 12 leading zero bytes that pad a 20-byte
