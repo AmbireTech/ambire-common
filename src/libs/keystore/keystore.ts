@@ -6,6 +6,7 @@ import {
   KeystoreEncryptedPayload,
   MainKey,
   MainKeyOld,
+  ScryptParams,
   StoredKey,
   StoredKeystoreSeed
 } from '@/interfaces/keystore'
@@ -291,15 +292,18 @@ export const decryptSeedWithKeyOld = async (
 export const deriveSecret = async (
   scryptAdapter: ScryptAdapter,
   secretValue: string,
-  salt: string
+  scryptParams: ScryptParams
 ): Promise<Uint8Array<ArrayBuffer>> => {
+  const { salt, N, r, p, dkLen } = scryptParams
+
   // Use wait(0) to yield to the event loop and avoid blocking the UI
   await wait(0)
+
   const secretKey = await scryptAdapter.scrypt(getBytesForSecret(secretValue), getBytes(salt), {
-    N: SCRYPT_PARAMS.N,
-    r: SCRYPT_PARAMS.r,
-    p: SCRYPT_PARAMS.p,
-    dkLen: SCRYPT_PARAMS.dkLen
+    N,
+    r,
+    p,
+    dkLen
   })
   await wait(0)
 

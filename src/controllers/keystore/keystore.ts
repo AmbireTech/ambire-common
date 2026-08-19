@@ -279,7 +279,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       })
     }
 
-    const secretKey = await deriveSecret(this.#scryptAdapter, secret, scryptParams.salt)
+    const secretKey = await deriveSecret(this.#scryptAdapter, secret, scryptParams)
     const isOldSecretCipher =
       aesEncrypted.cipherType === undefined || aesEncrypted.cipherType === CIPHER_OLD
 
@@ -593,12 +593,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     const entropyGenerator = new EntropyGenerator()
     const salt = entropyGenerator.generateRandomBytes(32, extraEntropy)
-    const secretKey = await deriveSecret(this.#scryptAdapter, secret, hexlify(salt))
+    const scryptParams = { salt: hexlify(salt), ...SCRYPT_PARAMS }
+    const secretKey = await deriveSecret(this.#scryptAdapter, secret, scryptParams)
     const mainKeyEncryptedWithSecret = await encryptMainKeyWithSecret(mainKey, secretKey)
 
     this.#keystoreSecrets.push({
       id: secretId,
-      scryptParams: { salt: hexlify(salt), ...SCRYPT_PARAMS },
+      scryptParams,
       aesEncrypted: mainKeyEncryptedWithSecret
     })
 
@@ -1306,7 +1307,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     if (secret.aesEncrypted.cipherType !== CIPHER)
       throw new Error('keystore: synced main key is not encrypted with GCM')
 
-    const secretKey = await deriveSecret(this.#scryptAdapter, password, secret.scryptParams.salt)
+    const secretKey = await deriveSecret(this.#scryptAdapter, password, secret.scryptParams)
     // The exporting device's main key. Kept in this scope only, never persisted, and only
     // able to decrypt, so its bytes never reach this app.
     const exportedMainKey = await this.#unwrapSyncedMainKey(secretKey, secret.aesEncrypted)
