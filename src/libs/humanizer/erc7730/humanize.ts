@@ -42,7 +42,7 @@ import {
   getWarning,
   uintToAddress
 } from '../utils'
-import { SAFE_TX_PRIMARY_TYPE } from './consts'
+import { MAX_DISPLAYED_NESTED_CALLDATA_DEPTH, SAFE_TX_PRIMARY_TYPE } from './consts'
 import { getEip712EncodeType, getEip712EncodeTypeHashFromString } from './eip712'
 import {
   Erc7730Descriptor,
@@ -66,7 +66,6 @@ type FormatContext = {
   descriptorPath?: string
   root: Record<string, unknown>
   chainId?: bigint
-  nestedCalldataDepth?: number
 }
 
 type VisibilityResult = {
@@ -75,7 +74,6 @@ type VisibilityResult = {
 }
 
 const MAX_INTERPOLATED_VALUE_LENGTH = 80
-const MAX_NESTED_CALLDATA_DEPTH = 4
 const ABI_WORD_HEX_LENGTH = 64
 
 const isMapReference = (value: unknown): value is Erc7730MapReference =>
@@ -629,8 +627,16 @@ const formatFieldValue = (
   return [getText(valueToText(value))]
 }
 
-const getFieldValue = (field: Erc7730Field, context: FormatContext, base: unknown): unknown =>
-  field.value !== undefined ? field.value : resolvePath(field.path, context, base)
+// A field value is usually a literal, but ERC-7730 also allows it to be a descriptor
+// path pointing at a constant authored in the file itself (e.g. the vault ticker in
+// `$.metadata.constants.vaultTicker`), which has to be resolved before it is displayed
+const getFieldValue = (field: Erc7730Field, context: FormatContext, base: unknown): unknown => {
+  if (field.value === undefined) return resolvePath(field.path, context, base)
+
+  return typeof field.value === 'string' && (field.value === '$' || field.value.startsWith('$.'))
+    ? resolvePath(field.value, context, base)
+    : field.value
+}
 
 const getArrayValueAt = (value: unknown, index: number): unknown =>
   Array.isArray(value) ? value[index] : value
@@ -665,11 +671,17 @@ const getNestedErc7730CalldataValue = (
   callee: unknown,
   amount: unknown
 ): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
-  if ((context.nestedCalldataDepth || 0) >= MAX_NESTED_CALLDATA_DEPTH) return null
+  // No depth limit here on purpose: every nested calldata is a part of its parent
+  // calldata, so it is always shorter and the recursion always stops. A depth limit
+  // in the library hides the warnings of the deeply embedded calls. The limit for how
+  // deep the nested calls are shown is applied in the UI.
   if (typeof calldata !== 'string' || !calldata.startsWith('0x') || calldata.length < 10)
     return null
   if (typeof callee !== 'string' || !isAddress(callee)) return null
   if (!context.chainId) return null
+  // A descriptor that points at the calldata of its own call would recurse forever
+  const parentCalldata = resolvePath('#.@.data', context, context.root)
+  if (typeof parentCalldata === 'string' && parentCalldata === calldata) return null
 
   const accountAddr = resolvePath('#.@.accountAddr', context, context.root)
   if (typeof accountAddr !== 'string' || !isAddress(accountAddr)) return null
@@ -682,8 +694,7 @@ const getNestedErc7730CalldataValue = (
     },
     context.chainId,
     accountAddr,
-    { descriptor: context.descriptor, path: context.descriptorPath },
-    (context.nestedCalldataDepth || 0) + 1
+    { descriptor: context.descriptor, path: context.descriptorPath }
   )
   const erc7730Visualization = humanizedCall?.fullVisualization?.find(
     (visualization) => visualization.type === 'erc7730'
@@ -1489,6 +1500,42 @@ const getNativeValueWarnings = (
     : []
 }
 
+// The humanizer decodes all the levels of calls embedded in other calls, but only the
+// first MAX_DISPLAYED_NESTED_CALLDATA_DEPTH levels are shown in the UI. A transaction
+// nested that deep is unusual, so the user is warned about it.
+const getNestedErc7730Depth = (visualization: HumanizerErc7730Visualization): number => {
+  const nestedDepths = visualization.rows.flatMap((row) =>
+    row.value
+      .filter(
+        (value): value is HumanizerVisualization & HumanizerErc7730Visualization =>
+          value.type === 'erc7730'
+      )
+      .map((nestedVisualization) => 1 + getNestedErc7730Depth(nestedVisualization))
+  )
+
+  return nestedDepths.length ? Math.max(...nestedDepths) : 0
+}
+
+const getNestedCalldataDepthWarnings = (
+  fullVisualization: HumanizerVisualization[]
+): HumanizerWarning[] => {
+  const depths = fullVisualization
+    .filter(
+      (visualization): visualization is HumanizerVisualization & HumanizerErc7730Visualization =>
+        visualization.type === 'erc7730'
+    )
+    .map((visualization) => getNestedErc7730Depth(visualization))
+
+  if (!depths.length || Math.max(...depths) < MAX_DISPLAYED_NESTED_CALLDATA_DEPTH) return []
+
+  return [
+    getWarning(
+      'This transaction hides many other transactions one inside another. This is unusual - continue only if you fully trust this app.',
+      'ERC7730_SUSPICIOUS_NESTED_CALLDATA_DEPTH'
+    )
+  ]
+}
+
 const getSafeCallWarnings = (call: Call, safeAddr = call.to): HumanizerWarning[] => {
   return getSafeHumanization(safeAddr, call.to, call.value, call.data)?.warnings || []
 }
@@ -1639,7 +1686,6 @@ export const humanizeCallWithErc7730 = (
   chainId: bigint,
   accountAddr: string,
   resolvedDescriptor: Erc7730ResolvedDescriptor,
-  nestedCalldataDepth = 0,
   nativeAssetSymbol?: string
 ): IrCall | null => {
   if (resolvedDescriptor.safeTxTransactionsOnly && resolvedDescriptor.safeTxCalls?.length) {
@@ -1689,8 +1735,7 @@ export const humanizeCallWithErc7730 = (
         chainId
       }
     },
-    chainId,
-    nestedCalldataDepth
+    chainId
   }
   const fullVisualization = formatToVisualizations(match.format, context, call.dapp)
   const normalizedVisualization = fullVisualization
@@ -1713,7 +1758,8 @@ export const humanizeCallWithErc7730 = (
           ...getNativeValueWarnings(
             visualizationWithNativeValue.didAppendNativeValueRow,
             nativeAssetSymbol
-          )
+          ),
+          ...getNestedCalldataDepthWarnings(visualizationWithNativeValue.fullVisualization)
         ])
       }
     : null
