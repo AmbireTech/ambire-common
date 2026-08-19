@@ -1,3 +1,5 @@
+import { generateUuid } from '@/utils/uuid'
+
 import { DappProviderRequest } from '../../interfaces/dapp'
 import { getAccountOpNonce } from '../accountOp/accountOp'
 import {
@@ -144,7 +146,7 @@ export const buildSwitchAccountUserRequest = ({
   dappPromises: UserRequest['dappPromises']
 }): SwitchAccountRequest => {
   return {
-    id: new Date().getTime(),
+    id: generateUuid(),
     kind: 'switchAccount',
     meta: {
       accountAddr: selectedAccountAddr,

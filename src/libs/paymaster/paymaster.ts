@@ -1,5 +1,7 @@
 import { AbiCoder, Contract, Interface, toBeHex, ZeroAddress } from 'ethers'
 
+import { generateUuid } from '@/utils/uuid'
+
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import entryPointAbi from '../../../contracts/compiled/EntryPoint.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -434,7 +436,7 @@ export class Paymaster extends AbstractPaymaster {
         getPaymasterStubData(
           {
             url: getAmbireSponsorshipUrl(this.#relayerUrl),
-            id: new Date().getTime(),
+            id: generateUuid(),
             context: {
               policyId: AMBIRE_SWAP_POLICY,
               swapSponsorship: {
