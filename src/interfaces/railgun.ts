@@ -191,6 +191,12 @@ export type RailgunActivityEntry = {
   recipient: string | null
   status: RailgunActivityStatus
   createdAt: number
+  /**
+   * When the shield's transaction was signed and sent, for shields only. Absent until then, which
+   * is what tells "still waiting for a signature" apart from "on its way" - a shield leaves this
+   * controller as plain calls (see `buildShieldCalls`), so without this the two look identical.
+   */
+  broadcastedAt?: number
   // Set when `status` is 'failed', to surface why without digging through logs
   error?: string
   /**
@@ -202,7 +208,8 @@ export type RailgunActivityEntry = {
 
 /**
  * 'pending' means "not observed as complete yet". Unshields/transfers resolve from their own
- * broadcast result; shields are broadcast by the regular sign & broadcast flow, which never
- * reports back here, so they resolve on the next sync that shows the balance growing.
+ * broadcast result; a shield is broadcast by the regular sign & broadcast flow, so it resolves from
+ * what that flow's transaction did - see `RailgunController.handleShieldAccountOpStatusUpdate`, and
+ * `#resolvePendingShields` for the balance-based fallback when that transaction is never seen.
  */
 export type RailgunActivityStatus = 'pending' | 'success' | 'failed'

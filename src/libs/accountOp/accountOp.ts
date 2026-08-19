@@ -107,6 +107,13 @@ export interface AccountOp {
     }
     /** Descriptor-backed humanization persisted so activity, history and Benzin show the same clear signing details. */
     clearSigningHumanization?: IrCall[]
+    /**
+     * Ties this accountOp to the Railgun activity entry of the shield it carries. A shield leaves
+     * the Railgun controller as plain calls and comes back only as somebody else's transaction, so
+     * this tag is what lets that controller learn whether the funds were actually shielded - see
+     * `RailgunController.buildShieldCalls`.
+     */
+    railgunShieldActivityId?: string
   }
   flags?: {
     /** Excludes it from the "failed transactions" banner and the Activity counter badge,

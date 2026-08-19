@@ -695,7 +695,11 @@ export class MainController extends EventEmitter implements IMainController {
         this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
         this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
       },
-      onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
+      onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
+      // A no-op unless the rejected request carried a shield
+      onCallsRequestRejected: (accountOp) => {
+        this.railgun.handleShieldNotBroadcasted(accountOp, 'rejected')
+      }
     })
 
     this.contractInfo = new ContractInfoController({
@@ -1029,6 +1033,8 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
+    // A no-op unless this op carries a shield - see RailgunController.handleShieldBroadcasted
+    this.railgun.handleShieldBroadcasted(submittedAccountOp)
     await this.activity.addAccountOp(submittedAccountOp)
     await this.ui.notification.create({
       title:
@@ -1047,6 +1053,8 @@ export class MainController extends EventEmitter implements IMainController {
   async #handleBroadcastFailed(op: AccountOp) {
     // remove the active route on broadcast failure
     if (op.meta?.swapTxn) this.swapAndBridge.removeActiveRoute(op.meta.swapTxn.activeRouteId)
+
+    this.railgun.handleShieldNotBroadcasted(op, 'broadcast-failed')
   }
 
   async handleSignAndBroadcastAccountOp(
@@ -1504,6 +1512,11 @@ export class MainController extends EventEmitter implements IMainController {
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+
+          // Not awaited: a confirmed shield starts a pool scan that takes minutes, and the rest of
+          // this loop must not wait for it. Reports its own failures, so nothing is swallowed here.
+          // eslint-disable-next-line @typescript-eslint/no-floating-promises
+          this.railgun.handleShieldAccountOpStatusUpdate(op)
 
           // we scan for logs only if Success & a dapp interaction has been made
           // because only a dapp interaction might have a receiving txn after;

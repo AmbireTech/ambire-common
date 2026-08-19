@@ -53,7 +53,9 @@ import {
 } from '../../interfaces/railgun'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
-import { Call } from '../../libs/accountOp/types'
+import { AccountOp } from '../../libs/accountOp/accountOp'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { Portfolio } from '../../libs/portfolio'
 import { getRailgunTokenBalance } from '../../libs/railgun/balances'
 import { getRailgunUnshieldAmounts, RAILGUN_FEE_BPS } from '../../libs/railgun/protocolFee'
@@ -86,6 +88,20 @@ const DEFAULT_RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS = 2_000
 // Keeps the persisted activity log bounded - it exists to show the user their recent Railgun
 // operations, not to be a complete audit trail.
 const MAX_ACTIVITY_ENTRIES = 20
+
+/**
+ * The outcomes of a shield's transaction that mean the funds will never arrive, so its activity
+ * entry can stop waiting for them - see `handleShieldAccountOpStatusUpdate`.
+ *
+ * 'broadcast-but-stuck' and 'partially-complete' are deliberately absent: the first can still be
+ * mined, and the second says some call in the batch went through without saying which - so both are
+ * left to the balance to answer (see `#resolvePendingShields`).
+ */
+const FAILED_SHIELD_ACCOUNT_OP_STATUSES: (AccountOpStatus | undefined)[] = [
+  AccountOpStatus.Failure,
+  AccountOpStatus.Rejected,
+  AccountOpStatus.UnknownButPastNonce
+]
 // Catching an identity up on a chain it has state for only covers the tail - measured at ~6s on
 // Ethereum. The budget is generous against that, but bounded, because a wedged sync would otherwise
 // lock the user out of the whole screen: `withStatus` refuses to start an action while another is
@@ -229,10 +245,12 @@ const toRailgunPoiStatus = (tag: string | undefined): RailgunPoiStatus => {
  * Read-after-write still holds, because `get` reads the same cache.
  */
 /**
- * Decodes a key name the SDK's `DatabaseAdapter` hex-encoded, for the measurement inventory above.
- * Falls back to the raw input if it isn't valid hex, since this only ever feeds a log line.
+ * Decodes what the SDK hex-encoded - key names for the measurement inventory above, and values for
+ * `hasPendingPoi`, since the Rust side encodes both.
+ * Falls back to the raw input if it isn't valid hex: a log line reads better with the raw string
+ * than with nothing, and `hasPendingPoi` treats anything it cannot parse as "cannot tell".
  */
-const fromHexKeyName = (encoded: string) => {
+const fromHexEncoded = (encoded: string) => {
   if (encoded.length % 2 !== 0) return encoded
 
   let decoded = ''
@@ -253,12 +271,37 @@ const fromHexKeyName = (encoded: string) => {
 const toHexKeyName = (name: string) =>
   [...name].map((char) => char.charCodeAt(0).toString(16).padStart(2, '0')).join('')
 
+/**
+ * The SDK's POI state for one chain: `{ pending, pois }`, where `pending` holds one witness per
+ * transaction whose outputs have no innocence proof yet (`PendingPoiEntry` in the SDK's
+ * `poi/provider.rs`) and `pois` is a re-fetchable cache of statuses.
+ *
+ * Singled out by name because it is the only entry the SDK cannot rebuild from chain state, which
+ * makes it the exception on both paths that touch it - see `scopedTo` and `hasPendingPoi`.
+ */
+const POI_STATE_KEY_NAME = 'poi_provider'
+
+// Compared as hex so the write path never has to decode a key name.
+const POI_STATE_KEY_NAME_IN_HEX = toHexKeyName(POI_STATE_KEY_NAME)
+
+const isPoiStateKey = (key: string) => key.slice(key.indexOf(':') + 1) === POI_STATE_KEY_NAME_IN_HEX
+
+// The only `poi_provider` schema this code reads. Anything else is left alone - see hasPendingPoi.
+const SUPPORTED_POI_STATE_SCHEMA_VERSION = 1
+
+/**
+ * Kept vague on purpose: the user cannot act on it, and the only thing that matters is that it
+ * reaches the report, since it means the SDK changed a format this code depends on.
+ */
+const POI_STATE_READ_ERROR_MESSAGE =
+  'A privacy pool check could not be completed. Your funds are not affected.'
+
 export class RailgunHostStorageAdapter implements RailgunHostStorage {
   readonly _brand = 'Storage' as const
 
   #storage: IStorageController
 
-  #onError: (error: unknown) => void
+  #onError: (error: unknown, message?: string) => void
 
   #cache: Record<string, string> | null = null
 
@@ -272,8 +315,9 @@ export class RailgunHostStorageAdapter implements RailgunHostStorage {
   #skippedWriteCount = 0
 
   // Since `set` no longer awaits persistence, a failed write has no caller left to throw at -
-  // hence the injected reporter.
-  constructor(storage: IStorageController, onError: (error: unknown) => void) {
+  // hence the injected reporter. `message` is for the readers that report something other than a
+  // failed write, and falls back to the write wording when omitted.
+  constructor(storage: IStorageController, onError: (error: unknown, message?: string) => void) {
     this.#storage = storage
     this.#onError = onError
   }
@@ -382,7 +426,7 @@ export class RailgunHostStorageAdapter implements RailgunHostStorage {
         const chainId = key.slice(0, separatorIndex)
         const encodedName = key.slice(separatorIndex + 1)
 
-        return { key: `${chainId}:${fromHexKeyName(encodedName)}`, bytes: value.length }
+        return { key: `${chainId}:${fromHexEncoded(encodedName)}`, bytes: value.length }
       })
       .sort((a, b) => b.bytes - a.bytes)
   }
@@ -438,18 +482,72 @@ export class RailgunHostStorageAdapter implements RailgunHostStorage {
    * the abandoned scan can persist an older `synced_block` on top of a newer one, or a shorter tree
    * over a longer one, and the next sync has to redo the difference.
    *
+   * `poi_provider` is deliberately exempt, because for it the trade is inverted. Every other entry
+   * is a snapshot of chain state, so refusing a stale write costs a rescan at worst - while
+   * `pending` holds the witnesses for POI proofs that have not been submitted yet, which the SDK
+   * records once, while building the transaction (`register_ops`), and can rebuild from nothing.
+   * Refusing that write therefore does not lose a refresh, it loses the only copy there is: the
+   * note's outputs stay without an innocence proof, and the SDK's own note selection then refuses
+   * to spend them - for unshields as much as for private transfers. A stale POI write cannot cause
+   * the matching damage, since a superseded plugin can only have entries the live one either also
+   * has or has already submitted.
+   *
    * Reads are left alone: they cannot corrupt anything, and refusing them would only make the
    * abandoned scan fail in less predictable ways.
    */
-  scopedTo(isLive: () => boolean): RailgunHostStorage {
+  scopedTo(isLive: () => boolean, onRefusedWrite?: (keyName: string) => void): RailgunHostStorage {
     return {
       _brand: 'Storage' as const,
       get: (key: string) => this.get(key),
       set: async (key: string, value: string) => {
-        if (!isLive()) return
+        if (!isLive() && !isPoiStateKey(key)) {
+          // Reported rather than silent: a refused write used to leave no trace at all, which is
+          // what made a lost POI witness look like the aggregator taking its time.
+          onRefusedWrite?.(fromHexEncoded(key.slice(key.indexOf(':') + 1)))
+
+          return
+        }
 
         await this.set(key, value)
       }
+    }
+  }
+
+  /**
+   * Whether the SDK still owes a POI proof for this chain, answered from its own persisted state
+   * rather than from a flag of ours.
+   *
+   * `poi_provider.pending` holds one entry per transaction whose outputs have no innocence proof
+   * yet, and the SDK removes an entry only once the aggregator has accepted the proof - which it
+   * attempts on every `provider.sync()`. So the state IS the marker: there is nothing to keep in
+   * sync, and it clears itself.
+   *
+   * Reads the length and nothing else, and only for a schema version it recognises. Anything else
+   * answers "no": being wrong here delays a submission until the next sync at worst, and can never
+   * affect what is submitted.
+   */
+  async hasPendingPoi(chainId: string): Promise<boolean> {
+    const value = await this.get(`${chainId}:${POI_STATE_KEY_NAME_IN_HEX}`)
+    if (!value) return false
+
+    try {
+      const state = JSON.parse(fromHexEncoded(value))
+      if (state?.v !== SUPPORTED_POI_STATE_SCHEMA_VERSION) {
+        this.#onError(
+          new Error(
+            `railgun: unrecognised poi_provider schema version ${state?.v}, cannot tell whether a POI proof is owed`
+          ),
+          POI_STATE_READ_ERROR_MESSAGE
+        )
+
+        return false
+      }
+
+      return Array.isArray(state?.data?.pending) && state.data.pending.length > 0
+    } catch (error) {
+      this.#onError(error, POI_STATE_READ_ERROR_MESSAGE)
+
+      return false
     }
   }
 }
@@ -817,9 +915,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     this.#loadWasm = loadWasm
     this.#sendUiMessage = sendUiMessage
     this.#pimlicoApiKey = pimlicoApiKey
-    this.#pluginStorage = new RailgunHostStorageAdapter(storage, (error) =>
+    this.#pluginStorage = new RailgunHostStorageAdapter(storage, (error, message) =>
       this.emitError({
-        message: 'Could not save the Railgun sync state. It will be rebuilt on the next sync.',
+        message:
+          message || 'Could not save the Railgun sync state. It will be rebuilt on the next sync.',
         level: 'silent',
         error: error instanceof Error ? error : new Error('railgun: plugin storage write failed')
       })
@@ -858,20 +957,26 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       this.#keystore.onUpdate((forceEmit) => {
         // Locking must drop the derived Railgun keys, not just hide the UI.
         // Locking wipes the balances too: nothing derived from the seed may outlive the lock.
-        if (!this.#keystore.isUnlocked && this.#plugins.size) this.#teardown({ wipeBalances: true })
+        // Keyed on the identity rather than on the plugins: deriving an identity is what puts the
+        // spending and viewing keys in memory, whether or not a chain was ever scanned with them.
+        if (!this.#keystore.isUnlocked && this.#railgunKeystoreSeedId)
+          this.#teardown({ wipeBalances: true })
 
         this.propagateUpdate(forceEmit)
       }, 'railgun'),
 
       this.#selectedAccount.onUpdate((forceEmit) => {
         const seedId = this.#getSeedIdForSelectedAccount()
-        // A different recovery phrase is a different Railgun identity, so nothing built for
-        // the previous one may be reused. Railgun stays opt-in, so the new account is not
-        // initialized here - the user enables it.
         // A different recovery phrase is a different Railgun identity, so nothing built for the
         // previous one may be reused - but its balances stay in their own bucket, so switching back
-        // shows them at once instead of re-scanning.
-        if (seedId !== this.#railgunKeystoreSeedId && this.#plugins.size)
+        // shows them at once instead of re-scanning. Railgun stays opt-in, so the new account is not
+        // initialized here - the user enables it.
+        //
+        // Keyed on there being an identity rather than on there being plugins, for the same reason
+        // as the lock above: an account whose identity was derived without any chain being scanned
+        // has no plugins, so the old condition left that identity up - and with it an address, and
+        // everything the UI reads through it, belonging to an account that is no longer selected.
+        if (this.#railgunKeystoreSeedId && seedId !== this.#railgunKeystoreSeedId)
           this.#teardown({ wipeBalances: false })
 
         this.propagateUpdate(forceEmit)
@@ -1491,10 +1596,20 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     // Captured before the plugin exists, so the view it gets is bound to exactly this instance.
     const pluginGeneration = this.#getChainPluginGeneration(chainId)
 
+    // One line per entry rather than per write: an abandoned mainnet scan keeps writing the same
+    // handful of keys thousands of times, and a log nobody can read is as good as no log.
+    const keyNamesRefusedForThisPlugin = new Set<string>()
+
     const host: RailgunHost = {
       keystore: railgunKeystore,
       storage: this.#pluginStorage.scopedTo(
-        () => this.#getChainPluginGeneration(chainId) === pluginGeneration
+        () => this.#getChainPluginGeneration(chainId) === pluginGeneration,
+        (keyName) => {
+          if (keyNamesRefusedForThisPlugin.has(keyName)) return
+
+          keyNamesRefusedForThisPlugin.add(keyName)
+          this.debugLog('sync', 'refused a write from a superseded plugin', { chainId, keyName })
+        }
       ),
       provider: toEthereumProvider(provider as JsonRpcProvider),
       network: {
@@ -1826,11 +1941,13 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * Marks pending shields as successful once their token's shielded balance grows. Shields are
-   * broadcast through the regular sign & broadcast flow, so this controller never sees their
-   * receipt - the balance is the only signal it gets. Deliberately a heuristic: an incoming
-   * private transfer of the same token, in the same window, resolves the entry too. Acceptable
-   * for now; a real implementation would match the shield's txn id.
+   * Marks pending shields as successful once their token's shielded balance grows.
+   *
+   * The fallback, not the main path: a shield normally resolves from its own transaction (see
+   * `handleShieldAccountOpStatusUpdate`), and this covers the shields whose transaction was never
+   * seen from here - one broadcast before a background restart, or from another device on the same
+   * recovery phrase. Deliberately a heuristic: an incoming private transfer of the same token, in
+   * the same window, resolves the entry too.
    *
    * Compares totals across every POI status, not spendable amounts: a shield lands as 'Missing'
    * and only becomes 'Valid' about an hour later, so a spendable-only comparison would leave
@@ -1869,7 +1986,80 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     if (!hasResolvedAny) return
 
     this.activity = resolvedActivity
+    this.emitUpdate()
     this.#persistActivity()
+  }
+
+  /**
+   * The pending shield an account op is carrying, or undefined when it carries none. Matched on the
+   * tag the shield's own activity entry left on the op (see `buildShieldCalls`), because a shield
+   * leaves this controller as plain calls and comes back only as somebody else's transaction.
+   */
+  #getPendingShieldFor(op: Pick<AccountOp, 'meta'>) {
+    const activityId = op.meta?.railgunShieldActivityId
+    if (!activityId) return undefined
+
+    return this.activity.find((entry) => entry.id === activityId && entry.status === 'pending')
+  }
+
+  /**
+   * A shield's transaction was signed and sent. Recorded so the UI can stop asking for a signature
+   * it already has and wait for the funds instead - the two are indistinguishable from here
+   * otherwise, which is what left a rejected shield "waiting for the funds to arrive" forever.
+   */
+  handleShieldBroadcasted(op: SubmittedAccountOp) {
+    const shield = this.#getPendingShieldFor(op)
+    if (!shield) return
+
+    this.#updateActivityEntry(shield.id, { broadcastedAt: Date.now() })
+  }
+
+  /**
+   * What a shield's transaction did, as the Activity controller resolved it. This is the accurate
+   * signal that a shield landed, and the fast one: the balance heuristic it replaces only speaks on
+   * the next pool scan, which is up to a few minutes away and minutes long on Ethereum.
+   *
+   * A confirmed shield is followed by a scan, because the shielded balance is what the user is
+   * sent back to look at and the pool has to be read for it to appear. Skipped when there is
+   * nothing to scan with (a background restart drops every plugin) or while a scan is already
+   * running - both only produce an error the user can do nothing about, and the periodic refresh
+   * covers the tail either way.
+   */
+  async handleShieldAccountOpStatusUpdate(op: SubmittedAccountOp) {
+    const shield = this.#getPendingShieldFor(op)
+    if (!shield) return
+
+    if (op.status === AccountOpStatus.Success) {
+      this.#updateActivityEntry(shield.id, { status: 'success' })
+
+      if (this.isInitialized && this.statuses.sync !== 'LOADING') await this.sync()
+
+      return
+    }
+
+    if (FAILED_SHIELD_ACCOUNT_OP_STATUSES.includes(op.status))
+      this.#updateActivityEntry(shield.id, {
+        status: 'failed',
+        error: 'The transaction did not go through, so nothing was shielded.'
+      })
+  }
+
+  /**
+   * A shield whose transaction never made it onto the chain - the user rejected it, or it could not
+   * be sent. Nothing was spent and nothing will arrive, which the entry has to say: no transaction
+   * means no outcome will ever come back for it.
+   */
+  handleShieldNotBroadcasted(op: Pick<AccountOp, 'meta'>, cause: 'rejected' | 'broadcast-failed') {
+    const shield = this.#getPendingShieldFor(op)
+    if (!shield) return
+
+    this.#updateActivityEntry(shield.id, {
+      status: 'failed',
+      error:
+        cause === 'rejected'
+          ? 'You rejected the transaction, so nothing was shielded.'
+          : 'The transaction could not be sent, so nothing was shielded.'
+    })
   }
 
   /**
@@ -1916,13 +2106,41 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     // per-chain summaries the filter below reads.
     await this.#resolveIdentity()
 
+    const candidateChainIds = isBackgroundUpdate
+      ? [...this.#enabledChainIds]
+      : this.supportedChainIds
+
+    /**
+     * The chains whose POI proofs the SDK has recorded but not submitted yet. Read up front because
+     * the filter below is synchronous, and per chain because a proof can only be submitted by a
+     * plugin for the chain that holds the transaction.
+     *
+     * This is what makes the freshness check below not apply to them: submitting is something only
+     * a sync does, and it cannot succeed on the sync the broadcast itself runs - the aggregator has
+     * to validate the transaction's txid first, which takes minutes. So the proof always lands on a
+     * later sync, and a chain that is "fresh enough" to skip is exactly the case where it never
+     * does.
+     */
+    const chainIdsOwingPoi = new Set(
+      (
+        await Promise.all(
+          candidateChainIds.map(async (chainId) =>
+            (await this.#pluginStorage.hasPendingPoi(chainId)) ? chainId : null
+          )
+        )
+      ).filter((chainId): chainId is string => !!chainId)
+    )
+
+    if (chainIdsOwingPoi.size)
+      this.debugLog('sync', 'chains with a POI proof still to submit', {
+        chainIds: [...chainIdsOwingPoi]
+      })
+
     // Every exclusion is decided here, before anything is marked as queued. Marking first and
     // filtering inside the loop is what used to leave a skipped chain showing "waiting" forever: a
     // background refresh right after a scan finds that chain fresh, `continue`s past it, and never
     // writes a terminal status.
-    const chainIds = (
-      isBackgroundUpdate ? [...this.#enabledChainIds] : this.supportedChainIds
-    ).filter((chainId) => {
+    const chainIds = candidateChainIds.filter((chainId) => {
       const { hasIdentityData, lastSyncedAt } = this.#getChainState(chainId)
 
       // A refresh only ever catches up. A chain this identity has never scanned would turn it into
@@ -1934,7 +2152,9 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       }
 
       const isFreshEnough =
-        !!lastSyncedAt && Date.now() - lastSyncedAt < MIN_BACKGROUND_SYNC_AGE_IN_MS
+        !!lastSyncedAt &&
+        Date.now() - lastSyncedAt < MIN_BACKGROUND_SYNC_AGE_IN_MS &&
+        !chainIdsOwingPoi.has(chainId)
 
       if (isBackgroundUpdate && isFreshEnough) {
         this.debugLog('sync', 'skipped a background sync - already fresh', {
@@ -2204,10 +2424,9 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       }
       calls.push(...shieldCalls)
 
-      // Recorded as pending here (not once signed): this is the last point in the shield flow
-      // this controller is part of - from here the calls travel through RequestsController, and
-      // whether they get signed and mined is only observable as a balance change on the next
-      // sync (see #resolvePendingShields).
+      // Recorded as pending here (not once signed): from here the calls travel through
+      // RequestsController, and what happens to them comes back through the account op that
+      // carries them - see `handleShieldAccountOpStatusUpdate`.
       const activityId = this.#addActivityEntry({
         chainId,
         type: 'shield',
@@ -2217,9 +2436,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         recipient: null
       })
 
-      // The activity entry travels back with the calls so the UI can follow this shield to its end:
-      // the entry is what a later sync resolves once the shielded balance grows, which is the only
-      // signal that the funds actually arrived (this controller never sees the signing flow).
+      // The activity entry travels back with the calls so the UI can follow this shield to its end,
+      // and so the caller can tag the account op with it - see
+      // `AccountOp['meta'].railgunShieldActivityId`, which is what brings the transaction's outcome
+      // back to this controller.
       this.#sendUiMessage({ requestId, ok: true, res: { calls, activityId } })
     } catch (error: any) {
       this.emitError({
