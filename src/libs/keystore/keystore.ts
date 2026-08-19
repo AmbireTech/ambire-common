@@ -188,6 +188,35 @@ export const decryptWithKey = async (
 }
 
 /**
+ * Decrypts a stored seed entry with the main key it was encrypted with. Handles both
+ * the entropy bytes seeds are stored as after the GCM migration and the plain mnemonic
+ * legacy ones stored before it.
+ */
+export const decryptStoredSeed = async (
+  mainKey: MainKey,
+  storedSeed: Pick<StoredKeystoreSeed, 'seed' | 'seedPassphrase'>
+): Promise<{ seed: string; seedPassphrase: string | null }> => {
+  const seedBytes = await decryptWithKey(mainKey, storedSeed.seed)
+
+  let seedPassphrase: string | null = null
+  if (storedSeed.seedPassphrase) {
+    const seedPassphraseBytes = await decryptWithKey(mainKey, storedSeed.seedPassphrase)
+
+    seedPassphrase = new TextDecoder().decode(seedPassphraseBytes) || null
+  }
+
+  // Seeds after the GCM migration are stored as entropy bytes, so the mnemonic has to
+  // be reconstructed from them. Legacy ones decrypt to the mnemonic itself.
+  if (typeof storedSeed.seed !== 'string')
+    return { seed: reconstructSeedFromEntropy(seedBytes, seedPassphrase), seedPassphrase }
+
+  const seed = new TextDecoder().decode(seedBytes)
+  if (!Mnemonic.isValidMnemonic(seed)) throw new Error('keystore: invalid seed stored')
+
+  return { seed, seedPassphrase }
+}
+
+/**
  * Used during migration to read legacy payloads
  */
 export const decryptWithKeyOld = async (

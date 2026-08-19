@@ -11,6 +11,7 @@ import {
   CIPHER,
   CIPHER_OLD,
   decryptMainKeyWithSecret,
+  decryptStoredSeed,
   decryptWithKey,
   deriveSecret,
   encryptMainKeyWithSecret,
@@ -18,7 +19,6 @@ import {
   extractEntropyFromSeed,
   getBytesForSecret,
   migrateStoredPayloadsToGCM,
-  reconstructSeedFromEntropy,
   SCRYPT_PARAMS
 } from '@/libs/keystore/keystore'
 
@@ -1300,14 +1300,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     // Seeds first, so the keys below can be linked to the seed they were derived from
     const syncedSeedIds: { [exportedSeedId: string]: StoredKeystoreSeed['id'] } = {}
     for (const seed of seeds) {
-      const entropy = await decryptWithKey(exportedMainKey, seed.seed)
-      const seedPassphrase = seed.seedPassphrase
-        ? new TextDecoder().decode(await decryptWithKey(exportedMainKey, seed.seedPassphrase))
-        : null
+      const { seed: decryptedSeed, seedPassphrase } = await decryptStoredSeed(exportedMainKey, seed)
 
       syncedSeedIds[seed.id] = await this.#storeSyncedSeed({
         id: seed.id,
-        seed: reconstructSeedFromEntropy(entropy, seedPassphrase),
+        seed: decryptedSeed,
         seedPassphrase,
         hdPathTemplate: seed.hdPathTemplate,
         notBackedUp: seed.notBackedUp
@@ -1363,7 +1360,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     const [storedSeedId] = await this.#addSeeds([seed])
 
-    return storedSeedId
+    return storedSeedId!
   }
 
   async getSigner(keyAddress: Key['addr'], keyType: Key['type']): Promise<KeystoreSignerInterface> {
@@ -1412,35 +1409,9 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
     if (!keystoreSeed) throw new Error(`keystore seed with id:${id} not found`)
 
-    const seedBytes = await decryptWithKey(this.#mainKey, keystoreSeed.seed)
-    let seedPassphrase: string | null = null
+    const { seed, seedPassphrase } = await decryptStoredSeed(this.#mainKey, keystoreSeed)
 
-    if (keystoreSeed.seedPassphrase) {
-      const decryptedSeedPassphraseBytes = await decryptWithKey(
-        this.#mainKey,
-        keystoreSeed.seedPassphrase
-      )
-
-      seedPassphrase = new TextDecoder().decode(decryptedSeedPassphraseBytes)
-      if (seedPassphrase === '') seedPassphrase = null
-    }
-
-    // Decrypt as encoded text first, even if it's entropy
-    let decryptedSeed = new TextDecoder().decode(seedBytes)
-
-    // Seeds after the GCM migration are stored as entropy bytes, so we have to
-    // reconstruct the seed from that
-    if (typeof keystoreSeed.seed !== 'string') {
-      decryptedSeed = reconstructSeedFromEntropy(seedBytes, seedPassphrase)
-    } else if (!Mnemonic.isValidMnemonic(decryptedSeed)) {
-      throw new Error('keystore: invalid seed stored')
-    }
-
-    return {
-      ...keystoreSeed,
-      seed: decryptedSeed,
-      seedPassphrase: seedPassphrase
-    }
+    return { ...keystoreSeed, seed, seedPassphrase }
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
