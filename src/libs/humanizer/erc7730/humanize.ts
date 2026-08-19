@@ -32,6 +32,7 @@ import { genericErc20Humanizer } from '../modules/Tokens'
 import {
   eToNative,
   flattenHumanizerVisualizations,
+  getAction,
   getAddressVisualization,
   getChain,
   getErc7730Visualization,
@@ -295,15 +296,6 @@ const valueToText = (value: unknown): string => {
   } catch {
     return String(value)
   }
-}
-
-const interpolatedValueToText = (path: string, value: unknown): string => {
-  const amount = toBigIntOrNull(value)
-  if ((path === '@.value' || path === '#.@.value') && amount !== null) {
-    return formatUnits(amount, 18)
-  }
-
-  return valueToText(value)
 }
 
 const normalizeDecodedParam = (value: unknown, param: ParamType): unknown => {
@@ -969,38 +961,117 @@ const fieldsToRows = (
   }, [])
 }
 
-const interpolateIntent = (
+// Per the ERC-7730 spec's interpolation algorithm, each `{path}` placeholder
+// must be resolved against the matching entry in the format's `fields` array
+// (by path, after resolving `$ref`) so its declared `format`/`params` control
+// how the value is rendered - not just the raw value. Only leaf fields are
+// searched: interpolated intents may only reference always-visible paths, and
+// those never live under a grouped/array `fields` sub-list.
+const findInterpolationField = (
+  fields: Erc7730Field[] | undefined,
+  path: string,
+  context: FormatContext
+): Erc7730Field | null => {
+  if (!fields) return null
+
+  for (const field of fields) {
+    const resolvedField = resolveFieldReference(field, context)
+    if (resolvedField.path === path) return resolvedField
+  }
+
+  return null
+}
+
+// Builds the ERC-7730 `interpolatedIntent` title as structured parts. Every
+// placeholder uses the same field formatter as its corresponding detail row.
+// Interpolation is all-or-nothing: malformed templates, unresolved paths,
+// fields that are not always visible, or missing formatters return null so the
+// UI can fall back to the static `intent` and its rows.
+const interpolateIntentParts = (
   template: string,
+  fields: Erc7730Field[] | undefined,
   context: FormatContext,
   base: unknown
-): string | null => {
-  let interpolated = ''
+): HumanizerVisualization[] | null => {
+  const parts: HumanizerVisualization[] = []
   let currentIndex = 0
+
+  // The leading word(s) of an interpolated intent are the verb ("Swap ",
+  // "Stake ", ...), so render them as an `action` part - same styling as the
+  // rest of the app's action verbs (e.g. getAction('Swap') in the Uniswap/
+  // CowSwap/etc. modules) - instead of plain text.
+  const pushText = (text: string) => {
+    if (!text) return
+    parts.push(parts.length === 0 ? getAction(text) : getText(text))
+  }
 
   while (currentIndex < template.length) {
     const openingBraceIndex = template.indexOf('{', currentIndex)
-    if (openingBraceIndex === -1) {
-      interpolated += template.slice(currentIndex)
+    const closingBraceIndex = template.indexOf('}', currentIndex)
+    const nextBraceIndex =
+      openingBraceIndex === -1
+        ? closingBraceIndex
+        : closingBraceIndex === -1
+          ? openingBraceIndex
+          : Math.min(openingBraceIndex, closingBraceIndex)
+
+    if (nextBraceIndex === -1) {
+      pushText(template.slice(currentIndex))
       break
     }
 
-    const closingBraceIndex = template.indexOf('}', openingBraceIndex + 1)
-    if (closingBraceIndex === -1) {
-      interpolated += template.slice(currentIndex)
-      break
+    pushText(template.slice(currentIndex, nextBraceIndex))
+
+    const brace = template.charAt(nextBraceIndex)
+    const isEscapedBrace = template.charAt(nextBraceIndex + 1) === brace
+    if (isEscapedBrace) {
+      pushText(brace)
+      currentIndex = nextBraceIndex + 2
+      continue
     }
 
-    interpolated += template.slice(currentIndex, openingBraceIndex)
+    if (brace === '}') return null
 
-    const path = template.slice(openingBraceIndex + 1, closingBraceIndex).trim()
+    const placeholderEndIndex = template.indexOf('}', nextBraceIndex + 1)
+    if (placeholderEndIndex === -1) return null
+
+    const path = template.slice(nextBraceIndex + 1, placeholderEndIndex).trim()
+    if (!path || path.includes('{')) return null
+
+    const matchingField = findInterpolationField(fields, path, context)
+    if (
+      !matchingField ||
+      (matchingField.visible !== undefined && matchingField.visible !== 'always') ||
+      matchingField.fields?.length ||
+      matchingField.format === 'calldata'
+    ) {
+      return null
+    }
+
     const value = resolvePath(path, context, base)
     if (value === undefined) return null
 
-    interpolated += interpolatedValueToText(path, value)
-    currentIndex = closingBraceIndex + 1
+    const formattedValue = formatFieldValue(matchingField, value, context, base)
+    if (!formattedValue.length) return null
+    if (
+      (matchingField.format === 'amount' || matchingField.format === 'tokenAmount') &&
+      !formattedValue.some((item) => item.type === 'token')
+    ) {
+      return null
+    }
+    if (
+      (matchingField.format === 'addressName' ||
+        matchingField.format === 'interoperableAddressName') &&
+      !formattedValue.some((item) => item.type === 'address')
+    ) {
+      return null
+    }
+    parts.push(...formattedValue)
+
+    currentIndex = placeholderEndIndex + 1
   }
 
-  return interpolated
+  return parts.length ? parts : null
 }
 
 const formatToVisualizations = (
@@ -1008,14 +1079,20 @@ const formatToVisualizations = (
   context: FormatContext,
   dapp?: Call['dapp']
 ): HumanizerVisualization[] | null => {
-  const intent =
-    (format.interpolatedIntent &&
-      interpolateIntent(format.interpolatedIntent, context, context.root)) ||
-    format.intent
+  const titleParts = format.interpolatedIntent
+    ? interpolateIntentParts(format.interpolatedIntent, format.fields, context, context.root)
+    : null
+  // `format.intent` is the spec's plain, non-interpolated short title (e.g.
+  // "Swap") and is always used as `title` - it needs no token/decimals lookup,
+  // so it can never fail the way interpolation can. Consumers that need a rich,
+  // fully-interpolated title (e.g. "Swap 0.5 ETH for at least 120 USDC") must
+  // render `titleParts` instead; `title` is only the safe fallback text for
+  // non-rendering consumers (label comparisons, non-rich surfaces) and for
+  // when `titleParts` itself is null (interpolation couldn't be resolved).
   const rows = fieldsToRows(format.fields || [], context, context.root)
   if (!rows) return null
 
-  return [getErc7730Visualization(intent, rows, dapp)]
+  return [getErc7730Visualization(format.intent, rows, dapp, titleParts ?? undefined)]
 }
 
 const isOneInchFillOrderFormat = (formatKey: string, descriptorPath?: string) =>
