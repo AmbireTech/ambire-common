@@ -132,21 +132,25 @@ describe('toCallsUserRequest', () => {
     expect(meta.isOnchainSafeRejection).toBe(true)
   })
 
+  test('marks a Safe Global rejection call to the Safe itself as an onchain Safe rejection', () => {
+    const meta = getCallsRequestMeta(buildSafeTransaction({ to: SAFE_ADDRESS }))
+
+    expect(meta.isOnchainSafeRejection).toBe(true)
+  })
+
   test.each([
     { to: OWNER, value: '0', data: '0x' },
     { to: ZeroAddress, value: '1', data: '0x' },
-    { to: ZeroAddress, value: '0', data: '0x01' }
-  ])('does not mark a non-rejection single call (%o)', ({ to, value, data }) => {
-    const meta = getCallsRequestMeta(buildSafeTransaction({ to, value, data }))
+    { to: ZeroAddress, value: '0', data: '0x01' },
+    { to: SAFE_ADDRESS, value: '0', data: '0x', operation: 1 }
+  ])('does not mark a non-rejection single call (%o)', (overrides) => {
+    const meta = getCallsRequestMeta(buildSafeTransaction(overrides))
 
     expect(meta.isOnchainSafeRejection).toBeUndefined()
   })
 
   test('does not mark a batch that contains an empty call to the zero address', () => {
-    const calls = [
-      { to: ZeroAddress, value: 0n, data: '0x' },
-      { to: OWNER, value: 0n, data: '0x' }
-    ]
+    const calls = [{ to: ZeroAddress, value: 0n, data: '0x' }]
     const encodedCalls = concat(
       calls.map((call) =>
         solidityPacked(

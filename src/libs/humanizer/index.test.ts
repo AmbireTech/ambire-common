@@ -2456,7 +2456,7 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
-  test('humanizes a Safe execTransaction reject call with ERC-7730', async () => {
+  test('leaves a nested Safe execTransaction empty self-call generic', async () => {
     const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
     const safeSingleton = '0x29fcb43b46531bca003ddc8fcb67ffe91900c762'
     const safeExecAccountOp: AccountOp = {
@@ -2531,7 +2531,7 @@ describe('ERC-7730 descriptors', () => {
           value: [
             expect.objectContaining({
               type: 'erc7730',
-              title: 'Reject currently queued transaction'
+              title: 'Empty call to'
             })
           ]
         }

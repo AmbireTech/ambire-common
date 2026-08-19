@@ -37,15 +37,14 @@ export const fallbackHumanizer: HumanizerCallModule = (
       }
     case 'has-to:no-value:no-data':
       const safeNonce = getAccountOpNonce(accountOp)
-      if (accountOp.meta?.isOnchainSafeRejection && call.to === ZeroAddress && safeNonce !== null) {
+      if (accountOp.meta?.isOnchainSafeRejection && safeNonce !== null) {
         return {
           ...call,
           fullVisualization: [getAction(`Cancel transaction with nonce ${safeNonce.toString()}`)]
         }
       }
-      // preserve a visualization already set by an earlier, more specific module (e.g. a
-      // Safe{WALLET} "reject queued transaction" call), instead of unconditionally
-      // overwriting it with a generic "Empty call to" label below
+      // preserve a visualization already set by an earlier, more specific module instead of
+      // unconditionally overwriting it with a generic "Empty call to" label below
       if (call.fullVisualization) return call
       return {
         ...call,

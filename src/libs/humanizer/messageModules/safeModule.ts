@@ -10,7 +10,7 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
   if (message.content.kind === 'message' || typeof message.content.message === 'string')
     return { fullVisualization: [] }
   if (message.content.primaryType !== 'SafeTx') return { fullVisualization: [] }
-  const { to, value, data, operation, nonce } = message.content.message
+  const { to, value, data, operation } = message.content.message
   const { accountAddr } = message
   const { verifyingContract } = message.content.domain
   const humanizedCall = genericErc20Humanizer({ accountAddr }, { to, value, data })
@@ -18,9 +18,7 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
     verifyingContract ?? undefined,
     to,
     value,
-    data,
-    0,
-    nonce
+    data
   )
   const fullVisualization: HumanizerVisualization[] = []
   if (!isAddress(verifyingContract)) return {}

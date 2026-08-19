@@ -1161,9 +1161,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           userRequest.meta.accountAddr === accountOp.accountAddr &&
           userRequest.meta.chainId === accountOp.chainId &&
           getAccountOpNonce(userRequest.signAccountOp.accountOp) === nonce &&
-          userRequest.signAccountOp.accountOp.calls.some(
-            (call) => call.to === ZeroAddress && call.value === 0n && call.data === '0x'
-          )
+          userRequest.meta.isOnchainSafeRejection
       )
 
       if (existingSafeRejectionRequest) {
@@ -2170,6 +2168,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         callUserRequest.signAccountOp.accountOp.safeTx?.confirmations?.length
       )
       let lastSafeSignature = callUserRequest.signAccountOp.accountOp.signature
+      let lastHumanization = callUserRequest.signAccountOp.humanization
 
       callUserRequest.signAccountOp.onUpdate((forceEmit) => {
         const callsReq = this.userRequests.find(
@@ -2184,15 +2183,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           callsReq.signAccountOp.accountOp.safeTx?.confirmations?.length
         )
         const safeSignature = callsReq.signAccountOp.accountOp.signature
+        const humanization = callsReq.signAccountOp.humanization
         const hasSafeQueueStateChanged =
           !!callsReq.signAccountOp.account.safeCreation &&
           (safeNonce !== lastSafeNonce ||
             isSignedBySafeOwner !== wasSignedBySafeOwner ||
-            safeSignature !== lastSafeSignature)
+            safeSignature !== lastSafeSignature ||
+            humanization !== lastHumanization)
 
         lastSafeNonce = safeNonce
         wasSignedBySafeOwner = isSignedBySafeOwner
         lastSafeSignature = safeSignature
+        lastHumanization = humanization
 
         if (
           callsReq.signAccountOp.isSignAndBroadcastInProgress ||

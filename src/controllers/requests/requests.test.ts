@@ -473,6 +473,46 @@ describe('RequestsController ', () => {
     })
   })
 
+  test('emits completed humanization for a Safe transaction already in the queue', async () => {
+    const { controller } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+
+    await controller.build({
+      type: 'calls',
+      params: {
+        executionType: 'queue',
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, value: 0n, data: '0x' }],
+          meta: { accountAddr, chainId: 1n }
+        }
+      }
+    })
+
+    const request = controller.userRequests[0]
+    expect(request?.kind).toBe('calls')
+    if (request?.kind !== 'calls') throw new Error('Expected calls request')
+
+    const emittedHumanizationLabels: (string | undefined)[] = []
+    const unsubscribe = controller.onUpdate(() => {
+      emittedHumanizationLabels.push(
+        request.signAccountOp.humanization[0]?.fullVisualization?.[0]?.content
+      )
+    })
+
+    request.signAccountOp.humanization = [
+      {
+        ...request.signAccountOp.accountOp.calls[0]!,
+        fullVisualization: [{ id: 1, type: 'action', content: 'Transaction details' }]
+      }
+    ]
+    await request.signAccountOp.forceEmitUpdate()
+    await request.signAccountOp.forceEmitUpdate()
+    unsubscribe()
+
+    expect(emittedHumanizationLabels).toEqual(['Transaction details'])
+    request.signAccountOp.destroy()
+  })
+
   test('adds a new Safe request when two partially signed requests occupy earlier nonces', async () => {
     const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -612,6 +652,43 @@ describe('RequestsController ', () => {
     ).toBe(true)
     expect(request.signAccountOp.accountOp.calls).toHaveLength(1)
     expect(request.signAccountOp.accountOp.signed).toEqual([SAFE_OWNER])
+
+    controller.userRequests.forEach((userRequest) => {
+      if (userRequest.kind === 'calls') userRequest.signAccountOp.destroy()
+    })
+  })
+  test('focuses an imported Safe cancellation at the same nonce', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    jest.spyOn(portfolioCtrl, 'overrideSimulationResults').mockResolvedValue()
+    const regularRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    const cancellationRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
+    regularRequest.id = 'regular-safe-api-request'
+    cancellationRequest.id = 'safe-api-cancellation-request'
+    cancellationRequest.meta = {
+      ...cancellationRequest.meta,
+      isOnchainSafeRejection: true
+    }
+    updateAccountOp(regularRequest, { nonce: 7n, signed: [SAFE_OWNER] })
+    updateAccountOp(cancellationRequest, {
+      nonce: 7n,
+      calls: [
+        {
+          ...cancellationRequest.signAccountOp.accountOp.calls[0]!,
+          to: accountAddr,
+          value: 0n,
+          data: '0x'
+        }
+      ],
+      meta: { isOnchainSafeRejection: true }
+    })
+    controller.userRequests = [regularRequest, cancellationRequest]
+    await controller.setCurrentUserRequestById(regularRequest.id)
+
+    await controller.buildOnchainSafeRejection(regularRequest.id)
+
+    expect(controller.userRequests).toHaveLength(2)
+    expect(controller.currentUserRequest).toBe(cancellationRequest)
 
     controller.userRequests.forEach((userRequest) => {
       if (userRequest.kind === 'calls') userRequest.signAccountOp.destroy()
