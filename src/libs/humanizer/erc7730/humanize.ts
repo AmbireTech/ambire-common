@@ -627,8 +627,16 @@ const formatFieldValue = (
   return [getText(valueToText(value))]
 }
 
-const getFieldValue = (field: Erc7730Field, context: FormatContext, base: unknown): unknown =>
-  field.value !== undefined ? field.value : resolvePath(field.path, context, base)
+// A field value is usually a literal, but ERC-7730 also allows it to be a descriptor
+// path pointing at a constant authored in the file itself (e.g. the vault ticker in
+// `$.metadata.constants.vaultTicker`), which has to be resolved before it is displayed
+const getFieldValue = (field: Erc7730Field, context: FormatContext, base: unknown): unknown => {
+  if (field.value === undefined) return resolvePath(field.path, context, base)
+
+  return typeof field.value === 'string' && (field.value === '$' || field.value.startsWith('$.'))
+    ? resolvePath(field.value, context, base)
+    : field.value
+}
 
 const getArrayValueAt = (value: unknown, index: number): unknown =>
   Array.isArray(value) ? value[index] : value
