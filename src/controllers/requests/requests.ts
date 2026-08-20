@@ -1225,7 +1225,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       userRequest = {
-        id: new Date().getTime(),
+        id: generateUuid(),
         kind: 'message',
         meta: { params: { message: msg[0] }, accountAddr: msgAddress, chainId: network.chainId },
         dappPromises: [
@@ -1376,7 +1376,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       userRequest = {
-        id: new Date().getTime(),
+        id: generateUuid(),
         kind: 'typedMessage',
         meta: {
           params: {
@@ -1392,7 +1392,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       } as TypedMessageUserRequest
     } else {
       userRequest = {
-        id: new Date().getTime(),
+        id: generateUuid(),
         kind,
         meta: { params: request.params },
         dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
