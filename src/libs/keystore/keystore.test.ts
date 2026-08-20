@@ -249,11 +249,10 @@ describe('Keystore lib', () => {
   describe('encryptMainKeyWithSecret', () => {
     test('uses the first 32 bytes of the derived secret key', async () => {
       const mainKey = await createMainKey()
-      const secretKey = await deriveSecret(
-        new ScryptAdapter('browser-webkit'),
-        'password',
-        TEST_SALT_HEX
-      )
+      const secretKey = await deriveSecret(new ScryptAdapter('browser-webkit'), 'password', {
+        salt: TEST_SALT_HEX,
+        ...SCRYPT_PARAMS
+      })
       const expectedImportedKey = await crypto.subtle.importKey(
         'raw',
         secretKey.slice(0, 32),
@@ -280,7 +279,10 @@ describe('Keystore lib', () => {
       scryptMock.mockResolvedValue(getBytes(MOCK))
 
       const scryptAdapter = { scrypt: scryptMock } as unknown as ScryptAdapter
-      const result = await deriveSecret(scryptAdapter, 'cafe\u0301', TEST_SALT_HEX)
+      const result = await deriveSecret(scryptAdapter, 'cafe\u0301', {
+        salt: TEST_SALT_HEX,
+        ...SCRYPT_PARAMS
+      })
 
       expect(hexlify(result)).toBe(MOCK)
       expect(scryptMock).toHaveBeenCalledWith(
@@ -293,6 +295,26 @@ describe('Keystore lib', () => {
           dkLen: SCRYPT_PARAMS.dkLen
         }
       )
+    })
+
+    test('derives with the params it is given, not the current defaults', async () => {
+      const scryptMock = jest.fn<
+        ReturnType<ScryptAdapter['scrypt']>,
+        Parameters<ScryptAdapter['scrypt']>
+      >()
+      scryptMock.mockResolvedValue(getBytes(hexlify(crypto.getRandomValues(new Uint8Array(32)))))
+
+      // A secret created by an older version, or by another Ambire product configured
+      // differently, only derives the same key when its own params are used
+      const storedParams = { salt: TEST_SALT_HEX, N: 16384, r: 4, p: 2, dkLen: 32 }
+      await deriveSecret({ scrypt: scryptMock } as unknown as ScryptAdapter, 'pass', storedParams)
+
+      expect(scryptMock).toHaveBeenCalledWith(getBytesForSecret('pass'), getBytes(TEST_SALT_HEX), {
+        N: 16384,
+        r: 4,
+        p: 2,
+        dkLen: 32
+      })
     })
   })
 
