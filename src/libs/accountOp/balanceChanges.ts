@@ -9,33 +9,37 @@ export type { BalanceChangesReceipt, BalanceChangeTransferLog } from './hyperEvm
 
 const ABSTRACT_CHAIN_ID = 2741n
 const ABSTRACT_NATIVE_TOKEN_ADDRESS = '0x000000000000000000000000000000000000800A'
+const NATIVE_TOKEN_TRANSFER_LOG_ADDRESS = '0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE'
 
 /**
- * The ETH token on abstract is represented on an address
- * that isn't a standard ERC-20 but it emits such a transfer log,
- * causing our balance changes to break. We're fixing that here by
- * omiting it
+ * Some native tokens emit ERC-20-shaped transfer logs from addresses that
+ * aren't standard ERC-20 contracts. Exclude the universal native transfer
+ * log address and Abstract's native token alias from ERC-20 balance checks.
  */
-const filterAbstractNativeTokenAlias = (tokenAddrs: string[], chainId?: bigint) => {
-  if (chainId !== ABSTRACT_CHAIN_ID) return tokenAddrs
+const filterNativeTokenAliases = (tokenAddrs: string[], chainId?: bigint) =>
+  tokenAddrs.filter((tokenAddr) => {
+    const normalizedTokenAddr = tokenAddr.toLowerCase()
 
-  return tokenAddrs.filter(
-    (tokenAddr) => tokenAddr.toLowerCase() !== ABSTRACT_NATIVE_TOKEN_ADDRESS.toLowerCase()
-  )
-}
+    if (normalizedTokenAddr === NATIVE_TOKEN_TRANSFER_LOG_ADDRESS.toLowerCase()) return false
+
+    return (
+      chainId !== ABSTRACT_CHAIN_ID ||
+      normalizedTokenAddr !== ABSTRACT_NATIVE_TOKEN_ADDRESS.toLowerCase()
+    )
+  })
 
 export const getBalanceChangeTokenAddresses = (
   tokenAddrs: string[],
   chainId?: bigint
 ): string[] => {
-  const tokenAddrsToNormalize = filterAbstractNativeTokenAlias(tokenAddrs, chainId)
+  const tokenAddrsToNormalize = filterNativeTokenAliases(tokenAddrs, chainId)
 
   return Array.from(
     new Set(
       [ZeroAddress, ...tokenAddrsToNormalize].map((tokenAddr) => {
         try {
           return getAddress(tokenAddr)
-        } catch (e) {
+        } catch {
           return null
         }
       })
@@ -149,7 +153,7 @@ export const getAccountOpBalanceChanges = async ({
       debugTraceTransaction
     })
   }
-  const balanceChangeTokenAddrs = filterAbstractNativeTokenAlias(tokenAddrs, chainId)
+  const balanceChangeTokenAddrs = filterNativeTokenAliases(tokenAddrs, chainId)
   const previousBlockNumber = prevBlockNumber
     ? prevBlockNumber
     : receiptBlockNumber > 0

@@ -111,6 +111,7 @@ import { SquidAPI } from '@/services/squid/api'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
+import { generateUuid } from '@/utils/uuid'
 import wait from '@/utils/wait'
 
 type AccountsUpdate = {
@@ -1936,7 +1937,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (openBenzin) {
       const benzinUserRequest: BenzinUserRequest = {
-        id: new Date().getTime(),
+        id: generateUuid(),
         kind: 'benzin',
         meta,
         dappPromises: []

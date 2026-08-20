@@ -85,7 +85,6 @@ const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOpt
             accountOp.chainId,
             accountOp.accountAddr,
             resolvedDescriptor,
-            0,
             options.nativeAssetSymbol
           ) || call
         )
