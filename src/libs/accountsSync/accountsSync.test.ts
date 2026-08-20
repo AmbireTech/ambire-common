@@ -1,6 +1,7 @@
-import { getBytes, toUtf8Bytes } from 'ethers'
+import { getBytes, getCreate2Address, keccak256, toUtf8Bytes } from 'ethers'
 import { gzip } from 'pako'
 
+import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
 import { CIPHER } from '@/libs/keystore/keystore'
 
 import {
@@ -10,7 +11,18 @@ import {
   serializeAccountsSyncPayload
 } from './accountsSync'
 
-const ACCOUNT_ADDR = '0x8DC9b3e1F5b0Dc9F6b2e0d3D0Ba0A5a32B0E7C4B'
+const ACCOUNT_CREATION = {
+  factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+  bytecode: `0x${'60'.repeat(120)}`,
+  salt: `0x${'00'.repeat(32)}`
+}
+// The parser verifies the address against the creation data, so it can't be an arbitrary one
+const ACCOUNT_ADDR = getCreate2Address(
+  ACCOUNT_CREATION.factoryAddr,
+  ACCOUNT_CREATION.salt,
+  keccak256(ACCOUNT_CREATION.bytecode)
+)
+const EOA_ADDR = '0x8DC9b3e1F5b0Dc9F6b2e0d3D0Ba0A5a32B0E7C4B'
 const KEY_ADDR = '0x085f8A348f6fBc6F8d8FC3f1e427473436506D65'
 const EXTERNAL_KEY_ADDR = '0x1A2C3802A9eC12725678dAF23DbFD13134e5893A'
 
@@ -34,11 +46,7 @@ const buildPayload = (): AccountsSyncPayload => ({
       initialPrivileges: [
         [KEY_ADDR, '0x0000000000000000000000000000000000000000000000000000000000000002']
       ],
-      creation: {
-        factoryAddr: '0xa8202f888b9b2dFA5Ceb2204865018133F6F179A',
-        bytecode: `0x${'60'.repeat(120)}`,
-        salt: `0x${'00'.repeat(32)}`
-      },
+      creation: ACCOUNT_CREATION,
       preferences: { label: 'Account 1', pfp: ACCOUNT_ADDR }
     }
   ],
@@ -144,6 +152,13 @@ describe('accountsSync payload', () => {
     expect(() => serializeAndParse(payload)).toThrow('invalid scrypt params')
   })
 
+  it('rejects scrypt params that would make deriving the key allocate gigabytes', () => {
+    const payload: any = buildPayload()
+    payload.secret.scryptParams = { ...payload.secret.scryptParams, N: 2 ** 21, p: 64 }
+
+    expect(() => serializeAndParse(payload)).toThrow('invalid scrypt params')
+  })
+
   it('rejects a main key that is not AES-GCM encrypted', () => {
     const payload: any = buildPayload()
     payload.secret.aesEncrypted = {
@@ -168,6 +183,57 @@ describe('accountsSync payload', () => {
     payload.accounts[0].addr = '0xnot-an-address'
 
     expect(() => serializeAndParse(payload)).toThrow('invalid account addr')
+  })
+
+  it('rejects an account that does not match its creation data', () => {
+    const payload: any = buildPayload()
+    payload.accounts[0].creation = { ...ACCOUNT_CREATION, salt: `0x${'11'.repeat(32)}` }
+
+    expect(() => serializeAndParse(payload)).toThrow(
+      `account ${ACCOUNT_ADDR} does not match its creation data`
+    )
+  })
+
+  it('rejects an account with a non-address in associatedKeys', () => {
+    const payload: any = buildPayload()
+    payload.accounts[0].associatedKeys = [KEY_ADDR, '0xnot-an-address']
+
+    expect(() => serializeAndParse(payload)).toThrow('invalid account associatedKeys')
+  })
+
+  it('rejects an account with malformed initialPrivileges', () => {
+    const payload: any = buildPayload()
+    payload.accounts[0].initialPrivileges = [[KEY_ADDR, 'not-a-hex-privilege']]
+
+    expect(() => serializeAndParse(payload)).toThrow('invalid account initialPrivileges')
+  })
+
+  it('accepts an EOA controlled by its own address', () => {
+    const payload: any = buildPayload()
+    payload.accounts[0] = {
+      addr: EOA_ADDR,
+      associatedKeys: [EOA_ADDR],
+      initialPrivileges: [],
+      creation: null,
+      preferences: { label: 'Account 1', pfp: EOA_ADDR }
+    }
+
+    expect(serializeAndParse(payload)).toEqual(payload)
+  })
+
+  it('rejects an EOA that lists keys other than its own address', () => {
+    const payload: any = buildPayload()
+    payload.accounts[0] = {
+      addr: EOA_ADDR,
+      associatedKeys: [KEY_ADDR],
+      initialPrivileges: [],
+      creation: null,
+      preferences: { label: 'Account 1', pfp: EOA_ADDR }
+    }
+
+    expect(() => serializeAndParse(payload)).toThrow(
+      `account ${EOA_ADDR} has unexpected associatedKeys`
+    )
   })
 
   it('rejects an internal key that is not AES-GCM encrypted', () => {

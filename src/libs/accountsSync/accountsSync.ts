@@ -1,4 +1,12 @@
-import { hexlify, isAddress, toUtf8Bytes, toUtf8String } from 'ethers'
+import {
+  getCreate2Address,
+  hexlify,
+  isAddress,
+  isHexString,
+  keccak256,
+  toUtf8Bytes,
+  toUtf8String
+} from 'ethers'
 import { gzip, Inflate } from 'pako'
 
 import { Account } from '../../interfaces/account'
@@ -7,7 +15,7 @@ import {
   StoredKey,
   StoredKeystoreSeed
 } from '../../interfaces/keystore'
-import { CIPHER, tryParseGcmPayload } from '../keystore/keystore'
+import { CIPHER, SCRYPT_PARAMS, tryParseGcmPayload } from '../keystore/keystore'
 
 /**
  * The UR type used to transport the accounts sync payload over animated QR codes.
@@ -41,17 +49,40 @@ const validateSecret = (secret: any) => {
   if (!secret || secret.id !== 'password')
     throw new Error('accountsSync: missing the password protected main key')
 
+  // Deriving the key allocates 128 * N * r bytes, so the scanned params are pinned to the
+  // ones every Ambire product uses, instead of letting a hostile QR code ask for gigabytes
   const { salt, N, r, p, dkLen } = secret.scryptParams || {}
   const hasValidScryptParams =
     typeof salt === 'string' &&
-    typeof N === 'number' &&
-    typeof r === 'number' &&
-    typeof p === 'number' &&
-    typeof dkLen === 'number'
+    N === SCRYPT_PARAMS.N &&
+    r === SCRYPT_PARAMS.r &&
+    p === SCRYPT_PARAMS.p &&
+    dkLen === SCRYPT_PARAMS.dkLen
   if (!hasValidScryptParams) throw new Error('accountsSync: invalid scrypt params')
 
   requireGcmPayload(secret.aesEncrypted, 'the main key')
 }
+
+/**
+ * Recomputes the address the factory deploys for the scanned bytecode, the same way the
+ * AccountPicker does for linked accounts, so a scanned account cannot claim to be an
+ * address it isn't. Safe accounts are left out, because deriving their address needs the
+ * factory's proxy creation code, which is only available over an RPC call.
+ */
+const validateAccountCreation = (account: any) => {
+  const { factoryAddr, bytecode, salt } = account.creation
+  if (!isAddress(factoryAddr) || !isHexString(bytecode) || !isHexString(salt, 32))
+    throw new Error(`accountsSync: invalid creation data for account ${account.addr}`)
+
+  if (
+    getCreate2Address(factoryAddr, salt, keccak256(bytecode)).toLowerCase() !==
+    account.addr.toLowerCase()
+  )
+    throw new Error(`accountsSync: account ${account.addr} does not match its creation data`)
+}
+
+const isPrivilege = (privilege: any) =>
+  Array.isArray(privilege) && isAddress(privilege[0]) && isHexString(privilege[1])
 
 const validateAccounts = (accounts: any) => {
   if (!Array.isArray(accounts) || !accounts.length)
@@ -59,9 +90,22 @@ const validateAccounts = (accounts: any) => {
 
   accounts.forEach((account) => {
     if (!account || !isAddress(account.addr)) throw new Error('accountsSync: invalid account addr')
-    if (!Array.isArray(account.associatedKeys))
+    if (!Array.isArray(account.associatedKeys) || !account.associatedKeys.every(isAddress))
       throw new Error('accountsSync: invalid account associatedKeys')
+    if (!Array.isArray(account.initialPrivileges) || !account.initialPrivileges.every(isPrivilege))
+      throw new Error('accountsSync: invalid account initialPrivileges')
     if (!account.preferences?.label) throw new Error('accountsSync: invalid account preferences')
+
+    if (account.creation) return validateAccountCreation(account)
+
+    // An EOA is controlled by its own address only, so anything else means the scanned
+    // account was tampered with. Safe accounts have no `creation`, but do list their owners
+    if (
+      !account.safeCreation &&
+      (account.associatedKeys.length !== 1 ||
+        account.associatedKeys[0].toLowerCase() !== account.addr.toLowerCase())
+    )
+      throw new Error(`accountsSync: account ${account.addr} has unexpected associatedKeys`)
   })
 }
 
