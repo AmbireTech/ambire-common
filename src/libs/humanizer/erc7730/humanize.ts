@@ -30,6 +30,7 @@ import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import {
+  dedupeWarnings,
   eToNative,
   flattenHumanizerVisualizations,
   getAction,
@@ -66,6 +67,13 @@ type FormatContext = {
   descriptorPath?: string
   root: Record<string, unknown>
   chainId?: bigint
+  /**
+   * Warnings found while decoding the calls nested inside this one. A nested call is rendered as a
+   * row, and a row has nowhere to put a warning, so the decoders push here instead and the top
+   * level reads it once the whole call is formatted. Shared by every nested level, because the
+   * context is threaded down unchanged.
+   */
+  collectedWarnings: HumanizerWarning[]
 }
 
 type VisibilityResult = {
@@ -699,8 +707,11 @@ const getNestedErc7730CalldataValue = (
   const erc7730Visualization = humanizedCall?.fullVisualization?.find(
     (visualization) => visualization.type === 'erc7730'
   )
+  if (erc7730Visualization?.type !== 'erc7730') return null
 
-  return erc7730Visualization?.type === 'erc7730' ? erc7730Visualization : null
+  context.collectedWarnings.push(...(humanizedCall?.warnings || []))
+
+  return erc7730Visualization
 }
 
 const resolveCalldataParam = (
@@ -788,7 +799,8 @@ const getCalldataRows = (
         },
         context.chainId,
         accountAddr,
-        singleCallHumanizerModules
+        singleCallHumanizerModules,
+        context.collectedWarnings
       )
 
       if (moduleFallbackVisualization) {
@@ -1362,7 +1374,8 @@ const getModuleFallbackVisualization = (
   call: Call,
   chainId: bigint,
   accountAddr: string,
-  modules?: HumanizerCallModule[]
+  modules?: HumanizerCallModule[],
+  collectedWarnings?: HumanizerWarning[]
 ): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
   const accountOp = {
     accountAddr,
@@ -1424,20 +1437,13 @@ const getModuleFallbackVisualization = (
       rowsWithReset[0]!.label,
     rowsWithReset
   )
+  if (visualization.type !== 'erc7730') return null
 
-  return visualization.type === 'erc7730' ? visualization : null
-}
+  // The modules above already found everything worth warning about in this nested call, but only
+  // its visualization becomes a row. Hand the warnings to the caller so they reach the top level.
+  collectedWarnings?.push(...(humanizedCall?.warnings || []))
 
-const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
-  const warningKeys = new Set<string>()
-
-  return warnings.filter((warning) => {
-    const warningKey = `${warning.code}:${warning.content}:${warning.address || ''}`
-    if (warningKeys.has(warningKey)) return false
-    warningKeys.add(warningKey)
-
-    return true
-  })
+  return visualization
 }
 
 const hasDisplayedNativeTransactionValue = (
@@ -1562,7 +1568,8 @@ const getSafeTxCallVisualizations = (
   safeTxCalls: Call[],
   chainId: bigint,
   accountAddr: string,
-  resolvedDescriptor: Erc7730ResolvedDescriptor
+  resolvedDescriptor: Erc7730ResolvedDescriptor,
+  collectedWarnings?: HumanizerWarning[]
 ): (HumanizerVisualization & HumanizerErc7730Visualization)[] => {
   return safeTxCalls
     .map((safeTxCall, index) => {
@@ -1579,7 +1586,11 @@ const getSafeTxCallVisualizations = (
         const erc7730Visualization = humanizedCall?.fullVisualization?.find(
           (visualization) => visualization.type === 'erc7730'
         )
-        if (erc7730Visualization) return erc7730Visualization
+        if (erc7730Visualization) {
+          collectedWarnings?.push(...(humanizedCall?.warnings || []))
+
+          return erc7730Visualization
+        }
       }
 
       const safeFallbackVisualization = getSafeCallFallbackVisualization(safeTxCall)
@@ -1588,13 +1599,17 @@ const getSafeTxCallVisualizations = (
       const moduleFallbackVisualization = getModuleFallbackVisualization(
         safeTxCall,
         chainId,
-        accountAddr
+        accountAddr,
+        undefined,
+        collectedWarnings
       )
       if (moduleFallbackVisualization) return moduleFallbackVisualization
 
       const fallbackCall = genericErc20Humanizer({ accountAddr }, safeTxCall)
       const rows = getRowsFromFlatCallVisualization(fallbackCall?.fullVisualization)
       if (!rows) return getKnownCallVisualization(safeTxCall)
+
+      collectedWarnings?.push(...(fallbackCall?.warnings || []))
 
       return getErc7730Visualization(
         getActionTitleFromFlatCallVisualization(fallbackCall?.fullVisualization) || rows[0]!.label,
@@ -1689,11 +1704,13 @@ export const humanizeCallWithErc7730 = (
   nativeAssetSymbol?: string
 ): IrCall | null => {
   if (resolvedDescriptor.safeTxTransactionsOnly && resolvedDescriptor.safeTxCalls?.length) {
+    const collectedWarnings: HumanizerWarning[] = []
     const safeTxCallVisualizations = getSafeTxCallVisualizations(
       resolvedDescriptor.safeTxCalls,
       chainId,
       accountAddr,
-      resolvedDescriptor
+      resolvedDescriptor,
+      collectedWarnings
     )
 
     if (!safeTxCallVisualizations.length || !call.to) return null
@@ -1712,9 +1729,10 @@ export const humanizeCallWithErc7730 = (
           }
         ])
       ],
-      warnings: dedupeWarnings(
-        resolvedDescriptor.safeTxCalls.flatMap((safeTxCall) => getSafeCallWarnings(safeTxCall))
-      )
+      warnings: dedupeWarnings([
+        ...resolvedDescriptor.safeTxCalls.flatMap((safeTxCall) => getSafeCallWarnings(safeTxCall)),
+        ...collectedWarnings
+      ])
     }
   }
 
@@ -1735,7 +1753,8 @@ export const humanizeCallWithErc7730 = (
         chainId
       }
     },
-    chainId
+    chainId,
+    collectedWarnings: []
   }
   const fullVisualization = formatToVisualizations(match.format, context, call.dapp)
   const normalizedVisualization = fullVisualization
@@ -1759,7 +1778,9 @@ export const humanizeCallWithErc7730 = (
             visualizationWithNativeValue.didAppendNativeValueRow,
             nativeAssetSymbol
           ),
-          ...getNestedCalldataDepthWarnings(visualizationWithNativeValue.fullVisualization)
+          ...getNestedCalldataDepthWarnings(visualizationWithNativeValue.fullVisualization),
+          // warnings the nested calls produced while this call was being formatted
+          ...context.collectedWarnings
         ])
       }
     : null
@@ -1787,7 +1808,8 @@ export const humanizeMessageWithErc7730 = (
         verifyingContract: message.content.domain.verifyingContract
       }
     },
-    chainId
+    chainId,
+    collectedWarnings: []
   }
   const fullVisualization = formatToVisualizations(match.format, context)
   const safeTxVisualization =
@@ -1799,7 +1821,11 @@ export const humanizeMessageWithErc7730 = (
     ? {
         ...message,
         fullVisualization: safeTxVisualization,
-        warnings: getSafeTxMessageWarnings(message),
+        warnings: dedupeWarnings([
+          ...getSafeTxMessageWarnings(message),
+          // warnings the calls nested in this message produced while it was being formatted
+          ...context.collectedWarnings
+        ]),
         canHideDropdownArrow: true
       }
     : null

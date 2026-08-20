@@ -1320,6 +1320,24 @@ export class DappsController extends EventEmitter implements IDappsController {
     return undefined
   }
 
+  #isDappIdInDefaultCatalog(dappId: string): boolean {
+    const storedDapp = this.#dapps.get(dappId)
+
+    // Custom dApps are user-added/connected entries, not default catalog entries.
+    return !!storedDapp && !storedDapp.isCustom
+  }
+
+  /**
+   * True when the app is a default Ambire catalog entry - one we ship and keep an eye on - rather
+   * than one the user added or connected to on their own. Used to decide how much to trust an app
+   * beyond the verification status, e.g. whether to warn about an unlimited approval it requests.
+   */
+  isDappInDefaultCatalog(url: string): boolean {
+    if (!url) return false
+
+    return this.#isDappIdInDefaultCatalog(getDappIdFromUrl(url))
+  }
+
   /**
    * Returns the highest-priority dApp verification banner for the provided dApp URLs, or `null` if none apply.
    *
@@ -1392,13 +1410,6 @@ export class DappsController extends EventEmitter implements IDappsController {
       return `${withColon} ${dappNames}`
     }
 
-    const isDappInDefaultCatalog = (dappId: string) => {
-      const storedDapp = this.#dapps.get(dappId)
-
-      // Custom dApps are user-added/connected entries, not default catalog entries.
-      return !!storedDapp && !storedDapp.isCustom
-    }
-
     // 1) dApp is blacklisted
     const blacklistedDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'BLACKLISTED')
     if (blacklistedDappNames.length) {
@@ -1461,7 +1472,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     // 5) dApp is not in the default catalog
     const notInCatalogDappNames = getDappNamesByPredicate(
-      (dapp) => dapp.status === 'VERIFIED' && !isDappInDefaultCatalog(dapp.id)
+      (dapp) => dapp.status === 'VERIFIED' && !this.#isDappIdInDefaultCatalog(dapp.id)
     )
     if (notInCatalogDappNames.length) {
       return {

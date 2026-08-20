@@ -30,6 +30,7 @@ import {
   getLabel,
   getText,
   getToken,
+  getUnlimitedApprovalWarning,
   getWarning,
   hasErc7730Humanization
 } from './utils'
@@ -2177,7 +2178,10 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     })
+    // both approvals in this batch are for the maximum amount, and the modules that found them
+    // keep their warnings even though the ERC-7730 descriptors replaced the visualization
     expect(irCalls[0]!.warnings).toEqual([
+      getUnlimitedApprovalWarning(permit2),
       getWarning('This transaction will send ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
     ])
     expect(irCalls[1]!.fullVisualization?.[0]).toMatchObject({
@@ -2194,6 +2198,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     })
     expect(irCalls[1]!.warnings).toEqual([
+      getUnlimitedApprovalWarning(universalRouter),
       getWarning('This transaction will send ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
     ])
     expect(irCalls[2]!.fullVisualization?.[0]).toMatchObject({
