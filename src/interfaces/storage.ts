@@ -21,6 +21,7 @@ import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
+import { RailgunActivityEntry } from './railgun'
 import type { FeeSpeed } from './signAccountOp'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
@@ -123,6 +124,17 @@ export type StorageProps = {
   functionSelectors: Selectors
   // Per-controller debug logging toggles. Only enabled ones are stored
   debugLogNamespaces: Record<string, boolean>
+  // Railgun (privacy pool) integration.
+  // Note there is no stored Railgun identity: the 0zk keys are derived on demand from the
+  // recovery phrase the selected account belongs to (see KeystoreController.deriveRailgunKey),
+  // so nothing about the identity needs persisting.
+  // Flat key-value blob the Railgun SDK's Host.storage adapter reads/writes into
+  // (UTXO sync state, POI cache, etc). Keyed by the SDK's own internal keys, which it prefixes
+  // with the chain id - so one blob holds every chain's state without collisions.
+  railgunPluginStorage: Record<string, string>
+  // Locally recorded Railgun operations (the pool exposes no transaction history), capped to
+  // the most recent ones - see RailgunController's MAX_ACTIVITY_ENTRIES.
+  railgunActivity: RailgunActivityEntry[]
 }
 
 export interface Storage {

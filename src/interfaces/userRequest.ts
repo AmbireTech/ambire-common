@@ -65,6 +65,8 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     safeTx?: SafeMultisigTransactionResponse
     swapTxn?: SwapAndBridgeSendTxRequest
     quote?: SwapAndBridgeQuote
+    /** Travels on to `AccountOp['meta']`, where it is documented. */
+    railgunShieldActivityId?: string
   }
   signAccountOp: ISignAccountOpController
 }

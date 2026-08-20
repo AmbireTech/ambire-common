@@ -382,7 +382,8 @@ requestsCtrl = new RequestsController({
   addTokensToBeLearned: () => {},
   onSetCurrentUserRequest: () => {},
   onBroadcastSuccess: async () => {},
-  onBroadcastFailed: () => {}
+  onBroadcastFailed: () => {},
+  onCallsRequestRejected: () => {}
 })
 
 describe('SwapAndBridge Controller', () => {

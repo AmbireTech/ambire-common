@@ -171,6 +171,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #onBroadcastFailed: OnBroadcastFailed
 
+  #onCallsRequestRejected: (accountOp: AccountOp) => void
+
   userRequests: UserRequest[] = []
 
   userRequestsWaitingAccountSwitch: UserRequest[] = []
@@ -242,6 +244,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     onSetCurrentUserRequest,
     onBroadcastSuccess,
     onBroadcastFailed,
+    onCallsRequestRejected,
     shouldSimulateAccountOps = true
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
@@ -277,6 +280,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     onSetCurrentUserRequest: (currentUserRequest: UserRequest | null) => void
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
+    /**
+     * A transaction request the user turned down, so whoever put it together can undo what it was
+     * part of. Fired per rejected request, before it is torn down, and for every reason a request
+     * is rejected - the Reject button, a rejected call that emptied the batch, an account switch.
+     */
+    onCallsRequestRejected: (accountOp: AccountOp) => void
     shouldSimulateAccountOps?: boolean
   }) {
     super(eventEmitterRegistry)
@@ -309,6 +318,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#onSetCurrentUserRequest = onSetCurrentUserRequest
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
+    this.#onCallsRequestRejected = onCallsRequestRejected
     this.shouldSimulateAccountOps = shouldSimulateAccountOps
 
     this.#ui.window.event.on('windowRemoved', async (winId: number) => {
@@ -1044,6 +1054,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       callsUserRequestsToReject.map((r) =>
         this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
       )
+    )
+
+    // Before removeUserRequests below, which destroys the SignAccountOpController the op is read
+    // from
+    callsUserRequestsToReject.forEach((r) =>
+      this.#onCallsRequestRejected(r.signAccountOp.accountOp)
     )
 
     waitingUserRequestsToReject.forEach((r) => {

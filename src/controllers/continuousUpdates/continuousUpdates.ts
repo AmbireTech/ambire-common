@@ -7,6 +7,7 @@ import {
   ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
   ACTIVITY_REFRESH_INTERVAL,
   INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL,
+  RAILGUN_BALANCE_REFRESH_INTERVAL,
   TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL,
   TRENDING_TOKENS_FAILED_UPDATE_INTERVAL,
   TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL
@@ -73,6 +74,12 @@ export class ContinuousUpdatesController extends EventEmitter {
   #safeGlobalTxnInterval: IRecurringTimeout
 
   #safeGlobalMessageInterval: IRecurringTimeout
+
+  #railgunBalancesInterval: IRecurringTimeout
+
+  get railgunBalancesInterval() {
+    return this.#railgunBalancesInterval
+  }
 
   #updateTrendingTokensInterval: IRecurringTimeout
 
@@ -173,6 +180,32 @@ export class ContinuousUpdatesController extends EventEmitter {
       'resolveConfirmedSafeMessages'
     )
 
+    this.#railgunBalancesInterval = new RecurringTimeout(
+      this.#updateRailgunBalances.bind(this),
+      RAILGUN_BALANCE_REFRESH_INTERVAL,
+      this.emitError.bind(this),
+      'railgunBalancesInterval'
+    )
+
+    // Railgun requires explicit user opt-in (key derivation + WASM init + a shielded pool
+    // sync), so the refresh interval only runs once initialized, and stops if that ever
+    // reverts (e.g. the background context restarted, or the keystore locked, and Railgun
+    // hasn't been re-initialized yet).
+    //
+    // With POI enabled this interval is not just a balance refresh: the SDK generates and
+    // submits the POI proofs for notes it has pending during a sync, so a wallet that never
+    // syncs after sending leaves those notes without an innocence proof - and unspendable.
+    this.#main.railgun.onUpdate(() => {
+      // Gated on a completed scan, not merely on an initialized plugin: opening the Privacy screen
+      // derives the identity (RailgunController.initIdentity), and starting a scan off the back of
+      // that would turn a screen visit into the minutes-long first walk nobody asked for.
+      if (this.#main.railgun.isInitialized && this.#main.railgun.hasSyncedAnyChain) {
+        this.#railgunBalancesInterval.start({ runImmediately: true })
+      } else {
+        this.#railgunBalancesInterval.stop()
+      }
+    }, 'continuous-update')
+
     // Trending tokens poll frequently only while the extension is active and back off to a long
     // cadence otherwise. On becoming active we refresh immediately, but the freshness guard in
     // #updateTrendingTokens skips the fetch when the last update is still recent.
@@ -272,6 +305,16 @@ export class ContinuousUpdatesController extends EventEmitter {
       maxDataAgeMs: 60 * 1000,
       maxDataAgeMsUnused: 60 * 60 * 1000
     })
+  }
+
+  async #updateRailgunBalances() {
+    await this.initialLoadPromise
+
+    if (!this.#main.railgun.isInitialized) return
+
+    // Flagged as a background update so a transient failure on this timer doesn't toast the
+    // user (and report to Sentry) on every tick - see RailgunController.sync.
+    await this.#main.railgun.sync({ isBackgroundUpdate: true })
   }
 
   async #updateTrendingTokens() {
