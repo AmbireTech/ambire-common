@@ -1,4 +1,5 @@
 import { ethErrors } from 'eth-rpc-errors'
+import { getBytes } from 'ethers'
 
 import EmittableError from '@/classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
@@ -98,6 +99,12 @@ import {
   SubmittedAccountOp
 } from '@/libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '@/libs/accountOp/types'
+import {
+  ACCOUNTS_SYNC_PAYLOAD_VERSION,
+  AccountsSyncPayload,
+  parseAccountsSyncPayload,
+  serializeAccountsSyncPayload
+} from '@/libs/accountsSync/accountsSync'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
@@ -1655,6 +1662,102 @@ export class MainController extends EventEmitter implements IMainController {
 
   async updateAccounts(accountsUpdate: AccountsUpdate) {
     await this.withStatus('updateAccounts', async () => this.#updateAccounts(accountsUpdate))
+  }
+
+  /**
+   * Runs an accounts sync step and replies to the UI request that triggered it, so the
+   * UI can await the result instead of watching a transient status.
+   */
+  async #withSyncResponse(
+    callName: 'exportAccountsForSync' | 'importAccountsFromSync',
+    requestId: string | undefined,
+    fn: () => Promise<any>
+  ) {
+    await this.withStatus(callName, async () => {
+      try {
+        const res = await fn()
+
+        if (requestId) this.ui.message.sendUiMessage({ requestId, ok: true, res })
+      } catch (error: any) {
+        // Rethrown, so that `withStatus` emits (and reports) the error as usual
+        if (requestId)
+          this.ui.message.sendUiMessage({
+            requestId,
+            ok: false,
+            error: error?.message || `${callName} failed`
+          })
+
+        throw error
+      }
+    })
+  }
+
+  /**
+   * Prepares the selected accounts and the keys controlling them for the other Ambire
+   * product and returns the payload, which the UI displays as animated QR codes.
+   * Everything sensitive leaves this device encrypted, see `keystore.exportForSync`.
+   *
+   * `includeSeeds` lets the user leave the recovery phrases of the selected accounts
+   * behind, in which case only the accounts and their keys are sent over.
+   */
+  async exportAccountsForSync(
+    addrs: Account['addr'][],
+    includeSeeds: boolean = true,
+    requestId?: string
+  ) {
+    await this.#withSyncResponse('exportAccountsForSync', requestId, async () => {
+      const accounts = this.accounts.accounts.filter((account) => addrs.includes(account.addr))
+
+      if (!accounts.length)
+        throw new EmittableError({
+          level: 'expected',
+          message: 'Select at least one account to sync.',
+          error: new Error('main: no accounts to sync')
+        })
+
+      const keyAddrs = Array.from(new Set(accounts.flatMap((account) => account.associatedKeys)))
+      const { secret, keys, seeds } = await this.keystore.exportForSync(keyAddrs, includeSeeds)
+
+      return serializeAccountsSyncPayload({
+        v: ACCOUNTS_SYNC_PAYLOAD_VERSION,
+        secret,
+        accounts,
+        keys,
+        seeds
+      })
+    })
+  }
+
+  /**
+   * Takes over the accounts and keys scanned from the other Ambire product's QR codes.
+   * `payload` is the hex encoded data assembled from the scanned codes and `password`
+   * is the device password of the product that exported them.
+   */
+  async importAccountsFromSync(
+    { payload, password }: { payload: string; password: string },
+    requestId?: string
+  ) {
+    await this.#withSyncResponse('importAccountsFromSync', requestId, async () => {
+      let parsedPayload: AccountsSyncPayload
+      try {
+        parsedPayload = parseAccountsSyncPayload(getBytes(payload))
+      } catch (error: any) {
+        throw new EmittableError({
+          level: 'expected',
+          message:
+            'The scanned QR codes do not contain Ambire accounts, or not all of them were scanned. Please try again.',
+          error: error instanceof Error ? error : new Error('main: invalid accounts sync payload')
+        })
+      }
+
+      // The accounts are added only if the keys made it in, so that the user doesn't
+      // end up with accounts they cannot sign with
+      await this.keystore.importFromSync(parsedPayload, password)
+      await this.#updateAccounts({
+        accountsToAdd: parsedPayload.accounts,
+        accountAddressesToRemove: []
+      })
+    })
   }
 
   async reloadSelectedAccount(options?: {
