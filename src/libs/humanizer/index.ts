@@ -25,6 +25,7 @@ import {
   zealyMessageModule
 } from './messageModules'
 import { fallbackShortPlaintext } from './messageModules/fallbackShortPlaintext'
+import { dedupeWarnings, UNLIMITED_APPROVAL_WARNING_CODE } from './utils'
 
 // from least generic to most generic
 // the final visualization and warnings are from the first triggered module
@@ -48,10 +49,36 @@ const humanizerTMModules = [
 type HumanizeAccountOpOptions = {
   erc7730Descriptors?: Erc7730CallDescriptors
   nativeAssetSymbol?: string
+  /**
+   * Decides whether the app that requested a call is one we already trust. Unlimited approval
+   * warnings are dropped for calls from a trusted app, because the modules that detect them
+   * cannot read the app catalog themselves. A call with no app url is never trusted.
+   */
+  isDappTrusted?: (dappUrl?: string) => boolean
 }
 
 type HumanizeMessageOptions = {
   erc7730Descriptor?: Erc7730ResolvedDescriptor
+}
+
+/**
+ * Humanizer modules cannot read the app catalog, so they report every unlimited approval. This
+ * removes that warning again when the app is one we already trust. A call with no app url keeps
+ * the warning: an unknown origin is not a trusted one.
+ */
+const dropUnlimitedApprovalWarningIfTrusted = (
+  call: IrCall,
+  dappUrl: string | undefined,
+  isDappTrusted: (dappUrl?: string) => boolean
+): IrCall => {
+  if (!call.warnings?.length || !dappUrl || !isDappTrusted(dappUrl)) return call
+
+  const warnings = call.warnings.filter(
+    (warning) => warning.code !== UNLIMITED_APPROVAL_WARNING_CODE
+  )
+  if (warnings.length === call.warnings.length) return call
+
+  return { ...call, warnings }
 }
 
 const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOptions): IrCall[] => {
@@ -79,20 +106,33 @@ const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOpt
         const originalCall = accountOp.calls[index]
         if (!originalCall) return call
 
-        return (
-          humanizeCallWithErc7730(
-            originalCall,
-            accountOp.chainId,
-            accountOp.accountAddr,
-            resolvedDescriptor,
-            options.nativeAssetSymbol
-          ) || call
+        const erc7730Call = humanizeCallWithErc7730(
+          originalCall,
+          accountOp.chainId,
+          accountOp.accountAddr,
+          resolvedDescriptor,
+          options.nativeAssetSymbol
         )
+        if (!erc7730Call) return call
+
+        // The descriptor builds its result from the raw call, so it starts with no warnings. The
+        // warnings the modules found are still about the same call, so keep them both.
+        return {
+          ...erc7730Call,
+          warnings: dedupeWarnings([...(call.warnings || []), ...(erc7730Call.warnings || [])])
+        }
       } catch (error) {
         console.error(error)
         return call
       }
     })
+  }
+
+  const { isDappTrusted } = options || {}
+  if (isDappTrusted) {
+    currentCalls = currentCalls.map((call, index) =>
+      dropUnlimitedApprovalWarningIfTrusted(call, accountOp.calls[index]?.dapp?.url, isDappTrusted)
+    )
   }
 
   return currentCalls

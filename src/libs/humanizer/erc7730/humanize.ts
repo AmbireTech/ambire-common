@@ -30,6 +30,7 @@ import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import {
+  dedupeWarnings,
   eToNative,
   flattenHumanizerVisualizations,
   getAction,
@@ -1426,18 +1427,6 @@ const getModuleFallbackVisualization = (
   )
 
   return visualization.type === 'erc7730' ? visualization : null
-}
-
-const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
-  const warningKeys = new Set<string>()
-
-  return warnings.filter((warning) => {
-    const warningKey = `${warning.code}:${warning.content}:${warning.address || ''}`
-    if (warningKeys.has(warningKey)) return false
-    warningKeys.add(warningKey)
-
-    return true
-  })
 }
 
 const hasDisplayedNativeTransactionValue = (
