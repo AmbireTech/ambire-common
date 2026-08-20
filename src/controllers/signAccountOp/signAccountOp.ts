@@ -98,6 +98,7 @@ import {
 import { calculateFeeAmount } from '../../libs/fees/fees'
 import { fetchErc7730DescriptorsForAccountOp, humanizeAccountOp } from '../../libs/humanizer'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
+import { isStkWalletUnwrapCall } from '../../libs/humanizer/modules/WALLET'
 import { flattenHumanizerVisualizations, hasErc7730Humanization } from '../../libs/humanizer/utils'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
@@ -134,6 +135,10 @@ import {
 import { isPermit2Interaction } from '../../libs/simulation/detectPermit2Interaction'
 import { getGasUsed } from '../../libs/singleton/singleton'
 import { UserOperation } from '../../libs/userOperation/types'
+import {
+  WALLET_STAKING_CHAIN_ID,
+  xWalletShareValueCache
+} from '../../libs/walletStaking/shareValue'
 import {
   getActivatorCall,
   getPackedUserOp,
@@ -330,6 +335,8 @@ export class SignAccountOpController
   estimation: EstimationController
 
   humanization: IrCall[] = []
+
+  #xWalletShareValue?: bigint
 
   humanizationId: number | null = null
 
@@ -974,7 +981,10 @@ export class SignAccountOpController
       return false
     }
 
-    this.#setHumanization(humanizeAccountOp(this.accountOp), humanizationId)
+    this.#setHumanization(
+      humanizeAccountOp(this.accountOp, { xWalletShareValue: this.#xWalletShareValue }),
+      humanizationId
+    )
     this.learnTokens()
 
     return true
@@ -994,7 +1004,8 @@ export class SignAccountOpController
 
     const erc7730Humanization = humanizeAccountOp(this.accountOp, {
       erc7730Descriptors,
-      nativeAssetSymbol: this.#network.nativeAssetSymbol
+      nativeAssetSymbol: this.#network.nativeAssetSymbol,
+      xWalletShareValue: this.#xWalletShareValue
     })
     if (
       !hasErc7730Humanization(erc7730Humanization) ||
@@ -1025,8 +1036,47 @@ export class SignAccountOpController
     })
   }
 
+  async #loadXWalletShareValue(humanizationId: number) {
+    if (
+      this.#network.chainId !== WALLET_STAKING_CHAIN_ID ||
+      !this.accountOp.calls.some(isStkWalletUnwrapCall)
+    ) {
+      return
+    }
+
+    try {
+      const { shareValue, refreshError } = await xWalletShareValueCache.get(this.provider)
+
+      if (refreshError) {
+        this.emitError({
+          level: 'silent',
+          message: 'Unable to refresh the WALLET staking conversion rate.',
+          error: refreshError
+        })
+      }
+
+      if (!this.isCurrentHumanization(humanizationId)) return
+
+      this.#xWalletShareValue = shareValue
+      if (!hasErc7730Humanization(this.humanization)) {
+        this.#setFallbackHumanization(humanizationId)
+      }
+    } catch (error) {
+      const shareValueError =
+        error instanceof Error
+          ? error
+          : new Error('Unable to load the WALLET staking conversion rate.')
+      this.emitError({
+        level: 'silent',
+        message: 'Unable to load the WALLET staking conversion rate.',
+        error: shareValueError
+      })
+    }
+  }
+
   humanize() {
     const currentHumanizationId = this.#startHumanization()
+    void this.#loadXWalletShareValue(currentHumanizationId)
     void this.#applyDescriptorFirstHumanization(currentHumanizationId)
   }
 

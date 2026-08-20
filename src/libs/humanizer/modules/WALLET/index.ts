@@ -2,8 +2,13 @@ import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { STK_WALLET, WALLET_STAKING_ADDR, WALLET_TOKEN } from '../../../../consts/addresses'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { HexIrCall, getAction, getLabel, getToken, isHexCall } from '../../utils'
+import {
+  getWalletAmountFromXWallet,
+  getXWalletConversionText,
+  WALLET_STAKING_CHAIN_ID
+} from '../../../walletStaking/shareValue'
+import { HumanizerCallModule, HumanizerContext, IrCall } from '../../interfaces'
+import { HexIrCall, getAction, getBreak, getInfo, getLabel, getToken, isHexCall } from '../../utils'
 import { StakingPools } from './stakingPools'
 // update return ir to be {...ir,calls:newCalls} instead of {calls:newCalls} everywhere
 import { WALLETSupplyControllerMapping } from './WALLETSupplyController'
@@ -22,7 +27,17 @@ const stkWrapAbi = parseAbi(['function wrap(uint256 shareAmount)'])
 const stkUnwrapAbi = parseAbi(['function unwrap(uint256 shareAmount)'])
 const stkEnterAbi = parseAbi(['function enter(uint256 amount)'])
 
-export const WALLETModule: HumanizerCallModule = (_: AccountOp, call: IrCall) => {
+export const isStkWalletUnwrapCall = (call: IrCall) =>
+  isHexCall(call) &&
+  call.to?.toLowerCase() === STK_WALLET.toLowerCase() &&
+  call.data.startsWith(toFunctionSelector(stkUnwrapAbi[0]))
+
+export const WALLETModule: HumanizerCallModule = (
+  accountOp: AccountOp,
+  call: IrCall,
+  _,
+  context?: HumanizerContext
+) => {
   const matcher = {
     supplyController: WALLET_SUPPLY_CONTROLLER_MAPPING,
     stakingPool: STAKING_POOLS,
@@ -49,12 +64,27 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, call: IrCall) =>
       [toFunctionSelector(stkUnwrapAbi[0])]: ({ data }: HexIrCall) => {
         const { args } = decodeFunctionData({ abi: stkUnwrapAbi, data })
         const [shareAmount] = args
-
-        return [
+        const visualization = [
           getAction('Unwrap'),
           getToken(STK_WALLET, 0n),
           getLabel('for'),
           getToken(WALLET_STAKING_ADDR, shareAmount)
+        ]
+
+        if (
+          accountOp.chainId !== WALLET_STAKING_CHAIN_ID ||
+          !context?.xWalletShareValue ||
+          context.xWalletShareValue <= 0n
+        ) {
+          return visualization
+        }
+
+        const walletAmount = getWalletAmountFromXWallet(shareAmount, context.xWalletShareValue)
+
+        return [
+          ...visualization,
+          getBreak(),
+          getInfo(getXWalletConversionText(shareAmount, walletAmount))
         ]
       },
       [toFunctionSelector(stkEnterAbi[0])]: ({ data }: HexIrCall) => {

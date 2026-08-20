@@ -48,6 +48,7 @@ const humanizerTMModules = [
 type HumanizeAccountOpOptions = {
   erc7730Descriptors?: Erc7730CallDescriptors
   nativeAssetSymbol?: string
+  xWalletShareValue?: bigint
 }
 
 type HumanizeMessageOptions = {
@@ -61,7 +62,9 @@ const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOpt
     let currentCall: IrCall = originalCall
     humanizerCallModules.forEach((hm) => {
       try {
-        currentCall = hm(accountOp, currentCall, humanizerInfo as HumanizerMeta)
+        currentCall = hm(accountOp, currentCall, humanizerInfo as HumanizerMeta, {
+          xWalletShareValue: options?.xWalletShareValue
+        })
       } catch (error) {
         console.error(error)
         // No action is needed here; we only update `currentCall` if the module successfully resolves it.
@@ -79,15 +82,35 @@ const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOpt
         const originalCall = accountOp.calls[index]
         if (!originalCall) return call
 
-        return (
-          humanizeCallWithErc7730(
-            originalCall,
-            accountOp.chainId,
-            accountOp.accountAddr,
-            resolvedDescriptor,
-            options.nativeAssetSymbol
-          ) || call
+        const erc7730Call = humanizeCallWithErc7730(
+          originalCall,
+          accountOp.chainId,
+          accountOp.accountAddr,
+          resolvedDescriptor,
+          options.nativeAssetSymbol
         )
+
+        if (!erc7730Call) return call
+
+        const infoIndex = call.fullVisualization?.findIndex(
+          (visualization) => visualization.type === 'info'
+        )
+        const informationalVisualizations =
+          infoIndex !== undefined && infoIndex >= 0
+            ? call.fullVisualization?.slice(
+                call.fullVisualization[infoIndex - 1]?.type === 'break' ? infoIndex - 1 : infoIndex
+              )
+            : undefined
+
+        return informationalVisualizations?.length
+          ? {
+              ...erc7730Call,
+              fullVisualization: [
+                ...(erc7730Call.fullVisualization || []),
+                ...informationalVisualizations
+              ]
+            }
+          : erc7730Call
       } catch (error) {
         console.error(error)
         return call

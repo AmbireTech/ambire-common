@@ -7,6 +7,10 @@ import { IStorageController } from '../../interfaces/storage'
 import { getAccountOpBalanceChanges } from '../../libs/accountOp/balanceChanges'
 import { getProviderBatchMaxCount } from '../../libs/networks/networks'
 import { GetOptions, Portfolio, TokenResult } from '../../libs/portfolio'
+import {
+  WALLET_STAKING_CHAIN_ID,
+  xWalletShareValueCache
+} from '../../libs/walletStaking/shareValue'
 import { getProviderConnectionUrl, getRpcProvider } from '../../services/provider'
 import { getDebugTraceTransaction } from '../../utils/debugTransaction'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -422,6 +426,36 @@ export class ProvidersController extends EventEmitter implements IProvidersContr
         ok: false,
         error: error.message
       })
+    }
+  }
+
+  async getXWalletShareValueAndSendResToUi(requestId: string) {
+    const provider = this.providers[WALLET_STAKING_CHAIN_ID.toString()]
+    if (!provider) {
+      const error = new Error('The Ethereum provider is unavailable.')
+      this.emitError({ error, message: error.message, level: 'silent' })
+      return this.#sendUiMessage({ requestId, ok: false, error: error.message })
+    }
+
+    try {
+      const { shareValue, refreshError } = await xWalletShareValueCache.get(provider)
+
+      if (refreshError) {
+        this.emitError({
+          error: refreshError,
+          message: 'Unable to refresh the WALLET staking conversion rate.',
+          level: 'silent'
+        })
+      }
+
+      this.#sendUiMessage({ requestId, ok: true, res: shareValue })
+    } catch (error) {
+      const shareValueError =
+        error instanceof Error
+          ? error
+          : new Error('Unable to load the WALLET staking conversion rate.')
+      this.emitError({ error: shareValueError, message: shareValueError.message, level: 'silent' })
+      this.#sendUiMessage({ requestId, ok: false, error: shareValueError.message })
     }
   }
 
