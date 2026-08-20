@@ -9,6 +9,7 @@ import {
   NetworkState as DefiNetworkState,
   PositionsByProvider
 } from '../defiPositions/types'
+
 import type { DeploylessMode } from '../deployless/deployless'
 
 // @TODO: Move most of these interfaces to src/interfaces and
@@ -101,6 +102,59 @@ export type TokenDataCacheValue = Pick<TokenResult, 'marketDataIn' | 'priceIn' |
 export type TokenDataCache = Map<string, [number, TokenDataCacheValue]>
 
 export type MetaData = { blockNumber?: number; beforeNonce?: bigint; afterNonce?: bigint }
+
+/**
+ * A token's symbol, name and decimals. These practically never change, so the
+ * portfolio remembers them and asks the chain for balances alone on later updates.
+ */
+export type TokenMetadataEntry = {
+  symbol: string
+  name: string
+  decimals: number
+  /**
+   * When the metadata was last read from the chain. Entries older than
+   * TOKEN_METADATA_MAX_AGE_MS are read again.
+   */
+  fetchedAt: number
+}
+
+/**
+ * A collection's name and symbol. Kept apart from TokenMetadataEntry as collections
+ * have no decimals.
+ */
+export type CollectionMetadataEntry = {
+  symbol: string
+  name: string
+  /**
+   * When the metadata was last read from the chain. Entries older than
+   * TOKEN_METADATA_MAX_AGE_MS are read again.
+   */
+  fetchedAt: number
+}
+
+/**
+ * Token metadata for a single network, keyed by checksummed token address.
+ */
+export type KnownTokenMetadata = Map<string, TokenMetadataEntry>
+
+/**
+ * Collection metadata for a single network, keyed by checksummed collection address.
+ */
+export type KnownCollectionMetadata = Map<string, CollectionMetadataEntry>
+
+/**
+ * What getTokens and getNFTs need in order to ask the chain for balances alone.
+ * `needsMetadata` holds the addresses whose metadata must be read on this update,
+ * computed once up front so every page of the same update agrees on it.
+ */
+export type AssetMetadataFetchPlan<T> = {
+  known: Map<string, T>
+  needsMetadata: Set<string>
+}
+
+export type TokenMetadataFetchPlan = AssetMetadataFetchPlan<TokenMetadataEntry>
+
+export type CollectionMetadataFetchPlan = AssetMetadataFetchPlan<CollectionMetadataEntry>
 
 /**
  * ERC-721 hints, returned by the Velcro API
@@ -292,6 +346,16 @@ export interface PortfolioLibGetResult {
     erc20s: Hints['erc20s']
     erc721s: Hints['erc721s']
   }
+  /**
+   * Metadata read from the chain during this update, for the caller to remember.
+   * Only holds tokens whose metadata was missing or stale, so passing it back on
+   * every update keeps the stored copy fresh without re-reading what is known.
+   */
+  fetchedTokenMetadata: [string, TokenMetadataEntry][]
+  /**
+   * The collection counterpart of `fetchedTokenMetadata`.
+   */
+  fetchedCollectionMetadata: [string, CollectionMetadataEntry][]
   tokenErrors: { error: string; address: string }[]
   collectionErrors: { error: string; address: string }[]
   collections: CollectionResult[]
@@ -346,6 +410,8 @@ export type PortfolioNetworkResult = CommonResultProps &
     | 'blockNumber'
     | 'tokenDataCache'
     | 'toBeLearned'
+    | 'fetchedTokenMetadata'
+    | 'fetchedCollectionMetadata'
     | 'feeTokens'
     | 'priceUpdateTime'
     | 'oracleCallTime'
@@ -548,6 +614,16 @@ export interface GetOptions {
   blockTag: 'latest' | 'pending' | 'both' | number
   simulation?: GetOptionsSimulation
   tokenDataCache?: TokenDataCache
+  /**
+   * Token metadata the caller already has for this network. Tokens found here are
+   * fetched with their balance only, which makes the response much cheaper to decode.
+   * Leave it out to always read full token data from the chain.
+   */
+  knownTokenMetadata?: KnownTokenMetadata
+  /**
+   * The collection counterpart of `knownTokenMetadata`.
+   */
+  knownCollectionMetadata?: KnownCollectionMetadata
   tokenDataRecency: number
   tokenDataRecencyOnFailure?: number
   fetchPinned: boolean

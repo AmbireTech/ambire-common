@@ -1481,6 +1481,8 @@ export class PortfolioController
         portfolioLib.get(account.addr, {
           tokenDataRecency: 60000 * 5,
           tokenDataCache: networkTokenDataCache,
+          knownTokenMetadata: this.hints.getKnownTokenMetadata(network.chainId),
+          knownCollectionMetadata: this.hints.getKnownCollectionMetadata(network.chainId),
           fetchPinned: !hasNonZeroTokens,
           ...allHints,
           ...portfolioProps,
@@ -1976,6 +1978,11 @@ export class PortfolioController
                 network.chainId,
                 accountId,
                 networkResult
+              )
+              this.hints.learnTokenMetadata(network.chainId, networkResult.fetchedTokenMetadata)
+              this.hints.learnCollectionMetadata(
+                network.chainId,
+                networkResult.fetchedCollectionMetadata
               )
             }
 
