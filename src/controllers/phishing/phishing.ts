@@ -1,5 +1,4 @@
 import { getDomain } from 'tldts'
-
 import { zeroAddress } from 'viem'
 
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -15,7 +14,6 @@ import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishin
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 import { getDappIdFromUrl, getNormalizedHostnameFromUrl } from '../../libs/dapps/helpers'
-
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -154,7 +152,6 @@ export const SUSPICIOUS_HOSTING_DOMAINS = [
   'mypinata.cloud',
   '4everland.app',
   'w3s.link',
-  'eth.limo',
   'eth.link'
 ]
 
