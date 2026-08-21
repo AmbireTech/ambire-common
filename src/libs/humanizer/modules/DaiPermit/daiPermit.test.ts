@@ -6,7 +6,14 @@ import daiPermitModule from '.'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getLabel,
+  getToken,
+  getUnlimitedApprovalWarning
+} from '../../utils'
 
 const accountOp: AccountOp = {
   id: '1',
@@ -112,5 +119,18 @@ describe('dai permit module', () => {
     const unrelatedCall: IrCall = { to: DAI, value: 0n, data: '0x' }
     const calls = [unrelatedCall].map((c) => daiPermitModule(accountOp, c))
     expect(calls[0]!.fullVisualization).toBeUndefined()
+  })
+
+  // this permit has no amount at all - granting it always means an unlimited allowance
+  test('warns that a granted permit has no spending limit', () => {
+    const call = daiPermitModule(accountOp, getPermitCall(accountOp.accountAddr, expiry, true))
+
+    expect(call.warnings).toEqual([getUnlimitedApprovalWarning(spender)])
+  })
+
+  test('does not warn when the permit revokes', () => {
+    const call = daiPermitModule(accountOp, getPermitCall(accountOp.accountAddr, expiry, false))
+
+    expect(call.warnings).toBeUndefined()
   })
 })

@@ -1,8 +1,28 @@
 import { EventEmitter as UiEventEmitter } from 'events'
 
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-import { IUiController, NavigateOptions, UiManager, View } from '../../interfaces/ui'
+import {
+  FocusWindowParams,
+  isExtensionOverlayView,
+  IUiController,
+  NavigateOptions,
+  OpenWindowOptions,
+  UiManager,
+  View,
+  WindowId,
+  WindowProps
+} from '../../interfaces/ui'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+/**
+ * The surface that shows a request: the panel when it is open (nothing to open, focus or close
+ * there), a dedicated request window otherwise. Consumers only open, focus and close.
+ */
+type RequestViewManager = {
+  open: (options?: OpenWindowOptions) => Promise<WindowProps>
+  focus: (windowProps: WindowProps, params?: FocusWindowParams) => Promise<WindowProps>
+  close: (winId: WindowId) => Promise<void>
+}
 
 /** A route can carry search params (benzin), while a view reports its path alone. */
 const getRoutePath = (route: string) => route.split('?')[0] ?? route
@@ -13,6 +33,8 @@ export class UiController extends EventEmitter implements IUiController {
   views: View[] = []
 
   window: UiManager['window']
+
+  panel: UiManager['panel']
 
   notification: UiManager['notification']
 
@@ -26,6 +48,9 @@ export class UiController extends EventEmitter implements IUiController {
   #latestViewRouteSyncTokens: Map<string, number> = new Map()
 
   #viewRouteSyncTokenCounter = 0
+  dispatchDappTabFocus?: UiManager['dispatchDappTabFocus']
+
+  requestView: RequestViewManager
 
   constructor({
     eventEmitterRegistry,
@@ -38,26 +63,44 @@ export class UiController extends EventEmitter implements IUiController {
 
     this.uiEvent = new UiEventEmitter()
     this.window = uiManager.window
+    this.panel = uiManager.panel
     this.notification = uiManager.notification
     this.message = uiManager.message
     this.#resolveViewRoute = uiManager.resolveViewRoute
+    this.dispatchDappTabFocus = uiManager.dispatchDappTabFocus
+
+    this.requestView = {
+      open: async (options?: OpenWindowOptions) => {
+        if (this.panel?.isOpen()) return null
+
+        // The popup can't stay open next to a request window
+        await this.window.remove('popup')
+
+        return this.window.open(options)
+      },
+      focus: async (windowProps: WindowProps, params?: FocusWindowParams) => {
+        await this.window.remove('popup')
+
+        return this.window.focus(windowProps, params)
+      },
+      close: (winId: WindowId) => this.window.remove(winId)
+    }
   }
 
   addView(view: View) {
-    const existingPopup = this.views.find((v) => v.type === 'popup')
+    const existingOverlay = this.views.find((v) => isExtensionOverlayView(v))
 
-    // if a popup already exists, just update its id and stop here
-    if (view.type === 'popup' && existingPopup) {
-      existingPopup.id = view.id
-      // A reopened popup starts at its root, so the route the previous one was on must not be
-      // taken for where this one already is.
-      delete existingPopup.currentRoute
-      delete existingPopup.pendingRoute
-      delete existingPopup.searchParams
+    // if an overlay view already exists, just update its id and stop here
+    if (isExtensionOverlayView(view) && existingOverlay) {
+      existingOverlay.id = view.id
+      existingOverlay.type = view.type
+      delete existingOverlay.currentRoute
+      delete existingOverlay.pendingRoute
+      delete existingOverlay.searchParams
+      if (!existingOverlay.isReady) this.uiEvent.emit('addView', view)
       this.emitUpdate()
     } else {
-      // if the same view already exists, skip adding
-      if (this.views.some((v) => v.id === view.id)) return
+      if (this.views.find((v) => v.id === view.id)) return
 
       this.views.push(view)
       this.uiEvent.emit('addView', view)
@@ -180,8 +223,11 @@ export class UiController extends EventEmitter implements IUiController {
       ...super.toJSON(),
       uiEvent: undefined,
       window: undefined,
+      panel: undefined,
       notification: undefined,
-      message: undefined
+      message: undefined,
+      dispatchDappTabFocus: undefined,
+      requestView: undefined
     }
   }
 }

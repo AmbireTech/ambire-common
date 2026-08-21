@@ -98,7 +98,11 @@ import {
 import { calculateFeeAmount } from '../../libs/fees/fees'
 import { fetchErc7730DescriptorsForAccountOp, humanizeAccountOp } from '../../libs/humanizer'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
-import { flattenHumanizerVisualizations, hasErc7730Humanization } from '../../libs/humanizer/utils'
+import {
+  flattenHumanizerVisualizations,
+  hasErc7730Humanization,
+  UNLIMITED_APPROVAL_WARNING_CODE
+} from '../../libs/humanizer/utils'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
@@ -329,7 +333,41 @@ export class SignAccountOpController
 
   estimation: EstimationController
 
-  humanization: IrCall[] = []
+  #humanization: IrCall[] = []
+
+  /**
+   * The humanized calls, with the unlimited approval warnings of apps in the default Ambire
+   * catalog taken out. Humanizer modules cannot read the catalog, so they report every unlimited
+   * approval, and the ones from an app we already trust are dropped here.
+   *
+   * The catalog is fetched, so it often arrives after the calls were humanized. Deciding this on
+   * read, rather than baking it into the humanization, means a catalog that lands late needs no
+   * new humanization: the dapps update this controller already listens to emits, the UI reads
+   * again, and the answer is right whether an app joins the catalog or leaves it.
+   *
+   * Returns the stored array itself when nothing was dropped, so the calls on screen keep their
+   * identity while a new humanization is running.
+   */
+  get humanization(): IrCall[] {
+    let didSuppressWarning = false
+
+    const humanization = this.#humanization.map((call, index) => {
+      const dappUrl = this.accountOp.calls[index]?.dapp?.url
+      // an app with no url is never trusted - a request of unknown origin is not a safer one
+      if (!dappUrl || !this.#dapps.isDappInDefaultCatalog(dappUrl)) return call
+
+      const warnings = call.warnings?.filter(
+        (warning) => warning.code !== UNLIMITED_APPROVAL_WARNING_CODE
+      )
+      if (warnings?.length === call.warnings?.length) return call
+
+      didSuppressWarning = true
+
+      return { ...call, warnings }
+    })
+
+    return didSuppressWarning ? humanization : this.#humanization
+  }
 
   humanizationId: number | null = null
 
@@ -449,7 +487,8 @@ export class SignAccountOpController
       account,
       accountState,
       network,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
     this.#network = network
     this.#activity = activity
@@ -565,7 +604,8 @@ export class SignAccountOpController
       this.account,
       accountState,
       this.#network,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
     this.gasPrice?.setBaseAccount(this.baseAccount)
   }
@@ -912,15 +952,15 @@ export class SignAccountOpController
   }
 
   #setHumanization(humanization: IrCall[], existingHumanizationId?: number) {
-    this.humanization = humanization
+    this.#humanization = humanization
     this.isHumanizing = false
     const currentHumanizationId = existingHumanizationId ?? this.createHumanizationId()
     this.humanizationId = currentHumanizationId
 
-    if (this.humanization.length) {
+    if (this.#humanization.length) {
       const updateBlacklistedStatusPromise = this.#phishing
         .updateAddressesBlacklistedStatus(
-          this.humanization
+          this.#humanization
             .flatMap((call) =>
               flattenHumanizerVisualizations(call.fullVisualization)
                 .filter((v) => v.type === 'token' || v.type === 'address')
@@ -930,7 +970,7 @@ export class SignAccountOpController
           (addressesStatus) => {
             if (!this.isCurrentHumanization(currentHumanizationId)) return
 
-            for (const call of this.humanization) {
+            for (const call of this.#humanization) {
               if (!call.fullVisualization) continue
 
               for (const vis of flattenHumanizerVisualizations(call.fullVisualization)) {
@@ -1443,13 +1483,6 @@ export class SignAccountOpController
     const warnings: Warning[] = []
 
     const state = this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr)
-
-    const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
-      state,
-      this.accountOp.chainId,
-      this.traceCallDiscoveryStatus
-    )
-
     const unknownTokenWarnings = getUnknownTokenWarning(state, this.accountOp.chainId)
 
     if (this.selectedOption) {
@@ -1465,7 +1498,6 @@ export class SignAccountOpController
         warnings.push(feeTokenPriceUnavailableWarning)
     }
 
-    if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
     if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
 
     const accountState =
@@ -2224,9 +2256,7 @@ export class SignAccountOpController
       return
     }
 
-    // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
-    // it should be cleared to prevent the previous interval from changing the status
-    // to `SlowPendingResponse` for the newer `traceCall` invocation.
+    // clear the timeout on each new invoke
     if (this.traceCallTimeoutId) clearTimeout(this.traceCallTimeoutId)
 
     // Here, we also check the status because, in the case of re-estimation,
@@ -2235,7 +2265,6 @@ export class SignAccountOpController
     if (this.traceCallDiscoveryStatus === TraceCallDiscoveryStatus.NotStarted)
       this.setDiscoveryStatus(TraceCallDiscoveryStatus.InProgress)
 
-    // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
     const timeoutId = setTimeout(() => {
       // Prevent race conditions between multiple `traceCall` invocations
       if (
@@ -2243,9 +2272,6 @@ export class SignAccountOpController
         this.traceCallTimeoutId !== timeoutId
       )
         return
-
-      this.setDiscoveryStatus(TraceCallDiscoveryStatus.SlowPendingResponse)
-      this.calculateWarnings()
     }, 2000)
 
     this.traceCallTimeoutId = timeoutId
@@ -2290,7 +2316,6 @@ export class SignAccountOpController
       })
     }
 
-    this.calculateWarnings()
     this.traceCallTimeoutId = null
     clearTimeout(timeoutId)
   }
@@ -4013,6 +4038,11 @@ export class SignAccountOpController
 
   setDiscoveryStatus(status: TraceCallDiscoveryStatus) {
     this.traceCallDiscoveryStatus = status
+
+    // emit an update on done/failed to sync&show the final banners
+    if (status === TraceCallDiscoveryStatus.Done || status === TraceCallDiscoveryStatus.Failed) {
+      this.emitUpdate()
+    }
   }
 
   /**
@@ -4076,6 +4106,7 @@ export class SignAccountOpController
       banners.push({
         id: 'blacklisted-addresses-error-banner',
         type: 'error',
+        title: 'Potentially harmful transaction',
         text: getScamDetectedText(blacklistedItems)
       })
     } else {
@@ -4087,6 +4118,7 @@ export class SignAccountOpController
         banners.push({
           id: 'blacklisted-addresses-warning-banner',
           type: 'warning',
+          title: 'Safety check unavailable',
           text: "We couldn't check the addresses or tokens in this transaction for malicious activity. Proceed with caution."
         })
       }
@@ -4095,11 +4127,27 @@ export class SignAccountOpController
     const dappVerificationBanner = this.#getDappVerificationBanner()
     if (dappVerificationBanner) banners.push(dappVerificationBanner)
 
+    const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
+      this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr),
+      this.accountOp.chainId,
+      this.traceCallDiscoveryStatus
+    )
+    if (significantBalanceDecreaseWarning) {
+      banners.push({
+        id: significantBalanceDecreaseWarning.id,
+        type: 'warning',
+        title: significantBalanceDecreaseWarning.title,
+        text: significantBalanceDecreaseWarning.text || significantBalanceDecreaseWarning.title,
+        secondaryText: significantBalanceDecreaseWarning.secondaryText
+      })
+    }
+
     const safeDelegateCallWarning = getSafeDelegateCallWarning(this.accountOp)
     if (safeDelegateCallWarning) {
       banners.push({
         id: safeDelegateCallWarning.id,
         type: 'warning',
+        title: safeDelegateCallWarning.title,
         text: safeDelegateCallWarning.text || safeDelegateCallWarning.title
       })
     }
@@ -4171,6 +4219,7 @@ export class SignAccountOpController
       gasSavedUSD: this.gasSavedUSD,
       delegatedContract: this.delegatedContract,
       accountOp: this.accountOp,
+      humanization: this.humanization,
       isSignInProgress: this.isSignInProgress,
       isBroadcastInProgress: this.isBroadcastInProgress,
       isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress,

@@ -23,8 +23,7 @@ export type NavigateOptions = {
 
 export type View = {
   id: string
-  type: typeof REQUEST_VIEW_TYPE | 'tab' | 'popup' | 'mobile'
-  /** Where the view reports it actually is. Only the UI writes this. */
+  type: typeof REQUEST_VIEW_TYPE | 'tab' | 'popup' | 'side-panel' | 'mobile'
   currentRoute?: string
   previousRoute?: string
   /**
@@ -37,14 +36,21 @@ export type View = {
   searchParams?: { [key: string]: string }
 }
 
+export const isExtensionOverlayView = (view: Pick<View, 'type'>) =>
+  view.type === 'popup' || view.type === 'side-panel'
+
+export const isSidePanelView = (view: Pick<View, 'type'>) => view.type === 'side-panel'
+
+export type OpenWindowOptions = {
+  route?: string
+  customSize?: { width: number; height: number }
+  baseWindowId?: number
+}
+
 export type UiManager = {
   window: {
     event: EventEmitter
-    open: (options?: {
-      route?: string
-      customSize?: { width: number; height: number }
-      baseWindowId?: number
-    }) => Promise<WindowProps>
+    open: (options?: OpenWindowOptions) => Promise<WindowProps>
     focus: (windowProps: WindowProps, params?: FocusWindowParams) => Promise<WindowProps>
     remove: (winId: WindowId | 'popup') => Promise<void>
     closePopupWithUrl: (url: string) => Promise<void> // remove window of type popup
@@ -78,6 +84,14 @@ export type UiManager = {
    * nowhere to go, never that the wallet is not ready yet.
    */
   resolveViewRoute: (view: View) => Promise<string | null>
+  /** An always-visible surface that renders requests inline, opened and closed by the user only. */
+  panel?: PanelManager
+  /** Sends a synthetic focus to the dapp's tab, so dapp libraries refetch the state they cache. */
+  dispatchDappTabFocus?: (targets: { tabId: number; windowId?: number }[]) => void
+}
+
+export type PanelManager = {
+  isOpen: () => boolean
 }
 
 export type WindowId = number

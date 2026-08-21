@@ -593,7 +593,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.visibleUserRequests.filter((r) => r.kind === 'calls')
         )
       ) {
-        await this.#portfolio.overrideSimulationResults(
+        // this should not be awaited as it gets added to
+        // the queue and that could slow things down
+        void this.#portfolio.overrideSimulationResults(
           this.currentUserRequest.signAccountOp.accountOp
         )
       }
@@ -642,12 +644,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       try {
-        await this.#ui.window.remove('popup')
-        this.requestWindow.openWindowPromise = this.#ui.window
+        this.requestWindow.openWindowPromise = this.#ui.requestView
           .open({ customSize, baseWindowId })
           .finally(() => {
             this.requestWindow.openWindowPromise = undefined
           })
+        // Stays null when the request is rendered in the panel instead of a window
         this.requestWindow.windowProps = await this.requestWindow.openWindowPromise
 
         this.emitUpdate()
@@ -673,8 +675,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
 
     try {
-      await this.#ui.window.remove('popup')
-      this.requestWindow.focusWindowPromise = this.#ui.window
+      this.requestWindow.focusWindowPromise = this.#ui.requestView
         .focus(this.requestWindow.windowProps, params)
         .finally(() => {
           this.requestWindow.focusWindowPromise = undefined
@@ -700,10 +701,22 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   async closeRequestWindow() {
     await this.#awaitPendingPromises()
 
-    if (!this.requestWindow.windowProps) return
+    if (!this.requestWindow.windowProps) {
+      // Rendered inline (in the panel), so closing means dismissing the active request.
+      // Guarded, because clearing the current request calls this method too.
+      if (this.currentUserRequest) await this.#handleRequestWindowClose()
 
-    this.requestWindow.closeWindowPromise = this.#ui.window
-      .remove(this.requestWindow.windowProps.id)
+      return
+    }
+
+    // Snapshot before the close is dispatched, not after it completes. Closing the request
+    // view is not instant on every platform (on mobile it is a bottom sheet with a ~250ms
+    // close animation plus two bridge hops), and requests that arrive while it is closing
+    // must not be swept into this close.
+    const requestIdsSnapshotAtClose = new Set(this.userRequests.map((r) => r.id))
+
+    this.requestWindow.closeWindowPromise = this.#ui.requestView
+      .close(this.requestWindow.windowProps.id)
       .finally(() => {
         this.requestWindow.closeWindowPromise = undefined
       })
@@ -712,11 +725,23 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (!this.requestWindow.windowProps) return
 
-    await this.#handleRequestWindowClose(this.requestWindow.windowProps.id)
+    await this.#handleRequestWindowClose(
+      this.requestWindow.windowProps.id,
+      requestIdsSnapshotAtClose
+    )
   }
 
-  async #handleRequestWindowClose(winId: number) {
+  /**
+   * `winId` is omitted when the request was rendered inline and had no window of its own.
+   * `requestIdsSnapshot` is passed by `closeRequestWindow` so the requests to reject are the
+   * ones that existed when the close started, not when the close animation finished. It is
+   * omitted on the `windowRemoved` event path, where the close was not initiated here.
+   */
+  async #handleRequestWindowClose(winId?: number, requestIdsSnapshot?: Set<UserRequest['id']>) {
+    const isInlineRequestClosed = winId === undefined && !this.requestWindow.windowProps
+
     if (
+      isInlineRequestClosed ||
       winId === this.requestWindow.windowProps?.id ||
       (!this.visibleUserRequests.length &&
         this.currentUserRequest &&
@@ -724,7 +749,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     ) {
       // Snapshot IDs synchronously before any awaits so requests that arrive
       // during async operations below are not incorrectly bulk-rejected.
-      const requestIdsSnapshotAtClose = new Set(this.userRequests.map((r) => r.id))
+      const requestIdsSnapshotAtClose =
+        requestIdsSnapshot || new Set(this.userRequests.map((r) => r.id))
 
       this.requestWindow.windowProps = null
       this.requestWindow.loaded = false
@@ -771,6 +797,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       )
 
       this.userRequestsWaitingAccountSwitch = []
+
+      // A request that is not in the snapshot arrived while the view was closing (a dapp
+      // firing a follow-up right after the previous one resolved, e.g. connect then SIWE).
+      // It survived the rejection above, but `#setCurrentUserRequest(null)` cleared it as the
+      // current request, so reopen the view with it instead of leaving it without a view.
+      const requestArrivedWhileClosing = this.visibleUserRequests.find(
+        (r) => !requestIdsSnapshotAtClose.has(r.id)
+      )
+
+      if (requestArrivedWhileClosing) {
+        await this.#setCurrentUserRequest(requestArrivedWhileClosing)
+        return
+      }
+
       this.emitUpdate()
     }
   }
@@ -1036,7 +1076,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       ...waitingUserRequestsToReject
     ].filter((r) => r.kind === 'calls') as CallsUserRequest[]
 
-    await Promise.all(
+    // do not await overrideSimulationResults as the Reject handle becomes slow
+    void Promise.all(
       callsUserRequestsToReject.map((r) =>
         this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
       )
@@ -1151,7 +1192,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.#selectedAccount.account,
         accountState,
         network,
-        this.#featureFlags.isFeatureEnabled('erc4337')
+        this.#featureFlags.isFeatureEnabled('erc4337'),
+        this.#featureFlags.isFeatureEnabled('eip7702')
       )
       const accountAddr = getAddress(request.params[0].from)
 
@@ -1220,7 +1262,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       userRequest = {
-        id: new Date().getTime(),
+        id: generateUuid(),
         kind: 'message',
         meta: { params: { message: msg[0] }, accountAddr: msgAddress, chainId: network.chainId },
         dappPromises: [
@@ -1371,7 +1413,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       userRequest = {
-        id: new Date().getTime(),
+        id: generateUuid(),
         kind: 'typedMessage',
         meta: {
           params: {
@@ -1387,7 +1429,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       } as TypedMessageUserRequest
     } else {
       userRequest = {
-        id: new Date().getTime(),
+        id: generateUuid(),
         kind,
         meta: { params: request.params },
         dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
@@ -1475,7 +1517,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.#selectedAccount.account,
       accountState,
       this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
 
     const requestParams = getIntentRequestParams({
@@ -1625,7 +1668,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.#selectedAccount.account,
       accountState,
       this.#networks.networks.find((net) => net.chainId === selectedToken.chainId)!,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
 
     const callsRequestParams = getTransferRequestParams({
@@ -1710,7 +1754,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.#selectedAccount.account,
           accountState,
           network,
-          this.#featureFlags.isFeatureEnabled('erc4337')
+          this.#featureFlags.isFeatureEnabled('erc4337'),
+          this.#featureFlags.isFeatureEnabled('eip7702')
         )
         const swapAndBridgeRequestParams = await getSwapAndBridgeRequestParams(
           transaction,

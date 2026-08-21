@@ -5,12 +5,14 @@ import {
   getAddress,
   hexlify,
   Interface,
+  MaxUint256,
   parseEther,
   toBeHex,
   verifyMessage
 } from 'ethers'
 import fetch from 'node-fetch'
 
+import { WARNINGS } from '@/consts/signAccountOp/errorHandling'
 import { describe, expect, jest, test } from '@jest/globals'
 import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-util'
 
@@ -47,8 +49,12 @@ import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { clearErc7730RegistryCache } from '../../libs/humanizer'
+import { HumanizerWarning } from '../../libs/humanizer/interfaces'
+import { UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
+import { AccountState } from '../../libs/portfolio/interfaces'
+import { PORTFOLIO_STATE } from '../../libs/portfolio/testData'
 import { BindedRelayerCall, relayerCall, RelayerError } from '../../libs/relayerCall/relayerCall'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
@@ -383,6 +389,41 @@ const nativeFeeToken: TokenResult = {
   }
 }
 
+const buildPortfolioState = ({
+  amountBeforeSimulation,
+  amountPostSimulation,
+  isLoading
+}: {
+  amountBeforeSimulation: bigint
+  amountPostSimulation: bigint
+  isLoading: boolean
+}): AccountState => {
+  const networkState = PORTFOLIO_STATE['1']
+  const token = networkState?.result?.tokens[0]
+
+  if (!networkState?.result || !token) throw new Error('Invalid portfolio test fixture')
+
+  return {
+    '1': {
+      ...networkState,
+      isLoading,
+      result: {
+        ...networkState.result,
+        total: { usd: Number(amountBeforeSimulation) },
+        tokens: [
+          {
+            ...token,
+            amount: amountBeforeSimulation,
+            amountPostSimulation,
+            decimals: 0,
+            priceIn: [{ baseCurrency: 'usd', price: 1 }]
+          }
+        ]
+      }
+    }
+  }
+}
+
 const gasTankToken: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
   symbol: 'ETH',
@@ -546,7 +587,7 @@ const init = async (
     ui: uiCtrl
   })
   if (options?.dapps) {
-    await phishing.initialLoadPromise
+    await phishing.init()
     await phishing.updatePhishingInterval.promise
     phishing.updatePhishingInterval.stop()
     continuouslyUpdatePhishingSpy?.mockRestore()
@@ -600,6 +641,7 @@ const init = async (
     account,
     accountsCtrl.accountStates[account.addr]![network.chainId.toString()]!,
     network,
+    true,
     true
   )
 
@@ -664,7 +706,7 @@ const init = async (
       ui: uiCtrl,
       selectedAccount: selectedAccountCtrl
     })
-    await realDappsController.initialLoadPromise
+    await realDappsController.init()
 
     // Register any dApp sessions so the real #getFrameContextStatus can read the top frame
     // reported for them (the iframe-in-suspicious-tab scenario).
@@ -704,7 +746,7 @@ const init = async (
     gasPrices: gasPricesOrMock
   })
 
-  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl }
+  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl, portfolio }
 }
 
 const initDappVerificationBannerTest = async (
@@ -3099,6 +3141,80 @@ describe('ERC-7730 humanization', () => {
   })
 })
 
+describe('significant balance decrease banners', () => {
+  test('keeps the previous banner while refreshing and recalculates when the result changes', async () => {
+    const { controller, portfolio } = await initDappVerificationBannerTest(verifiedDapp)
+    const portfolioState = portfolio.getAccountPortfolioState(eoaAccount.addr)
+
+    controller.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
+    portfolioState['1'] = { isReady: false, isLoading: true, errors: [] }
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
+
+    portfolioState['1'] = buildPortfolioState({
+      amountBeforeSimulation: 5000n,
+      amountPostSimulation: 3000n,
+      isLoading: false
+    })['1']
+    const significantBalanceDecreaseBanner = controller.banners.find(
+      ({ id }) => id === WARNINGS.significantBalanceDecrease.id
+    )
+    expect(significantBalanceDecreaseBanner).toEqual({
+      id: WARNINGS.significantBalanceDecrease.id,
+      type: 'warning',
+      title: 'Significant balance decrease detected',
+      text: 'Our checks indicate this transaction may significantly reduce your account balance.',
+      secondaryText:
+        'May be inaccurate when moving funds to another network or providing liquidity.'
+    })
+
+    portfolioState['1']!.isLoading = true
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toEqual(significantBalanceDecreaseBanner)
+
+    portfolioState['1'] = buildPortfolioState({
+      amountBeforeSimulation: 5000n,
+      amountPostSimulation: 5000n,
+      isLoading: false
+    })['1']
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
+    expect(
+      controller.warnings.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
+  })
+
+  test('waits for token discovery to finish while the portfolio is refreshing', async () => {
+    const { controller, portfolio } = await initDappVerificationBannerTest(verifiedDapp)
+    const portfolioState = portfolio.getAccountPortfolioState(eoaAccount.addr)
+    portfolioState['1'] = buildPortfolioState({
+      amountBeforeSimulation: 5000n,
+      amountPostSimulation: 3000n,
+      isLoading: true
+    })['1']
+
+    controller.setDiscoveryStatus(TraceCallDiscoveryStatus.InProgress)
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
+
+    controller.setDiscoveryStatus(TraceCallDiscoveryStatus.Failed)
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toEqual({
+      id: WARNINGS.significantBalanceDecrease.id,
+      type: 'warning',
+      title: 'Significant balance decrease detected',
+      text: 'Our checks indicate this transaction may significantly reduce your account balance.',
+      secondaryText:
+        'May be inaccurate when moving funds to another network or providing liquidity.'
+    })
+  })
+})
+
 describe('dapp verification banners', () => {
   test('should return loading banners', async () => {
     const { controller } = await initDappVerificationBannerTest(loadingDapp)
@@ -3107,6 +3223,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
         type: 'warning',
+        title: 'Safety check in progress',
         text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests: Loading Dapp"
       }
     ])
@@ -3119,6 +3236,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
         type: 'warning',
+        title: "App couldn't be verified",
         text: "We couldn't verify the app. Make sure you trust it before signing requests: Failed Dapp"
       }
     ])
@@ -3131,6 +3249,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
         type: 'error',
+        title: 'Potentially harmful app',
         text: "This app didn't pass our safety check. Proceed at your own risk: Blacklisted Dapp"
       }
     ])
@@ -3149,6 +3268,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
         type: 'warning',
+        title: "App not in Ambire's catalog",
         text: 'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: Custom Dapp'
       }
     ])
@@ -3163,6 +3283,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
         type: 'warning',
+        title: 'Suspicious app hosting',
         text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
       }
     ])
@@ -3303,10 +3424,6 @@ describe('traceCall asset discovery', () => {
     // A second request while one is in progress is a no-op (reentrancy guard).
     await (controller as any).traceCall()
     expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
-
-    // After 2s without a response the status reflects the slow pending state.
-    jest.advanceTimersByTime(2000)
-    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.SlowPendingResponse)
 
     // Resolving discovery learns the assets, fires the success callback and
     // settles on Done.
@@ -3565,5 +3682,109 @@ describe('external signer PIN sessions', () => {
 
     expect(nfc.beginPinSession).toHaveBeenCalledTimes(2)
     expect(nfc.endPinSession).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('unlimited approval warnings', () => {
+  const usdt = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+  const spender = '0x46705dfff24256421a05d056c29e81bdc09723b8'
+  const approveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
+
+  // no ERC-7730 registry is reachable here, so every approval falls back to the built-in
+  // descriptor - the path a real approval takes as well
+  const failingErc7730Relayer = jest.fn(async (path: string) => {
+    throw new Error(`No ERC-7730 registry in this test: ${path}`)
+  })
+
+  const approveCall = (amount: bigint, dapp?: Dapp) => ({
+    to: usdt,
+    value: 0n,
+    data: approveInterface.encodeFunctionData('approve', [spender, amount]),
+    ...(dapp ? { dapp: getDappRequestData(dapp) } : {})
+  })
+
+  const humanizeApproval = async (amount: bigint, dapp: Dapp, includeDappOnCall = true) => {
+    const { controller } = await initDappVerificationBannerTest(dapp, {
+      calls: [approveCall(amount, includeDappOnCall ? dapp : undefined)] as AccountOp['calls'],
+      callRelayer: failingErc7730Relayer as any
+    })
+    await wait(0)
+
+    return controller
+  }
+
+  const hasUnlimitedApprovalWarning = (controller: SignAccountOpTesterController) =>
+    !!controller.humanization[0]?.warnings?.some(
+      (warning: HumanizerWarning) => warning.code === UNLIMITED_APPROVAL_WARNING_CODE
+    )
+
+  test('warns on a maximum approval requested by an app outside the catalog', async () => {
+    const controller = await humanizeApproval(MaxUint256, customDapp)
+
+    expect(hasUnlimitedApprovalWarning(controller)).toBe(true)
+  })
+
+  test('stays quiet on a maximum approval requested by an app in the catalog', async () => {
+    const controller = await humanizeApproval(MaxUint256, verifiedDapp)
+
+    expect(hasUnlimitedApprovalWarning(controller)).toBe(false)
+  })
+
+  test('warns on a maximum approval when the call carries no app', async () => {
+    const controller = await humanizeApproval(MaxUint256, verifiedDapp, false)
+
+    expect(hasUnlimitedApprovalWarning(controller)).toBe(true)
+  })
+
+  test('stays quiet on a finite approval, whatever the app', async () => {
+    const controller = await humanizeApproval(1000000n, customDapp)
+
+    expect(hasUnlimitedApprovalWarning(controller)).toBe(false)
+  })
+
+  // reading the same humanization twice must give the same array, or the calls on screen would
+  // lose their identity on every render while a new humanization is running
+  test('returns the same humanization when nothing is suppressed', async () => {
+    const controller = await humanizeApproval(MaxUint256, customDapp)
+
+    expect(controller.humanization).toBe(controller.humanization)
+  })
+
+  // the catalog is fetched, so it can arrive after the calls were already humanized
+  test('drops the warning once the app turns out to be in the catalog, without humanizing again', async () => {
+    const catalogSpy = jest
+      .spyOn(DappsController.prototype, 'isDappInDefaultCatalog')
+      .mockReturnValue(false)
+
+    try {
+      const controller = await humanizeApproval(MaxUint256, customDapp)
+      expect(hasUnlimitedApprovalWarning(controller)).toBe(true)
+
+      const humanizationIdBefore = controller.humanizationId
+      catalogSpy.mockReturnValue(true)
+
+      expect(hasUnlimitedApprovalWarning(controller)).toBe(false)
+      // the same humanization is still in place - only the reading of it changed
+      expect(controller.humanizationId).toBe(humanizationIdBefore)
+    } finally {
+      catalogSpy.mockRestore()
+    }
+  })
+
+  test('brings the warning back when the app leaves the catalog', async () => {
+    const catalogSpy = jest
+      .spyOn(DappsController.prototype, 'isDappInDefaultCatalog')
+      .mockReturnValue(true)
+
+    try {
+      const controller = await humanizeApproval(MaxUint256, customDapp)
+      expect(hasUnlimitedApprovalWarning(controller)).toBe(false)
+
+      catalogSpy.mockReturnValue(false)
+
+      expect(hasUnlimitedApprovalWarning(controller)).toBe(true)
+    } finally {
+      catalogSpy.mockRestore()
+    }
   })
 })
