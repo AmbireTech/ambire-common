@@ -34,7 +34,6 @@ import {
 import { AcrossAPI } from '../across/api'
 import {
   AMBIRE_FEE_TAKER_ADDRESS,
-  FEE_PERCENT,
   SWAP_COMPATIBLE_ROUTINGS,
   UNISWAP_API_BASE_URL,
   UNISWAP_SUPPORTED_CHAIN_IDS
@@ -405,7 +404,8 @@ export class UniswapAPI implements SwapProvider {
     toTokenAddress,
     fromAmount,
     userAddress,
-    isWrapOrUnwrap
+    isWrapOrUnwrap,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     this.#ensureApiKey()
 
@@ -423,7 +423,7 @@ export class UniswapAPI implements SwapProvider {
       )
 
     const shouldIncludeConvenienceFee =
-      !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
+      feePercent > 0 && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
 
     const body: {
       type: 'EXACT_INPUT'
@@ -457,7 +457,7 @@ export class UniswapAPI implements SwapProvider {
     if (shouldIncludeConvenienceFee) {
       body.integratorFees = [
         {
-          bips: FEE_PERCENT * 100,
+          bips: feePercent * 100,
           recipient: AMBIRE_FEE_TAKER_ADDRESS
         }
       ]

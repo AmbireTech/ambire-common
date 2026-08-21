@@ -35,7 +35,7 @@ import {
   lifiMapNativeToAddr,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
+import { ZERO_ADDRESS } from '../socket/constants'
 import { getHumanReadableErrorMessage } from './helpers'
 
 const normalizeLiFiTokenToSwapAndBridgeToToken = (
@@ -457,7 +457,8 @@ export class LiFiAPI implements SwapProvider {
     sort,
     isWrapOrUnwrap,
     accountNativeBalance,
-    nativeSymbol
+    nativeSymbol,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     if (!fromAsset)
       throw new SwapAndBridgeProviderApiError(
@@ -485,7 +486,7 @@ export class LiFiAPI implements SwapProvider {
         allowDestinationCall: 'false',
         allowSwitchChain: 'false',
         // LiFi fee is from 0 to 1, so normalize it by dividing by 100
-        fee: (FEE_PERCENT / 100).toString() as string | undefined,
+        fee: (feePercent / 100).toString() as string | undefined,
         // How this works:
         // When this strategy is applied, we give all tool 900ms (minWaitTimeMs) to return a result.
         // If we received 5 or more (startingExpectedResults) results during this time we return those and don’t wait for other tools.
@@ -513,7 +514,8 @@ export class LiFiAPI implements SwapProvider {
       }
     }
 
-    const shouldRemoveConvenienceFee = isWrapOrUnwrap || isNoFeeToken(fromChainId, fromTokenAddress)
+    const shouldRemoveConvenienceFee =
+      feePercent === 0 || isWrapOrUnwrap || isNoFeeToken(fromChainId, fromTokenAddress)
     if (shouldRemoveConvenienceFee) delete body.options.fee
 
     const url = `${this.#baseUrl}/advanced/routes`

@@ -3,10 +3,12 @@ import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'eth
 import { getAccountNetworks } from '@/libs/networks/networks'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
+import { getFeePercent } from '@/libs/swapAndBridge/fee'
 
 import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
+import { STK_WALLET } from '../../consts/addresses'
 import {
   BRIDGE_STATUS_INTERVAL,
   UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
@@ -48,7 +50,7 @@ import { getBridgeBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
-import { getTokenAmount } from '../../libs/portfolio/helpers'
+import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpers'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import {
   addCustomTokensIfNeeded,
@@ -307,6 +309,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   toTokenSearchResults: SwapAndBridgeToToken[] = []
 
   quote: SwapAndBridgeQuote | null = null
+
+  feePercent: number = getFeePercent()
 
   quoteRoutesStatuses: { [key: string]: { status: string } } = {}
 
@@ -1836,6 +1840,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         const isWrapOrUnwrap = this.#getIsWrapOrUnwrap()
         const toSelectedToken = this.toSelectedToken
         const selectedAccountAddress = this.#selectedAccount.account.addr
+        const stkWalletToken = this.#portfolio
+          .getAccountPortfolioState(selectedAccountAddress)
+          ['1']?.result?.tokens.find(({ address }) => address === STK_WALLET)
+        this.feePercent = getFeePercent(
+          stkWalletToken ? getTokenBalanceInUSD(stkWalletToken) : undefined
+        )
         const toTokenPricePromise = withTimeout(
           () =>
             this.#portfolio.getTokenPrice(
@@ -1871,7 +1881,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             sort: this.routePriority,
             isWrapOrUnwrap,
             accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
-            nativeSymbol: network?.nativeAssetSymbol || 'ETH'
+            nativeSymbol: network?.nativeAssetSymbol || 'ETH',
+            feePercent: this.feePercent
           })
         ])
         // sort the routes by value and them by disabled, making disabled last
@@ -2747,7 +2758,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       feeTokenPriceInUsd: feeToken.feeTokenPriceInUsd,
       feeTokenDecimals: feeToken.decimals,
       providerId: this.quote?.selectedRoute?.providerId,
-      isBridge
+      isBridge,
+      feePercent: this.feePercent
     })
 
     if (this.#signAccountOpController) {

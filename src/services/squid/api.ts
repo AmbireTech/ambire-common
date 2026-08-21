@@ -339,7 +339,8 @@ export class SquidAPI implements SwapProvider {
     userAddress,
     isWrapOrUnwrap,
     accountNativeBalance,
-    nativeSymbol
+    nativeSymbol,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     this.#ensureIntegratorId()
 
@@ -358,7 +359,10 @@ export class SquidAPI implements SwapProvider {
 
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESS
     const shouldIncludeConvenienceFee =
-      !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
+      feePercent > 0 &&
+      !!feeTakerAddress &&
+      !isWrapOrUnwrap &&
+      !isNoFeeToken(fromChainId, fromTokenAddress)
 
     const body: {
       fromAddress: string

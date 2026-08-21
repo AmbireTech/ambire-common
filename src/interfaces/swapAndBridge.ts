@@ -656,6 +656,7 @@ export interface ProviderQuoteParams {
   isWrapOrUnwrap: boolean
   accountNativeBalance: bigint
   nativeSymbol: string
+  feePercent: number
 }
 
 export interface SwapProvider {
@@ -697,7 +698,8 @@ export interface SwapProvider {
     userAddress,
     sort,
     accountNativeBalance,
-    nativeSymbol
+    nativeSymbol,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote>
   getRouteStatus({
     txHash,

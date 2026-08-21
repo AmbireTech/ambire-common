@@ -27,7 +27,6 @@ import { CITREA_CHAIN_ID } from '../squid/constants'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
-  FEE_PERCENT,
   NULL_ADDRESS,
   PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE,
   ZERO_ADDRESS
@@ -273,7 +272,8 @@ export class SocketAPI implements SwapProvider {
     userAddress,
     isWrapOrUnwrap,
     accountNativeBalance,
-    nativeSymbol
+    nativeSymbol,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     if (!fromAsset || !toAsset)
       throw new SwapAndBridgeProviderApiError(
@@ -293,10 +293,13 @@ export class SocketAPI implements SwapProvider {
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
     const shouldIncludeConvenienceFee =
-      !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
+      feePercent > 0 &&
+      !!feeTakerAddress &&
+      !isWrapOrUnwrap &&
+      !isNoFeeToken(fromChainId, fromTokenAddress)
     if (shouldIncludeConvenienceFee) {
       params.append('feeTakerAddress', feeTakerAddress)
-      params.append('feeBps', (FEE_PERCENT * 100).toString())
+      params.append('feeBps', (feePercent * 100).toString())
     }
 
     const url = `${this.#bungeQuoteApiUrl}/api/v1/bungee/quote?${params.toString()}`

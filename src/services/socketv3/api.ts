@@ -23,11 +23,7 @@ import {
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { CITREA_CHAIN_ID } from '../squid/constants'
-import {
-  AMBIRE_FEE_TAKER_ADDRESSES,
-  ETH_ON_OPTIMISM_LEGACY_ADDRESS,
-  FEE_PERCENT
-} from './constants'
+import { AMBIRE_FEE_TAKER_ADDRESSES, ETH_ON_OPTIMISM_LEGACY_ADDRESS } from './constants'
 
 type SocketV3Protocol = {
   name: string
@@ -406,7 +402,8 @@ export class SocketV3API implements SwapProvider {
     userAddress,
     isWrapOrUnwrap,
     accountNativeBalance,
-    nativeSymbol
+    nativeSymbol,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     if (!fromAsset || !toAsset)
       throw new SwapAndBridgeProviderApiError(
@@ -425,10 +422,13 @@ export class SocketV3API implements SwapProvider {
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId] || FEE_COLLECTOR
     const shouldIncludeConvenienceFee =
-      !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
+      feePercent > 0 &&
+      !!feeTakerAddress &&
+      !isWrapOrUnwrap &&
+      !isNoFeeToken(fromChainId, fromTokenAddress)
     if (shouldIncludeConvenienceFee) {
       params.append('feeTakerAddress', feeTakerAddress)
-      params.append('feeBps', (FEE_PERCENT * 100).toString())
+      params.append('feeBps', (feePercent * 100).toString())
     }
 
     const url = `${this.#socketApiUrl}/v3/swap/quote?${params.toString()}`
