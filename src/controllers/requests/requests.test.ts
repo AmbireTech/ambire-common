@@ -492,6 +492,22 @@ describe('RequestsController ', () => {
     expect(request?.kind).toBe('calls')
     if (request?.kind !== 'calls') throw new Error('Expected calls request')
 
+    const waitForHumanization = async () => {
+      if (!request.signAccountOp.isHumanizing) return
+
+      await new Promise<void>((resolve) => {
+        const unsubscribeFromHumanization = request.signAccountOp.onUpdate(() => {
+          if (request.signAccountOp.isHumanizing) return
+
+          unsubscribeFromHumanization()
+          resolve()
+        })
+      })
+    }
+
+    await waitForHumanization()
+    await request.signAccountOp.forceEmitUpdate()
+
     const emittedHumanizationLabels: (string | undefined)[] = []
     const unsubscribe = controller.onUpdate(() => {
       emittedHumanizationLabels.push(
@@ -499,12 +515,8 @@ describe('RequestsController ', () => {
       )
     })
 
-    request.signAccountOp.humanization = [
-      {
-        ...request.signAccountOp.accountOp.calls[0]!,
-        fullVisualization: [{ id: 1, type: 'action', content: 'Transaction details' }]
-      }
-    ]
+    request.signAccountOp.humanize()
+    await waitForHumanization()
     await request.signAccountOp.forceEmitUpdate()
     await request.signAccountOp.forceEmitUpdate()
     unsubscribe()
