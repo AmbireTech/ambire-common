@@ -1164,10 +1164,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (type === 'safeSignMessageRequest') {
       await this.#buildSafeSignMessageUserRequest(params)
     }
+
+    if (type === 'onchainSafeRejection') {
+      await this.#buildOnchainSafeRejection(params.requestId)
+    }
   }
 
   /** Builds or focuses a Safe transaction that rejects another transaction onchain. */
-  async buildOnchainSafeRejection(requestId: UserRequest['id']) {
+  async #buildOnchainSafeRejection(requestId: UserRequest['id']) {
     const request = this.userRequests.find((userRequest) => userRequest.id === requestId)
     if (!request || request.kind !== 'calls') return
 

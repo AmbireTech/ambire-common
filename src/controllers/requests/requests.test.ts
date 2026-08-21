@@ -604,7 +604,10 @@ describe('RequestsController ', () => {
       .mockResolvedValue()
     const setSafeNonceSpy = jest.spyOn(SignAccountOpController.prototype, 'setSafeNonce')
 
-    await controller.buildOnchainSafeRejection(request.id)
+    await controller.build({
+      type: 'onchainSafeRejection',
+      params: { requestId: request.id }
+    })
 
     expect(controller.userRequests).toHaveLength(2)
     expect(controller.currentUserRequest).not.toBe(request)
@@ -642,7 +645,10 @@ describe('RequestsController ', () => {
     controller.userRequests = [request]
     await controller.setCurrentUserRequestById(request.id)
 
-    await controller.buildOnchainSafeRejection(request.id)
+    await controller.build({
+      type: 'onchainSafeRejection',
+      params: { requestId: request.id }
+    })
     const rejectionRequest = controller.userRequests.find(
       (userRequest) => userRequest.id !== request.id
     )
@@ -651,7 +657,10 @@ describe('RequestsController ', () => {
     expect(rejectionRequest.signAccountOp.accountOp.calls).toHaveLength(1)
 
     await controller.setCurrentUserRequestById(request.id)
-    await controller.buildOnchainSafeRejection(request.id)
+    await controller.build({
+      type: 'onchainSafeRejection',
+      params: { requestId: request.id }
+    })
 
     expect(controller.userRequests).toHaveLength(2)
     expect(controller.currentUserRequest).toBe(rejectionRequest)
@@ -697,7 +706,10 @@ describe('RequestsController ', () => {
     controller.userRequests = [regularRequest, cancellationRequest]
     await controller.setCurrentUserRequestById(regularRequest.id)
 
-    await controller.buildOnchainSafeRejection(regularRequest.id)
+    await controller.build({
+      type: 'onchainSafeRejection',
+      params: { requestId: regularRequest.id }
+    })
 
     expect(controller.userRequests).toHaveLength(2)
     expect(controller.currentUserRequest).toBe(cancellationRequest)
@@ -719,14 +731,20 @@ describe('RequestsController ', () => {
     controller.userRequests = [request]
     await controller.setCurrentUserRequestById(request.id)
 
-    await controller.buildOnchainSafeRejection(request.id)
+    await controller.build({
+      type: 'onchainSafeRejection',
+      params: { requestId: request.id }
+    })
     const firstRejectionRequest = controller.currentUserRequest
     expect(firstRejectionRequest?.kind).toBe('calls')
     if (firstRejectionRequest?.kind !== 'calls') throw new Error('Expected calls request')
     firstRejectionRequest.signAccountOp.setSafeNonce(8n)
 
     await controller.setCurrentUserRequestById(request.id)
-    await controller.buildOnchainSafeRejection(request.id)
+    await controller.build({
+      type: 'onchainSafeRejection',
+      params: { requestId: request.id }
+    })
 
     expect(controller.userRequests).toHaveLength(3)
     expect(controller.currentUserRequest).not.toBe(firstRejectionRequest)
@@ -748,7 +766,10 @@ describe('RequestsController ', () => {
     controller.userRequests = [request]
     jest.spyOn(portfolioCtrl, 'overrideSimulationResults').mockResolvedValue()
 
-    await controller.buildOnchainSafeRejection(request.id)
+    await controller.build({
+      type: 'onchainSafeRejection',
+      params: { requestId: request.id }
+    })
 
     expect(controller.userRequests).toHaveLength(2)
     expect(controller.currentUserRequest?.kind).toBe('calls')
@@ -771,7 +792,10 @@ describe('RequestsController ', () => {
     })
     controller.userRequests = [request]
 
-    await controller.buildOnchainSafeRejection(request.id)
+    await controller.build({
+      type: 'onchainSafeRejection',
+      params: { requestId: request.id }
+    })
 
     expect(controller.userRequests).toEqual([request])
     request.signAccountOp.destroy()

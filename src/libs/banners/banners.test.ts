@@ -89,6 +89,10 @@ describe('getSafeMessageRequestBanners', () => {
 
     expect(banners).toHaveLength(1)
     expect(banners[0]!.meta?.accountAddr).toEqual(ACCOUNT_ADDR)
+    expect(banners[0]!.title).toEqual('Pending signature request')
+    expect(
+      getSafeMessageRequestBanners(safeAccount, [messageRequest, messageRequest])[0]!.title
+    ).toEqual('Pending signature requests')
   })
 })
 

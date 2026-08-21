@@ -136,7 +136,7 @@ export const getSafeMessageRequestBanners = (
     {
       id: 'safe-message-request-banner',
       type: 'info',
-      title: `You have ${requests.length} pending signature request${requests.length > 1 ? 's' : ''}`,
+      title: `Pending signature request${requests.length > 1 ? 's' : ''}`,
       text: '',
       meta: {
         accountAddr: account.addr

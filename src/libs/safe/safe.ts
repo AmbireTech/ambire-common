@@ -626,7 +626,7 @@ export async function fetchExecutedTransactions(
     // we're allowed a max of 5 req to the API per second so we
     // have to be careful - making 3 at a time from here
     const responses = await Promise.all(
-      page.map(({ chainId, minNonce }) => {
+      page.map(async ({ chainId, minNonce }) => {
         const apiKit = getApiKit(chainId)
         // @TODO this method can be used to get safe tx history
         // @TODO make rate limit tracking for the whole library
@@ -634,29 +634,37 @@ export async function fetchExecutedTransactions(
         // everything below minNonce can no longer execute, so it cannot resolve a
         // request we are waiting on. The double underscore is the filter syntax of
         // the Safe Transaction Service, not a typo
-        return apiKit.getMultisigTransactions(safeAddr, {
-          ordering: 'nonce',
-          nonce__gte: minNonce
-        })
+        const res = await apiKit
+          .getMultisigTransactions(safeAddr, {
+            ordering: 'nonce',
+            nonce__gte: minNonce
+          })
+          .catch((error: unknown) => {
+            console.log(`failed to call getMultisigTransactions on ${chainId}`, error)
+            return null
+          })
+        return res
       })
     )
-    responses.forEach(({ results: txns }) => {
-      txns.forEach((tx) => {
-        if (tx.transactionHash) {
-          results.push({
-            safeTxnHash: tx.safeTxHash as Hex,
-            transactionHash: tx.transactionHash as Hex,
-            nonce: tx.nonce
-          })
-        } else {
-          results.push({
-            safeTxnHash: tx.safeTxHash as Hex,
-            nonce: tx.nonce,
-            confirmations: tx.confirmations
-          })
-        }
+    responses
+      .filter((response): response is SafeMultisigTransactionListResponse => response !== null)
+      .forEach(({ results: txns }) => {
+        txns.forEach((tx) => {
+          if (tx.transactionHash) {
+            results.push({
+              safeTxnHash: tx.safeTxHash as Hex,
+              transactionHash: tx.transactionHash as Hex,
+              nonce: tx.nonce
+            })
+          } else {
+            results.push({
+              safeTxnHash: tx.safeTxHash as Hex,
+              nonce: tx.nonce,
+              confirmations: tx.confirmations
+            })
+          }
+        })
       })
-    })
     // no need to throttle after the last page, nothing follows it
     if (i + 1 < pages.length) await wait(1100)
   }
