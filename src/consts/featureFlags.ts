@@ -23,6 +23,12 @@ export interface FeatureFlags {
    * ENS profile fresh in the background (the pre-privacy behaviour).
    */
   keepEnsProfilesUpToDate: boolean
+  /**
+   * Fetch the price movement and the exchanges of the tokens in the Swap & Bridge
+   * receive list. Requires sending their addresses to our price API, so the user
+   * can opt out of it.
+   */
+  swapAndBridgeTokenInfo: boolean
   /** Resolve Namoshi names (.btc, .citrea) on Citrea. */
   namoshiDomains: boolean
   /** Resolve GNS names (.gwei) on Ethereum. */
@@ -39,6 +45,7 @@ export const defaultFeatureFlags: FeatureFlags = {
   erc4337: true,
   eip7702: true,
   keepEnsProfilesUpToDate: false,
+  swapAndBridgeTokenInfo: true,
   // @TODO: Introduce a setting and flip to false
   namoshiDomains: true,
   gnsDomains: true

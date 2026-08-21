@@ -1,6 +1,6 @@
 import { geckoIdMapper } from '../../consts/coingecko'
 import { Network } from '../../interfaces/network'
-import { QueueElement, Request } from './batcher'
+import { QueueElement, Request } from '../../utils/batcher'
 import { paginate } from './pagination'
 
 // max tokens per request; we seem to have faster results when it's lower

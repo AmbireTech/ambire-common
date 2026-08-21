@@ -519,6 +519,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.swapAndBridge = new SwapAndBridgeController({
       eventEmitterRegistry,
       callRelayer: this.callRelayer,
+      fetch,
       accounts: this.accounts,
       keystore: this.keystore,
       portfolio: this.portfolio,
