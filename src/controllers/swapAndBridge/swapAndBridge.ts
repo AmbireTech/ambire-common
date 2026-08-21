@@ -9,8 +9,21 @@ import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeou
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import {
   BRIDGE_STATUS_INTERVAL,
+  BRIDGE_STATUS_INTERVAL_CEILING,
   UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
 } from '../../consts/intervals'
+import {
+  CONVERSION_PRECISION,
+  CONVERSION_PRECISION_POW,
+  HARD_CODED_CURRENCY,
+  MARKET_DATA_THRESHOLD_BY_STATUS,
+  NETWORK_MISMATCH_MESSAGE,
+  ROUTE_SORT_AMOUNT_THRESHOLD_PERCENT,
+  SUPPORTED_CHAINS_CACHE_THRESHOLD,
+  TO_TOKEN_LIST_CACHE_THRESHOLD,
+  TO_TOKEN_LIST_LIMIT,
+  TO_TOKEN_PRICE_TIMEOUT_MS
+} from '../../consts/swapAndBridge'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IDappsController } from '../../interfaces/dapp'
@@ -104,45 +117,11 @@ type SwapAndBridgeErrorType = {
   level: 'error' | 'warning'
 }
 
-const HARD_CODED_CURRENCY = 'usd'
-
 const isSwapAndBridge = (route: string | undefined) => route === 'swap-and-bridge'
-
-const CONVERSION_PRECISION = 16
-const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
-
-const NETWORK_MISMATCH_MESSAGE =
-  'Swap & Bridge network configuration mismatch. Please try again or contact Ambire support.'
-
-// For performance reasons, limit the max number of tokens in the to token list
-const TO_TOKEN_LIST_LIMIT = 100
-const TO_TOKEN_PRICE_TIMEOUT_MS = 4000
 
 const STATUS_WRAPPED_METHODS = {
   addToTokenByAddress: 'INITIAL'
 } as const
-
-const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
-const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
-
-// Market data (24h change, market cap) goes stale fast, so a short threshold. Displaying
-// a day-old price movement next to a token the user is about to receive would be misleading.
-const MARKET_DATA_THRESHOLD = 1000 * 60 * 10 // 10 minutes
-// Many of the tokens in the service provider lists are not tracked by our price API at all.
-// Their absence is effectively permanent, so don't keep asking for them.
-const MARKET_DATA_NOT_FOUND_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
-const MARKET_DATA_FAIL_THRESHOLD = 1000 * 60 * 2 // 2 minutes
-// Frees records left in a loading state by a request that can no longer complete, for
-// instance because the background got suspended mid-flight. Without it such records
-// would never be requested again and their tokens would load forever.
-const MARKET_DATA_LOADING_DEADLINE = 1000 * 30 // 30 seconds
-
-const MARKET_DATA_THRESHOLD_BY_STATUS: { [status in ToTokenMarketDataStatus]: number } = {
-  DONE: MARKET_DATA_THRESHOLD,
-  NOT_FOUND: MARKET_DATA_NOT_FOUND_THRESHOLD,
-  FAIL: MARKET_DATA_FAIL_THRESHOLD,
-  LOADING: MARKET_DATA_LOADING_DEADLINE
-}
 
 type ToTokenMarketDataRecord = {
   status: ToTokenMarketDataStatus
@@ -156,7 +135,7 @@ export const sortSwapAndBridgeRoutes = (r1: SwapAndBridgeRoute, r2: SwapAndBridg
 
   // the amount threshold in %. If below, we check the time as
   // the deciding sort factor
-  const threshold = 1.2
+  const threshold = ROUTE_SORT_AMOUNT_THRESHOLD_PERCENT
 
   const sortByTime = () => {
     const aTime = Number(r1.serviceTime)
@@ -3234,7 +3213,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // coming here means the bridge should complete any second now
     // so start with BRIDGE_STATUS_INTERVAL
     // upon status pending, increase by BRIDGE_STATUS_INTERVAL until the ceiling is hit
-    const ceiling = 60000
     const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
     const startTimeout =
       minServiceTime === this.#updateActiveRoutesInterval.currentTimeout
@@ -3242,7 +3220,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         : this.#updateActiveRoutesInterval.currentTimeout + BRIDGE_STATUS_INTERVAL
 
     this.#updateActiveRoutesInterval.updateTimeout({
-      timeout: startTimeout < ceiling ? startTimeout : ceiling
+      timeout:
+        startTimeout < BRIDGE_STATUS_INTERVAL_CEILING
+          ? startTimeout
+          : BRIDGE_STATUS_INTERVAL_CEILING
     })
   }
 

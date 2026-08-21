@@ -1,5 +1,8 @@
 export const UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL = 60000 // 1 minute
 export const BRIDGE_STATUS_INTERVAL = 10000 // 10 seconds
+// Upon a pending bridge status, the poll interval increases by BRIDGE_STATUS_INTERVAL each
+// time, up to this ceiling
+export const BRIDGE_STATUS_INTERVAL_CEILING = 60000 // 1 minute
 export const ACTIVITY_REFRESH_INTERVAL = 5000 // 5 seconds
 export const ACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL = 2 * 60 * 1000 // 2 minutes
 export const INACTIVE_EXTENSION_PORTFOLIO_UPDATE_INTERVAL = 10 * 60 * 1000 // 10 minutes
