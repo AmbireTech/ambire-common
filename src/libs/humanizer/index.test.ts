@@ -30,6 +30,7 @@ import {
   getLabel,
   getText,
   getToken,
+  getUnlimitedApprovalWarning,
   getWarning,
   hasErc7730Humanization
 } from './utils'
@@ -611,6 +612,116 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  // Real world tx (mainnet) calling LI.FI Diamond's swapTokensSingleV3NativeToERC20
+  // (selector 0xaf7060fd - confirmed via 4byte.directory). Descriptor fields below
+  // are copied verbatim from the LI.FI entry in the ERC-7730 registry:
+  // https://github.com/ethereum/clear-signing-erc7730-registry/blob/master/registry/lifi/calldata-LIFIDiamond.json
+  // The descriptor's "interpolatedIntent" - "Swap {@.value} for at least
+  // {_minAmountOut} to {_receiver}" - exercises interpolateIntentParts()'s
+  // per-spec field lookup: {_minAmountOut} resolves through the "Minimum to
+  // Receive" field's tokenAmount format/tokenPath, so it renders as a `type:
+  // 'token'` titleParts item, matching the "Minimum to Receive" row below.
+  // `title` itself stays the plain, non-interpolated "Swap" intent.
+  test('humanizes a LI.FI swapTokensSingleV3NativeToERC20 call with its ERC-7730 registry descriptor', () => {
+    accountOp.calls = [
+      {
+        to: '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE',
+        value: 5837776470906329n,
+        data: '0xaf7060fdedbb23ef4269219df4d4d0183bea7af79cc46298a7df01a4e949e02b9384f19b00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001000000000000000000000000006969174fd72466430a46e18234d0b530c9fd5f490000000000000000000000000000000000000000000000000014bd6d40d395d900000000000000000000000000000000000000000000000000000000000001600000000000000000000000000000000000000000000000000000000000000015616d626972652d657874656e73696f6e2d70726f640000000000000000000000000000000000000000000000000000000000000000000000000000000000002a307830303030303030303030303030303030303030303030303030303030303030303030303030303030000000000000000000000000000000000000000000000000000000000000000000005c57cf61e473ae865e733a3a23fbb7618b4621f60000000000000000000000005c57cf61e473ae865e733a3a23fbb7618b4621f60000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000000000000000000000000000000014bd6d40d395d900000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000004d0e30db000000000000000000000000000000000000000000000000000000000'
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: {
+          path: 'registry/lifi/calldata-LIFIDiamond.json',
+          descriptor: {
+            display: {
+              formats: {
+                'swapTokensSingleV3NativeToERC20(bytes32 _transactionId, string _integrator, string _referrer, address _receiver, uint256 _minAmountOut, (address callTo, address approveTo, address sendingAssetId, address receivingAssetId, uint256 fromAmount, bytes callData, bool requiresDeposit) _swapData)':
+                  {
+                    intent: 'Swap',
+                    interpolatedIntent:
+                      'Swap {@.value} for at least {_minAmountOut} to {_receiver}',
+                    fields: [
+                      { path: '@.value', label: 'Amount to send', format: 'amount' },
+                      {
+                        path: '_minAmountOut',
+                        label: 'Minimum to Receive',
+                        format: 'tokenAmount',
+                        params: { tokenPath: '_swapData.receivingAssetId' },
+                        visible: 'always'
+                      },
+                      {
+                        path: '_receiver',
+                        label: 'Recipient',
+                        format: 'addressName',
+                        params: { types: ['eoa', 'contract'], sources: ['local', 'ens'] },
+                        visible: 'always'
+                      },
+                      { path: '_transactionId', label: 'Transaction Id', visible: 'never' },
+                      { path: '_integrator', label: 'Integrator', visible: 'never' },
+                      { path: '_referrer', label: 'Referrer', visible: 'never' },
+                      {
+                        path: '_swapData.callData',
+                        label: 'Swap Data Call Data',
+                        visible: 'never'
+                      },
+                      { path: '_swapData.callTo', label: 'Swap Data Call To', visible: 'never' },
+                      {
+                        path: '_swapData.approveTo',
+                        label: 'Swap Data Approve To',
+                        visible: 'never'
+                      },
+                      {
+                        path: '_swapData.requiresDeposit',
+                        label: 'Swap Data Requires Deposit',
+                        visible: 'never'
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization(
+          'Swap',
+          [
+            {
+              label: 'Amount to send',
+              value: [getToken(ZeroAddress, 5837776470906329n, 1n)]
+            },
+            {
+              label: 'Minimum to Receive',
+              value: [getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n)]
+            },
+            {
+              label: 'Recipient',
+              value: [getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')]
+            }
+          ],
+          undefined,
+          // Structured title parts, so the UI can render the two amounts as
+          // `type: 'token'` items (live decimals/symbol lookup via TokenOrNft)
+          // instead of relying on a static, possibly incomplete token registry.
+          [
+            getAction('Swap '),
+            getToken(ZeroAddress, 5837776470906329n, 1n),
+            getText(' for at least '),
+            getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n),
+            getText(' to '),
+            getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')
+          ]
+        )
+      ]
+    ])
+  })
+
   test('adds the native transaction value when it is not already displayed', async () => {
     const call = {
       ...transactions.erc20[1]!,
@@ -1168,15 +1279,123 @@ describe('ERC-7730 descriptors', () => {
 
     compareHumanizerVisualizations(irCalls, [
       [
-        getErc7730Visualization('Stake 0.001 ETH', [
-          {
-            label: 'Amount',
-            value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
-          }
-        ])
+        getErc7730Visualization(
+          'Stake ETH',
+          [
+            {
+              label: 'Amount',
+              value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
+            }
+          ],
+          undefined,
+          [getAction('Stake '), getToken(ZeroAddress, 1000000000000000n, 1n), getText(' ETH')]
+        )
       ]
     ])
     expect(irCalls[0]!.warnings).toEqual([])
+  })
+
+  test.each([
+    {
+      name: 'malformed braces',
+      interpolatedIntent: 'Stake {@.value ETH',
+      fields: [{ label: 'Amount', format: 'amount', path: '@.value' }]
+    },
+    {
+      name: 'a missing field formatter',
+      interpolatedIntent: 'Stake {_referral}',
+      fields: [{ label: 'Amount', format: 'amount', path: '@.value' }]
+    },
+    {
+      name: 'a field that is not always visible',
+      interpolatedIntent: 'Stake {@.value} ETH',
+      fields: [{ label: 'Amount', format: 'amount', path: '@.value', visible: 'optional' as const }]
+    },
+    {
+      name: 'a token amount with an invalid token reference',
+      interpolatedIntent: 'Stake {_referral}',
+      fields: [
+        {
+          label: 'Amount',
+          format: 'tokenAmount',
+          path: '_referral',
+          params: { token: 'not-an-address' }
+        }
+      ]
+    }
+  ])(
+    'falls back to the static intent when interpolation has $name',
+    ({ interpolatedIntent, fields }) => {
+      accountOp.calls = [
+        {
+          to: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
+          value: ethers.parseEther('0.001'),
+          data: '0xa1903eab00000000000000000000000011d00000000000000000000000000000000011d0'
+        }
+      ]
+
+      const irCalls = humanizeAccountOp(accountOp, {
+        erc7730Descriptors: {
+          0: {
+            descriptor: {
+              display: {
+                formats: {
+                  'submit(address _referral)': {
+                    intent: 'Stake ETH',
+                    interpolatedIntent,
+                    fields
+                  }
+                }
+              }
+            }
+          }
+        }
+      })
+      const visualization = irCalls[0]!.fullVisualization?.find((item) => item.type === 'erc7730')
+
+      expect(visualization).toMatchObject({ type: 'erc7730', title: 'Stake ETH' })
+      if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
+      expect(visualization.titleParts).toBeUndefined()
+    }
+  )
+
+  test('supports escaped braces in an interpolated intent', () => {
+    accountOp.calls = [
+      {
+        to: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
+        value: ethers.parseEther('0.001'),
+        data: '0xa1903eab00000000000000000000000011d00000000000000000000000000000000011d0'
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'submit(address _referral)': {
+                  intent: 'Stake ETH',
+                  interpolatedIntent: 'Stake {{ETH}} {@.value}',
+                  fields: [{ label: 'Amount', format: 'amount', path: '@.value' }]
+                }
+              }
+            }
+          }
+        }
+      }
+    })
+    const visualization = irCalls[0]!.fullVisualization?.find((item) => item.type === 'erc7730')
+
+    if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
+    expect(visualization.titleParts?.map((item) => item.content || item.type)).toEqual([
+      'Stake ',
+      '{',
+      'ETH',
+      '}',
+      ' ',
+      'token'
+    ])
   })
 
   test('does not warn when an ERC-7730 descriptor displays the native transaction value', () => {
@@ -1959,7 +2178,10 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     })
+    // both approvals in this batch are for the maximum amount, and the modules that found them
+    // keep their warnings even though the ERC-7730 descriptors replaced the visualization
     expect(irCalls[0]!.warnings).toEqual([
+      getUnlimitedApprovalWarning(permit2),
       getWarning('This transaction will send ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
     ])
     expect(irCalls[1]!.fullVisualization?.[0]).toMatchObject({
@@ -1976,6 +2198,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     })
     expect(irCalls[1]!.warnings).toEqual([
+      getUnlimitedApprovalWarning(universalRouter),
       getWarning('This transaction will send ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
     ])
     expect(irCalls[2]!.fullVisualization?.[0]).toMatchObject({
@@ -4207,7 +4430,6 @@ describe('ERC-7730 descriptors', () => {
     const spender = '0xc92e8bdf79f0507f65a392b0ab4667716bfe0110'
     const settlementContract = '0xfdafc9d1902f4e0b84f65f49f244b32b31013b74'
     const undecodableContract = '0xa1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
-    const undecodableSelector = '0xb0f3f1c2'
     const multiSendData =
       '0x8d80ff0a00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000244002c5d356f2244b942c72ddfccbfa2e61529dc9c8d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000024f08a03230000000000000000000000002f55e8b20d0b9fefa187aa7d00b6cbe563605bf5002c5d356f2244b942c72ddfccbfa2e61529dc9c8d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000443365582cd72ffa789b6fae41254d0b5a13e6e1e92ed947ec6a251edf1cf0b6c02c257b4b000000000000000000000000fdafc9d1902f4e0b84f65f49f244b32b31013b7400833589fcd6edb6e08f4c7c32d4f71b54bda0291300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe0110ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00a1b2c3d4e5f60718293a4b5c6d7e8f901234567800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044b0f3f1c2000000000000000000000000000000000000000000000000000000000000002a0000000000000000000000006cf1e9ca41f7611def408122793c358a3d11e5a500000000000000000000000000000000000000000000000000000000'
 
@@ -4349,6 +4571,112 @@ describe('ERC-7730 descriptors', () => {
       (row: any) => row.label === 'Transactions'
     )
     expect(transactionsRow?.value).toHaveLength(4)
+  })
+  test('humanizes calls nested deeper than the displayed depth and warns about it', async () => {
+    const router = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5'
+    const beneficiary = '0x0012b7C5D4310915bB2d58C0b14C72546D320C05'
+    const routerInterface = new ethers.Interface([
+      'function multicall(bytes[] data)',
+      'function deepestCall(address beneficiary)'
+    ])
+    const getNestedMulticallData = (nestingLevels: number) => {
+      let data = routerInterface.encodeFunctionData('deepestCall', [beneficiary])
+
+      for (let level = 0; level < nestingLevels; level += 1) {
+        data = routerInterface.encodeFunctionData('multicall', [[data]])
+      }
+
+      return data
+    }
+    const humanizeNestedMulticall = (nestingLevels: number) =>
+      humanizeAccountOp(
+        {
+          ...accountOp,
+          chainId: 8453n,
+          calls: [{ to: router, value: 0n, data: getNestedMulticallData(nestingLevels) }]
+        },
+        {
+          erc7730Descriptors: {
+            0: {
+              descriptor: {
+                display: {
+                  formats: {
+                    'multicall(bytes[] data)': {
+                      intent: 'Multicall',
+                      fields: [
+                        {
+                          path: 'data',
+                          label: 'Call',
+                          format: 'calldata',
+                          params: { calleePath: '@.to' },
+                          visible: 'always'
+                        }
+                      ]
+                    },
+                    'deepestCall(address beneficiary)': {
+                      intent: 'Deepest call',
+                      fields: [
+                        {
+                          path: 'beneficiary',
+                          label: 'Beneficiary',
+                          format: 'addressName',
+                          visible: 'always'
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      )
+    const getErc7730Titles = (visualization: any): string[] => [
+      visualization.title,
+      ...(visualization.rows || []).flatMap((row: any) =>
+        (row.value || [])
+          .filter((rowValue: any) => rowValue.type === 'erc7730')
+          .flatMap((nestedVisualization: any) => getErc7730Titles(nestedVisualization))
+      )
+    ]
+    const depthWarning = getWarning(
+      'This transaction hides many other transactions one inside another. This is unusual - continue only if you fully trust this app.',
+      'ERC7730_SUSPICIOUS_NESTED_CALLDATA_DEPTH'
+    )
+
+    // 6 multicalls one inside another - the innermost call is 6 levels deep, way past
+    // the depth the UI shows, but the humanizer still decodes it so its warnings are kept
+    const deeplyNestedCalls = humanizeNestedMulticall(6)
+    expect(getErc7730Titles(deeplyNestedCalls[0]!.fullVisualization?.[0])).toEqual([
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Deepest call'
+    ])
+    expect(deeplyNestedCalls[0]!.warnings).toContainEqual(depthWarning)
+
+    // exactly at the depth the UI stops showing calls
+    const nestedCallsAtTheDisplayLimit = humanizeNestedMulticall(4)
+    expect(getErc7730Titles(nestedCallsAtTheDisplayLimit[0]!.fullVisualization?.[0])).toEqual([
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Deepest call'
+    ])
+    expect(nestedCallsAtTheDisplayLimit[0]!.warnings).toContainEqual(depthWarning)
+
+    // shallow nesting is normal and should not warn
+    const shallowNestedCalls = humanizeNestedMulticall(2)
+    expect(getErc7730Titles(shallowNestedCalls[0]!.fullVisualization?.[0])).toEqual([
+      'Multicall',
+      'Multicall',
+      'Deepest call'
+    ])
+    expect(shallowNestedCalls[0]!.warnings).not.toContainEqual(depthWarning)
   })
 })
 

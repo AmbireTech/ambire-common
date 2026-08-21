@@ -30,8 +30,10 @@ import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import {
+  dedupeWarnings,
   eToNative,
   flattenHumanizerVisualizations,
+  getAction,
   getAddressVisualization,
   getChain,
   getErc7730Visualization,
@@ -41,7 +43,7 @@ import {
   getWarning,
   uintToAddress
 } from '../utils'
-import { SAFE_TX_PRIMARY_TYPE } from './consts'
+import { MAX_DISPLAYED_NESTED_CALLDATA_DEPTH, SAFE_TX_PRIMARY_TYPE } from './consts'
 import { getEip712EncodeType, getEip712EncodeTypeHashFromString } from './eip712'
 import {
   Erc7730Descriptor,
@@ -65,7 +67,13 @@ type FormatContext = {
   descriptorPath?: string
   root: Record<string, unknown>
   chainId?: bigint
-  nestedCalldataDepth?: number
+  /**
+   * Warnings found while decoding the calls nested inside this one. A nested call is rendered as a
+   * row, and a row has nowhere to put a warning, so the decoders push here instead and the top
+   * level reads it once the whole call is formatted. Shared by every nested level, because the
+   * context is threaded down unchanged.
+   */
+  collectedWarnings: HumanizerWarning[]
 }
 
 type VisibilityResult = {
@@ -74,7 +82,6 @@ type VisibilityResult = {
 }
 
 const MAX_INTERPOLATED_VALUE_LENGTH = 80
-const MAX_NESTED_CALLDATA_DEPTH = 4
 const ABI_WORD_HEX_LENGTH = 64
 
 const isMapReference = (value: unknown): value is Erc7730MapReference =>
@@ -295,15 +302,6 @@ const valueToText = (value: unknown): string => {
   } catch {
     return String(value)
   }
-}
-
-const interpolatedValueToText = (path: string, value: unknown): string => {
-  const amount = toBigIntOrNull(value)
-  if ((path === '@.value' || path === '#.@.value') && amount !== null) {
-    return formatUnits(amount, 18)
-  }
-
-  return valueToText(value)
 }
 
 const normalizeDecodedParam = (value: unknown, param: ParamType): unknown => {
@@ -637,8 +635,16 @@ const formatFieldValue = (
   return [getText(valueToText(value))]
 }
 
-const getFieldValue = (field: Erc7730Field, context: FormatContext, base: unknown): unknown =>
-  field.value !== undefined ? field.value : resolvePath(field.path, context, base)
+// A field value is usually a literal, but ERC-7730 also allows it to be a descriptor
+// path pointing at a constant authored in the file itself (e.g. the vault ticker in
+// `$.metadata.constants.vaultTicker`), which has to be resolved before it is displayed
+const getFieldValue = (field: Erc7730Field, context: FormatContext, base: unknown): unknown => {
+  if (field.value === undefined) return resolvePath(field.path, context, base)
+
+  return typeof field.value === 'string' && (field.value === '$' || field.value.startsWith('$.'))
+    ? resolvePath(field.value, context, base)
+    : field.value
+}
 
 const getArrayValueAt = (value: unknown, index: number): unknown =>
   Array.isArray(value) ? value[index] : value
@@ -673,11 +679,17 @@ const getNestedErc7730CalldataValue = (
   callee: unknown,
   amount: unknown
 ): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
-  if ((context.nestedCalldataDepth || 0) >= MAX_NESTED_CALLDATA_DEPTH) return null
+  // No depth limit here on purpose: every nested calldata is a part of its parent
+  // calldata, so it is always shorter and the recursion always stops. A depth limit
+  // in the library hides the warnings of the deeply embedded calls. The limit for how
+  // deep the nested calls are shown is applied in the UI.
   if (typeof calldata !== 'string' || !calldata.startsWith('0x') || calldata.length < 10)
     return null
   if (typeof callee !== 'string' || !isAddress(callee)) return null
   if (!context.chainId) return null
+  // A descriptor that points at the calldata of its own call would recurse forever
+  const parentCalldata = resolvePath('#.@.data', context, context.root)
+  if (typeof parentCalldata === 'string' && parentCalldata === calldata) return null
 
   const accountAddr = resolvePath('#.@.accountAddr', context, context.root)
   if (typeof accountAddr !== 'string' || !isAddress(accountAddr)) return null
@@ -690,14 +702,16 @@ const getNestedErc7730CalldataValue = (
     },
     context.chainId,
     accountAddr,
-    { descriptor: context.descriptor, path: context.descriptorPath },
-    (context.nestedCalldataDepth || 0) + 1
+    { descriptor: context.descriptor, path: context.descriptorPath }
   )
   const erc7730Visualization = humanizedCall?.fullVisualization?.find(
     (visualization) => visualization.type === 'erc7730'
   )
+  if (erc7730Visualization?.type !== 'erc7730') return null
 
-  return erc7730Visualization?.type === 'erc7730' ? erc7730Visualization : null
+  context.collectedWarnings.push(...(humanizedCall?.warnings || []))
+
+  return erc7730Visualization
 }
 
 const resolveCalldataParam = (
@@ -785,7 +799,8 @@ const getCalldataRows = (
         },
         context.chainId,
         accountAddr,
-        singleCallHumanizerModules
+        singleCallHumanizerModules,
+        context.collectedWarnings
       )
 
       if (moduleFallbackVisualization) {
@@ -969,38 +984,117 @@ const fieldsToRows = (
   }, [])
 }
 
-const interpolateIntent = (
+// Per the ERC-7730 spec's interpolation algorithm, each `{path}` placeholder
+// must be resolved against the matching entry in the format's `fields` array
+// (by path, after resolving `$ref`) so its declared `format`/`params` control
+// how the value is rendered - not just the raw value. Only leaf fields are
+// searched: interpolated intents may only reference always-visible paths, and
+// those never live under a grouped/array `fields` sub-list.
+const findInterpolationField = (
+  fields: Erc7730Field[] | undefined,
+  path: string,
+  context: FormatContext
+): Erc7730Field | null => {
+  if (!fields) return null
+
+  for (const field of fields) {
+    const resolvedField = resolveFieldReference(field, context)
+    if (resolvedField.path === path) return resolvedField
+  }
+
+  return null
+}
+
+// Builds the ERC-7730 `interpolatedIntent` title as structured parts. Every
+// placeholder uses the same field formatter as its corresponding detail row.
+// Interpolation is all-or-nothing: malformed templates, unresolved paths,
+// fields that are not always visible, or missing formatters return null so the
+// UI can fall back to the static `intent` and its rows.
+const interpolateIntentParts = (
   template: string,
+  fields: Erc7730Field[] | undefined,
   context: FormatContext,
   base: unknown
-): string | null => {
-  let interpolated = ''
+): HumanizerVisualization[] | null => {
+  const parts: HumanizerVisualization[] = []
   let currentIndex = 0
+
+  // The leading word(s) of an interpolated intent are the verb ("Swap ",
+  // "Stake ", ...), so render them as an `action` part - same styling as the
+  // rest of the app's action verbs (e.g. getAction('Swap') in the Uniswap/
+  // CowSwap/etc. modules) - instead of plain text.
+  const pushText = (text: string) => {
+    if (!text) return
+    parts.push(parts.length === 0 ? getAction(text) : getText(text))
+  }
 
   while (currentIndex < template.length) {
     const openingBraceIndex = template.indexOf('{', currentIndex)
-    if (openingBraceIndex === -1) {
-      interpolated += template.slice(currentIndex)
+    const closingBraceIndex = template.indexOf('}', currentIndex)
+    const nextBraceIndex =
+      openingBraceIndex === -1
+        ? closingBraceIndex
+        : closingBraceIndex === -1
+          ? openingBraceIndex
+          : Math.min(openingBraceIndex, closingBraceIndex)
+
+    if (nextBraceIndex === -1) {
+      pushText(template.slice(currentIndex))
       break
     }
 
-    const closingBraceIndex = template.indexOf('}', openingBraceIndex + 1)
-    if (closingBraceIndex === -1) {
-      interpolated += template.slice(currentIndex)
-      break
+    pushText(template.slice(currentIndex, nextBraceIndex))
+
+    const brace = template.charAt(nextBraceIndex)
+    const isEscapedBrace = template.charAt(nextBraceIndex + 1) === brace
+    if (isEscapedBrace) {
+      pushText(brace)
+      currentIndex = nextBraceIndex + 2
+      continue
     }
 
-    interpolated += template.slice(currentIndex, openingBraceIndex)
+    if (brace === '}') return null
 
-    const path = template.slice(openingBraceIndex + 1, closingBraceIndex).trim()
+    const placeholderEndIndex = template.indexOf('}', nextBraceIndex + 1)
+    if (placeholderEndIndex === -1) return null
+
+    const path = template.slice(nextBraceIndex + 1, placeholderEndIndex).trim()
+    if (!path || path.includes('{')) return null
+
+    const matchingField = findInterpolationField(fields, path, context)
+    if (
+      !matchingField ||
+      (matchingField.visible !== undefined && matchingField.visible !== 'always') ||
+      matchingField.fields?.length ||
+      matchingField.format === 'calldata'
+    ) {
+      return null
+    }
+
     const value = resolvePath(path, context, base)
     if (value === undefined) return null
 
-    interpolated += interpolatedValueToText(path, value)
-    currentIndex = closingBraceIndex + 1
+    const formattedValue = formatFieldValue(matchingField, value, context, base)
+    if (!formattedValue.length) return null
+    if (
+      (matchingField.format === 'amount' || matchingField.format === 'tokenAmount') &&
+      !formattedValue.some((item) => item.type === 'token')
+    ) {
+      return null
+    }
+    if (
+      (matchingField.format === 'addressName' ||
+        matchingField.format === 'interoperableAddressName') &&
+      !formattedValue.some((item) => item.type === 'address')
+    ) {
+      return null
+    }
+    parts.push(...formattedValue)
+
+    currentIndex = placeholderEndIndex + 1
   }
 
-  return interpolated
+  return parts.length ? parts : null
 }
 
 const formatToVisualizations = (
@@ -1008,14 +1102,20 @@ const formatToVisualizations = (
   context: FormatContext,
   dapp?: Call['dapp']
 ): HumanizerVisualization[] | null => {
-  const intent =
-    (format.interpolatedIntent &&
-      interpolateIntent(format.interpolatedIntent, context, context.root)) ||
-    format.intent
+  const titleParts = format.interpolatedIntent
+    ? interpolateIntentParts(format.interpolatedIntent, format.fields, context, context.root)
+    : null
+  // `format.intent` is the spec's plain, non-interpolated short title (e.g.
+  // "Swap") and is always used as `title` - it needs no token/decimals lookup,
+  // so it can never fail the way interpolation can. Consumers that need a rich,
+  // fully-interpolated title (e.g. "Swap 0.5 ETH for at least 120 USDC") must
+  // render `titleParts` instead; `title` is only the safe fallback text for
+  // non-rendering consumers (label comparisons, non-rich surfaces) and for
+  // when `titleParts` itself is null (interpolation couldn't be resolved).
   const rows = fieldsToRows(format.fields || [], context, context.root)
   if (!rows) return null
 
-  return [getErc7730Visualization(intent, rows, dapp)]
+  return [getErc7730Visualization(format.intent, rows, dapp, titleParts ?? undefined)]
 }
 
 const isOneInchFillOrderFormat = (formatKey: string, descriptorPath?: string) =>
@@ -1274,7 +1374,8 @@ const getModuleFallbackVisualization = (
   call: Call,
   chainId: bigint,
   accountAddr: string,
-  modules?: HumanizerCallModule[]
+  modules?: HumanizerCallModule[],
+  collectedWarnings?: HumanizerWarning[]
 ): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
   const accountOp = {
     accountAddr,
@@ -1336,20 +1437,13 @@ const getModuleFallbackVisualization = (
       rowsWithReset[0]!.label,
     rowsWithReset
   )
+  if (visualization.type !== 'erc7730') return null
 
-  return visualization.type === 'erc7730' ? visualization : null
-}
+  // The modules above already found everything worth warning about in this nested call, but only
+  // its visualization becomes a row. Hand the warnings to the caller so they reach the top level.
+  collectedWarnings?.push(...(humanizedCall?.warnings || []))
 
-const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
-  const warningKeys = new Set<string>()
-
-  return warnings.filter((warning) => {
-    const warningKey = `${warning.code}:${warning.content}:${warning.address || ''}`
-    if (warningKeys.has(warningKey)) return false
-    warningKeys.add(warningKey)
-
-    return true
-  })
+  return visualization
 }
 
 const hasDisplayedNativeTransactionValue = (
@@ -1412,6 +1506,42 @@ const getNativeValueWarnings = (
     : []
 }
 
+// The humanizer decodes all the levels of calls embedded in other calls, but only the
+// first MAX_DISPLAYED_NESTED_CALLDATA_DEPTH levels are shown in the UI. A transaction
+// nested that deep is unusual, so the user is warned about it.
+const getNestedErc7730Depth = (visualization: HumanizerErc7730Visualization): number => {
+  const nestedDepths = visualization.rows.flatMap((row) =>
+    row.value
+      .filter(
+        (value): value is HumanizerVisualization & HumanizerErc7730Visualization =>
+          value.type === 'erc7730'
+      )
+      .map((nestedVisualization) => 1 + getNestedErc7730Depth(nestedVisualization))
+  )
+
+  return nestedDepths.length ? Math.max(...nestedDepths) : 0
+}
+
+const getNestedCalldataDepthWarnings = (
+  fullVisualization: HumanizerVisualization[]
+): HumanizerWarning[] => {
+  const depths = fullVisualization
+    .filter(
+      (visualization): visualization is HumanizerVisualization & HumanizerErc7730Visualization =>
+        visualization.type === 'erc7730'
+    )
+    .map((visualization) => getNestedErc7730Depth(visualization))
+
+  if (!depths.length || Math.max(...depths) < MAX_DISPLAYED_NESTED_CALLDATA_DEPTH) return []
+
+  return [
+    getWarning(
+      'This transaction hides many other transactions one inside another. This is unusual - continue only if you fully trust this app.',
+      'ERC7730_SUSPICIOUS_NESTED_CALLDATA_DEPTH'
+    )
+  ]
+}
+
 const getSafeCallWarnings = (call: Call, safeAddr = call.to): HumanizerWarning[] => {
   return getSafeHumanization(safeAddr, call.to, call.value, call.data)?.warnings || []
 }
@@ -1438,7 +1568,8 @@ const getSafeTxCallVisualizations = (
   safeTxCalls: Call[],
   chainId: bigint,
   accountAddr: string,
-  resolvedDescriptor: Erc7730ResolvedDescriptor
+  resolvedDescriptor: Erc7730ResolvedDescriptor,
+  collectedWarnings?: HumanizerWarning[]
 ): (HumanizerVisualization & HumanizerErc7730Visualization)[] => {
   return safeTxCalls
     .map((safeTxCall, index) => {
@@ -1455,7 +1586,11 @@ const getSafeTxCallVisualizations = (
         const erc7730Visualization = humanizedCall?.fullVisualization?.find(
           (visualization) => visualization.type === 'erc7730'
         )
-        if (erc7730Visualization) return erc7730Visualization
+        if (erc7730Visualization) {
+          collectedWarnings?.push(...(humanizedCall?.warnings || []))
+
+          return erc7730Visualization
+        }
       }
 
       const safeFallbackVisualization = getSafeCallFallbackVisualization(safeTxCall)
@@ -1464,13 +1599,17 @@ const getSafeTxCallVisualizations = (
       const moduleFallbackVisualization = getModuleFallbackVisualization(
         safeTxCall,
         chainId,
-        accountAddr
+        accountAddr,
+        undefined,
+        collectedWarnings
       )
       if (moduleFallbackVisualization) return moduleFallbackVisualization
 
       const fallbackCall = genericErc20Humanizer({ accountAddr }, safeTxCall)
       const rows = getRowsFromFlatCallVisualization(fallbackCall?.fullVisualization)
       if (!rows) return getKnownCallVisualization(safeTxCall)
+
+      collectedWarnings?.push(...(fallbackCall?.warnings || []))
 
       return getErc7730Visualization(
         getActionTitleFromFlatCallVisualization(fallbackCall?.fullVisualization) || rows[0]!.label,
@@ -1562,15 +1701,16 @@ export const humanizeCallWithErc7730 = (
   chainId: bigint,
   accountAddr: string,
   resolvedDescriptor: Erc7730ResolvedDescriptor,
-  nestedCalldataDepth = 0,
   nativeAssetSymbol?: string
 ): IrCall | null => {
   if (resolvedDescriptor.safeTxTransactionsOnly && resolvedDescriptor.safeTxCalls?.length) {
+    const collectedWarnings: HumanizerWarning[] = []
     const safeTxCallVisualizations = getSafeTxCallVisualizations(
       resolvedDescriptor.safeTxCalls,
       chainId,
       accountAddr,
-      resolvedDescriptor
+      resolvedDescriptor,
+      collectedWarnings
     )
 
     if (!safeTxCallVisualizations.length || !call.to) return null
@@ -1589,9 +1729,10 @@ export const humanizeCallWithErc7730 = (
           }
         ])
       ],
-      warnings: dedupeWarnings(
-        resolvedDescriptor.safeTxCalls.flatMap((safeTxCall) => getSafeCallWarnings(safeTxCall))
-      )
+      warnings: dedupeWarnings([
+        ...resolvedDescriptor.safeTxCalls.flatMap((safeTxCall) => getSafeCallWarnings(safeTxCall)),
+        ...collectedWarnings
+      ])
     }
   }
 
@@ -1613,7 +1754,7 @@ export const humanizeCallWithErc7730 = (
       }
     },
     chainId,
-    nestedCalldataDepth
+    collectedWarnings: []
   }
   const fullVisualization = formatToVisualizations(match.format, context, call.dapp)
   const normalizedVisualization = fullVisualization
@@ -1636,7 +1777,10 @@ export const humanizeCallWithErc7730 = (
           ...getNativeValueWarnings(
             visualizationWithNativeValue.didAppendNativeValueRow,
             nativeAssetSymbol
-          )
+          ),
+          ...getNestedCalldataDepthWarnings(visualizationWithNativeValue.fullVisualization),
+          // warnings the nested calls produced while this call was being formatted
+          ...context.collectedWarnings
         ])
       }
     : null
@@ -1664,7 +1808,8 @@ export const humanizeMessageWithErc7730 = (
         verifyingContract: message.content.domain.verifyingContract
       }
     },
-    chainId
+    chainId,
+    collectedWarnings: []
   }
   const fullVisualization = formatToVisualizations(match.format, context)
   const safeTxVisualization =
@@ -1676,7 +1821,11 @@ export const humanizeMessageWithErc7730 = (
     ? {
         ...message,
         fullVisualization: safeTxVisualization,
-        warnings: getSafeTxMessageWarnings(message),
+        warnings: dedupeWarnings([
+          ...getSafeTxMessageWarnings(message),
+          // warnings the calls nested in this message produced while it was being formatted
+          ...context.collectedWarnings
+        ]),
         canHideDropdownArrow: true
       }
     : null
