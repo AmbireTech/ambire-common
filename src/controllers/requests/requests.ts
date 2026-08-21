@@ -74,8 +74,7 @@ import {
   getCallsUserRequestsByNetwork,
   getSafeNonceConflict,
   isSignRequest,
-  messageOnNewRequest,
-  type SafeNonceConflict
+  messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
 import {
@@ -92,14 +91,12 @@ import {
 import { generateUuid } from '../../utils/uuid'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import {
-  OnBroadcastFailed,
-  OnBroadcastSuccess,
-  SignAccountOpController
-} from '../signAccountOp/signAccountOp'
+import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
 import type { EIP712TypedData } from '@safe-global/types-kit'
+import type { SafeNonceConflict } from '../../libs/requests/requests'
+import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/signAccountOp'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
@@ -545,9 +542,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         // Even without an initialized SignAccountOpController or Screen, we should still update the portfolio and run the simulation.
         // It's necessary to continue operating with the token `amountPostSimulation` amount.
-        if (this.shouldSimulateAccountOps) {
-          void this.#performSimulation(req)
-        }
+        if (this.shouldSimulateAccountOps) void this.#performSimulation(req)
       } else if (req.kind === 'typedMessage' || req.kind === 'message' || req.kind === 'siwe') {
         const existingMessageRequest = this.userRequests.find(
           (r) => r.kind === req.kind && r.meta.accountAddr === req.meta.accountAddr
@@ -1110,7 +1105,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.#portfolio.overrideSimulationResults(r.signAccountOp.accountOp)
       )
     )
-    // after override, we need another simulation
 
     waitingUserRequestsToReject.forEach((r) => {
       if (r.kind === 'calls') r.signAccountOp.destroy()

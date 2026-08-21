@@ -22,22 +22,12 @@ import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { Hex } from '../../interfaces/hex'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeAccountByOwner, SafeTx } from '../../interfaces/safe'
-import {
-  CallsUserRequest,
-  TypedMessageUserRequest,
-  UserRequest
-} from '../../interfaces/userRequest'
+import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
 import { paginate } from '../../utils/paginate'
 import wait from '../../utils/wait'
 import { withTimeout } from '../../utils/with-timeout'
-import { AccountOp, getAccountOpNonce } from '../accountOp/accountOp'
 import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
-import {
-  decodeMultiSend,
-  getPreferredSafeRequest,
-  multiCallAbi,
-  parseSafeMessageOrigin
-} from './helpers'
+import { decodeMultiSend, multiCallAbi, parseSafeMessageOrigin } from './helpers'
 
 import type {
   AddMessageOptions,
@@ -74,96 +64,6 @@ export function getApiKit(chainId: bigint) {
     apiKey: process.env.SAFE_API_KEY,
     txServiceUrl: getTxServiceUrl(chainId)
   })
-}
-
-/**
- * The goal here is to get all account ops for acc|net for safe requests
- * that are not rejected and are sequential, with no gaps.
- * Example:
- * - txns with nonces: 131, 132, 133 - get all of them
- * - txns with nonces: 131, 132, 134 - remove 134
- * - txns with nonces: 131, 133, 134 - remove 133, 134
- * - txns with nonces: 131, 132, 132 - keep 131 and one of the 132 txns
- * - current account nonce 131 and txns with nonces 132, 133 - remove all txns
- *
- * Only one of the txns competing for the same nonce can ever execute, so exactly one of
- * them takes part in the simulation - the preferred one.
- *
- * Also, the simulation should be run from the current account state nonce.
- * If a txn is missing for it, it should not be shown as the user will
- * probably want to have the current snapshot visible to work with
- *
- * Finally, if accountStateNonce is undefined, we do not perform a dashboard
- * simulation as we don't know where to start from
- */
-export function getSequentialSafeAccountOps(
-  userRequests: UserRequest[],
-  curR: UserRequest,
-  accountStateNonce: bigint | undefined
-): AccountOp[] {
-  if (curR.kind !== 'calls') return []
-
-  const requests = userRequests.filter(
-    (r): r is CallsUserRequest =>
-      r.kind === 'calls' &&
-      r.signAccountOp.account.addr === curR.signAccountOp.account.addr &&
-      r.signAccountOp.accountOp.chainId === curR.signAccountOp.accountOp.chainId
-  )
-
-  // Requests without a nonce cannot compete for one, so each of them is kept on its own
-  // and is left to the gap check below
-  const requestsWithoutNonce: CallsUserRequest[] = []
-  const requestsByNonce = new Map<string, CallsUserRequest[]>()
-
-  requests.forEach((request) => {
-    const nonce = getAccountOpNonce(request.signAccountOp.accountOp)
-    if (nonce === null) {
-      requestsWithoutNonce.push(request)
-      return
-    }
-
-    const key = nonce.toString()
-    requestsByNonce.set(key, [...(requestsByNonce.get(key) || []), request])
-  })
-
-  const accountOps = [
-    ...[...requestsByNonce.values()].map(
-      (nonceRequests) => getPreferredSafeRequest(nonceRequests)!
-    ),
-    ...requestsWithoutNonce
-  ]
-    .map((r) => r.signAccountOp.accountOp)
-    .sort((a, b) => {
-      const aNonce = getAccountOpNonce(a)
-      const bNonce = getAccountOpNonce(b)
-
-      if (aNonce === bNonce) return 0
-      if (aNonce === null) return 1
-      if (bNonce === null) return -1
-      return aNonce < bNonce ? -1 : aNonce > bNonce ? 1 : 0
-    })
-
-  const accountStateNonceIndex = accountOps.findIndex(
-    (accountOp) => getAccountOpNonce(accountOp) === accountStateNonce
-  )
-  if (accountStateNonceIndex === -1) return []
-
-  const accountOpsFromStateNonce = accountOps.slice(accountStateNonceIndex)
-
-  const firstNonSequentialIndex = accountOpsFromStateNonce.findIndex((accountOp, index) => {
-    const nonce = getAccountOpNonce(accountOp)
-    if (nonce === null) return true
-    if (index === 0) return false
-
-    const previousNonce = getAccountOpNonce(accountOpsFromStateNonce[index - 1]!)
-    return previousNonce === null || nonce !== previousNonce + 1n
-  })
-
-  if (firstNonSequentialIndex === -1) return accountOpsFromStateNonce
-
-  // Duplicate nonces are already resolved to a single account op above, so the first
-  // non-sequential account op is always the first invalid one
-  return accountOpsFromStateNonce.slice(0, firstNonSequentialIndex)
 }
 
 type SafeAccountApiKitFactory = (
