@@ -23,6 +23,7 @@ import {
   convertNullAddressToZeroAddressIfNeeded,
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import { CITREA_CHAIN_ID } from '../squid/constants'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
@@ -292,12 +293,13 @@ export class SocketAPI implements SwapProvider {
       enableManual: 'true'
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
-    const shouldIncludeConvenienceFee =
-      feePercent > 0 &&
-      !!feeTakerAddress &&
-      !isWrapOrUnwrap &&
-      !isNoFeeToken(fromChainId, fromTokenAddress)
-    if (shouldIncludeConvenienceFee) {
+    const feeExemptionReason = getFeeExemptionReason({
+      isWrapOrUnwrap,
+      isFeeExemptToken: isNoFeeToken(fromChainId, fromTokenAddress),
+      isFeeCollectionAvailable: !!feeTakerAddress
+    })
+    const shouldIncludeConvenienceFee = feePercent > 0 && !feeExemptionReason
+    if (shouldIncludeConvenienceFee && feeTakerAddress) {
       params.append('feeTakerAddress', feeTakerAddress)
       params.append('feeBps', (feePercent * 100).toString())
     }
@@ -408,6 +410,7 @@ export class SocketAPI implements SwapProvider {
           txData: 'txData' in route ? route.txData : undefined,
           rawRoute: '', // not needed for socket,
           withConvenienceFee: shouldIncludeConvenienceFee,
+          feeExemptionReason,
           usedBridgeNames:
             fromChainId !== route.output.token.chainId
               ? [route.isIntent ? 'bungeeAutoRoute' : route.routeDetails.name.toLowerCase()]

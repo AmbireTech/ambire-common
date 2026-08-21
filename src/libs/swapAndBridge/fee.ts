@@ -11,3 +11,25 @@ export const getFeePercent = (stkWalletHeldInUsd?: number): number => {
 
   return 0
 }
+
+export type FeeExemptionReason =
+  | 'wrap-or-unwrap'
+  | 'fee-exempt-token'
+  | 'fee-collection-unavailable'
+
+/** Returns why an operation is exempt from the Swap & Bridge fee, when applicable. */
+export const getFeeExemptionReason = ({
+  isWrapOrUnwrap,
+  isFeeExemptToken,
+  isFeeCollectionAvailable = true
+}: {
+  isWrapOrUnwrap: boolean
+  isFeeExemptToken: boolean
+  isFeeCollectionAvailable?: boolean
+}): FeeExemptionReason | undefined => {
+  if (isWrapOrUnwrap) return 'wrap-or-unwrap'
+  if (isFeeExemptToken) return 'fee-exempt-token'
+  if (!isFeeCollectionAvailable) return 'fee-collection-unavailable'
+
+  return undefined
+}

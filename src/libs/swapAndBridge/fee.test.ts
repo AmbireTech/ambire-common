@@ -1,4 +1,4 @@
-import { getFeePercent } from './fee'
+import { getFeeExemptionReason, getFeePercent } from './fee'
 
 describe('getFeePercent', () => {
   test.each([
@@ -20,4 +20,34 @@ describe('getFeePercent', () => {
       expect(getFeePercent(stkWalletHeldInUsd)).toBe(0.5)
     }
   )
+})
+
+describe('getFeeExemptionReason', () => {
+  test.each([
+    [true, false, true, 'wrap-or-unwrap'],
+    [false, true, true, 'fee-exempt-token'],
+    [false, false, false, 'fee-collection-unavailable'],
+    [false, false, true, undefined]
+  ])(
+    'returns the expected reason for wrap=%s, exemptToken=%s, feeCollection=%s',
+    (isWrapOrUnwrap, isFeeExemptToken, isFeeCollectionAvailable, expectedReason) => {
+      expect(
+        getFeeExemptionReason({
+          isWrapOrUnwrap,
+          isFeeExemptToken,
+          isFeeCollectionAvailable
+        })
+      ).toBe(expectedReason)
+    }
+  )
+
+  test('prioritizes the operation-specific reason when multiple exemptions apply', () => {
+    expect(
+      getFeeExemptionReason({
+        isWrapOrUnwrap: true,
+        isFeeExemptToken: true,
+        isFeeCollectionAvailable: false
+      })
+    ).toBe('wrap-or-unwrap')
+  })
 })

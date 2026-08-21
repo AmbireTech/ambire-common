@@ -433,6 +433,38 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromChainId).toEqual(10)
     expect(swapAndBridgeController.toChainId).toEqual(10)
   })
+  test('should expose the wrap exemption before a quote is available', () => {
+    const network = networksCtrl.networks.find(({ chainId }) => chainId === 10n)
+    if (!network?.wrappedAddr)
+      throw new Error('Expected OP Mainnet to have a wrapped token address')
+
+    const previousFromSelectedToken = swapAndBridgeController.fromSelectedToken
+    const previousToSelectedToken = swapAndBridgeController.toSelectedToken
+    const previousFromChainId = swapAndBridgeController.fromChainId
+    const previousToChainId = swapAndBridgeController.toChainId
+    const previousQuote = swapAndBridgeController.quote
+
+    swapAndBridgeController.fromSelectedToken = PORTFOLIO_TOKENS[2]!
+    swapAndBridgeController.toSelectedToken = {
+      address: network.wrappedAddr,
+      chainId: 10,
+      decimals: 18,
+      name: 'Wrapped Ether',
+      symbol: 'WETH'
+    }
+    swapAndBridgeController.fromChainId = 10
+    swapAndBridgeController.toChainId = 10
+    swapAndBridgeController.quote = null
+
+    expect(swapAndBridgeController.feeExemptionReason).toBe('wrap-or-unwrap')
+    expect(swapAndBridgeController.toJSON().feeExemptionReason).toBe('wrap-or-unwrap')
+
+    swapAndBridgeController.fromSelectedToken = previousFromSelectedToken
+    swapAndBridgeController.toSelectedToken = previousToSelectedToken
+    swapAndBridgeController.fromChainId = previousFromChainId
+    swapAndBridgeController.toChainId = previousToChainId
+    swapAndBridgeController.quote = previousQuote
+  })
   test('should sync toChainId to the preselected from token chain when no to token is provided', async () => {
     const preselectedToken = PORTFOLIO_TOKENS[1]!
 

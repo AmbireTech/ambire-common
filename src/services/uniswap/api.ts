@@ -31,6 +31,8 @@ import {
   isNoFeeToken,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
+import type { FeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import { AcrossAPI } from '../across/api'
 import {
   AMBIRE_FEE_TAKER_ADDRESS,
@@ -137,7 +139,8 @@ const normalizeUniswapRouteToSwapAndBridgeRoute = ({
   fromChainId,
   toChainId,
   userAddress,
-  withConvenienceFee
+  withConvenienceFee,
+  feeExemptionReason
 }: {
   response: UniswapQuoteResponse
   fromAsset: SwapAndBridgeToToken
@@ -147,6 +150,7 @@ const normalizeUniswapRouteToSwapAndBridgeRoute = ({
   toChainId: number
   userAddress: string
   withConvenienceFee: boolean
+  feeExemptionReason?: FeeExemptionReason
 }): SwapAndBridgeRoute => {
   const quote = response.quote
   const fromAmount = quote.input.amount
@@ -215,7 +219,8 @@ const normalizeUniswapRouteToSwapAndBridgeRoute = ({
       symbol: toAsset.symbol
     } as any,
     disabled: false,
-    withConvenienceFee
+    withConvenienceFee,
+    feeExemptionReason
   }
 }
 
@@ -422,8 +427,11 @@ export class UniswapAPI implements SwapProvider {
         'Quote requested, but missing required params. Error details: <to token details are missing>'
       )
 
-    const shouldIncludeConvenienceFee =
-      feePercent > 0 && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
+    const feeExemptionReason = getFeeExemptionReason({
+      isWrapOrUnwrap,
+      isFeeExemptToken: isNoFeeToken(fromChainId, fromTokenAddress)
+    })
+    const shouldIncludeConvenienceFee = feePercent > 0 && !feeExemptionReason
 
     const body: {
       type: 'EXACT_INPUT'
@@ -494,7 +502,8 @@ export class UniswapAPI implements SwapProvider {
           toAsset,
           toChainId,
           userAddress,
-          withConvenienceFee: shouldIncludeConvenienceFee
+          withConvenienceFee: shouldIncludeConvenienceFee,
+          feeExemptionReason
         })
       ],
       selectedRoute: undefined,

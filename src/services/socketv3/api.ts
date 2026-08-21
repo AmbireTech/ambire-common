@@ -22,6 +22,7 @@ import {
   convertNullAddressToZeroAddressIfNeeded,
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import { CITREA_CHAIN_ID } from '../squid/constants'
 import { AMBIRE_FEE_TAKER_ADDRESSES, ETH_ON_OPTIMISM_LEGACY_ADDRESS } from './constants'
 
@@ -421,11 +422,12 @@ export class SocketV3API implements SwapProvider {
       receiverAddress: userAddress
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId] || FEE_COLLECTOR
-    const shouldIncludeConvenienceFee =
-      feePercent > 0 &&
-      !!feeTakerAddress &&
-      !isWrapOrUnwrap &&
-      !isNoFeeToken(fromChainId, fromTokenAddress)
+    const feeExemptionReason = getFeeExemptionReason({
+      isWrapOrUnwrap,
+      isFeeExemptToken: isNoFeeToken(fromChainId, fromTokenAddress),
+      isFeeCollectionAvailable: !!feeTakerAddress
+    })
+    const shouldIncludeConvenienceFee = feePercent > 0 && !feeExemptionReason
     if (shouldIncludeConvenienceFee) {
       params.append('feeTakerAddress', feeTakerAddress)
       params.append('feeBps', (feePercent * 100).toString())
@@ -534,6 +536,7 @@ export class SocketV3API implements SwapProvider {
           : undefined,
         rawRoute: route as any,
         withConvenienceFee: shouldIncludeConvenienceFee,
+        feeExemptionReason,
         usedBridgeNames:
           fromChainId !== normalizedToAsset.chainId ? [protocol.name.toLowerCase()] : [''],
         usedDexName: fromChainId === normalizedToAsset.chainId ? protocol.displayName : undefined

@@ -35,6 +35,8 @@ import {
   lifiMapNativeToAddr,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
+import type { FeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import { ZERO_ADDRESS } from '../socket/constants'
 import { getHumanReadableErrorMessage } from './helpers'
 
@@ -129,7 +131,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
   userAddress: string,
   accountNativeBalance: bigint,
   nativeSymbol: string,
-  withConvenienceFee: boolean
+  withConvenienceFee: boolean,
+  feeExemptionReason?: FeeExemptionReason
 ): SwapAndBridgeRoute => {
   // search for a feeCost that is not included in the quote
   // if there is one, check if the user has enough to pay for it
@@ -175,7 +178,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
     disabled,
     disabledReason,
     serviceFee,
-    withConvenienceFee
+    withConvenienceFee,
+    feeExemptionReason
   }
 }
 
@@ -514,8 +518,11 @@ export class LiFiAPI implements SwapProvider {
       }
     }
 
-    const shouldRemoveConvenienceFee =
-      feePercent === 0 || isWrapOrUnwrap || isNoFeeToken(fromChainId, fromTokenAddress)
+    const feeExemptionReason = getFeeExemptionReason({
+      isWrapOrUnwrap,
+      isFeeExemptToken: isNoFeeToken(fromChainId, fromTokenAddress)
+    })
+    const shouldRemoveConvenienceFee = feePercent === 0 || !!feeExemptionReason
     if (shouldRemoveConvenienceFee) delete body.options.fee
 
     const url = `${this.#baseUrl}/advanced/routes`
@@ -539,7 +546,8 @@ export class LiFiAPI implements SwapProvider {
           userAddress,
           accountNativeBalance,
           nativeSymbol,
-          !shouldRemoveConvenienceFee
+          !shouldRemoveConvenienceFee,
+          feeExemptionReason
         )
       ),
       // selecting a route is a controller's responsiilibty, not the API's

@@ -2,6 +2,7 @@ import { Route as LiFiRoute, Token as LiFiToken } from '@lifi/types'
 
 import { AccountOpIdentifiedBy } from '../libs/accountOp/submittedAccountOp'
 import { TokenResult } from '../libs/portfolio'
+import type { FeeExemptionReason } from '../libs/swapAndBridge/fee'
 import { ControllerInterface } from './controller'
 
 export type ISwapAndBridgeController = ControllerInterface<
@@ -213,6 +214,8 @@ export interface SwapAndBridgeRoute {
    * @example - Wrapping and unwrapping natives
    */
   withConvenienceFee: boolean
+  /** Why the selected operation has no convenience fee. */
+  feeExemptionReason?: FeeExemptionReason
   isIntent?: boolean // we add this by ourselves
 }
 
