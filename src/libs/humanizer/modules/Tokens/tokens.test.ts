@@ -6,7 +6,15 @@ import { genericErc20Humanizer, genericErc721Humanizer } from '.'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
-import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getLabel,
+  getToken,
+  getUnlimitedApprovalWarning,
+  getWarning,
+  UNLIMITED_APPROVAL_WARNING_CODE
+} from '../../utils'
 
 const accountOp: AccountOp = {
   id: '1',
@@ -371,5 +379,81 @@ describe('Tokens', () => {
         getAddressVisualization(spender)
       ]
     ])
+  })
+
+  describe('unlimited approval warnings', () => {
+    const paddedSpender = `000000000000000000000000${spender.substring(2)}`
+    const maxUint256 = 'f'.repeat(64)
+    const maxUint160InAUint256Slot = `${'0'.repeat(24)}${'f'.repeat(40)}`
+    const oneUsdt = '000000000000000000000000000000000000000000000000000000003b9aca00'
+    const nft = '0x59468516a8259058baD1cA5F8f4BFF190d30E066'
+
+    const humanizeErc20 = (data: string) =>
+      genericErc20Humanizer(accountOp, { to: USDT, value: 0n, data })
+    const humanizeErc721 = (data: string) =>
+      genericErc721Humanizer(accountOp, { to: nft, value: 0n, data })
+
+    test('warns on an approve for the maximum amount', () => {
+      expect(humanizeErc20(`0x095ea7b3${paddedSpender}${maxUint256}`).warnings).toEqual([
+        getUnlimitedApprovalWarning(spender)
+      ])
+    })
+
+    test('warns on an increaseAllowance for the maximum amount', () => {
+      expect(humanizeErc20(`0x39509351${paddedSpender}${maxUint256}`).warnings).toEqual([
+        getUnlimitedApprovalWarning(spender)
+      ])
+    })
+
+    test('warns on a legacy increaseApproval for the maximum amount', () => {
+      expect(humanizeErc20(`0xd73dd623${paddedSpender}${maxUint256}`).warnings).toEqual([
+        getUnlimitedApprovalWarning(spender)
+      ])
+    })
+
+    test('does not warn on an approve for a finite amount', () => {
+      expect(humanizeErc20(`0x095ea7b3${paddedSpender}${oneUsdt}`).warnings).toBeUndefined()
+    })
+
+    test('does not warn on an approve that revokes', () => {
+      expect(humanizeErc20(`0x095ea7b3${paddedSpender}${'0'.repeat(64)}`).warnings).toBeUndefined()
+    })
+
+    test('does not warn on a decreaseAllowance, whatever the amount', () => {
+      expect(humanizeErc20(`0xa457c2d7${paddedSpender}${maxUint256}`).warnings).toBeUndefined()
+    })
+
+    // an ERC-20 allowance is a uint256, so the uint160 maximum Permit2 uses is a finite amount here
+    test('does not warn when an approve carries the uint160 maximum', () => {
+      expect(
+        humanizeErc20(`0x095ea7b3${paddedSpender}${maxUint160InAUint256Slot}`).warnings
+      ).toBeUndefined()
+    })
+
+    // pre solidity 0.5.0 tokens send short calldata, which the humanizer pads with zeroes
+    test('does not warn on a truncated approve, which means an amount of zero', () => {
+      expect(humanizeErc20(`0x095ea7b3${paddedSpender}`).warnings).toBeUndefined()
+    })
+
+    test('warns when setApprovalForAll grants control of a whole collection', () => {
+      expect(humanizeErc721(`0xa22cb465${paddedSpender}${'0'.repeat(63)}1`).warnings).toEqual([
+        getWarning(
+          'This app can transfer any item you own from this collection, now or later. Continue only if you trust it.',
+          UNLIMITED_APPROVAL_WARNING_CODE,
+          false,
+          spender
+        )
+      ])
+    })
+
+    test('does not warn when setApprovalForAll revokes', () => {
+      expect(humanizeErc721(`0xa22cb465${paddedSpender}${'0'.repeat(64)}`).warnings).toBeUndefined()
+    })
+
+    test('does not warn on an approval for a single NFT', () => {
+      expect(
+        humanizeErc721(`0x095ea7b3${paddedSpender}${'0'.repeat(63)}1`).warnings
+      ).toBeUndefined()
+    })
   })
 })

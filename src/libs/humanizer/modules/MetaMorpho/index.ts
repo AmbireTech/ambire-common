@@ -1,7 +1,12 @@
 import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../../interfaces'
+import {
+  HumanizerCallModule,
+  HumanizerVisualization,
+  HumanizerWarning,
+  IrCall
+} from '../../interfaces'
 import {
   getAction,
   getAddressVisualization,
@@ -9,8 +14,11 @@ import {
   getLabel,
   getOnBehalfOf,
   getToken,
+  getUnlimitedApprovalWarning,
   HexIrCall,
-  isHexCall
+  isHexCall,
+  isUnlimitedAmount,
+  mergeWarnings
 } from '../../utils'
 
 // MetaMorpho vaults are ERC-4626 + ERC-20 + ERC-2612 (permit) + OZ Multicall contracts.
@@ -46,96 +54,129 @@ const erc4626RedeemAbi = parseAbi([
 interface DecodedInnerCall {
   visualization: HumanizerVisualization[]
   matched: boolean
+  // set while the inner call is decoded, when it turns out to be an approval with no limit
+  warning?: HumanizerWarning
 }
 
 // inner calls not matching one of these selectors are rendered as "Unknown call" rather
 // than dropping the whole multicall's humanization
+type DecodedInnerCallResult = {
+  visualization: HumanizerVisualization[]
+  warning?: HumanizerWarning
+}
+
 const innerCallMatcher: Record<
   string,
-  (vault: string, accAddr: string, data: HexIrCall['data']) => HumanizerVisualization[]
+  (vault: string, accAddr: string, data: HexIrCall['data']) => DecodedInnerCallResult
 > = {
   [toFunctionSelector(erc20ApproveAbi[0])]: (vault, _accAddr, data) => {
     const { args } = decodeFunctionData({ abi: erc20ApproveAbi, data })
     const [spender, amount] = args
-    return amount !== 0n
-      ? [
-          getAction('Grant approval'),
-          getLabel('for'),
-          getToken(vault, amount),
-          getLabel('to'),
-          getAddressVisualization(spender)
-        ]
-      : [
+    if (amount === 0n)
+      return {
+        visualization: [
           getAction('Revoke approval'),
           getToken(vault, amount),
           getLabel('for'),
           getAddressVisualization(spender)
         ]
+      }
+
+    return {
+      visualization: [
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken(vault, amount),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ],
+      warning: isUnlimitedAmount(amount) ? getUnlimitedApprovalWarning(spender) : undefined
+    }
   },
   [toFunctionSelector(permitAbi[0])]: (vault, accAddr, data) => {
     const { args } = decodeFunctionData({ abi: permitAbi, data })
     const [owner, spender, value] = args
-    return [
-      getAction('Grant approval'),
-      getLabel('for'),
-      getToken(vault, value),
-      getLabel('to'),
-      getAddressVisualization(spender),
-      ...getOnBehalfOf(owner, accAddr)
-    ]
+    return {
+      visualization: [
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken(vault, value),
+        getLabel('to'),
+        getAddressVisualization(spender),
+        ...getOnBehalfOf(owner, accAddr)
+      ],
+      warning: isUnlimitedAmount(value) ? getUnlimitedApprovalWarning(spender) : undefined
+    }
   },
   [toFunctionSelector(erc20TransferAbi[0])]: (vault, _accAddr, data) => {
     const { args } = decodeFunctionData({ abi: erc20TransferAbi, data })
     const [to, amount] = args
-    return [getAction('Send'), getToken(vault, amount), getLabel('to'), getAddressVisualization(to)]
+    return {
+      visualization: [
+        getAction('Send'),
+        getToken(vault, amount),
+        getLabel('to'),
+        getAddressVisualization(to)
+      ]
+    }
   },
   [toFunctionSelector(erc20TransferFromAbi[0])]: (vault, _accAddr, data) => {
     const { args } = decodeFunctionData({ abi: erc20TransferFromAbi, data })
     const [from, to, amount] = args
-    return [
-      getAction('Transfer'),
-      getToken(vault, amount),
-      getLabel('from'),
-      getAddressVisualization(from),
-      getLabel('to'),
-      getAddressVisualization(to)
-    ]
+    return {
+      visualization: [
+        getAction('Transfer'),
+        getToken(vault, amount),
+        getLabel('from'),
+        getAddressVisualization(from),
+        getLabel('to'),
+        getAddressVisualization(to)
+      ]
+    }
   },
   [toFunctionSelector(erc4626DepositAbi[0])]: (vault, accAddr, data) => {
     const { args } = decodeFunctionData({ abi: erc4626DepositAbi, data })
     const [assets, receiver] = args
-    return [
-      getAction('Deposit into vault'),
-      getToken(vault, assets),
-      ...getOnBehalfOf(receiver, accAddr)
-    ]
+    return {
+      visualization: [
+        getAction('Deposit into vault'),
+        getToken(vault, assets),
+        ...getOnBehalfOf(receiver, accAddr)
+      ]
+    }
   },
   [toFunctionSelector(erc4626MintAbi[0])]: (vault, accAddr, data) => {
     const { args } = decodeFunctionData({ abi: erc4626MintAbi, data })
     const [shares, receiver] = args
-    return [
-      getAction('Mint vault shares'),
-      getToken(vault, shares),
-      ...getOnBehalfOf(receiver, accAddr)
-    ]
+    return {
+      visualization: [
+        getAction('Mint vault shares'),
+        getToken(vault, shares),
+        ...getOnBehalfOf(receiver, accAddr)
+      ]
+    }
   },
   [toFunctionSelector(erc4626WithdrawAbi[0])]: (vault, accAddr, data) => {
     const { args } = decodeFunctionData({ abi: erc4626WithdrawAbi, data })
     const [assets, , owner] = args
-    return [
-      getAction('Withdraw from vault'),
-      getToken(vault, assets),
-      ...getOnBehalfOf(owner, accAddr)
-    ]
+    return {
+      visualization: [
+        getAction('Withdraw from vault'),
+        getToken(vault, assets),
+        ...getOnBehalfOf(owner, accAddr)
+      ]
+    }
   },
   [toFunctionSelector(erc4626RedeemAbi[0])]: (vault, accAddr, data) => {
     const { args } = decodeFunctionData({ abi: erc4626RedeemAbi, data })
     const [shares, , owner] = args
-    return [
-      getAction('Redeem vault shares'),
-      getToken(vault, shares),
-      ...getOnBehalfOf(owner, accAddr)
-    ]
+    return {
+      visualization: [
+        getAction('Redeem vault shares'),
+        getToken(vault, shares),
+        ...getOnBehalfOf(owner, accAddr)
+      ]
+    }
   }
 }
 
@@ -153,7 +194,7 @@ const decodeVaultMulticall = (
     const decodeInnerCall = innerCallMatcher[data.slice(0, 10)]
     if (!decodeInnerCall) return unmatched()
     try {
-      return { visualization: decodeInnerCall(vault, accAddr, data), matched: true }
+      return { ...decodeInnerCall(vault, accAddr, data), matched: true }
     } catch (error) {
       console.error('Failed to decode MetaMorpho inner call', error)
       return unmatched()
@@ -179,7 +220,9 @@ const MetaMorphoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): 
   const fullVisualization = decoded.flatMap((c) => [getBreak(), ...c.visualization])
   fullVisualization.shift()
 
-  return { ...call, fullVisualization }
+  const warnings = decoded.flatMap((c) => (c.warning ? [c.warning] : []))
+
+  return { ...call, fullVisualization, warnings: mergeWarnings(call.warnings, warnings) }
 }
 
 export default MetaMorphoModule
