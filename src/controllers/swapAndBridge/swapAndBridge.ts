@@ -4,7 +4,6 @@ import { getAccountNetworks } from '@/libs/networks/networks'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
 import { getFeeExemptionReason, getFeePercent } from '@/libs/swapAndBridge/fee'
-import type { FeeExemptionReason } from '@/libs/swapAndBridge/fee'
 
 import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -12,13 +11,27 @@ import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import { STK_WALLET } from '../../consts/addresses'
 import {
   BRIDGE_STATUS_INTERVAL,
+  BRIDGE_STATUS_INTERVAL_CEILING,
   UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
 } from '../../consts/intervals'
+import {
+  CONVERSION_PRECISION,
+  CONVERSION_PRECISION_POW,
+  HARD_CODED_CURRENCY,
+  MARKET_DATA_THRESHOLD_BY_STATUS,
+  NETWORK_MISMATCH_MESSAGE,
+  ROUTE_SORT_AMOUNT_THRESHOLD_PERCENT,
+  SUPPORTED_CHAINS_CACHE_THRESHOLD,
+  TO_TOKEN_LIST_CACHE_THRESHOLD,
+  TO_TOKEN_LIST_LIMIT,
+  TO_TOKEN_PRICE_TIMEOUT_MS
+} from '../../consts/swapAndBridge'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IDappsController } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
+import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -39,7 +52,9 @@ import {
   SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken,
-  SwapProvider
+  SwapProvider,
+  ToTokenMarketDataByToken,
+  ToTokenMarketDataStatus
 } from '../../interfaces/swapAndBridge'
 import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
@@ -51,7 +66,12 @@ import { getBridgeBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
-import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpers'
+import {
+  convertApiTokenDataToTokenDataCache,
+  getTokenAmount,
+  getTokenBalanceInUSD
+} from '../../libs/portfolio/helpers'
+import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import {
   addCustomTokensIfNeeded,
@@ -73,9 +93,14 @@ import {
   sortTokenListResponse
 } from '../../libs/swapAndBridge/swapAndBridge'
 import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swapAndBridgeErrorHumanizer'
+import {
+  getTokenMarketDataKey,
+  marketDataRequestBatcher
+} from '../../libs/swapAndBridge/tokenMarketData'
 import { getSanitizedAmount } from '../../libs/transfer/amount'
 import { NULL_ADDRESS } from '../../services/socket/constants'
 import { validateSendTransferAmount, Validation } from '../../services/validations/validate'
+import batcher from '../../utils/batcher'
 import {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue
@@ -92,6 +117,7 @@ import {
 } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
+import type { FeeExemptionReason } from '@/libs/swapAndBridge/fee'
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' | 'no-routes' | 'all-routes-failed'
   title: string
@@ -99,33 +125,25 @@ type SwapAndBridgeErrorType = {
   level: 'error' | 'warning'
 }
 
-const HARD_CODED_CURRENCY = 'usd'
-
 const isSwapAndBridge = (route: string | undefined) => route === 'swap-and-bridge'
-
-const CONVERSION_PRECISION = 16
-const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
-
-const NETWORK_MISMATCH_MESSAGE =
-  'Swap & Bridge network configuration mismatch. Please try again or contact Ambire support.'
-
-// For performance reasons, limit the max number of tokens in the to token list
-const TO_TOKEN_LIST_LIMIT = 100
-const TO_TOKEN_PRICE_TIMEOUT_MS = 4000
 
 const STATUS_WRAPPED_METHODS = {
   addToTokenByAddress: 'INITIAL'
 } as const
 
-const SUPPORTED_CHAINS_CACHE_THRESHOLD = 1000 * 60 * 60 * 24 // 1 day
-const TO_TOKEN_LIST_CACHE_THRESHOLD = 1000 * 60 * 60 * 4 // 4 hours
+type ToTokenMarketDataRecord = {
+  status: ToTokenMarketDataStatus
+  updatedAt: number
+  // Only set when the status is DONE
+  data?: TokenDataCacheValue
+}
 
 export const sortSwapAndBridgeRoutes = (r1: SwapAndBridgeRoute, r2: SwapAndBridgeRoute) => {
   const isBridge = r1.fromChainId !== r1.toChainId
 
   // the amount threshold in %. If below, we check the time as
   // the deciding sort factor
-  const threshold = 1.2
+  const threshold = ROUTE_SORT_AMOUNT_THRESHOLD_PERCENT
 
   const sortByTime = () => {
     const aTime = Number(r1.serviceTime)
@@ -337,6 +355,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   } = {}
 
   /**
+   * Market data (24h price movement and exchanges) for the "to" tokens, fetched on demand.
+   * Kept private for the same reason as `#toTokenList` - it holds far more tokens than the
+   * UI ever renders and the whole public state is serialized on every update. Only the
+   * records of the currently visible tokens are exposed, through `toTokenMarketData`.
+   * Addresses are lowercased.
+   */
+  #toTokenMarketData: { [chainId: number]: Map<string, ToTokenMarketDataRecord> } = {}
+
+  #batchedTokenMarketData: ReturnType<typeof batcher>
+
+  /**
    * Similar to the `#toTokenList[key].apiTokens`, this helps in avoiding repeated API
    * calls to fetch the supported chains from our service provider.
    */
@@ -421,6 +450,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   constructor({
     eventEmitterRegistry,
     callRelayer,
+    fetch,
     accounts,
     keystore,
     portfolio,
@@ -446,6 +476,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     callRelayer: BindedRelayerCall
+    fetch: Fetch
     accounts: IAccountsController
     keystore: IKeystoreController
     portfolio: IPortfolioController
@@ -495,6 +526,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#onBroadcastFailed = onBroadcastFailed
     this.#ui = ui
+
+    this.#batchedTokenMarketData = batcher(fetch, marketDataRequestBatcher, {
+      // Groups the tokens requested for the same list into as few requests as possible
+      batchDebounce: 100,
+      dedupeByKeys: ['chainId', 'address'],
+      timeoutSettings: {
+        timeoutAfter: 5000,
+        timeoutErrorMessage: 'Token market data request timed out'
+      }
+    })
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -1454,6 +1495,167 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     toTokenList.status = 'INITIAL'
     this.#emitUpdateIfNeeded()
+
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#fetchToTokenMarketData(this.toTokenShortList)
+  }
+
+  #getMarketDataRecord(
+    chainId: number,
+    address: string
+  ): { record?: ToTokenMarketDataRecord; isStale: boolean } {
+    const record = this.#toTokenMarketData[chainId]?.get(address.toLowerCase())
+    const isStale =
+      !record || Date.now() - record.updatedAt > MARKET_DATA_THRESHOLD_BY_STATUS[record.status]
+
+    return { record, isStale }
+  }
+
+  #setMarketDataRecord(chainId: number, address: string, record: ToTokenMarketDataRecord) {
+    if (!this.#toTokenMarketData[chainId]) this.#toTokenMarketData[chainId] = new Map()
+
+    this.#toTokenMarketData[chainId]!.set(address.toLowerCase(), record)
+  }
+
+  /**
+   * Fetches the market data of the passed tokens, skipping the ones that already have
+   * fresh data or a request in flight. Fire-and-forget, so that displaying the token
+   * list never waits on it.
+   */
+  async #fetchToTokenMarketData(tokens: SwapAndBridgeToToken[]) {
+    // Opted out of sending the receive token addresses to our price API
+    if (!this.#featureFlags.isFeatureEnabled('swapAndBridgeTokenInfo')) return
+
+    const tokensToFetch = tokens.filter((token) => {
+      const network = this.#networks.networks.find((n) => Number(n.chainId) === token.chainId)
+
+      // Without a platform id our price API has nothing to look the token up by. This is
+      // the case for custom networks, which are simply left without market data.
+      if (!network?.platformId) return false
+
+      // Native tokens aren't real contracts, so the contract-address route can't look
+      // them up either. Without a recognized CoinGecko coin id there is nothing to fall
+      // back to, so they are left without market data too.
+      const isNative = token.address === ZeroAddress
+      if (isNative && (!network.nativeAssetId || network.nativeAssetId === 'LOADING')) return false
+
+      return this.#getMarketDataRecord(token.chainId, token.address).isStale
+    })
+
+    if (!tokensToFetch.length) return
+
+    // Not emitting an update here on purpose. Tokens without a record are already
+    // reported as loading by `toTokenMarketData`, so marking them changes nothing for
+    // the UI and emitting would serialize the whole controller state for nothing.
+    tokensToFetch.forEach((token) => {
+      this.#setMarketDataRecord(token.chainId, token.address, {
+        status: 'LOADING',
+        updatedAt: Date.now()
+      })
+    })
+
+    const results = await Promise.allSettled(
+      tokensToFetch.map((token) => {
+        const network = this.#networks.networks.find((n) => Number(n.chainId) === token.chainId)
+        const isNative = token.address === ZeroAddress
+
+        return this.#batchedTokenMarketData({
+          address: token.address,
+          chainId: token.chainId,
+          platformId: network?.platformId,
+          nativeAssetId: network?.nativeAssetId,
+          // Native tokens are looked up by their CoinGecko coin id (e.g. "ethereum")
+          // instead, as the contract-address route doesn't support them
+          responseIdentifier: isNative ? network?.nativeAssetId : token.address.toLowerCase()
+        })
+      })
+    )
+
+    let failure: any
+
+    results.forEach((result, index) => {
+      const token = tokensToFetch[index]
+      if (!token) return
+
+      if (result.status === 'rejected') {
+        failure = result.reason
+        this.#setMarketDataRecord(token.chainId, token.address, {
+          status: 'FAIL',
+          updatedAt: Date.now()
+        })
+        return
+      }
+
+      // Our price API omits the tokens it has no data for, instead of returning empty entries
+      if (!result.value) {
+        this.#setMarketDataRecord(token.chainId, token.address, {
+          status: 'NOT_FOUND',
+          updatedAt: Date.now()
+        })
+        return
+      }
+
+      this.#setMarketDataRecord(token.chainId, token.address, {
+        status: 'DONE',
+        updatedAt: Date.now(),
+        data: convertApiTokenDataToTokenDataCache(result.value)
+      })
+    })
+
+    // Emitted once for the whole batch, as emitting per token would serialize the
+    // entire controller state dozens of times in a row.
+    this.#emitUpdateIfNeeded()
+
+    if (failure) {
+      this.emitError({
+        level: 'silent',
+        error: failure instanceof Error ? failure : new Error(String(failure)),
+        message: 'Failed to fetch the market data of the Swap & Bridge receive tokens',
+        sendCrashReport: true
+      })
+    }
+  }
+
+  /**
+   * The market data of the currently visible "to" tokens only, because the whole
+   * `#toTokenMarketData` is far too large to be sent to the UI on every update.
+   * Records that went stale are reported as loading - they are hidden until the
+   * refresh triggered alongside this list completes, so that the UI never displays
+   * an outdated exchange list.
+   */
+  get toTokenMarketData(): ToTokenMarketDataByToken {
+    // Whatever was fetched before the user opted out stays out of the UI state too
+    if (!this.#featureFlags.isFeatureEnabled('swapAndBridgeTokenInfo')) return {}
+
+    const visibleTokens = [
+      ...this.toTokenShortList,
+      ...this.toTokenSearchResults,
+      ...(this.toSelectedToken ? [this.toSelectedToken] : [])
+    ]
+
+    return visibleTokens.reduce<ToTokenMarketDataByToken>((acc, token) => {
+      const key = getTokenMarketDataKey(token.chainId, token.address)
+      if (acc[key]) return acc
+
+      const { record, isStale } = this.#getMarketDataRecord(token.chainId, token.address)
+
+      if (!record || isStale || record.status === 'LOADING') {
+        acc[key] = { status: 'LOADING' }
+        return acc
+      }
+
+      if (record.status !== 'DONE') {
+        acc[key] = { status: record.status }
+        return acc
+      }
+
+      acc[key] = {
+        status: 'DONE',
+        exchanges: record.data?.meta?.exchanges
+      }
+
+      return acc
+    }, {})
   }
 
   /**
@@ -1721,6 +1923,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.toTokenSearchResults = [...exactMatches, ...partialMatches].slice(0, TO_TOKEN_LIST_LIMIT)
     this.#emitUpdateIfNeeded()
+
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#fetchToTokenMarketData(this.toTokenSearchResults)
   }
 
   async switchFromAndToTokens() {
@@ -3057,7 +3262,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // coming here means the bridge should complete any second now
     // so start with BRIDGE_STATUS_INTERVAL
     // upon status pending, increase by BRIDGE_STATUS_INTERVAL until the ceiling is hit
-    const ceiling = 60000
     const minServiceTime = getActiveRoutesLowestServiceTime(this.activeRoutesInProgress)
     const startTimeout =
       minServiceTime === this.#updateActiveRoutesInterval.currentTimeout
@@ -3065,7 +3269,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         : this.#updateActiveRoutesInterval.currentTimeout + BRIDGE_STATUS_INTERVAL
 
     this.#updateActiveRoutesInterval.updateTimeout({
-      timeout: startTimeout < ceiling ? startTimeout : ceiling
+      timeout:
+        startTimeout < BRIDGE_STATUS_INTERVAL_CEILING
+          ? startTimeout
+          : BRIDGE_STATUS_INTERVAL_CEILING
     })
   }
 
@@ -3083,6 +3290,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       ...this,
       ...super.toJSON(),
       toTokenShortList: this.toTokenShortList,
+      toTokenMarketData: this.toTokenMarketData,
       updateToTokenListStatus: this.updateToTokenListStatus,
       maxFromAmount: this.maxFromAmount,
       validateFromAmount: this.validateFromAmount,

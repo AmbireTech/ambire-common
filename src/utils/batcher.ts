@@ -1,5 +1,5 @@
-import { Fetch } from '../../interfaces/fetch'
-import { fetchWithTimeout } from '../../utils/fetch'
+import { Fetch } from '../interfaces/fetch'
+import { fetchWithTimeout } from './fetch'
 
 export interface QueueElement {
   resolve: Function

@@ -519,6 +519,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.swapAndBridge = new SwapAndBridgeController({
       eventEmitterRegistry,
       callRelayer: this.callRelayer,
+      fetch,
       accounts: this.accounts,
       keystore: this.keystore,
       portfolio: this.portfolio,
@@ -713,6 +714,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.keystore.onUpdate(() => {
       if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
+        // Don't call syncViewRoutes here, because the status is set after
+        // operations different than unlock too (change password, export key etc.)
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.storage.associateAccountKeysWithLegacySavedSeedMigration(
           () =>
@@ -837,6 +840,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   lock() {
     this.keystore.lock()
+    void this.ui.syncViewRoutes()
     this.emailVault?.cleanMagicAndSessionKeys()
     this.selectedAccount.setDashboardNetworkFilter(null)
     this.continuousUpdates?.updatePortfolioInterval.restart({

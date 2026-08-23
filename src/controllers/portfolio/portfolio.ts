@@ -47,7 +47,6 @@ import {
 } from '../../libs/defiPositions/types'
 import { getAccountKeysCount } from '../../libs/keys/keys'
 import { Portfolio } from '../../libs/portfolio'
-import batcher from '../../libs/portfolio/batcher'
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import { PortfolioDebugFlow } from '../../libs/portfolio/debug'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
@@ -90,6 +89,7 @@ import {
   WALLET_STAKING_CHAIN_ID,
   xWalletShareValueCache
 } from '../../libs/walletStaking/shareValue'
+import batcher from '../../utils/batcher'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
 
