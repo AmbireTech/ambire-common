@@ -1,3 +1,5 @@
+import { WALLET_TOKEN } from '@/consts/addresses'
+
 import { SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
 
 export const ETH_ON_OPTIMISM_LEGACY_ADDRESS = '0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000'
@@ -11,7 +13,7 @@ const AMBIRE_WALLET_TOKEN_COMMON_PROPS = {
 
 export const AMBIRE_WALLET_TOKEN_ON_ETHEREUM: SwapAndBridgeToToken = {
   chainId: 1,
-  address: '0x88800092fF476844f74dC2FC427974BBee2794Ae',
+  address: WALLET_TOKEN,
   ...AMBIRE_WALLET_TOKEN_COMMON_PROPS
 }
 
