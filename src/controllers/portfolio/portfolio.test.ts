@@ -610,7 +610,13 @@ describe('Portfolio Controller ', () => {
     portfolioGetCalls.length = 0
     jest.useFakeTimers()
     try {
-      await controller.updateSelectedAccount(account.addr, [colibriEthereum])
+      // Started rather than awaited: the update yields to the main thread
+      // between networks (see yieldToMain), and that timer only fires once the
+      // clock below moves. Awaiting here would deadlock the test.
+      const catchUpUpdate = controller.updateSelectedAccount(account.addr, [colibriEthereum])
+
+      await jest.advanceTimersByTimeAsync(COLIBRI_CATCH_UP_RETRY_INTERVAL)
+      await catchUpUpdate
 
       await jest.advanceTimersByTimeAsync(COLIBRI_CATCH_UP_RETRY_INTERVAL)
       await Promise.resolve()
