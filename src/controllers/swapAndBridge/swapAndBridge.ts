@@ -606,7 +606,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const selectedAccountMainnetTokens =
       this.#portfolio.getAccountPortfolioState(selectedAccountAddress)['1']?.result?.tokens
     const stkWalletToken = (portfolioTokens ?? selectedAccountMainnetTokens)?.find(
-      ({ address, chainId }) => Number(chainId) === 1 && address === STK_WALLET
+      ({ address, chainId }) => chainId === 1n && address.toLowerCase() === STK_WALLET.toLowerCase()
     )
 
     this.feePercent = getFeePercent(
