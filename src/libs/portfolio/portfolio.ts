@@ -19,6 +19,7 @@ import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
 import {
   convertApiTokenDataToTokenDataCache,
+  getTokenDataCacheKey,
   formatExternalHintsAPIResponse,
   getHardcodedCitreaPrices,
   mergeERC721s,
@@ -288,7 +289,7 @@ export class Portfolio {
 
       if (!tokenDataHint) continue
 
-      tokenDataCache.set(addr, [start, tokenDataHint])
+      tokenDataCache.set(getTokenDataCacheKey(addr), [start, tokenDataHint])
     }
     const discoveryDone = Date.now()
 
@@ -347,7 +348,7 @@ export class Portfolio {
           }
       }
 
-      const cached = tokenDataCache.get(address)
+      const cached = tokenDataCache.get(getTokenDataCacheKey(address))
       if (!cached) return null
       const [timestamp, entry] = cached
       const eligible = entry.priceIn.find((p) => p.baseCurrency === baseCurrency)
@@ -521,7 +522,10 @@ export class Portfolio {
               hasPrice = true
             }
 
-            tokenDataCache.set(token.address, [Date.now(), formattedTokenData])
+            tokenDataCache.set(getTokenDataCacheKey(token.address), [
+              Date.now(),
+              formattedTokenData
+            ])
 
             return {
               ...token,
@@ -641,9 +645,7 @@ export class Portfolio {
       tokenDataRecency?: number
     } = {}
   ): Promise<number | undefined> {
-    const cachedTokenData = [...tokenDataCache.entries()].find(
-      ([cachedAddress]) => cachedAddress.toLowerCase() === address.toLowerCase()
-    )?.[1]
+    const cachedTokenData = tokenDataCache.get(getTokenDataCacheKey(address))
 
     if (cachedTokenData && Date.now() - cachedTokenData[0] <= tokenDataRecency) {
       return cachedTokenData[1].priceIn.find((price) => price.baseCurrency === baseCurrency)?.price
@@ -659,7 +661,7 @@ export class Portfolio {
     })
     const formattedTokenData = convertApiTokenDataToTokenDataCache(tokenData)
 
-    tokenDataCache.set(address, [Date.now(), formattedTokenData])
+    tokenDataCache.set(getTokenDataCacheKey(address), [Date.now(), formattedTokenData])
 
     return formattedTokenData.priceIn.find((price) => price.baseCurrency === baseCurrency)?.price
   }

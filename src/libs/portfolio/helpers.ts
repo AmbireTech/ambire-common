@@ -654,6 +654,11 @@ export const getHardcodedCitreaPrices = (address: string): Price | null => {
   return null
 }
 
+/**
+ * The API may return the token checksummed or lowercase so we normalize it to lowercase to avoid cache misses.
+ */
+export const getTokenDataCacheKey = (address: string): string => address.toLowerCase()
+
 export const convertApiTokenDataToTokenDataCache = (
   tokenData: ExternalAPITokenMarketDataResponse | null
 ): TokenDataCacheValue => {
