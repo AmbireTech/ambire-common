@@ -84,7 +84,8 @@ export const getSafeHumanization = (
   to?: string,
   value?: string | number | bigint,
   data?: string,
-  setupHookDepth = 0
+  setupHookDepth = 0,
+  nonce?: string | number | bigint | null
 ): { visuals?: HumanizerVisualization[]; warnings?: HumanizerWarning[] } | undefined => {
   if (!data || !isHex(data)) return
 
@@ -92,6 +93,26 @@ export const getSafeHumanization = (
   const warnings: HumanizerWarning[] = []
 
   const selector = data.substring(0, 10)
+
+  if (
+    to &&
+    safeAddr &&
+    to.toLowerCase() === safeAddr.toLowerCase() &&
+    value?.toString() === '0' &&
+    data === '0x'
+  ) {
+    // a Safe{WALLET} "reject" is just an empty, 0-value self-call proposed with the same
+    // nonce as the transaction it is meant to replace, so surface that nonce when it's known
+    // instead of showing a blank/empty call
+    fullVisualization.push(
+      ...(nonce !== undefined && nonce !== null
+        ? [getAction('Reject'), getLabel('Tx with nonce'), getLabel(nonce, true)]
+        : [getAction('Reject currently queued transaction')])
+    )
+    return {
+      visuals: fullVisualization
+    }
+  }
 
   if (selector === toFunctionSelector(setupAbi[0])) {
     const { args } = decodeFunctionData({ abi: setupAbi, data })

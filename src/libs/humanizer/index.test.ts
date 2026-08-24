@@ -2754,7 +2754,7 @@ describe('ERC-7730 descriptors', () => {
           value: [
             expect.objectContaining({
               type: 'erc7730',
-              title: 'Empty call to'
+              title: 'Reject currently queued transaction'
             })
           ]
         }

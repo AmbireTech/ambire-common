@@ -41,7 +41,12 @@ import {
 } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
-import { FocusWindowParams, IUiController, WindowProps } from '../../interfaces/ui'
+import {
+  FocusWindowParams,
+  IUiController,
+  REQUEST_VIEW_TYPE,
+  WindowProps
+} from '../../interfaces/ui'
 import {
   CallsUserRequest,
   OpenRequestWindowParams,
@@ -663,6 +668,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.emitUpdate()
 
     if (nextRequest) {
+      // Move the request window to the screen the new request needs before it is focused, so
+      // switching between requests goes straight from one screen to the next.
+      await this.#ui.syncViewRoutes(REQUEST_VIEW_TYPE)
       await this.openRequestWindow(params)
       return
     }
