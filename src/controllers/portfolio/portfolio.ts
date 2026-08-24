@@ -56,7 +56,10 @@ import {
   formatExternalHintsAPIResponse,
   getHintsError,
   getTotal,
-  validateERC20Token
+  getAssetCacheKey,
+  validateCollectibleOwnership,
+  validateERC20Token,
+  validateERC721Token
 } from '../../libs/portfolio/helpers'
 import {
   AccountAssetsState,
@@ -78,6 +81,7 @@ import {
   TokenDataCache,
   TokenDataCacheValue,
   TokenError,
+  AssetValidations,
   TokenResult,
   TokenValidationResult
 } from '../../libs/portfolio/interfaces'
@@ -143,7 +147,7 @@ export class PortfolioController
   // the response of the update call to be overwritten by a slower previous call.
   #queue: { [accountId: string]: { [chainId: string]: Promise<void> } }
 
-  validTokens: any = { erc20: {}, erc721: {} }
+  validTokens: AssetValidations = { erc20: {}, erc721: {} }
 
   temporaryTokens: TemporaryTokens = {}
 
@@ -878,7 +882,8 @@ export class PortfolioController
     allNetworks: boolean = false
   ) {
     await this.initialLoadPromise
-    if (this.validTokens.erc20[`${token.address}-${token.chainId}`]?.isValid === true) return
+    if (this.validTokens.erc20[getAssetCacheKey(token.address, token.chainId)]?.isValid === true)
+      return
 
     const provider = this.#providers.providers[token.chainId.toString()]
     if (!provider) {
@@ -902,13 +907,81 @@ export class PortfolioController
     )
     const { isValid, standard, error } = result
 
-    this.validTokens[standard] = {
-      ...this.validTokens[standard],
-      [`${token.address}-${token.chainId}`]: {
+    this.validTokens[standard === 'erc721' ? 'erc721' : 'erc20'] = {
+      ...this.validTokens[standard === 'erc721' ? 'erc721' : 'erc20'],
+      [getAssetCacheKey(token.address, token.chainId)]: {
         isValid,
         error
       }
     }
+
+    this.emitUpdate()
+  }
+
+  /**
+   * Validates that the address is an ERC-721 collection before it's added as a
+   * custom one and stores the result in `validTokens.erc721`.
+   */
+  async updateCollectionValidation(
+    collection: { address: TokenResult['address']; chainId: TokenResult['chainId'] },
+    accountId: AccountId
+  ) {
+    await this.initialLoadPromise
+
+    const key = getAssetCacheKey(collection.address, collection.chainId)
+    // A verdict of any kind is enough, as it doesn't change for an address
+    if (this.validTokens.erc721[key]) return
+
+    const provider = this.#providers.providers[collection.chainId.toString()]
+    if (!provider) {
+      const message = `Error while validating collection ${collection.address} (${collection.chainId}).`
+      this.emitError({ level: 'silent', message, error: new Error(message) })
+
+      return
+    }
+
+    const {
+      isValid,
+      error,
+      collection: collectionMeta
+    } = await validateERC721Token(collection, accountId, provider)
+
+    this.validTokens.erc721 = {
+      ...this.validTokens.erc721,
+      [key]: { isValid, error, collection: collectionMeta }
+    }
+
+    this.emitUpdate()
+  }
+
+  /**
+   * Checks whether the account owns the collectible and stores the result in
+   * `validTokens.erc721`, keyed by the collection and the id.
+   */
+  async updateCollectibleValidation(
+    collectible: {
+      address: TokenResult['address']
+      chainId: TokenResult['chainId']
+      tokenId: bigint
+    },
+    accountId: AccountId
+  ) {
+    await this.initialLoadPromise
+
+    const key = `${getAssetCacheKey(collectible.address, collectible.chainId)}-${collectible.tokenId}`
+    if (this.validTokens.erc721[key]) return
+
+    const provider = this.#providers.providers[collectible.chainId.toString()]
+    if (!provider) {
+      const message = `Error while validating collectible ${collectible.tokenId} of ${collectible.address}.`
+      this.emitError({ level: 'silent', message, error: new Error(message) })
+
+      return
+    }
+
+    const { isValid, error } = await validateCollectibleOwnership(collectible, accountId, provider)
+
+    this.validTokens.erc721 = { ...this.validTokens.erc721, [key]: { isValid, error } }
 
     this.emitUpdate()
   }

@@ -21,7 +21,7 @@ import {
   convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
   getHardcodedCitreaPrices,
-  mergeERC721s,
+  mergeCollectionHints,
   tokenFilter
 } from './helpers'
 import {
@@ -241,11 +241,11 @@ export class Portfolio {
       ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
 
-    hints.erc721s = mergeERC721s([
-      additionalErc721Hints || {},
-      hints.erc721s,
-      ...Object.values(specialErc721Hints || {})
-    ])
+    hints.erc721s = mergeCollectionHints({
+      additionalHints: additionalErc721Hints,
+      apiHints: hints.erc721s,
+      specialHints: specialErc721Hints
+    })
 
     // Deduped before checksumming for performance
     const seenErc20Hints = new Set<string>()
@@ -433,18 +433,39 @@ export class Portfolio {
         return result
       })
 
+    // Unlike the deployless ones, preference addresses aren't always checksummed
+    const customCollectionAddresses = new Set(
+      Object.keys(specialErc721Hints?.custom || {}).map((address) => address.toLowerCase())
+    )
+    // An empty array of ids hides the whole collection, otherwise the listed
+    // collectibles are the hidden ones
+    const hiddenCollectibles: { [lowercasedAddress: string]: bigint[] } = {}
+    Object.entries(specialErc721Hints?.hidden || {}).forEach(([address, ids]) => {
+      hiddenCollectibles[address.toLowerCase()] = ids
+    })
+
     const collections = collectionsWithErrResult.reduce<CollectionResult[]>(
       (acc, [error, collection]) => {
-        if (!isValidToken(error, collection)) return acc
+        // Unlike a token, a collection without a symbol is still displayable -
+        // it is labeled by its name or its address
+        if (error !== '0x') return acc
+
+        const lowercasedAddress = collection.address.toLowerCase()
+        const isCustom = customCollectionAddresses.has(lowercasedAddress)
+        const hiddenIds = hiddenCollectibles[lowercasedAddress]
+        const isHidden = !!hiddenIds && !hiddenIds.length
+        const visibleCollectibles = hiddenIds?.length
+          ? collection.collectibles.filter((id) => !hiddenIds.includes(id))
+          : collection.collectibles
 
         // Spam filter: hide collections whose symbol/name matches a blacklisted
-        // pattern or embeds a phishing domain. Custom collections are never hidden
-        // (even tho we don't support them atm).
+        // pattern or embeds a phishing domain. Custom (user-added) collections
+        // are never hidden.
         if (
           isBlacklistedAsset({
             symbol: collection.symbol,
             name: collection.name,
-            isCustom: collection.flags?.isCustom,
+            isCustom,
             patterns: blacklistPatterns,
             checkForEmbeddedDomain: true
           })
@@ -463,12 +484,29 @@ export class Portfolio {
         }
 
         // Important note: Collections with 0 collectibles are allow to pass through the filter.
-        if (!toBeLearned.erc721s[collection.address] && collection.collectibles.length > 0) {
+        // Hidden collections are always requested as hints, so they don't have
+        // to be learned. Custom ones are, so they survive being removed.
+        if (
+          !isHidden &&
+          !toBeLearned.erc721s[collection.address] &&
+          collection.collectibles.length > 0
+        ) {
           toBeLearned.erc721s[collection.address] = collection.collectibles
         }
 
         acc.push({
           ...collection,
+          collectibles: visibleCollectibles,
+          // Collections have no flags until this point
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: false,
+            isFeeToken: false,
+            suspectedType: null,
+            isCustom,
+            isHidden
+          },
           priceIn: getTokenDataFromCache(collection.address)?.priceIn || []
         })
         return acc

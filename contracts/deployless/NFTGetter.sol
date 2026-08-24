@@ -40,8 +40,13 @@ contract NFTGetter is Simulation {
     uint[] memory tokenIds,
     uint limit
   ) external view returns (NFTCollectionMetadata memory meta) {
-    meta.name = collection.name();
-    meta.symbol = collection.symbol();
+    // Optional metadata, missing on collections like the ENS names one
+    try collection.name() returns (string memory name) {
+      meta.name = name;
+    } catch {}
+    try collection.symbol() returns (string memory symbol) {
+      meta.symbol = symbol;
+    } catch {}
 
     uint balance = collection.balanceOf(address(account));
     if (balance > limit) balance = limit;
@@ -50,9 +55,25 @@ contract NFTGetter is Simulation {
     bool isEnumerable = collection.supportsInterface(0x780e9d63);
 
     if (isEnumerable || tokenIds.length == 0) {
+      // A collection can report the interface and still not implement it, and a
+      // collection with no ids to check is walked as if it were enumerable, so
+      // the enumeration is allowed to fail without discarding the collection
+      uint owned;
       for (uint i = 0; i != balance; i++) {
-        uint tokenId = collection.tokenOfOwnerByIndex(address(account), i);
-        meta.nfts[i] = tokenId;
+        try collection.tokenOfOwnerByIndex(address(account), i) returns (uint tokenId) {
+          meta.nfts[owned] = tokenId;
+          owned++;
+        } catch {
+          break;
+        }
+      }
+
+      if (owned != balance) {
+        uint256[] memory enumerated = new uint256[](owned);
+        for (uint i = 0; i != owned; i++) {
+          enumerated[i] = meta.nfts[i];
+        }
+        meta.nfts = enumerated;
       }
     } else {
       uint total;

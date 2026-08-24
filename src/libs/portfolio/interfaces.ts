@@ -682,8 +682,27 @@ export type KnownTokenInfo = {
   chainIds?: number[]
 }
 
+/** Validation results of tokens and collections, keyed by `getAssetCacheKey` */
+export type AssetValidations = {
+  erc20: { [assetKey: string]: Pick<TokenValidationResult, 'isValid' | 'error'> }
+  erc721: { [assetKey: string]: Pick<TokenValidationResult, 'isValid' | 'error' | 'collection'> }
+}
+
 export type TokenValidationResult = {
   isValid: boolean
   standard: string
   error: { message: string | null; type: 'network' | 'validation' | null }
+  /**
+   * Metadata of a valid ERC-721 collection, so it can be previewed before the
+   * user adds it. Not set for ERC-20 tokens.
+   */
+  collection?: {
+    name: string | null
+    symbol: string | null
+    /**
+     * Whether the collection implements ERC-721 Enumerable. If it doesn't, the
+     * collectibles the account holds can't be listed.
+     */
+    isEnumerable: boolean
+  }
 }

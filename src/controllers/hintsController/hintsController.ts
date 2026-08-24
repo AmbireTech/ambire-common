@@ -7,7 +7,7 @@ import { IKeystoreController } from '@/interfaces/keystore'
 import { Network } from '@/interfaces/network'
 import { IStorageController } from '@/interfaces/storage'
 import { getAllAssetsAsHints } from '@/libs/defiPositions/defiPositions'
-import { CustomToken, TokenPreference } from '@/libs/portfolio/customToken'
+import { CustomToken, getAssetPreferenceId, TokenPreference } from '@/libs/portfolio/customToken'
 import {
   erc721CollectionToLearnedAssetKeys,
   getSpecialHints,
@@ -118,10 +118,9 @@ export class HintsController extends EventEmitter {
    */
   async addCustomToken(customToken: CustomToken): Promise<boolean> {
     await this.initialLoadPromise
+    // A collectible is added on its own, so the id is part of its identity
     const isTokenAlreadyAdded = this.customTokens.some(
-      ({ address, chainId }) =>
-        address.toLowerCase() === customToken.address.toLowerCase() &&
-        chainId === customToken.chainId
+      (token) => getAssetPreferenceId(token) === getAssetPreferenceId(customToken)
     )
 
     if (isTokenAlreadyAdded) return false
@@ -140,20 +139,21 @@ export class HintsController extends EventEmitter {
    */
   async removeCustomToken(customToken: Omit<CustomToken, 'standard'>): Promise<boolean> {
     await this.initialLoadPromise
-    this.customTokens = this.customTokens.filter(
-      (token) =>
-        !(
-          token.address.toLowerCase() === customToken.address.toLowerCase() &&
-          token.chainId === customToken.chainId
-        )
-    )
+    const isTokenBeingRemoved = (token: Omit<CustomToken, 'standard'>) =>
+      getAssetPreferenceId(token) === getAssetPreferenceId(customToken)
+    // The standard is needed by the preference, as it distinguishes a hidden
+    // collection from a hidden token
+    const removedTokenStandard = this.customTokens.find(isTokenBeingRemoved)?.standard
+
+    this.customTokens = this.customTokens.filter((token) => !isTokenBeingRemoved(token))
+
     const existingPreference = this.tokenPreferences.some(
-      (pref) => pref.address === customToken.address && pref.chainId === customToken.chainId
+      (pref) => getAssetPreferenceId(pref) === getAssetPreferenceId(customToken)
     )
 
     // Delete the custom token preference if it exists
     if (existingPreference) {
-      this.#toggleTokenPreference(customToken)
+      this.#toggleTokenPreference({ ...customToken, standard: removedTokenStandard })
     }
 
     this.emitUpdate()
@@ -180,10 +180,9 @@ export class HintsController extends EventEmitter {
   }
 
   #toggleTokenPreference(tokenPreference: Omit<CustomToken, 'standard'> | TokenPreference) {
+    const preferenceId = getAssetPreferenceId(tokenPreference)
     const existingPreference = this.tokenPreferences.find(
-      ({ address, chainId }) =>
-        address.toLowerCase() === tokenPreference.address.toLowerCase() &&
-        chainId === tokenPreference.chainId
+      (preference) => getAssetPreferenceId(preference) === preferenceId
     )
 
     // Push the token as hidden
@@ -192,8 +191,7 @@ export class HintsController extends EventEmitter {
       // Remove the token preference if the user decides to show it again
     } else if (existingPreference.isHidden) {
       this.tokenPreferences = this.tokenPreferences.filter(
-        ({ address, chainId }) =>
-          !(address === tokenPreference.address && chainId === tokenPreference.chainId)
+        (preference) => getAssetPreferenceId(preference) !== preferenceId
       )
     } else {
       // Should happen only after migration
