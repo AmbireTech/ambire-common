@@ -33,7 +33,12 @@ import {
 } from '../../interfaces/swapAndBridge'
 import { ITransactionManagerController } from '../../interfaces/transactionManager'
 import { ITransferController } from '../../interfaces/transfer'
-import { FocusWindowParams, IUiController, WindowProps } from '../../interfaces/ui'
+import {
+  FocusWindowParams,
+  IUiController,
+  REQUEST_VIEW_TYPE,
+  WindowProps
+} from '../../interfaces/ui'
 import {
   CallsUserRequest,
   OpenRequestWindowParams,
@@ -607,6 +612,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.emitUpdate()
 
     if (nextRequest) {
+      // Move the request window to the screen the new request needs before it is focused, so
+      // switching between requests goes straight from one screen to the next.
+      await this.#ui.syncViewRoutes(REQUEST_VIEW_TYPE)
       await this.openRequestWindow(params)
       return
     }
@@ -701,6 +709,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
+    // Snapshot before the close is dispatched, not after it completes. Closing the request
+    // view is not instant on every platform (on mobile it is a bottom sheet with a ~250ms
+    // close animation plus two bridge hops), and requests that arrive while it is closing
+    // must not be swept into this close.
+    const requestIdsSnapshotAtClose = new Set(this.userRequests.map((r) => r.id))
+
     this.requestWindow.closeWindowPromise = this.#ui.requestView
       .close(this.requestWindow.windowProps.id)
       .finally(() => {
@@ -711,11 +725,19 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (!this.requestWindow.windowProps) return
 
-    await this.#handleRequestWindowClose(this.requestWindow.windowProps.id)
+    await this.#handleRequestWindowClose(
+      this.requestWindow.windowProps.id,
+      requestIdsSnapshotAtClose
+    )
   }
 
-  /** `winId` is omitted when the request was rendered inline and had no window of its own. */
-  async #handleRequestWindowClose(winId?: number) {
+  /**
+   * `winId` is omitted when the request was rendered inline and had no window of its own.
+   * `requestIdsSnapshot` is passed by `closeRequestWindow` so the requests to reject are the
+   * ones that existed when the close started, not when the close animation finished. It is
+   * omitted on the `windowRemoved` event path, where the close was not initiated here.
+   */
+  async #handleRequestWindowClose(winId?: number, requestIdsSnapshot?: Set<UserRequest['id']>) {
     const isInlineRequestClosed = winId === undefined && !this.requestWindow.windowProps
 
     if (
@@ -727,7 +749,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     ) {
       // Snapshot IDs synchronously before any awaits so requests that arrive
       // during async operations below are not incorrectly bulk-rejected.
-      const requestIdsSnapshotAtClose = new Set(this.userRequests.map((r) => r.id))
+      const requestIdsSnapshotAtClose =
+        requestIdsSnapshot || new Set(this.userRequests.map((r) => r.id))
 
       this.requestWindow.windowProps = null
       this.requestWindow.loaded = false
@@ -774,6 +797,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       )
 
       this.userRequestsWaitingAccountSwitch = []
+
+      // A request that is not in the snapshot arrived while the view was closing (a dapp
+      // firing a follow-up right after the previous one resolved, e.g. connect then SIWE).
+      // It survived the rejection above, but `#setCurrentUserRequest(null)` cleared it as the
+      // current request, so reopen the view with it instead of leaving it without a view.
+      const requestArrivedWhileClosing = this.visibleUserRequests.find(
+        (r) => !requestIdsSnapshotAtClose.has(r.id)
+      )
+
+      if (requestArrivedWhileClosing) {
+        await this.#setCurrentUserRequest(requestArrivedWhileClosing)
+        return
+      }
+
       this.emitUpdate()
     }
   }

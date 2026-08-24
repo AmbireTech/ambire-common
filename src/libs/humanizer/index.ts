@@ -25,6 +25,7 @@ import {
   zealyMessageModule
 } from './messageModules'
 import { fallbackShortPlaintext } from './messageModules/fallbackShortPlaintext'
+import { dedupeWarnings } from './utils'
 
 // from least generic to most generic
 // the final visualization and warnings are from the first triggered module
@@ -79,15 +80,21 @@ const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOpt
         const originalCall = accountOp.calls[index]
         if (!originalCall) return call
 
-        return (
-          humanizeCallWithErc7730(
-            originalCall,
-            accountOp.chainId,
-            accountOp.accountAddr,
-            resolvedDescriptor,
-            options.nativeAssetSymbol
-          ) || call
+        const erc7730Call = humanizeCallWithErc7730(
+          originalCall,
+          accountOp.chainId,
+          accountOp.accountAddr,
+          resolvedDescriptor,
+          options.nativeAssetSymbol
         )
+        if (!erc7730Call) return call
+
+        // The descriptor builds its result from the raw call, so it starts with no warnings. The
+        // warnings the modules found are still about the same call, so keep them both.
+        return {
+          ...erc7730Call,
+          warnings: dedupeWarnings([...(call.warnings || []), ...(erc7730Call.warnings || [])])
+        }
       } catch (error) {
         console.error(error)
         return call

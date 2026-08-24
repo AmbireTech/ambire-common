@@ -1,6 +1,6 @@
 import { CollectionResult, MetaData, TokenError, TokenResult } from './interfaces'
 
-export function paginate(input: string[] | [string, bigint[]][], limit: number): any[][] {
+export function paginate<T>(input: T[], limit: number): T[][] {
   const pages = []
   let from = 0
   for (let i = 1; i <= Math.ceil(input.length / limit); i++) {

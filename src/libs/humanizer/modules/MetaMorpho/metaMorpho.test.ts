@@ -1,8 +1,17 @@
+import { encodeFunctionData, maxUint256, parseAbi } from 'viem'
+
 import MetaMorphoModule from '.'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
-import { getAction, getAddressVisualization, getBreak, getLabel, getToken } from '../../utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getBreak,
+  getLabel,
+  getToken,
+  getUnlimitedApprovalWarning
+} from '../../utils'
 
 // real MetaMorpho vault on Ethereum
 const VAULT_ADDRESS = '0xdd0f28e19C1780eb6396170735D45153D261490d'
@@ -101,5 +110,52 @@ describe('MetaMorpho', () => {
     ]
     const irCalls = [call].map((c) => MetaMorphoModule(accountOp, c))
     compareHumanizerVisualizations(irCalls, [expectedVisualization])
+  })
+
+  describe('unlimited approval warnings', () => {
+    const multicallAbi = parseAbi(['function multicall(bytes[] data)'])
+    const approveAbi = parseAbi(['function approve(address spender, uint256 amount)'])
+    const depositAbi = parseAbi(['function deposit(uint256 assets, address receiver)'])
+
+    const vaultMulticall = (innerCalls: `0x${string}`[]): IrCall => ({
+      to: VAULT_ADDRESS,
+      value: 0n,
+      data: encodeFunctionData({ abi: multicallAbi, args: [innerCalls] })
+    })
+    const approveInnerCall = (amount: bigint) =>
+      encodeFunctionData({ abi: approveAbi, args: [SPENDER, amount] })
+    const depositInnerCall = encodeFunctionData({
+      abi: depositAbi,
+      args: [10n ** 18n, accountOp.accountAddr as `0x${string}`]
+    })
+
+    test('warns when an inner approve is for the maximum amount', () => {
+      const irCall = MetaMorphoModule(accountOp, vaultMulticall([approveInnerCall(maxUint256)]))
+
+      expect(irCall.warnings).toEqual([getUnlimitedApprovalWarning(SPENDER)])
+    })
+
+    // the approval is easy to miss when it is one of several actions in the batch
+    test('warns when a maximum inner approve is batched with other actions', () => {
+      const irCall = MetaMorphoModule(
+        accountOp,
+        vaultMulticall([approveInnerCall(maxUint256), depositInnerCall])
+      )
+
+      expect(irCall.warnings).toEqual([getUnlimitedApprovalWarning(SPENDER)])
+      expect(irCall.fullVisualization).toBeDefined()
+    })
+
+    test('does not warn when an inner approve is for a finite amount', () => {
+      const irCall = MetaMorphoModule(accountOp, vaultMulticall([approveInnerCall(10n ** 18n)]))
+
+      expect(irCall.warnings).toBeUndefined()
+    })
+
+    test('does not warn when an inner approve revokes', () => {
+      const irCall = MetaMorphoModule(accountOp, vaultMulticall([approveInnerCall(0n)]))
+
+      expect(irCall.warnings).toBeUndefined()
+    })
   })
 })

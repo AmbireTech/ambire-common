@@ -5,6 +5,7 @@ import {
   FocusWindowParams,
   isExtensionOverlayView,
   IUiController,
+  NavigateOptions,
   OpenWindowOptions,
   UiManager,
   View,
@@ -33,6 +34,9 @@ type RequestViewManager = {
   close: (winId: WindowId) => Promise<void>
 }
 
+/** A route can carry search params (benzin), while a view reports its path alone. */
+const getRoutePath = (route: string) => route.split('?')[0] ?? route
+
 export class UiController extends EventEmitter implements IUiController {
   uiEvent: UiEventEmitter
 
@@ -46,6 +50,14 @@ export class UiController extends EventEmitter implements IUiController {
 
   message: UiManager['message']
 
+  #resolveViewRoute: UiManager['resolveViewRoute']
+
+  /**
+   * Prevents race conditions with routing
+   */
+  #latestViewRouteSyncTokens: Map<string, number> = new Map()
+
+  #viewRouteSyncTokenCounter = 0
   dispatchDappTabFocus?: UiManager['dispatchDappTabFocus']
 
   requestView: RequestViewManager
@@ -64,6 +76,7 @@ export class UiController extends EventEmitter implements IUiController {
     this.panel = uiManager.panel
     this.notification = uiManager.notification
     this.message = uiManager.message
+    this.#resolveViewRoute = uiManager.resolveViewRoute
     this.dispatchDappTabFocus = uiManager.dispatchDappTabFocus
 
     this.requestView = {
@@ -91,17 +104,21 @@ export class UiController extends EventEmitter implements IUiController {
     if (isExtensionOverlayView(view) && existingOverlay) {
       existingOverlay.id = view.id
       existingOverlay.type = view.type
+      delete existingOverlay.currentRoute
+      delete existingOverlay.pendingRoute
+      delete existingOverlay.searchParams
       if (!existingOverlay.isReady) this.uiEvent.emit('addView', view)
       this.emitUpdate()
-      return
+    } else {
+      if (this.views.find((v) => v.id === view.id)) return
+
+      this.views.push(view)
+      this.uiEvent.emit('addView', view)
+      this.emitUpdate()
     }
 
-    // if the same view already exists, skip adding
-    if (this.views.some((v) => v.id === view.id)) return
-
-    this.views.push(view)
-    this.uiEvent.emit('addView', view)
-    this.emitUpdate()
+    // This navigates the new view to its initial route
+    this.syncViewRoute(view.id, { isInitialNavigation: true })
   }
 
   updateView(
@@ -110,6 +127,10 @@ export class UiController extends EventEmitter implements IUiController {
   ) {
     const view = this.views.find((v) => v.id === viewId)
     if (!view) return
+
+    if ('currentRoute' in updatedProps) {
+      delete view.pendingRoute
+    }
 
     const shouldUpdate = Object.entries(updatedProps).some(([key, value]) => {
       // searchParams is a plain object rebuilt by the caller on every dispatch,
@@ -120,6 +141,7 @@ export class UiController extends EventEmitter implements IUiController {
 
       return view[key as keyof View] !== value
     })
+
     if (!shouldUpdate) return
 
     let previousRoute = view.previousRoute
@@ -150,18 +172,67 @@ export class UiController extends EventEmitter implements IUiController {
     if (!view) return
 
     this.views = this.views.filter((v) => v.id !== viewId)
+    this.#latestViewRouteSyncTokens.delete(viewId)
 
     this.uiEvent.emit('removeView', view)
     this.emitUpdate()
   }
 
-  navigateView(viewId: string, route: string, params: { [key: string]: any }) {
+  /**
+   * Navigates the application to a route in a view, if it is not already there.
+   */
+  navigateView(viewId: string, route: string, options?: NavigateOptions) {
     const view = this.views.find((v) => v.id === viewId)
-    if (!view || view.currentRoute === route) return
+    if (!view) return
 
-    view.currentRoute = route
-    this.message.sendNavigateMessage(viewId, route, params)
+    const routePath = getRoutePath(route)
+    if (view.currentRoute === routePath || view.pendingRoute === routePath) return
+
+    view.pendingRoute = routePath
+    this.message.sendNavigateMessage(viewId, route, options)
     this.emitUpdate()
+  }
+
+  /**
+   * Sends a view to the route its state calls for, if it has not been navigated already.
+   * Examples:
+   * - Sending to keystore unlock if locked
+   * - Moving between request windows when switching requests
+   */
+  async syncViewRoute(viewId: string, options?: Pick<NavigateOptions, 'isInitialNavigation'>) {
+    try {
+      const view = this.views.find((v) => v.id === viewId)
+      if (!view) return
+
+      this.#viewRouteSyncTokenCounter += 1
+      const syncToken = this.#viewRouteSyncTokenCounter
+      this.#latestViewRouteSyncTokens.set(viewId, syncToken)
+
+      const route = await this.#resolveViewRoute(view)
+
+      // A newer sync of the same view started while we were resolving, so its answer wins.
+      if (this.#latestViewRouteSyncTokens.get(viewId) !== syncToken) return
+
+      if (!route) return
+
+      this.navigateView(viewId, route, {
+        replace: true,
+        isInitialNavigation: options?.isInitialNavigation
+      })
+    } catch (e: any) {
+      this.emitError({
+        level: 'silent',
+        message: 'Error: ui.syncViewRoute() failed.',
+        error: e
+      })
+    }
+  }
+
+  /** Syncs the route of every view, or of every view of one type. */
+  async syncViewRoutes(filterByType?: View['type']) {
+    const views = filterByType ? this.views.filter((v) => v.type === filterByType) : this.views
+
+    await Promise.all(views.map((v) => this.syncViewRoute(v.id)))
   }
 
   toJSON() {

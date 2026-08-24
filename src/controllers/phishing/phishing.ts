@@ -1,5 +1,4 @@
 import { getDomain } from 'tldts'
-
 import { zeroAddress } from 'viem'
 
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -153,7 +152,6 @@ export const SUSPICIOUS_HOSTING_DOMAINS = [
   'mypinata.cloud',
   '4everland.app',
   'w3s.link',
-  'eth.limo',
   'eth.link'
 ]
 

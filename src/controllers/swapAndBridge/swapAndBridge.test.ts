@@ -2,6 +2,7 @@ import fetch from 'node-fetch'
 
 import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
 import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
+import { getTokenMarketDataKey } from '@/libs/swapAndBridge/tokenMarketData'
 import { expect, jest } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
@@ -313,6 +314,7 @@ const dappsControllerMock = {
 
 const swapAndBridgeController = new SwapAndBridgeController({
   callRelayer: async () => ({}),
+  fetch: fetch as any,
   selectedAccount: selectedAccountCtrl,
   networks: networksCtrl,
   accounts: accountsCtrl,
@@ -558,18 +560,20 @@ describe('SwapAndBridge Controller', () => {
     })
   })
   test('should update fromAmount', (done) => {
-    let emitCounter = 0
+    // Asserting on the status transitions instead of on a fixed number of emits, as
+    // the controller also emits for updates unrelated to the form (fetching the market
+    // data of the receive tokens, for instance).
+    let didPassThroughFetchingRoutes = false
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
-      emitCounter++
-      if (emitCounter === 4) {
-        expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
+      if (swapAndBridgeController.formStatus === 'fetching-routes')
+        didPassThroughFetchingRoutes = true
+
+      if (swapAndBridgeController.formStatus === 'ready-to-estimate') {
+        expect(didPassThroughFetchingRoutes).toBe(true)
         expect(swapAndBridgeController.quote).not.toBeNull()
         expect(swapAndBridgeController.fromAmount).toBe('0.8')
         unsubscribe()
         done()
-      }
-      if (emitCounter === 2) {
-        expect(swapAndBridgeController.formStatus).toEqual('fetching-routes')
       }
     })
     swapAndBridgeController.updateForm({ fromAmount: '0.8' })
@@ -959,5 +963,180 @@ describe('SwapAndBridge Controller', () => {
   })
   test('should toJSON()', () => {
     expect(swapAndBridgeController.toJSON()).toBeDefined()
+  })
+})
+
+describe('SwapAndBridge Controller: to token market data', () => {
+  // Longer than the batcher debounce, so that the fire-and-forget fetch has settled
+  const waitForMarketData = () => wait(400)
+
+  const MARKET_DATA_RESPONSE = {
+    usd: 1.0001,
+    usd_24h_change: -2.5,
+    usd_market_cap: 1200000000,
+    usd_24h_vol: 500000,
+    exchanges: ['binance', 'uniswap']
+  }
+
+  let marketDataFetch: jest.Mock<any>
+  let ctrl: SwapAndBridgeController
+
+  const buildController = (fetchMock: any) =>
+    new SwapAndBridgeController({
+      callRelayer: async () => ({}),
+      fetch: fetchMock,
+      selectedAccount: selectedAccountCtrl,
+      networks: networksCtrl,
+      accounts: accountsCtrl,
+      activity: activityCtrl,
+      storage: storageCtrl,
+      signAccountOpPreference,
+      featureFlags: featureFlagsCtrl,
+      swapProvider: socketAPIMock as any,
+      keystore,
+      portfolio: portfolioCtrl,
+      providers: providersCtrl,
+      phishing: phishingCtrl,
+      dapps: dappsControllerMock,
+      externalSignerControllers: {},
+      relayerUrl,
+      getUserRequests: () => [],
+      getVisibleUserRequests: () => [],
+      onBroadcastSuccess: () => Promise.resolve(),
+      onBroadcastFailed: () => {},
+      ui: uiCtrl
+    })
+
+  const initFormAndTokenList = async () => {
+    await ctrl.initForm('market-data-session')
+    await ctrl.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+    await waitForMarketData()
+  }
+
+  beforeEach(async () => {
+    marketDataFetch = jest.fn(async () => ({
+      status: 200,
+      json: async () => ({
+        // Our price API keys the response by lowercased contract address
+        '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58': MARKET_DATA_RESPONSE
+      })
+    })) as any
+
+    ctrl = buildController(marketDataFetch)
+    await selectedAccountCtrl.initialLoadPromise
+    await selectedAccountCtrl.setAccount(accounts[0]!)
+  })
+
+  afterEach(() => {
+    ctrl.unloadScreen('market-data-session')
+    jest.restoreAllMocks()
+  })
+
+  test('exposes the market data of a token our price API knows about', async () => {
+    await initFormAndTokenList()
+
+    const usdt = ctrl.toTokenShortList.find((t) => t.symbol === 'USDT')
+    expect(usdt).toBeDefined()
+
+    const marketData = ctrl.toTokenMarketData[getTokenMarketDataKey(usdt!.chainId, usdt!.address)]
+
+    expect(marketData).toEqual({
+      status: 'DONE',
+      exchanges: ['binance', 'uniswap']
+    })
+  })
+
+  test('marks the tokens missing from the response as not found', async () => {
+    await initFormAndTokenList()
+
+    const notInResponse = ctrl.toTokenShortList.find((t) => t.symbol !== 'USDT')
+    expect(notInResponse).toBeDefined()
+
+    expect(
+      ctrl.toTokenMarketData[getTokenMarketDataKey(notInResponse!.chainId, notInResponse!.address)]
+    ).toEqual({ status: 'NOT_FOUND' })
+  })
+
+  test('does not request the market data of a token that already has fresh data', async () => {
+    await initFormAndTokenList()
+    const callsAfterFirstFetch = marketDataFetch.mock.calls.length
+    expect(callsAfterFirstFetch).toBeGreaterThan(0)
+
+    await ctrl.searchToToken('USDT')
+    await waitForMarketData()
+
+    expect(marketDataFetch.mock.calls.length).toEqual(callsAfterFirstFetch)
+  })
+
+  test('hides the market data that went stale and requests it again', async () => {
+    await initFormAndTokenList()
+    const callsAfterFirstFetch = marketDataFetch.mock.calls.length
+
+    const usdt = ctrl.toTokenShortList.find((t) => t.symbol === 'USDT')!
+    const usdtKey = getTokenMarketDataKey(usdt.chainId, usdt.address)
+
+    // 11 minutes later, past the 10 minute threshold of a successfully fetched record
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 1000 * 60 * 11)
+
+    expect(ctrl.toTokenMarketData[usdtKey]).toEqual({ status: 'LOADING' })
+
+    await ctrl.searchToToken('USDT')
+    nowSpy.mockRestore()
+    await waitForMarketData()
+
+    expect(marketDataFetch.mock.calls.length).toBeGreaterThan(callsAfterFirstFetch)
+    expect(ctrl.toTokenMarketData[usdtKey]?.status).toEqual('DONE')
+  })
+
+  test('marks the tokens as failed when the request fails, without throwing', async () => {
+    const { restore } = suppressConsole()
+    ctrl = buildController(jest.fn(async () => ({ status: 500, json: async () => ({}) })) as any)
+
+    await initFormAndTokenList()
+
+    const usdt = ctrl.toTokenShortList.find((t) => t.symbol === 'USDT')!
+
+    expect(ctrl.toTokenMarketData[getTokenMarketDataKey(usdt.chainId, usdt.address)]).toEqual({
+      status: 'FAIL'
+    })
+    restore()
+  })
+
+  test('reports the tokens it has not fetched yet as loading', async () => {
+    await ctrl.initForm('market-data-session')
+    await ctrl.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+
+    const statuses = Object.values(ctrl.toTokenMarketData).map(({ status }) => status)
+
+    expect(statuses.length).toBeGreaterThan(0)
+    expect(statuses.every((status) => status === 'LOADING')).toBe(true)
+
+    await waitForMarketData()
+  })
+
+  describe('when the user has opted out', () => {
+    beforeEach(async () => {
+      await featureFlagsCtrl.setFeatureFlag('swapAndBridgeTokenInfo', false)
+    })
+
+    afterEach(async () => {
+      await featureFlagsCtrl.setFeatureFlag('swapAndBridgeTokenInfo', true)
+    })
+
+    test('sends no token addresses to the price API', async () => {
+      await initFormAndTokenList()
+
+      expect(marketDataFetch).not.toHaveBeenCalled()
+    })
+
+    test('keeps the data fetched before the opt out out of the UI state', async () => {
+      await featureFlagsCtrl.setFeatureFlag('swapAndBridgeTokenInfo', true)
+      await initFormAndTokenList()
+      expect(Object.keys(ctrl.toTokenMarketData).length).toBeGreaterThan(0)
+
+      await featureFlagsCtrl.setFeatureFlag('swapAndBridgeTokenInfo', false)
+
+      expect(ctrl.toTokenMarketData).toEqual({})
+    })
   })
 })

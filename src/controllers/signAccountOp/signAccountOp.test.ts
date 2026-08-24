@@ -5,6 +5,7 @@ import {
   getAddress,
   hexlify,
   Interface,
+  MaxUint256,
   parseEther,
   toBeHex,
   verifyMessage
@@ -48,6 +49,8 @@ import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { clearErc7730RegistryCache } from '../../libs/humanizer'
+import { HumanizerWarning } from '../../libs/humanizer/interfaces'
+import { UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
 import { AccountState } from '../../libs/portfolio/interfaces'
@@ -3680,5 +3683,109 @@ describe('external signer PIN sessions', () => {
 
     expect(nfc.beginPinSession).toHaveBeenCalledTimes(2)
     expect(nfc.endPinSession).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('unlimited approval warnings', () => {
+  const usdt = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+  const spender = '0x46705dfff24256421a05d056c29e81bdc09723b8'
+  const approveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
+
+  // no ERC-7730 registry is reachable here, so every approval falls back to the built-in
+  // descriptor - the path a real approval takes as well
+  const failingErc7730Relayer = jest.fn(async (path: string) => {
+    throw new Error(`No ERC-7730 registry in this test: ${path}`)
+  })
+
+  const approveCall = (amount: bigint, dapp?: Dapp) => ({
+    to: usdt,
+    value: 0n,
+    data: approveInterface.encodeFunctionData('approve', [spender, amount]),
+    ...(dapp ? { dapp: getDappRequestData(dapp) } : {})
+  })
+
+  const humanizeApproval = async (amount: bigint, dapp: Dapp, includeDappOnCall = true) => {
+    const { controller } = await initDappVerificationBannerTest(dapp, {
+      calls: [approveCall(amount, includeDappOnCall ? dapp : undefined)] as AccountOp['calls'],
+      callRelayer: failingErc7730Relayer as any
+    })
+    await wait(0)
+
+    return controller
+  }
+
+  const hasUnlimitedApprovalWarning = (controller: SignAccountOpTesterController) =>
+    !!controller.humanization[0]?.warnings?.some(
+      (warning: HumanizerWarning) => warning.code === UNLIMITED_APPROVAL_WARNING_CODE
+    )
+
+  test('warns on a maximum approval requested by an app outside the catalog', async () => {
+    const controller = await humanizeApproval(MaxUint256, customDapp)
+
+    expect(hasUnlimitedApprovalWarning(controller)).toBe(true)
+  })
+
+  test('stays quiet on a maximum approval requested by an app in the catalog', async () => {
+    const controller = await humanizeApproval(MaxUint256, verifiedDapp)
+
+    expect(hasUnlimitedApprovalWarning(controller)).toBe(false)
+  })
+
+  test('warns on a maximum approval when the call carries no app', async () => {
+    const controller = await humanizeApproval(MaxUint256, verifiedDapp, false)
+
+    expect(hasUnlimitedApprovalWarning(controller)).toBe(true)
+  })
+
+  test('stays quiet on a finite approval, whatever the app', async () => {
+    const controller = await humanizeApproval(1000000n, customDapp)
+
+    expect(hasUnlimitedApprovalWarning(controller)).toBe(false)
+  })
+
+  // reading the same humanization twice must give the same array, or the calls on screen would
+  // lose their identity on every render while a new humanization is running
+  test('returns the same humanization when nothing is suppressed', async () => {
+    const controller = await humanizeApproval(MaxUint256, customDapp)
+
+    expect(controller.humanization).toBe(controller.humanization)
+  })
+
+  // the catalog is fetched, so it can arrive after the calls were already humanized
+  test('drops the warning once the app turns out to be in the catalog, without humanizing again', async () => {
+    const catalogSpy = jest
+      .spyOn(DappsController.prototype, 'isDappInDefaultCatalog')
+      .mockReturnValue(false)
+
+    try {
+      const controller = await humanizeApproval(MaxUint256, customDapp)
+      expect(hasUnlimitedApprovalWarning(controller)).toBe(true)
+
+      const humanizationIdBefore = controller.humanizationId
+      catalogSpy.mockReturnValue(true)
+
+      expect(hasUnlimitedApprovalWarning(controller)).toBe(false)
+      // the same humanization is still in place - only the reading of it changed
+      expect(controller.humanizationId).toBe(humanizationIdBefore)
+    } finally {
+      catalogSpy.mockRestore()
+    }
+  })
+
+  test('brings the warning back when the app leaves the catalog', async () => {
+    const catalogSpy = jest
+      .spyOn(DappsController.prototype, 'isDappInDefaultCatalog')
+      .mockReturnValue(true)
+
+    try {
+      const controller = await humanizeApproval(MaxUint256, customDapp)
+      expect(hasUnlimitedApprovalWarning(controller)).toBe(false)
+
+      catalogSpy.mockReturnValue(false)
+
+      expect(hasUnlimitedApprovalWarning(controller)).toBe(true)
+    } finally {
+      catalogSpy.mockRestore()
+    }
   })
 })

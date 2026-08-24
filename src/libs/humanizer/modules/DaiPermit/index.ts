@@ -10,7 +10,9 @@ import {
   getLabel,
   getOnBehalfOf,
   getToken,
-  isHexCall
+  getUnlimitedApprovalWarning,
+  isHexCall,
+  mergeWarnings
 } from '../../utils'
 
 // DAI predates EIP-2612, so its permit has no `value` param - only a boolean
@@ -38,8 +40,11 @@ const daiPermitModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
       ]
     }
 
+  // This permit has no amount field at all - `allowed` is the whole decision, and granting it
+  // always means an unlimited allowance. There is nothing to compare against a maximum.
   return {
     ...call,
+    warnings: mergeWarnings(call.warnings, [getUnlimitedApprovalWarning(spender)]),
     fullVisualization: [
       getAction('Grant approval'),
       getLabel('for'),

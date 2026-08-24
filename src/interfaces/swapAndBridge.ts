@@ -34,6 +34,21 @@ export interface SwapAndBridgeToToken {
   priceUSD?: string
 }
 
+/**
+ * LOADING also covers "not requested yet" and "the cached record went stale and is
+ * being refreshed" - in all three cases the UI has nothing to display yet.
+ */
+export type ToTokenMarketDataStatus = 'LOADING' | 'DONE' | 'NOT_FOUND' | 'FAIL'
+
+export interface ToTokenMarketData {
+  status: ToTokenMarketDataStatus
+  /** Ids of the exchanges the token is traded on. Only set on DONE. */
+  exchanges?: string[]
+}
+
+/** Keyed by `getTokenMarketDataKey(chainId, address)`. */
+export type ToTokenMarketDataByToken = { [key: string]: ToTokenMarketData }
+
 export interface SocketAPIQuote {
   fromAsset: SocketAPIToken
   fromChainId: number
