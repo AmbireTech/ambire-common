@@ -5,23 +5,17 @@ import {
 } from '../../interfaces/railgun'
 
 /**
- * Whether a note with this POI status can be spent.
- *
- * Mirrors the SDK's own rule in `SignerPool.drain`, which skips a note when
- * `poiStatus !== undefined && poiStatus !== 'Valid'` - so a missing status ('unknown' here,
- * which is what a POI-disabled provider reports) counts as spendable, and everything else
- * does not.
+ * Mirrors the SDK's rule in `SignerPool.drain`: a note is skipped when
+ * `poiStatus !== undefined && poiStatus !== 'Valid'`, so a missing status ('unknown' here, what a
+ * POI-disabled provider reports) counts as spendable and everything else does not.
  */
-export const isSpendablePoiStatus = (poiStatus: RailgunPoiStatus) =>
+const isSpendablePoiStatus = (poiStatus: RailgunPoiStatus) =>
   poiStatus === 'Valid' || poiStatus === 'unknown'
 
 /**
- * Collapses the SDK's per-(token, POI status) balance entries into one entry per token, split
- * by what the user can actually do with it.
- *
- * This split is not cosmetic: showing a single summed balance is what makes a freshly shielded
- * (and therefore still 'Missing') amount look spendable, so the user picks it, submits, and
- * gets `Insufficient balance` straight out of the SDK's note selection.
+ * Collapses the SDK's per-(token, POI status) entries into one per token, split by what the user
+ * can actually do with it. The split is not cosmetic: a single summed balance makes a freshly
+ * shielded (still 'Missing') amount look spendable, and the SDK's note selection then refuses it.
  */
 export const getRailgunTokenBalances = (
   balances: RailgunShieldedBalance[]

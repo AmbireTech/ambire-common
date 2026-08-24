@@ -5,7 +5,12 @@ module.exports = {
   testTimeout: 25000,
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
-    '^@test/(.*)$': '<rootDir>/test/$1'
+    '^@test/(.*)$': '<rootDir>/test/$1',
+    // The Railgun SDK ships as ESM around a WASM entry point that Jest's transform cannot load, and
+    // importing MainController pulls it in. Nothing under test reaches into it, so it is stubbed
+    // here rather than in each test - without this, every suite that loads MainController fails at
+    // import time.
+    '^@kohaku-eth/(railgun|plugins|provider)$': '<rootDir>/test/kohakuStub.ts'
   },
   // For services/validate.ts https://stackoverflow.com/a/61785012/13840636
   transform: {

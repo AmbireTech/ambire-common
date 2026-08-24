@@ -5,14 +5,12 @@ import { Portfolio } from '../portfolio'
 import { TokenResult } from '../portfolio/interfaces'
 
 /**
- * Whose balances the metadata probe asks for. The deployless `getBalances` contract returns
- * symbol/decimals/name alongside a `balanceOf`, so it needs an address - but we only want the
- * metadata, and the balances come back as zeros and are discarded.
+ * Whose balances the metadata probe asks for. The deployless `getBalances` contract needs an
+ * address to return symbol/decimals alongside a `balanceOf`; the balances themselves are discarded.
  *
- * Deliberately a constant rather than the user's account. Unlike cena, the RPC provider is a third
- * party, and this request's token list is derived from decrypted shielded notes - so pairing it
- * with the account address would hand that party the one link the pool exists to hide. With a
- * fixed address the request is identical for every user and links to nobody.
+ * Deliberately a constant rather than the user's account: the token list here is derived from
+ * decrypted shielded notes, so pairing it with the account address would hand the RPC provider the
+ * one link the pool exists to hide.
  */
 const METADATA_PROBE_ADDRESS = ZeroAddress
 
@@ -32,18 +30,11 @@ const NO_TOKEN_ERROR = '0x'
  * Symbol/decimals for a chain's tokens as the public portfolio already knows them, in the shape
  * `resolveRailgunTokensData` accepts as already-resolved.
  *
- * Worth seeding because these are not an approximation of the contract read - they ARE the same
- * read: the public portfolio gets them from the same deployless `getBalances` call through the same
- * `mapToken`, symbol overrides included. So every token covered here is one the metadata
- * `eth_call` does not have to ask about, and when it covers all of them the call is skipped
- * entirely. It also means one less request whose token list is derived from decrypted notes.
- *
- * It does not cover everything, by design of the portfolio rather than of this: a token with a zero
- * public balance is filtered out of the portfolio (see `tokenFilter`), so a token that was shielded
- * in full still needs the contract read. A partially shielded one does not.
- *
- * Despite coming from the selected account, this is not account-specific data - it is used purely as
- * a source of contract truth, which is identical for every account.
+ * Not an approximation of the contract read - it IS the same read, through the same deployless
+ * `getBalances` and `mapToken`. Every token it covers is one the metadata `eth_call` can skip, and
+ * one less request whose token list is derived from decrypted notes. It cannot cover everything: a
+ * token with no public balance is filtered out of the portfolio, so a fully shielded one still
+ * needs the read.
  */
 export const getRailgunTokensDataFromPortfolio = (
   portfolioTokens: TokenResult[],
@@ -73,22 +64,15 @@ export const getRailgunTokensDataFromPortfolio = (
 }
 
 /**
- * Resolves what the UI needs to render a shielded balance - symbol, decimals and price - for the
- * tokens a Railgun pool holds. The pool reports raw contract addresses and raw amounts only, so
- * without this a balance has no label, no way to be formatted, and no value.
+ * Resolves symbol, decimals and price for the tokens a Railgun pool holds - without them a balance
+ * has no label, no way to be formatted and no value.
  *
- * Metadata comes from the portfolio's deployless `getBalances` contract, which returns
- * symbol/decimals for a whole list of tokens in a single `eth_call` - as opposed to a
- * `symbol()` + `decimals()` pair per token, which is what the same information costs over a plain
- * ERC20 contract.
+ * Metadata comes from the portfolio's deployless `getBalances`, which covers a whole list in one
+ * `eth_call`. `knownTokensData` is what the caller already resolved: symbol/decimals are immutable
+ * and never re-read, prices always are.
  *
- * `knownTokensData` is what the caller already resolved: symbol and decimals are immutable, so a
- * token that has been resolved once is never asked for again. Prices are re-fetched every time,
- * since that is the part that goes stale.
- *
- * Never rejects. A pool holds real, spendable money whose balances were just scanned
- * successfully; failing that because a price server was slow would be the wrong trade. Failures
- * are returned so the caller can log them.
+ * Never rejects - the balances it decorates are real money that has just been scanned successfully,
+ * and a slow price server must not undo that. Failures come back for the caller to log.
  */
 export const resolveRailgunTokensData = async ({
   addresses,

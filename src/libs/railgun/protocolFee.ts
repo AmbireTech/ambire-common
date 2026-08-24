@@ -16,12 +16,9 @@
 const RAILGUN_FEE_BPS_DENOMINATOR = 10_000n
 
 /**
- * The rate both fees have been at since Railgun launched, and what the SDK's own chain config
- * assumes too.
- *
- * Not read from the contract: `shieldFee()` / `unshieldFee()` are public getters and governance can
- * change them (up to a 50% cap), so if that ever happens this constant is the one place to correct -
- * and reading it per chain would put an RPC call between the user and a figure that has never moved.
+ * The rate both fees have been at since Railgun launched. Not read from the contract: governance can
+ * change `shieldFee()`/`unshieldFee()` (up to a 50% cap), but reading them per chain would put an
+ * RPC call between the user and a figure that has never moved - so this is the one place to correct.
  */
 export const RAILGUN_FEE_BPS = 25
 
@@ -48,9 +45,8 @@ const normalizeFeeBps = (feeBps: number): bigint => {
 }
 
 /**
- * The treasury's cut of a shield, i.e. the difference between what leaves the public account and
- * what the pool credits. Floors, exactly like the contract - which is why a dust-sized shield can
- * genuinely pay nothing.
+ * The treasury's cut of a shield - the difference between what leaves the account and what the pool
+ * credits. Floors like the contract, so a dust-sized shield can genuinely pay nothing.
  */
 export const getRailgunShieldFee = (amount: bigint, feeBps: number): bigint => {
   if (amount <= 0n) return 0n
@@ -66,14 +62,10 @@ export const getRailgunShieldedAmountAfterFee = (amount: bigint, feeBps: number)
 }
 
 /**
- * The three amounts an unshield of `requestedAmount` involves.
- *
- * The SDK grosses the amount up before building the operation (`prepareUnshieldMulti`:
- * `amount * 10000 / (10000 - unshieldFeeBps)`) so that what the contract pays out after its
- * inclusive fee is what the user asked for. Hence:
- * - `spentAmount` leaves the shielded balance
- * - `feeAmount` goes to Railgun's treasury
- * - `recipientAmount` arrives, and is `requestedAmount` up to the contract's own flooring
+ * The three amounts an unshield of `requestedAmount` involves. The SDK grosses the amount up first
+ * (`amount * 10000 / (10000 - unshieldFeeBps)`) so the contract's inclusive fee still leaves the
+ * recipient with what was asked for: `spentAmount` leaves the shielded balance, `feeAmount` goes to
+ * the treasury, `recipientAmount` arrives (up to the contract's own flooring).
  */
 export const getRailgunUnshieldAmounts = (
   requestedAmount: bigint,

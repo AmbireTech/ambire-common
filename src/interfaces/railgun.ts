@@ -7,43 +7,29 @@ export type IRailgunController = ControllerInterface<
 >
 
 /**
- * 'queued' exists because scans cannot overlap: the WASM module is single-threaded and every plugin
- * method takes `&mut self`, so a run over several chains is strictly sequential. Saying so is better
- * than showing two spinners of which only one is moving.
+ * 'queued' exists because scans cannot overlap - the WASM module is single-threaded, so a run over
+ * several chains is strictly sequential and a waiting chain has to say so.
  */
 export type RailgunSyncStatus = 'idle' | 'initializing' | 'queued' | 'syncing' | 'ready'
 
 /**
- * Why Railgun can't be used right now, so the UI can explain it instead of just disabling
- * the button:
- * - 'locked' - the keystore is locked, so the Railgun keys can't be derived
- * - 'no-seed' - the selected account has no internal key derived from a stored recovery
- *   phrase (hardware wallet, private-key import or view-only account). Railgun's identity is
- *   derived from the seed, so there is nothing to derive from
- * - 'unsupported-network' - none of the Railgun-capable chains is in the user's network list
- *   (or its RPC provider is missing)
+ * Why Railgun can't be used right now, so the UI can explain it rather than just disable the button:
+ * - 'locked' - the keystore is locked, so the keys can't be derived
+ * - 'no-seed' - the account has no key from a stored recovery phrase (hardware, private key,
+ *   view-only), and the Railgun identity is derived from that phrase
+ * - 'unsupported-network' - no Railgun-capable chain is in the user's network list
  */
 export type RailgunUnavailableReason = 'locked' | 'no-seed' | 'unsupported-network'
 
 /**
- * Spendability of a note according to the POI (Proof of Innocence) aggregator, mirroring the
- * SDK's `PoiStatus`:
- * - 'Valid' - proven innocent, spendable
- * - 'ProofSubmitted' - the wallet submitted a POI proof, waiting for the aggregator
- * - 'Missing' - no POI yet. Freshly shielded notes start here and stay for Railgun's ~1h
- *   Unshield-Only Standby Period
- * - 'ShieldBlocked' - the shield was flagged by the list provider
- * - 'unknown' - the SDK returned no status (only happens with POI disabled)
- *
- * This matters beyond display: the SDK's `SignerPool.drain` refuses to spend any note that
- * isn't 'Valid', for private transfers AND unshields alike.
+ * Spendability of a note per the POI (Proof of Innocence) aggregator, mirroring the SDK's
+ * `PoiStatus`. Only 'Valid' notes can be spent - `SignerPool.drain` refuses the rest, for unshields
+ * as much as for private transfers. 'Missing' is where a freshly shielded note sits for Railgun's
+ * ~1h standby period; 'unknown' means the SDK reported no status (POI disabled).
  */
 export type RailgunPoiStatus = 'Valid' | 'ProofSubmitted' | 'Missing' | 'ShieldBlocked' | 'unknown'
 
-/**
- * One shielded balance entry as the SDK reports it: amounts are grouped per
- * (token, POI status) pair, so the same token can appear more than once.
- */
+/** One shielded balance as the SDK reports it - grouped per (token, POI status) pair. */
 export type RailgunShieldedBalance = {
   tokenAddress: string
   amount: bigint
@@ -51,8 +37,8 @@ export type RailgunShieldedBalance = {
 }
 
 /**
- * The same balances collapsed to one entry per token, split by what the user can actually do
- * with them. `spendable` is the only part unshield/private-transfer can use.
+ * The same balances collapsed to one entry per token, split by what the user can actually do with
+ * them. Only `spendableAmount` can be unshielded or transferred.
  */
 export type RailgunTokenBalance = {
   tokenAddress: string
@@ -63,17 +49,12 @@ export type RailgunTokenBalance = {
 }
 
 /**
- * What the UI needs in order to render a shielded balance, resolved separately because the pool
- * reports raw contract addresses and raw amounts and nothing else. Deliberately the same three
- * pieces the dashboard uses for a public token, so a shielded row can be rendered the same way.
+ * What the UI needs to render a shielded balance - the pool reports raw addresses and amounts only.
  *
- * An entry exists only when `symbol`/`decimals` were actually read from the contract - never with
- * assumed values, since `decimals` is what user-entered amounts are parsed with. A missing entry
- * therefore means "unresolved", and the forms refuse to act on such a token.
- *
- * `priceIn` may be empty while the entry exists: the token's market simply isn't known (always
- * the case on testnets, which have no CoinGecko platform). That is a balance shown without a
- * value, not an unresolved token.
+ * An entry exists only when `symbol`/`decimals` were actually read, never assumed: `decimals` is
+ * what user-entered amounts are parsed with, so a missing entry means "unresolved" and the forms
+ * refuse to act on the token. `priceIn` may still be empty - that is a balance without a value
+ * (always the case on testnets), not an unresolved token.
  */
 export type RailgunTokenData = {
   address: string
@@ -84,50 +65,43 @@ export type RailgunTokenData = {
 
 export type RailgunChainState = {
   chainId: string
-  // Note there is no address here: the 0zk address is wallet-wide, not per-chain - see
-  // RailgunController.railgunAddress.
-  // The chain's wrapped native token (WETH on Ethereum/Sepolia). Exposed so the UI can label
-  // the corresponding shielded balance and the native shield/unshield flows without
-  // hardcoding a possibly-stale address.
+  /**
+   * The chain's wrapped native token (WETH), so the UI can label the matching shielded balance and
+   * the native flows without hardcoding a possibly-stale address. There is no 0zk address here -
+   * that one is wallet-wide, see `RailgunController.railgunAddress`.
+   */
   wrappedBaseTokenAddress: Hex | null
   syncStatus: RailgunSyncStatus
   /**
-   * Whether the current identity's own entry is on the device, i.e. whether its notes have been
-   * decrypted here before. This is what decides whether a run is the one-time initialization or a
-   * seconds-long catch-up - reading it off `lastSyncedAt` instead is what previously applied the
-   * short timeout to a first run and put the chain in a permanent retry loop.
+   * Whether this identity's own notes have been decrypted on this device before, which is what
+   * tells the one-time initialization apart from a seconds-long catch-up. Read from what is
+   * persisted, not from `lastSyncedAt` - a further identity on an already-scanned chain still faces
+   * the full walk.
    */
   hasIdentityData: boolean
-  // Lets the UI tell "never synced" (show placeholders) apart from "syncing again" (keep what
-  // is on screen), so a refresh doesn't swap content in and out.
+  // Tells "never synced" (show placeholders) apart from "syncing again" (keep what is on screen)
   lastSyncedAt: number | null
   /**
-   * When the sync currently in flight started, or null when none is. Exists because the SDK
-   * reports no progress at all - `RailgunProvider.sync()` returns void, emits nothing, and its
-   * only narration goes to the console (see the RailgunSyncTelemetry experiment). With no
-   * numerator to show, elapsed time is what tells a slow sync from a hung one, and a first sync
-   * on Ethereum measured ~11 minutes - long enough that a bare spinner reads as broken.
+   * When the sync in flight started, or null when none is. The SDK reports no progress at all, so
+   * elapsed time is the only thing that tells a slow sync from a hung one.
    */
   syncStartedAt: number | null
   balances: RailgunShieldedBalance[]
   /**
-   * Why this chain is unusable right now, or null when it is fine. Per-chain rather than one
-   * controller-wide error because every supported chain is initialized and synced now: a single
-   * dead RPC (or a chain whose cold sync timed out) must not present itself as "Railgun is
-   * broken" while the other chain's shielded balances are on screen and spendable.
+   * Why this chain is unusable, or null when it is fine. Per chain rather than controller-wide: one
+   * dead RPC must not present itself as "Railgun is broken" while the other chain's balances are on
+   * screen and spendable.
    */
   error: string | null
 }
 
 /**
  * What broadcasting an unshield or a private transfer is expected to cost, in the chain's wrapped
- * base token (WETH) - the only asset the SDK will pay the relayer with, so this fee always comes out
- * of the user's shielded WETH and never out of the asset being sent.
+ * base token (WETH) - the only asset the SDK pays the relayer with, so it never comes out of the
+ * asset being sent.
  *
- * An estimate by nature: the fee is gas x gas price, the gas is only known once the proof exists,
- * and the price is whatever it is minutes later when the operation actually goes out. `maxAmount`
- * carries the headroom the shielded WETH balance is checked against, so an operation isn't started
- * with a balance that only just covers the middle of the range.
+ * An estimate by nature: the gas is only known once the proof exists. `maxAmount` carries the
+ * headroom the shielded WETH balance is checked against.
  */
 export type RailgunNetworkFeeEstimate = {
   amount: bigint
@@ -139,20 +113,15 @@ export type RailgunNetworkFeeEstimate = {
 }
 
 /**
- * How far along a private operation is. There is no percentage to be had - the SDK reports nothing
- * while it works - so these are the points the controller can actually observe:
- * - 'preparing' - picking which shielded notes to spend. Seconds
- * - 'proving' - building the proof and sending it. Minutes, and the bulk of the wait
- * - 'finalizing' - refreshing the shielded balance, which is also what confirms the result
+ * How far along a private operation is. No percentage to be had - the SDK reports nothing while it
+ * works - so these are the points the controller can observe: picking notes (seconds), proving and
+ * sending (minutes, the bulk of the wait), then refreshing the balance that confirms the result.
  */
 export type RailgunPrivateOperationPhase = 'preparing' | 'proving' | 'finalizing'
 
 /**
- * The private operation on screen: the one in flight, or the last one until the user dismisses it,
- * so its result can be shown rather than toasted away.
- *
- * Shields are absent on purpose - they are signed and broadcast through the regular transaction
- * flow, which has its own progress UI.
+ * The private operation on screen: the one in flight, or the last one until the user dismisses it.
+ * Shields are absent - they go through the regular transaction flow, which has its own progress UI.
  */
 export type RailgunPrivateOperation = {
   // The id of the matching activity entry, so the two can never drift apart
@@ -173,18 +142,17 @@ export type RailgunPrivateOperation = {
 export type RailgunActivityType = 'shield' | 'unshield' | 'transfer'
 
 /**
- * A Railgun operation started from this wallet. Railgun's own pool exposes no transaction
- * history (`notes()` returns unspent notes only, with no timestamp or txn id, and change notes
- * are indistinguishable from received ones), so activity is recorded locally as operations are
- * performed instead of being derived from chain state.
+ * A Railgun operation started from this wallet. Recorded locally as operations are performed,
+ * because the pool exposes no transaction history: `notes()` returns unspent notes only, with no
+ * timestamp or txn id, and change notes are indistinguishable from received ones.
  */
 export type RailgunActivityEntry = {
   id: string
   chainId: string
   type: RailgunActivityType
   tokenAddress: string
-  // Native shields/unshields move the wrapped base token in the pool - kept so the UI can
-  // label the entry with the asset the user picked, not the wrapped one.
+  // Native shields move the wrapped base token in the pool - kept so the entry can be labelled with
+  // the asset the user picked, not the wrapped one
   isNative: boolean
   amount: bigint
   // Public 0x address for unshields, 0zk address for private transfers, null for shields
@@ -193,23 +161,19 @@ export type RailgunActivityEntry = {
   createdAt: number
   /**
    * When the shield's transaction was signed and sent, for shields only. Absent until then, which
-   * is what tells "still waiting for a signature" apart from "on its way" - a shield leaves this
-   * controller as plain calls (see `buildShieldCalls`), so without this the two look identical.
+   * is what tells "waiting for a signature" apart from "on its way".
    */
   broadcastedAt?: number
   // Set when `status` is 'failed', to surface why without digging through logs
   error?: string
-  /**
-   * What Railgun's treasury took for this operation, in the token the entry is about. Recorded
-   * rather than recomputed, so the log stays accurate if the rate ever changes.
-   */
+  // What Railgun's treasury took, recorded rather than recomputed so the log survives a rate change
   protocolFee?: bigint
 }
 
 /**
- * 'pending' means "not observed as complete yet". Unshields/transfers resolve from their own
- * broadcast result; a shield is broadcast by the regular sign & broadcast flow, so it resolves from
- * what that flow's transaction did - see `RailgunController.handleShieldAccountOpStatusUpdate`, and
- * `#resolvePendingShields` for the balance-based fallback when that transaction is never seen.
+ * 'pending' means "not observed as complete yet". Unshields and transfers resolve from their own
+ * broadcast result; a shield resolves from the transaction that carries it - see
+ * `RailgunController.handleShieldAccountOpStatusUpdate`, with `#resolvePendingShields` as the
+ * balance-based fallback when that transaction is never seen.
  */
 export type RailgunActivityStatus = 'pending' | 'success' | 'failed'

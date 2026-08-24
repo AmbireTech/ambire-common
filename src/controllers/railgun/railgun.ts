@@ -18,13 +18,7 @@ import type {
   Keystore as RailgunHostKeystore
 } from '@kohaku-eth/plugins'
 import type { EthereumProvider } from '@kohaku-eth/provider'
-import type {
-  Eip1193Provider,
-  LogLevel,
-  RailgunAddress,
-  RailgunPlugin,
-  RawLog
-} from '@kohaku-eth/railgun'
+import type { Eip1193Provider, RailgunAddress, RailgunPlugin, RawLog } from '@kohaku-eth/railgun'
 
 import EmittableError from '../../classes/EmittableError'
 import {
@@ -67,18 +61,10 @@ import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /**
- * Blocks per `eth_getLogs` for the SDK's RPC-based UTXO syncer (its own default is 10). Chain
- * dependent, because the two chains fail in opposite directions - see the rationale at the
- * `createRailgunPlugin` call site.
- *
- * On Sepolia the window has to be wide: Railgun transacts there are days apart, so the RPC
- * syncer is always handed a tail of thousands of blocks, and the whole contract has only a few
- * thousand logs in total - nowhere near a provider's response cap.
- *
- * On Ethereum the opposite holds. Transacts are frequent, so the Subsquid indexer's head is
- * close to the chain's and the tail the RPC syncer has to cover is short - while a 10k-block
- * window over a busy Railgun Smart Wallet can exceed a provider's log cap (Alchemy returns at
- * most 10k logs per response) and fail the whole scan.
+ * Blocks per `eth_getLogs` for the SDK's RPC-based UTXO syncer (its default of 10 is far too small).
+ * Chain dependent because the two fail in opposite directions: on Sepolia the tail to cover is
+ * thousands of blocks but the logs are few, so the window must be wide; on Ethereum the tail is
+ * short but busy, and a 10k-block window can exceed a provider's 10k-log response cap.
  */
 const RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS: { [chainId: string]: number } = {
   '1': 2_000,
@@ -90,80 +76,53 @@ const DEFAULT_RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS = 2_000
 const MAX_ACTIVITY_ENTRIES = 20
 
 /**
- * The outcomes of a shield's transaction that mean the funds will never arrive, so its activity
- * entry can stop waiting for them - see `handleShieldAccountOpStatusUpdate`.
- *
- * 'broadcast-but-stuck' and 'partially-complete' are deliberately absent: the first can still be
- * mined, and the second says some call in the batch went through without saying which - so both are
- * left to the balance to answer (see `#resolvePendingShields`).
+ * The outcomes of a shield's transaction that mean the funds will never arrive. 'broadcast-but-stuck'
+ * and 'partially-complete' are deliberately absent - the first can still be mined, the second does
+ * not say which call in the batch went through - so both are left to `#resolvePendingShields`.
  */
 const FAILED_SHIELD_ACCOUNT_OP_STATUSES: (AccountOpStatus | undefined)[] = [
   AccountOpStatus.Failure,
   AccountOpStatus.Rejected,
   AccountOpStatus.UnknownButPastNonce
 ]
-// Catching an identity up on a chain it has state for only covers the tail - measured at ~6s on
-// Ethereum. The budget is generous against that, but bounded, because a wedged sync would otherwise
-// lock the user out of the whole screen: `withStatus` refuses to start an action while another is
-// LOADING, including the refresh that would recover it.
+// Catching an identity up on a chain it already has state for only covers the tail (~6s on
+// Ethereum). Bounded anyway, because a wedged sync locks the user out of the whole screen -
+// `withStatus` refuses to start any action, including the refresh that would recover it.
 const RAILGUN_CATCH_UP_TIMEOUT_IN_MS = 3 * 60 * 1000
-// An identity's *first* scan of a chain is a different animal: it walks the pool's whole history and
-// runs Groth16 in WASM for the notes it finds. The budget is the same figure the UI states as the
-// upper bound, so we cannot give up before our own promise expires - see
-// RAILGUN_INITIAL_SYNC_MAX_MINUTES for the measurements behind it. The distinction that matters is
-// first scan versus catch-up, and getting it from `lastSyncedAt` instead of from what is actually
-// persisted is what used to apply the 3-minute budget to a 6-minute walk, timing it out on every
-// attempt.
+// A first scan walks the pool's whole history and proves in WASM, so it gets the figure the UI
+// states as its upper bound - we cannot give up before our own promise expires.
 const RAILGUN_FIRST_SCAN_TIMEOUT_IN_MS = RAILGUN_INITIAL_SYNC_MAX_MINUTES * 60 * 1000
-// Owned by this module and handed to `withTimeout` as its rejection message, so a soft timeout
-// can be told apart from an error raised by the scan itself - see #syncChain.
+// Owned by this module and handed to `withTimeout`, so a soft timeout can be told apart from an
+// error raised by the scan itself - see #syncChain.
 const RAILGUN_SYNC_TIMEOUT_MESSAGE =
   'Syncing your shielded balances took too long. Please try again.'
-// Owned by this module, like the timeout message above, so an operation abandoned because the
-// selected identity changed can be told apart from a real failure - it is nobody's error and must
-// not be reported as one. See #abortInFlightOperations.
+// Owned by this module too, so an operation abandoned because the selected identity changed can be
+// told apart from a real failure - it is nobody's error and must not be reported as one.
 const RAILGUN_ABORTED_MESSAGE = 'railgun: superseded by a newer identity'
-// The SDK writes its UTXO/POI state key-by-key during a sync, so a burst of writes is the norm.
-// Debouncing them into one blob write is what keeps a sync from rewriting the whole blob
-// hundreds of times (see RailgunHostStorageAdapter).
+// The SDK writes its UTXO/POI state key-by-key, so debouncing is what keeps a sync from rewriting
+// the whole blob hundreds of times - see RailgunHostStorageAdapter.
 const RAILGUN_STORAGE_WRITE_DEBOUNCE_IN_MS = 250
-// How many periodic refreshes may fail before the user is told. Below this the failure is only
-// debug-logged: the refresh runs on a timer, so reporting a transient RPC blip would toast (and
-// report to Sentry) on every tick. See `sync`.
+// How many periodic refreshes may fail before the user is told. The refresh runs on a timer, so
+// reporting a transient RPC blip would toast (and report to Sentry) on every tick.
 const MAX_QUIET_BACKGROUND_SYNC_FAILURES = 3
-// A background refresh this soon after the last successful sync is skipped. Enabling Railgun
-// syncs, and the update that emits starts the periodic refresh with `runImmediately`, so without
-// this the first thing that happens after a (potentially very long) mainnet cold sync is the
-// exact same sync again.
+// A background refresh this soon after the last successful sync is skipped. Enabling Railgun emits
+// an update that starts the periodic refresh with `runImmediately`, so without this the first thing
+// after a long cold sync is the exact same sync again.
 const MIN_BACKGROUND_SYNC_AGE_IN_MS = 60 * 1000
-/**
- * What one private operation's UserOperation costs in gas, all limits included (execution, account
- * verification, and the paymaster's own verification of the proof).
- *
- * A single conservative figure rather than a model: the real number is only produced once the proof
- * exists, and erring high here is the safe direction - the estimate is labelled as one, and an
- * operation that turns out cheaper is a pleasant surprise, while one that turns out dearer than
- * promised is not.
- *
- * TODO(calibration): replace with a measurement once a few real operations have been observed - the
- * broadcast debug log records every UserOperation's gas fields.
- */
+// Gas for one private operation's UserOperation, all limits included. A single conservative figure
+// rather than a model: the real number only exists once the proof does, and erring high is the safe
+// direction for a number labelled as an estimate.
 const PRIVATE_OPERATION_GAS_ESTIMATE = 1_800_000n
-// How much room on top of the estimate the shielded WETH balance is checked against, since the fee
-// is sized minutes later against a gas price that has moved by then.
+// Room on top of the estimate the shielded WETH balance is checked against, since the fee is sized
+// minutes later against a gas price that has moved by then.
 const NETWORK_FEE_HEADROOM_MULTIPLIER = 3n
 const NETWORK_FEE_HEADROOM_DIVISOR = 2n
 
 /**
- * The Privacy Paymaster fronts the gas for a private operation (which is why the disposable
- * broadcasting key needs no ETH), but it gets reimbursed inside the pool: `prepareUserOp` adds a
- * fee note transfer sized by iterating gas estimates. That note can only be denominated in the
- * wrapped base token - both the plugin (which passes `chain.wrappedBaseToken` as the fee token)
- * and the WASM ("Currently only the wrapped base token is supported for fee payment") enforce it.
- *
- * So both of these mean the same thing to the user: there isn't enough *spendable* shielded WETH
- * to pay the relay fee. The first is raised when no workable set of notes exists at all, the
- * second when the estimate won't settle (some WETH, but not enough of it).
+ * The Privacy Paymaster fronts the gas but is reimbursed inside the pool with a fee note that can
+ * only be denominated in the wrapped base token. Both of these therefore mean the same thing to the
+ * user - not enough *spendable* shielded WETH: the first when no workable set of notes exists at
+ * all, the second when the estimate won't settle.
  */
 const RELAY_FEE_ERRORS = [
   'Unable to construct valid note configuration for fee payment',
@@ -196,25 +155,9 @@ const isErc20Balance = (balance: AssetAmount): balance is AssetAmount<ERC20Asset
   balance.asset.__type === 'erc20'
 
 /**
- * Whether the SDK's tracing dispatcher has already been installed in this JS context.
- *
- * Module-level on purpose: it tracks a process-global resource, not per-controller state. The
- * SDK's `initLogging` treats 'Off' as a no-op but hands any other level to
- * `tracing_wasm::set_as_global_default_with_config`, which panics with "a global default trace
- * dispatcher has already been set" the second time round - and the SDK re-applies the level on
- * every `ensureInitialized` call while offering no way to ask whether it is already set. So a
- * real level is requested exactly once and every later init runs with 'Off'.
- *
- * The consequence is that the SDK's logging can be turned on for a context but not back off. It
- * resets with the context (a service worker restart), same as the WASM module itself.
- */
-let hasInstalledSdkLogger = false
-
-/**
- * `AssetAmount.tag` carries the SDK's `PoiStatus` as a loose string, so it is narrowed here
- * instead of being cast. An unrecognised (or absent) tag becomes 'unknown', which the balance
- * helpers treat as spendable - matching how the SDK's own note selection treats a missing
- * status.
+ * `AssetAmount.tag` carries the SDK's `PoiStatus` as a loose string, so it is narrowed rather than
+ * cast. An unrecognised tag becomes 'unknown', which the balance helpers treat as spendable -
+ * matching how the SDK's own note selection treats a missing status.
  */
 const toRailgunPoiStatus = (tag: string | undefined): RailgunPoiStatus => {
   if (tag === 'Valid' || tag === 'ProofSubmitted' || tag === 'Missing' || tag === 'ShieldBlocked')
@@ -224,31 +167,8 @@ const toRailgunPoiStatus = (tag: string | undefined): RailgunPoiStatus => {
 }
 
 /**
- * Ambire's StorageController is a fixed-schema key store, not the arbitrary key-value
- * store the Railgun SDK's Host.storage expects, so writes are folded into a single flat
- * `railgunPluginStorage` blob.
- *
- * One blob is enough for all chains: the SDK routes every write through its own
- * `DatabaseAdapter`, which prefixes each key with the chain id, so entries for different
- * chains never collide. That is also why a single adapter instance is shared by every chain's
- * Host.
- *
- * The blob is cached in memory and hydrated once. Re-reading it on every `set` (as this used to
- * do) meant one full read *and* one full write of the entire UTXO/POI state per key the SDK
- * touched - fine for a near-empty testnet pool, quadratic-feeling on a real one.
- *
- * `set` resolves as soon as the value is in the cache, and the blob write is debounced behind it.
- * This is load-bearing, not an optimisation: the Rust side awaits every `Database::set` in
- * sequence, so resolving only after the debounced write landed made each key the sync touched
- * cost the full debounce interval. A mainnet sync walks ~250k commitments, and the write count
- * scales with it - at a quarter of a second each that alone is longer than anyone will wait.
- * Read-after-write still holds, because `get` reads the same cache.
- */
-/**
- * Decodes what the SDK hex-encoded - key names for the measurement inventory above, and values for
- * `hasPendingPoi`, since the Rust side encodes both.
- * Falls back to the raw input if it isn't valid hex: a log line reads better with the raw string
- * than with nothing, and `hasPendingPoi` treats anything it cannot parse as "cannot tell".
+ * Decodes what the SDK hex-encoded. Falls back to the raw input if it isn't valid hex, which
+ * `hasPendingPoi` treats as "cannot tell".
  */
 const fromHexEncoded = (encoded: string) => {
   if (encoded.length % 2 !== 0) return encoded
@@ -273,8 +193,7 @@ const toHexKeyName = (name: string) =>
 
 /**
  * The SDK's POI state for one chain: `{ pending, pois }`, where `pending` holds one witness per
- * transaction whose outputs have no innocence proof yet (`PendingPoiEntry` in the SDK's
- * `poi/provider.rs`) and `pois` is a re-fetchable cache of statuses.
+ * transaction whose outputs have no innocence proof yet and `pois` is a re-fetchable cache.
  *
  * Singled out by name because it is the only entry the SDK cannot rebuild from chain state, which
  * makes it the exception on both paths that touch it - see `scopedTo` and `hasPendingPoi`.
@@ -296,6 +215,17 @@ const SUPPORTED_POI_STATE_SCHEMA_VERSION = 1
 const POI_STATE_READ_ERROR_MESSAGE =
   'A privacy pool check could not be completed. Your funds are not affected.'
 
+/**
+ * Satisfies the SDK's `Host.storage` on top of Ambire's fixed-schema StorageController, by folding
+ * every write into one flat `railgunPluginStorage` blob. One blob covers all chains, since the SDK
+ * prefixes each key with the chain id - which is why one instance serves every chain's Host.
+ *
+ * The blob is hydrated once and cached, and `set` resolves as soon as the value is in that cache,
+ * with the write debounced behind it. Load-bearing rather than an optimisation: the Rust side awaits
+ * every `Database::set` in sequence, so waiting for the debounced write would cost the full interval
+ * per key - and a mainnet sync touches them by the thousand. Read-after-write still holds, since
+ * `get` reads the same cache.
+ */
 export class RailgunHostStorageAdapter implements RailgunHostStorage {
   readonly _brand = 'Storage' as const
 
@@ -312,11 +242,9 @@ export class RailgunHostStorageAdapter implements RailgunHostStorage {
 
   #writeQueue: Promise<void> = Promise.resolve()
 
-  #skippedWriteCount = 0
-
-  // Since `set` no longer awaits persistence, a failed write has no caller left to throw at -
-  // hence the injected reporter. `message` is for the readers that report something other than a
-  // failed write, and falls back to the write wording when omitted.
+  // Since `set` does not await persistence, a failed write has no caller left to throw at - hence
+  // the injected reporter. `message` is for the readers that report something other than a failed
+  // write, and falls back to the write wording when omitted.
   constructor(storage: IStorageController, onError: (error: unknown, message?: string) => void) {
     this.#storage = storage
     this.#onError = onError
@@ -355,15 +283,10 @@ export class RailgunHostStorageAdapter implements RailgunHostStorage {
   async set(key: string, value: string): Promise<void> {
     const cache = await this.#hydrate()
 
-    // The SDK re-serializes and hands back every key on every sync, whether or not it changed: a
-    // catch-up with zero new commitments still returns all four 18 MB UTXO trees byte-for-byte
-    // identical. Comparing is memory bandwidth; persisting is a rewrite of the whole blob, so an
-    // unchanged value must never reach the write queue.
-    if (cache[key] === value) {
-      this.#skippedWriteCount += 1
-
-      return
-    }
+    // The SDK re-serializes and hands back every key on every sync, changed or not: a catch-up with
+    // zero new commitments still returns all four 18 MB UTXO trees byte-for-byte identical.
+    // Comparing is memory bandwidth; persisting rewrites the whole blob.
+    if (cache[key] === value) return
 
     cache[key] = value
 
@@ -371,11 +294,6 @@ export class RailgunHostStorageAdapter implements RailgunHostStorage {
     // persistence. Failures are reported rather than thrown, since there is nobody left to
     // throw at.
     this.#scheduleWrite().catch(this.#onError)
-  }
-
-  /** How many identical writes have been skipped, so the effect of the check above is measurable. */
-  get skippedWriteCount(): number {
-    return this.#skippedWriteCount
   }
 
   #scheduleWrite(): Promise<void> {
@@ -411,38 +329,13 @@ export class RailgunHostStorageAdapter implements RailgunHostStorage {
   }
 
   /**
-   * TEMPORARY, for the cold-sync measurement: what the persisted blob currently holds, with the
-   * SDK's hex-encoded key names decoded. Exists to establish which entries are shared per chain
-   * (the trees, which is where the megabytes are) and which are per identity (the decrypted-notes
-   * entry, keyed by the chain-scoped 0zk address), and how much a second identity therefore has to
-   * redo. Values are never read - only key names and byte lengths.
-   */
-  async inventory(): Promise<{ key: string; bytes: number }[]> {
-    const cache = await this.#hydrate()
-
-    return Object.entries(cache)
-      .map(([key, value]) => {
-        const separatorIndex = key.indexOf(':')
-        const chainId = key.slice(0, separatorIndex)
-        const encodedName = key.slice(separatorIndex + 1)
-
-        return { key: `${chainId}:${fromHexEncoded(encodedName)}`, bytes: value.length }
-      })
-      .sort((a, b) => b.bytes - a.bytes)
-  }
-
-  /**
-   * Whether this identity has already been initialized on this chain, answered from the one place
-   * that knows: the persisted blob. No separate "already set up" flag has to be kept in sync with
-   * it, because the state IS the flag.
+   * Whether this identity has already been initialized on this chain - the persisted state IS the
+   * flag, so there is no separate one to keep in sync. Biased towards "no": a false negative only
+   * offers an initialization that turns out quick, a false positive applies the catch-up timeout to
+   * a full history walk.
    *
-   * `identityAddress` must be the SDK's own chain-scoped variant (`instanceId()`, i.e.
-   * `RailgunSigner.privateKey(spending, viewing, chainId)`), not the chain-agnostic address the UI
-   * displays: the two encode the same keys but differ in the middle of the bech32m, so looking an
-   * identity up by the displayed one never matches anything.
-   *
-   * Biased towards "no": a false negative only offers an initialization that turns out quick, while
-   * a false positive would apply the catch-up timeout to a full history walk.
+   * `identityAddress` must be the SDK's chain-scoped variant, not the chain-agnostic address the UI
+   * displays - the two differ in the middle of the bech32m, so the displayed one matches no key.
    */
   async hasStateForIdentity(chainId: string, identityAddress: string): Promise<boolean> {
     const cache = await this.#hydrate()
@@ -473,40 +366,28 @@ export class RailgunHostStorageAdapter implements RailgunHostStorage {
   }
 
   /**
-   * A view of this storage bound to one plugin's lifetime. `isLive` is asked on every write, and a
-   * write from a plugin that is no longer the live one for its chain is dropped.
+   * A view of this storage bound to one plugin's lifetime: a write from a plugin that is no longer
+   * the live one for its chain is dropped.
    *
    * This is what keeps an abandoned scan from corrupting the chain's cursor. A scan cannot be
-   * cancelled - it keeps running inside WASM after we stop awaiting it - and the chain-wide keys
-   * (`utxo_indexer`, the trees) are the same ones the plugin that replaced it writes. Without this,
-   * the abandoned scan can persist an older `synced_block` on top of a newer one, or a shorter tree
-   * over a longer one, and the next sync has to redo the difference.
+   * cancelled - it keeps running inside WASM after we stop awaiting it - and writes the same
+   * chain-wide keys (the trees, `utxo_indexer`) as the plugin that replaced it, so it can persist an
+   * older `synced_block` over a newer one and force the next sync to redo the difference.
    *
-   * `poi_provider` is deliberately exempt, because for it the trade is inverted. Every other entry
-   * is a snapshot of chain state, so refusing a stale write costs a rescan at worst - while
-   * `pending` holds the witnesses for POI proofs that have not been submitted yet, which the SDK
-   * records once, while building the transaction (`register_ops`), and can rebuild from nothing.
-   * Refusing that write therefore does not lose a refresh, it loses the only copy there is: the
-   * note's outputs stay without an innocence proof, and the SDK's own note selection then refuses
-   * to spend them - for unshields as much as for private transfers. A stale POI write cannot cause
-   * the matching damage, since a superseded plugin can only have entries the live one either also
-   * has or has already submitted.
+   * `poi_provider` is exempt, because for it the trade is inverted: it holds the witnesses for POI
+   * proofs not yet submitted, recorded once while building the transaction and rebuildable from
+   * nothing. Refusing that write loses the only copy there is, and the notes stay unspendable. A
+   * stale POI write cannot do matching damage - a superseded plugin only holds entries the live one
+   * either also has or has already submitted.
    *
-   * Reads are left alone: they cannot corrupt anything, and refusing them would only make the
-   * abandoned scan fail in less predictable ways.
+   * Reads are left alone: they cannot corrupt anything.
    */
-  scopedTo(isLive: () => boolean, onRefusedWrite?: (keyName: string) => void): RailgunHostStorage {
+  scopedTo(isLive: () => boolean): RailgunHostStorage {
     return {
       _brand: 'Storage' as const,
       get: (key: string) => this.get(key),
       set: async (key: string, value: string) => {
-        if (!isLive() && !isPoiStateKey(key)) {
-          // Reported rather than silent: a refused write used to leave no trace at all, which is
-          // what made a lost POI witness look like the aggregator taking its time.
-          onRefusedWrite?.(fromHexEncoded(key.slice(key.indexOf(':') + 1)))
-
-          return
-        }
+        if (!isLive() && !isPoiStateKey(key)) return
 
         await this.set(key, value)
       }
@@ -514,17 +395,12 @@ export class RailgunHostStorageAdapter implements RailgunHostStorage {
   }
 
   /**
-   * Whether the SDK still owes a POI proof for this chain, answered from its own persisted state
-   * rather than from a flag of ours.
+   * Whether the SDK still owes a POI proof for this chain, answered from its own persisted state.
+   * The SDK drops a `pending` entry only once the aggregator accepts the proof, which it attempts on
+   * every sync - so the state IS the marker and it clears itself.
    *
-   * `poi_provider.pending` holds one entry per transaction whose outputs have no innocence proof
-   * yet, and the SDK removes an entry only once the aggregator has accepted the proof - which it
-   * attempts on every `provider.sync()`. So the state IS the marker: there is nothing to keep in
-   * sync, and it clears itself.
-   *
-   * Reads the length and nothing else, and only for a schema version it recognises. Anything else
-   * answers "no": being wrong here delays a submission until the next sync at worst, and can never
-   * affect what is submitted.
+   * Only a schema version it recognises is read; anything else answers "no", which at worst delays
+   * a submission to the next sync and can never affect what is submitted.
    */
   async hasPendingPoi(chainId: string): Promise<boolean> {
     const value = await this.get(`${chainId}:${POI_STATE_KEY_NAME_IN_HEX}`)
@@ -553,18 +429,13 @@ export class RailgunHostStorageAdapter implements RailgunHostStorage {
 }
 
 /**
- * Satisfies the Railgun SDK's `Host.keystore`, whose whole contract is "derive a BIP-32 path".
+ * Satisfies the SDK's `Host.keystore`, whose whole contract is "derive a BIP-32 path".
  *
- * Deliberately *not* the SDK's own `MnemonicKeystore`: that one takes the recovery phrase and
- * keeps it, so handing it the user's seed would put the phrase inside an unaudited alpha
- * dependency for the lifetime of the plugin. This derives through
- * `KeystoreController.deriveRailgunKey` instead, which whitelists Railgun's two derivation
- * paths and never returns the phrase.
- *
- * The cache both satisfies the SDK's "same path MUST return the same key" requirement and keeps
- * `deriveAt` cheap - every call would otherwise re-run the seed's pbkdf2. It is bounded by the
- * two paths the SDK asks for, and its lifetime is the instance's: RailgunController drops the
- * instance (and with it the derived keys) whenever the keystore locks or the seed changes.
+ * Deliberately not the SDK's own `MnemonicKeystore`, which keeps the recovery phrase - that would
+ * put the phrase inside an unaudited alpha dependency for the lifetime of the plugin. This goes
+ * through `KeystoreController.deriveRailgunKey`, which whitelists Railgun's two paths and never
+ * returns the phrase. The cache satisfies the SDK's "same path MUST return the same key" rule and
+ * keeps `deriveAt` off the seed's pbkdf2; it is dropped with the instance on lock or seed change.
  */
 export class AmbireRailgunKeystore implements RailgunHostKeystore {
   readonly _brand = 'Keystore' as const
@@ -588,32 +459,37 @@ export class AmbireRailgunKeystore implements RailgunHostKeystore {
   }
 }
 
+const getChainIdOf = async (provider: JsonRpcProvider) => (await provider.getNetwork()).chainId
+
+const getGasPriceOf = async (provider: JsonRpcProvider) =>
+  (await provider.getFeeData()).gasPrice ?? 0n
+
+const toEthereumProviderLog = (log: {
+  blockNumber: number
+  topics: readonly string[]
+  data: string
+  address: string
+}) => ({
+  blockNumber: BigInt(log.blockNumber),
+  topics: log.topics as unknown as string[],
+  data: log.data,
+  address: log.address
+})
+
 /**
- * Adapter satisfying @kohaku-eth/plugins' `Host.provider` (`EthereumProvider`), needed to
- * build the Host passed to `createRailgunPlugin`. `@kohaku-eth/provider` ships a ready-made
- * version of this (the `ethers()` helper from its `./ethers` subpath export), but that
- * subpath isn't resolvable under this repo's `moduleResolution: "node"` (classic resolution
- * doesn't consult package.json "exports" maps) - and using a local ambient `.d.ts` shim +
- * side-effect import to work around that turned out to cascade into real Webpack/runtime
- * problems (module-not-found at build time, then at service-worker runtime once ignored).
- * Reimplementing the small interface directly over an ethers `JsonRpcProvider` avoids all
- * of that. Parameter/return types are inferred contextually from `EthereumProvider<T>`
- * below, so no `ox` (its dependency) types need to be imported by name.
+ * Satisfies @kohaku-eth/plugins' `Host.provider`, needed to build the Host passed to
+ * `createRailgunPlugin`. `@kohaku-eth/provider` ships a ready-made version, but its subpath export
+ * isn't resolvable under this repo's `moduleResolution: "node"`, and shimming that cascaded into
+ * Webpack and service-worker failures - so the small interface is reimplemented over ethers here.
+ * Parameter and return types are inferred contextually from `EthereumProvider<T>`.
  */
 const toEthereumProvider = (provider: JsonRpcProvider): EthereumProvider<JsonRpcProvider> => ({
   _internal: provider,
-  async getChainId() {
-    const network = await provider.getNetwork()
-    return network.chainId
-  },
+  getChainId: () => getChainIdOf(provider),
+  getGasPrice: () => getGasPriceOf(provider),
   async getLogs(filter) {
     const logs = await provider.getLogs(filter as any)
-    return logs.map((log) => ({
-      blockNumber: BigInt(log.blockNumber),
-      topics: log.topics as unknown as string[],
-      data: log.data,
-      address: log.address
-    }))
+    return logs.map(toEthereumProviderLog)
   },
   async getBlockNumber() {
     return BigInt(await provider.getBlockNumber())
@@ -621,12 +497,8 @@ const toEthereumProvider = (provider: JsonRpcProvider): EthereumProvider<JsonRpc
   async waitForTransaction(txHash) {
     await provider.waitForTransaction(txHash)
   },
-  async getBalance(address) {
-    return provider.getBalance(address)
-  },
-  async getCode(address) {
-    return provider.getCode(address)
-  },
+  getBalance: (address) => provider.getBalance(address),
+  getCode: (address) => provider.getCode(address),
   async getTransactionReceipt(txHash) {
     const receipt = await provider.getTransactionReceipt(txHash)
     if (!receipt) return null
@@ -635,24 +507,14 @@ const toEthereumProvider = (provider: JsonRpcProvider): EthereumProvider<JsonRpc
       blockNumber: BigInt(receipt.blockNumber),
       status: BigInt(receipt.status ?? 0),
       gasUsed: receipt.gasUsed,
-      logs: receipt.logs.map((log) => ({
-        blockNumber: BigInt(log.blockNumber),
-        topics: log.topics as unknown as string[],
-        data: log.data,
-        address: log.address
-      }))
+      logs: receipt.logs.map(toEthereumProviderLog)
     }
   },
-  async request(req) {
-    return provider.send(req.method, (req.params as unknown as any[]) ?? [])
-  },
+  request: (req) => provider.send(req.method, (req.params as unknown as any[]) ?? []),
   async call(callParams) {
-    // `CallData`'s calldata field is named `input` (see @kohaku-eth/provider's type),
-    // while ethers' TransactionRequest expects `data` - passing the object straight
-    // through (as the code here previously did) silently drops the calldata, producing
-    // an empty `0x` call. This is what caused the Railgun UTXO tree verification call to
-    // hard-revert with `require(false)` - it looked like a contract/address problem, but
-    // was this field-name mismatch turning every verification call into an empty-data one.
+    // `CallData` names its calldata field `input` while ethers expects `data` - passing the object
+    // straight through silently drops the calldata and produces an empty `0x` call, which is what
+    // once made the UTXO tree verification hard-revert with `require(false)`.
     const result = await provider.call({
       to: callParams.to,
       from: callParams.from,
@@ -663,57 +525,35 @@ const toEthereumProvider = (provider: JsonRpcProvider): EthereumProvider<JsonRpc
     })
     return (result || undefined) as `0x${string}` | undefined
   },
-  async estimateGas(callParams) {
-    return provider.estimateGas({
+  estimateGas: (callParams) =>
+    provider.estimateGas({
       to: callParams.to,
       from: callParams.from,
       data: callParams.input,
       value: callParams.value,
       gasPrice: callParams.gasPrice
     })
-  },
-  async getGasPrice() {
-    const feeData = await provider.getFeeData()
-    return feeData.gasPrice ?? 0n
-  }
 })
 
 /**
- * Adapter satisfying @kohaku-eth/railgun's `Eip1193Provider`, needed only for
- * `SimpleSmartAccount` (the disposable-key broadcast path). The SDK's own equivalent
- * adapter (used internally by `createRailgunPlugin`) isn't exported from the package,
- * so this is a minimal reimplementation over an ethers `JsonRpcProvider`.
+ * Satisfies @kohaku-eth/railgun's `Eip1193Provider`, needed only by `SimpleSmartAccount` on the
+ * disposable-key broadcast path. The SDK's own equivalent isn't exported from the package.
  */
-class RailgunEip1193ProviderAdapter implements Eip1193Provider {
-  #provider: JsonRpcProvider
-
-  constructor(provider: JsonRpcProvider) {
-    this.#provider = provider
-  }
-
-  async getChainId(): Promise<bigint> {
-    const network = await this.#provider.getNetwork()
-    return network.chainId
-  }
-
-  async getBlockNumber(): Promise<bigint> {
-    return BigInt(await this.#provider.getBlockNumber())
-  }
-
-  async getLogs(
-    address: `0x${string}`,
-    eventSignature: `0x${string}` | undefined,
-    fromBlock: number | undefined,
-    toBlock: number | undefined
-  ): Promise<RawLog[]> {
-    const logs = await this.#provider.getLogs({
+const toEip1193Provider = (provider: JsonRpcProvider): Eip1193Provider => ({
+  getChainId: () => getChainIdOf(provider),
+  getGasPrice: () => getGasPriceOf(provider),
+  async getBlockNumber() {
+    return BigInt(await provider.getBlockNumber())
+  },
+  async getLogs(address, eventSignature, fromBlock, toBlock) {
+    const logs = await provider.getLogs({
       address,
       topics: eventSignature ? [eventSignature] : undefined,
       fromBlock,
       toBlock
     })
 
-    return logs.map((log) => ({
+    return logs.map<RawLog>((log) => ({
       blockNumber: log.blockNumber,
       // Not available from eth_getLogs without an extra per-block RPC call.
       blockTimestamp: null,
@@ -722,29 +562,13 @@ class RailgunEip1193ProviderAdapter implements Eip1193Provider {
       topics: log.topics as unknown as `0x${string}`[],
       data: log.data as `0x${string}`
     }))
+  },
+  ethCall: async (to, data) => (await provider.call({ to, data })) as `0x${string}`,
+  estimateGas: (to, from, data) => provider.estimateGas({ to, from, data }),
+  async getTransactionCount(address, block) {
+    return BigInt(await provider.getTransactionCount(address, block))
   }
-
-  async ethCall(to: `0x${string}`, data: `0x${string}`): Promise<`0x${string}`> {
-    return (await this.#provider.call({ to, data })) as `0x${string}`
-  }
-
-  async estimateGas(
-    to: `0x${string}`,
-    from: `0x${string}` | undefined,
-    data: `0x${string}`
-  ): Promise<bigint> {
-    return this.#provider.estimateGas({ to, from, data })
-  }
-
-  async getGasPrice(): Promise<bigint> {
-    const feeData = await this.#provider.getFeeData()
-    return feeData.gasPrice ?? 0n
-  }
-
-  async getTransactionCount(address: `0x${string}`, block: number | undefined): Promise<bigint> {
-    return BigInt(await this.#provider.getTransactionCount(address, block))
-  }
-}
+})
 
 export class RailgunController extends EventEmitter implements IRailgunController {
   #keystore: IKeystoreController
@@ -799,32 +623,23 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   railgunAddress: string | null = null
 
   /**
-   * Sync state per identity, then per chain.
+   * Symbol, decimals and price per chain, then per lowercased token address.
    *
-   * Keyed by the 0zk address rather than only by chain because everything in `RailgunChainState`
-   * except the pool flags belongs to an identity, not to a network: balances, `lastSyncedAt`, the
-   * synced-through block. Keying it by chain alone meant two recovery phrases shared one slot, so
-   * one identity's finished scan made the other look synced - and, worse, made `isFirstSync` false
-   * for a scan that had never run, which applied the 3-minute timeout to a 6-minute walk and left
-   * the chain in a permanent retry loop.
-   *
-   * Kept per identity rather than cleared on every switch so that switching back shows the last
-   * known balances immediately instead of re-scanning for them.
-   */
-  /**
-   * Symbol, decimals and price for every token seen in a pool, keyed by chain and then by
-   * lowercased token address.
-   *
-   * Kept outside `#chainStatesByIdentity` on purpose, even though everything else about a pool
-   * lives there: this is a property of the token contract and of its market, so it is identical
-   * for every identity. Keying it per identity would re-read it on every identity switch and
-   * would let one identity's failed lookup present itself as another's unknown token.
-   *
-   * In memory only, like the chain states: a persisted price is a stale price, and symbol/decimals
-   * cost one batched `eth_call` per session to read again.
+   * Deliberately outside `#chainStatesByIdentity`: this describes the token contract and its
+   * market, so it is identical for every identity, and keying it per identity would re-read it on
+   * every switch. In memory only - a persisted price is a stale price.
    */
   #tokensDataByChain: { [chainId: string]: { [address: string]: RailgunTokenData } } = {}
 
+  /**
+   * Sync state per identity, then per chain. Keyed by the 0zk address because everything in
+   * `RailgunChainState` except the pool flags belongs to an identity rather than to a network - by
+   * chain alone, two recovery phrases share one slot and one identity's finished scan makes the
+   * other look synced.
+   *
+   * Kept per identity rather than cleared on every switch, so switching back shows the last known
+   * balances instead of re-scanning for them.
+   */
   #chainStatesByIdentity: { [railgunAddress: string]: { [chainId: string]: RailgunChainState } } =
     {}
 
@@ -838,18 +653,12 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   privateOperation: RailgunPrivateOperation | null = null
 
   /**
-   * Serializes everything that reaches into the SDK's WASM objects.
+   * Serializes everything that reaches into the SDK's WASM objects. Every plugin method takes
+   * `&mut self`, so a second concurrent call aborts the module with "recursive use of an object
+   * detected" and the promise it was driving never settles.
    *
-   * wasm-bindgen keeps those objects behind a Rust RefCell, and every method the plugin drives
-   * (`sync`, `balance`, `register`, `build`, `prepareUserOp`) takes `&mut self` - so a second
-   * concurrent call aborts the module with "recursive use of an object detected which would lead
-   * to unsafe aliasing in rust", and the promise it was driving never settles, leaving the UI on
-   * "Syncing shielded balances..." forever.
-   *
-   * That is not hypothetical. Enabling Railgun emits an update the moment the plugin exists,
-   * which starts the periodic balance refresh (ContinuousUpdatesController, with
-   * `runImmediately: true`) while `#init`'s own first sync is still in flight - two `balance()`
-   * calls on the same provider.
+   * Not hypothetical: enabling Railgun emits an update the moment the plugin exists, which starts
+   * the periodic refresh while `#init`'s own first sync is still in flight.
    */
   #wasmQueue: Promise<unknown> = Promise.resolve()
 
@@ -867,11 +676,8 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
 
   /**
    * Bumped every time a chain's plugin is discarded, so the storage view handed to that plugin can
-   * tell it is no longer the live one - see `RailgunHostStorageAdapter.scopedTo`.
-   *
-   * Per chain rather than global because that is the granularity at which plugins are replaced: a
-   * timed-out scan discards one chain's plugin and the next sync builds a fresh one, while the
-   * abandoned scan keeps running against the same chain-wide keys.
+   * tell it is no longer the live one - see `RailgunHostStorageAdapter.scopedTo`. Per chain,
+   * because that is the granularity at which plugins are replaced.
    */
   #chainPluginGenerations = new Map<string, number>()
 
@@ -895,9 +701,8 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     selectedAccount: ISelectedAccountController
     storage: IStorageController
     fetch: Fetch
-    // The WASM bytes are a build asset (see webpack CopyPlugin config) - ambire-common is
-    // environment-agnostic and can't know the asset URL, so the loader is injected by the
-    // platform layer (web/mobile).
+    // The WASM bytes are a build asset; ambire-common can't know the URL, so the platform layer
+    // injects the loader.
     loadWasm: () => Promise<Response | BufferSource>
     sendUiMessage: (params: object) => void
     // Used only for the unshield/private-transfer broadcast path (ERC-4337 UserOp via
@@ -969,13 +774,11 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         const seedId = this.#getSeedIdForSelectedAccount()
         // A different recovery phrase is a different Railgun identity, so nothing built for the
         // previous one may be reused - but its balances stay in their own bucket, so switching back
-        // shows them at once instead of re-scanning. Railgun stays opt-in, so the new account is not
-        // initialized here - the user enables it.
+        // shows them at once. Railgun stays opt-in, so the new account is not initialized here.
         //
-        // Keyed on there being an identity rather than on there being plugins, for the same reason
-        // as the lock above: an account whose identity was derived without any chain being scanned
-        // has no plugins, so the old condition left that identity up - and with it an address, and
-        // everything the UI reads through it, belonging to an account that is no longer selected.
+        // Keyed on there being an identity rather than on there being plugins: an account whose
+        // identity was derived without any chain being scanned has no plugins, and would otherwise
+        // leave its address - and everything the UI reads through it - on screen.
         if (this.#railgunKeystoreSeedId && seedId !== this.#railgunKeystoreSeedId)
           this.#teardown({ wipeBalances: false })
 
@@ -1093,12 +896,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * Deliberately not derived from any existing entry: a write for an identity that has no entry for
-   * this chain yet must start from nothing, or it would copy whatever the currently selected
-   * identity happens to hold - which is the cross-identity bleed this whole structure exists to
-   * prevent.
+   * Deliberately not derived from any existing entry: an identity with no entry for this chain must
+   * start from nothing, or it would copy whatever the selected identity happens to hold - the
+   * cross-identity bleed this whole structure exists to prevent.
    */
-
   #getDefaultChainState(chainId: string): RailgunChainState {
     return {
       chainId,
@@ -1113,18 +914,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   #getChainState(chainId: string): RailgunChainState {
-    return (
-      this.chains[chainId] || {
-        chainId,
-        wrappedBaseTokenAddress: null,
-        syncStatus: 'idle',
-        hasIdentityData: false,
-        lastSyncedAt: null,
-        syncStartedAt: null,
-        balances: [],
-        error: null
-      }
-    )
+    return this.chains[chainId] || this.#getDefaultChainState(chainId)
   }
 
   get tokensData(): { [chainId: string]: { [address: string]: RailgunTokenData } } {
@@ -1132,17 +922,13 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * Resolves symbol, decimals and price for the tokens this chain's pool holds, in one batch for
-   * all of them, right after a sync has written the balances. Runs there rather than lazily from
-   * the UI because the balances are what reveal which tokens exist: the pool has no token list, so
-   * the scan result IS the discovery.
-   *
-   * The wrapped base token is always included, even at a zero balance, because the unshield form
-   * offers to take shielded ETH out unwrapped and needs its decimals to parse the amount.
+   * Resolves symbol, decimals and price for everything this chain's pool holds, in one batch, right
+   * after a sync has written the balances - the pool has no token list, so the scan result IS the
+   * discovery. The wrapped base token is always included even at a zero balance, since the unshield
+   * form needs its decimals to parse an unwrapped withdrawal.
    *
    * Never throws: the sync it runs at the end of has just produced correct balances of real money,
-   * and a slow price server must not turn that into a failed sync. A token left unresolved shows
-   * as such and is blocked in the forms - see the RailgunTokenData docs.
+   * and a slow price server must not turn that into a failed sync.
    */
   async #resolveTokensData(chainId: string, tokenAddresses: string[]) {
     try {
@@ -1178,44 +964,48 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       }
       this.emitUpdate()
 
-      // Debug-logged rather than emitted: this runs on every sync, including the periodic
-      // background ones, so a token cena doesn't know would otherwise toast forever.
+      // Console only, and never reported: this runs on every sync, including the periodic
+      // background ones, so a token nobody prices would otherwise be raised forever. It is not a
+      // failure the user can act on either - an unresolved token shows as such and is blocked in
+      // the forms.
       if (errors.length)
-        this.debugLog('sync', 'could not resolve data for every shielded token', {
-          chainId,
-          errors
+        this.emitError({
+          message: 'Some shielded tokens could not be fully identified.',
+          level: 'silent',
+          sendCrashReport: false,
+          error: new Error(
+            `railgun: could not resolve token data on chain ${chainId}: ${errors
+              .map(({ address, message }) => `${address}: ${message}`)
+              .join('; ')}`
+          )
         })
     } catch (error: any) {
-      this.debugLog('sync', 'resolving shielded token data failed', {
-        chainId,
-        error: error?.message
+      // Same reason as above - never surfaced, never reported, but never swallowed either.
+      this.emitError({
+        message: 'Some shielded tokens could not be fully identified.',
+        level: 'silent',
+        sendCrashReport: false,
+        error: error instanceof Error ? error : new Error('railgun: resolving token data failed')
       })
     }
-  }
-
-  /**
-   * Writes a chain's state and emits. The teardown paths below deliberately don't go through
-   * this: they run from `onUpdate` callbacks, where an update has to be forwarded with
-   * `propagateUpdate` rather than emitted, so they mutate state and leave emitting to the
-   * caller.
-   */
-  #updateChainState(chainId: string, update: Partial<RailgunChainState>) {
-    this.#setChainState(chainId, update)
-    this.emitUpdate()
-  }
-
-  #setChainState(chainId: string, update: Partial<RailgunChainState>) {
-    if (!this.railgunAddress) return
-
-    this.#setChainStateFor(this.railgunAddress, chainId, update)
   }
 
   /**
    * Writes into a named identity's bucket. Every long operation captures the identity it started
    * for and writes through this, so an abandoned scan - which keeps running inside WASM, since it
    * cannot be cancelled - lands on its own identity instead of on the one now selected.
+   *
+   * `emit` is off for the teardown paths: they run from `onUpdate` callbacks, where an update has
+   * to be forwarded with `propagateUpdate` rather than emitted.
    */
-  #setChainStateFor(identityAddress: string, chainId: string, update: Partial<RailgunChainState>) {
+  #writeChainState(
+    identityAddress: string | null,
+    chainId: string,
+    update: Partial<RailgunChainState>,
+    { emit }: { emit: boolean } = { emit: true }
+  ) {
+    if (!identityAddress) return
+
     const identityChains = this.#chainStatesByIdentity[identityAddress] || {}
     const current = identityChains[chainId] || this.#getDefaultChainState(chainId)
 
@@ -1223,25 +1013,21 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       ...this.#chainStatesByIdentity,
       [identityAddress]: { ...identityChains, [chainId]: { ...current, ...update } }
     }
+
+    if (emit) this.emitUpdate()
   }
 
-  #updateChainStateFor(
-    identityAddress: string,
-    chainId: string,
-    update: Partial<RailgunChainState>
-  ) {
-    this.#setChainStateFor(identityAddress, chainId, update)
-    this.emitUpdate()
+  /** `#writeChainState` against the identity currently on screen, which is the common case. */
+  #updateChainState(chainId: string, update: Partial<RailgunChainState>) {
+    this.#writeChainState(this.railgunAddress, chainId, update)
   }
 
   /**
-   * Marks the chains that will wait their turn, and returns the undo. Scans cannot overlap (the WASM
-   * module is single-threaded and non-reentrant), so everything after the first is genuinely queued
-   * and saying so beats a second spinner that never moves.
+   * Marks the chains that will wait their turn, and returns the undo. Scans cannot overlap, so
+   * everything after the first is genuinely queued and saying so beats a spinner that never moves.
    *
-   * The undo is not optional: a run can end without touching every chain it marked - a background
-   * refresh skips one that is already fresh, an abort breaks out early - and a 'queued' status left
-   * behind is a row that waits forever for something that already finished.
+   * The undo is not optional: a run can end without touching every chain it marked (a fresh chain
+   * is skipped, an abort breaks out early) and a leftover 'queued' waits forever.
    */
   #markQueued(chainIds: string[]): () => void {
     const queuedChainIds = chainIds.slice(1)
@@ -1271,7 +1057,12 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     this.#chainPluginGenerations.set(chainId, this.#getChainPluginGeneration(chainId) + 1)
     this.#plugins.delete(chainId)
     this.#providerInstances.delete(chainId)
-    this.#setChainState(chainId, { syncStatus: 'idle', syncStartedAt: null })
+    this.#writeChainState(
+      this.railgunAddress,
+      chainId,
+      { syncStatus: 'idle', syncStartedAt: null },
+      { emit: false }
+    )
   }
 
   /**
@@ -1279,7 +1070,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    *
    * The work itself cannot be cancelled - the WASM module is single-threaded and offers no abort -
    * so this is two things at once: stop waiting, which frees the queue for the identity that
-   * replaced this one, and refuse the result, which is what `#setChainStateFor` guarantees by
+   * replaced this one, and refuse the result, which is what `#writeChainState` guarantees by
    * writing to the identity the operation started for.
    */
   #abortInFlightOperations() {
@@ -1316,8 +1107,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   #teardown({ wipeBalances }: { wipeBalances: boolean }) {
     this.#abortInFlightOperations()
     // Whatever the sheet was showing belonged to the identity being dropped, so it must not be
-    // presented as the next one's - even a run that is still finishing inside the WASM, whose result
-    // can no longer be attributed to what is now on screen.
+    // presented as the next one's.
     this.privateOperation = null
     // Same reason as in #teardownChain, for every chain at once.
     this.#plugins.forEach((_, chainId) =>
@@ -1334,14 +1124,19 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
 
     if (identityAddress)
       Object.keys(this.#chainStatesByIdentity[identityAddress] || {}).forEach((chainId) =>
-        this.#setChainStateFor(identityAddress, chainId, {
-          syncStatus: 'idle',
-          syncStartedAt: null,
-          // A teardown is not a failure of the chain, so a stale error must not survive into the
-          // next attempt.
-          error: null,
-          ...(wipeBalances && { balances: [] })
-        })
+        this.#writeChainState(
+          identityAddress,
+          chainId,
+          {
+            syncStatus: 'idle',
+            syncStartedAt: null,
+            // A teardown is not a failure of the chain, so a stale error must not survive into the
+            // next attempt.
+            error: null,
+            ...(wipeBalances && { balances: [] })
+          },
+          { emit: false }
+        )
       )
 
     if (wipeBalances) this.#chainStatesByIdentity = {}
@@ -1392,30 +1187,19 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
 
   /**
    * Derives the 0zk identity and nothing else: no provider, no pool, no chain data. Cheap enough to
-   * run on every visit to the Privacy screen, which is what lets the address be shown - and used to
-   * receive - before any scan has been started.
-   *
-   * Deliberately does NOT build the plugins. `createRailgunPlugin` deserializes the persisted pool
-   * state and calls `provider.register(signer)`, which for an identity the pool has not seen means
-   * trial-decrypting every commitment in it; doing that on a screen visit is what previously made
-   * opening Privacy start a multi-minute scan nobody asked for.
+   * run on every visit to the screen, which is what puts the address up - and makes it usable to
+   * receive - before any scan has been started. Deliberately does NOT build the plugins:
+   * `createRailgunPlugin` registers the signer, which for an unseen identity trial-decrypts every
+   * commitment in the pool.
    *
    * Finishes by catching up the chains this identity already has state for - seconds of work, and
-   * since `chains` is not persisted it is the only thing that can put those balances back on screen
+   * since `chains` is not persisted it is the only thing that puts those balances back on screen
    * after a background restart.
    */
   async initIdentity() {
-    /**
-     * Deliberately NOT queued behind #wasmQueue, unlike everything else that reaches into the SDK.
-     * That queue exists because two concurrent calls on the *same* plugin abort the module, and
-     * deriving an identity touches no plugin at all: it initializes the module (a no-op after the
-     * first time), derives two keys through the keystore's own cache, builds fresh `RailgunSigner`
-     * objects and reads the persisted blob.
-     *
-     * Queueing it meant that switching accounts while a private operation was proving left the new
-     * account with no address and no screen state for minutes, waiting on work that had nothing to do
-     * with it.
-     */
+    // Deliberately NOT queued behind #wasmQueue: that queue exists because two concurrent calls on
+    // the same plugin abort the module, and deriving an identity touches no plugin at all. Queueing
+    // it would leave a newly selected account with no address for the length of a private operation.
     await this.withStatus('initIdentity', () => this.#resolveIdentity(), true)
 
     const chainIdsToCatchUp = this.supportedChainIds.filter(
@@ -1453,16 +1237,13 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * Brings up every supported chain, rather than one the user picked. The 0zk identity is
-   * wallet-wide (see #resolveRailgunAddress) and each chain holds its own shielded pool, so
-   * "which network am I on" is not a question the user should have to answer - the Privacy
-   * screen shows every chain's balances at once, exactly like the dashboard does for public ones.
+   * Brings up every supported chain rather than one the user picked: the 0zk identity is wallet-wide
+   * and each chain holds its own pool, so "which network am I on" is not a question the user should
+   * have to answer.
    *
-   * Sequential on purpose, and not just because #queueWasmOperation would serialize it anyway:
-   * each chain emits its state as soon as it lands, so the first chain's balances are on screen
-   * while the next one is still walking its pool. A chain that fails is recorded in its own
-   * state and skipped, so one dead RPC can't take the working chains down with it - only an
-   * across-the-board failure is reported as one.
+   * Sequential, and each chain emits as soon as it lands, so the first chain's balances are on
+   * screen while the next is still walking its pool. A failing chain is recorded on its own state
+   * and skipped - only an across-the-board failure is reported as one.
    */
   async #init(chainIds: string[]) {
     await this.initialLoadPromise
@@ -1576,9 +1357,6 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     // the bytes itself in this environment. It is a no-op once the module is up, so calling it
     // per chain is free.
     //
-    // Deliberately called without a log level: `ensureInitialized` applies the level on every
-    // call, so requesting one here and again through `createRailgunPlugin`'s config below would
-    // request it twice - which panics. See #takeSdkLogLevel.
     await ensureInitialized(await this.#loadWasm())
 
     const chain = chainConfig(BigInt(chainId))
@@ -1596,20 +1374,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     // Captured before the plugin exists, so the view it gets is bound to exactly this instance.
     const pluginGeneration = this.#getChainPluginGeneration(chainId)
 
-    // One line per entry rather than per write: an abandoned mainnet scan keeps writing the same
-    // handful of keys thousands of times, and a log nobody can read is as good as no log.
-    const keyNamesRefusedForThisPlugin = new Set<string>()
-
     const host: RailgunHost = {
       keystore: railgunKeystore,
       storage: this.#pluginStorage.scopedTo(
-        () => this.#getChainPluginGeneration(chainId) === pluginGeneration,
-        (keyName) => {
-          if (keyNamesRefusedForThisPlugin.has(keyName)) return
-
-          keyNamesRefusedForThisPlugin.add(keyName)
-          this.debugLog('sync', 'refused a write from a superseded plugin', { chainId, keyName })
-        }
+        () => this.#getChainPluginGeneration(chainId) === pluginGeneration
       ),
       provider: toEthereumProvider(provider as JsonRpcProvider),
       network: {
@@ -1621,52 +1389,25 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       }
     }
 
-    // Timed for the measurement: `createRailgunPlugin` loads the persisted pool state and calls
-    // `provider.register(signer)`. For an identity this pool has never seen, that registration is
-    // what trial-decrypts every existing commitment - i.e. the whole cost of a *second* identity on
-    // an already-downloaded chain sits here, not in the sync below.
-    // Read before the build, not after: the build itself writes state, so an inventory taken
-    // afterwards could not tell a first identity from a second one.
-    const storageBefore = this.isDebugLogEnabled ? await this.#pluginStorage.inventory() : []
-    const pluginBuildStartedAt = Date.now()
-
+    // Not cheap: `createRailgunPlugin` loads the persisted pool state and calls
+    // `provider.register(signer)`, which for an identity this pool has never seen trial-decrypts
+    // every existing commitment. The whole cost of a second identity on an already-downloaded chain
+    // sits here, not in the sync below.
     const plugin = await createRailgunPlugin(host, {
       keyIndex: RAILGUN_KEY_INDEX,
-      // The SDK syncs with `UtxoSyncer.chained([subsquid, rpc])`: the Subsquid indexer covers
-      // history, and the RPC syncer scans everything above it. Crucially, Subsquid reports its
-      // `latest_block` from `transactions(orderBy: blockNumber_DESC, limit: 1)` - the last
-      // Railgun *transact* on the chain, NOT the indexer's head. On Sepolia those are sparse
-      // (hours to days apart), so the RPC syncer is always handed a tail of thousands of blocks
-      // that grows by ~7.2k blocks/day of testnet inactivity. At the SDK's default batch size of
-      // 10 that is one `eth_getLogs` per 10 blocks, i.e. hundreds of sequential round-trips per
-      // sync - which is why `sync()` never finished and the UI sat on "Syncing shielded
-      // balances..." indefinitely. Hence the per-chain window - see
-      // RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS for why Ethereum needs the opposite treatment.
+      // The SDK chains a Subsquid indexer with an RPC syncer for everything above it, but Subsquid
+      // reports its head as the last Railgun *transact*, not the last indexed block. On a quiet
+      // chain that leaves the RPC syncer a tail of thousands of blocks, which at the SDK's default
+      // batch size of 10 is hundreds of sequential round-trips per sync - see
+      // RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS.
       rpcBatchSize:
         RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS[chainId] ??
-        DEFAULT_RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS,
-      // POI (Proof of Innocence) is left at the SDK's default (enabled). It was disabled here
-      // while the integration was Sepolia-only, on the belief that the POI aggregator did not
-      // serve Sepolia - that turned out to be wrong: both chain configs point at
-      // https://ppoi.fdi.network/ with the same list key, and the aggregator answers
-      // `ppoi_validated_txid` and `ppoi_pois_per_list` for chain 11155111 as well as for 1.
-      //
-      // With POI on, `balance()` tags each amount with a PoiStatus and the SDK's note selection
-      // will only spend 'Valid' notes - for unshields as well as private transfers. That is why
-      // balances are kept split per status all the way to the UI (see
-      // libs/railgun/balances.ts): a freshly shielded amount is 'Missing' for Railgun's ~1h
-      // Unshield-Only Standby Period and genuinely cannot be moved yet.
-      logLevel: this.#takeSdkLogLevel()
-    })
-
-    this.debugLog('sync', 'plugin built', {
-      chainId,
-      durationMs: Date.now() - pluginBuildStartedAt,
-      // What was on disk before this ran, so the duration can be attributed: an empty inventory
-      // means nothing to load and nothing to decrypt, entries for this chain mean the trees were
-      // there, and an entry ending in this identity's chain-scoped address means even the notes
-      // were - which is the difference between a first and a second identity.
-      storageBefore
+        DEFAULT_RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS
+      // POI (Proof of Innocence) is left at the SDK's default (enabled) - the aggregator serves
+      // both chains. With it on, `balance()` tags each amount with a PoiStatus and the SDK's note
+      // selection only spends 'Valid' ones, which is why balances are kept split per status all the
+      // way to the UI: a freshly shielded amount is 'Missing' for Railgun's ~1h standby period and
+      // genuinely cannot be moved yet.
     })
 
     this.#plugins.set(chainId, plugin)
@@ -1683,26 +1424,6 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * Resolves the one 0zk address shown for this wallet, deliberately built with no chain scope.
-   *
-   * `RailgunSigner.privateKey(spending, viewing, chainId)` maps a chain id to `ChainId::Evm` and
-   * `undefined` to `ChainId::All` - a "any chain" address. The keys are the same either way: the
-   * chain only changes the middle chunk of the bech32m encoding, while the master and viewing
-   * public keys it carries are byte-identical (which is what makes the funds spendable no matter
-   * which variant a sender used).
-   *
-   * The chain-scoped variant is what `plugin.instanceId()` reports, but showing it would describe
-   * a restriction that does not exist on-chain. A Railgun commitment binds to
-   * `npk = poseidon(masterPublicKey, random)`; there is no chain field anywhere in a note, and the
-   * shield calldata this SDK builds is byte-identical for all three variants (verified by masking
-   * out the per-build `random` and diffing). The chain field is a hint for the sender's wallet,
-   * decoded and discarded - this SDK does not even validate it.
-   *
-   * So one address across chains is the accurate representation, not a convenience. What stays
-   * per-chain is the balance: each chain has its own Railgun Smart Wallet and its own UTXO tree,
-   * exactly like one EVM address holding separate balances per network.
-   */
-  /**
    * Derives the identity and records, per chain, what is already on the device for it. Everything
    * here is either a cached key derivation or a read of the persisted blob - no chain data, no
    * plugin - which is what makes it safe to run on every visit to the Privacy screen.
@@ -1710,11 +1431,20 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   async #resolveIdentity() {
     const seedId = this.#assertAvailableAndGetSeedId()
 
-    // Deliberately called without a log level here as well - see #takeSdkLogLevel.
     await ensureInitialized(await this.#loadWasm())
     await this.#resolveRailgunAddress(this.#getRailgunKeystore(seedId))
   }
 
+  /**
+   * Resolves the one 0zk address shown for this wallet, deliberately built with no chain scope.
+   *
+   * `RailgunSigner.privateKey(spending, viewing, chainId)` maps a chain id to `ChainId::Evm` and
+   * `undefined` to `ChainId::All`. The keys are the same either way - the chain only changes the
+   * middle chunk of the bech32m, while the master and viewing public keys are byte-identical, which
+   * is what makes the funds spendable whichever variant a sender used. There is no chain field in a
+   * note at all, so showing the chain-scoped variant would describe a restriction that does not
+   * exist. What genuinely stays per chain is the balance: each has its own pool and UTXO tree.
+   */
   async #resolveRailgunAddress(railgunKeystore: AmbireRailgunKeystore) {
     // Free after `createRailgunPlugin` derived the same two paths through this same instance -
     // AmbireRailgunKeystore caches per path, so this is a cache hit rather than another pbkdf2.
@@ -1739,36 +1469,25 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
           BigInt(chainId)
         ).address
 
-        this.#setChainStateFor(railgunAddress, chainId, {
-          hasIdentityData: await this.#pluginStorage.hasStateForIdentity(
-            chainId,
-            chainScopedAddress
-          )
-        })
+        this.#writeChainState(
+          railgunAddress,
+          chainId,
+          {
+            hasIdentityData: await this.#pluginStorage.hasStateForIdentity(
+              chainId,
+              chainScopedAddress
+            )
+          },
+          { emit: false }
+        )
       })
     )
 
-    // Published only now, together with the state that describes it. Assigning it before the reads
-    // above left a window in which the UI saw an identity with no chain state yet - long enough,
-    // because reading the persisted blob can mean re-hydrating ~140 MB - and every network looked
-    // un-enabled. That is what made the "enable on all networks" banner flash on account switch for
-    // an identity that was already enabled.
+    // Published only now, together with the state that describes it: assigning it before the reads
+    // above leaves a window - long enough, since hydrating the blob can mean ~140 MB - in which the
+    // UI sees an identity with no chain state and every network looks un-enabled.
     this.railgunAddress = railgunAddress
     this.emitUpdate()
-  }
-
-  /**
-   * The log level to hand `createRailgunPlugin`, which is the single place the SDK's tracing
-   * dispatcher may be installed from - see `hasInstalledSdkLogger`. Worth having at all because
-   * a cold sync is a long opaque wait from the outside, and the SDK's own logs are the only thing
-   * that narrates it (paginating the indexer, downloading POI artifacts, proving).
-   */
-  #takeSdkLogLevel(): LogLevel {
-    if (!this.isDebugLogEnabled || hasInstalledSdkLogger) return 'Off'
-
-    hasInstalledSdkLogger = true
-
-    return 'Debug'
   }
 
   #getRailgunKeystore(seedId: string): AmbireRailgunKeystore {
@@ -1867,14 +1586,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
 
   /**
    * What broadcasting an unshield or a private transfer is expected to cost, for the form to show
-   * before the user commits to it.
+   * before the user commits. Only the network fee - Railgun's own is arithmetic the UI does itself
+   * (see getPrivacyProtocolFee), while this one needs the gas price and the shielded balance.
    *
-   * Only the network fee: Railgun's own fee is arithmetic on the amount and a fixed rate, which the
-   * UI does itself (see getPrivacyProtocolFee) so that no figure in the form ever waits on - or is
-   * lost to - a round trip. This one needs the background for the gas price and the shielded balance.
-   *
-   * Bounded and cheap (one gas-price read), hence `#sendUiMessage` rather than a status - see
-   * buildShieldCalls for the same pattern.
+   * Bounded and cheap, hence `#sendUiMessage` rather than a status.
    */
   async estimateNetworkFee(
     {
@@ -1941,17 +1656,13 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * Marks pending shields as successful once their token's shielded balance grows.
+   * Marks pending shields as successful once their token's shielded balance grows. The fallback, not
+   * the main path - it covers shields whose transaction was never seen from here (broadcast before a
+   * background restart, or from another device on the same phrase). Deliberately a heuristic: an
+   * incoming private transfer of the same token resolves the entry too.
    *
-   * The fallback, not the main path: a shield normally resolves from its own transaction (see
-   * `handleShieldAccountOpStatusUpdate`), and this covers the shields whose transaction was never
-   * seen from here - one broadcast before a background restart, or from another device on the same
-   * recovery phrase. Deliberately a heuristic: an incoming private transfer of the same token, in
-   * the same window, resolves the entry too.
-   *
-   * Compares totals across every POI status, not spendable amounts: a shield lands as 'Missing'
-   * and only becomes 'Valid' about an hour later, so a spendable-only comparison would leave
-   * every shield stuck on "pending" until the standby period elapsed.
+   * Compares totals across every POI status: a shield lands as 'Missing' and only becomes 'Valid'
+   * an hour later, so a spendable-only comparison would leave every shield pending until then.
    */
   #resolvePendingShields(chainId: string, previousBalances: RailgunShieldedBalance[]) {
     const currentBalances = this.#getChainState(chainId).balances
@@ -2015,15 +1726,13 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * What a shield's transaction did, as the Activity controller resolved it. This is the accurate
-   * signal that a shield landed, and the fast one: the balance heuristic it replaces only speaks on
-   * the next pool scan, which is up to a few minutes away and minutes long on Ethereum.
+   * What a shield's transaction did, as the Activity controller resolved it - the accurate signal
+   * that a shield landed, and the fast one, since the balance heuristic only speaks on the next
+   * pool scan.
    *
-   * A confirmed shield is followed by a scan, because the shielded balance is what the user is
-   * sent back to look at and the pool has to be read for it to appear. Skipped when there is
-   * nothing to scan with (a background restart drops every plugin) or while a scan is already
-   * running - both only produce an error the user can do nothing about, and the periodic refresh
-   * covers the tail either way.
+   * A confirmed shield is followed by a scan, because the pool has to be read for the balance to
+   * appear. Skipped when there is nothing to scan with, or while a scan is already running - the
+   * periodic refresh covers the tail either way.
    */
   async handleShieldAccountOpStatusUpdate(op: SubmittedAccountOp) {
     const shield = this.#getPendingShieldFor(op)
@@ -2072,10 +1781,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   async sync(params?: { isBackgroundUpdate?: boolean }) {
     // A private operation in flight already re-syncs when it settles, so syncing alongside it
     // would be both redundant and a way to wedge the (non-reentrant) WASM module.
-    if (this.#isBroadcastingPrivateOperation) {
-      this.debugLog('sync', 'skipped - a private operation is in flight')
-      return
-    }
+    if (this.#isBroadcastingPrivateOperation) return
 
     await this.withStatus(
       'sync',
@@ -2094,16 +1800,11 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
 
     const errors: any[] = []
 
-    /**
-     * A user-initiated refresh retries every supported chain, not just the enabled ones. A chain
-     * that failed at Enable time is deliberately left out of `#enabledChainIds` so the periodic
-     * refresh doesn't keep hammering it, but that would otherwise make it unreachable: once one
-     * chain is up, `isInitialized` is true, so the UI shows Refresh instead of Enable and there
-     * is nothing left to press. Refresh IS the retry.
-     */
+    // A user-initiated refresh retries every supported chain, not just the enabled ones: a chain
+    // that failed at Enable time is left out of `#enabledChainIds` so the timer doesn't hammer it,
+    // and once one chain is up the UI shows Refresh instead of Enable. Refresh IS the retry.
     // Cheap and idempotent, and needed because a refresh can be the first thing that runs after a
-    // chain was torn down - #initChain no longer resolves the identity itself. Also refreshes the
-    // per-chain summaries the filter below reads.
+    // chain was torn down. Also refreshes the per-chain summaries the filter below reads.
     await this.#resolveIdentity()
 
     const candidateChainIds = isBackgroundUpdate
@@ -2111,15 +1812,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       : this.supportedChainIds
 
     /**
-     * The chains whose POI proofs the SDK has recorded but not submitted yet. Read up front because
-     * the filter below is synchronous, and per chain because a proof can only be submitted by a
-     * plugin for the chain that holds the transaction.
-     *
-     * This is what makes the freshness check below not apply to them: submitting is something only
-     * a sync does, and it cannot succeed on the sync the broadcast itself runs - the aggregator has
-     * to validate the transaction's txid first, which takes minutes. So the proof always lands on a
-     * later sync, and a chain that is "fresh enough" to skip is exactly the case where it never
-     * does.
+     * The chains whose POI proofs the SDK has recorded but not submitted yet, read up front because
+     * the filter below is synchronous. They are exempt from the freshness check: only a sync
+     * submits, and never the one the broadcast itself runs (the aggregator has to validate the txid
+     * first), so a chain that is "fresh enough" to skip is exactly the case where it never does.
      */
     const chainIdsOwingPoi = new Set(
       (
@@ -2131,41 +1827,22 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       ).filter((chainId): chainId is string => !!chainId)
     )
 
-    if (chainIdsOwingPoi.size)
-      this.debugLog('sync', 'chains with a POI proof still to submit', {
-        chainIds: [...chainIdsOwingPoi]
-      })
-
-    // Every exclusion is decided here, before anything is marked as queued. Marking first and
-    // filtering inside the loop is what used to leave a skipped chain showing "waiting" forever: a
-    // background refresh right after a scan finds that chain fresh, `continue`s past it, and never
-    // writes a terminal status.
+    // Every exclusion is decided here, before anything is marked as queued - marking first and
+    // filtering inside the loop leaves a skipped chain showing "waiting" with nothing left to write
+    // it a terminal status.
     const chainIds = candidateChainIds.filter((chainId) => {
       const { hasIdentityData, lastSyncedAt } = this.#getChainState(chainId)
 
       // A refresh only ever catches up. A chain this identity has never scanned would turn it into
       // the minutes-long first walk, which is the user's choice to make - see `initChainAndSync`.
-      if (!hasIdentityData) {
-        this.debugLog('sync', 'skipped a chain this identity has never scanned', { chainId })
-
-        return false
-      }
+      if (!hasIdentityData) return false
 
       const isFreshEnough =
         !!lastSyncedAt &&
         Date.now() - lastSyncedAt < MIN_BACKGROUND_SYNC_AGE_IN_MS &&
         !chainIdsOwingPoi.has(chainId)
 
-      if (isBackgroundUpdate && isFreshEnough) {
-        this.debugLog('sync', 'skipped a background sync - already fresh', {
-          chainId,
-          lastSyncedAt
-        })
-
-        return false
-      }
-
-      return true
+      return !(isBackgroundUpdate && isFreshEnough)
     })
 
     const clearQueuedStatus = this.#markQueued(chainIds)
@@ -2188,11 +1865,6 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     if (!isBackgroundUpdate) throw error
 
     this.#consecutiveBackgroundSyncFailures += 1
-    this.debugLog('sync', 'background sync failed', {
-      consecutiveFailures: this.#consecutiveBackgroundSyncFailures,
-      failedChainsCount: errors.length,
-      error
-    })
 
     if (this.#consecutiveBackgroundSyncFailures < MAX_QUIET_BACKGROUND_SYNC_FAILURES) return
 
@@ -2263,35 +1935,22 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     // that walk and left it retrying forever.
     const { hasIdentityData } = this.#getChainState(chainId)
     const isFirstScanForIdentity = !hasIdentityData
-    this.#updateChainStateFor(identityAddress, chainId, {
+    this.#writeChainState(identityAddress, chainId, {
       syncStatus: 'syncing',
       syncStartedAt: Date.now()
     })
-    // Logged on the way in as well as on the way out: without a start line there is no way to
-    // tell a slow sync from a hung one in the log.
-    this.debugLog('sync', 'shielded balance sync started', { chainId, isFirstScanForIdentity })
 
-    // `balance()` syncs the UTXO tree before answering, so its duration is dominated by the
-    // chain scan (and, with POI on, by proving), not the balance math. Timed because a slow
-    // scan is indistinguishable from a hang in the UI - see the rpcBatchSize note.
-    const syncStartedAt = Date.now()
     let hasTimedOut = false
     let wasAborted = false
     try {
-      // Soft timeout: the WASM scan keeps running in the background (withTimeout can't cancel
-      // it), but giving up on awaiting it is what lets the status - and with it the refresh
-      // button and every other action - come back. Because the scan is still running, this
-      // chain's plugin is discarded in the finally below: the abandoned Rust object is still
-      // mutably borrowed, so touching it again is what produces "recursive use of an object
-      // detected". A rebuilt plugin is a different object, so it can't alias the abandoned one.
+      // Soft timeout: the WASM scan keeps running, but giving up on awaiting it is what lets the
+      // status - and with it every action - come back. Because it is still running, this chain's
+      // plugin is discarded in the finally below: the abandoned Rust object is still mutably
+      // borrowed, and touching it again produces "recursive use of an object detected".
       //
-      // `balance()` groups amounts per (asset, poiStatus) pair and tags each entry, which is
-      // what the spendable/pending split below relies on. Worth confirming against a live chain:
-      // the WASM's own doc comment for `RailgunProvider.balance` claims it "only returns the
-      // spendable balance" when POI is enabled, which would contradict the SDK's TS layer
-      // grouping by status. If a freshly shielded amount never shows up as pending, that doc
-      // comment is the accurate one and this should read `plugin.notes()` instead - it returns
-      // every unspent note with its own poiStatus, unfiltered.
+      // `balance()` syncs the UTXO tree before answering, so its duration is the chain scan (and,
+      // with POI on, the proving) rather than the balance math. It groups amounts per (asset,
+      // poiStatus) pair, which is what the spendable/pending split below relies on.
       const balances = await this.#withAbort(
         withTimeout(() => plugin.balance(undefined), {
           timeoutMs: isFirstScanForIdentity
@@ -2300,16 +1959,6 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
           message: RAILGUN_SYNC_TIMEOUT_MESSAGE
         })
       )
-      this.debugLog('sync', 'shielded balance sync completed', {
-        chainId,
-        isFirstScanForIdentity,
-        durationMs: Date.now() - syncStartedAt,
-        balancesCount: balances.length,
-        // Cumulative for the session. On a catch-up with no new commitments this should account for
-        // every key the SDK handed back, i.e. the whole blob was left unwritten.
-        skippedIdenticalWrites: this.#pluginStorage.skippedWriteCount
-      })
-
       const { balances: previousBalances, wrappedBaseTokenAddress } = this.#getChainState(chainId)
       const shieldedBalances = balances.filter(isErc20Balance).map((balance) => ({
         tokenAddress: balance.asset.contract,
@@ -2317,7 +1966,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         poiStatus: toRailgunPoiStatus(balance.tag)
       }))
 
-      this.#updateChainStateFor(identityAddress, chainId, {
+      this.#writeChainState(identityAddress, chainId, {
         balances: shieldedBalances,
         lastSyncedAt: Date.now(),
         // This run is what created the identity's persisted entry, so a later one on this chain is
@@ -2353,7 +2002,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       // Skipped when aborted: #teardown has already reset this identity's chains, and writing a
       // status now would resurrect state for an identity that is no longer selected.
       if (!wasAborted)
-        this.#updateChainStateFor(identityAddress, chainId, {
+        this.#writeChainState(identityAddress, chainId, {
           syncStatus: hasTimedOut ? 'idle' : 'ready',
           syncStartedAt: null
         })
@@ -2379,12 +2028,11 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * Builds the raw {to,data,value} calls for shielding (Ambire account -> 0zk). Shield
-   * transactions must be self-broadcast (no proof/relayer needed - the source account is
-   * already public), so the caller hands the returned calls to
-   * `RequestsController.build({type:'calls', ...})` to go through the normal sign/broadcast
-   * pipeline. Supports `dispatchAndWait` (see ProvidersController.callProviderAndSendResToUi
-   * for the same requestId/sendUiMessage pattern) since `build`'s own dispatch is fire-and-forget.
+   * Builds the raw {to,data,value} calls for shielding (Ambire account -> 0zk). A shield needs no
+   * proof or relayer - the source account is already public - so it is self-broadcast: the caller
+   * hands these calls to `RequestsController.build` and they go through the normal sign/broadcast
+   * pipeline. Answers through `requestId`/`sendUiMessage`, since `build`'s own dispatch is
+   * fire-and-forget.
    */
   async buildShieldCalls(
     {
@@ -2463,22 +2111,14 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * Broadcasts a proved private operation (unshield/transfer) via an ERC-4337 UserOp,
-   * signed by a fresh disposable key generated per operation and never persisted. This is
-   * what gives unshield/transfer real unlinkability: the bundler fee is paid from the
-   * shielded balance itself (not this disposable key's balance, which is never funded),
-   * and the disposable key/account has no other on-chain history tying it to the user -
-   * this is why it differs from Shield's self-broadcast path.
+   * Broadcasts a proved private operation via an ERC-4337 UserOp signed by a fresh disposable key.
+   * This is what gives unshield and transfer their unlinkability: the fee comes out of the shielded
+   * balance rather than that key's (never funded) one, and the key has no on-chain history tying it
+   * to the user - which is why it differs from shield's self-broadcast path. The account is upgraded
+   * to a smart account via EIP-7702 inside the UserOp, so no pre-funding is needed.
    *
-   * Pimlico URL uses the numeric chain id in the path (`/v2/<chainId>/rpc`), confirmed
-   * against a working reference integration - an earlier guess using `/v2/sepolia/rpc`
-   * was unverified and wrong. The disposable account is expected to be upgraded to a smart
-   * account via EIP-7702 on the fly inside the UserOp, so a fresh, zero-balance,
-   * never-delegated key should broadcast with no pre-funding.
-   *
-   * `disposableSigner` may be passed in by the caller when the operation had to be *built*
-   * against the smart account's address - native unshields do, see
-   * `#createDisposableBroadcastSigner`.
+   * `disposableSigner` is passed in when the operation had to be *built* against the smart account's
+   * address - native unshields do, see `#createDisposableBroadcastSigner`.
    */
   async #broadcastPrivateOperation(
     chainId: string,
@@ -2501,120 +2141,32 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         error: new Error(`railgun: missing provider for chain ${chainId}`)
       })
 
-    const ethersProvider = provider as JsonRpcProvider
-    const eip1193Provider = new RailgunEip1193ProviderAdapter(ethersProvider)
     const smartAccount = new SimpleSmartAccount(
       disposableSigner.address,
       BigInt(chainId),
-      eip1193Provider
-    )
-    const bundler = Bundler.pimlico(
-      `https://api.pimlico.io/v2/${chainId}/rpc?apikey=${this.#pimlicoApiKey}`
+      toEip1193Provider(provider as JsonRpcProvider)
     )
 
-    plugin.setBundler(bundler)
+    plugin.setBundler(
+      Bundler.pimlico(`https://api.pimlico.io/v2/${chainId}/rpc?apikey=${this.#pimlicoApiKey}`)
+    )
     plugin.setSmartAccount(smartAccount, disposableSigner)
-
-    // Snapshot the disposable EOA's on-chain state right before broadcasting, so a failure tells
-    // us whether the on-the-fly EIP-7702 delegation of a zero-balance, never-delegated fresh key
-    // is the blocker. Gated behind the RailgunController debug toggle and wrapped so a
-    // diagnostic RPC hiccup can never abort the broadcast itself.
-    if (this.isDebugLogEnabled) {
-      try {
-        const [nativeBalanceWei, code] = await Promise.all([
-          ethersProvider.getBalance(disposableSigner.address),
-          ethersProvider.getCode(disposableSigner.address)
-        ])
-        this.debugLog('broadcast', 'disposable signer pre-broadcast state', {
-          chainId,
-          address: disposableSigner.address,
-          nativeBalanceWei,
-          isZeroBalance: nativeBalanceWei === 0n,
-          code,
-          isAlreadyDelegated: code !== '0x'
-        })
-      } catch (diagnosticError) {
-        this.debugLog('broadcast', 'failed to read disposable signer pre-broadcast state', {
-          address: disposableSigner.address,
-          diagnosticError
-        })
-      }
-    }
-
-    // Tap the raw bundler JSON-RPC traffic so we can see the actual UserOp on the wire (does it
-    // carry the privacy paymaster and/or an eip7702Auth?) and the bundler's raw error response
-    // (richer than the WASM-wrapped "-32521 reverted 0x"). The Kohaku bundler talks to Pimlico
-    // via the GLOBAL fetch - confirmed in the SDK's wasm-bindgen shim, which calls
-    // `fetch(request)` rather than the host fetch - so we wrap globalThis.fetch for the duration
-    // of this broadcast only. Only wrapped when the RailgunController debug toggle is on (zero
-    // overhead otherwise), and always restored in the finally below.
-    const originalFetch = this.isDebugLogEnabled ? globalThis.fetch : null
-    if (originalFetch) {
-      const tappedFetch = async (input: any, init?: any): Promise<Response> => {
-        const url = typeof input === 'string' ? input : input?.url
-        const isBundlerCall = typeof url === 'string' && url.includes('api.pimlico.io')
-        if (isBundlerCall) {
-          try {
-            const body =
-              init?.body ??
-              (typeof input?.clone === 'function' ? await input.clone().text() : undefined)
-            this.debugLog('broadcast', 'bundler request', { url, body })
-          } catch (tapError) {
-            this.debugLog('broadcast', 'failed to tap bundler request', tapError)
-          }
-        }
-        const response = await originalFetch(input, init)
-        if (isBundlerCall) {
-          try {
-            // Clone before reading so the WASM still receives an unconsumed response body.
-            this.debugLog('broadcast', 'bundler response', {
-              status: response.status,
-              body: await response.clone().text()
-            })
-          } catch (tapError) {
-            this.debugLog('broadcast', 'failed to tap bundler response', tapError)
-          }
-        }
-        return response
-      }
-      // Local cast: the wrapper is structurally fetch-compatible; reproducing the full
-      // `typeof fetch` overload set is not worth it for a debug-only tap.
-      globalThis.fetch = tappedFetch as typeof globalThis.fetch
-    }
 
     try {
       await plugin.broadcast(op)
-      this.debugLog('broadcast', 'broadcast succeeded', {
-        chainId,
-        disposableSignerAddress: disposableSigner.address
-      })
-    } catch (broadcastError) {
-      // Log the full error (bundler AA codes, revert reasons and nested `cause`/`details`
-      // usually live here) before it is re-thrown to the withStatus wrapper, which only
-      // surfaces `.message` to the UI. Enable the RailgunController debug toggle to see it,
-      // since debugLog is a no-op otherwise.
-      this.debugLog('broadcast', 'broadcast failed', {
-        chainId,
-        disposableSignerAddress: disposableSigner.address,
-        broadcastError
-      })
-      throw broadcastError
     } finally {
-      // Restore the original fetch before anything else, even if the broadcast threw.
-      if (originalFetch) globalThis.fetch = originalFetch
       // The sheet's last step: the re-sync below is what confirms the result, since it is the
       // shielded balance - not the bundler's receipt - that tells the user what actually happened.
       if (this.privateOperation)
         this.#setPrivateOperationPhase(this.privateOperation.id, 'finalizing')
-      // Re-sync regardless of outcome, and not only to refresh balances: with POI enabled the
-      // SDK generates and submits the transact proof for this operation's outputs during a
-      // sync, so skipping it can leave the recipient's (and the change) note without a POI,
-      // i.e. unspendable. A bundler-side retry can also reject (e.g. "Note already spent")
-      // even when an earlier attempt for the same op already landed on-chain, so the shielded
-      // balance would otherwise stay stale after a "failed" broadcast that actually succeeded.
-      // Its failure is caught here on purpose: a throw from a finally block replaces the
-      // exception on its way out, so a failed re-sync would otherwise hide the broadcast error
-      // that the user actually needs to see.
+      // Re-synced regardless of outcome, and not only to refresh balances: with POI enabled the SDK
+      // generates and submits the transact proof for this operation's outputs during a sync, so
+      // skipping it can leave the recipient's (and the change) note unspendable. A bundler retry
+      // can also reject an op that already landed, which would otherwise leave the balance stale
+      // after a "failed" broadcast that actually succeeded.
+      //
+      // Its failure is caught on purpose: a throw from a finally block replaces the exception on
+      // its way out, and would hide the broadcast error the user actually needs to see.
       try {
         await this.#syncChain(chainId)
       } catch (syncError: any) {
@@ -2628,27 +2180,91 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * Unshield/transfer broadcasts (UserOp submission + bundler wait-for-receipt + re-sync)
-   * routinely take longer than `dispatchAndWait`'s fixed 10s UI-side timeout (confirmed live:
-   * the broadcast succeeds but the UI reports "timed out" first) - so unlike
-   * `buildShieldCalls` (bounded, WASM-only), these use the same `withStatus` + polled
-   * `statuses` pattern as `init`/`sync`, not requestId/sendUiMessage.
+   * Runs one private operation end to end: record it, narrate it, prove it, broadcast it, resolve
+   * it. Shared by unshield and private transfer, which differ only in what `prepare` builds and in
+   * what Railgun's treasury takes.
+   *
+   * Unlike `buildShieldCalls` (bounded, WASM-only), these routinely outlast `dispatchAndWait`'s
+   * fixed 10s UI-side timeout, so they report through `withStatus` and the polled `statuses` the
+   * way `init` and `sync` do.
    */
-  async buildAndBroadcastUnshield(params: {
+  async #runPrivateOperation({
+    chainId,
+    type,
+    tokenAddress,
+    isNative,
+    amount,
+    recipient,
+    protocolFee,
+    failureMessage,
+    prepare
+  }: {
     chainId: string
+    type: RailgunPrivateOperation['type']
     tokenAddress: `0x${string}`
     isNative: boolean
     amount: bigint
-    toAddress: `0x${string}`
+    recipient: string
+    protocolFee: bigint
+    failureMessage: string
+    prepare: (
+      plugin: RailgunPlugin,
+      asset: AssetId
+    ) => Promise<{
+      op: Parameters<RailgunPlugin['broadcast']>[0]
+      disposableSigner?: EthSigner
+    }>
   }) {
-    await this.withStatus(
-      'buildAndBroadcastUnshield',
-      () => this.#queueWasmOperation(() => this.#buildAndBroadcastUnshield(params)),
-      true
-    )
+    const plugin = this.#getChainPlugin(chainId)
+
+    const activityId = this.#addActivityEntry({
+      chainId,
+      type,
+      tokenAddress,
+      isNative,
+      amount,
+      recipient,
+      protocolFee
+    })
+
+    this.#startPrivateOperation({
+      id: activityId,
+      chainId,
+      type,
+      tokenAddress,
+      isNative,
+      amount,
+      recipient
+    })
+
+    // Held across proving too, not just the broadcast: preparing an operation drains notes through
+    // the same WASM module a concurrent sync would use.
+    this.#isBroadcastingPrivateOperation = true
+    try {
+      const asset: AssetId = isNative
+        ? { __type: 'native' }
+        : { __type: 'erc20', contract: tokenAddress }
+
+      const { op, disposableSigner } = await prepare(plugin, asset)
+      // The notes are picked at this point, so what is left is the long part: proving, submitting
+      // and waiting for the bundler.
+      this.#setPrivateOperationPhase(activityId, 'proving')
+      await this.#broadcastPrivateOperation(chainId, plugin, op, disposableSigner)
+
+      this.#updateActivityEntry(activityId, { status: 'success' })
+      this.#updatePrivateOperation(activityId, { status: 'success' })
+    } catch (error: any) {
+      const message = getPrivateOperationErrorMessage(error, failureMessage)
+      this.#updateActivityEntry(activityId, { status: 'failed', error: message })
+      this.#updatePrivateOperation(activityId, { status: 'failed', error: message })
+
+      throw new EmittableError({ message, level: 'major', error })
+    } finally {
+      this.#isBroadcastingPrivateOperation = false
+    }
   }
 
-  async #buildAndBroadcastUnshield({
+  async buildAndBroadcastUnshield({
     chainId,
     tokenAddress,
     isNative,
@@ -2661,103 +2277,58 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     amount: bigint
     toAddress: `0x${string}`
   }) {
-    const plugin = this.#getChainPlugin(chainId)
-
-    const activityId = this.#addActivityEntry({
-      chainId,
-      type: 'unshield',
-      tokenAddress,
-      isNative,
-      amount,
-      recipient: toAddress,
-      // Railgun's cut is arithmetic on the amount, so it is recorded up front: the operation spends
-      // the grossed-up amount, and this is the part of it the recipient never sees.
-      protocolFee: getRailgunUnshieldAmounts(amount, RAILGUN_FEE_BPS).feeAmount
-    })
-
-    this.#startPrivateOperation({
-      id: activityId,
-      chainId,
-      type: 'unshield',
-      tokenAddress,
-      isNative,
-      amount,
-      recipient: toAddress
-    })
-
-    // Held across proving too, not just the broadcast: `prepareUnshield` drains notes through
-    // the same WASM module a concurrent sync would use.
-    this.#isBroadcastingPrivateOperation = true
-    try {
-      const asset: AssetId = isNative
-        ? { __type: 'native' }
-        : { __type: 'erc20', contract: tokenAddress }
-
-      // The pool holds no ETH, so a native unshield is really a WETH unshield followed by
-      // `WETH.withdraw`, which burns from `msg.sender` - the smart account that runs the UserOp.
-      // Unshielding straight to the user's recipient therefore cannot work (the WETH would sit on
-      // an address the UserOp can't spend from, and the unwrap would revert): the pool must pay
-      // the smart account, and a tail call appended to the same UserOp forwards the unwrapped ETH
-      // on to the recipient. Ambire's broadcaster is a fresh disposable key, so it can never be
-      // the recipient itself - which is what makes the tail call necessary rather than optional.
-      // ERC-20 unshields need none of this and go straight to the recipient.
-      const disposableSigner = isNative ? this.#createDisposableBroadcastSigner() : undefined
-      const unshieldToAddress = disposableSigner ? disposableSigner.address : toAddress
-      if (disposableSigner)
-        this.debugLog('broadcast', 'native unshield routed through the smart account', {
-          chainId,
-          smartAccountAddress: unshieldToAddress,
-          recipient: toAddress,
-          amount
-        })
-
-      const op = await plugin.prepareUnshield({ asset, amount }, unshieldToAddress, {
-        tailCalls: disposableSigner
-          ? async (smartAccountAddress) => {
-              // Guards against the SDK resolving the tails against a different address than the
-              // one the WETH was unshielded to - that would forward ETH the account doesn't hold
-              // (reverting the whole UserOp at best, stranding the funds at worst).
-              if (smartAccountAddress.toLowerCase() !== unshieldToAddress.toLowerCase())
-                throw new Error(
-                  `railgun: unshield tail call address mismatch (built for ${unshieldToAddress}, resolved ${smartAccountAddress})`
-                )
-
-              return [{ to: toAddress, data: '0x', value: amount }]
-            }
-          : undefined
-      })
-      // The notes are picked at this point, so what is left is the long part: proving, submitting
-      // and waiting for the bundler.
-      this.#setPrivateOperationPhase(activityId, 'proving')
-      await this.#broadcastPrivateOperation(chainId, plugin, op, disposableSigner)
-
-      this.#updateActivityEntry(activityId, { status: 'success' })
-      this.#updatePrivateOperation(activityId, { status: 'success' })
-    } catch (error: any) {
-      const message = getPrivateOperationErrorMessage(error, 'Failed to unshield.')
-      this.#updateActivityEntry(activityId, { status: 'failed', error: message })
-      this.#updatePrivateOperation(activityId, { status: 'failed', error: message })
-
-      throw new EmittableError({ message, level: 'major', error })
-    } finally {
-      this.#isBroadcastingPrivateOperation = false
-    }
-  }
-
-  async buildAndBroadcastTransfer(params: {
-    chainId: string
-    tokenAddress: `0x${string}`
-    amount: bigint
-    toZkAddress: string
-  }) {
     await this.withStatus(
-      'buildAndBroadcastTransfer',
-      () => this.#queueWasmOperation(() => this.#buildAndBroadcastTransfer(params)),
+      'buildAndBroadcastUnshield',
+      () =>
+        this.#queueWasmOperation(() =>
+          this.#runPrivateOperation({
+            chainId,
+            type: 'unshield',
+            tokenAddress,
+            isNative,
+            amount,
+            recipient: toAddress,
+            // Railgun's cut is arithmetic on the amount, so it is recorded up front: the operation
+            // spends the grossed-up amount, and this is the part the recipient never sees.
+            protocolFee: getRailgunUnshieldAmounts(amount, RAILGUN_FEE_BPS).feeAmount,
+            failureMessage: 'Failed to unshield.',
+            prepare: async (plugin, asset) => {
+              // The pool holds no ETH, so a native unshield is really a WETH unshield followed by
+              // `WETH.withdraw`, which burns from `msg.sender` - the smart account that runs the
+              // UserOp. Unshielding straight to the recipient cannot work (the WETH would sit on an
+              // address the UserOp can't spend from, and the unwrap would revert), so the pool pays
+              // the smart account and a tail call on the same UserOp forwards the ETH on. ERC-20
+              // unshields need none of this and go straight to the recipient.
+              const disposableSigner = isNative
+                ? this.#createDisposableBroadcastSigner()
+                : undefined
+              const unshieldToAddress = disposableSigner ? disposableSigner.address : toAddress
+
+              const op = await plugin.prepareUnshield({ asset, amount }, unshieldToAddress, {
+                tailCalls: disposableSigner
+                  ? async (smartAccountAddress) => {
+                      // Guards against the SDK resolving the tails against a different address than
+                      // the one the WETH was unshielded to - that would forward ETH the account
+                      // doesn't hold, reverting the UserOp at best and stranding the funds at worst.
+                      if (smartAccountAddress.toLowerCase() !== unshieldToAddress.toLowerCase())
+                        throw new Error(
+                          `railgun: unshield tail call address mismatch (built for ${unshieldToAddress}, resolved ${smartAccountAddress})`
+                        )
+
+                      return [{ to: toAddress, data: '0x', value: amount }]
+                    }
+                  : undefined
+              })
+
+              return { op, disposableSigner }
+            }
+          })
+        ),
       true
     )
   }
 
-  async #buildAndBroadcastTransfer({
+  async buildAndBroadcastTransfer({
     chainId,
     tokenAddress,
     amount,
@@ -2768,50 +2339,31 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     amount: bigint
     toZkAddress: string
   }) {
-    const plugin = this.#getChainPlugin(chainId)
-
-    const activityId = this.#addActivityEntry({
-      chainId,
-      type: 'transfer',
-      tokenAddress,
-      // Private transfers never involve the native asset - the pool holds none
-      isNative: false,
-      amount,
-      recipient: toZkAddress,
-      // Nothing crosses the pool's boundary, which is the only place Railgun charges
-      protocolFee: 0n
-    })
-
-    this.#startPrivateOperation({
-      id: activityId,
-      chainId,
-      type: 'transfer',
-      tokenAddress,
-      isNative: false,
-      amount,
-      recipient: toZkAddress
-    })
-
-    // See the note in #buildAndBroadcastUnshield - proving uses the same WASM module
-    this.#isBroadcastingPrivateOperation = true
-    try {
-      const asset: ERC20AssetId = { __type: 'erc20', contract: tokenAddress }
-      const op = await plugin.prepareTransfer({ asset, amount }, toZkAddress as RailgunAddress)
-      // See the note in #buildAndBroadcastUnshield - from here on it is proving and broadcasting.
-      this.#setPrivateOperationPhase(activityId, 'proving')
-      await this.#broadcastPrivateOperation(chainId, plugin, op)
-
-      this.#updateActivityEntry(activityId, { status: 'success' })
-      this.#updatePrivateOperation(activityId, { status: 'success' })
-    } catch (error: any) {
-      const message = getPrivateOperationErrorMessage(error, 'Failed to send privately.')
-      this.#updateActivityEntry(activityId, { status: 'failed', error: message })
-      this.#updatePrivateOperation(activityId, { status: 'failed', error: message })
-
-      throw new EmittableError({ message, level: 'major', error })
-    } finally {
-      this.#isBroadcastingPrivateOperation = false
-    }
+    await this.withStatus(
+      'buildAndBroadcastTransfer',
+      () =>
+        this.#queueWasmOperation(() =>
+          this.#runPrivateOperation({
+            chainId,
+            type: 'transfer',
+            tokenAddress,
+            // Private transfers never involve the native asset - the pool holds none
+            isNative: false,
+            amount,
+            recipient: toZkAddress,
+            // Nothing crosses the pool's boundary, which is the only place Railgun charges
+            protocolFee: 0n,
+            failureMessage: 'Failed to send privately.',
+            prepare: async (plugin, asset) => ({
+              op: await plugin.prepareTransfer(
+                { asset: asset as ERC20AssetId, amount },
+                toZkAddress as RailgunAddress
+              )
+            })
+          })
+        ),
+      true
+    )
   }
 
   toJSON() {
