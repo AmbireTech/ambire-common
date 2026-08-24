@@ -72,7 +72,8 @@ const RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS: { [chainId: string]: number } = {
 }
 const DEFAULT_RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS = 2_000
 // Keeps the persisted activity log bounded - it exists to show the user their recent Railgun
-// operations, not to be a complete audit trail.
+// operations, not to be a complete audit trail. Counted per identity, so a busy recovery phrase
+// cannot evict the entries of one the user switches back to.
 const MAX_ACTIVITY_ENTRIES = 20
 
 /**
@@ -643,7 +644,12 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   #chainStatesByIdentity: { [railgunAddress: string]: { [chainId: string]: RailgunChainState } } =
     {}
 
-  activity: RailgunActivityEntry[] = []
+  /**
+   * Every identity's operations in one list, newest first, as persisted. Read through the
+   * `activity` getter, which narrows it to the identity on screen - see there for why the log is
+   * not split per identity in storage.
+   */
+  #activity: RailgunActivityEntry[] = []
 
   /**
    * The private operation on screen: the one running, or the last one until the user dismisses it.
@@ -745,7 +751,11 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     await this.#keystore.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    this.activity = await this.#storage.get('railgunActivity', [])
+    // Entries recorded before the log carried an identity cannot be attributed to one, so they are
+    // dropped instead of being kept around unreachable.
+    this.#activity = (await this.#storage.get('railgunActivity', [])).filter(
+      (entry) => !!entry.railgunAddress
+    )
 
     this.#subscribeToDependencies()
     this.emitUpdate()
@@ -878,6 +888,24 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    * from, so it only exists for accounts that have one: hardware wallets, private-key imports
    * and view-only accounts have no seed to derive from.
    */
+  /**
+   * The operations of the identity on screen, newest first - which is what the account the user is
+   * on has done, since the identity is derived from its recovery phrase. Scoped here rather than in
+   * the UI so another identity's operations cannot reach it at all.
+   *
+   * Scoped by identity rather than by account address, to match the balances it sits next to:
+   * accounts sharing a recovery phrase share one 0zk address and one shielded pool, so the
+   * operations on that pool are theirs jointly - and an account-scoped log would show an empty
+   * history beside a non-empty balance.
+   *
+   * Empty until the identity is resolved, which the Railgun screen does as soon as it is opened.
+   */
+  get activity(): RailgunActivityEntry[] {
+    if (!this.railgunAddress) return []
+
+    return this.#activity.filter((entry) => entry.railgunAddress === this.railgunAddress)
+  }
+
   #getSeedIdForSelectedAccount(): string | null {
     const account = this.#selectedAccount.account
     if (!account) return null
@@ -1503,19 +1531,29 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   #addActivityEntry(
-    entry: Omit<RailgunActivityEntry, 'id' | 'status' | 'createdAt'> & {
+    entry: Omit<RailgunActivityEntry, 'id' | 'railgunAddress' | 'status' | 'createdAt'> & {
       status?: RailgunActivityStatus
     }
   ) {
+    const { railgunAddress } = this
+    // Every caller holds a plugin, and a plugin is built from the identity - so this narrows the
+    // type rather than describing a reachable state.
+    if (!railgunAddress) throw new Error('railgun: no identity to record the operation against')
+
     const createdAt = Date.now()
     // Unique without a uuid dependency: two entries can't be created for the same asset on the
     // same chain in the same millisecond, since every op goes through one awaited call per action.
     const id = `${entry.chainId}-${entry.type}-${entry.tokenAddress}-${createdAt}`
 
-    this.activity = [
-      { ...entry, id, status: entry.status || 'pending', createdAt },
-      ...this.activity
-    ].slice(0, MAX_ACTIVITY_ENTRIES)
+    // Trimmed within the identity, then put back in front of the rest: the cap must not let this
+    // identity's operations push another's out of the log.
+    this.#activity = [
+      ...[
+        { ...entry, id, railgunAddress, status: entry.status || 'pending', createdAt },
+        ...this.#activity.filter((other) => other.railgunAddress === railgunAddress)
+      ].slice(0, MAX_ACTIVITY_ENTRIES),
+      ...this.#activity.filter((other) => other.railgunAddress !== railgunAddress)
+    ]
     this.emitUpdate()
     this.#persistActivity()
 
@@ -1523,7 +1561,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   #updateActivityEntry(id: string, update: Partial<RailgunActivityEntry>) {
-    this.activity = this.activity.map((entry) =>
+    this.#activity = this.#activity.map((entry) =>
       entry.id === id ? { ...entry, ...update } : entry
     )
     this.emitUpdate()
@@ -1533,7 +1571,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   // Deliberately not awaited by the callers: the activity log is a UI convenience, so a slow
   // (or failed) write must not delay - or fail - the operation that produced the entry.
   #persistActivity() {
-    this.#storage.set('railgunActivity', this.activity).catch((error) => {
+    this.#storage.set('railgunActivity', this.#activity).catch((error) => {
       this.emitError({
         message: 'Could not save the Railgun activity log.',
         level: 'silent',
@@ -1682,7 +1720,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       )
     }
 
-    const resolvedActivity = this.activity.map((entry) =>
+    // The balances compared above are the current identity's, so only its shields may be resolved
+    // from them.
+    const resolvedActivity = this.#activity.map((entry) =>
+      entry.railgunAddress === this.railgunAddress &&
       entry.chainId === chainId &&
       entry.type === 'shield' &&
       entry.status === 'pending' &&
@@ -1692,11 +1733,11 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     )
 
     const hasResolvedAny = resolvedActivity.some(
-      (entry, index) => entry.status !== this.activity[index]?.status
+      (entry, index) => entry.status !== this.#activity[index]?.status
     )
     if (!hasResolvedAny) return
 
-    this.activity = resolvedActivity
+    this.#activity = resolvedActivity
     this.emitUpdate()
     this.#persistActivity()
   }
@@ -1710,7 +1751,9 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     const activityId = op.meta?.railgunShieldActivityId
     if (!activityId) return undefined
 
-    return this.activity.find((entry) => entry.id === activityId && entry.status === 'pending')
+    // Deliberately the whole log, not the identity-scoped view: the transaction carrying a shield
+    // can settle after the user has switched accounts, and its entry still has to be resolved.
+    return this.#activity.find((entry) => entry.id === activityId && entry.status === 'pending')
   }
 
   /**

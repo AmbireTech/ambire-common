@@ -148,6 +148,12 @@ export type RailgunActivityType = 'shield' | 'unshield' | 'transfer'
  */
 export type RailgunActivityEntry = {
   id: string
+  /**
+   * The 0zk identity the operation belongs to. Recorded because the log is one flat list shared by
+   * every identity on the device, while the pool it describes is per identity (per recovery
+   * phrase) - so it is what scopes the log to the account on screen. See `RailgunController.activity`.
+   */
+  railgunAddress: string
   chainId: string
   type: RailgunActivityType
   tokenAddress: string
