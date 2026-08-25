@@ -63,7 +63,7 @@ import {
 import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getAccountOpNonce } from '../../libs/accountOp/accountOp'
-import { Call } from '../../libs/accountOp/types'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import {
   getAccountOpBanners,
   getDappUserRequestsBanners,
@@ -216,6 +216,36 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   set currentUserRequest(val: UserRequest | null) {
     this.#currentUserRequest = val
     this.#onSetCurrentUserRequest(val)
+  }
+
+  #getFirstFreeNonce(accountAddr: string, chainId: bigint, startNonce: bigint): bigint {
+    const latestActivityAccountOp = this.#activity.getAccountOpsForAccount({ accountAddr }).find(
+      (accountOp) =>
+        accountOp.chainId === chainId &&
+        // failures do not move the nonce
+        accountOp.status !== AccountOpStatus.Failure &&
+        accountOp.status !== AccountOpStatus.Rejected
+    )
+    const queuedNonces = this.userRequests.reduce<bigint[]>((nonces, request) => {
+      if (
+        request.kind !== 'calls' ||
+        !request.signAccountOp.account.safeCreation ||
+        request.signAccountOp.accountOp.accountAddr !== accountAddr ||
+        request.signAccountOp.accountOp.chainId !== chainId
+      )
+        return nonces
+
+      const nonce = getAccountOpNonce(request.signAccountOp.accountOp)
+      if (nonce !== null) nonces.push(nonce)
+      return nonces
+    }, [])
+
+    const activityNextNonce = latestActivityAccountOp
+      ? latestActivityAccountOp.nonce + 1n
+      : startNonce
+    let firstFreeNonce = activityNextNonce > startNonce ? activityNextNonce : startNonce
+    while (queuedNonces.includes(firstFreeNonce)) firstFreeNonce += 1n
+    return firstFreeNonce
   }
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
@@ -2083,6 +2113,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const requestId = !!account.safeCreation
         ? `${baseRequestId}-${generateUuid()}`
         : baseRequestId
+      const initialNonce =
+        account.safeCreation && !meta.safeTxnProps && accountOpNonce === undefined
+          ? this.#getFirstFreeNonce(meta.accountAddr, meta.chainId, accountState.nonce)
+          : (accountOpNonce ?? meta.safeTxnProps?.nonce ?? accountState.nonce)
       await this.#signAccountOpPreference.initialLoadPromise
       callUserRequest = {
         id: requestId,
@@ -2106,7 +2140,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           dapps: this.#dapps,
           fromRequestId: requestId,
           accountOp: providedAccountOp
-            ? { ...providedAccountOp, nonce: meta.safeTxnProps?.nonce ?? accountState.nonce }
+            ? { ...providedAccountOp, nonce: initialNonce }
             : {
                 id: generateUuid(),
                 accountAddr: meta.accountAddr,
@@ -2115,7 +2149,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
                 signingKeyType: null,
                 gasLimit: null,
                 gasFeePayment: null,
-                nonce: accountOpNonce ?? meta.safeTxnProps?.nonce ?? accountState.nonce,
+                nonce: initialNonce,
                 signature: meta.safeTxnProps?.signature ?? null,
                 txnId: meta.safeTxnProps?.txnId ?? undefined,
                 calls: [
@@ -2144,6 +2178,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       } as CallsUserRequest
 
       if (accountOpNonce !== undefined) callUserRequest.signAccountOp.setSafeNonce(accountOpNonce)
+
+      // disable automatic changes to the Safe nonce if a higher one is set
+      // unless the user changes it manually
+      if (account.safeCreation && initialNonce && initialNonce > accountState.nonce)
+        callUserRequest.signAccountOp.setSafeNonce(initialNonce)
 
       if (executionType !== 'open-request-window') {
         // If the request doesn't open immediately we shouldn't

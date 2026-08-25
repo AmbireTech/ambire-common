@@ -18,6 +18,7 @@ import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 import type { AccountOp } from '../../libs/accountOp/accountOp'
+import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
 const SAFE_TX_HASH = `0x${'1'.repeat(64)}` as Hex
@@ -83,6 +84,29 @@ const accounts = [
 const updateAccountOp = (request: CallsUserRequest, accountOpData: Partial<AccountOp>) => {
   request.signAccountOp.update({ accountOpData })
 }
+
+const getActivityAccountOp = (
+  accountAddr: string,
+  chainId: bigint,
+  nonce: bigint,
+  timestamp = Date.now()
+): SubmittedAccountOp => ({
+  id: `activity-account-op-${nonce.toString()}`,
+  accountAddr,
+  chainId,
+  nonce,
+  signingKeyAddr: null,
+  signingKeyType: null,
+  gasLimit: null,
+  gasFeePayment: null,
+  signature: null,
+  calls: [],
+  identifiedBy: {
+    type: 'Transaction',
+    identifier: `activity-account-op-${nonce.toString()}`
+  },
+  timestamp
+})
 
 const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) => {
   const { mainCtrl, eventEmitterRegistry, getWindowId, eventEmitter } = await makeMainController(
@@ -227,6 +251,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
     portfolioCtrl: mainCtrl.portfolio,
     storageCtrl: mainCtrl.storage,
     safeCtrl: mainCtrl.safe,
+    activityCtrl: mainCtrl.activity,
     controller: mainCtrl.requests,
     getSignAccountOp,
     getCallsRequest,
@@ -525,11 +550,12 @@ describe('RequestsController ', () => {
     request.signAccountOp.destroy()
   })
 
-  test('adds a new Safe request when two partially signed requests occupy earlier nonces', async () => {
-    const { controller, accountsCtrl } = await prepareTest(false, true)
+  test('assigns the first free nonce to each new Safe request', async () => {
+    const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, chainId, 117n))
     const buildRequest = () =>
       controller.build({
         type: 'calls',
@@ -561,11 +587,12 @@ describe('RequestsController ', () => {
     })
 
     await buildRequest()
-    const nonce120Request = controller.userRequests.find(
+    const secondRequest = controller.userRequests.find(
       (request) => request !== nonce119Request
     ) as CallsUserRequest
-    nonce120Request.signAccountOp.setSafeNonce(120n)
-    nonce120Request.signAccountOp.update({
+    expect(secondRequest.signAccountOp.accountOp.nonce).toBe(120n)
+    secondRequest.signAccountOp.setSafeNonce(121n)
+    secondRequest.signAccountOp.update({
       accountOpData: {
         signed: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E'],
         txnId: `0x${'2'.repeat(64)}`
@@ -573,13 +600,75 @@ describe('RequestsController ', () => {
     })
 
     await buildRequest()
+    const gapRequest = controller.userRequests.find(
+      (request) => request !== nonce119Request && request !== secondRequest
+    ) as CallsUserRequest
 
     expect(controller.userRequests).toHaveLength(3)
     expect(controller.userRequests).toContain(nonce119Request)
-    expect(controller.userRequests).toContain(nonce120Request)
+    expect(controller.userRequests).toContain(secondRequest)
     expect(nonce119Request.signAccountOp.accountOp.nonce).toBe(119n)
-    expect(nonce120Request.signAccountOp.accountOp.nonce).toBe(120n)
+    expect(secondRequest.signAccountOp.accountOp.nonce).toBe(121n)
+    expect(gapRequest.signAccountOp.accountOp.nonce).toBe(120n)
     expect(new Set(controller.userRequests.map((request) => request.id)).size).toBe(3)
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
+  test('uses the latest activity nonce when the account state is stale', async () => {
+    const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, chainId, 118n, 1))
+    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, chainId, 120n, 2))
+    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, 10n, 999n, 3))
+
+    await controller.build({
+      type: 'calls',
+      params: {
+        executionType: 'queue',
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, value: 1n, data: '0x' }],
+          meta: { accountAddr, chainId }
+        }
+      }
+    })
+
+    const request = controller.userRequests[0]
+    expect(request?.kind).toBe('calls')
+    if (request?.kind !== 'calls') throw new Error('Expected calls request')
+    expect(request.signAccountOp.accountOp.nonce).toBe(121n)
+    request.signAccountOp.destroy()
+  })
+  test('keeps the nonce when adding calls to an existing Safe request', async () => {
+    const { controller, accountsCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+    const buildRequest = () =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [{ to: ZeroAddress, value: 1n, data: '0x' }],
+            meta: { accountAddr, chainId }
+          }
+        }
+      })
+
+    await buildRequest()
+    await buildRequest()
+
+    expect(controller.userRequests).toHaveLength(1)
+    const request = controller.userRequests[0]
+    expect(request?.kind).toBe('calls')
+    if (request?.kind !== 'calls') throw new Error('Expected calls request')
+    expect(request.signAccountOp.accountOp.nonce).toBe(119n)
+    expect(request.signAccountOp.accountOp.calls).toHaveLength(2)
+    request.signAccountOp.destroy()
   })
   test('builds an onchain Safe rejection as the current request at the same nonce', async () => {
     const { accountsCtrl, controller, getCallsRequest, portfolioCtrl } = await prepareTest(
@@ -833,12 +922,12 @@ describe('RequestsController ', () => {
 
     await buildSafeRequest(0n, '0x00')
     await buildSafeRequest(1n, '0x01')
-    await buildSafeRequest(2n, '0x02')
+    await buildSafeRequest(5n, '0x05')
 
     const safeRequests = controller.userRequests.filter(
       (request): request is CallsUserRequest => request.kind === 'calls'
     )
-    expect(safeRequests.map((request) => request.signAccountOp.accountOp.nonce)).toEqual([1n, 2n])
+    expect(safeRequests.map((request) => request.signAccountOp.accountOp.nonce)).toEqual([1n, 5n])
 
     safeRequests.forEach((request) => request.signAccountOp.destroy())
   })
