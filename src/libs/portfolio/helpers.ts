@@ -716,9 +716,9 @@ export function isAssetMetadataStale(
 
 /**
  * Splits the passed addresses into the metadata already held for them and the ones
- * whose metadata has to be read on this update. The held entries are copied, so that
- * an update in flight keeps the metadata it started with even if the caller's store
- * drops entries in the meantime.
+ * whose metadata has to be read on this update. The map is copied, so that an update in
+ * flight keeps the metadata it started with even if the caller's store drops entries in
+ * the meantime.
  */
 export function planAssetMetadata<T extends { fetchedAt: number }>(
   addresses: string[],

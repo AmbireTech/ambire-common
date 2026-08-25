@@ -523,19 +523,6 @@ export class Portfolio {
       []
     )
 
-    console.log(
-      'Debug: called for',
-      hints.erc20s.length,
-      'tokens and',
-      collectionsHints.length,
-      'collections',
-      'Returned',
-      tokensWithErrResult.filter(([, result]) => result.amount && result.amount > 0).length,
-      'tokens and',
-      collectionsWithErr.length,
-      'collections'
-    )
-
     const oracleCallDone = Date.now()
 
     // Update prices and set the priceIn for each token by reference,

@@ -31,8 +31,8 @@ export class AssetMetadataStore<T extends { fetchedAt: number }> {
    * anything was kept.
    */
   learn(chainId: bigint, entries: [string, T][]): boolean {
-    // A result carrying no metadata at all comes from a portfolio update that ran
-    // before this was tracked, so there is nothing to keep
+    // Nothing was read from the chain, which is the normal case once a network is
+    // fully known
     if (!entries?.length) return false
 
     const metadata = this.getKnown(chainId)

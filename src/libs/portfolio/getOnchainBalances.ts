@@ -165,8 +165,6 @@ export function planMetaRequest(
     metaIndexByAddress.set(address, metaIndexByAddress.size)
   })
 
-  console.log('Debug: flags', flags)
-
   return { metaFlags: `0x${flags.join('')}`, metaIndexByAddress }
 }
 
@@ -214,8 +212,6 @@ export async function getNFTs(
     const fetchedMeta = metaIndex === undefined ? undefined : metas[metaIndex]
     const knownMeta = fetchedMeta ? undefined : opts.metadataPlan.known.get(address)
     const collectibles: bigint[] = [...balance.nfts]
-
-    console.log('Debug: resolving collection from', fetchedMeta ? 'fetched' : 'known')
 
     return {
       error: balance.error,
@@ -387,8 +383,6 @@ export async function getTokens(
     }
 
     const knownMeta = opts.metadataPlan.known.get(address)
-
-    console.log('Debug: resolving tokens from', fetchedMeta ? 'fetched' : 'known')
 
     return {
       amount: balance.amount,
