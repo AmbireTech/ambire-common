@@ -79,7 +79,7 @@ async function estimateGas(
   counter: number = 0
 ): Promise<bigint> {
   // this should happen only in the case of internet issues
-  if (counter > 10) {
+  if (counter > 9) {
     throw new Error(
       `Failed estimating gas for broadcast${
         error ? `: ${getErrorCodeStringFromReason(error.message)}` : ''
@@ -122,9 +122,12 @@ async function estimateGas(
 
   // Sequential EOA calls can fail temporarily if the RPC pending state is stale.
   if (gasLimit instanceof Error || hasNonceDiscrepancyOnApproval) {
-    // Other estimation errors are deterministic, so return them immediately.
-    const isEoaBatch = broadcastOption === BROADCAST_OPTIONS.bySelf && op.calls.length > 1
-    if (gasLimit instanceof Error && !isEoaBatch) throw gasLimit
+    const isGS013 = gasLimit.message.includes('GS013')
+    if (gasLimit instanceof Error) {
+      // Other estimation errors are deterministic, so return them immediately.
+      const isEoaBatch = broadcastOption === BROADCAST_OPTIONS.bySelf && op.calls.length > 1
+      if (!isGS013 && !isEoaBatch) throw gasLimit
+    }
 
     await waitBeforeRetry(chainId)
     return estimateGas(
