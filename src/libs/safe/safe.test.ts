@@ -50,11 +50,6 @@ const buildSafeTransaction = (
   ...overrides
 })
 
-const getCallsRequestMeta = (transaction: SafeMultisigTransactionResponse) =>
-  toCallsUserRequest(SAFE_ADDRESS, {
-    '1': { txns: [transaction], messages: [] }
-  })[0]!.params.userRequestParams.meta
-
 const getSafeInfo = (owners: string[] = [OWNER]): SafeInfoResponse => ({
   address: SAFE_ADDRESS,
   fallbackHandler: '0x0000000000000000000000000000000000000000',
@@ -84,30 +79,7 @@ const createApi = (owners: string[] = [OWNER]) => ({
 })
 
 describe('toCallsUserRequest', () => {
-  test('marks a single empty call to the zero address as an onchain Safe rejection', () => {
-    const meta = getCallsRequestMeta(buildSafeTransaction({}))
-
-    expect(meta.isOnchainSafeRejection).toBe(true)
-  })
-
-  test('marks a Safe Global rejection call to the Safe itself as an onchain Safe rejection', () => {
-    const meta = getCallsRequestMeta(buildSafeTransaction({ to: SAFE_ADDRESS }))
-
-    expect(meta.isOnchainSafeRejection).toBe(true)
-  })
-
-  test.each([
-    { to: OWNER, value: '0', data: '0x' },
-    { to: ZeroAddress, value: '1', data: '0x' },
-    { to: ZeroAddress, value: '0', data: '0x01' },
-    { to: SAFE_ADDRESS, value: '0', data: '0x', operation: 1 }
-  ])('does not mark a non-rejection single call (%o)', (overrides) => {
-    const meta = getCallsRequestMeta(buildSafeTransaction(overrides))
-
-    expect(meta.isOnchainSafeRejection).toBeUndefined()
-  })
-
-  test('does not mark a batch that contains an empty call to the zero address', () => {
+  test('decodes a batch call from multiSend data', () => {
     const calls = [{ to: ZeroAddress, value: 0n, data: '0x' }]
     const encodedCalls = concat(
       calls.map((call) =>
@@ -122,9 +94,11 @@ describe('toCallsUserRequest', () => {
       [encodedCalls]
     )
 
-    const meta = getCallsRequestMeta(buildSafeTransaction({ data }))
+    const { calls: decodedCalls } = toCallsUserRequest(SAFE_ADDRESS, {
+      '1': { txns: [buildSafeTransaction({ data })], messages: [] }
+    })[0]!.params.userRequestParams
 
-    expect(meta.isOnchainSafeRejection).toBeUndefined()
+    expect(decodedCalls).toEqual(calls)
   })
 })
 

@@ -9,7 +9,7 @@ import {
 } from 'viem'
 
 import { allowedFallbackHandlers, allowedMulticallContracts } from '../../../../consts/safe'
-import { AccountOp } from '../../../accountOp/accountOp'
+import { AccountOp, isSafeRejectionCall } from '../../../accountOp/accountOp'
 import {
   HumanizerCallModule,
   HumanizerVisualization,
@@ -95,19 +95,17 @@ export const getSafeHumanization = (
   const selector = data.substring(0, 10)
 
   if (
-    to &&
-    safeAddr &&
-    to.toLowerCase() === safeAddr.toLowerCase() &&
-    value?.toString() === '0' &&
-    data === '0x'
+    to !== undefined &&
+    value !== undefined &&
+    isSafeRejectionCall([{ to, value: BigInt(value), data }], safeAddr ?? '')
   ) {
-    // a Safe{WALLET} "reject" is just an empty, 0-value self-call proposed with the same
-    // nonce as the transaction it is meant to replace, so surface that nonce when it's known
-    // instead of showing a blank/empty call
+    // a Safe{WALLET} "cancel" is just an empty, 0-value call to the zero address or to the
+    // Safe itself, proposed with the same nonce as the transaction it is meant to replace, so
+    // surface that nonce when it's known instead of showing a blank/empty call
     fullVisualization.push(
       ...(nonce !== undefined && nonce !== null
-        ? [getAction('Reject'), getLabel('Tx with nonce'), getLabel(nonce, true)]
-        : [getAction('Reject currently queued transaction')])
+        ? [getAction('Cancel'), getLabel('transaction with'), getLabel(`nonce ${nonce}`, true)]
+        : [getAction('Cancel'), getLabel('currently queued transaction')])
     )
     return {
       visuals: fullVisualization

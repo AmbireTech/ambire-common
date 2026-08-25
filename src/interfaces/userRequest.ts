@@ -61,7 +61,6 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     activeRouteId?: string
     isSwapAndBridgeCall?: boolean
     topUpAmount?: bigint
-    isOnchainSafeRejection?: boolean
     safeTxnProps?: { txnId: Hex; signature: Hex; nonce: bigint }
     safeTx?: SafeMultisigTransactionResponse
     swapTxn?: SwapAndBridgeSendTxRequest

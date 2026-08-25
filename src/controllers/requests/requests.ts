@@ -62,7 +62,7 @@ import {
 } from '../../interfaces/userRequest'
 import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
-import { AccountOp, getAccountOpNonce } from '../../libs/accountOp/accountOp'
+import { AccountOp, getAccountOpNonce, isSafeRejectionCall } from '../../libs/accountOp/accountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import {
   getAccountOpBanners,
@@ -1181,7 +1181,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           userRequest.meta.accountAddr === accountOp.accountAddr &&
           userRequest.meta.chainId === accountOp.chainId &&
           getAccountOpNonce(userRequest.signAccountOp.accountOp) === nonce &&
-          userRequest.meta.isOnchainSafeRejection
+          isSafeRejectionCall(
+            userRequest.signAccountOp.accountOp.calls,
+            userRequest.signAccountOp.accountOp.accountAddr
+          )
       )
 
       if (existingSafeRejectionRequest) {
@@ -1196,8 +1199,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           calls: [{ to: ZeroAddress, value: 0n, data: '0x' }],
           meta: {
             accountAddr: accountOp.accountAddr,
-            chainId: accountOp.chainId,
-            isOnchainSafeRejection: true
+            chainId: accountOp.chainId
           }
         },
         'open-request-window',
@@ -1980,7 +1982,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const existingUserRequest = this.userRequests.find(
       (r) =>
         // A Safe rejection must be a separate account operation.
-        !meta.isOnchainSafeRejection &&
+        !isSafeRejectionCall(calls, meta.accountAddr) &&
         r.kind === 'calls' &&
         r.meta.accountAddr === meta.accountAddr &&
         r.meta.chainId === meta.chainId &&

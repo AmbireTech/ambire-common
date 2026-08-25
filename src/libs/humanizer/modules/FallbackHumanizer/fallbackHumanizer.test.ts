@@ -138,9 +138,9 @@ const fallbackCases: Array<{
       to: TO,
       value: 0n,
       data: '0x',
-      fullVisualization: [{ type: 'action', content: 'Reject Tx with nonce 5', id: 1 }]
+      fullVisualization: [{ type: 'action', content: 'Cancel transaction with nonce 5', id: 1 }]
     } as IrCall,
-    expected: [{ type: 'action', content: 'Reject Tx with nonce 5' }]
+    expected: [{ type: 'action', content: 'Cancel transaction with nonce 5' }]
   }
 ]
 
@@ -152,42 +152,6 @@ describe('fallbackHumanizer', () => {
       result!.fullVisualization!.forEach((item, i) => {
         expect(item).toMatchObject(expected[i]!)
       })
-    })
-  })
-
-  test('humanizes an onchain Safe cancellation with its signed nonce', () => {
-    const result = fallbackHumanizer(
-      {
-        ...accountOp,
-        nonce: 99n,
-        safeTx: { nonce: '7' } as any,
-        meta: { isOnchainSafeRejection: true }
-      },
-      { to: ZeroAddress, value: 0n, data: '0x' } as IrCall
-    )
-
-    expect(result.fullVisualization).toEqual([
-      expect.objectContaining({
-        type: 'action',
-        content: 'Cancel transaction with nonce 7'
-      })
-    ])
-  })
-
-  test('humanizes an imported Safe self-call cancellation with its signed nonce', () => {
-    const result = fallbackHumanizer(
-      {
-        ...accountOp,
-        nonce: 99n,
-        safeTx: { nonce: '7' } as any,
-        meta: { isOnchainSafeRejection: true }
-      },
-      { to: accountOp.accountAddr, value: 0n, data: '0x' } as IrCall
-    )
-
-    expect(result.fullVisualization?.[0]).toMatchObject({
-      type: 'action',
-      content: 'Cancel transaction with nonce 7'
     })
   })
 })

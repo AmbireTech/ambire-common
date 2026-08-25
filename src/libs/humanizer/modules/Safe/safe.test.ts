@@ -239,31 +239,47 @@ describe('Safe', () => {
   })
 })
 
-describe('reject queued transaction', () => {
-  test('is labeled with its nonce', () => {
-    const rejectAccountOp: AccountOp = { ...accountOp, nonce: 5n }
-    const rejectCall = {
-      to: rejectAccountOp.accountAddr,
+describe('cancel queued transaction', () => {
+  test('a self-call is labeled with its nonce', () => {
+    const cancelAccountOp: AccountOp = { ...accountOp, nonce: 5n }
+    const cancelCall = {
+      to: cancelAccountOp.accountAddr,
       value: 0n,
       data: '0x'
     }
     const expectedVisualization = [
-      [getAction('Reject'), getLabel('Tx with nonce'), getLabel(5, true)]
+      [getAction('Cancel'), getLabel('transaction with'), getLabel('nonce 5', true)]
     ]
-    const irCalls = [rejectCall].map((c) =>
-      SafeModule(rejectAccountOp, c, humanizerInfo as HumanizerMeta)
+    const irCalls = [cancelCall].map((c) =>
+      SafeModule(cancelAccountOp, c, humanizerInfo as HumanizerMeta)
+    )
+    compareHumanizerVisualizations(irCalls, expectedVisualization)
+  })
+
+  test('a call to the zero address is labeled with its nonce', () => {
+    const cancelAccountOp: AccountOp = { ...accountOp, nonce: 5n }
+    const cancelCall = {
+      to: zeroAddress,
+      value: 0n,
+      data: '0x'
+    }
+    const expectedVisualization = [
+      [getAction('Cancel'), getLabel('transaction with'), getLabel('nonce 5', true)]
+    ]
+    const irCalls = [cancelCall].map((c) =>
+      SafeModule(cancelAccountOp, c, humanizerInfo as HumanizerMeta)
     )
     compareHumanizerVisualizations(irCalls, expectedVisualization)
   })
 
   test('without a known nonce falls back to a generic label', () => {
-    const rejectCall = {
+    const cancelCall = {
       to: accountOp.accountAddr,
       value: 0n,
       data: '0x'
     }
-    const expectedVisualization = [[getAction('Reject currently queued transaction')]]
-    const irCalls = [rejectCall].map((c) =>
+    const expectedVisualization = [[getAction('Cancel'), getLabel('currently queued transaction')]]
+    const irCalls = [cancelCall].map((c) =>
       SafeModule(accountOp, c, humanizerInfo as HumanizerMeta)
     )
     compareHumanizerVisualizations(irCalls, expectedVisualization)

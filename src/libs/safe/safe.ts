@@ -10,7 +10,6 @@ import {
   recoverAddress,
   toBeHex,
   toUtf8Bytes,
-  ZeroAddress,
   zeroPadValue
 } from 'ethers'
 
@@ -393,13 +392,11 @@ export function toCallsUserRequest(
     const txns = response[chainId]!.txns
     txns.forEach((txn) => {
       let calls: CallsUserRequest['signAccountOp']['accountOp']['calls'] = []
-      let isBatch = false
       try {
         // try to decode the data to check if it's a batch
         // if it is, use it; otherwise, construct a single call reqx
         const multisendInterface = new Interface(multiCallAbi)
         const multiSendCall = multisendInterface.decodeFunctionData('multiSend', txn.data!)
-        isBatch = true
         calls = decodeMultiSend(multiSendCall[0]).map((call) => ({
           to: call.to,
           value: call.value,
@@ -409,16 +406,6 @@ export function toCallsUserRequest(
         // this just means it's not a batch
         calls = [{ to: txn.to, value: BigInt(txn.value), data: txn.data || '0x' }]
       }
-
-      const call = calls.length === 1 ? calls[0] : undefined
-      const isOnchainSafeRejection =
-        !isBatch &&
-        !!call?.to &&
-        txn.operation === 0 &&
-        (call.to.toLowerCase() === ZeroAddress ||
-          call.to.toLowerCase() === safeAddr.toLowerCase()) &&
-        call.value === 0n &&
-        call.data === '0x'
 
       const signature = txn.confirmations
         ? sortSigs(
@@ -436,7 +423,6 @@ export function toCallsUserRequest(
             meta: {
               accountAddr: safeAddr,
               chainId: BigInt(chainId),
-              ...(isOnchainSafeRejection && { isOnchainSafeRejection: true }),
               safeTxnProps: {
                 txnId: txn.safeTxHash as Hex,
                 signature,

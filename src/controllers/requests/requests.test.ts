@@ -546,7 +546,9 @@ describe('RequestsController ', () => {
     await request.signAccountOp.forceEmitUpdate()
     unsubscribe()
 
-    expect(emittedHumanizationLabels).toEqual(['Empty call to'])
+    // an empty, 0-value call to the zero address is the exact shape of a Safe{WALLET}
+    // cancellation, so it's humanized as one regardless of how the request was built
+    expect(emittedHumanizationLabels).toEqual(['Cancel'])
     request.signAccountOp.destroy()
   })
 
@@ -708,8 +710,7 @@ describe('RequestsController ', () => {
       chainId: 1n,
       nonce: 7n,
       signature: null,
-      calls: [{ to: ZeroAddress, value: 0n, data: '0x' }],
-      meta: { isOnchainSafeRejection: true }
+      calls: [{ to: ZeroAddress, value: 0n, data: '0x' }]
     })
     expect(request.signAccountOp.accountOp.signature).toBe(SAFE_SIGNATURE)
     expect(request.signAccountOp.accountOp.nonce).toBe(99n)
@@ -775,11 +776,9 @@ describe('RequestsController ', () => {
     const cancellationRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
     regularRequest.id = 'regular-safe-api-request'
     cancellationRequest.id = 'safe-api-cancellation-request'
-    cancellationRequest.meta = {
-      ...cancellationRequest.meta,
-      isOnchainSafeRejection: true
-    }
     updateAccountOp(regularRequest, { nonce: 7n, signed: [SAFE_OWNER] })
+    // this is what actually makes it a cancellation - a single empty call to the account
+    // itself - rather than any meta flag
     updateAccountOp(cancellationRequest, {
       nonce: 7n,
       calls: [
@@ -789,8 +788,7 @@ describe('RequestsController ', () => {
           value: 0n,
           data: '0x'
         }
-      ],
-      meta: { isOnchainSafeRejection: true }
+      ]
     })
     controller.userRequests = [regularRequest, cancellationRequest]
     await controller.setCurrentUserRequestById(regularRequest.id)
@@ -865,8 +863,7 @@ describe('RequestsController ', () => {
     if (controller.currentUserRequest?.kind !== 'calls') throw new Error('Expected calls request')
     expect(controller.currentUserRequest.signAccountOp.accountOp).toMatchObject({
       nonce: 0n,
-      calls: [{ to: ZeroAddress, value: 0n, data: '0x' }],
-      meta: { isOnchainSafeRejection: true }
+      calls: [{ to: ZeroAddress, value: 0n, data: '0x' }]
     })
 
     controller.userRequests.forEach((userRequest) => {
