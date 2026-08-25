@@ -88,7 +88,7 @@ import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
 import { ITransfersScannerController } from '@/interfaces/transferScanner'
-import { IUiController, UiManager, View, isExtensionOverlayView } from '@/interfaces/ui'
+import { isExtensionOverlayView, IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
@@ -670,7 +670,7 @@ export class MainController extends EventEmitter implements IMainController {
         )
         await this.commonHandlerForBroadcastSuccess(props)
         // resolve dapp requests, open benzin and etc only if the main sign accountOp
-        this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
+        await this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
         this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
       },
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
@@ -1825,6 +1825,12 @@ export class MainController extends EventEmitter implements IMainController {
     return this.#fetchSafeTxnsPromise
   }
 
+  async refreshSafeTxns() {
+    if (this.statuses.refreshSafeTxns === 'LOADING') return
+
+    await this.withStatus('refreshSafeTxns', () => this.fetchSafeTxns([], true), true)
+  }
+
   async #fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
     if (!this.selectedAccount?.account?.safeCreation) return
     // cache the addr here to prevent race conditions
@@ -1853,50 +1859,58 @@ export class MainController extends EventEmitter implements IMainController {
       threshold: accountState[c.toString()]?.threshold || 0
     }))
 
-    for (let i = 0; i < networksAndThresholds.length; i++) {
-      // wait a second to not hit 5 request per minute API limit
-      if (i !== 0) await wait(600)
+    if (!networksAndThresholds.length) return
 
-      const firstBatch = networksAndThresholds[i]!
-      const res: SafeResults | null = await this.safe
-        .fetchPending(safeAddr, [firstBatch])
-        .catch((e) => {
-          console.log(e)
-          console.log('failed to retrieve pending Safe txns')
-          return null
-        })
+    await this.withStatus(
+      'fetchSafeTxns',
+      async () => {
+        for (let i = 0; i < networksAndThresholds.length; i++) {
+          // wait a second to not hit 5 request per minute API limit
+          if (i !== 0) await wait(600)
 
-      if (!res) continue
+          const firstBatch = networksAndThresholds[i]!
+          const res: SafeResults | null = await this.safe
+            .fetchPending(safeAddr, [firstBatch])
+            .catch((e) => {
+              console.log(e)
+              console.log('failed to retrieve pending Safe txns')
+              return null
+            })
 
-      // build txn requests
-      const txnRequest = toCallsUserRequest(safeAddr, res)
-      for (let i = 0; i < txnRequest.length; i++) {
-        // build the requests only if the selected account hasn't changed
-        if (this.selectedAccount?.account?.addr === safeAddr)
-          await this.requests.build(txnRequest[i]!).catch((e) => e)
-      }
+          if (!res) continue
 
-      // build and resolve message requests
-      const messageRequests = toSigMessageUserRequests(res)
-      for (let i = 0; i < messageRequests.length; i++) {
-        const req = messageRequests[i]!
-        const userRequest = this.requests.userRequests.find(
-          (u) =>
-            u.meta.accountAddr === safeAddr &&
-            u.meta.chainId === req.params.chainId &&
-            (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
-            u.meta.hash === req.params.messageHash
-        )
-        if (!userRequest && !req.isConfirmed) {
-          // build the requests only if the selected account hasn't changed
-          if (this.selectedAccount?.account?.addr === safeAddr)
-            await this.requests.build(req).catch((e) => e)
+          // build txn requests
+          const txnRequest = toCallsUserRequest(safeAddr, res)
+          for (let i = 0; i < txnRequest.length; i++) {
+            // build the requests only if the selected account hasn't changed
+            if (this.selectedAccount?.account?.addr === safeAddr)
+              await this.requests.build(txnRequest[i]!).catch((e) => e)
+          }
+
+          // build and resolve message requests
+          const messageRequests = toSigMessageUserRequests(res)
+          for (let i = 0; i < messageRequests.length; i++) {
+            const req = messageRequests[i]!
+            const userRequest = this.requests.userRequests.find(
+              (u) =>
+                u.meta.accountAddr === safeAddr &&
+                u.meta.chainId === req.params.chainId &&
+                (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
+                u.meta.hash === req.params.messageHash
+            )
+            if (!userRequest && !req.isConfirmed) {
+              // build the requests only if the selected account hasn't changed
+              if (this.selectedAccount?.account?.addr === safeAddr)
+                await this.requests.build(req).catch((e) => e)
+            }
+            if (userRequest && req.isConfirmed) {
+              await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
+            }
+          }
         }
-        if (userRequest && req.isConfirmed) {
-          await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
-        }
-      }
-    }
+      },
+      true
+    )
   }
 
   #updateIsOffline() {
@@ -2059,7 +2073,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (safeRequests.length) {
       await this.requests.removeUserRequests(safeRequests, {
-        shouldRejectSafeRequests: false
+        shouldOpenNextRequest: false
       })
     }
 
@@ -2082,7 +2096,8 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     await this.requests.removeUserRequests([accountOpRequest.id], {
-      shouldRemoveSwapAndBridgeRoute: false
+      shouldRemoveSwapAndBridgeRoute: false,
+      shouldOpenNextRequest: false
     })
 
     this.resolveDappBroadcast(submittedAccountOp, dappHandlers)

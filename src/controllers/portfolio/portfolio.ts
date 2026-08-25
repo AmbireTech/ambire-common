@@ -2137,6 +2137,9 @@ export class PortfolioController
     return this.#networksWithAssetsByAccounts[accountAddr] || {}
   }
 
+  /**
+   * Always pass account ops that belong to the same account & network
+   */
   async simulateAccountOp(op: AccountOp): Promise<void> {
     const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)
     const network = this.#networks.networks.find((net) => net.chainId === op.chainId)
