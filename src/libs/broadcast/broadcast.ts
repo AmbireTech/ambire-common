@@ -122,9 +122,9 @@ async function estimateGas(
 
   // Sequential EOA calls can fail temporarily if the RPC pending state is stale.
   if (gasLimit instanceof Error || hasNonceDiscrepancyOnApproval) {
-    const isGS013 = gasLimit.message.includes('GS013')
     if (gasLimit instanceof Error) {
       // Other estimation errors are deterministic, so return them immediately.
+      const isGS013 = gasLimit.message.includes('GS013')
       const isEoaBatch = broadcastOption === BROADCAST_OPTIONS.bySelf && op.calls.length > 1
       if (!isGS013 && !isEoaBatch) throw gasLimit
     }
