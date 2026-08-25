@@ -1,5 +1,5 @@
 import aes from 'aes-js'
-import { getBytes, hexlify, Mnemonic, toUtf8Bytes } from 'ethers'
+import { concat, getBytes, hexlify, Mnemonic, toUtf8Bytes } from 'ethers'
 
 import {
   AESGCMEncrypted,
@@ -242,6 +242,19 @@ export const decryptSyncedMainKeyWithSecret = async (
     'decrypt'
   ])
 }
+
+/**
+ * Rebuilds a synced legacy main key out of its 16 byte key and iv, the way the migration derives
+ * it on the exporting device. Non-extractable and decrypt only, like the GCM one.
+ */
+export const importSyncedMainKeyOld = (mainKeyOld: MainKeyOld): Promise<MainKey> =>
+  crypto.subtle.importKey(
+    'raw',
+    new Uint8Array(getBytes(concat([mainKeyOld.key, mainKeyOld.iv]))),
+    { name: CIPHER },
+    false,
+    ['decrypt']
+  )
 
 /**
  * Used during migration to read legacy payloads

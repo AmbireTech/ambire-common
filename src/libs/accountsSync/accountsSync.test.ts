@@ -2,7 +2,7 @@ import { getBytes, getCreate2Address, keccak256, toUtf8Bytes } from 'ethers'
 import { gzip } from 'pako'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
-import { CIPHER } from '@/libs/keystore/keystore'
+import { CIPHER, CIPHER_OLD } from '@/libs/keystore/keystore'
 
 import {
   ACCOUNTS_SYNC_PAYLOAD_VERSION,
@@ -30,6 +30,14 @@ const gcmPayload = (byteLength: number) => ({
   cipherType: CIPHER as 'AES-GCM',
   ciphertext: `0x${'ab'.repeat(byteLength)}`,
   iv: `0x${'cd'.repeat(12)}`
+})
+
+// The legacy main key is 16 bytes of key plus 16 bytes of iv, CTR encrypted and keccak maced
+const ctrMainKeyPayload = () => ({
+  cipherType: CIPHER_OLD as 'aes-128-ctr',
+  ciphertext: `0x${'ab'.repeat(32)}`,
+  iv: `0x${'cd'.repeat(16)}`,
+  mac: `0x${'ef'.repeat(32)}`
 })
 
 const buildPayload = (): AccountsSyncPayload => ({
@@ -159,14 +167,62 @@ describe('accountsSync payload', () => {
     expect(() => serializeAndParse(payload)).toThrow('invalid scrypt params')
   })
 
-  it('rejects a main key that is not AES-GCM encrypted', () => {
+  // A secret is only migrated to AES-GCM on an unlock that uses it, so a device that has
+  // only ever unlocked with biometrics exports a main key that is still AES-CTR wrapped
+  it('accepts a legacy AES-CTR wrapped main key', () => {
     const payload: any = buildPayload()
-    payload.secret.aesEncrypted = {
-      cipherType: 'aes-128-ctr',
-      ciphertext: '0xabab',
-      iv: '0xcdcd',
-      mac: '0xefef'
-    }
+    payload.secret.aesEncrypted = ctrMainKeyPayload()
+
+    expect(serializeAndParse(payload)).toEqual(payload)
+  })
+
+  it('rejects a legacy main key that is not the length the ciphers expect', () => {
+    const shapes = [
+      { ...ctrMainKeyPayload(), ciphertext: `0x${'ab'.repeat(31)}` },
+      { ...ctrMainKeyPayload(), ciphertext: 'not hex at all' },
+      { ...ctrMainKeyPayload(), iv: `0x${'cd'.repeat(12)}` },
+      { ...ctrMainKeyPayload(), mac: `0x${'ef'.repeat(16)}` },
+      { ...ctrMainKeyPayload(), mac: 'not hex at all' },
+      { ...ctrMainKeyPayload(), mac: undefined }
+    ]
+
+    shapes.forEach((aesEncrypted) => {
+      const payload: any = buildPayload()
+      payload.secret.aesEncrypted = aesEncrypted
+
+      expect(() => serializeAndParse(payload)).toThrow(
+        'the main key is not a valid aes-128-ctr one'
+      )
+    })
+  })
+
+  it('rejects a legacy main key that does not say which cipher wraps it', () => {
+    const payload: any = buildPayload()
+    const withoutCipherType: any = ctrMainKeyPayload()
+    delete withoutCipherType.cipherType
+    payload.secret.aesEncrypted = withoutCipherType
+
+    // `tryParseGcmPayload` treats a missing cipherType as a legacy string payload
+    expect(() => serializeAndParse(payload)).toThrow(`the main key is not encrypted with ${CIPHER}`)
+  })
+
+  it('does not let a legacy main key relax the checks on the keys and seeds', () => {
+    const withCtrKey: any = buildPayload()
+    withCtrKey.secret.aesEncrypted = ctrMainKeyPayload()
+    withCtrKey.keys[0].privKey = `0x${'ab'.repeat(48)}`
+
+    expect(() => serializeAndParse(withCtrKey)).toThrow(`key ${KEY_ADDR} is not encrypted`)
+
+    const withCtrSeed: any = buildPayload()
+    withCtrSeed.secret.aesEncrypted = ctrMainKeyPayload()
+    withCtrSeed.seeds[0].seed = `0x${'ab'.repeat(32)}`
+
+    expect(() => serializeAndParse(withCtrSeed)).toThrow('seed seed-1 is not encrypted')
+  })
+
+  it('rejects a main key wrapped with a cipher no Ambire product knows', () => {
+    const payload: any = buildPayload()
+    payload.secret.aesEncrypted = { ...ctrMainKeyPayload(), cipherType: 'aes-256-cbc' }
 
     // `tryParseGcmPayload` rejects a known but unsupported cipher itself
     expect(() => serializeAndParse(payload)).toThrow('unsupported payload cipherType')

@@ -10,12 +10,19 @@ import wait from '@/utils/wait'
 import { describe, expect } from '@jest/globals'
 import { CTR_STORAGE, LedgerSigner } from '@test/keystore'
 
+import {
+  ACCOUNTS_SYNC_PAYLOAD_VERSION,
+  AccountsSyncPayload,
+  parseAccountsSyncPayload,
+  serializeAccountsSyncPayload
+} from '../../libs/accountsSync/accountsSync'
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE, HD_PATH_TEMPLATE_TYPE } from '../../consts/derivation'
 import { Hex } from '../../interfaces/hex'
 import { StoredKey, StoredKeystoreSeed } from '../../interfaces/keystore'
+import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
 import { KeystoreController } from './keystore'
@@ -281,6 +288,14 @@ const createGcmSecretEntry = async (
     scryptParams: { ...SCRYPT_PARAMS, salt: hexlify(salt) },
     aesEncrypted
   }
+}
+
+// Flips the first byte of a hex string, to simulate a scanned payload that was tampered with.
+const tamperFirstByte = (hex: string) => {
+  const bytes = getBytes(hex)
+  bytes[0] = bytes[0]! ^ 0xff
+
+  return hexlify(bytes)
 }
 
 // Flips the first byte of a GCM payload's ciphertext to simulate tampering/corruption at rest.
@@ -1031,5 +1046,419 @@ describe('CTR to GCM migration', () => {
     ).rejects.toThrow()
 
     restore()
+  })
+})
+
+describe('accounts sync from a device that never unlocked with its password', () => {
+  const MOCK_BIOMETRICS_SECRET = 'mockBiometricsSecret'
+  const IMPORTING_PASS = 'importingDevicePass'
+  const SYNCED_SEED_ID = 'seed-12-word'
+  const IMPORTING_OWN_KEY_PRIV = `0x${'11'.repeat(32)}`
+  const IMPORTING_OWN_KEY_ADDR = new Wallet(IMPORTING_OWN_KEY_PRIV).address
+
+  // A legacy keystore where biometrics were turned on after the GCM migration shipped, so that
+  // secret is GCM while the password one, migrated only on an unlock that uses it, stays CTR
+  const prepareLegacyBiometricsDevice = async ({
+    seedId = SYNCED_SEED_ID,
+    biometricsAsCtr = false,
+    mapPasswordEntry = (entry: any) => entry
+  }: {
+    seedId?: string
+    biometricsAsCtr?: boolean
+    mapPasswordEntry?: (entry: any) => any
+  } = {}) => {
+    let mainKeyOld: { key: Uint8Array; iv: Uint8Array } | undefined
+
+    const prepared = await prepareTest(async (storageCtrl) => {
+      const fixture = await createMockOldAesStorageFixture()
+      mainKeyOld = fixture.mainKey
+
+      await storageCtrl.set('keystoreSecrets', [
+        mapPasswordEntry(await fixture.createSecretEntry('password', MOCK_MIGRATION_PASS)),
+        biometricsAsCtr
+          ? await fixture.createSecretEntry('biometrics', MOCK_BIOMETRICS_SECRET)
+          : await createGcmSecretEntry('biometrics', MOCK_BIOMETRICS_SECRET, fixture.mainKey)
+      ])
+      await storageCtrl.set('keystoreSeeds', fixture.mockSeeds)
+      // Link the internal key to a seed, so the recovery phrase travels with it
+      await storageCtrl.set(
+        'keystoreKeys',
+        fixture.mockKeys.map((key) =>
+          key.type === 'internal' && key.addr === MOCK_INTERNAL_KEY.addr
+            ? { ...key, meta: { ...key.meta, fromSeedId: seedId } }
+            : key
+        )
+      )
+    }, true)
+
+    return { ...prepared, mainKeyOld: mainKeyOld! }
+  }
+
+  /** A legacy device the user just unlocked with biometrics, ready to export. */
+  const prepareUnlockedLegacyDevice = async (
+    options?: Parameters<typeof prepareLegacyBiometricsDevice>[0]
+  ) => {
+    const prepared = await prepareLegacyBiometricsDevice(options)
+    await prepared.keystoreCtrl.unlockWithSecret('biometrics', MOCK_BIOMETRICS_SECRET)
+
+    return prepared
+  }
+
+  const createImportingKeystore = async ({ withOwnKey = false } = {}) => {
+    const importingStorageCtrl = new StorageController(produceMemoryStore())
+    const importingCtrl = new KeystoreController(
+      'default',
+      importingStorageCtrl,
+      keystoreSigners,
+      new UiController({ uiManager })
+    )
+    await importingCtrl.initialLoadPromise
+    await importingCtrl.addSecret('password', IMPORTING_PASS, '', true)
+
+    if (withOwnKey)
+      await importingCtrl.addKeys([
+        {
+          addr: IMPORTING_OWN_KEY_ADDR,
+          label: 'Own Key',
+          type: 'internal',
+          privateKey: IMPORTING_OWN_KEY_PRIV,
+          dedicatedToOneSA: false,
+          meta: { createdAt: Date.now() }
+        }
+      ])
+
+    return { importingCtrl, importingStorageCtrl }
+  }
+
+  const buildSyncPayload = (
+    exported: Awaited<ReturnType<KeystoreController['exportForSync']>>
+  ): AccountsSyncPayload => ({
+    v: ACCOUNTS_SYNC_PAYLOAD_VERSION,
+    accounts: [
+      {
+        addr: MOCK_INTERNAL_KEY.addr,
+        associatedKeys: [MOCK_INTERNAL_KEY.addr],
+        initialPrivileges: [],
+        creation: null,
+        preferences: { label: 'Account 1', pfp: MOCK_INTERNAL_KEY.addr }
+      }
+    ],
+    ...exported
+  })
+
+  // Goes through the QR codes, so the payload has to survive the parser as well
+  const throughTheQrCodes = (exported: Awaited<ReturnType<KeystoreController['exportForSync']>>) =>
+    parseAccountsSyncPayload(getBytes(serializeAccountsSyncPayload(buildSyncPayload(exported))))
+
+  const readImportedPrivateKey = async (importingCtrl: KeystoreController, addr: string) => {
+    const json = await importingCtrl.exportKeyWithPasscode(addr, 'internal', 'tempPass')
+
+    return (await Wallet.fromEncryptedJson(JSON.parse(json), 'tempPass')).privateKey
+  }
+
+  describe('exporting', () => {
+    it('exports the main key still wrapped with AES-CTR after a biometrics only unlock', async () => {
+      const { keystoreCtrl, storageCtrl } = await prepareUnlockedLegacyDevice()
+      expect(keystoreCtrl.isUnlocked).toBe(true)
+
+      // The unlock migrates the keys and seeds, but leaves the password secret where it was
+      const secrets = await storageCtrl.get('keystoreSecrets', [])
+      expect(secrets.find((s) => s.id === 'password')!.aesEncrypted.cipherType).toBe(CIPHER_OLD)
+      expect(secrets.find((s) => s.id === 'biometrics')!.aesEncrypted.cipherType).toBe(CIPHER)
+
+      const exported = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+
+      expect(exported.secret.id).toBe('password')
+      expect(exported.secret.aesEncrypted.cipherType).toBe(CIPHER_OLD)
+      // Only the main key stays legacy - keys and seeds migrate on any unlock
+      expect(exported.keys[0]!.privKey).toMatchObject({ cipherType: CIPHER })
+      expect(exported.seeds[0]!.seed).toMatchObject({ cipherType: CIPHER })
+    })
+
+    it('exports after a biometrics unlock that migrated the biometrics secret itself', async () => {
+      const { keystoreCtrl, storageCtrl } = await prepareUnlockedLegacyDevice({
+        biometricsAsCtr: true
+      })
+
+      const secrets = await storageCtrl.get('keystoreSecrets', [])
+      expect(secrets.find((s) => s.id === 'biometrics')!.aesEncrypted.cipherType).toBe(CIPHER)
+      expect(secrets.find((s) => s.id === 'password')!.aesEncrypted.cipherType).toBe(CIPHER_OLD)
+
+      const exported = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+      expect(exported.secret.aesEncrypted.cipherType).toBe(CIPHER_OLD)
+    })
+
+    it('stamps the cipher of a secret stored before the cipher was recorded', async () => {
+      const { keystoreCtrl, storageCtrl } = await prepareUnlockedLegacyDevice({
+        mapPasswordEntry: (entry) => {
+          const aesEncrypted = { ...entry.aesEncrypted }
+          delete aesEncrypted.cipherType
+
+          return { ...entry, aesEncrypted }
+        }
+      })
+
+      const exported = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+      expect(exported.secret.aesEncrypted.cipherType).toBe(CIPHER_OLD)
+
+      // Stamped only on the way out - the entry at rest is left exactly as it was
+      const stored = await storageCtrl.get('keystoreSecrets', [])
+      expect(stored.find((s) => s.id === 'password')!.aesEncrypted.cipherType).toBeUndefined()
+
+      const { importingCtrl } = await createImportingKeystore()
+      await importingCtrl.importFromSync(throughTheQrCodes(exported), MOCK_MIGRATION_PASS)
+      expect(importingCtrl.keys).toHaveLength(1)
+    })
+
+    it('refuses to export a main key wrapped with a cipher it cannot unwrap', async () => {
+      const { keystoreCtrl } = await prepareUnlockedLegacyDevice({
+        mapPasswordEntry: (entry) => ({
+          ...entry,
+          aesEncrypted: { ...entry.aesEncrypted, cipherType: 'aes-256-cbc' }
+        })
+      })
+
+      await expect(keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])).rejects.toThrow(
+        'Something went wrong when preparing your accounts for syncing. Please unlock the app again'
+      )
+    })
+
+    it('still refuses to export keys and seeds that are not migrated yet', async () => {
+      // Never unlocked, so the stored keys and seeds are still AES-CTR
+      const { keystoreCtrl } = await prepareLegacyBiometricsDevice()
+
+      await expect(keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])).rejects.toThrow(
+        'Something went wrong when preparing your accounts for syncing. Please try again.'
+      )
+    })
+
+    it('exports a GCM wrapped main key once the user finally unlocks with the password', async () => {
+      const { keystoreCtrl } = await prepareUnlockedLegacyDevice()
+      const legacyExport = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+      expect(legacyExport.secret.aesEncrypted.cipherType).toBe(CIPHER_OLD)
+
+      keystoreCtrl.lock()
+      await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+
+      const migratedExport = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+      expect(migratedExport.secret.aesEncrypted.cipherType).toBe(CIPHER)
+
+      const { importingCtrl } = await createImportingKeystore()
+      await importingCtrl.importFromSync(throughTheQrCodes(migratedExport), MOCK_MIGRATION_PASS)
+
+      expect(await readImportedPrivateKey(importingCtrl, MOCK_INTERNAL_KEY.addr)).toBe(
+        MOCK_INTERNAL_KEY.privKey
+      )
+    })
+
+    it('puts nothing decrypted into the payload', async () => {
+      const { keystoreCtrl, mainKeyOld } = await prepareUnlockedLegacyDevice()
+
+      const exported = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+      const serialized = JSON.stringify(buildSyncPayload(exported))
+      const mainKeyHex = hexlify(concat([mainKeyOld.key, mainKeyOld.iv]))
+
+      expect(serialized).not.toContain(MOCK_12_WORD_SEED)
+      expect(serialized).not.toContain(MOCK_12_WORD_SEED.split(' ')[0])
+      expect(serialized).not.toContain(MOCK_INTERNAL_KEY.privKey)
+      expect(serialized).not.toContain(stripHexPrefix(MOCK_INTERNAL_KEY.privKey as string))
+      expect(serialized).not.toContain(MOCK_MIGRATION_PASS)
+      // The main key travels wrapped with the password, never in the clear
+      expect(serialized).not.toContain(stripHexPrefix(mainKeyHex))
+    })
+  })
+
+  describe('importing', () => {
+    it('imports keys and seeds from an AES-CTR wrapped main key', async () => {
+      const { keystoreCtrl } = await prepareUnlockedLegacyDevice()
+      const exported = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+
+      const { importingCtrl, importingStorageCtrl } = await createImportingKeystore()
+      await importingCtrl.importFromSync(throughTheQrCodes(exported), MOCK_MIGRATION_PASS)
+
+      expect(await readImportedPrivateKey(importingCtrl, MOCK_INTERNAL_KEY.addr)).toBe(
+        MOCK_INTERNAL_KEY.privKey
+      )
+      expect(importingCtrl.seeds).toHaveLength(1)
+      expect((await importingCtrl.getSavedSeed(importingCtrl.seeds[0]!.id)).seed).toBe(
+        MOCK_12_WORD_SEED
+      )
+
+      // Everything is re-encrypted with the importing device's own main key, so nothing
+      // legacy is left behind on it
+      const importedSecrets = await importingStorageCtrl.get('keystoreSecrets', [])
+      expect(importedSecrets[0]!.aesEncrypted.cipherType).toBe(CIPHER)
+      const importedStoredSeeds = await importingStorageCtrl.get('keystoreSeeds', [])
+      expect(importedStoredSeeds[0]!.seed).toMatchObject({ cipherType: CIPHER })
+      const importedStoredKeys = await importingStorageCtrl.get('keystoreKeys', [])
+      expect(importedStoredKeys[0]!.privKey).toMatchObject({ cipherType: CIPHER })
+    })
+
+    it('carries the passphrase of a recovery phrase across the legacy path', async () => {
+      const { keystoreCtrl } = await prepareUnlockedLegacyDevice({
+        seedId: 'seed-24-word-with-passphrase'
+      })
+      const exported = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+
+      const { importingCtrl } = await createImportingKeystore()
+      await importingCtrl.importFromSync(throughTheQrCodes(exported), MOCK_MIGRATION_PASS)
+
+      const importedSeed = await importingCtrl.getSavedSeed(importingCtrl.seeds[0]!.id)
+      expect(importedSeed.seed).toBe(MOCK_24_WORD_SEED)
+      expect(importedSeed.seedPassphrase).toBe(SEED_PASSPHRASE)
+    })
+
+    it('leaves the recovery phrase behind when the user opted out of exporting it', async () => {
+      const { keystoreCtrl } = await prepareUnlockedLegacyDevice()
+      const exported = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr], false)
+      expect(exported.seeds).toHaveLength(0)
+
+      const { importingCtrl } = await createImportingKeystore()
+      await importingCtrl.importFromSync(throughTheQrCodes(exported), MOCK_MIGRATION_PASS)
+
+      expect(importingCtrl.seeds).toHaveLength(0)
+      // The key still signs on the other device, it is just no longer tied to a seed
+      expect(await readImportedPrivateKey(importingCtrl, MOCK_INTERNAL_KEY.addr)).toBe(
+        MOCK_INTERNAL_KEY.privKey
+      )
+      expect(importingCtrl.keys[0]!.meta.fromSeedId).toBeUndefined()
+    })
+
+    it('carries hardware wallet keys, which have no private key to decrypt', async () => {
+      const { keystoreCtrl } = await prepareUnlockedLegacyDevice()
+      const exported = await keystoreCtrl.exportForSync([
+        MOCK_INTERNAL_KEY.addr,
+        MOCK_LEDGER_KEY.addr
+      ])
+      expect(exported.keys).toHaveLength(2)
+
+      const { importingCtrl } = await createImportingKeystore()
+      await importingCtrl.importFromSync(throughTheQrCodes(exported), MOCK_MIGRATION_PASS)
+
+      const importedLedgerKey = importingCtrl.keys.find((k) => k.addr === MOCK_LEDGER_KEY.addr)
+      expect(importedLedgerKey!.type).toBe('ledger')
+      expect(importedLedgerKey!.isExternallyStored).toBe(true)
+      expect(await readImportedPrivateKey(importingCtrl, MOCK_INTERNAL_KEY.addr)).toBe(
+        MOCK_INTERNAL_KEY.privKey
+      )
+    })
+
+    it('does not duplicate keys or seeds when the same payload is imported twice', async () => {
+      const { keystoreCtrl } = await prepareUnlockedLegacyDevice()
+      const exported = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+      const payload = throughTheQrCodes(exported)
+
+      const { importingCtrl } = await createImportingKeystore()
+      await importingCtrl.importFromSync(payload, MOCK_MIGRATION_PASS)
+      await importingCtrl.importFromSync(payload, MOCK_MIGRATION_PASS)
+
+      expect(importingCtrl.keys).toHaveLength(1)
+      expect(importingCtrl.seeds).toHaveLength(1)
+    })
+
+    it('does not touch the main key or the secrets of the importing device', async () => {
+      const { keystoreCtrl } = await prepareUnlockedLegacyDevice()
+      const exported = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+
+      const { importingCtrl, importingStorageCtrl } = await createImportingKeystore({
+        withOwnKey: true
+      })
+      const secretsBefore = await importingStorageCtrl.get('keystoreSecrets', [])
+
+      await importingCtrl.importFromSync(throughTheQrCodes(exported), MOCK_MIGRATION_PASS)
+
+      // The legacy unwrap must not leak into this device's own unlock state, so its own
+      // key still decrypts with the main key it had before the import
+      expect(importingCtrl.isUnlocked).toBe(true)
+      expect(await readImportedPrivateKey(importingCtrl, IMPORTING_OWN_KEY_ADDR)).toBe(
+        IMPORTING_OWN_KEY_PRIV
+      )
+      // The password of the exporting device does not become a way into this device
+      expect(await importingStorageCtrl.get('keystoreSecrets', [])).toEqual(secretsBefore)
+    })
+  })
+
+  describe('Negative cases', () => {
+    it('does not import anything when the password of the legacy device is wrong', async () => {
+      const { restore } = suppressConsole()
+      const { keystoreCtrl } = await prepareUnlockedLegacyDevice()
+      const exported = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+
+      const { importingCtrl } = await createImportingKeystore()
+
+      await expect(
+        importingCtrl.importFromSync(throughTheQrCodes(exported), 'wrongPass')
+      ).rejects.toThrow('Incorrect password. Please try again.')
+
+      expect(importingCtrl.errorMessage).toBe('Incorrect password. Please try again.')
+      expect(importingCtrl.keys).toHaveLength(0)
+      expect(importingCtrl.seeds).toHaveLength(0)
+
+      restore()
+    })
+
+    it('does not import anything when the scanned AES-CTR main key was tampered with', async () => {
+      const { restore } = suppressConsole()
+      const { keystoreCtrl } = await prepareUnlockedLegacyDevice()
+      const exported = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+
+      // AES-CTR is malleable, so the keccak mac is the only thing standing between a
+      // tampered main key and the importing device decrypting garbage into its keystore
+      const payload = throughTheQrCodes(exported)
+      payload.secret.aesEncrypted.ciphertext = tamperFirstByte(
+        payload.secret.aesEncrypted.ciphertext
+      )
+
+      const { importingCtrl } = await createImportingKeystore()
+
+      await expect(importingCtrl.importFromSync(payload, MOCK_MIGRATION_PASS)).rejects.toThrow(
+        'Incorrect password. Please try again.'
+      )
+      expect(importingCtrl.keys).toHaveLength(0)
+      expect(importingCtrl.seeds).toHaveLength(0)
+
+      restore()
+    })
+
+    it('does not import anything when the scanned iv was tampered with', async () => {
+      const { restore } = suppressConsole()
+      const { keystoreCtrl } = await prepareUnlockedLegacyDevice()
+      const exported = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+
+      // The legacy mac covers the ciphertext only, so a tampered iv passes it and yields a
+      // wrong main key. The GCM tag on the keys and seeds is what catches it
+      const payload = throughTheQrCodes(exported)
+      payload.secret.aesEncrypted.iv = tamperFirstByte(payload.secret.aesEncrypted.iv)
+
+      const { importingCtrl } = await createImportingKeystore()
+
+      await expect(importingCtrl.importFromSync(payload, MOCK_MIGRATION_PASS)).rejects.toThrow()
+      // The mac did pass, so this is not reported to the user as a wrong password
+      expect(importingCtrl.errorMessage).toBe('')
+      expect(importingCtrl.keys).toHaveLength(0)
+      expect(importingCtrl.seeds).toHaveLength(0)
+
+      restore()
+    })
+
+    it('does not import anything when the scanned scrypt salt was tampered with', async () => {
+      const { restore } = suppressConsole()
+      const { keystoreCtrl } = await prepareUnlockedLegacyDevice()
+      const exported = await keystoreCtrl.exportForSync([MOCK_INTERNAL_KEY.addr])
+
+      // The parser cannot tell one salt from another, so a swapped one derives a different
+      // key from the right password and has to fail the same way a wrong password does
+      const payload = throughTheQrCodes(exported)
+      payload.secret.scryptParams.salt = tamperFirstByte(payload.secret.scryptParams.salt)
+
+      const { importingCtrl } = await createImportingKeystore()
+
+      await expect(importingCtrl.importFromSync(payload, MOCK_MIGRATION_PASS)).rejects.toThrow(
+        'Incorrect password. Please try again.'
+      )
+      expect(importingCtrl.keys).toHaveLength(0)
+
+      restore()
+    })
   })
 })

@@ -15,7 +15,7 @@ import {
   StoredKey,
   StoredKeystoreSeed
 } from '../../interfaces/keystore'
-import { CIPHER, SCRYPT_PARAMS, tryParseGcmPayload } from '../keystore/keystore'
+import { CIPHER, CIPHER_OLD, SCRYPT_PARAMS, tryParseGcmPayload } from '../keystore/keystore'
 
 /**
  * The UR type used to transport the accounts sync payload over animated QR codes.
@@ -45,6 +45,36 @@ const requireGcmPayload = (payload: any, what: string) => {
     throw new Error(`accountsSync: ${what} is not encrypted with ${CIPHER}`)
 }
 
+/**
+ * Prepares the stored password secret for the payload, stamping the implicit cipher of a legacy
+ * AES-CTR one so it is stated, not inferred. Null when no Ambire product can unwrap it.
+ */
+export const toSyncableSecret = (
+  secret: MainKeyEncryptedWithSecret
+): MainKeyEncryptedWithSecret | null => {
+  const { aesEncrypted } = secret
+
+  if (aesEncrypted.cipherType === CIPHER) return secret
+
+  if (aesEncrypted.cipherType === CIPHER_OLD || aesEncrypted.cipherType === undefined)
+    return { ...secret, aesEncrypted: { ...aesEncrypted, cipherType: CIPHER_OLD } }
+
+  return null
+}
+
+/**
+ * The legacy main key is 16 bytes of key plus iv, CTR encrypted and keccak maced. Every part is
+ * pinned to its exact length before any of it reaches the ciphers.
+ */
+const requireCtrMainKeyPayload = (aesEncrypted: any) => {
+  const hasValidShape =
+    isHexString(aesEncrypted.ciphertext, 32) &&
+    isHexString(aesEncrypted.iv, 16) &&
+    isHexString(aesEncrypted.mac, 32)
+
+  if (!hasValidShape) throw new Error(`accountsSync: the main key is not a valid ${CIPHER_OLD} one`)
+}
+
 const validateSecret = (secret: any) => {
   if (!secret || secret.id !== 'password')
     throw new Error('accountsSync: missing the password protected main key')
@@ -59,6 +89,11 @@ const validateSecret = (secret: any) => {
     p === SCRYPT_PARAMS.p &&
     dkLen === SCRYPT_PARAMS.dkLen
   if (!hasValidScryptParams) throw new Error('accountsSync: invalid scrypt params')
+
+  // Keys and seeds migrate on any unlock, so the main key is the only part of the payload
+  // that can still arrive AES-CTR wrapped
+  if (secret.aesEncrypted?.cipherType === CIPHER_OLD)
+    return requireCtrMainKeyPayload(secret.aesEncrypted)
 
   requireGcmPayload(secret.aesEncrypted, 'the main key')
 }

@@ -19,6 +19,7 @@ import {
   encryptWithKey,
   extractEntropyFromSeed,
   getBytesForSecret,
+  importSyncedMainKeyOld,
   migrateStoredPayloadsToGCM,
   SCRYPT_PARAMS
 } from '@/libs/keystore/keystore'
@@ -54,7 +55,7 @@ import {
 import { Platform } from '../../interfaces/platform'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
-import { AccountsSyncPayload } from '../../libs/accountsSync/accountsSync'
+import { AccountsSyncPayload, toSyncableSecret } from '../../libs/accountsSync/accountsSync'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
@@ -345,7 +346,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Used only once to decrypt the main key with AES-CTR, in order to migrate the secrets and stored keys/seeds to AES-GCM.
+   * Decrypts a main key wrapped the legacy AES-CTR way, to migrate this device's secrets and
+   * stored keys/seeds to AES-GCM, or to unwrap the main key of a synced device that hasn't.
    */
   #unlockWithSecretOld(secretKey: Uint8Array, secretEntry: MainKeyEncryptedWithSecret): MainKeyOld {
     const aesEncrypted = secretEntry.aesEncrypted
@@ -400,13 +402,24 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   /**
    * Unwraps the main key of another device from a scanned accounts sync payload, with the
-   * same wrong password handling as unlocking this device.
+   * same wrong password handling as unlocking this device. A device that has only ever
+   * unlocked with biometrics sends it AES-CTR wrapped, which unwraps the legacy way.
    */
   async #unwrapSyncedMainKey(
     secretKey: Uint8Array<ArrayBuffer>,
-    aesEncrypted: AESGCMEncrypted
+    secretEntry: MainKeyEncryptedWithSecret
   ): Promise<MainKey> {
-    return this.#decryptMainKeyWithSecret(secretKey, aesEncrypted, decryptSyncedMainKeyWithSecret)
+    const { aesEncrypted } = secretEntry
+
+    if (aesEncrypted.cipherType === CIPHER)
+      return this.#decryptMainKeyWithSecret(secretKey, aesEncrypted, decryptSyncedMainKeyWithSecret)
+
+    if (aesEncrypted.cipherType !== CIPHER_OLD)
+      throw new Error(
+        `keystore: synced main key has an unsupported cipherType ${aesEncrypted.cipherType}`
+      )
+
+    return importSyncedMainKeyOld(this.#unlockWithSecretOld(secretKey, secretEntry))
   }
 
   /**
@@ -1257,12 +1270,17 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         error: new Error('keystore: no password secret to sync with')
       })
 
-    if (secret.aesEncrypted.cipherType !== CIPHER)
+    // A secret is only migrated on an unlock that uses it, so a biometrics only device still
+    // wraps its main key with AES-CTR. It travels as stored, unwrapped the legacy way
+    const syncedSecret = toSyncableSecret(secret)
+    if (!syncedSecret)
       throw new EmittableError({
         level: 'major',
         message:
           'Something went wrong when preparing your accounts for syncing. Please unlock the app again or contact support if the problem persists.',
-        error: new Error('keystore: password secret not migrated to GCM yet')
+        error: new Error(
+          `keystore: password secret has an unsupported cipherType ${secret.aesEncrypted.cipherType}`
+        )
       })
 
     const keys = this.#keystoreKeys.filter((key) => keyAddrs.includes(key.addr))
@@ -1288,7 +1306,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         error: new Error('keystore: keys or seeds not migrated to GCM yet')
       })
 
-    return { secret, keys, seeds }
+    return { secret: syncedSecret, keys, seeds }
   }
 
   /**
@@ -1304,13 +1322,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     await this.initialLoadPromise
 
     const { secret, keys, seeds } = payload
-    if (secret.aesEncrypted.cipherType !== CIPHER)
-      throw new Error('keystore: synced main key is not encrypted with GCM')
 
     const secretKey = await deriveSecret(this.#scryptAdapter, password, secret.scryptParams)
     // The exporting device's main key. Kept in this scope only, never persisted, and only
     // able to decrypt, so its bytes never reach this app.
-    const exportedMainKey = await this.#unwrapSyncedMainKey(secretKey, secret.aesEncrypted)
+    const exportedMainKey = await this.#unwrapSyncedMainKey(secretKey, secret)
 
     try {
       // Seeds first, so the keys below can be linked to the seed they were derived from

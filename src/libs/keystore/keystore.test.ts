@@ -15,6 +15,7 @@ import {
   encryptWithKey,
   extractEntropyFromSeed,
   getBytesForSecret,
+  importSyncedMainKeyOld,
   migrateStoredPayloadsToGCM,
   reconstructSeedFromEntropy,
   SCRYPT_PARAMS,
@@ -593,6 +594,36 @@ describe('Keystore lib', () => {
       expect(result.hasMigrated).toBe(false)
       expect(result.failedMigrations.keyAddrs).toEqual([SECONDARY_INTERNAL_ADDR])
       expect(result.failedMigrations.seedIds).toEqual(['seed-broken'])
+    })
+  })
+
+  describe('importSyncedMainKeyOld', () => {
+    test('rebuilds the key the migration derives from the same legacy key and iv', async () => {
+      const migratedMainKey = await createMainKey()
+      const syncedMainKey = await importSyncedMainKeyOld(TEST_MAIN_KEY_OLD)
+      const encrypted = await encryptWithKey(migratedMainKey, getBytes(TEST_PRIVATE_KEY))
+
+      expect(hexlify(await decryptWithKey(syncedMainKey, encrypted))).toBe(TEST_PRIVATE_KEY)
+    })
+
+    test('rebuilds a different key when the legacy key and iv differ', async () => {
+      const migratedMainKey = await createMainKey()
+      const otherMainKey = await importSyncedMainKeyOld({
+        key: TEST_MAIN_KEY_OLD.iv,
+        iv: TEST_MAIN_KEY_OLD.key
+      })
+      const encrypted = await encryptWithKey(migratedMainKey, getBytes(TEST_PRIVATE_KEY))
+
+      await expect(decryptWithKey(otherMainKey, encrypted)).rejects.toThrow()
+    })
+
+    test('cannot leave the app or be used to encrypt', async () => {
+      const syncedMainKey = await importSyncedMainKeyOld(TEST_MAIN_KEY_OLD)
+
+      expect(syncedMainKey.extractable).toBe(false)
+      expect(syncedMainKey.usages).toEqual(['decrypt'])
+      await expect(crypto.subtle.exportKey('raw', syncedMainKey)).rejects.toThrow()
+      await expect(encryptWithKey(syncedMainKey, getBytes(TEST_PRIVATE_KEY))).rejects.toThrow()
     })
   })
 })
