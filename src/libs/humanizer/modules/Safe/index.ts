@@ -414,7 +414,9 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
     accOp.accountAddr,
     call.to,
     call.value,
-    call.data
+    call.data,
+    0,
+    accOp.nonce
   )
   if (safeSpecificHumanization) {
     newCall = {
