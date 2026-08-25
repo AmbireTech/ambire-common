@@ -1981,9 +1981,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     let callUserRequest: CallsUserRequest | undefined
     const existingUserRequest = this.userRequests.find(
       (r) =>
-        // A Safe rejection must be a separate account operation.
-        !isSafeRejectionCall(calls, meta.accountAddr) &&
         r.kind === 'calls' &&
+        // done like this so 1) a safe onchain rejection tx is not bundled with a normal batch
+        // 2) a fetched rejection is bundled with the current local present rejection
+        isSafeRejectionCall(calls, meta.accountAddr) ===
+          isSafeRejectionCall(r.signAccountOp.accountOp.calls, meta.accountAddr) &&
         r.meta.accountAddr === meta.accountAddr &&
         r.meta.chainId === meta.chainId &&
         (accountOpNonce === undefined ||
