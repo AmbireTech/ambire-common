@@ -658,10 +658,11 @@ export const calculateAmountWarnings = (
       Number(inputValueInUsd) < 400
         ? 1.05
         : Number((0.005 / Math.ceil(Number(inputValueInUsd) / 20000)).toPrecision(2)) * 100 + 0.01
-    const possibleSlippage = (1 - minInUsdNumber / outputValueInUsd) * 100
-    // @precautionary if
-    const diffBetweenQuoteAndMinAmount =
-      outputValueInUsd > minInUsdNumber ? outputValueInUsd - minInUsdNumber : 0
+    // Percentage of the loss relative to the amount the user is putting in (not the quote),
+    // so it stays consistent with `estimatedLossUsd` below, which is also input-based. Using
+    // the quote as the denominator would understate this when the quote itself is already
+    // far below the input (large price impact already baked into the quote).
+    const possibleSlippage = (1 - minInUsdNumber / inputValueInUsd) * 100
 
     const quoteLossUsd = getSwapQuoteLossUsd(inputValueInUsd, outputValueInUsd)
     const slippageLossUsd = getSwapSlippageLossUsd(inputValueInUsd, minInUsdNumber)
@@ -675,8 +676,7 @@ export const calculateAmountWarnings = (
     // It seems a bit odd to display a slippage warning only if the difference
     // is > $50?
     const isElevatedSlippage =
-      possibleSlippage > allowedSlippage &&
-      diffBetweenQuoteAndMinAmount > SLIPPAGE_MIN_QUOTE_DIFF_USD
+      possibleSlippage > allowedSlippage && slippageLossUsd > SLIPPAGE_MIN_QUOTE_DIFF_USD
 
     if (isExtreme && slippageLossUsd > quoteLossUsd) {
       return {

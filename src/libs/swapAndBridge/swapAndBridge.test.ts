@@ -445,7 +445,9 @@ describe('swapAndBridge lib', () => {
       expect(result).not.toBeNull()
       expect(result?.type).toBe('slippageImpact')
       if (result?.type === 'slippageImpact') {
-        expect(result.possibleSlippage).toBeGreaterThan(81.8)
+        // possibleSlippage is relative to inputValueInUsd (100), not the more favorable
+        // outputValueInUsd (110), so it doesn't understate the risk of the low minAmountOut
+        expect(result.possibleSlippage).toBeCloseTo(80, 5)
         expect(result.minInUsd).toBe(20)
       }
     })
@@ -462,6 +464,26 @@ describe('swapAndBridge lib', () => {
       const result = calculateAmountWarnings(selectedRoute, '200', '0.1', 18)
 
       expect(result).toBeNull()
+    })
+
+    test('should return slippage warning when quote-to-min gap is small but the loss vs. input exceeds $50', () => {
+      // Input: $1000, Output (quote): $960 (4% price impact, under the 5% threshold)
+      // minAmountOut: $930 -> quote-to-min gap is only $30, but the loss vs. input is $70,
+      // which is what should gate the $50 noise filter (not the quote-relative gap)
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 1000,
+        outputValueInUsd: 960,
+        fromAmount: 0.5,
+        minAmountOut: 930
+      })
+      const result = calculateAmountWarnings(selectedRoute, '1000', '0.5', 18)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('slippageImpact')
+      if (result?.type === 'slippageImpact') {
+        expect(result.severity).toBe('elevated')
+        expect(result.estimatedLossUsd).toBeCloseTo(70, 5)
+      }
     })
 
     test('should calculate slippage correctly for very large swaps', () => {
@@ -530,6 +552,29 @@ describe('swapAndBridge lib', () => {
       if (result?.type === 'slippageImpact') {
         expect(result.severity).toBe('extreme')
         expect(result.estimatedLossUsd).toBeGreaterThan(100_000)
+      }
+    })
+
+    test('extreme slippage percentage should reflect the loss relative to the input, not the already-discounted quote', () => {
+      // Input: $140,000, quote (outputValueInUsd): $93,000 -> the quote itself already
+      // reflects ~33.6% price impact. minAmountOut: $92,900, so the quote -> min-out gap
+      // is a negligible ~0.1%, but the slippage-based loss ($47,100) still edges out the
+      // quote-based loss ($47,000), routing this into the "extreme slippage" branch.
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 140_000,
+        outputValueInUsd: 93_000,
+        fromAmount: 70,
+        minAmountOut: 92_900
+      })
+      const result = calculateAmountWarnings(selectedRoute, '140000', '70', 18)
+
+      expect(result).not.toBeNull()
+      expect(result?.type).toBe('slippageImpact')
+      if (result?.type === 'slippageImpact') {
+        expect(result.severity).toBe('extreme')
+        expect(result.estimatedLossUsd).toBeCloseTo(47_100, 0)
+        // Must reflect the ~33.6% total loss vs. input, not the ~0.1% quote-to-floor gap
+        expect(result.possibleSlippage).toBeGreaterThan(30)
       }
     })
 
