@@ -1509,6 +1509,20 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     return this.#keystoreSecrets.some((x) => x.id === 'biometrics')
   }
 
+  /**
+   * Whether the user must unlock with their password instead of biometrics, because the
+   * password secret still awaits its AES-GCM migration. A secret can only be migrated by
+   * unlocking with it, so unlocking with biometrics leaves the password secret on the legacy
+   * cipher.
+   */
+  get isPasswordUnlockRequired() {
+    if (!this.hasBiometricsSecret) return false
+
+    const passwordSecret = this.#keystoreSecrets.find((x) => x.id === 'password')
+
+    return !!passwordSecret && passwordSecret.aesEncrypted.cipherType !== CIPHER
+  }
+
   get hasKeystoreTempSeed() {
     return !!this.#tempSeed
   }
@@ -1627,6 +1641,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       seeds: this.seeds,
       hasPasswordSecret: this.hasPasswordSecret,
       hasBiometricsSecret: this.hasBiometricsSecret,
+      isPasswordUnlockRequired: this.isPasswordUnlockRequired,
       hasKeystoreTempSeed: this.hasKeystoreTempSeed,
       hasTempSeed: this.hasTempSeed,
       isReadyToStoreKeys: this.isReadyToStoreKeys
