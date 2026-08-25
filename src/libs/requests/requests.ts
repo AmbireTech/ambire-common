@@ -1,69 +1,12 @@
 import { generateUuid } from '@/utils/uuid'
 
 import { DappProviderRequest } from '../../interfaces/dapp'
-import { getAccountOpNonce } from '../accountOp/accountOp'
 import {
   CallsUserRequest,
   SignUserRequest,
   SwitchAccountRequest,
   UserRequest
 } from '../../interfaces/userRequest'
-
-/** Describes a queued Safe transaction that uses the nonce of the current request. */
-export interface SafeNonceConflict {
-  requestId: CallsUserRequest['id']
-  chainId: bigint
-  nonce: bigint
-  nextNonce: bigint
-}
-
-/** Finds a nonce conflict for an unsigned Safe request and the next nonce available in its queue. */
-export const getSafeNonceConflict = (
-  currentRequest: CallsUserRequest,
-  userRequests: UserRequest[]
-): SafeNonceConflict | null => {
-  const { account, accountOp } = currentRequest.signAccountOp
-
-  if (
-    !account.safeCreation ||
-    accountOp.meta?.isOnchainSafeRejection ||
-    accountOp.signed?.length ||
-    accountOp.safeTx?.confirmations?.length
-  )
-    return null
-
-  const currentNonce = getAccountOpNonce(accountOp)
-  if (currentNonce === null) return null
-
-  const queuedNonces = userRequests.reduce<bigint[]>((nonces, request) => {
-    if (
-      request.kind !== 'calls' ||
-      request.id === currentRequest.id ||
-      !request.signAccountOp.account.safeCreation ||
-      request.signAccountOp.accountOp.accountAddr !== accountOp.accountAddr ||
-      request.signAccountOp.accountOp.chainId !== accountOp.chainId
-    )
-      return nonces
-
-    const nonce = getAccountOpNonce(request.signAccountOp.accountOp)
-    if (nonce !== null) nonces.push(nonce)
-    return nonces
-  }, [])
-
-  if (!queuedNonces.includes(currentNonce)) return null
-
-  const highestQueuedNonce = queuedNonces.reduce(
-    (highestNonce, nonce) => (nonce > highestNonce ? nonce : highestNonce),
-    currentNonce
-  )
-
-  return {
-    requestId: currentRequest.id,
-    chainId: accountOp.chainId,
-    nonce: currentNonce,
-    nextNonce: highestQueuedNonce + 1n
-  }
-}
 
 export const dappRequestMethodToRequestKind = (method: DappProviderRequest['method']) => {
   if (['call', 'calls', 'eth_sendTransaction', 'wallet_sendCalls'].includes(method)) return 'calls'

@@ -77,7 +77,6 @@ import {
   buildSwitchAccountUserRequest,
   dappRequestMethodToRequestKind,
   getCallsUserRequestsByNetwork,
-  getSafeNonceConflict,
   isSignRequest,
   messageOnNewRequest
 } from '../../libs/requests/requests'
@@ -100,7 +99,6 @@ import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
 import type { EIP712TypedData } from '@safe-global/types-kit'
-import type { SafeNonceConflict } from '../../libs/requests/requests'
 import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/signAccountOp'
 
 const STATUS_WRAPPED_METHODS = {
@@ -209,8 +207,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #currentUserRequest: UserRequest | null = null
 
-  #dismissedSafeNonceConflicts: SafeNonceConflict[] = []
-
   private shouldSimulateAccountOps = true
 
   get currentUserRequest() {
@@ -220,42 +216,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   set currentUserRequest(val: UserRequest | null) {
     this.#currentUserRequest = val
     this.#onSetCurrentUserRequest(val)
-  }
-
-  #getCurrentSafeNonceConflict(): SafeNonceConflict | null {
-    if (!this.currentUserRequest || this.currentUserRequest.kind !== 'calls') return null
-
-    return getSafeNonceConflict(this.currentUserRequest, this.userRequests)
-  }
-
-  /** The current unsigned Safe request's nonce conflict, unless the user chose to replace it. */
-  get currentSafeNonceConflict(): SafeNonceConflict | null {
-    const conflict = this.#getCurrentSafeNonceConflict()
-    if (!conflict) return null
-
-    const isDismissed = this.#dismissedSafeNonceConflicts.some(
-      ({ requestId, chainId, nonce }) =>
-        requestId === conflict.requestId && chainId === conflict.chainId && nonce === conflict.nonce
-    )
-
-    return isDismissed ? null : conflict
-  }
-
-  /** Moves the current Safe request after the highest nonce already present in its queue. */
-  setCurrentRequestSafeNonceToNextAvailable() {
-    const conflict = this.currentSafeNonceConflict
-    if (!conflict || !this.currentUserRequest || this.currentUserRequest.kind !== 'calls') return
-
-    this.currentUserRequest.signAccountOp.setSafeNonce(conflict.nextNonce)
-  }
-
-  /** Keeps the current Safe nonce so signing it can replace the queued transaction. */
-  dismissCurrentSafeNonceConflict() {
-    const conflict = this.currentSafeNonceConflict
-    if (!conflict) return
-
-    this.#dismissedSafeNonceConflicts.push(conflict)
-    this.emitUpdate()
   }
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
@@ -977,9 +937,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       if (!req) return
 
       this.userRequests.splice(this.userRequests.indexOf(req), 1)
-      this.#dismissedSafeNonceConflicts = this.#dismissedSafeNonceConflicts.filter(
-        ({ requestId }) => requestId !== req.id
-      )
       if (this.currentUserRequest?.id === req.id) didRemoveCurrentUserRequest = true
 
       // update the pending stuff to be signed
@@ -2195,11 +2152,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         callUserRequest.signAccountOp.pause()
       }
 
-      let lastSafeNonce = getAccountOpNonce(callUserRequest.signAccountOp.accountOp)
-      let wasSignedBySafeOwner = !!(
-        callUserRequest.signAccountOp.accountOp.signed?.length ||
-        callUserRequest.signAccountOp.accountOp.safeTx?.confirmations?.length
-      )
       let lastSafeSignature = callUserRequest.signAccountOp.accountOp.signature
       let lastHumanization = callUserRequest.signAccountOp.humanization
 
@@ -2210,22 +2162,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         if (!callsReq) return
 
-        const safeNonce = getAccountOpNonce(callsReq.signAccountOp.accountOp)
-        const isSignedBySafeOwner = !!(
-          callsReq.signAccountOp.accountOp.signed?.length ||
-          callsReq.signAccountOp.accountOp.safeTx?.confirmations?.length
-        )
         const safeSignature = callsReq.signAccountOp.accountOp.signature
         const humanization = callsReq.signAccountOp.humanization
         const hasSafeQueueStateChanged =
           !!callsReq.signAccountOp.account.safeCreation &&
-          (safeNonce !== lastSafeNonce ||
-            isSignedBySafeOwner !== wasSignedBySafeOwner ||
-            safeSignature !== lastSafeSignature ||
-            humanization !== lastHumanization)
+          (safeSignature !== lastSafeSignature || humanization !== lastHumanization)
 
-        lastSafeNonce = safeNonce
-        wasSignedBySafeOwner = isSignedBySafeOwner
         lastSafeSignature = safeSignature
         lastHumanization = humanization
 
@@ -2395,10 +2337,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       return true
     })
-    this.#dismissedSafeNonceConflicts = this.#dismissedSafeNonceConflicts.filter(({ requestId }) =>
-      this.userRequests.some((request) => request.id === requestId)
-    )
-
     this.emitUpdate()
   }
 
@@ -2438,7 +2376,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       ...this,
       ...super.toJSON(),
       banners: this.banners,
-      currentSafeNonceConflict: this.currentSafeNonceConflict,
       visibleUserRequests: this.visibleUserRequests,
       currentUserRequest: this.currentUserRequest
     }
