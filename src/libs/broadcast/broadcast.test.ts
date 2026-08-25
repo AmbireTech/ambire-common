@@ -167,7 +167,7 @@ describe('broadcast', () => {
       )
     ).rejects.toThrow('Failed estimating gas for broadcast')
 
-    expect(provider.send).toHaveBeenCalledTimes(11)
+    expect(provider.send).toHaveBeenCalledTimes(10)
   })
 
   test('returns an estimate error immediately for a broadcast that is not a multi-call EOA', async () => {
