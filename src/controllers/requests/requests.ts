@@ -627,10 +627,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       )
         return
 
-      const accountOps = [curR.signAccountOp.accountOp]
-
       this.#portfolio
-        .simulateAccountOp(accountOps)
+        .simulateAccountOp(curR.signAccountOp.accountOp)
         .catch((e) => console.log('Failed to do simulateAccountOp', e))
     } catch (e) {
       console.log('Failed to do #performSimulation', e)

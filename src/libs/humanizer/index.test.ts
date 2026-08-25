@@ -2679,7 +2679,7 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
-  test('leaves a nested Safe execTransaction empty self-call generic', async () => {
+  test('humanizes a Safe execTransaction reject call with ERC-7730', async () => {
     const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
     const safeSingleton = '0x29fcb43b46531bca003ddc8fcb67ffe91900c762'
     const safeExecAccountOp: AccountOp = {

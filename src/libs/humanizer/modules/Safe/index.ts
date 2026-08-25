@@ -374,7 +374,14 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
       // this decoded call is a nested `execTransaction` invocation (e.g. a relayer executing on
       // behalf of the Safe), so `accOp.nonce` does not necessarily reflect this inner Safe
       // transaction's nonce and is intentionally not passed here
-      const safeSpecificHumanization = getSafeHumanization(accOp.accountAddr, to, bigintValue, data)
+      const safeSpecificHumanization = getSafeHumanization(
+        accOp.accountAddr,
+        to,
+        bigintValue,
+        data,
+        0,
+        accOp.nonce
+      )
       const fullVisualization = [
         getAction('Execute a Safe{WALLET} transaction'),
         getLabel('from'),

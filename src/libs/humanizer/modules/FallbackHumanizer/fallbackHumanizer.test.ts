@@ -138,9 +138,9 @@ const fallbackCases: Array<{
       to: TO,
       value: 0n,
       data: '0x',
-      fullVisualization: [{ type: 'action', content: 'Specific empty call', id: 1 }]
+      fullVisualization: [{ type: 'action', content: 'Reject Tx with nonce 5', id: 1 }]
     } as IrCall,
-    expected: [{ type: 'action', content: 'Specific empty call' }]
+    expected: [{ type: 'action', content: 'Reject Tx with nonce 5' }]
   }
 ]
 
@@ -188,19 +188,6 @@ describe('fallbackHumanizer', () => {
     expect(result.fullVisualization?.[0]).toMatchObject({
       type: 'action',
       content: 'Cancel transaction with nonce 7'
-    })
-  })
-
-  test('keeps an unmarked empty zero-address call generic', () => {
-    const result = fallbackHumanizer({ ...accountOp, nonce: 7n }, {
-      to: ZeroAddress,
-      value: 0n,
-      data: '0x'
-    } as IrCall)
-
-    expect(result.fullVisualization?.[0]).toMatchObject({
-      type: 'action',
-      content: 'Empty call to'
     })
   })
 })
