@@ -258,8 +258,8 @@ export const getAccountImportStatus = ({
       (keyIteratorType ? key.type === keyIteratorType : true)
   )
   if (associatedKeysAlreadyImported.length) {
-    const associatedKeysNotImportedYet = mergedAssociatedKeys.filter((keyAddr) =>
-      associatedKeysAlreadyImported.some((x) => x.addr !== keyAddr)
+    const associatedKeysNotImportedYet = mergedAssociatedKeys.filter(
+      (keyAddr) => !associatedKeysAlreadyImported.some((x) => x.addr === keyAddr)
     )
 
     const notImportedYetKeysExistInPage = accountsOnPage.some((x) =>

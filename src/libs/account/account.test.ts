@@ -395,6 +395,67 @@ describe('Account', () => {
     ).toBe(ImportStatus.ImportedWithDifferentKeys)
   })
 
+  test('Should resolve a smart account with all of its multiple associated keys already imported to ImportStatus.ImportedWithTheSameKeys', async () => {
+    const secondSignerAddr = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const smartAccount = await getSmartAccount(
+      [{ addr: keyPublicAddress, hash: dedicatedToOneSAPriv }],
+      []
+    )
+    const smartAccountWithTwoSigners: Account = {
+      ...smartAccount,
+      associatedKeys: [keyPublicAddress, secondSignerAddr]
+    }
+
+    const firstKey: Key = {
+      addr: keyPublicAddress,
+      type: 'trezor',
+      dedicatedToOneSA: true,
+      label: 'Key 1',
+      meta: {
+        deviceId: '123',
+        deviceModel: '1',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        index: 0,
+        createdAt: new Date().getTime()
+      },
+      isExternallyStored: false
+    }
+    const secondKey: Key = {
+      ...firstKey,
+      addr: secondSignerAddr,
+      dedicatedToOneSA: false,
+      label: 'Key 2',
+      meta: { ...firstKey.meta, index: 1 }
+    }
+
+    const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
+      {
+        account: { ...basicAccount, usedOnNetworks: [] },
+        slot: 1,
+        index: 0,
+        isLinked: false
+      },
+      {
+        account: { ...smartAccountWithTwoSigners, usedOnNetworks: [] },
+        slot: 1,
+        index: 0,
+        isLinked: false
+      }
+    ]
+
+    expect(
+      getAccountImportStatus({
+        account: smartAccountWithTwoSigners,
+        alreadyImportedAccounts: [smartAccountWithTwoSigners],
+        // Both associated keys are already imported and up-to-date, so there is
+        // nothing left to import for this account.
+        keys: [firstKey, secondKey],
+        accountsOnPage,
+        keyIteratorType: 'trezor'
+      })
+    ).toBe(ImportStatus.ImportedWithTheSameKeys)
+  })
+
   test('Should resolve view only account import status to ImportStatus.ImportedWithoutKey', () => {
     const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
       {
