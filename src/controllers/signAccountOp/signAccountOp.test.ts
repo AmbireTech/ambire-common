@@ -13,7 +13,7 @@ import {
 import fetch from 'node-fetch'
 
 import { WARNINGS } from '@/consts/signAccountOp/errorHandling'
-import { describe, expect, jest, test } from '@jest/globals'
+import { afterEach, describe, expect, jest, test } from '@jest/globals'
 import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-util'
 
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
@@ -45,6 +45,8 @@ import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
+// Namespace import, so the broadcast helpers can be stood in for with jest.spyOn
+import * as broadcastLib from '../../libs/broadcast/broadcast'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
@@ -78,6 +80,7 @@ import { BannerController } from '../banner/banner'
 import { DappsController } from '../dapps/dapps'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
+import { FeatureFlags } from '../../consts/featureFlags'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import { InviteController } from '../invite/invite'
@@ -462,6 +465,8 @@ const init = async (
     initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
     externalSignerControllers?: ExternalSignerControllers
+    onBroadcastSuccess?: (params: any) => Promise<void>
+    featureFlags?: Partial<FeatureFlags>
   }
 ) => {
   const storage: Storage = produceMemoryStore()
@@ -560,7 +565,7 @@ const init = async (
   await networksCtrl.initialLoadPromise
   await providersCtrl.initialLoadPromise
 
-  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
+  const featureFlagsCtrl = new FeatureFlagsController(options?.featureFlags || {}, storageCtrl)
   const portfolio = new PortfolioController(
     storageCtrl,
     fetch,
@@ -641,8 +646,8 @@ const init = async (
     account,
     accountsCtrl.accountStates[account.addr]![network.chainId.toString()]!,
     network,
-    true,
-    true
+    featureFlagsCtrl.isFeatureEnabled('erc4337'),
+    featureFlagsCtrl.isFeatureEnabled('eip7702')
   )
 
   const callRelayer = options?.callRelayer || relayerCall.bind({ url: '', fetch })
@@ -737,7 +742,7 @@ const init = async (
     accountOp: op,
     shouldSimulate: false,
     onUpdateAfterTraceCallSuccess: options?.onUpdateAfterTraceCallSuccess,
-    onBroadcastSuccess: async () => {},
+    onBroadcastSuccess: options?.onBroadcastSuccess || (async () => {}),
     estimateController: estimationController,
     gasPriceController
   })
@@ -3786,5 +3791,169 @@ describe('unlimited approval warnings', () => {
     } finally {
       catalogSpy.mockRestore()
     }
+  })
+})
+
+describe('broadcasting a batch one transaction at a time', () => {
+  suppressConsoleBeforeEach(true)
+  afterEach(() => jest.restoreAllMocks())
+
+  const batchGasPrices = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+
+  /** An EOA broadcasts every call as its own transaction, so three calls take three signatures. */
+  const createThreeCallBatch = (account: Account) => {
+    const batch = createEOAAccountOp(account)
+    batch.op.calls = [1n, 2n, 3n].map((value) => ({
+      to: '0x0000000000000000000000000000000000000000',
+      value,
+      data: '0x' as Hex
+    }))
+    // Set, so the nonce is not read off the network during the test
+    ;(batch.op as any).eoaNonce = 7n
+
+    return batch
+  }
+
+  const initBatch = async () => {
+    const submittedAccountOps: any[] = []
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: nativeFeeToken
+      }
+    ]
+    const { controller } = await init(
+      eoaAccount,
+      createThreeCallBatch(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        flags: {},
+        updatedAt: Date.now()
+      } as any,
+      batchGasPrices,
+      false,
+      {
+        // Without this the account broadcasts through an EIP-7702 delegation, which
+        // sends the whole batch as one transaction and takes a single signature.
+        featureFlags: { eip7702: false },
+        callRelayer: (async () => ({})) as any,
+        onBroadcastSuccess: async ({ submittedAccountOp }: any) => {
+          submittedAccountOps.push(submittedAccountOp)
+        }
+      }
+    )
+
+    return { controller, submittedAccountOps }
+  }
+
+  /**
+   * Stands in for the network: every call becomes a transaction that is signed and
+   * sent, with `failFromIndex` naming the first signature that refuses.
+   */
+  const mockBroadcastChain = (failFromIndex: number | null) => {
+    jest
+      .spyOn(broadcastLib, 'buildRawTransaction')
+      .mockImplementation(async () => ({ to: '0x', value: 0n }) as any)
+
+    let signedCount = 0
+    const signRawTransaction = jest
+      .spyOn(KeystoreSigner.prototype, 'signRawTransaction')
+      .mockImplementation(async () => {
+        if (failFromIndex !== null && signedCount >= failFromIndex) {
+          throw new Error('Card operation cancelled.')
+        }
+        signedCount += 1
+
+        return `0xsigned${signedCount}`
+      })
+
+    const broadcastTransaction = jest
+      .spyOn(broadcastLib, 'broadcastTransaction')
+      .mockImplementation(async () => ({ hash: `0xhash${signedCount}` }) as any)
+
+    return { signRawTransaction, broadcastTransaction }
+  }
+
+  const getPartialBroadcastError = (controller: any) =>
+    controller.emittedErrors.find((e: any) => e.message.startsWith('Only '))
+
+  test('records every call and reports no error when the whole batch goes out', async () => {
+    const { controller, submittedAccountOps } = await initBatch()
+    const { signRawTransaction, broadcastTransaction } = mockBroadcastChain(null)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(signRawTransaction).toHaveBeenCalledTimes(3)
+    expect(broadcastTransaction).toHaveBeenCalledTimes(3)
+    expect(submittedAccountOps).toHaveLength(1)
+    expect(submittedAccountOps[0].calls).toHaveLength(3)
+    expect(submittedAccountOps[0].identifiedBy.type).toBe('MultipleTxns')
+    expect(getPartialBroadcastError(controller)).toBeUndefined()
+  })
+
+  test('records only the calls that were sent when the batch stops part-way', async () => {
+    const { controller, submittedAccountOps } = await initBatch()
+    const { broadcastTransaction } = mockBroadcastChain(1)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // The first call was signed and sent, the second was refused, so the third was
+    // never reached. Recording all three would list transactions that were never sent
+    // and line their hashes up with the wrong calls.
+    expect(broadcastTransaction).toHaveBeenCalledTimes(1)
+    expect(submittedAccountOps).toHaveLength(1)
+    expect(submittedAccountOps[0].calls).toHaveLength(1)
+    expect(submittedAccountOps[0].calls[0].value).toBe(1n)
+    expect(submittedAccountOps[0].identifiedBy.type).toBe('MultipleTxns')
+    expect(submittedAccountOps[0].identifiedBy.identifier.split('-')).toHaveLength(1)
+  })
+
+  test('tells the user how much of the batch was sent, and why the rest was not', async () => {
+    const { controller } = await initBatch()
+    mockBroadcastChain(1)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Reporting only the part that succeeded would leave the user believing all three
+    // transactions were sent.
+    const partialBroadcastError = getPartialBroadcastError(controller)
+
+    expect(partialBroadcastError).toBeDefined()
+    expect(partialBroadcastError.level).toBe('major')
+    expect(partialBroadcastError.message).toContain('Only 1 of 3 transactions')
+    expect(partialBroadcastError.message).toContain('The remaining 2 could not be sent')
+    expect(partialBroadcastError.message).toContain('Card operation cancelled.')
+  })
+
+  test('words the message for a single remaining transaction', async () => {
+    const { controller } = await initBatch()
+    mockBroadcastChain(2)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(getPartialBroadcastError(controller).message).toContain(
+      'Only 2 of 3 transactions in this batch were sent. The remaining one could not be sent'
+    )
+  })
+
+  test('reports a plain failure, not a partial success, when nothing was sent', async () => {
+    const { controller, submittedAccountOps } = await initBatch()
+    mockBroadcastChain(0)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Nothing reached the network, so there is no account op worth recording and the
+    // failure is the whole story.
+    expect(submittedAccountOps).toHaveLength(0)
+    expect(getPartialBroadcastError(controller)).toBeUndefined()
   })
 })

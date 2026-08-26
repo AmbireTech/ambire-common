@@ -3531,6 +3531,9 @@ export class SignAccountOpController
       nonce: number
       identifiedBy: AccountOpIdentifiedBy
     } | null = null
+    // Set only when a batch was broadcast in part, so the account op that gets
+    // recorded holds the transactions that were actually sent and no others.
+    let sentCallsCount: number | null = null
 
     // broadcasting by EOA is quite the same:
     // 1) build a rawTxn 2) sign 3) broadcast
@@ -3656,6 +3659,7 @@ export class SignAccountOpController
         // unless it's the build-in swap - we want to throw an error and
         // allow the user to retry in this case
         if (multipleTxnsBroadcastRes.length && this.#type !== 'one-click-swap-and-bridge') {
+          sentCallsCount = multipleTxnsBroadcastRes.length
           transactionRes = {
             nonce: senderNonce,
             identifiedBy: {
@@ -3664,6 +3668,20 @@ export class SignAccountOpController
             },
             txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
           }
+
+          // The part that went out is reported as broadcast, so without saying this
+          // the rest of the batch looks sent when it never was.
+          const notSentCount = accountOp.calls.length - sentCallsCount
+          const reason = error?.message || 'the transaction could not be signed'
+          this.emitError({
+            level: 'major',
+            message: `Only ${sentCallsCount} of ${accountOp.calls.length} transactions in this batch ${
+              sentCallsCount === 1 ? 'was' : 'were'
+            } sent. The remaining ${notSentCount === 1 ? 'one' : notSentCount} could not be sent: ${
+              reason.endsWith('.') ? reason : `${reason}.`
+            } You can send ${notSentCount === 1 ? 'it' : 'them'} again.`,
+            error
+          })
         } else {
           return this.throwBroadcastAccountOp({ error, accountState })
         }
@@ -3774,17 +3792,23 @@ export class SignAccountOpController
       submittedAccountOpMeta.clearSigningHumanization = clearSigningHumanization
     }
 
+    // A batch broadcast one transaction at a time can stop part-way through. The
+    // calls are sent in order, so the ones that made it out are the leading ones -
+    // and only those may be recorded, or the activity would list transactions that
+    // were never sent and their hashes would line up with the wrong calls.
+    const sentCalls =
+      sentCallsCount === null ? accountOp.calls : accountOp.calls.slice(0, sentCallsCount)
+
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,
+      calls: sentCalls,
       eoaNonce: this.accountOp.eoaNonce,
       status: AccountOpStatus.BroadcastedButNotConfirmed,
       txnId: transactionRes.txnId,
       nonce: BigInt(transactionRes.nonce),
       identifiedBy: transactionRes.identifiedBy,
       timestamp: new Date().getTime(),
-      isSingletonDeploy: !!accountOp.calls.find(
-        (call) => call.to && getAddress(call.to) === SINGLETON
-      )
+      isSingletonDeploy: !!sentCalls.find((call) => call.to && getAddress(call.to) === SINGLETON)
     }
     if (Object.keys(submittedAccountOpMeta).length) submittedAccountOp.meta = submittedAccountOpMeta
     else delete submittedAccountOp.meta
