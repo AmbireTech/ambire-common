@@ -687,6 +687,100 @@ describe('ActivityController — in-memory eviction reaches persistence', () => 
   })
 })
 
+describe('ActivityController — startup read is scoped to the selected account', () => {
+  const OTHER = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+
+  /** makeController's stub has no selected account, which means "load finalized for all". */
+  function makeControllerWithSelected(selectedAddr: string) {
+    return new ActivityController(
+      storage,
+      (() => {}) as any,
+      (() => {}) as any,
+      { ...alreadyLoaded, accounts: [{ addr: ACC }, { addr: OTHER }] } as any,
+      { ...alreadyLoaded, account: { addr: selectedAddr } } as any,
+      {} as any,
+      networksStub,
+      {} as any,
+      {} as any,
+      async () => {},
+      undefined,
+      db
+    )
+  }
+
+  /** Seeds a finalized op and a pending one for both ACC (selected) and OTHER. */
+  async function seedTwoAccounts() {
+    const store = new ActivityIdbStorage(db)
+    await store.putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: [makeOp('mine-final', 1000) as any] },
+      {
+        accountAddr: OTHER,
+        chainId: CHAIN_1,
+        ops: [
+          { ...makeOp('other-final', 2000), accountAddr: OTHER } as any,
+          {
+            ...makeOp('other-pending', 3000, AccountOpStatus.BroadcastedButNotConfirmed),
+            accountAddr: OTHER
+          } as any
+        ]
+      }
+    ])
+  }
+
+  test('another account contributes its pending ops but not its finalized ones', async () => {
+    // Pending ops are needed wallet-wide: broadcastedButNotConfirmed decides which accounts
+    // get status polling. Finalized ops are only ever rendered for the viewed account.
+    await seedTwoAccounts()
+
+    const controller = makeControllerWithSelected(ACC)
+    await awaitLoadOnly(controller)
+
+    const otherIds = controller.getAccountOpsForAccount({ accountAddr: OTHER }).map((op) => op.id)
+
+    expect(otherIds).toContain('other-pending')
+    expect(otherIds).not.toContain('other-final')
+  })
+
+  test('switching to that account loads its history on demand', async () => {
+    await seedTwoAccounts()
+
+    const controller = makeControllerWithSelected(ACC)
+    await awaitLoadOnly(controller)
+    await controller.filterAccountsOps('session-other', { account: OTHER })
+
+    const otherIds = controller.getAccountOpsForAccount({ accountAddr: OTHER }).map((op) => op.id)
+
+    expect(otherIds).toContain('other-final')
+  })
+
+  test('the startup read is never repeated when opening Activity', async () => {
+    await seedTwoAccounts()
+
+    const controller = makeControllerWithSelected(ACC)
+    await awaitLoadOnly(controller)
+
+    const spy = jest.spyOn(ActivityIdbStorage.prototype, 'loadStartupOps')
+    await controller.filterAccountsOps('session-mine', { account: ACC })
+
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  test('the on-demand load happens once per group', async () => {
+    await seedTwoAccounts()
+
+    const controller = makeControllerWithSelected(ACC)
+    await awaitLoadOnly(controller)
+
+    const spy = jest.spyOn(ActivityIdbStorage.prototype, 'getOpsForAccountAndChain')
+    await controller.filterAccountsOps('session-other', { account: OTHER })
+    await controller.filterAccountsOps('session-other', { account: OTHER })
+    await controller.filterAccountsOps('session-other', { account: OTHER })
+
+    const otherChain1 = spy.mock.calls.filter(([a, c]) => a === OTHER && String(c) === '1')
+    expect(otherChain1).toHaveLength(1)
+  })
+})
+
 describe('ActivityController — total transaction count', () => {
   // BannerController gates marketing banners on minTxnsTotal/maxTxnsTotal through a
   // SYNCHRONOUS callback (see the AccountData callback in main.ts), so the count has to

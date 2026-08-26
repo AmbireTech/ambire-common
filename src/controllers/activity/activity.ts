@@ -361,7 +361,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // Owns migration, fallback and the bounded read. Never rejects.
     const [accountsOps, externalAccountOps, signedMessages, sentToHistory] = await Promise.all([
-      this.#persistence.init(),
+      this.#persistence.init(this.#selectedAccount.account?.addr),
       this.#storage.get('externalAccountOps', {}),
       this.#storage.get('signedMessages', {}),
       this.#storage.get('sentToHistory', { domains: {}, recipients: {} })
@@ -475,11 +475,15 @@ export class ActivityController extends EventEmitter implements IActivityControl
     let internalAccountOpsByChain = this.#accountsOps[filters.account] || {}
     const externalAccountOpsByChain = this.#externalAccountOps[filters.account] || {}
 
-    // So pagination can page past the startup window. A failure just leaves the window.
-    if (filters.chainId) {
-      await this.#persistence.ensureGroupLoaded(filters.account, filters.chainId)
-      internalAccountOpsByChain = this.#accountsOps[filters.account] || internalAccountOpsByChain
-    }
+    // So pagination can page past the startup window, which holds finalized ops for the
+    // selected account only. With no chain filter every enabled chain has to be expanded, or a
+    // just-switched-to account would render its pending ops and nothing else.
+    await Promise.all(
+      (filters.chainId ? [filters.chainId] : enabledNetworkChainIds).map((chainId) =>
+        this.#persistence.ensureGroupLoaded(filters.account, chainId)
+      )
+    )
+    internalAccountOpsByChain = this.#accountsOps[filters.account] || internalAccountOpsByChain
 
     const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(
       internalAccountOpsByChain

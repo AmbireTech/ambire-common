@@ -133,16 +133,20 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
   }
 
   /**
-   * Load minimal startup dataset: all pending ops + up to STARTUP_RECENT_OPS_LIMIT
-   * finalized ops per (account, chain).
+   * Load minimal startup dataset: all pending ops for every account, plus up to
+   * STARTUP_RECENT_OPS_LIMIT finalized ops per chain for `finalizedFor` only.
+   *
+   * Pending ops are needed wallet-wide — broadcastedButNotConfirmed drives which accounts get
+   * status polling, and the pending/failed banners are built per account. Finalized ops are
+   * only ever rendered for the account being viewed, so fetching them for every account costs
+   * (accounts x chains x 20) deserialized rows that nothing reads. Omit `finalizedFor` to get
+   * the finalized slice for every account.
    *
    * Two transactions: a key-only cursor enumerates the (account, chainId) groups, then all
-   * per-group queries run in parallel inside one transaction — a timestamp cursor for the
-   * top N finalized, plus getAll on the status index for the pending ones.
-   *
-   * Every per-group request is fired before any await resolves, keeping the tx open.
+   * per-group queries run in parallel inside one transaction. Every per-group request is fired
+   * before any await resolves, keeping the tx open.
    */
-  async loadStartupOps(): Promise<InternalAccountsOps> {
+  async loadStartupOps(finalizedFor?: string): Promise<InternalAccountsOps> {
     // Step 1: enumerate (accountAddr, chainId) groups — key-only cursor, O(N_groups) reads
     const groups: [string, string][] = []
     {
@@ -178,11 +182,15 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
             [accountAddr, chainId, Number.MAX_SAFE_INTEGER]
           )
 
+          const wantsFinalized = !finalizedFor || accountAddr === finalizedFor
+
           // Run timestamp cursor + 2 pending getAlls in parallel for this group.
           // The getAlls are fired synchronously (before any await), the cursor IIFE
           // fires its first request synchronously too — all 3 are pending at once.
           const [, pendingBroadcasted, pendingQueued] = await Promise.all([
             (async () => {
+              if (!wantsFinalized) return
+
               let finalizedCount = 0
               let cur = await tsIndex.openCursor(tsRange, 'prev')
               while (cur && finalizedCount < STARTUP_RECENT_OPS_LIMIT) {
@@ -507,7 +515,8 @@ export class ActivityKeyValueStorage implements IActivityOpsBackend {
   // Migration is not needed for storage — data is already in storage.
   async ensureMigrated(_g: () => Promise<InternalAccountsOps>, _r: () => Promise<void>) {}
 
-  async loadStartupOps(): Promise<InternalAccountsOps> {
+  // The blob is read whole, so there is no per-account slice to skip.
+  async loadStartupOps(_finalizedFor?: string): Promise<InternalAccountsOps> {
     return this.#storage.get('accountsOps', {})
   }
 

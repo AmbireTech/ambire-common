@@ -69,14 +69,14 @@ export class AccountOpsPersistence {
    *
    * Deliberately does NOT do the post-load bookkeeping — see finalizeInit().
    */
-  async init(): Promise<InternalAccountsOps> {
+  async init(finalizedFor?: string): Promise<InternalAccountsOps> {
     const migrated = await this.#migrate()
 
     // Reads AND writes must both go to the legacy key. Writing to IDB while reading the blob
     // would put a row in the empty store, making isEmpty() skip the retry forever.
     if (!migrated) this.#fallBackToKeyValue()
 
-    return this.#loadStartupOps()
+    return this.#loadStartupOps(finalizedFor)
   }
 
   /**
@@ -217,9 +217,9 @@ export class AccountOpsPersistence {
     this.#adapter = new ActivityKeyValueStorage(this.#storage, this.#getCache)
   }
 
-  async #loadStartupOps(): Promise<InternalAccountsOps> {
+  async #loadStartupOps(finalizedFor?: string): Promise<InternalAccountsOps> {
     try {
-      return await this.#adapter.loadStartupOps()
+      return await this.#adapter.loadStartupOps(finalizedFor)
     } catch (error) {
       // Degrading to empty keeps the controller usable; the data is untouched on disk.
       this.#report('Your transaction history could not be loaded.', error, 'read startup ops')

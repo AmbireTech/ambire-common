@@ -29,8 +29,11 @@ export interface IActivityOpsBackend {
     removeStoredOps: () => Promise<void>
   ): Promise<void>
 
-  /** IDB: pending ops + up to 20 finalized per (account, chainId). Key-value: everything. */
-  loadStartupOps(): Promise<InternalAccountsOps>
+  /**
+   * Pending ops for every account, plus the finalized window for `finalizedFor` only —
+   * finalized ops are only rendered for the account being viewed. Key-value reads everything.
+   */
+  loadStartupOps(finalizedFor?: string): Promise<InternalAccountsOps>
 
   /** Write one new op, and delete the op the in-memory trim evicted (if any). */
   putSingleOp(
