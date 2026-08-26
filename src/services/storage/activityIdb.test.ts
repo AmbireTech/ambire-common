@@ -48,8 +48,6 @@ beforeEach(async () => {
   resetAmbireIdbForTesting()
   global.indexedDB = new IDBFactory()
   global.IDBKeyRange = IDBKeyRange
-  // checkQuota() reads navigator.storage — stub it to avoid ReferenceError in Node.
-  ;(global as any).navigator = {}
   db = await openAmbireIdb()
 })
 
@@ -66,20 +64,30 @@ describe('ActivityIdbStorage', () => {
 
     test('returns false after data is written', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)]
+        }
       ])
       expect(await store.isEmpty()).toBe(false)
     })
   })
 
-  describe('putOpsForAccountAndChain + getOpsForAccountAndChain', () => {
+  describe('putMultiple + getOpsForAccountAndChain', () => {
     test('stores ops and returns them sorted by timestamp descending', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000),
-        makeOp('op-2', ACC_A, CHAIN_1, AccountOpStatus.Success, 3000),
-        makeOp('op-3', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [
+            makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000),
+            makeOp('op-2', ACC_A, CHAIN_1, AccountOpStatus.Success, 3000),
+            makeOp('op-3', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000)
+          ]
+        }
       ])
 
       const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
@@ -93,8 +101,12 @@ describe('ActivityIdbStorage', () => {
 
     test('accepts bigint chainId — retrieve with bigint or equivalent string', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_137, [
-        makeOp('op-1', ACC_A, CHAIN_137, AccountOpStatus.Success, 1000)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_137,
+          ops: [makeOp('op-1', ACC_A, CHAIN_137, AccountOpStatus.Success, 1000)]
+        }
       ])
 
       expect(await store.getOpsForAccountAndChain(ACC_A, CHAIN_137)).toHaveLength(1)
@@ -103,12 +115,22 @@ describe('ActivityIdbStorage', () => {
 
     test('replaces existing ops on second write to the same pair', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('old', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [makeOp('old', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)]
+        }
       ])
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('new-1', ACC_A, CHAIN_1, AccountOpStatus.Failure, 2000),
-        makeOp('new-2', ACC_A, CHAIN_1, AccountOpStatus.Success, 3000)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [
+            makeOp('new-1', ACC_A, CHAIN_1, AccountOpStatus.Failure, 2000),
+            makeOp('new-2', ACC_A, CHAIN_1, AccountOpStatus.Success, 3000)
+          ]
+        }
       ])
 
       const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
@@ -118,11 +140,19 @@ describe('ActivityIdbStorage', () => {
 
     test('different chains for the same account are stored independently', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('chain1-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [makeOp('chain1-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)]
+        }
       ])
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_137, [
-        makeOp('chain137-op', ACC_A, CHAIN_137, AccountOpStatus.Success, 2000)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_137,
+          ops: [makeOp('chain137-op', ACC_A, CHAIN_137, AccountOpStatus.Success, 2000)]
+        }
       ])
 
       expect((await store.getOpsForAccountAndChain(ACC_A, CHAIN_1))?.[0]?.id).toBe('chain1-op')
@@ -133,11 +163,19 @@ describe('ActivityIdbStorage', () => {
       const store = new ActivityIdbStorage(db)
 
       await Promise.all([
-        store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-          makeOp('a-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
+        store.putMultiple([
+          {
+            accountAddr: ACC_A,
+            chainId: CHAIN_1,
+            ops: [makeOp('a-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)]
+          }
         ]),
-        store.putOpsForAccountAndChain(ACC_B, CHAIN_1, [
-          makeOp('b-op', ACC_B, CHAIN_1, AccountOpStatus.Success, 2000)
+        store.putMultiple([
+          {
+            accountAddr: ACC_B,
+            chainId: CHAIN_1,
+            ops: [makeOp('b-op', ACC_B, CHAIN_1, AccountOpStatus.Success, 2000)]
+          }
         ])
       ])
 
@@ -152,7 +190,7 @@ describe('ActivityIdbStorage', () => {
 
     test('writing an empty ops array leaves the pair as if it never existed', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [])
+      await store.putMultiple([{ accountAddr: ACC_A, chainId: CHAIN_1, ops: [] }])
       expect(await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)).toBeUndefined()
     })
 
@@ -160,7 +198,9 @@ describe('ActivityIdbStorage', () => {
       const store = new ActivityIdbStorage(db)
       const validOp = makeOp('valid', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
       const invalidOp = { ...makeOp('', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000) }
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [validOp as any, invalidOp as any])
+      await store.putMultiple([
+        { accountAddr: ACC_A, chainId: CHAIN_1, ops: [validOp as any, invalidOp as any] }
+      ])
       const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.id).toBe('valid')
@@ -170,7 +210,9 @@ describe('ActivityIdbStorage', () => {
       const store = new ActivityIdbStorage(db)
       const v1 = makeOp('dup-id', ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, 1000)
       const v2 = makeOp('dup-id', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [v1 as any, v2 as any])
+      await store.putMultiple([
+        { accountAddr: ACC_A, chainId: CHAIN_1, ops: [v1 as any, v2 as any] }
+      ])
       const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.status).toBe(AccountOpStatus.Success)
@@ -231,11 +273,19 @@ describe('ActivityIdbStorage', () => {
       // IDB serializes readwrite transactions — the second one starts only after
       // the first commits, so it deletes and rewrites with its own ops.
       await Promise.all([
-        store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-          makeOp('writer-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
+        store.putMultiple([
+          {
+            accountAddr: ACC_A,
+            chainId: CHAIN_1,
+            ops: [makeOp('writer-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)]
+          }
         ]),
-        store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-          makeOp('writer-2', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000)
+        store.putMultiple([
+          {
+            accountAddr: ACC_A,
+            chainId: CHAIN_1,
+            ops: [makeOp('writer-2', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000)]
+          }
         ])
       ])
 
@@ -363,13 +413,21 @@ describe('ActivityIdbStorage', () => {
 
     test('re-adding ops after deleteAccount works normally', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('original', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [makeOp('original', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)]
+        }
       ])
       await store.deleteAccount(ACC_A)
 
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('readded', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [makeOp('readded', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000)]
+        }
       ])
 
       const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
@@ -451,8 +509,12 @@ describe('ActivityIdbStorage', () => {
 
     test('skips migration when IDB already has data', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('existing', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [makeOp('existing', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)]
+        }
       ])
 
       const getStoredSpy = jest.fn(async () => ({}))
@@ -618,7 +680,7 @@ describe('ActivityIdbStorage', () => {
       const ops = Array.from({ length: 25 }, (_, i) =>
         makeOp(`op-${i}`, ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, i * 100)
       )
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, ops)
+      await store.putMultiple([{ accountAddr: ACC_A, chainId: CHAIN_1, ops }])
 
       const result = await store.loadStartupOps()
       expect(result[ACC_A]?.['1']).toHaveLength(25)
@@ -629,7 +691,7 @@ describe('ActivityIdbStorage', () => {
       const ops = Array.from({ length: 25 }, (_, i) =>
         makeOp(`op-${i}`, ACC_A, CHAIN_1, AccountOpStatus.Success, i * 100)
       )
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, ops)
+      await store.putMultiple([{ accountAddr: ACC_A, chainId: CHAIN_1, ops }])
 
       const result = await store.loadStartupOps()
       expect(result[ACC_A]?.['1']).toHaveLength(20)
@@ -643,7 +705,9 @@ describe('ActivityIdbStorage', () => {
       const pending = Array.from({ length: 3 }, (_, i) =>
         makeOp(`pend-${i}`, ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, 1000 + i)
       )
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [...finalized, ...pending])
+      await store.putMultiple([
+        { accountAddr: ACC_A, chainId: CHAIN_1, ops: [...finalized, ...pending] }
+      ])
 
       const result = await store.loadStartupOps()
       const ids = (result[ACC_A]?.['1'] ?? []).map((op) => op.id)
@@ -653,10 +717,16 @@ describe('ActivityIdbStorage', () => {
 
     test('returns ops sorted by timestamp descending within each group', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 100),
-        makeOp('op-2', ACC_A, CHAIN_1, AccountOpStatus.Success, 300),
-        makeOp('op-3', ACC_A, CHAIN_1, AccountOpStatus.Success, 200)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [
+            makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 100),
+            makeOp('op-2', ACC_A, CHAIN_1, AccountOpStatus.Success, 300),
+            makeOp('op-3', ACC_A, CHAIN_1, AccountOpStatus.Success, 200)
+          ]
+        }
       ])
 
       const result = await store.loadStartupOps()
@@ -695,7 +765,7 @@ describe('ActivityIdbStorage', () => {
       const ops = Array.from({ length: 25 }, (_, i) =>
         makeOp(`op-${i}`, ACC_A, CHAIN_1, AccountOpStatus.Success, i * 100)
       )
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, ops)
+      await store.putMultiple([{ accountAddr: ACC_A, chainId: CHAIN_1, ops }])
 
       const result = await store.loadStartupOps()
       const timestamps = (result[ACC_A]?.['1'] ?? []).map((op) => op.timestamp)
@@ -711,8 +781,12 @@ describe('ActivityIdbStorage', () => {
           makeOp(`${prefix}-${i}`, addr, chain, AccountOpStatus.Success, i * 100)
         )
 
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, make25('a1', ACC_A, CHAIN_1))
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_137, make25('a137', ACC_A, CHAIN_137))
+      await store.putMultiple([
+        { accountAddr: ACC_A, chainId: CHAIN_1, ops: make25('a1', ACC_A, CHAIN_1) }
+      ])
+      await store.putMultiple([
+        { accountAddr: ACC_A, chainId: CHAIN_137, ops: make25('a137', ACC_A, CHAIN_137) }
+      ])
 
       const result = await store.loadStartupOps()
       expect(result[ACC_A]?.['1']).toHaveLength(20)
@@ -728,7 +802,9 @@ describe('ActivityIdbStorage', () => {
       const queued = Array.from({ length: 5 }, (_, i) =>
         makeOp(`queued-${i}`, ACC_A, CHAIN_1, AccountOpStatus.Pending, 1000 + i)
       )
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [...finalized, ...queued] as any[])
+      await store.putMultiple([
+        { accountAddr: ACC_A, chainId: CHAIN_1, ops: [...finalized, ...queued] as any[] }
+      ])
 
       const result = await store.loadStartupOps()
       const ids = (result[ACC_A]?.['1'] ?? []).map((op) => op.id)
@@ -740,13 +816,31 @@ describe('ActivityIdbStorage', () => {
       // loadStartupOps fires two getAll() calls per group — one per pending status.
       // A mix of both types in the same group verifies neither query is broken.
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('fin-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 100) as any,
-        makeOp('bcast-1', ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, 200) as any,
-        makeOp('bcast-2', ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, 300) as any,
-        makeOp('pend-1', ACC_A, CHAIN_1, AccountOpStatus.Pending, 400) as any,
-        makeOp('pend-2', ACC_A, CHAIN_1, AccountOpStatus.Pending, 500) as any
-      ] as any[])
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [
+            makeOp('fin-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 100) as any,
+            makeOp(
+              'bcast-1',
+              ACC_A,
+              CHAIN_1,
+              AccountOpStatus.BroadcastedButNotConfirmed,
+              200
+            ) as any,
+            makeOp(
+              'bcast-2',
+              ACC_A,
+              CHAIN_1,
+              AccountOpStatus.BroadcastedButNotConfirmed,
+              300
+            ) as any,
+            makeOp('pend-1', ACC_A, CHAIN_1, AccountOpStatus.Pending, 400) as any,
+            makeOp('pend-2', ACC_A, CHAIN_1, AccountOpStatus.Pending, 500) as any
+          ] as any[]
+        }
+      ])
 
       const result = await store.loadStartupOps()
       const ids = (result[ACC_A]?.['1'] ?? []).map((op) => op.id)
@@ -774,7 +868,7 @@ describe('ActivityIdbStorage', () => {
         identifiedBy: { type: 'Transaction', identifier: '0xhash' }
       } as unknown as SubmittedAccountOpLike
 
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [op])
+      await store.putMultiple([{ accountAddr: ACC_A, chainId: CHAIN_1, ops: [op] }])
       const [retrieved] = (await store.getOpsForAccountAndChain(ACC_A, CHAIN_1))!
 
       expect(retrieved?.chainId).toBe(CHAIN_1)
@@ -797,8 +891,12 @@ describe('ActivityIdbStorage', () => {
 
     test('evicts the op identified by trimmedId', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('old-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000) as any
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [makeOp('old-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000) as any]
+        }
       ])
       await store.putSingleOp(
         ACC_A,
@@ -824,10 +922,14 @@ describe('ActivityIdbStorage', () => {
       expect(result?.[0]?.id).toBe('added-op')
     })
 
-    test('coexists with ops written by putOpsForAccountAndChain', async () => {
+    test('coexists with ops written by putMultiple', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('bulk-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000) as any
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [makeOp('bulk-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000) as any]
+        }
       ])
       await store.putSingleOp(
         ACC_A,
@@ -862,14 +964,14 @@ describe('ActivityIdbStorage', () => {
       )
     })
 
-    test('evicts the oldest op when the group exceeds MAX_IDB_GROUP_SIZE (1000)', async () => {
+    test('evicts the oldest op when the group exceeds MAX_OPS_PER_GROUP (1000)', async () => {
       const store = new ActivityIdbStorage(db)
       // Fill to exactly 1000 ops (timestamps 0..999, oldest id is 'cap-op-0')
       const ops = Array.from(
         { length: 1000 },
         (_, i) => makeOp(`cap-op-${i}`, ACC_A, CHAIN_1, AccountOpStatus.Success, i) as any
       )
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, ops)
+      await store.putMultiple([{ accountAddr: ACC_A, chainId: CHAIN_1, ops }])
 
       // Adding one more without trimmedId should trigger eviction of the oldest
       await store.putSingleOp(
@@ -891,8 +993,14 @@ describe('ActivityIdbStorage', () => {
       // timestamp; without tx.abort() the put already queued for the valid op would
       // still commit, so callers would see a half-applied batch.
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('op-a', ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, 1000) as any
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [
+            makeOp('op-a', ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, 1000) as any
+          ]
+        }
       ])
 
       const malformed = {
@@ -915,8 +1023,20 @@ describe('ActivityIdbStorage', () => {
 
     test('updates the status of an existing op', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('update-me', ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, 1000) as any
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [
+            makeOp(
+              'update-me',
+              ACC_A,
+              CHAIN_1,
+              AccountOpStatus.BroadcastedButNotConfirmed,
+              1000
+            ) as any
+          ]
+        }
       ])
 
       await store.updateOps([
@@ -940,8 +1060,12 @@ describe('ActivityIdbStorage', () => {
 
     test('empty array is a no-op — store is unchanged', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('existing', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000) as any
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [makeOp('existing', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000) as any]
+        }
       ])
       await store.updateOps([])
       expect(await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)).toHaveLength(1)
@@ -949,9 +1073,15 @@ describe('ActivityIdbStorage', () => {
 
     test('updates multiple ops in a single call', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('op-a', ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, 1000) as any,
-        makeOp('op-b', ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, 2000) as any
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [
+            makeOp('op-a', ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, 1000) as any,
+            makeOp('op-b', ACC_A, CHAIN_1, AccountOpStatus.BroadcastedButNotConfirmed, 2000) as any
+          ]
+        }
       ])
 
       await store.updateOps([
@@ -999,8 +1129,12 @@ describe('ActivityIdbStorage', () => {
 
     test('a read after the connection closes reopens and returns the data', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('persisted', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [makeOp('persisted', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)]
+        }
       ])
 
       db.close()
@@ -1011,8 +1145,12 @@ describe('ActivityIdbStorage', () => {
 
     test('loadStartupOps recovers from a closed connection', async () => {
       const store = new ActivityIdbStorage(db)
-      await store.putOpsForAccountAndChain(ACC_A, CHAIN_1, [
-        makeOp('startup', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [makeOp('startup', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)]
+        }
       ])
 
       db.close()
@@ -1081,14 +1219,6 @@ describe('ActivityKeyValueStorage', () => {
     }
     const storage = makeStorageMock()
     const backend = new ActivityKeyValueStorage(storage as any, () => inMemoryOps)
-
-    await backend.putOpsForAccountAndChain(ACC_A, CHAIN_1, [])
-    expect(storage.set).toHaveBeenCalledWith('accountsOps', inMemoryOps)
-    storage.set.mockClear()
-
-    await backend.putMultiple([])
-    expect(storage.set).toHaveBeenCalledWith('accountsOps', inMemoryOps)
-    storage.set.mockClear()
 
     await backend.deleteAccount(ACC_A)
     expect(storage.set).toHaveBeenCalledWith('accountsOps', inMemoryOps)

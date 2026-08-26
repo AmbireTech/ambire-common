@@ -1,3 +1,8 @@
+import { DBSchema } from 'idb'
+
+import { SubmittedAccountOp, SubmittedAccountOpLike } from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
+
 /**
  * Static IDB schema manifest — the single source of truth for the STRUCTURE of the
  * 'ambire' database.
@@ -25,7 +30,62 @@
  * drift out of step with the real version.
  */
 
-export interface IdbIndexDef {
+/**
+ * Row stored in the 'accountsOps' store. accountAddr/chainId/id form the compound primary
+ * key; timestamp and status are denormalized copies that the two indexes sort on.
+ */
+export interface IdbAccountOpRow {
+  accountAddr: string
+  // String copy of op.chainId — BigInt is not a valid IDB key type, so it cannot be used
+  // directly in the compound keyPath or index keys.
+  chainId: string
+  id: string
+  timestamp: number
+  status: AccountOpStatus
+  // Stored via the Structured Clone Algorithm, which preserves BigInt natively — no JSON
+  // serialization needed.
+  op: SubmittedAccountOp | SubmittedAccountOpLike
+}
+
+/**
+ * Row stored in the 'phishing' store — a single document under the id 'snapshot'.
+ * PhishingSnapshot is derived from this (Omit<…, 'id'>), so the fields live in one place.
+ */
+export interface IdbPhishingRow {
+  id: string
+  version: number
+  updatedAt: number
+  domains: string[]
+  addresses: string[]
+}
+
+/**
+ * Typed view of the database, so store names, key shapes, row shapes and index key types are
+ * all checked at the call site instead of being `any`.
+ *
+ * Must be kept in step with AMBIRE_IDB_SCHEMA below by hand — TypeScript cannot derive one
+ * from the other, because the manifest is a runtime value read by reconcileSchema().
+ *
+ * A store declared here but absent from the manifest is never created — the type describes
+ * the intended shape, the manifest controls what exists. Both stores below are in the
+ * manifest today.
+ */
+export interface AmbireIdbSchema extends DBSchema {
+  accountsOps: {
+    key: [string, string, string]
+    value: IdbAccountOpRow
+    indexes: {
+      'by-account-chain-timestamp': [string, string, number]
+      'by-account-chain-status': [string, string, AccountOpStatus]
+    }
+  }
+  phishing: {
+    key: string
+    value: IdbPhishingRow
+  }
+}
+
+interface IdbIndexDef {
   name: string
   keyPath: string | string[]
 }
@@ -36,13 +96,13 @@ export interface IdbStoreDef {
   indexes?: IdbIndexDef[]
 }
 
-export interface IdbMigration {
+interface IdbMigration {
   fromVersion: number
   toVersion: number
   description: string
 }
 
-export interface IdbSchema {
+interface IdbSchema {
   dbName: string
   dbVersion: number
   stores: IdbStoreDef[]
@@ -70,6 +130,11 @@ export const AMBIRE_IDB_SCHEMA: IdbSchema = {
           keyPath: ['accountAddr', 'chainId', 'status']
         }
       ]
+    },
+    {
+      // Single document under the id 'snapshot' — no indexes, it is always read whole.
+      storeName: 'phishing',
+      keyPath: 'id'
     }
   ],
   // Human-readable changelog of the schema. Not read at runtime — the executable
@@ -79,7 +144,8 @@ export const AMBIRE_IDB_SCHEMA: IdbSchema = {
     {
       fromVersion: 0,
       toVersion: 1,
-      description: 'Initial schema: accountsOps store with timestamp and status indexes'
+      description:
+        'Initial schema: accountsOps store with timestamp and status indexes, phishing snapshot store'
     }
   ]
 }

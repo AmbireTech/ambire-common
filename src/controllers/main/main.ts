@@ -457,7 +457,8 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       storage: this.storage,
       addressBook: this.addressBook,
-      ui: this.ui
+      ui: this.ui,
+      idb
     })
     this.dapps = new DappsController({
       eventEmitterRegistry,

@@ -10,7 +10,7 @@ import {
   PhishingKeyValueStorage,
   PhishingSnapshot
 } from './phishingIdb'
-import { AmbireIdbDatabase } from './idbDatabase'
+import { AmbireIdbDatabase, openAmbireIdb, resetAmbireIdbForTesting } from './idbDatabase'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -49,24 +49,13 @@ function makeStorageMock(initial: Record<string, any> = {}) {
 
 let db: AmbireIdbDatabase
 
-// Opens a minimal isolated DB with only the phishing store. Deliberately does NOT
-// use openAmbireIdb(): the phishing store is not in AMBIRE_IDB_SCHEMA, because
-// adding it would mean an unrollbackable dbVersion bump for a store nothing reads
-// yet. Switch these to openAmbireIdb() in the change that wires PhishingController.
-async function openTestDb(): Promise<AmbireIdbDatabase> {
-  return openDB('phishing-unit-test', 1, {
-    upgrade(d) {
-      d.createObjectStore('phishing', { keyPath: 'id' })
-    }
-  })
-}
-
 beforeEach(async () => {
+  resetAmbireIdbForTesting()
   global.indexedDB = new IDBFactory()
   global.IDBKeyRange = IDBKeyRange
-  // checkQuota() reads navigator.storage — stub it to avoid ReferenceError in Node.
-  ;(global as any).navigator = {}
-  db = await openTestDb()
+  // The real database now: 'phishing' is in AMBIRE_IDB_SCHEMA, so this also asserts that
+  // reconcileSchema actually creates the store the backend expects.
+  db = await openAmbireIdb()
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -392,16 +381,14 @@ describe('PhishingKeyValueStorage', () => {
       const getStoredSpy = jest.fn(async () => makeSnapshot())
       const removeSpy = jest.fn(async () => {})
 
-      // Never reports empty, so ensureMigrated can never decide to migrate
-      expect(await backend.isEmpty()).toBe(false)
-
+      // Neither callback is touched: there is nowhere to migrate to, so it must not read the
+      // legacy key and must never remove it. isEmpty()/migrateFromStorage() do not exist on
+      // this class at all — they are IDB-only, see IPhishingOpsBackend.
       await backend.ensureMigrated(getStoredSpy, removeSpy)
+
       expect(getStoredSpy).not.toHaveBeenCalled()
       expect(removeSpy).not.toHaveBeenCalled()
-
-      // An explicit import writes nothing either
-      await backend.migrateFromStorage(makeSnapshot())
-      expect(await backend.loadSnapshot()).toEqual(DEFAULT_PHISHING_SNAPSHOT)
+      expect(storage._store.phishing).toBeUndefined()
     })
   })
 })

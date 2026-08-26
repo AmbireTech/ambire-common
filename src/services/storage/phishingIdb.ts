@@ -1,12 +1,9 @@
 import { IStorageController as IStorageControllerType } from '../../interfaces/storage'
 import { AmbireIdbDatabase } from './idbDatabase'
+import { IdbPhishingRow } from './idbSchema'
 
-export interface PhishingSnapshot {
-  version: number
-  updatedAt: number
-  domains: string[]
-  addresses: string[]
-}
+/** The stored row minus its key — derived so the field list is not duplicated. */
+export type PhishingSnapshot = Omit<IdbPhishingRow, 'id'>
 
 export const DEFAULT_PHISHING_SNAPSHOT: PhishingSnapshot = {
   version: 0,
@@ -21,12 +18,6 @@ export const DEFAULT_PHISHING_SNAPSHOT: PhishingSnapshot = {
  * PhishingController always holds one of these — there are no conditional IDB checks in the controller.
  */
 export interface IPhishingOpsBackend {
-  /**
-   * Returns true if the store has no phishing snapshot yet.
-   * Used by ensureMigrated to decide whether migration is needed.
-   */
-  isEmpty(): Promise<boolean>
-
   /**
    * Load the persisted phishing snapshot.
    * Returns DEFAULT_PHISHING_SNAPSHOT if no data has been saved yet.
@@ -46,34 +37,23 @@ export interface IPhishingOpsBackend {
     getStoredData: () => Promise<PhishingSnapshot>,
     removeStoredData: () => Promise<void>
   ): Promise<void>
-
-  /**
-   * Import a snapshot from the legacy storage format.
-   * Called by ensureMigrated; also exposed for tests.
-   */
-  migrateFromStorage(data: PhishingSnapshot): Promise<void>
 }
+
+// isEmpty()/migrateFromStorage() stay off the interface — declaring them would force dead
+// stubs onto the key-value class.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // IDB backend
 // ─────────────────────────────────────────────────────────────────────────────
 
-// The 'phishing' store holds a single document keyed by this constant.
-// All reads and writes target this one record.
-//
-// NOTE: deliberately NOT in AMBIRE_IDB_SCHEMA. Adding it needs a dbVersion bump, and a
-// shipped bump cannot be rolled back — not worth carrying for a store nothing reads. Add it
-// in the same change that wires PhishingController.
-const STORE_NAME = 'phishing'
+// The store holds a single document under this key. In AMBIRE_IDB_SCHEMA at dbVersion 1 —
+// no bump was needed because v1 had not shipped when it was added.
 const SNAPSHOT_KEY = 'snapshot'
-
-interface PhishingIdbRow extends PhishingSnapshot {
-  id: string // always SNAPSHOT_KEY
-}
 
 export class PhishingIdbStorage implements IPhishingOpsBackend {
   #db: AmbireIdbDatabase
-  #storeName = STORE_NAME
+  // Literal so idb can resolve the row type for this store; see AmbireIdbSchema.
+  #storeName = 'phishing' as const
 
   constructor(db: AmbireIdbDatabase) {
     this.#db = db
@@ -85,7 +65,7 @@ export class PhishingIdbStorage implements IPhishingOpsBackend {
   }
 
   async loadSnapshot(): Promise<PhishingSnapshot> {
-    const row = (await this.#db.get(this.#storeName, SNAPSHOT_KEY)) as PhishingIdbRow | undefined
+    const row = await this.#db.get(this.#storeName, SNAPSHOT_KEY)
     if (!row) return { ...DEFAULT_PHISHING_SNAPSHOT }
     const { id: _id, ...snapshot } = row
     return snapshot
@@ -133,11 +113,6 @@ export class PhishingKeyValueStorage implements IPhishingOpsBackend {
     this.#storage = storage
   }
 
-  // Data is already in storage — isEmpty is meaningless for this backend.
-  async isEmpty(): Promise<boolean> {
-    return false
-  }
-
   async loadSnapshot(): Promise<PhishingSnapshot> {
     return this.#storage.get('phishing', { ...DEFAULT_PHISHING_SNAPSHOT })
   }
@@ -145,9 +120,6 @@ export class PhishingKeyValueStorage implements IPhishingOpsBackend {
   async saveSnapshot(data: PhishingSnapshot): Promise<void> {
     await this.#storage.set('phishing', data)
   }
-
-  // Migration is not needed — data is already in the right place.
-  async migrateFromStorage(_data: PhishingSnapshot): Promise<void> {}
 
   async ensureMigrated(
     _getStoredData: () => Promise<PhishingSnapshot>,

@@ -3,11 +3,7 @@ import { IStorageController } from '../../interfaces/storage'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { ActivityIdbStorage, ActivityKeyValueStorage } from './activityIdb'
 import { AmbireIdbDatabase } from './idbDatabase'
-
-export interface PersistenceError {
-  message: string
-  error: Error
-}
+import { ReportPersistenceError, toPersistenceError } from './persistenceError'
 
 interface AccountOpsPersistenceParams {
   storage: IStorageController
@@ -19,7 +15,7 @@ interface AccountOpsPersistenceParams {
    */
   getCache: () => InternalAccountsOps
   /** Reported instead of thrown — every method here degrades rather than failing a caller. */
-  onError: (e: PersistenceError) => void
+  onError: ReportPersistenceError
 }
 
 /**
@@ -43,15 +39,13 @@ export class AccountOpsPersistence {
 
   #getCache: () => InternalAccountsOps
 
-  #onError: (e: PersistenceError) => void
+  #onError: ReportPersistenceError
 
-  // (account, chainId) groups expanded to full history this session, keyed `${addr}:${chainId}`.
-  // Must be an explicit flag, not a length check: pending ops are exempt from the startup
-  // cap, so a group can exceed the window without having been expanded.
+  // Must be a flag, not a length check: pending ops are exempt from the startup cap, so a
+  // group can exceed the window without having been expanded.
   #fullyLoadedGroups = new Set<string>()
 
-  // Total op count per account, for callers that need a true total synchronously. Only used with
-  // a partially-loading adapter; otherwise the cache is the whole history and is summed live.
+  // Only used with a partially-loading adapter; otherwise the cache is summed live.
   #totalOpsCount = new Map<string, number>()
 
   constructor({ storage, idb, getCache, onError }: AccountOpsPersistenceParams) {
@@ -78,10 +72,8 @@ export class AccountOpsPersistence {
   async init(): Promise<InternalAccountsOps> {
     const migrated = await this.#migrate()
 
-    // A failed migration leaves the target empty while the retained legacy blob still holds
-    // everything, so this session behaves like a pre-migration one and reads AND writes the
-    // legacy key. Continuing to write to IDB would put a row into the empty store, making
-    // the isEmpty() guard skip the retry forever and stranding the real history.
+    // Reads AND writes must both go to the legacy key. Writing to IDB while reading the blob
+    // would put a row in the empty store, making isEmpty() skip the retry forever.
     if (!migrated) this.#fallBackToKeyValue()
 
     return this.#loadStartupOps()
@@ -99,19 +91,18 @@ export class AccountOpsPersistence {
     await this.#refreshAllCounts(ops)
   }
 
-  /** Whether the active adapter loads only a window at startup rather than everything. */
-  get loadsPartially(): boolean {
-    return this.#adapter.loadsPartially
-  }
-
   /**
-   * Expand the given accounts from the startup window to their full history, for callers
-   * that must reason over every past op rather than the recent slice.
+   * Every stored op, for the one-time recipient backfill. Never rejects; an empty result
+   * means the caller must not record the backfill as done.
    */
-  async ensureFullHistory(accountAddrs: string[]): Promise<void> {
-    if (!this.loadsPartially) return
+  async getAllOps(): Promise<InternalAccountsOps | null> {
+    try {
+      return await this.#adapter.getAllOps()
+    } catch (error) {
+      this.#report('Your transaction history could not be read.', error, 'read all ops')
 
-    await Promise.all(accountAddrs.map((addr) => this.#expandAccount(addr)))
+      return null
+    }
   }
 
   /**
@@ -128,10 +119,9 @@ export class AccountOpsPersistence {
       const fullOps = await this.#adapter.getOpsForAccountAndChain(accountAddr, chainId)
       if (fullOps) this.#mergeIntoCache(accountAddr, chainIdStr, fullOps)
 
-      // Marked even on an empty result: undefined means this group has no history to
-      // expand, not that expanding failed. Only marking on a hit would re-query on every
-      // call for any chain the account has never used. A real failure throws below.
-      this.#markGroupLoaded(accountAddr, chainIdStr)
+      // Marked even when empty: undefined means nothing to expand, not a failure. Marking
+      // only on a hit would re-query every call for chains the account never used.
+      this.#fullyLoadedGroups.add(this.#groupKey(accountAddr, chainIdStr))
     } catch (error) {
       this.#report('Older transactions could not be loaded.', error, 'expand a group')
     }
@@ -164,10 +154,9 @@ export class AccountOpsPersistence {
 
   /** Drop an account's rows and every marker keyed to it. */
   async removeAccount(accountAddr: string): Promise<void> {
-    // Cleared first so a failed delete cannot leave stale markers behind claiming the
-    // account's history is loaded and counted.
+    // First, so a failed delete cannot leave markers claiming the history is loaded.
     for (const key of this.#fullyLoadedGroups) {
-      if (key.startsWith(`${accountAddr}:`)) this.#fullyLoadedGroups.delete(key)
+      if (key.startsWith(this.#groupKey(accountAddr))) this.#fullyLoadedGroups.delete(key)
     }
     this.#totalOpsCount.delete(accountAddr)
 
@@ -187,9 +176,8 @@ export class AccountOpsPersistence {
    * (BannerController's txn thresholds) evaluates inside a sync callback.
    */
   getTotalOpsCount(accountAddr: string): number {
-    // With a fully-loading adapter the cache IS the whole history, so a live sum is exact
-    // and free — a stored count could only ever be staler.
-    if (!this.loadsPartially) return this.#countInCache(accountAddr)
+    // The cache IS the whole history here, so a stored count could only ever be staler.
+    if (!this.#adapter.loadsPartially) return this.#countInCache(accountAddr)
 
     return this.#totalOpsCount.get(accountAddr) ?? this.#countInCache(accountAddr)
   }
@@ -206,15 +194,13 @@ export class AccountOpsPersistence {
     try {
       await this.#adapter.ensureMigrated(
         () => this.#storage.get('accountsOps', {}),
-        // The legacy key is kept as a safety-net copy while IDB is still new; only the
-        // completion flag is recorded in place of removing it.
+        // Kept as a safety-net copy; the flag is recorded instead of removing it.
         async () => this.#setMigratedFlag(true)
       )
 
       return true
     } catch (error) {
-      // Non-fatal: the legacy key is intact, this session reads from it, and the next
-      // startup retries. The user sees their history either way.
+      // Non-fatal: the legacy key is intact and the next startup retries.
       this.#report(
         'Your transaction history could not be moved to its new location.',
         error,
@@ -226,7 +212,7 @@ export class AccountOpsPersistence {
   }
 
   #fallBackToKeyValue(): void {
-    if (!this.loadsPartially) return
+    if (!this.#adapter.loadsPartially) return
 
     this.#adapter = new ActivityKeyValueStorage(this.#storage, this.#getCache)
   }
@@ -235,8 +221,7 @@ export class AccountOpsPersistence {
     try {
       return await this.#adapter.loadStartupOps()
     } catch (error) {
-      // Degrading to empty keeps the controller usable; the data is untouched on disk and
-      // the next startup reads it again.
+      // Degrading to empty keeps the controller usable; the data is untouched on disk.
       this.#report('Your transaction history could not be loaded.', error, 'read startup ops')
 
       return {}
@@ -246,16 +231,12 @@ export class AccountOpsPersistence {
   /**
    * Record that this wallet's history lives in IDB.
    *
-   * Nothing reads the flag yet. It is written anyway because it can only be recorded while
-   * IDB works — a session that cannot open IDB can no longer tell "never had transactions"
-   * from "history is in IDB and unreachable".
-   *
-   * A second writer is needed because ensureMigrated only sets it after moving a legacy
-   * blob, which never happens for users who installed after IDB became the default. Gated
-   * on there being ops, so a brand-new empty wallet is not marked as migrated.
+   * Nothing reads the flag yet — it is written because it can only be recorded while IDB
+   * works. A second writer is needed because ensureMigrated only sets it after moving a legacy
+   * blob, which never happens for users who installed after IDB became the default.
    */
   async #recordMigrationCompleted(ops: InternalAccountsOps): Promise<void> {
-    if (!this.loadsPartially) return
+    if (!this.#adapter.loadsPartially) return
     if (!Object.keys(ops).length) return
 
     try {
@@ -266,9 +247,7 @@ export class AccountOpsPersistence {
     }
   }
 
-  // 'activityIdbMigrated' is intentionally NOT part of the shared StorageProps schema
-  // (interfaces/storage.ts) — it is a provisional detail of the ongoing accountsOps → IDB
-  // migration. get()/set() are typed against StorageProps, so each needs one narrow cast.
+  // Deliberately not in StorageProps — a provisional migration detail, hence the casts.
   #getMigratedFlag(): Promise<boolean> {
     return (this.#storage.get as (key: string, defaultValue: boolean) => Promise<boolean>)(
       'activityIdbMigrated',
@@ -281,41 +260,6 @@ export class AccountOpsPersistence {
       'activityIdbMigrated',
       value
     )
-  }
-
-  /**
-   * Expand every chain of one account.
-   *
-   * Only chains already in the cache are fetched, since loadStartupOps() enumerates every
-   * non-empty group. An account with no chains is deliberately NOT marked loaded —
-   * otherwise a failed startup read would convince us there is nothing to expand.
-   */
-  async #expandAccount(accountAddr: string): Promise<void> {
-    if (!accountAddr) return
-
-    const chainIds = Object.keys(this.#getCache()[accountAddr] ?? {}).filter(
-      (chainId) => !this.#isGroupLoaded(accountAddr, chainId)
-    )
-    if (!chainIds.length) return
-
-    try {
-      const groups = await Promise.all(
-        chainIds.map(async (chainId) => ({
-          chainId,
-          ops: await this.#adapter.getOpsForAccountAndChain(accountAddr, chainId)
-        }))
-      )
-
-      // Re-read: the account may have been removed while the reads were in flight.
-      if (!this.#getCache()[accountAddr]) return
-
-      for (const { chainId, ops } of groups) {
-        if (ops?.length) this.#mergeIntoCache(accountAddr, chainId, ops)
-        this.#markGroupLoaded(accountAddr, chainId)
-      }
-    } catch (error) {
-      this.#report('Part of your transaction history could not be loaded.', error, 'expand account')
-    }
   }
 
   /**
@@ -346,15 +290,16 @@ export class AccountOpsPersistence {
     )
   }
 
-  #isGroupLoaded(accountAddr: string, chainId: string): boolean {
-    // A fully-loading adapter has everything already, so every group is loaded by definition
-    if (!this.loadsPartially) return true
-
-    return this.#fullyLoadedGroups.has(`${accountAddr}:${chainId}`)
+  /** Marker key. With no chainId this is the prefix removeAccount clears by. */
+  #groupKey(accountAddr: string, chainId = ''): string {
+    return `${accountAddr}:${chainId}`
   }
 
-  #markGroupLoaded(accountAddr: string, chainId: string): void {
-    this.#fullyLoadedGroups.add(`${accountAddr}:${chainId}`)
+  #isGroupLoaded(accountAddr: string, chainId: string): boolean {
+    // A fully-loading adapter has everything already, so every group is loaded by definition
+    if (!this.#adapter.loadsPartially) return true
+
+    return this.#fullyLoadedGroups.has(this.#groupKey(accountAddr, chainId))
   }
 
   #countInCache(accountAddr: string): number {
@@ -369,14 +314,14 @@ export class AccountOpsPersistence {
    * every non-empty group, so an absent account has no ops and the cache sum of 0 is right.
    */
   async #refreshAllCounts(ops: InternalAccountsOps): Promise<void> {
-    if (!this.loadsPartially) return
+    if (!this.#adapter.loadsPartially) return
 
     await Promise.all(Object.keys(ops).map((addr) => this.#refreshCount(addr)))
   }
 
   async #refreshCount(accountAddr: string): Promise<void> {
     // Nothing to store when the cache is already the whole history.
-    if (!this.loadsPartially) return
+    if (!this.#adapter.loadsPartially) return
 
     try {
       this.#totalOpsCount.set(accountAddr, await this.#adapter.countOpsForAccount(accountAddr))
@@ -387,9 +332,6 @@ export class AccountOpsPersistence {
   }
 
   #report(message: string, error: unknown, what: string): void {
-    this.#onError({
-      message,
-      error: error instanceof Error ? error : new Error(`AccountOpsPersistence: failed to ${what}`)
-    })
+    this.#onError(toPersistenceError(message, error, `AccountOpsPersistence: failed to ${what}`))
   }
 }

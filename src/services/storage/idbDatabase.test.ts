@@ -1,10 +1,12 @@
 import 'fake-indexeddb/auto'
 
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
-import { openDB } from 'idb'
+import { IDBPDatabase, openDB } from 'idb'
 import { beforeEach, describe, expect, test } from '@jest/globals'
 
-import { AMBIRE_IDB_SCHEMA } from './idbSchema'
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
+import { AMBIRE_IDB_SCHEMA, IdbAccountOpRow } from './idbSchema'
 import { openAmbireIdb, resetAmbireIdbForTesting } from './idbDatabase'
 
 beforeEach(() => {
@@ -20,14 +22,16 @@ describe('openAmbireIdb', () => {
   })
 
   test('creates all stores declared in the schema', async () => {
-    const db = await openAmbireIdb()
+    // Walks the RUNTIME manifest, so store names are values not literals — the same reason
+    // reconcileSchema itself works against an unchecked view.
+    const db = (await openAmbireIdb()) as unknown as IDBPDatabase
     for (const storeDef of AMBIRE_IDB_SCHEMA.stores) {
       expect(db.objectStoreNames.contains(storeDef.storeName)).toBe(true)
     }
   })
 
   test('creates all indexes for each store', async () => {
-    const db = await openAmbireIdb()
+    const db = (await openAmbireIdb()) as unknown as IDBPDatabase
     for (const storeDef of AMBIRE_IDB_SCHEMA.stores) {
       const tx = db.transaction(storeDef.storeName, 'readonly')
       const store = tx.objectStore(storeDef.storeName)
@@ -82,24 +86,24 @@ describe('openAmbireIdb', () => {
 
   test('database is readable and writable after init', async () => {
     const db = await openAmbireIdb()
-    const storeName = AMBIRE_IDB_SCHEMA.stores[0]!.storeName
 
-    const row = {
+    // Literal store name rather than the manifest, so the row shape, the compound key and the
+    // result are all checked against AmbireIdbSchema.
+    const row: IdbAccountOpRow = {
       accountAddr: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
       chainId: '1',
       id: 'test-op',
       timestamp: 1000,
-      status: 0,
-      op: { id: 'test-op' }
+      status: AccountOpStatus.Success,
+      op: { id: 'test-op' } as SubmittedAccountOp
     }
 
-    await db.put(storeName, row)
-    const retrieved = await db.get(storeName, [
+    await db.put('accountsOps', row)
+    const retrieved = await db.get('accountsOps', [
       '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
       '1',
       'test-op'
     ])
-    expect(retrieved).toBeDefined()
-    expect((retrieved as typeof row).id).toBe('test-op')
+    expect(retrieved?.id).toBe('test-op')
   })
 })

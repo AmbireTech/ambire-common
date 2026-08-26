@@ -7,6 +7,7 @@ import {
   ScoredAddressPoisoningMatch
 } from '@/libs/transfer/address-poisoning'
 import { AccountOpsPersistence } from '@/services/storage/accountOpsPersistence'
+import { MAX_OPS_PER_GROUP } from '@/services/storage/activityIdb'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
@@ -93,16 +94,20 @@ export interface ExternalAccountOps {
   [account: string]: { [network: string]: SubmittedAccountOpLike[] }
 }
 
-// We are limiting items array to include no more than 1000 records,
-// as we trim out the oldest ones (in the beginning of the items array).
-// We do this to maintain optimal storage and performance.
+// Same number as MAX_OPS_PER_GROUP today, but not the same policy — kept separate.
+const MAX_SIGNED_MESSAGES_PER_ACCOUNT = 1000
 
-const trim = <T>(items: T[], maxSize = 1000): void => {
-  if (items.length > maxSize) {
-    // If the array size is greater than maxSize, remove the last (oldest) item
-    // newest items are added to the beginning of the array so oldest will be at the end (thats why we .pop())
-    items.pop()
-  }
+/**
+ * Drop the oldest item once the array is over cap, and return it.
+ *
+ * Newest items are unshifted to the front, so the oldest is at the end. Callers that need to
+ * mirror the eviction elsewhere (e.g. deleting the same row from persistence) use the return
+ * value rather than predicting which item will go.
+ */
+const trim = <T>(items: T[], maxSize: number): T | undefined => {
+  if (items.length <= maxSize) return undefined
+
+  return items.pop()
 }
 
 const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
@@ -237,7 +242,7 @@ const getAccountOpReceipts = async (
  * by calling `resetAccountsOpsFilters()` or `resetSignedMessagesFilters()`. If not cleared, all
  * sessions will be automatically removed when the browser is closed or the controller terminates.
  *
- * 💡 For performance, items per account and network are limited to 1000.
+ * 💡 For performance, items per account and network are capped (see MAX_OPS_PER_GROUP).
  * Older items are trimmed, keeping the most recent ones.
  */
 export class ActivityController extends EventEmitter implements IActivityController {
@@ -329,9 +334,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.#storage = storage
     this.#fetch = fetch
 
-    // idb is provided only by web/extension environments — the background calls
-    // openAmbireIdb() and passes the result through MainController. On mobile,
-    // idb is undefined and the controller falls back to chrome.storage / AsyncStorage.
+    // undefined on mobile, which selects the key-value backend.
     this.#persistence = new AccountOpsPersistence({
       storage,
       idb,
@@ -356,8 +359,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.#accounts.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    // Persistence owns migration, backend fallback and the bounded startup read. It never
-    // rejects, so #load() cannot break the controller for the session.
+    // Owns migration, fallback and the bounded read. Never rejects.
     const [accountsOps, externalAccountOps, signedMessages, sentToHistory] = await Promise.all([
       this.#persistence.init(),
       this.#storage.get('externalAccountOps', {}),
@@ -372,9 +374,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     this.emitUpdate()
 
-    // After the update on purpose: this warms the op counts and records the migration flag,
-    // and nothing on screen waits for either. It never rejects, so it cannot break #load().
+    // After the update on purpose — nothing here is rendered.
     await this.#persistence.finalizeInit(accountsOps)
+    await this.#backfillSentToHistory()
   }
 
   /**
@@ -404,74 +406,42 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (!toAddress) return { found: false, lastTransactionDate: null, addressPoisoningMatch: null }
 
     const checksummedToAddress = getAddressCaught(toAddress)
-    const lastSentAt =
-      checksummedToAddress && this.#sentToHistory.recipients[accountId]?.[checksummedToAddress]
 
-    // No need to check all account ops if we have this data
-    if (lastSentAt)
-      return {
-        found: true,
-        lastTransactionDate: new Date(lastSentAt),
-        addressPoisoningMatch: null
-      }
+    // Deliberately not a scan of #accountsOps: recipients outlive MAX_OPS_PER_GROUP eviction,
+    // so the map is the more complete source. See README.md, "The recipient index".
+    const accounts = accountId ? [accountId] : Object.keys(this.#sentToHistory.recipients)
 
-    // An empty accountId means "scan every account", so resolve the list first and
-    // expand all of them. Both answers below are derived from the entire history:
-    // whether the user has ever sent here, and whether the recipient mimics an
-    // address they used before. Judging either from the startup window alone would
-    // under-report — a lookalike of an older recipient would raise no warning.
-    const accounts = accountId ? [accountId] : Object.keys(this.#accountsOps)
-    await this.#persistence.ensureFullHistory(accounts)
-
-    let found = false
     let lastTimestamp: number | null = null
-    const normalizedToAddress = toAddress.toLowerCase()
-    let bestPoisoningMatch: ScoredAddressPoisoningMatch | null = null
-
-    const updatePoisoningMatch = (address: string, lastInteractedAt: number | null = null) => {
-      const matchCounts = getAddressPoisoningMatchCounts(toAddress, address)
-
-      if (!matchCounts) return
-
-      bestPoisoningMatch = pickBetterPoisoningMatch(bestPoisoningMatch, {
-        matchedAddress: address,
-        matchedPrefixCharsCount: matchCounts.matchedPrefixCharsCount,
-        matchedSuffixCharsCount: matchCounts.matchedSuffixCharsCount,
-        lastInteractedAt
-      })
+    for (const account of accounts) {
+      const sentAt = checksummedToAddress
+        ? this.#sentToHistory.recipients[account]?.[checksummedToAddress]
+        : undefined
+      if (sentAt && (!lastTimestamp || sentAt > lastTimestamp)) lastTimestamp = sentAt
     }
 
-    // Address poisoning compares the new recipient only against recipients from
-    // this account's historical account ops below.
-    accounts.forEach((account) => {
-      const accountOpsOfAccount = this.#accountsOps[account]
-      if (!accountOpsOfAccount) return
-      const networks = Object.keys(accountOpsOfAccount)
-      networks.forEach((network) => {
-        const networkAccountOpsOfAccount = accountOpsOfAccount[network]
-        if (!networkAccountOpsOfAccount) return
-        networkAccountOpsOfAccount.forEach((op) => {
-          const recipients = getAccountOpRecipients(op).map((recipient) => recipient.address)
-          const hasSentToRecipient = recipients.some((recipient) => {
-            if (recipient.toLowerCase() === normalizedToAddress) return true
+    const found = lastTimestamp !== null
 
-            // Poisoning checks are needed only for first-time sends. As soon as
-            // we know the recipient was used before, skip this extra work.
-            if (!found) updatePoisoningMatch(recipient, op.timestamp)
+    let bestPoisoningMatch: ScoredAddressPoisoningMatch | null = null
 
-            return false
+    // Only asked about first-time recipients, so skip it once we know the address was used.
+    if (!found) {
+      for (const account of accounts) {
+        const recipientsOfAccount = this.#sentToHistory.recipients[account]
+        if (!recipientsOfAccount) continue
+
+        for (const [recipient, sentAt] of Object.entries(recipientsOfAccount)) {
+          const matchCounts = getAddressPoisoningMatchCounts(toAddress, recipient)
+          if (!matchCounts) continue
+
+          bestPoisoningMatch = pickBetterPoisoningMatch(bestPoisoningMatch, {
+            matchedAddress: recipient,
+            matchedPrefixCharsCount: matchCounts.matchedPrefixCharsCount,
+            matchedSuffixCharsCount: matchCounts.matchedSuffixCharsCount,
+            lastInteractedAt: sentAt
           })
-
-          if (hasSentToRecipient) {
-            found = true
-
-            if (!lastTimestamp || op.timestamp > lastTimestamp) {
-              lastTimestamp = op.timestamp
-            }
-          }
-        })
-      })
-    })
+        }
+      }
+    }
 
     let addressPoisoningMatch: AddressPoisoningMatch | null = null
     if (!found && bestPoisoningMatch) {
@@ -505,8 +475,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     let internalAccountOpsByChain = this.#accountsOps[filters.account] || {}
     const externalAccountOpsByChain = this.#externalAccountOps[filters.account] || {}
 
-    // Expand the filtered chain so pagination can page past the startup window.
-    // Persistence owns the markers and the merge; a failure there just leaves the window.
+    // So pagination can page past the startup window. A failure just leaves the window.
     if (filters.chainId) {
       await this.#persistence.ensureGroupLoaded(filters.account, filters.chainId)
       internalAccountOpsByChain = this.#accountsOps[filters.account] || internalAccountOpsByChain
@@ -779,15 +748,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
     if (!this.#accountsOps[accountAddr][chainId.toString()])
       this.#accountsOps[accountAddr][chainId.toString()] = []
 
-    // Capture the oldest op's id before mutating — it is the one trim() will .pop() if the
-    // group is at capacity. On IDB the group usually starts at the startup window, so this
-    // rarely fires and eviction falls to putSingleOp's own MAX_IDB_GROUP_SIZE check.
     const group = this.#accountsOps[accountAddr][chainId.toString()]!
-    const trimmedId = group.length >= 1000 ? group[group.length - 1]?.id : undefined
 
     // newest SubmittedAccountOp goes first in the list
-    this.#accountsOps[accountAddr]![chainId.toString()]!.unshift({ ...accountOp })
-    trim(this.#accountsOps[accountAddr][chainId.toString()]!)
+    group.unshift({ ...accountOp })
+    // Passed to persistence so the same op is dropped there. On IDB the group usually starts
+    // at the startup window, so nothing is evicted here and the backend applies its own cap.
+    const evicted = trim(group, MAX_OPS_PER_GROUP)
 
     getAccountOpRecipients(accountOp).forEach((recipient) =>
       this.#recordRecipient(accountAddr, recipient.address, recipient.domain, accountOp.timestamp)
@@ -804,13 +771,67 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // Do not "fix" this by persisting first: syncFilteredAccountsOps() above may expand this
     // group from the backend before the op is written, and the merge inside
     // AccountOpsPersistence is what keeps the memory-only op.
-    await this.#persistence.addOp(accountAddr, chainId, accountOp, trimmedId)
+    await this.#persistence.addOp(accountAddr, chainId, accountOp, evicted?.id)
 
     // sentToHistory is a small durable index and always lives in key-value storage,
     // never IDB. Persisting it here is what lets the recipient fast path in
     // hasAccountOpsSentTo survive a service worker restart — without this the map
     // is rebuilt empty on every wake-up and every recipient looks new again.
     await this.#storage.set('sentToHistory', this.#sentToHistory)
+  }
+
+  /**
+   * One-time population of sentToHistory.recipients from existing history. Without it a user
+   * with existing history starts with an empty map — every known recipient reads as first-time
+   * and poisoning warnings silently stop.
+   */
+  async #backfillSentToHistory(): Promise<void> {
+    try {
+      if (await this.#getSentToHistoryBackfilled()) return
+
+      const allOps = await this.#persistence.getAllOps()
+      // Null means the read failed; leaving the flag unset retries on the next startup.
+      if (!allOps) return
+
+      for (const [accountAddr, byChain] of Object.entries(allOps)) {
+        for (const ops of Object.values(byChain)) {
+          for (const op of ops ?? []) {
+            getAccountOpRecipients(op).forEach((recipient) =>
+              this.#recordRecipient(accountAddr, recipient.address, recipient.domain, op.timestamp)
+            )
+          }
+        }
+      }
+
+      await this.#storage.set('sentToHistory', this.#sentToHistory)
+      await this.#setSentToHistoryBackfilled(true)
+      this.emitUpdate()
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: 'Your past recipients could not be indexed.',
+        error:
+          error instanceof Error
+            ? error
+            : new Error('ActivityController: sentToHistory backfill failed')
+      })
+    }
+  }
+
+  // Provisional like activityIdbMigrated, so deliberately not in StorageProps — one narrow
+  // cast each for read and write.
+  #getSentToHistoryBackfilled(): Promise<boolean> {
+    return (this.#storage.get as (key: string, defaultValue: boolean) => Promise<boolean>)(
+      'sentToHistoryBackfilled',
+      false
+    )
+  }
+
+  #setSentToHistoryBackfilled(value: boolean): Promise<void> {
+    return (this.#storage.set as (key: string, value: boolean) => Promise<void>)(
+      'sentToHistoryBackfilled',
+      value
+    )
   }
 
   #recordRecipient(
@@ -828,12 +849,17 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.#sentToHistory.recipients[accountId]![checksummedAddress] = Math.max(existing, timestamp)
 
     const normalized = toDomain?.toLowerCase().trim()
+    if (!normalized) return
 
-    if (normalized) {
-      this.#sentToHistory.domains[normalized] = {
-        address: checksummedAddress,
-        sentAt: timestamp
-      }
+    // Keep the newest: #backfillSentToHistory walks history out of order, so last-write-wins
+    // could point a domain at an older address — feeding a wrong "previous address" to the
+    // send-screen domain-change warning.
+    const existingDomain = this.#sentToHistory.domains[normalized]
+    if (existingDomain && existingDomain.sentAt > timestamp) return
+
+    this.#sentToHistory.domains[normalized] = {
+      address: checksummedAddress,
+      sentAt: timestamp
     }
   }
 
@@ -989,7 +1015,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     const externalAccountOps = this.#externalAccountOps[accountAddr]![chainIdString]!
     externalAccountOps.unshift(submittedAccountOpLike)
-    trim(externalAccountOps)
+    trim(externalAccountOps, MAX_OPS_PER_GROUP)
 
     // externalAccountOps: using chrome.storage.local only (not migrated to IDB yet)
     await this.#storage.set('externalAccountOps', this.#externalAccountOps)
@@ -1588,7 +1614,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // newest SignedMessage goes first in the list
     this.#signedMessages[account].unshift(signedMessage)
-    trim(this.#signedMessages[account])
+    trim(this.#signedMessages[account], MAX_SIGNED_MESSAGES_PER_ACCOUNT)
     await this.syncSignedMessages()
 
     await this.#storage.set('signedMessages', this.#signedMessages)

@@ -1,25 +1,20 @@
 /**
- * IDB integration tests using a self-contained dummy controller.
+ * Tests for the IDB infrastructure itself — schema reconciliation, the migration handler
+ * chain, and the manifest guards that keep dbVersion, migrationHandlers and the migrations
+ * changelog from drifting apart.
  *
- * Purpose: verify the infrastructure pattern — not phishing-specific logic.
- *   - Dynamic path: IDB is available (extension / web)
- *   - Static path:  IDB is not available (mobile / key-value fallback)
- *   - Schema upgrade: v1 → v2 runs the migration handler without data loss
- *
- * The DummyController defined below is the canonical template for wiring a
- * new controller to IDB. It mirrors the three steps every controller's #load()
- * must follow:
- *   1. await backend.ensureMigrated(...)  ← migration before any read
- *   2. this.state = await backend.loadSnapshot()
- *   3. mutations call backend.saveSnapshot(newState)
+ * Controller wiring is NOT tested here. AccountOpsPersistence and PhishingPersistence are the
+ * two shipped examples; their own suites cover migration ordering, restarts and fallbacks.
  */
 
 import 'fake-indexeddb/auto'
 
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
-import { openDB } from 'idb'
-import { beforeEach, describe, expect, jest, test } from '@jest/globals'
+import { IDBPDatabase, openDB } from 'idb'
+import { beforeEach, describe, expect, test } from '@jest/globals'
 
+import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
   AmbireIdbDatabase,
   AmbireIdbUpgradeTransaction,
@@ -32,436 +27,10 @@ import {
 } from './idbDatabase'
 import { AMBIRE_IDB_SCHEMA } from './idbSchema'
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Dummy backend interface + implementations
-//
-// These mirror the IActivityOpsBackend / IPhishingOpsBackend pattern but with
-// a minimal generic payload so the tests stay focused on the lifecycle, not
-// domain logic.
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface DummyState {
-  version: number
-  data: string
-}
-
-const DEFAULT_DUMMY_STATE: DummyState = { version: 0, data: '' }
-// Reuses the 'phishing' store name, but inside the isolated test DB created below —
-// these tests never touch the production database.
-const DUMMY_STORE = 'phishing'
-const DUMMY_KEY = 'dummy-snapshot'
-
-interface IDummyBackend {
-  isEmpty(): Promise<boolean>
-  migrateFromStorage(state: DummyState): Promise<void>
-  ensureMigrated(
-    getLegacy: () => Promise<DummyState>,
-    removeLegacy: () => Promise<void>
-  ): Promise<void>
-  load(): Promise<DummyState>
-  save(state: DummyState): Promise<void>
-}
-
-/** IDB-backed backend — used in web/extension environments. */
-class DummyIdbBackend implements IDummyBackend {
-  #db: AmbireIdbDatabase
-
-  constructor(db: AmbireIdbDatabase) {
-    this.#db = db
-  }
-
-  async isEmpty(): Promise<boolean> {
-    return (await this.#db.count(DUMMY_STORE)) === 0
-  }
-
-  async migrateFromStorage(state: DummyState): Promise<void> {
-    await this.save(state)
-  }
-
-  async ensureMigrated(
-    getLegacy: () => Promise<DummyState>,
-    removeLegacy: () => Promise<void>
-  ): Promise<void> {
-    const empty = await this.isEmpty()
-    if (!empty) return
-    const legacy = await getLegacy()
-    if (!legacy.version && !legacy.data) return
-    await this.migrateFromStorage(legacy)
-    await removeLegacy()
-  }
-
-  async load(): Promise<DummyState> {
-    const row = (await this.#db.get(DUMMY_STORE, DUMMY_KEY)) as
-      | (DummyState & { id: string })
-      | undefined
-    if (!row) return { ...DEFAULT_DUMMY_STATE }
-    const { id: _id, ...state } = row
-    return state
-  }
-
-  async save(state: DummyState): Promise<void> {
-    await this.#db.put(DUMMY_STORE, { id: DUMMY_KEY, ...state })
-  }
-}
-
-/** Key-value–backed backend — used on mobile (no IDB). */
-class DummyKeyValueBackend implements IDummyBackend {
-  #store: Record<string, any>
-
-  constructor(store: Record<string, any>) {
-    this.#store = store
-  }
-
-  // Data already lives in its final location, so nothing here migrates.
-  async isEmpty(): Promise<boolean> {
-    return false
-  }
-
-  async migrateFromStorage(_state: DummyState): Promise<void> {}
-
-  async ensureMigrated(_getLegacy: () => Promise<DummyState>, _remove: () => Promise<void>) {}
-
-  async load(): Promise<DummyState> {
-    return { ...(this.#store['dummy'] ?? DEFAULT_DUMMY_STATE) }
-  }
-
-  async save(state: DummyState): Promise<void> {
-    this.#store['dummy'] = state
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// DummyController
-//
-// Template for any controller that follows the IDB backend pattern.
-// Replace DummyState / IDummyBackend with the real types when wiring a new
-// controller. The three steps in #load() must remain in this exact order.
-// ─────────────────────────────────────────────────────────────────────────────
-
-class DummyController {
-  #backend: IDummyBackend
-  state: DummyState = { ...DEFAULT_DUMMY_STATE }
-
-  constructor(backend: IDummyBackend) {
-    this.#backend = backend
-  }
-
-  /**
-   * Mirrors a real controller's #load():
-   *   step 1 — migrate legacy data before reading anything
-   *   step 2 — load startup state from the backend
-   */
-  async load(
-    getLegacy: () => Promise<DummyState>,
-    removeLegacy: () => Promise<void>
-  ): Promise<void> {
-    await this.#backend.ensureMigrated(getLegacy, removeLegacy)
-    this.state = await this.#backend.load()
-  }
-
-  async update(newState: DummyState): Promise<void> {
-    this.state = newState
-    await this.#backend.save(newState)
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Setup
-// ─────────────────────────────────────────────────────────────────────────────
-
-let db: AmbireIdbDatabase
-
-// Opens an isolated test DB rather than going through openAmbireIdb(), so the
-// DummyController scenarios stay independent of the production manifest and do not
-// need updating every time a store or version is added to it.
-async function openTestDb(): Promise<AmbireIdbDatabase> {
-  return openDB('integration-test', 1, {
-    upgrade(d) {
-      d.createObjectStore('accountsOps', { keyPath: ['accountAddr', 'chainId', 'id'] })
-      d.createObjectStore('phishing', { keyPath: 'id' })
-    }
-  })
-}
-
-beforeEach(async () => {
+beforeEach(() => {
+  resetAmbireIdbForTesting()
   global.indexedDB = new IDBFactory()
   global.IDBKeyRange = IDBKeyRange
-  ;(global as any).navigator = {}
-  db = await openTestDb()
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Dynamic controller (IDB path)
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('Dynamic controller — IDB path', () => {
-  test('state reflects legacy storage after first init', async () => {
-    const ctrl = new DummyController(new DummyIdbBackend(db))
-    const legacy: DummyState = { version: 3, data: 'migrated-value' }
-
-    await ctrl.load(
-      async () => legacy,
-      async () => {}
-    )
-
-    expect(ctrl.state.version).toBe(3)
-    expect(ctrl.state.data).toBe('migrated-value')
-  })
-
-  test('migration runs before load — ordering guarantee', async () => {
-    const backend = new DummyIdbBackend(db)
-    const ctrl = new DummyController(backend)
-    const legacy: DummyState = { version: 5, data: 'must-arrive-before-load' }
-
-    // #load() awaits ensureMigrated, then reads — data must be present
-    await ctrl.load(
-      async () => legacy,
-      async () => {}
-    )
-
-    expect(ctrl.state.data).toBe('must-arrive-before-load')
-  })
-
-  test('legacy storage key is removed after migration', async () => {
-    const ctrl = new DummyController(new DummyIdbBackend(db))
-    const removeSpy = jest.fn(async () => {})
-
-    await ctrl.load(async () => ({ version: 1, data: 'x' }), removeSpy)
-
-    expect(removeSpy).toHaveBeenCalledTimes(1)
-  })
-
-  test('second init (service worker restart) skips migration and reads IDB', async () => {
-    const ctrl1 = new DummyController(new DummyIdbBackend(db))
-    await ctrl1.load(
-      async () => ({ version: 7, data: 'original' }),
-      async () => {}
-    )
-
-    // Simulate restart: new controller instance, same db
-    const getLegacySpy = jest.fn(async () => ({ version: 99, data: 'stale' }))
-    const ctrl2 = new DummyController(new DummyIdbBackend(db))
-    await ctrl2.load(getLegacySpy, async () => {})
-
-    expect(getLegacySpy).not.toHaveBeenCalled()
-    expect(ctrl2.state.version).toBe(7)
-  })
-
-  test('fresh install with no legacy data loads default state', async () => {
-    const ctrl = new DummyController(new DummyIdbBackend(db))
-
-    await ctrl.load(
-      async () => ({ ...DEFAULT_DUMMY_STATE }),
-      async () => {}
-    )
-
-    expect(ctrl.state).toEqual(DEFAULT_DUMMY_STATE)
-  })
-
-  test('update persists state so the next init reads the saved value', async () => {
-    const ctrl = new DummyController(new DummyIdbBackend(db))
-    await ctrl.load(
-      async () => ({ ...DEFAULT_DUMMY_STATE }),
-      async () => {}
-    )
-
-    await ctrl.update({ version: 2, data: 'saved' })
-
-    const ctrl2 = new DummyController(new DummyIdbBackend(db))
-    await ctrl2.load(
-      async () => ({ ...DEFAULT_DUMMY_STATE }),
-      async () => {}
-    )
-    expect(ctrl2.state.data).toBe('saved')
-  })
-
-  test('propagates error when getLegacy throws during migration', async () => {
-    const ctrl = new DummyController(new DummyIdbBackend(db))
-    const boom = new Error('storage read failed')
-
-    await expect(
-      ctrl.load(
-        async () => {
-          throw boom
-        },
-        async () => {}
-      )
-    ).rejects.toThrow('storage read failed')
-  })
-
-  test('IDB data is intact when removeLegacy throws after save — next load skips migration', async () => {
-    const ctrl = new DummyController(new DummyIdbBackend(db))
-    const legacy: DummyState = { version: 4, data: 'migrated' }
-
-    // removeLegacy fails, but the save to IDB already completed
-    await expect(
-      ctrl.load(
-        async () => legacy,
-        async () => {
-          throw new Error('cleanup failed')
-        }
-      )
-    ).rejects.toThrow('cleanup failed')
-
-    // IDB is now non-empty — the next load must find the data and skip migration
-    const getLegacySpy = jest.fn(async (): Promise<DummyState> => ({ ...DEFAULT_DUMMY_STATE }))
-    const ctrl2 = new DummyController(new DummyIdbBackend(db))
-    await ctrl2.load(getLegacySpy, async () => {})
-
-    expect(getLegacySpy).not.toHaveBeenCalled()
-    expect(ctrl2.state.data).toBe('migrated')
-  })
-
-  test('skips migration when version is 0 and data is empty — guard treats both as falsy', async () => {
-    const ctrl = new DummyController(new DummyIdbBackend(db))
-    const removeSpy = jest.fn(async () => {})
-
-    await ctrl.load(async () => ({ version: 0, data: '' }), removeSpy)
-
-    expect(removeSpy).not.toHaveBeenCalled()
-    expect(ctrl.state).toEqual(DEFAULT_DUMMY_STATE)
-  })
-
-  test('migrates when version is 0 but data is non-empty — only the falsy-both case is skipped', async () => {
-    // The guard is `!version && !data` — non-empty data triggers migration even at version 0.
-    const ctrl = new DummyController(new DummyIdbBackend(db))
-
-    await ctrl.load(
-      async () => ({ version: 0, data: 'payload-only' }),
-      async () => {}
-    )
-
-    expect(ctrl.state.data).toBe('payload-only')
-  })
-
-  test('concurrent load() calls complete without data loss', async () => {
-    const legacy: DummyState = { version: 1, data: 'concurrent' }
-    const ctrl1 = new DummyController(new DummyIdbBackend(db))
-    const ctrl2 = new DummyController(new DummyIdbBackend(db))
-
-    // Both instances start before either has written — both will see isEmpty()=true
-    // and run migration. The second put overwrites with identical data.
-    await Promise.all([
-      ctrl1.load(
-        async () => legacy,
-        async () => {}
-      ),
-      ctrl2.load(
-        async () => legacy,
-        async () => {}
-      )
-    ])
-
-    expect(ctrl1.state.data).toBe('concurrent')
-    expect(ctrl2.state.data).toBe('concurrent')
-
-    // IDB holds exactly one record (the second put was idempotent)
-    const backend = new DummyIdbBackend(db)
-    expect(await backend.load()).toEqual(legacy)
-  })
-
-  test('three sequential update() calls — only the last value survives reload', async () => {
-    const ctrl = new DummyController(new DummyIdbBackend(db))
-    await ctrl.load(
-      async () => ({ ...DEFAULT_DUMMY_STATE }),
-      async () => {}
-    )
-
-    await ctrl.update({ version: 1, data: 'first' })
-    await ctrl.update({ version: 2, data: 'second' })
-    await ctrl.update({ version: 3, data: 'third' })
-
-    const ctrl2 = new DummyController(new DummyIdbBackend(db))
-    await ctrl2.load(
-      async () => ({ ...DEFAULT_DUMMY_STATE }),
-      async () => {}
-    )
-
-    expect(ctrl2.state.version).toBe(3)
-    expect(ctrl2.state.data).toBe('third')
-  })
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Static controller (key-value storage path)
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('Static controller — key-value storage path', () => {
-  test('loads existing state from storage without migration', async () => {
-    const store = { dummy: { version: 4, data: 'from-storage' } }
-    const ctrl = new DummyController(new DummyKeyValueBackend(store))
-
-    const getLegacySpy = jest.fn(async () => ({ ...DEFAULT_DUMMY_STATE }))
-    const removeSpy = jest.fn(async () => {})
-    await ctrl.load(getLegacySpy, removeSpy)
-
-    expect(ctrl.state.version).toBe(4)
-    expect(ctrl.state.data).toBe('from-storage')
-    // ensureMigrated is a no-op — neither callback is touched
-    expect(getLegacySpy).not.toHaveBeenCalled()
-    expect(removeSpy).not.toHaveBeenCalled()
-  })
-
-  test('loads default state on a brand-new install', async () => {
-    const store = {}
-    const ctrl = new DummyController(new DummyKeyValueBackend(store))
-
-    await ctrl.load(
-      async () => ({ ...DEFAULT_DUMMY_STATE }),
-      async () => {}
-    )
-
-    expect(ctrl.state).toEqual(DEFAULT_DUMMY_STATE)
-  })
-
-  test('update persists state to storage', async () => {
-    const store: Record<string, any> = {}
-    const ctrl = new DummyController(new DummyKeyValueBackend(store))
-    await ctrl.load(
-      async () => ({ ...DEFAULT_DUMMY_STATE }),
-      async () => {}
-    )
-
-    await ctrl.update({ version: 1, data: 'written' })
-
-    expect(store['dummy']).toEqual({ version: 1, data: 'written' })
-  })
-
-  test('three sequential update() calls — only the last value survives in storage', async () => {
-    const store: Record<string, any> = {}
-    const ctrl = new DummyController(new DummyKeyValueBackend(store))
-    await ctrl.load(
-      async () => ({ ...DEFAULT_DUMMY_STATE }),
-      async () => {}
-    )
-
-    await ctrl.update({ version: 1, data: 'first' })
-    await ctrl.update({ version: 2, data: 'second' })
-    await ctrl.update({ version: 3, data: 'third' })
-
-    expect(store['dummy']).toEqual({ version: 3, data: 'third' })
-  })
-
-  test('mutating the loaded state does not affect subsequent loads', async () => {
-    const store = { dummy: { version: 1, data: 'original' } }
-    const ctrl = new DummyController(new DummyKeyValueBackend(store))
-    await ctrl.load(
-      async () => ({ ...DEFAULT_DUMMY_STATE }),
-      async () => {}
-    )
-
-    // Mutate the controller's in-memory state after load
-    ctrl.state.data = 'mutated'
-
-    // A new controller reading the same store must see the original value
-    const ctrl2 = new DummyController(new DummyKeyValueBackend(store))
-    await ctrl2.load(
-      async () => ({ ...DEFAULT_DUMMY_STATE }),
-      async () => {}
-    )
-
-    expect(ctrl2.state.data).toBe('original')
-  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -530,7 +99,7 @@ describe('Schema upgrade', () => {
 
     const currentDb = await openDB('ambire-dummy-upgrade', 1, {
       upgrade(d, _oldVersion, _newVersion, tx) {
-        reconcileSchema(d, tx as AmbireIdbUpgradeTransaction)
+        reconcileSchema(d as unknown as AmbireIdbDatabase, tx as AmbireIdbUpgradeTransaction)
       }
     })
     for (const storeDef of AMBIRE_IDB_SCHEMA.stores) {
@@ -543,7 +112,11 @@ describe('Schema upgrade', () => {
     const nextStores = [...AMBIRE_IDB_SCHEMA.stores, { storeName: FUTURE_STORE, keyPath: 'id' }]
     const upgraded = await openDB('ambire-dummy-upgrade', 2, {
       upgrade(d, _oldVersion, _newVersion, tx) {
-        reconcileSchema(d, tx as AmbireIdbUpgradeTransaction, nextStores)
+        reconcileSchema(
+          d as unknown as AmbireIdbDatabase,
+          tx as AmbireIdbUpgradeTransaction,
+          nextStores
+        )
       }
     })
 
@@ -569,7 +142,7 @@ describe('Schema upgrade', () => {
 
     const upgraded = await openDB('ambire-dummy-index-add', 2, {
       upgrade(d, _oldVersion, _newVersion, tx) {
-        reconcileSchema(d, tx as AmbireIdbUpgradeTransaction)
+        reconcileSchema(d as unknown as AmbireIdbDatabase, tx as AmbireIdbUpgradeTransaction)
       }
     })
 
@@ -585,7 +158,7 @@ describe('Schema upgrade', () => {
   test('reconcileSchema is idempotent — a second run changes nothing', async () => {
     const first = await openDB('ambire-dummy-idempotent', 1, {
       upgrade(d, _o, _n, tx) {
-        reconcileSchema(d, tx as AmbireIdbUpgradeTransaction)
+        reconcileSchema(d as unknown as AmbireIdbDatabase, tx as AmbireIdbUpgradeTransaction)
       }
     })
     const before = [...first.transaction('accountsOps').store.indexNames].sort()
@@ -593,7 +166,7 @@ describe('Schema upgrade', () => {
 
     const second = await openDB('ambire-dummy-idempotent', 2, {
       upgrade(d, _o, _n, tx) {
-        reconcileSchema(d, tx as AmbireIdbUpgradeTransaction)
+        reconcileSchema(d as unknown as AmbireIdbDatabase, tx as AmbireIdbUpgradeTransaction)
       }
     })
     const after = [...second.transaction('accountsOps').store.indexNames].sort()
@@ -608,7 +181,7 @@ describe('Schema upgrade', () => {
 
     const v1Db = await openDB('ambire-dummy-data-upgrade', 1, {
       upgrade(d, _o, _n, tx) {
-        reconcileSchema(d, tx as AmbireIdbUpgradeTransaction)
+        reconcileSchema(d as unknown as AmbireIdbDatabase, tx as AmbireIdbUpgradeTransaction)
       }
     })
     await v1Db.put('accountsOps', {
@@ -621,10 +194,16 @@ describe('Schema upgrade', () => {
     })
     v1Db.close()
 
-    const nextStores = [...AMBIRE_IDB_SCHEMA.stores, { storeName: 'phishing', keyPath: 'id' }]
+    // 'notifications' stands in for a future addition — 'phishing' is in the manifest now, so
+    // it would prove nothing here.
+    const nextStores = [...AMBIRE_IDB_SCHEMA.stores, { storeName: 'notifications', keyPath: 'id' }]
     const v2Db = await openDB('ambire-dummy-data-upgrade', 2, {
       upgrade(d, _o, _n, tx) {
-        reconcileSchema(d, tx as AmbireIdbUpgradeTransaction, nextStores)
+        reconcileSchema(
+          d as unknown as AmbireIdbDatabase,
+          tx as AmbireIdbUpgradeTransaction,
+          nextStores
+        )
       }
     })
 
@@ -634,13 +213,12 @@ describe('Schema upgrade', () => {
     expect((row as any).id).toBe('op-1')
 
     // New store must be empty but functional
-    expect(await v2Db.count('phishing')).toBe(0)
-    const ctrl = new DummyController(new DummyIdbBackend(v2Db))
-    await ctrl.load(
-      async () => ({ version: 1, data: 'post-upgrade' }),
-      async () => {}
-    )
-    expect(ctrl.state.data).toBe('post-upgrade')
+    expect(await v2Db.count('notifications')).toBe(0)
+    await v2Db.put('notifications', { id: 'n-1', data: 'post-upgrade' })
+    expect((await v2Db.get('notifications', 'n-1')) as { data: string }).toEqual({
+      id: 'n-1',
+      data: 'post-upgrade'
+    })
 
     v2Db.close()
   })
@@ -662,12 +240,12 @@ describe('applyMigrations', () => {
     dbName: string,
     version: number,
     handlers: Record<number, MigrationHandler>
-  ): Promise<{ db: AmbireIdbDatabase; applied: number[] }> {
+  ): Promise<{ db: IDBPDatabase<any>; applied: number[] }> {
     let applied: number[] = []
     const db = await openDB(dbName, version, {
       upgrade(d, oldVersion, newVersion, tx) {
         applied = applyMigrations(
-          d,
+          d as unknown as AmbireIdbDatabase,
           tx as AmbireIdbUpgradeTransaction,
           oldVersion,
           newVersion ?? version,
@@ -734,8 +312,8 @@ describe('applyMigrations', () => {
           chainId: '1',
           id: 'written-by-handler',
           timestamp: 1,
-          status: 'success',
-          op: {}
+          status: AccountOpStatus.Success,
+          op: {} as SubmittedAccountOp
         })
       }
     }
@@ -832,8 +410,10 @@ describe('openAmbireIdb singleton', () => {
 
       const retried = await openAmbireIdb()
       expect(retried).toBeDefined()
+      // Runtime manifest walk — store names are values here, not literals
+      const untypedRetried = retried as unknown as IDBPDatabase
       for (const storeDef of AMBIRE_IDB_SCHEMA.stores) {
-        expect(retried.objectStoreNames.contains(storeDef.storeName)).toBe(true)
+        expect(untypedRetried.objectStoreNames.contains(storeDef.storeName)).toBe(true)
       }
       retried.close()
     } finally {

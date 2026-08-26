@@ -8,40 +8,20 @@ import {
   isClosedConnectionError,
   openAmbireIdb
 } from './idbDatabase'
-import { AMBIRE_IDB_SCHEMA } from './idbSchema'
+import { IdbAccountOpRow } from './idbSchema'
 
+// Finalized ops loaded per (account, chainId) at startup; pending ops load in full on top.
+const STARTUP_RECENT_OPS_LIMIT = 20
 /**
- * Finalized ops loaded per (account, chainId) at startup. Pending ops are always
- * loaded in full on top of this.
- *
- * Exported because ActivityController needs it to decide whether an in-memory
- * group is still the startup window or has already been expanded from IDB.
+ * Hard cap on ops per (account, chainId) group. Enforced twice and the two MUST agree — the
+ * controller trims memory, putSingleOp guards the rows — or memory drops ops that storage
+ * keeps and every expansion re-adds them.
  */
-export const STARTUP_RECENT_OPS_LIMIT = 20
-// Hard cap on the number of IDB rows per (account, chainId) group.
-// The in-memory cap is enforced by ActivityController; this guards against IDB
-// accumulating more rows than the in-memory limit (e.g. after a startup that
-// loaded only the 20-op subset before the limit was enforced).
-const MAX_IDB_GROUP_SIZE = 1000
-
-interface IdbAccountOpRow {
-  accountAddr: string
-  // String copy of op.chainId — BigInt is not a valid IDB key type so it cannot
-  // be used directly in the compound keyPath or index keys.
-  chainId: string
-  id: string
-  timestamp: number
-  status: AccountOpStatus
-  // The full op is stored via the Structured Clone Algorithm, which preserves
-  // BigInt natively — no JSON serialization needed.
-  op: SubmittedAccountOp | SubmittedAccountOpLike
-}
+export const MAX_OPS_PER_GROUP = 1000
 
 // The highest BMP Unicode character — used as a range upper bound to select all keys
 // that start with a given prefix, without matching the prefix itself as a key.
 const RANGE_HIGH = '￿'
-
-const STORE_DEF = AMBIRE_IDB_SCHEMA.stores.find((s) => s.storeName === 'accountsOps')!
 
 /** An op carrying every field the IDB row and its indexes require. */
 type StorableOp = (SubmittedAccountOp | SubmittedAccountOpLike) & {
@@ -82,7 +62,8 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
 
   #db: AmbireIdbDatabase
 
-  #storeName = STORE_DEF.storeName
+  // Literal, not from the manifest: idb needs it to resolve the row and index types.
+  #storeName = 'accountsOps' as const
 
   #reconnect: () => Promise<AmbireIdbDatabase>
 
@@ -205,7 +186,7 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
               let finalizedCount = 0
               let cur = await tsIndex.openCursor(tsRange, 'prev')
               while (cur && finalizedCount < STARTUP_RECENT_OPS_LIMIT) {
-                const row = cur.value as IdbAccountOpRow
+                const row = cur.value
                 const isPending =
                   row.status === AccountOpStatus.BroadcastedButNotConfirmed ||
                   row.status === AccountOpStatus.Pending
@@ -222,7 +203,7 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
             statusIndex.getAll(IDBKeyRange.only([accountAddr, chainId, AccountOpStatus.Pending]))
           ])
 
-          for (const row of [...pendingBroadcasted, ...pendingQueued] as IdbAccountOpRow[]) {
+          for (const row of [...pendingBroadcasted, ...pendingQueued]) {
             groupOps.push(row.op as SubmittedAccountOp)
           }
         })
@@ -241,7 +222,7 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
 
   /**
    * Write a single new op and optionally delete the op evicted by the in-memory trim.
-   * O(1) IDB operations vs. the full-group rewrite of putOpsForAccountAndChain.
+   * O(1) IDB operations vs. the full-group rewrite of putMultiple.
    */
   async putSingleOp(
     accountAddr: string,
@@ -271,7 +252,7 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
         [accountAddr, chainIdStr, RANGE_HIGH]
       )
       const count = await store.count(groupRange)
-      if (count > MAX_IDB_GROUP_SIZE) {
+      if (count > MAX_OPS_PER_GROUP) {
         const tsIndex = store.index('by-account-chain-timestamp')
         const cursor = await tsIndex.openCursor(
           IDBKeyRange.bound(
@@ -280,13 +261,12 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
           )
         )
         if (cursor) {
-          store.delete(cursor.primaryKey as IDBValidKey).catch(() => {})
+          store.delete(cursor.primaryKey).catch(() => {})
         }
       }
     }
 
     await tx.done
-    this.#checkQuota()
   }
 
   /**
@@ -332,7 +312,7 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
     // Goes through #openTx rather than the db.getAll() shortcut so a dead
     // connection is recovered here too.
     const tx = await this.#openTx('readonly')
-    const rows = (await tx.objectStore(this.#storeName).getAll(range)) as IdbAccountOpRow[]
+    const rows = await tx.objectStore(this.#storeName).getAll(range)
 
     if (rows.length === 0) return undefined
 
@@ -341,20 +321,8 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
   }
 
   /**
-   * Write ops for a single (account, chainId) pair.
-   * Deletes existing rows for this pair first, then inserts new ones.
-   */
-  async putOpsForAccountAndChain(
-    accountAddr: string,
-    chainId: bigint | string,
-    ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
-  ): Promise<void> {
-    return this.putMultiple([{ accountAddr, chainId, ops }])
-  }
-
-  /**
    * Batch write multiple (account, chainId) pairs in a single transaction.
-   * More efficient than multiple individual puts.
+   * Existing rows for each pair are deleted first, then the new ops inserted.
    */
   async putMultiple(
     records: Array<{
@@ -387,7 +355,6 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
     }
 
     await tx.done
-    this.#checkQuota()
   }
 
   /**
@@ -398,6 +365,24 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
     const tx = await this.#openTx('readwrite')
     await tx.objectStore(this.#storeName).delete(range)
     await tx.done
+  }
+
+  /**
+   * One getAll rather than a query per group — only used by the one-time recipient backfill,
+   * where a single large read beats N round trips.
+   */
+  async getAllOps(): Promise<InternalAccountsOps> {
+    const tx = await this.#openTx('readonly')
+    const rows = await tx.objectStore(this.#storeName).getAll()
+
+    const result: InternalAccountsOps = {}
+    for (const row of rows) {
+      if (!result[row.accountAddr]) result[row.accountAddr] = {}
+      if (!result[row.accountAddr]![row.chainId]) result[row.accountAddr]![row.chainId] = []
+      result[row.accountAddr]![row.chainId]!.push(row.op as SubmittedAccountOp)
+    }
+
+    return result
   }
 
   /**
@@ -467,31 +452,6 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
     }
 
     return Array.from(deduped.values())
-  }
-
-  #checkQuota(): void {
-    if (!navigator.storage?.estimate) return
-
-    navigator.storage
-      .estimate()
-      .then((estimate) => {
-        if (!estimate.quota || !estimate.usage) return
-
-        const percentUsed = (estimate.usage / estimate.quota) * 100
-        const usedMB = (estimate.usage / 1024 / 1024).toFixed(1)
-        const quotaMB = (estimate.quota / 1024 / 1024).toFixed(1)
-
-        console.log(
-          `[ActivityIdbStorage] ${this.#storeName} quota: ${usedMB}MB / ${quotaMB}MB (${percentUsed.toFixed(1)}%)`
-        )
-
-        if (percentUsed > 80) {
-          console.warn(
-            `[ActivityIdbStorage] ${this.#storeName} quota usage high (${percentUsed.toFixed(1)}%)`
-          )
-        }
-      })
-      .catch(() => {})
   }
 
   #opToRow(
@@ -574,26 +534,13 @@ export class ActivityKeyValueStorage implements IActivityOpsBackend {
     return [...ops].sort((a, b) => b.timestamp - a.timestamp)
   }
 
-  async putOpsForAccountAndChain(
-    _accountAddr: string,
-    _chainId: bigint | string,
-    _ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
-  ): Promise<void> {
-    await this.#storage.set('accountsOps', this.#getOps())
-  }
-
-  async putMultiple(
-    _records: Array<{
-      accountAddr: string
-      chainId: bigint | string
-      ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
-    }>
-  ): Promise<void> {
-    await this.#storage.set('accountsOps', this.#getOps())
-  }
-
   async deleteAccount(_accountAddr: string): Promise<void> {
     await this.#storage.set('accountsOps', this.#getOps())
+  }
+
+  /** The in-memory blob already IS every stored op. */
+  async getAllOps(): Promise<InternalAccountsOps> {
+    return this.#getOps()
   }
 
   /**

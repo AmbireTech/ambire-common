@@ -9,14 +9,18 @@
  * migration handler are documented in ./README.md. Read it before changing this file.
  */
 
-import { IDBPDatabase, IDBPTransaction, openDB } from 'idb'
+import { IDBPDatabase, IDBPTransaction, openDB, StoreNames } from 'idb'
 
-import { AMBIRE_IDB_SCHEMA, IdbStoreDef } from './idbSchema'
+import { AmbireIdbSchema, AMBIRE_IDB_SCHEMA, IdbStoreDef } from './idbSchema'
 
-export type AmbireIdbDatabase = IDBPDatabase<any>
+export type AmbireIdbDatabase = IDBPDatabase<AmbireIdbSchema>
 
 /** The versionchange transaction handed to migration handlers. */
-export type AmbireIdbUpgradeTransaction = IDBPTransaction<any, string[], 'versionchange'>
+export type AmbireIdbUpgradeTransaction = IDBPTransaction<
+  AmbireIdbSchema,
+  ArrayLike<StoreNames<AmbireIdbSchema>>,
+  'versionchange'
+>
 
 /**
  * Create every store and index in the manifest that does not exist yet. Idempotent, runs on
@@ -29,10 +33,15 @@ export function reconcileSchema(
   // mutating the production manifest.
   stores: IdbStoreDef[] = AMBIRE_IDB_SCHEMA.stores
 ): void {
+  // Store and index names are runtime values here, so nothing can be checked against
+  // AmbireIdbSchema. Cast once, narrowly, rather than weakening the type every consumer sees.
+  const untypedDb = db as unknown as IDBPDatabase
+  const untypedTx = tx as unknown as IDBPTransaction<unknown, string[], 'versionchange'>
+
   for (const storeDef of stores) {
-    const store = db.objectStoreNames.contains(storeDef.storeName)
-      ? tx.objectStore(storeDef.storeName)
-      : db.createObjectStore(storeDef.storeName, { keyPath: storeDef.keyPath })
+    const store = untypedDb.objectStoreNames.contains(storeDef.storeName)
+      ? untypedTx.objectStore(storeDef.storeName)
+      : untypedDb.createObjectStore(storeDef.storeName, { keyPath: storeDef.keyPath })
 
     for (const idx of storeDef.indexes ?? []) {
       if (store.indexNames.contains(idx.name)) continue
@@ -105,7 +114,7 @@ let openPromise: Promise<AmbireIdbDatabase> | null = null
 export function openAmbireIdb(): Promise<AmbireIdbDatabase> {
   if (openPromise) return openPromise
 
-  openPromise = openDB(AMBIRE_IDB_SCHEMA.dbName, AMBIRE_IDB_SCHEMA.dbVersion, {
+  openPromise = openDB<AmbireIdbSchema>(AMBIRE_IDB_SCHEMA.dbName, AMBIRE_IDB_SCHEMA.dbVersion, {
     upgrade(db, oldVersion, newVersion, tx) {
       const targetVersion = newVersion ?? AMBIRE_IDB_SCHEMA.dbVersion
       console.log(

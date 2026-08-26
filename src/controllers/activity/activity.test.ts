@@ -161,6 +161,11 @@ describe('Activity Controller ', () => {
     jest.restoreAllMocks()
     await storageCtrl.remove('accountsOps')
     await storageCtrl.remove('signedMessages')
+    // sentToHistory is durable and deliberately outlives accountsOps — recipient memory is
+    // independent of op retention, so poisoning protection survives history eviction. Tests
+    // that assume "no history" therefore have to clear it explicitly.
+    await storageCtrl.remove('sentToHistory')
+    await (storageCtrl.remove as (key: string) => Promise<void>)('sentToHistoryBackfilled')
   })
 
   describe('AccountsOps', () => {

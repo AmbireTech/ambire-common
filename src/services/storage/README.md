@@ -1,7 +1,8 @@
 # IndexedDB persistence layer
 
-Row-level persistence for controller data that grows without bound. `ActivityController`
-(transaction history) is the only consumer today.
+Persistence for controller data that key-value storage handles badly. Two consumers:
+`ActivityController` (transaction history, row-per-op) and `PhishingController` (one snapshot
+document).
 
 This file covers the **runtime picture**: what each module does, the order things happen in,
 the invariants, and what each operation costs. For the step-by-step recipe to put a *new*
@@ -21,15 +22,17 @@ startup read.
 | `idbSchema.ts` | Declarative manifest: stores, keyPaths, indexes, `dbVersion`. The single source of truth for *structure*. Read by `reconcileSchema()`; contains no logic. |
 | `idbDatabase.ts` | Connection lifecycle (`openAmbireIdb()` singleton, `blocking`, `terminated`, invalidation) and upgrade orchestration (`reconcileSchema()`, `applyMigrations()`). |
 | `accountOpsPersistence.ts` | **The coordinator `ActivityController` talks to.** Picks an adapter, runs the data migration, falls back on failure, and keeps the in-memory cache coherent with a partially-loaded backend. |
+| `phishingPersistence.ts` | The coordinator `PhishingController` talks to. Simpler shape — no cache to keep coherent — and the better template to copy. |
 | `activityIdb.ts` | Two `IActivityOpsBackend` adapters: `ActivityIdbStorage` (rows) and `ActivityKeyValueStorage` (blob, used on mobile). |
-| `phishingIdb.ts` | A second reference implementation. Fully tested, **not wired** — its store is deliberately absent from the manifest. |
+| `phishingIdb.ts` | The two `IPhishingOpsBackend` adapters. |
+| `persistenceError.ts` | The `onError` contract both coordinators report through instead of throwing. |
 
 ## Adapters, and adding a service
 
-`IActivityOpsBackend` is the adapter contract — one implementation per storage service.
-`AccountOpsPersistence` selects one and exposes plain methods (`init`, `ensureFullHistory`,
-`ensureGroupLoaded`, `addOp`, `updateOps`, `removeAccount`, `getTotalOpsCount`), so the
-controller never branches on which backend it got.
+Each controller has an adapter contract — `IActivityOpsBackend`, `IPhishingOpsBackend` — with
+one implementation per storage service. A coordinator picks one in `#pickAdapter` and exposes
+plain methods, so the controller never branches on which backend it got and holds no IDB logic
+of its own.
 
 One capability drives every behavioural difference:
 
@@ -56,10 +59,11 @@ background.ts
        └─ applyMigrations()         transforms existing rows, per version
   └─ new MainController({ idb })    nothing can read before the await resolves
        └─ new ActivityController
+            └─ new AccountOpsPersistence   picks the adapter from `idb`
             └─ #load()
-                 ├─ ensureMigrated()        data migration: blob → rows, once
-                 ├─ loadStartupOps()        the bounded read
-                 └─ emitUpdate()            UI renders
+                 ├─ persistence.init()     data migration, then the bounded read
+                 ├─ emitUpdate()           UI renders
+                 └─ persistence.finalizeInit()   bookkeeping nothing renders
 ```
 
 `openAmbireIdb()` is awaited **before** any controller is constructed. That is the whole
@@ -80,8 +84,13 @@ Keeping these apart avoids most of the confusion in this layer.
 ## Structure is declarative
 
 `AMBIRE_IDB_SCHEMA` is the single source of truth for stores and indexes. `reconcileSchema()`
-creates anything in the manifest that does not exist yet, so a purely additive change needs
-only a manifest entry plus a `dbVersion` bump — never a hand-written create-store handler.
+creates anything in the manifest that does not exist yet, so a purely additive change needs a
+manifest entry and nothing else hand-written — never a create-store handler.
+
+It needs a `dbVersion` bump **only if the current version has shipped**: `reconcileSchema()`
+runs during `onupgradeneeded`, so an unbumped version never reaches installs that already have
+that version. A store added pre-release joins the existing one, which is how `phishing` reached
+v1 without a bump.
 
 It runs on **every** upgrade and is idempotent, which closes two gaps a per-version handler
 leaves open:
@@ -109,7 +118,8 @@ indexes added by the same upgrade.
    ```
    The versionchange transaction survives microtasks, so requests issued from a `.then()`
    still land inside the upgrade. Awaiting a non-IDB promise lets it commit and the writes
-   vanish silently. See invariant 1 below — this is the single most dangerous rule here.
+   vanish silently. **This is the single most dangerous rule in this layer** — no unit test
+   catches it, because `fake-indexeddb` does not reproduce the commit timing.
 3. **Never remove a handler.** The chain must stay walkable from any prior version.
 4. **Every version `1..dbVersion` needs an entry**, even a no-op, so a bump is always
    deliberate. A test in `idbIntegration.test.ts` enforces this.
@@ -118,8 +128,8 @@ indexes added by the same upgrade.
 
 ## Invariants
 
-Breaking any of these is a silent data bug, not a crash. The handler rules above are the
-other three; these are the ones that bite outside a migration.
+Breaking any of these is a silent data bug, not a crash. These are the ones that bite outside
+a migration — for the ones inside one, see the handler rules above.
 
 1. **A `dbVersion` bump cannot be rolled back.** An older build cannot open an upgraded
    database — `openDB` rejects with `VersionError` and every controller falls back to
@@ -134,8 +144,9 @@ other three; these are the ones that bite outside a migration.
    written, and an `IDBKeyRange` cannot match case-insensitively — unlike the in-memory
    `getAccountOpsAccountKey()` helper, which exists precisely because addresses are not
    always stored checksummed. A lookup with different casing than the stored row silently
-   returns nothing. Pre-existing rather than introduced here; noted so nobody assumes the
-   in-memory workaround extends to the storage layer.
+   returns nothing. The same applies to `sentToHistory.recipients`, which is keyed by account
+   address and read with a direct property lookup. Pre-existing rather than introduced here;
+   noted so nobody assumes the in-memory workaround extends to either.
 
 ## The startup window, and who has to care
 
@@ -160,29 +171,34 @@ Two mechanisms exist because of that:
 | `putSingleOp()` | 1 row write, plus one `count()` when the caller passed no `trimmedId` (the common case on IDB, since groups start at 20 and rarely hit the in-memory cap). |
 | `getOpsForAccountAndChain()` | Full group read. Triggered by pagination past the window, once per group per session. |
 | `countOpsForAccount()` | `count()` over a key range — served from the index without deserializing rows. |
-| `hasAccountOpsSentTo()` (first-time recipient) | **Expensive.** Expands the account's *entire* history into memory and scans every op. See below. |
+| `hasAccountOpsSentTo()` | No backend read at all. Answers from `sentToHistory.recipients` — an O(1) key lookup, plus an O(recipients) comparison only for a first-time address. |
+| `getAllOps()` | Whole-store read. Called **once ever**, by the recipient backfill; never on a user-facing path. |
 
-### The one path that defeats the bounded read
+### The recipient index
 
 `hasAccountOpsSentTo()` answers two questions — "have I sent here before?" and "does this
 recipient mimic one I used before?" (address poisoning). Both are properties of the *whole*
-history, so on a miss it calls `ensureFullHistory()` and scans everything. With an
-empty `accountId` it does this for **every** account.
+history, so this used to load every op of every account into memory and scan them, which
+defeated the point of the bounded startup read and left memory inflated for the session.
 
-There is a fast path: `sentToHistory.recipients[accountId][address]`, a small durable map of
-recipient → last-sent timestamp. When it hits, nothing is loaded.
+Both are now answered from `sentToHistory.recipients`: a small durable map of
+`account => recipient => last-sent timestamp`, written by `#recordRecipient` on every
+broadcast. It holds exactly the same information — the same `getAccountOpRecipients()` call
+produces it — and is **strictly more complete**, because entries survive the
+`MAX_OPS_PER_GROUP` eviction that drops old ops. A recipient you used 2,000 transactions ago
+still raises a lookalike warning; under the old scan it had aged out.
 
-But that map is only populated by `addAccountOp`, so it covers sends made *since the feature
-shipped*. **There is no backfill from existing history.** For a user with pre-existing
-history the map starts empty, so the expensive path runs on sends to recipients they have
-used before — not only genuinely new ones. Once expanded, the memory stays inflated for the
-session.
+**The backfill is what makes the map authoritative.** `#recordRecipient` only writes on
+broadcast, so a user with pre-existing history would start with it empty — every known
+recipient flagged as first-time and poisoning warnings silently gone. `#backfillSentToHistory()`
+therefore reads the whole history once, guarded by a persisted `sentToHistoryBackfilled` flag
+and run after the first `emitUpdate` so it never delays rendering. On a failed read the flag
+stays **unset** so the next startup retries — recording it would strand the map
+half-populated forever.
 
-Backfilling `recipients` from full history once (at data-migration time) would let both
-questions be answered from the small map and remove `ensureFullHistory()` from this
-path. It is the highest-value optimization left in this layer, and is deliberately *not* part
-of the initial IDB change: it alters security-relevant address-poisoning behaviour and
-deserves its own review.
+Because the map is durable and independent of op retention, clearing `accountsOps` does *not*
+clear recipient memory. Anything that assumes "no history implies no recipients" — a test, a
+reset flow — has to clear `sentToHistory` explicitly.
 
 ## Connection can die mid-session
 
@@ -199,12 +215,14 @@ The database itself survives all three, so a reopen recovers fully.
 ## Testing
 
 `fake-indexeddb` backs the unit tests. It does **not** reproduce the versionchange commit
-timing that invariant 1 is about — that was verified manually in both browsers.
+timing that handler rule 2 is about — that was verified manually in Chrome and Firefox.
 
 | Suite | Covers |
 |---|---|
 | `activityIdb.test.ts` | Storage primitives, atomicity, malformed rows, reconnect |
-| `idbIntegration.test.ts` | End-to-end wiring via a self-contained `DummyController` — the canonical template |
-| `activityIdbMigration.test.ts` | Controller `#load()`: migration, startup read, expansion, counts |
+| `idbIntegration.test.ts` | The infrastructure itself: `reconcileSchema`, the handler chain, manifest drift guards |
+| `activityIdbMigration.test.ts` | `ActivityController` wiring: migration, startup read, expansion, op counts, the recipient backfill |
 | `idbDatabase.test.ts` | Singleton, schema reconciliation, handler-chain consistency |
-| `phishingIdb.test.ts` | The unwired reference backend |
+| `phishingIdb.test.ts` | Both phishing backends, against the real database |
+| `phishingIdbMigration.test.ts` | `PhishingController` wiring: manifest entry, migration, restart, key-value path |
+| `activity.test.ts`, `phishing.test.ts` | Pre-existing suites built without an `idb`, so they run the key-value path — the **mobile regression guard**. They should keep passing untouched. |

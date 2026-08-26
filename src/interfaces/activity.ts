@@ -1,4 +1,4 @@
-import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/submittedAccountOp'
+import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { ControllerInterface } from './controller'
 
 export type IActivityController = ControllerInterface<
@@ -10,27 +10,19 @@ export interface InternalAccountsOps {
   [key: string]: { [key: string]: SubmittedAccountOp[] }
 }
 
-/**
- * Persistence backend for account ops: ActivityIdbStorage (IndexedDB) or
- * ActivityKeyValueStorage (chrome.storage.local). ActivityController always holds one, so
- * it never branches on IDB availability.
- */
+/** One per storage service. ActivityController always holds one, whichever is available. */
 export interface IActivityOpsBackend {
   /**
-   * Whether loadStartupOps() returns only a window rather than the whole history.
-   *
-   * The capability that drives every behavioural difference between adapters — expansion
-   * markers, cache merging and the total-op count all exist only when this is true. Callers
-   * branch on this, never on the concrete class.
+   * Whether loadStartupOps() returns a window rather than everything. Callers branch on this,
+   * never on the concrete class.
    */
   readonly loadsPartially: boolean
 
   /**
    * One-time migration of the legacy blob into IDB. No-op on the key-value backend.
-   * Takes callbacks to stay decoupled from IStorageController.
    *
-   * isEmpty()/migrateFromStorage() stay off this interface — nobody calls them
-   * polymorphically, and declaring them would force dead stubs onto the key-value class.
+   * isEmpty()/migrateFromStorage() stay off this interface — declaring them would force dead
+   * stubs onto the key-value class.
    */
   ensureMigrated(
     getStoredOps: () => Promise<InternalAccountsOps>,
@@ -48,7 +40,6 @@ export interface IActivityOpsBackend {
     trimmedId?: string
   ): Promise<void>
 
-  /** Update existing rows in place (status, balance changes). */
   updateOps(ops: SubmittedAccountOp[]): Promise<void>
 
   /** Full history for one (account, chainId) — the lazy-load behind pagination. */
@@ -57,31 +48,11 @@ export interface IActivityOpsBackend {
     chainId: bigint | string
   ): Promise<SubmittedAccountOp[] | undefined>
 
-  /** Write ops for one (account, chainId) pair. */
-  putOpsForAccountAndChain(
-    accountAddr: string,
-    chainId: bigint | string,
-    ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
-  ): Promise<void>
+  /** For the one-time sentToHistory backfill only — never call this on a user-facing path. */
+  getAllOps(): Promise<InternalAccountsOps>
 
-  /** Batch write across multiple (account, chainId) records. */
-  putMultiple(
-    records: Array<{
-      accountAddr: string
-      chainId: bigint | string
-      ops: (SubmittedAccountOp | SubmittedAccountOpLike)[]
-    }>
-  ): Promise<void>
-
-  /** Delete every op for an account, across all chains. */
   deleteAccount(accountAddr: string): Promise<void>
 
-  /**
-   * Total persisted ops for an account. Needed because the IDB startup read is a bounded
-   * window, so in-memory lengths are not a total.
-   */
+  /** Needed because the IDB startup read is a window, so in-memory lengths are not a total. */
   countOpsForAccount(accountAddr: string): Promise<number>
 }
-
-/** @deprecated Use IActivityOpsBackend */
-export type IActivityIdbStorage = IActivityOpsBackend
