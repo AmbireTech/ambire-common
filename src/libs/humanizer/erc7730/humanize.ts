@@ -19,6 +19,7 @@ import {
   HumanizerCallModule,
   HumanizerErc7730Row,
   HumanizerErc7730Visualization,
+  HumanizerFlatVisualization,
   HumanizerMeta,
   HumanizerVisualization,
   HumanizerWarning,
@@ -26,7 +27,6 @@ import {
   IrMessage
 } from '../interfaces'
 import { getSetAllowanceResetText } from '../modules/Allowance'
-import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import {
@@ -37,6 +37,7 @@ import {
   getAddressVisualization,
   getChain,
   getErc7730Visualization,
+  getFlatVisualization,
   getKnownFunctionName as getKnownFunctionNameFromSelector,
   getText,
   getToken,
@@ -649,30 +650,6 @@ const getFieldValue = (field: Erc7730Field, context: FormatContext, base: unknow
 const getArrayValueAt = (value: unknown, index: number): unknown =>
   Array.isArray(value) ? value[index] : value
 
-const getMorphoGeneralAdapterCalldataValue = (
-  context: FormatContext,
-  calldata: unknown,
-  callee: unknown,
-  amount: unknown
-): HumanizerVisualization[] | null => {
-  if (!context.descriptorPath?.includes('registry/morpho/calldata-MorphoBundlerV3.json'))
-    return null
-  if (typeof calldata !== 'string' || !calldata.startsWith('0x')) return null
-  if (typeof callee !== 'string' || !isAddress(callee)) return null
-
-  const accountAddr = resolvePath('#.@.accountAddr', context, context.root)
-  if (typeof accountAddr !== 'string' || !isAddress(accountAddr)) return null
-
-  const decodedCall = decodeGeneralAdapterCall(accountAddr, {
-    to: callee,
-    data: calldata,
-    value: toBigIntOrNull(amount) || 0n
-  })
-  const decodedValue = decodedCall.fullVisualization?.filter((item) => item.type !== 'break')
-
-  return decodedValue?.length ? decodedValue : null
-}
-
 const getNestedErc7730CalldataValue = (
   context: FormatContext,
   calldata: unknown,
@@ -748,16 +725,6 @@ const getCalldataRows = (
     const callee = getArrayValueAt(calleeValues, index)
     const selector = getArrayValueAt(selectorValues, index)
     const amount = getArrayValueAt(amountValues, index)
-    const decodedValue = getMorphoGeneralAdapterCalldataValue(context, calldata, callee, amount)
-
-    if (decodedValue) {
-      acc.push({
-        label: field.label || field.path || '',
-        value: decodedValue
-      })
-
-      return acc
-    }
 
     const nestedVisualization = getNestedErc7730CalldataValue(context, calldata, callee, amount)
     if (nestedVisualization) {
@@ -1376,7 +1343,7 @@ const getModuleFallbackVisualization = (
   accountAddr: string,
   modules?: HumanizerCallModule[],
   collectedWarnings?: HumanizerWarning[]
-): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
+): (HumanizerVisualization & HumanizerFlatVisualization) | null => {
   const accountOp = {
     accountAddr,
     chainId,
@@ -1417,27 +1384,31 @@ const getModuleFallbackVisualization = (
     }
   }
 
-  const rows = getRowsFromFlatCallVisualization(humanizedCall?.fullVisualization)
-  if (!rows) return null
+  // Breaks only ever separated a title from its rows in the old title/rows structure; a flat,
+  // single inline line has no use for them. A trailing label with nothing after it (e.g.
+  // AllowanceModule's own inline reset-time label) is dropped too - the old title/rows
+  // conversion turned it into an empty, filtered-out row, and getSetAllowanceResetText below
+  // re-adds the same information as bold text next to the token instead, so keeping it here
+  // would show it twice.
+  const withoutBreaks = humanizedCall?.fullVisualization?.filter((item) => item.type !== 'break')
+  const flatItems =
+    withoutBreaks?.length && withoutBreaks.at(-1)?.type === 'label'
+      ? withoutBreaks.slice(0, -1)
+      : withoutBreaks
+  // Require an action item, same as the old title/rows conversion this replaces - some modules'
+  // fallback output (e.g. from a malformed/truncated call a strict decode gives up on) has no
+  // action item, and should keep falling through to the next fallback tier instead of being
+  // treated as a successful decode here.
+  if (!flatItems?.length || !flatItems.some((item) => item.type === 'action')) return null
 
   const resetText = getSetAllowanceResetText(call as IrCall)
-  const rowsWithReset = resetText
-    ? rows.map((row) =>
-        row.value.some((value) => value.type === 'token')
-          ? {
-              ...row,
-              value: [...row.value, getText(resetText, true)]
-            }
-          : row
-      )
-    : rows
+  const itemsWithReset =
+    resetText && flatItems.some((item) => item.type === 'token')
+      ? [...flatItems, getText(resetText, true)]
+      : flatItems
 
-  const visualization = getErc7730Visualization(
-    getActionTitleFromFlatCallVisualization(humanizedCall?.fullVisualization) ||
-      rowsWithReset[0]!.label,
-    rowsWithReset
-  )
-  if (visualization.type !== 'erc7730') return null
+  const visualization = getFlatVisualization(itemsWithReset)
+  if (visualization.type !== 'flatVisualization') return null
 
   // The modules above already found everything worth warning about in this nested call, but only
   // its visualization becomes a row. Hand the warnings to the caller so they reach the top level.
@@ -1570,7 +1541,7 @@ const getSafeTxCallVisualizations = (
   accountAddr: string,
   resolvedDescriptor: Erc7730ResolvedDescriptor,
   collectedWarnings?: HumanizerWarning[]
-): (HumanizerVisualization & HumanizerErc7730Visualization)[] => {
+): (HumanizerVisualization & (HumanizerErc7730Visualization | HumanizerFlatVisualization))[] => {
   return safeTxCalls
     .map((safeTxCall, index) => {
       const safeTxCallDescriptor =
@@ -1617,8 +1588,12 @@ const getSafeTxCallVisualizations = (
       )
     })
     .filter(
-      (visualization): visualization is HumanizerVisualization & HumanizerErc7730Visualization =>
-        !!visualization && visualization.type === 'erc7730'
+      (
+        visualization
+      ): visualization is HumanizerVisualization &
+        (HumanizerErc7730Visualization | HumanizerFlatVisualization) =>
+        !!visualization &&
+        (visualization.type === 'erc7730' || visualization.type === 'flatVisualization')
     )
 }
 

@@ -196,7 +196,11 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
   })
 }
 
-const Bundler3Module: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall => {
+// Handles the outer Bundler3 `multicall` call itself, decoding each entry of its bundle.
+// The individual GeneralAdapter action calls inside that bundle (repay, withdrawCollateral,
+// supplyCollateral, etc.) are handled separately by Bundler3GeneralAdapterModule, since they
+// can also show up decoded on their own (e.g. as a nested ERC-7730 calldata row).
+const Bundler3MulticallModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall => {
   const matcher: { [sighash: string]: (call: IrCall) => IrCall | undefined } = {
     [toFunctionSelector(multicallAbi[0])]: (call) => {
       if (!call.to) return
@@ -221,4 +225,4 @@ const Bundler3Module: HumanizerCallModule = (accOp: AccountOp, call: IrCall): Ir
   return newCall
 }
 
-export default Bundler3Module
+export default Bundler3MulticallModule

@@ -152,6 +152,15 @@ export function getErc7730Visualization(
   return { type: 'erc7730', title, titleParts, dapp, rows, id: randomId() }
 }
 
+// Wraps a plain, flat fullVisualization array (e.g. from a local humanizer module) so it can
+// be embedded as a nested call's value without being reshaped into HumanizerErc7730Visualization's
+// title/rows structure - the UI renders it inline with the same simple layout as a top-level
+// call instead of the nested ERC-7730 row/chevron treatment, which implies a verified descriptor
+// match that a local module fallback isn't.
+export function getFlatVisualization(items: HumanizerVisualization[]): HumanizerVisualization {
+  return { type: 'flatVisualization', items, id: randomId() }
+}
+
 export function flattenHumanizerVisualizations(
   visualizations: HumanizerVisualization[] = []
 ): HumanizerVisualization[] {

@@ -3,6 +3,13 @@ import { HumanizerVisualization, IrCall } from './interfaces'
 const stripVisualizationIds = (visualization: HumanizerVisualization): HumanizerVisualization => {
   const strippedVisualization = { ...visualization, id: null as any }
 
+  if (strippedVisualization.type === 'flatVisualization') {
+    return {
+      ...strippedVisualization,
+      items: strippedVisualization.items.map(stripVisualizationIds)
+    }
+  }
+
   if (strippedVisualization.type !== 'erc7730') return strippedVisualization
 
   return {

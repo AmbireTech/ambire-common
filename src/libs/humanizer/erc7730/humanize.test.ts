@@ -168,10 +168,22 @@ describe('warnings from nested calls', () => {
     const multicallVisualization = humanizedCall?.fullVisualization?.[0]
     if (multicallVisualization?.type !== 'erc7730') throw new Error('expected an ERC-7730 result')
 
-    expect(multicallVisualization.rows[0]?.value[0]).toMatchObject({
-      type: 'erc7730',
-      title: 'Grant approval'
-    })
+    // No ERC-7730 descriptor covers Grant approval's own selector, so it's decoded by the
+    // AllowanceModule fallback and rendered inline (flatVisualization) rather than nested
+    // as its own erc7730 row - see Bundler3GeneralAdapterModule for the same pattern.
+    const nestedApproval = multicallVisualization.rows[0]?.value[0]
+    expect(nestedApproval?.type).toBe('flatVisualization')
+    if (nestedApproval?.type !== 'flatVisualization') throw new Error('expected a flat result')
+
+    expect(nestedApproval.items.find((item) => item.type === 'action')?.content).toBe(
+      'Grant approval'
+    )
+    expect(nestedApproval.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'token', address: usdt.toLowerCase(), value: maxUint256 }),
+        expect.objectContaining({ type: 'address', address: spender.toLowerCase() })
+      ])
+    )
   })
 
   test('a multicall with no approval carries no approval warning', () => {

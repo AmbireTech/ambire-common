@@ -30,6 +30,17 @@ export interface HumanizerErc7730Visualization {
   rows: HumanizerErc7730Row[]
 }
 
+// A nested call that a local humanizer module decoded (no ERC-7730 descriptor was involved),
+// e.g. a Bundler3 GeneralAdapter action found via the module-fallback path. It carries its
+// module's plain, flat `fullVisualization` as-is instead of being reshaped into
+// HumanizerErc7730Visualization's title/rows structure, so the UI can render it with the
+// same simple inline layout as a top-level call instead of the nested ERC-7730 row/chevron
+// treatment - that treatment implies a verified descriptor match, which this isn't.
+export interface HumanizerFlatVisualization {
+  type: 'flatVisualization'
+  items: HumanizerVisualization[]
+}
+
 // @TODO remove property humanizerMeta
 export type HumanizerVisualization = (
   | {
@@ -52,6 +63,7 @@ export type HumanizerVisualization = (
       chainId?: bigint
     }
   | HumanizerErc7730Visualization
+  | HumanizerFlatVisualization
   | {
       type: 'token'
       address: string

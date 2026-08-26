@@ -7,7 +7,8 @@ import AcrossModule from './modules/Across'
 import { airdropsModule } from './modules/Airdrops'
 import AllowanceModule from './modules/Allowance'
 import asciiModule from './modules/AsciiModule'
-import Bundler3Module from './modules/Bundler3'
+import Bundler3MulticallModule from './modules/Bundler3'
+import Bundler3GeneralAdapterModule from './modules/Bundler3/generalAdapterActions'
 import CowSwapModule from './modules/CowSwap'
 import curveModule from './modules/Curve'
 import daiPermitModule from './modules/DaiPermit'
@@ -62,7 +63,8 @@ export const singleCallHumanizerModules: HumanizerCallModule[] = [
   aaveHumanizer,
   WALLETModule,
   SafeModule,
-  Bundler3Module,
+  Bundler3MulticallModule,
+  Bundler3GeneralAdapterModule,
   MetaMorphoModule,
   AllowanceModule,
   ModuleProxyFactoryModule,

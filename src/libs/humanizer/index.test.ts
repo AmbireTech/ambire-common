@@ -27,6 +27,7 @@ import {
   getAddressVisualization,
   getDeadline,
   getErc7730Visualization,
+  getFlatVisualization,
   getLabel,
   getText,
   getToken,
@@ -1601,12 +1602,13 @@ describe('ERC-7730 descriptors', () => {
         getErc7730Visualization('Multicall', [
           {
             label: '',
+            // setUserEMode has no descriptor field of its own, so it's decoded by the local
+            // Aave module fallback and rendered flat instead of as a nested erc7730 row.
             value: [
-              getErc7730Visualization('Enable cbBTC stablecoin efficiency mode', [
-                {
-                  label: 'Category',
-                  value: [getText('cbBTC / stablecoins')]
-                }
+              getFlatVisualization([
+                getAction('Enable cbBTC stablecoin efficiency mode'),
+                getLabel('Category'),
+                getText('cbBTC / stablecoins')
               ])
             ]
           },
@@ -1664,24 +1666,20 @@ describe('ERC-7730 descriptors', () => {
     expect(multicallVisualization.rows).toHaveLength(1)
     expect(multicallVisualization.rows[0]?.label).toBe('')
     expect(multicallVisualization.rows[0]?.value).toHaveLength(1)
+    // No ERC-7730 descriptor covers approve's own selector here, so it's decoded by the
+    // AllowanceModule fallback and rendered flat instead of as a nested erc7730 row.
     expect(multicallVisualization.rows[0]?.value[0]).toMatchObject({
-      type: 'erc7730',
-      title: 'Grant approval',
-      rows: [
+      type: 'flatVisualization',
+      items: [
+        { type: 'action', content: 'Grant approval' },
+        { type: 'label', content: 'for' },
         {
-          label: 'For',
-          value: [
-            {
-              type: 'token',
-              address: token.toLowerCase(),
-              value: ethers.MaxUint256
-            }
-          ]
+          type: 'token',
+          address: token.toLowerCase(),
+          value: ethers.MaxUint256
         },
-        {
-          label: 'To',
-          value: [{ type: 'address', address: spender.toLowerCase() }]
-        }
+        { type: 'label', content: 'to' },
+        { type: 'address', address: spender.toLowerCase() }
       ]
     })
   })
@@ -1728,49 +1726,40 @@ describe('ERC-7730 descriptors', () => {
     expect(multicallVisualization.rows.map((row) => row.label)).toEqual(['', ''])
     const approvalVisualization = multicallVisualization.rows[0]?.value[0]
     const allowanceVisualization = multicallVisualization.rows[1]?.value[0]
-    if (approvalVisualization?.type !== 'erc7730' || allowanceVisualization?.type !== 'erc7730') {
-      throw new Error('Expected nested ERC-7730 visualizations')
+    // Neither approve nor increaseAllowance has a descriptor field of its own here, so both
+    // are decoded by the genericErc20Humanizer fallback and rendered flat.
+    if (
+      approvalVisualization?.type !== 'flatVisualization' ||
+      allowanceVisualization?.type !== 'flatVisualization'
+    ) {
+      throw new Error('Expected flat visualizations')
     }
 
-    expect([approvalVisualization.title, allowanceVisualization.title]).toEqual([
-      'Grant approval',
-      'Increase allowance'
-    ])
     expect(approvalVisualization).toMatchObject({
-      type: 'erc7730',
-      rows: [
+      type: 'flatVisualization',
+      items: [
+        { type: 'action', content: 'Grant approval' },
+        { type: 'label', content: 'for' },
         {
-          label: 'For',
-          value: [
-            {
-              type: 'token',
-              address: token.toLowerCase(),
-              value: approvalAmount
-            }
-          ]
+          type: 'token',
+          address: token.toLowerCase(),
+          value: approvalAmount
         },
-        {
-          label: 'To',
-          value: [{ type: 'address', address: spender.toLowerCase() }]
-        }
+        { type: 'label', content: 'to' },
+        { type: 'address', address: spender.toLowerCase() }
       ]
     })
     expect(allowanceVisualization).toMatchObject({
-      type: 'erc7730',
-      rows: [
+      type: 'flatVisualization',
+      items: [
+        { type: 'action', content: 'Increase allowance' },
+        { type: 'label', content: 'of' },
+        { type: 'address', address: spender.toLowerCase() },
+        { type: 'label', content: 'with' },
         {
-          label: 'Of',
-          value: [{ type: 'address', address: spender.toLowerCase() }]
-        },
-        {
-          label: 'With',
-          value: [
-            {
-              type: 'token',
-              address: token.toLowerCase(),
-              value: allowanceIncrease
-            }
-          ]
+          type: 'token',
+          address: token.toLowerCase(),
+          value: allowanceIncrease
         }
       ]
     })
@@ -1803,14 +1792,22 @@ describe('ERC-7730 descriptors', () => {
       throw new Error('Expected ERC-7730 multicall visualization')
     }
 
+    // Neither nested call has a descriptor field of its own here, so both are decoded by
+    // local module fallbacks and rendered flat instead of as nested erc7730 rows.
     const nestedVisualizations = multicallVisualization.rows
       .flatMap((row) => row.value)
-      .filter((visualization) => visualization.type === 'erc7730')
+      .filter(
+        (visualization) =>
+          visualization.type === 'erc7730' || visualization.type === 'flatVisualization'
+      )
 
-    expect(nestedVisualizations.map((visualization) => visualization.title)).toEqual([
-      'Add liquidity',
-      'Withdraw'
-    ])
+    expect(
+      nestedVisualizations.map((visualization) =>
+        visualization.type === 'erc7730'
+          ? visualization.title
+          : visualization.items.find((item) => item.type === 'action')?.content
+      )
+    ).toEqual(['Add liquidity', 'Withdraw'])
     expect(multicallVisualization.rows.at(-1)).toMatchObject({
       label: 'Send',
       value: [expect.objectContaining({ address: ZeroAddress, value: nativeValue })]
@@ -2004,13 +2001,29 @@ describe('ERC-7730 descriptors', () => {
     })
     if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
 
+    // The Morpho GeneralAdapter fast-path that used to live directly in the ERC-7730 humanizer
+    // was removed (security > UX: a compromised Morpho bundle should never have its inner calls
+    // hidden or relabeled away, see PR #7803), but each inner GeneralAdapter action call is still
+    // decoded - now via Bundler3GeneralAdapterModule through the generic module-fallback path, the
+    // same way any other protocol's nested calldata gets decoded. Every action stays visible, none
+    // hidden, and each is nested as its own flat visualization instead of a raw address+selector.
     expect(visualization.rows).toHaveLength(5)
     expect(visualization.rows.every((row) => row.label === 'Action')).toBe(true)
+    const nestedVisualizations = visualization.rows.map((row) => row.value[0])
+    expect(nestedVisualizations.every((value) => value?.type === 'flatVisualization')).toBe(true)
     expect(
-      visualization.rows.map((row) => row.value.find((value) => value.type === 'action')?.content)
+      nestedVisualizations.map((value) =>
+        value?.type === 'flatVisualization'
+          ? value.items.find((item) => item.type === 'action')?.content
+          : null
+      )
     ).toEqual(['Transfer', 'Repay', 'Withdraw', 'Transfer', 'Transfer'])
     expect(
-      visualization.rows.map((row) => row.value.find((value) => value.type === 'token'))
+      nestedVisualizations.map((value) =>
+        value?.type === 'flatVisualization'
+          ? value.items.find((item) => item.type === 'token')
+          : null
+      )
     ).toEqual([
       expect.objectContaining({ address: baseUsdc, value: 2n }),
       expect.objectContaining({ address: baseUsdc, value: 220292767985000000n }),
@@ -2019,11 +2032,8 @@ describe('ERC-7730 descriptors', () => {
       expect.objectContaining({ address: baseCbBtc, value: ethers.MaxUint256 })
     ])
     expect(
-      visualization.rows.flatMap((row) => row.value).some((value) => value.type === 'text')
-    ).toBe(false)
-    expect(
-      visualization.rows
-        .flatMap((row) => row.value)
+      nestedVisualizations
+        .flatMap((value) => (value?.type === 'flatVisualization' ? value.items : []))
         .some((value) =>
           ['0xd96ca0b9', '0x4d5fcf68', '0x1af3bbc6', '0x3790767d'].includes(value.content || '')
         )
@@ -2115,19 +2125,28 @@ describe('ERC-7730 descriptors', () => {
     })
     if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
 
+    // Same module-fallback path as above: the bundled reallocateTo call is decoded via
+    // Bundler3GeneralAdapterModule and nested as its own flat visualization.
     expect(visualization.rows).toHaveLength(1)
     expect(visualization.rows[0]!.label).toBe('Action')
-    expect(visualization.rows[0]!.value.find((value) => value.type === 'action')?.content).toBe(
+    const nestedVisualization = visualization.rows[0]!.value[0]
+    expect(nestedVisualization?.type).toBe('flatVisualization')
+    if (nestedVisualization?.type !== 'flatVisualization') {
+      throw new Error('Expected a flat visualization')
+    }
+    expect(nestedVisualization.items.find((item) => item.type === 'action')?.content).toBe(
       'Reallocate liquidity'
     )
-    expect(visualization.rows[0]!.value).toEqual(
+    expect(nestedVisualization.items).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: 'label', content: 'To vault' }),
-        expect.objectContaining({ type: 'address', address: vault })
+        expect.objectContaining({
+          type: 'address',
+          address: vault.toLowerCase()
+        })
       ])
     )
     expect(
-      visualization.rows[0]!.value.some((value) =>
+      nestedVisualization.items.some((value) =>
         ['0x833947fd', 'reallocateTo'].includes(value.content || '')
       )
     ).toBe(false)
@@ -2667,11 +2686,12 @@ describe('ERC-7730 descriptors', () => {
                 value: [getToken(tokenAddress, 1514n, 8453n)]
               }
             ]),
-            getErc7730Visualization('SetPreSignature', [
-              {
-                label: 'On',
-                value: [getAddressVisualization(settlement)]
-              }
+            // No ERC-7730 descriptor covers setPreSignature's own selector, so it's decoded by
+            // the module fallback and rendered flat.
+            getFlatVisualization([
+              getAction('SetPreSignature'),
+              getLabel('on'),
+              getAddressVisualization(settlement)
             ])
           ]
         }
@@ -4018,26 +4038,20 @@ describe('ERC-7730 descriptors', () => {
         },
         {
           label: 'Transactions',
+          // Neither transfer has a descriptor field of its own here, so both are decoded by
+          // the local module fallback and rendered flat.
           value: [
-            getErc7730Visualization('Send', [
-              {
-                label: 'Send',
-                value: [getToken(tokenAddress, 100n)]
-              },
-              {
-                label: 'To',
-                value: [getAddressVisualization(recipientOne)]
-              }
+            getFlatVisualization([
+              getAction('Send'),
+              getToken(tokenAddress, 100n),
+              getLabel('to'),
+              getAddressVisualization(recipientOne)
             ]),
-            getErc7730Visualization('Send', [
-              {
-                label: 'Send',
-                value: [getToken(tokenAddress, 200n)]
-              },
-              {
-                label: 'To',
-                value: [getAddressVisualization(recipientTwo)]
-              }
+            getFlatVisualization([
+              getAction('Send'),
+              getToken(tokenAddress, 200n),
+              getLabel('to'),
+              getAddressVisualization(recipientTwo)
             ])
           ]
         },
@@ -4146,22 +4160,20 @@ describe('ERC-7730 descriptors', () => {
         },
         {
           label: 'Transactions',
+          // Neither call has a descriptor field of its own here, so both are decoded by the
+          // local module fallback and rendered flat.
           value: [
-            getErc7730Visualization('Grant approval', [
-              {
-                label: 'For',
-                value: [getToken(tokenAddress, 1514n)]
-              },
-              {
-                label: 'To',
-                value: [getAddressVisualization(spender)]
-              }
+            getFlatVisualization([
+              getAction('Grant approval'),
+              getLabel('for'),
+              getToken(tokenAddress, 1514n),
+              getLabel('to'),
+              getAddressVisualization(spender)
             ]),
-            getErc7730Visualization('SetPreSignature', [
-              {
-                label: 'On',
-                value: [getAddressVisualization(settlement)]
-              }
+            getFlatVisualization([
+              getAction('SetPreSignature'),
+              getLabel('on'),
+              getAddressVisualization(settlement)
             ])
           ]
         },
@@ -4297,21 +4309,17 @@ describe('ERC-7730 descriptors', () => {
                 value: [getAddressVisualization(allowanceModule)]
               }
             ]),
-            getErc7730Visualization('Add delegate', [
-              {
-                label: 'Add delegate',
-                value: [getAddressVisualization(delegate)]
-              }
-            ]),
-            getErc7730Visualization('Allow', [
-              {
-                label: 'Allow',
-                value: [getAddressVisualization(delegate)]
-              },
-              {
-                label: 'To spend',
-                value: [getToken(ZeroAddress, 1000000000000000000n), getText('No reset', true)]
-              }
+            // Neither call has a descriptor field of its own here, so both are decoded by the
+            // local module fallback and rendered flat. AllowanceModule's own inline reset-time
+            // label is dropped (see the comment above getSetAllowanceResetText's use) in favor
+            // of the bold reset text appended at the end.
+            getFlatVisualization([getAction('Add delegate'), getAddressVisualization(delegate)]),
+            getFlatVisualization([
+              getAction('Allow'),
+              getAddressVisualization(delegate),
+              getLabel('to spend'),
+              getToken(ZeroAddress, 1000000000000000000n),
+              getText('No reset', true)
             ])
           ]
         }
@@ -4527,22 +4535,20 @@ describe('ERC-7730 descriptors', () => {
                 value: [getAddressVisualization(settlementContract)]
               }
             ]),
-            getErc7730Visualization('Grant approval', [
-              {
-                label: 'For',
-                value: [getToken(usdc, ethers.MaxUint256)]
-              },
-              {
-                label: 'To',
-                value: [getAddressVisualization(spender)]
-              }
+            // Neither call has a descriptor field of its own here, so both are decoded by the
+            // local module fallback and rendered flat.
+            getFlatVisualization([
+              getAction('Grant approval'),
+              getLabel('for'),
+              getToken(usdc, ethers.MaxUint256),
+              getLabel('to'),
+              getAddressVisualization(spender)
             ]),
             // The call no humanizer module can decode falls back to a plain "Interacting with" row
-            getErc7730Visualization('Interacting', [
-              {
-                label: 'With',
-                value: [getAddressVisualization(undecodableContract)]
-              }
+            getFlatVisualization([
+              getAction('Interacting'),
+              getLabel('with'),
+              getAddressVisualization(undecodableContract)
             ])
           ]
         },
