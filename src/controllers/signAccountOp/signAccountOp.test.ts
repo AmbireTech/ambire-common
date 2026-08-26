@@ -3819,7 +3819,7 @@ describe('broadcasting a batch one transaction at a time', () => {
     return batch
   }
 
-  const initBatch = async () => {
+  const initBatch = async (overrides?: { callRelayer?: any }) => {
     const submittedAccountOps: any[] = []
     const feePaymentOptions = [
       {
@@ -3845,7 +3845,7 @@ describe('broadcasting a batch one transaction at a time', () => {
         // Without this the account broadcasts through an EIP-7702 delegation, which
         // sends the whole batch as one transaction and takes a single signature.
         featureFlags: { eip7702: false },
-        callRelayer: (async () => ({})) as any,
+        callRelayer: overrides?.callRelayer || ((async () => ({})) as any),
         onBroadcastSuccess: async ({ submittedAccountOp }: any) => {
           submittedAccountOps.push(submittedAccountOp)
         }
@@ -3943,6 +3943,25 @@ describe('broadcasting a batch one transaction at a time', () => {
     expect(getPartialBroadcastError(controller).message).toContain(
       'Only 2 of 3 transactions in this batch were sent. The remaining one could not be sent'
     )
+  })
+
+  test('sends the whole batch even when the gas tank bookkeeping throws', async () => {
+    const { controller, submittedAccountOps } = await initBatch({
+      callRelayer: () => {
+        throw new Error('relayer is unavailable')
+      }
+    })
+    const { signRawTransaction } = mockBroadcastChain(null)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Recording the transaction for the gas tank is bookkeeping the broadcast does
+    // not depend on. Letting it stop the batch would strand the calls after it, and
+    // the ones already sent cannot be taken back.
+    expect(signRawTransaction).toHaveBeenCalledTimes(3)
+    expect(submittedAccountOps).toHaveLength(1)
+    expect(submittedAccountOps[0].calls).toHaveLength(3)
+    expect(getPartialBroadcastError(controller)).toBeUndefined()
   })
 
   test('reports a plain failure, not a partial success, when nothing was sent', async () => {

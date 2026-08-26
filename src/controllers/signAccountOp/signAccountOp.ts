@@ -3623,15 +3623,7 @@ export class SignAccountOpController
 
           // record the EOA txn only if isErc4337Enabled as
           // we need this for the gas tank
-          if (this.isErc4337Enabled) {
-            this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
-              rawTxn: signedTxn
-            }).catch((e: any) => {
-              console.log('failed to record EOA txn to relayer', accountOp.chainId)
-
-              console.log(e)
-            })
-          }
+          if (this.isErc4337Enabled) this.#recordEoaTxnForGasTank(accountOp.chainId, signedTxn)
         }
 
         transactionRes = {
@@ -3891,6 +3883,26 @@ export class SignAccountOpController
     })
 
     await this.signAndBroadcastPromise
+  }
+
+  /**
+   * Bookkeeping for the gas tank, which the broadcast does not depend on. It is
+   * deliberately not awaited and never allowed to throw: it runs between the
+   * transactions of a batch, where anything escaping it would stop the rest of the
+   * batch from being sent - and the transactions before it cannot be taken back.
+   */
+  #recordEoaTxnForGasTank(chainId: bigint, rawTxn: string) {
+    const onFailedToRecord = (e: any) => {
+      console.log('failed to record EOA txn to relayer', chainId)
+
+      console.log(e)
+    }
+
+    try {
+      this.#callRelayer(`/v2/eoaSubmitTxn/${chainId}`, 'POST', { rawTxn }).catch(onFailedToRecord)
+    } catch (e: any) {
+      onFailedToRecord(e)
+    }
   }
 
   #hwCleanup() {
