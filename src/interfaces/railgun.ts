@@ -6,11 +6,7 @@ export type IRailgunController = ControllerInterface<
   InstanceType<typeof import('../controllers/railgun/railgun').RailgunController>
 >
 
-/**
- * 'queued' exists because scans cannot overlap - the WASM module is single-threaded, so a run over
- * several chains is strictly sequential and a waiting chain has to say so.
- */
-export type RailgunSyncStatus = 'idle' | 'initializing' | 'queued' | 'syncing' | 'ready'
+export type RailgunSyncStatus = 'idle' | 'initializing' | 'syncing' | 'ready'
 
 /**
  * Why Railgun can't be used right now, so the UI can explain it rather than just disable the button:
@@ -63,37 +59,61 @@ export type RailgunTokenData = {
   priceIn: Price[]
 }
 
+/**
+ * One chain as the UI reads it, merged from the two things it is actually made of: the chain's own
+ * sync, shared by every identity registered on it, and this identity's balances.
+ *
+ * The split matters because a sync is a property of the network, not of the account. `provider.sync()`
+ * takes no address and walks the pool once, decrypting for every registered identity - so a run
+ * started while one account was selected is equally the other's run, and both have to show it.
+ */
 export type RailgunChainState = {
   chainId: string
   /**
    * The chain's wrapped native token (WETH), so the UI can label the matching shielded balance and
    * the native flows without hardcoding a possibly-stale address. There is no 0zk address here -
    * that one is wallet-wide, see `RailgunController.railgunAddress`.
+   *
+   * Per chain, like everything down to `error` below.
    */
   wrappedBaseTokenAddress: Hex | null
   syncStatus: RailgunSyncStatus
-  /**
-   * Whether this identity's own notes have been decrypted on this device before, which is what
-   * tells the one-time initialization apart from a seconds-long catch-up. Read from what is
-   * persisted, not from `lastSyncedAt` - a further identity on an already-scanned chain still faces
-   * the full walk.
-   */
-  hasIdentityData: boolean
-  // Tells "never synced" (show placeholders) apart from "syncing again" (keep what is on screen)
-  lastSyncedAt: number | null
   /**
    * When the sync in flight started, or null when none is. The SDK reports no progress at all, so
    * elapsed time is the only thing that tells a slow sync from a hung one.
    */
   syncStartedAt: number | null
-  balances: RailgunShieldedBalance[]
   /**
    * Why this chain is unusable, or null when it is fine. Per chain rather than controller-wide: one
    * dead RPC must not present itself as "Railgun is broken" while the other chain's balances are on
    * screen and spendable.
    */
   error: string | null
+  /**
+   * Whether this identity's own notes have been decrypted on this device before, which is what
+   * tells the one-time initialization apart from a seconds-long catch-up. Read from what is
+   * persisted, not from `lastSyncedAt` - a further identity on an already-scanned chain still faces
+   * the full walk.
+   *
+   * Per identity, like `lastSyncedAt` and `balances` below.
+   */
+  hasIdentityData: boolean
+  // Tells "never synced" (show placeholders) apart from "syncing again" (keep what is on screen)
+  lastSyncedAt: number | null
+  balances: RailgunShieldedBalance[]
 }
+
+/** The half of `RailgunChainState` that belongs to the chain, shared by every identity on it. */
+export type RailgunChainSyncState = Pick<
+  RailgunChainState,
+  'wrappedBaseTokenAddress' | 'syncStatus' | 'syncStartedAt' | 'error'
+>
+
+/** The half that belongs to one identity - the notes it owns in the chain's pool. */
+export type RailgunIdentityChainState = Pick<
+  RailgunChainState,
+  'hasIdentityData' | 'lastSyncedAt' | 'balances'
+>
 
 /**
  * What broadcasting an unshield or a private transfer is expected to cost, in the chain's wrapped

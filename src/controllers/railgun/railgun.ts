@@ -1,24 +1,26 @@
 import { Interface, JsonRpcProvider, Wallet } from 'ethers'
 
-import { Storage as RailgunHostStorage } from '@kohaku-eth/plugins'
 import {
   Bundler,
   chainConfig,
-  createRailgunPlugin,
   ensureInitialized,
+  RailgunBuilder,
+  RailgunPlugin,
   RailgunSigner,
   Signer as EthSigner,
-  SimpleSmartAccount
+  SignerPool,
+  SimpleSmartAccount,
+  UtxoSyncer
 } from '@kohaku-eth/railgun'
+import type { AssetAmount, AssetId, ERC20AssetId } from '@kohaku-eth/plugins'
 import type {
-  AssetAmount,
-  AssetId,
-  ERC20AssetId,
-  Host as RailgunHost,
-  Keystore as RailgunHostKeystore
-} from '@kohaku-eth/plugins'
-import type { EthereumProvider } from '@kohaku-eth/provider'
-import type { Eip1193Provider, RailgunAddress, RailgunPlugin, RawLog } from '@kohaku-eth/railgun'
+  ChainConfig,
+  Database as RailgunDatabase,
+  Eip1193Provider,
+  RailgunAddress,
+  RailgunProvider,
+  RawLog
+} from '@kohaku-eth/railgun'
 
 import EmittableError from '../../classes/EmittableError'
 import {
@@ -37,6 +39,8 @@ import {
   RailgunActivityEntry,
   RailgunActivityStatus,
   RailgunChainState,
+  RailgunChainSyncState,
+  RailgunIdentityChainState,
   RailgunNetworkFeeEstimate,
   RailgunPoiStatus,
   RailgunPrivateOperation,
@@ -97,11 +101,8 @@ const RAILGUN_FIRST_SCAN_TIMEOUT_IN_MS = RAILGUN_INITIAL_SYNC_MAX_MINUTES * 60 *
 // error raised by the scan itself - see #syncChain.
 const RAILGUN_SYNC_TIMEOUT_MESSAGE =
   'Syncing your shielded balances took too long. Please try again.'
-// Owned by this module too, so an operation abandoned because the selected identity changed can be
-// told apart from a real failure - it is nobody's error and must not be reported as one.
-const RAILGUN_ABORTED_MESSAGE = 'railgun: superseded by a newer identity'
 // The SDK writes its UTXO/POI state key-by-key, so debouncing is what keeps a sync from rewriting
-// the whole blob hundreds of times - see RailgunHostStorageAdapter.
+// the whole blob hundreds of times - see RailgunStorage.
 const RAILGUN_STORAGE_WRITE_DEBOUNCE_IN_MS = 250
 // How many periodic refreshes may fail before the user is told. The refresh runs on a timer, so
 // reporting a transient RPC blip would toast (and report to Sentry) on every tick.
@@ -147,6 +148,10 @@ const STATUS_WRAPPED_METHODS = {
   // opening the screen - from "scanning a pool", which takes minutes and is asked for.
   initIdentity: 'INITIAL',
   init: 'INITIAL',
+  // The automatic catch-up on opening the screen, kept apart from `init` because they have
+  // different owners: `init` belongs to the user pressing Enable, and a run of it survives an
+  // account switch - so sharing one slot made the account switched *to* refuse to catch up at all.
+  catchUp: 'INITIAL',
   sync: 'INITIAL',
   buildAndBroadcastUnshield: 'INITIAL',
   buildAndBroadcastTransfer: 'INITIAL'
@@ -197,14 +202,12 @@ const toHexKeyName = (name: string) =>
  * transaction whose outputs have no innocence proof yet and `pois` is a re-fetchable cache.
  *
  * Singled out by name because it is the only entry the SDK cannot rebuild from chain state, which
- * makes it the exception on both paths that touch it - see `scopedTo` and `hasPendingPoi`.
+ * is what makes it worth reading directly - see `hasPendingPoi`.
  */
 const POI_STATE_KEY_NAME = 'poi_provider'
 
-// Compared as hex so the write path never has to decode a key name.
+// Compared as hex so the read path never has to decode a key name.
 const POI_STATE_KEY_NAME_IN_HEX = toHexKeyName(POI_STATE_KEY_NAME)
-
-const isPoiStateKey = (key: string) => key.slice(key.indexOf(':') + 1) === POI_STATE_KEY_NAME_IN_HEX
 
 // The only `poi_provider` schema this code reads. Anything else is left alone - see hasPendingPoi.
 const SUPPORTED_POI_STATE_SCHEMA_VERSION = 1
@@ -217,9 +220,9 @@ const POI_STATE_READ_ERROR_MESSAGE =
   'A privacy pool check could not be completed. Your funds are not affected.'
 
 /**
- * Satisfies the SDK's `Host.storage` on top of Ambire's fixed-schema StorageController, by folding
- * every write into one flat `railgunPluginStorage` blob. One blob covers all chains, since the SDK
- * prefixes each key with the chain id - which is why one instance serves every chain's Host.
+ * Backs the SDK's `Database` on top of Ambire's fixed-schema StorageController, by folding every
+ * write into one flat `railgunPluginStorage` blob. One blob covers all chains: `forChain` prefixes
+ * each key with the chain id, which is why one instance serves every chain's provider.
  *
  * The blob is hydrated once and cached, and `set` resolves as soon as the value is in that cache,
  * with the write debounced behind it. Load-bearing rather than an optimisation: the Rust side awaits
@@ -227,9 +230,7 @@ const POI_STATE_READ_ERROR_MESSAGE =
  * per key - and a mainnet sync touches them by the thousand. Read-after-write still holds, since
  * `get` reads the same cache.
  */
-export class RailgunHostStorageAdapter implements RailgunHostStorage {
-  readonly _brand = 'Storage' as const
-
+export class RailgunStorage {
   #storage: IStorageController
 
   #onError: (error: unknown, message?: string) => void
@@ -294,6 +295,18 @@ export class RailgunHostStorageAdapter implements RailgunHostStorage {
     // Deliberately not returned: see the class comment for why the caller must not wait for
     // persistence. Failures are reported rather than thrown, since there is nobody left to
     // throw at.
+    this.#scheduleWrite().catch(this.#onError)
+  }
+
+  /**
+   * Removes the entry outright, rather than blanking it the way the SDK's own adapter does. These
+   * entries hold an identity's decrypted notes, so forgetting one has to actually drop them.
+   */
+  async delete(key: string): Promise<void> {
+    const cache = await this.#hydrate()
+    if (!(key in cache)) return
+
+    delete cache[key]
     this.#scheduleWrite().catch(this.#onError)
   }
 
@@ -367,31 +380,20 @@ export class RailgunHostStorageAdapter implements RailgunHostStorage {
   }
 
   /**
-   * A view of this storage bound to one plugin's lifetime: a write from a plugin that is no longer
-   * the live one for its chain is dropped.
+   * This chain's slice of the blob. Every key the Rust side asks for is namespaced by chain id, so
+   * one instance of this class backs the databases of all of them.
    *
-   * This is what keeps an abandoned scan from corrupting the chain's cursor. A scan cannot be
-   * cancelled - it keeps running inside WASM after we stop awaiting it - and writes the same
-   * chain-wide keys (the trees, `utxo_indexer`) as the plugin that replaced it, so it can persist an
-   * older `synced_block` over a newer one and force the next sync to redo the difference.
-   *
-   * `poi_provider` is exempt, because for it the trade is inverted: it holds the witnesses for POI
-   * proofs not yet submitted, recorded once while building the transaction and rebuildable from
-   * nothing. Refusing that write loses the only copy there is, and the notes stay unspendable. A
-   * stale POI write cannot do matching damage - a superseded plugin only holds entries the live one
-   * either also has or has already submitted.
-   *
-   * Reads are left alone: they cannot corrupt anything.
+   * Unguarded on purpose: a chain has exactly one provider, so these keys have exactly one writer.
+   * That invariant is what `#holdWasmQueueUntil` maintains, and it is what makes this a plain view
+   * rather than something that has to reason about which writer is still the current one.
    */
-  scopedTo(isLive: () => boolean): RailgunHostStorage {
-    return {
-      _brand: 'Storage' as const,
-      get: (key: string) => this.get(key),
-      set: async (key: string, value: string) => {
-        if (!isLive() && !isPoiStateKey(key)) return
+  forChain(chainId: string): RailgunDatabase {
+    const scoped = (key: string) => `${chainId}:${key}`
 
-        await this.set(key, value)
-      }
+    return {
+      get: (key: string) => this.get(scoped(key)),
+      set: (key: string, value: string) => this.set(scoped(key), value),
+      delete: (key: string) => this.delete(scoped(key))
     }
   }
 
@@ -430,17 +432,15 @@ export class RailgunHostStorageAdapter implements RailgunHostStorage {
 }
 
 /**
- * Satisfies the SDK's `Host.keystore`, whose whole contract is "derive a BIP-32 path".
+ * Derives one identity's Railgun keys, whose whole contract is "derive a BIP-32 path".
  *
  * Deliberately not the SDK's own `MnemonicKeystore`, which keeps the recovery phrase - that would
- * put the phrase inside an unaudited alpha dependency for the lifetime of the plugin. This goes
+ * put the phrase inside an unaudited alpha dependency for the lifetime of the provider. This goes
  * through `KeystoreController.deriveRailgunKey`, which whitelists Railgun's two paths and never
- * returns the phrase. The cache satisfies the SDK's "same path MUST return the same key" rule and
- * keeps `deriveAt` off the seed's pbkdf2; it is dropped with the instance on lock or seed change.
+ * returns the phrase. The cache keeps `deriveAt` off the seed's pbkdf2 and is dropped with the
+ * instance on lock or seed change.
  */
-export class AmbireRailgunKeystore implements RailgunHostKeystore {
-  readonly _brand = 'Keystore' as const
-
+export class AmbireRailgunKeystore {
   #deriveKey: (path: string) => Promise<Hex>
 
   #cache = new Map<string, Hex>()
@@ -465,80 +465,10 @@ const getChainIdOf = async (provider: JsonRpcProvider) => (await provider.getNet
 const getGasPriceOf = async (provider: JsonRpcProvider) =>
   (await provider.getFeeData()).gasPrice ?? 0n
 
-const toEthereumProviderLog = (log: {
-  blockNumber: number
-  topics: readonly string[]
-  data: string
-  address: string
-}) => ({
-  blockNumber: BigInt(log.blockNumber),
-  topics: log.topics as unknown as string[],
-  data: log.data,
-  address: log.address
-})
-
 /**
- * Satisfies @kohaku-eth/plugins' `Host.provider`, needed to build the Host passed to
- * `createRailgunPlugin`. `@kohaku-eth/provider` ships a ready-made version, but its subpath export
- * isn't resolvable under this repo's `moduleResolution: "node"`, and shimming that cascaded into
- * Webpack and service-worker failures - so the small interface is reimplemented over ethers here.
- * Parameter and return types are inferred contextually from `EthereumProvider<T>`.
- */
-const toEthereumProvider = (provider: JsonRpcProvider): EthereumProvider<JsonRpcProvider> => ({
-  _internal: provider,
-  getChainId: () => getChainIdOf(provider),
-  getGasPrice: () => getGasPriceOf(provider),
-  async getLogs(filter) {
-    const logs = await provider.getLogs(filter as any)
-    return logs.map(toEthereumProviderLog)
-  },
-  async getBlockNumber() {
-    return BigInt(await provider.getBlockNumber())
-  },
-  async waitForTransaction(txHash) {
-    await provider.waitForTransaction(txHash)
-  },
-  getBalance: (address) => provider.getBalance(address),
-  getCode: (address) => provider.getCode(address),
-  async getTransactionReceipt(txHash) {
-    const receipt = await provider.getTransactionReceipt(txHash)
-    if (!receipt) return null
-
-    return {
-      blockNumber: BigInt(receipt.blockNumber),
-      status: BigInt(receipt.status ?? 0),
-      gasUsed: receipt.gasUsed,
-      logs: receipt.logs.map(toEthereumProviderLog)
-    }
-  },
-  request: (req) => provider.send(req.method, (req.params as unknown as any[]) ?? []),
-  async call(callParams) {
-    // `CallData` names its calldata field `input` while ethers expects `data` - passing the object
-    // straight through silently drops the calldata and produces an empty `0x` call, which is what
-    // once made the UTXO tree verification hard-revert with `require(false)`.
-    const result = await provider.call({
-      to: callParams.to,
-      from: callParams.from,
-      data: callParams.input,
-      value: callParams.value,
-      gasLimit: callParams.gas,
-      gasPrice: callParams.gasPrice
-    })
-    return (result || undefined) as `0x${string}` | undefined
-  },
-  estimateGas: (callParams) =>
-    provider.estimateGas({
-      to: callParams.to,
-      from: callParams.from,
-      data: callParams.input,
-      value: callParams.value,
-      gasPrice: callParams.gasPrice
-    })
-})
-
-/**
- * Satisfies @kohaku-eth/railgun's `Eip1193Provider`, needed only by `SimpleSmartAccount` on the
- * disposable-key broadcast path. The SDK's own equivalent isn't exported from the package.
+ * Satisfies @kohaku-eth/railgun's `Eip1193Provider`, which is what both `RailgunBuilder` and
+ * `SimpleSmartAccount` bind against. The SDK's own adapter isn't exported from the package, and
+ * reimplementing the seven methods over ethers is smaller than the two-hop shape it converts from.
  */
 const toEip1193Provider = (provider: JsonRpcProvider): Eip1193Provider => ({
   getChainId: () => getChainIdOf(provider),
@@ -590,17 +520,36 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
 
   #pimlicoApiKey?: string
 
-  #pluginStorage: RailgunHostStorageAdapter
+  #railgunStorage: RailgunStorage
 
-  // One plugin instance per chain: `createRailgunPlugin` resolves its ChainConfig from the
-  // provider's chain id, so a plugin is bound to a single chain for its whole life.
+  /**
+   * One `RailgunProvider` per chain, shared by every identity on it. This is what owns the chain's
+   * whole state - the UTXO trees, the sync cursor, the POI provider - so sharing it is what keeps a
+   * second recovery phrase from re-downloading a pool the first one already has, and what leaves a
+   * single writer on the chain-wide storage keys.
+   */
+  #chainProviders = new Map<string, RailgunProvider>()
+
+  /**
+   * One plugin per (chain, identity), keyed by `#pluginKey`. A plugin is a thin object over the
+   * chain's shared provider plus this identity's signer, so several can coexist over one provider -
+   * every read it does is addressed (`provider.balance(address)`) and every operation carries its
+   * own signer.
+   */
   #plugins = new Map<string, RailgunPlugin>()
 
   /**
-   * The provider instance each plugin was built with. ProvidersController destroys and replaces
-   * providers when an RPC url changes or a network is removed, and a destroyed ethers provider
-   * throws on use - so without this comparison a plugin would keep holding a dead provider and
-   * Railgun would silently stop working until the background restarted.
+   * The signers registered on each chain's provider, keyed by `#pluginKey` so they can be freed on
+   * lock. They hold spending key material inside the WASM heap for as long as the provider lives,
+   * which is why dropping the reference is not enough.
+   */
+  #signers = new Map<string, RailgunSigner>()
+
+  /**
+   * The ethers provider each chain's `RailgunProvider` was built with. ProvidersController destroys
+   * and replaces providers when an RPC url changes or a network is removed, and a destroyed ethers
+   * provider throws on use - so without this comparison a chain would keep holding a dead provider
+   * and Railgun would silently stop working until the background restarted.
    */
   #providerInstances = new Map<string, RPCProvider>()
 
@@ -626,23 +575,30 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   /**
    * Symbol, decimals and price per chain, then per lowercased token address.
    *
-   * Deliberately outside `#chainStatesByIdentity`: this describes the token contract and its
+   * Deliberately outside the per-identity state: this describes the token contract and its
    * market, so it is identical for every identity, and keying it per identity would re-read it on
    * every switch. In memory only - a persisted price is a stale price.
    */
   #tokensDataByChain: { [chainId: string]: { [address: string]: RailgunTokenData } } = {}
 
   /**
-   * Sync state per identity, then per chain. Keyed by the 0zk address because everything in
-   * `RailgunChainState` except the pool flags belongs to an identity rather than to a network - by
-   * chain alone, two recovery phrases share one slot and one identity's finished scan makes the
-   * other look synced.
+   * What a chain is doing, per chain. Not per identity: `provider.sync()` takes no address and walks
+   * the pool once for every identity registered on it, so a run started while one account was
+   * selected is equally the other's run. Keying this per identity is what used to leave the account
+   * you switched to looking idle while its own notes were being decrypted.
+   */
+  #syncStatesByChain: { [chainId: string]: RailgunChainSyncState } = {}
+
+  /**
+   * What a chain holds for one identity, keyed by the 0zk address. Balances genuinely are per
+   * identity - two recovery phrases share the pool but not the notes in it.
    *
    * Kept per identity rather than cleared on every switch, so switching back shows the last known
    * balances instead of re-scanning for them.
    */
-  #chainStatesByIdentity: { [railgunAddress: string]: { [chainId: string]: RailgunChainState } } =
-    {}
+  #chainStatesByIdentity: {
+    [railgunAddress: string]: { [chainId: string]: RailgunIdentityChainState }
+  } = {}
 
   /**
    * Every identity's operations in one list, newest first, as persisted. Read through the
@@ -659,14 +615,19 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   privateOperation: RailgunPrivateOperation | null = null
 
   /**
-   * Serializes everything that reaches into the SDK's WASM objects. Every plugin method takes
-   * `&mut self`, so a second concurrent call aborts the module with "recursive use of an object
-   * detected" and the promise it was driving never settles.
+   * The run in flight per chain, if any: bringing the chain up for the selected identity and reading
+   * every registered identity's balances off the sync it performs.
    *
-   * Not hypothetical: enabling Railgun emits an update the moment the plugin exists, which starts
-   * the periodic refresh while `#init`'s own first sync is still in flight.
+   * One per chain, and callers join it rather than starting a second. That is both what the SDK
+   * allows - every provider method is `&mut self`, so a concurrent call aborts the module with
+   * "recursive use of an object detected" - and what the work actually is: one pool walk that serves
+   * everyone registered on it.
+   *
+   * Registered on the real run, never on how long a caller waits for it. A caller that gives up
+   * waiting leaves the entry in place, so the next one joins the same run instead of starting one
+   * the provider cannot accept.
    */
-  #wasmQueue: Promise<unknown> = Promise.resolve()
+  #chainRuns = new Map<string, Promise<void>>()
 
   // Private operations (prove + broadcast) take minutes. A background refresh queued behind one
   // would be pure waste, since the broadcast re-syncs when it settles - so those are skipped
@@ -676,16 +637,6 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
 
   // Reset by any successful sync - see MAX_QUIET_BACKGROUND_SYNC_FAILURES.
   #consecutiveBackgroundSyncFailures = 0
-
-  // Aborted whenever what is being synced stops being what the user is looking at.
-  #abortController = new AbortController()
-
-  /**
-   * Bumped every time a chain's plugin is discarded, so the storage view handed to that plugin can
-   * tell it is no longer the live one - see `RailgunHostStorageAdapter.scopedTo`. Per chain,
-   * because that is the granularity at which plugins are replaced.
-   */
-  #chainPluginGenerations = new Map<string, number>()
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -726,7 +677,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     this.#loadWasm = loadWasm
     this.#sendUiMessage = sendUiMessage
     this.#pimlicoApiKey = pimlicoApiKey
-    this.#pluginStorage = new RailgunHostStorageAdapter(storage, (error, message) =>
+    this.#railgunStorage = new RailgunStorage(storage, (error, message) =>
       this.emitError({
         message:
           message || 'Could not save the Railgun sync state. It will be rebuilt on the next sync.',
@@ -796,7 +747,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       }, 'railgun'),
 
       this.#providers.onUpdate((forceEmit) => {
-        const staleChainIds = [...this.#plugins.keys()].filter(
+        const staleChainIds = [...this.#chainProviders.keys()].filter(
           (chainId) => this.#providers.providers[chainId] !== this.#providerInstances.get(chainId)
         )
 
@@ -830,15 +781,18 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * The chains that currently have a live plugin, i.e. the ones whose shielded balances can
-   * actually be spent. A supported chain that failed to initialize (or whose sync timed out and
-   * had its plugin discarded) is deliberately absent, so the UI can offer each action against
-   * the chains that work instead of letting the user start one that can only fail.
+   * The chains that currently have a live plugin for the identity on screen, i.e. the ones whose
+   * shielded balances can actually be spent. A supported chain that failed to initialize (or whose
+   * sync timed out and had its provider discarded) is deliberately absent, so the UI can offer each
+   * action against the chains that work instead of letting the user start one that can only fail.
+   *
+   * Scoped to the identity rather than to the chain: a chain can have a provider up because another
+   * recovery phrase brought it up, while this identity has never been registered on it.
    */
   get initializedChainIds(): string[] {
     // Ordered by `supportedChainIds` rather than by insertion order, so the chain order the UI
     // renders stays stable across re-initializations.
-    return this.supportedChainIds.filter((chainId) => this.#plugins.has(chainId))
+    return this.supportedChainIds.filter((chainId) => !!this.#getIdentityPlugin(chainId))
   }
 
   get unavailableReason(): RailgunUnavailableReason | null {
@@ -862,16 +816,25 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    * `chains[chainId].error`.
    */
   get isInitialized(): boolean {
-    return this.#plugins.size > 0
+    return this.initializedChainIds.length > 0
   }
 
   /**
-   * The current identity's per-chain state, which is what the UI reads. A getter rather than a
-   * field, so the identity-keyed buckets above stay an implementation detail and the UI keeps
-   * indexing by chain id.
+   * Per-chain state as the UI reads it: each chain's own sync merged with what it holds for the
+   * identity on screen. A getter rather than a field, so the split above stays an implementation
+   * detail and the UI keeps indexing by chain id.
    */
   get chains(): { [chainId: string]: RailgunChainState } {
-    return (this.railgunAddress && this.#chainStatesByIdentity[this.railgunAddress]) || {}
+    const chainIds = new Set([
+      ...Object.keys(this.#syncStatesByChain),
+      ...Object.keys(
+        (this.railgunAddress && this.#chainStatesByIdentity[this.railgunAddress]) || {}
+      )
+    ])
+
+    return Object.fromEntries(
+      [...chainIds].map((chainId) => [chainId, this.#getChainState(chainId)])
+    )
   }
 
   /**
@@ -923,26 +886,38 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     return null
   }
 
+  #getChainSyncState(chainId: string): RailgunChainSyncState {
+    return (
+      this.#syncStatesByChain[chainId] || {
+        wrappedBaseTokenAddress: null,
+        syncStatus: 'idle',
+        syncStartedAt: null,
+        error: null
+      }
+    )
+  }
+
   /**
    * Deliberately not derived from any existing entry: an identity with no entry for this chain must
    * start from nothing, or it would copy whatever the selected identity happens to hold - the
-   * cross-identity bleed this whole structure exists to prevent.
+   * cross-identity bleed this split exists to prevent.
    */
-  #getDefaultChainState(chainId: string): RailgunChainState {
-    return {
-      chainId,
-      wrappedBaseTokenAddress: null,
-      syncStatus: 'idle',
-      hasIdentityData: false,
-      lastSyncedAt: null,
-      syncStartedAt: null,
-      balances: [],
-      error: null
-    }
+  #getIdentityChainState(
+    identityAddress: string | null,
+    chainId: string
+  ): RailgunIdentityChainState {
+    const stored = identityAddress && this.#chainStatesByIdentity[identityAddress]?.[chainId]
+
+    return stored || { hasIdentityData: false, lastSyncedAt: null, balances: [] }
   }
 
+  /** The two halves as one, for the identity on screen. */
   #getChainState(chainId: string): RailgunChainState {
-    return this.chains[chainId] || this.#getDefaultChainState(chainId)
+    return {
+      chainId,
+      ...this.#getChainSyncState(chainId),
+      ...this.#getIdentityChainState(this.railgunAddress, chainId)
+    }
   }
 
   get tokensData(): { [chainId: string]: { [address: string]: RailgunTokenData } } {
@@ -1019,110 +994,121 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * Writes into a named identity's bucket. Every long operation captures the identity it started
-   * for and writes through this, so an abandoned scan - which keeps running inside WASM, since it
-   * cannot be cancelled - lands on its own identity instead of on the one now selected.
-   *
-   * `emit` is off for the teardown paths: they run from `onUpdate` callbacks, where an update has
-   * to be forwarded with `propagateUpdate` rather than emitted.
+   * `emit` is off for the teardown paths: they run from `onUpdate` callbacks, where an update has to
+   * be forwarded with `propagateUpdate` rather than emitted.
    */
-  #writeChainState(
-    identityAddress: string | null,
+  #writeChainSyncState(
     chainId: string,
-    update: Partial<RailgunChainState>,
+    update: Partial<RailgunChainSyncState>,
     { emit }: { emit: boolean } = { emit: true }
   ) {
-    if (!identityAddress) return
-
-    const identityChains = this.#chainStatesByIdentity[identityAddress] || {}
-    const current = identityChains[chainId] || this.#getDefaultChainState(chainId)
-
-    this.#chainStatesByIdentity = {
-      ...this.#chainStatesByIdentity,
-      [identityAddress]: { ...identityChains, [chainId]: { ...current, ...update } }
+    this.#syncStatesByChain = {
+      ...this.#syncStatesByChain,
+      [chainId]: { ...this.#getChainSyncState(chainId), ...update }
     }
 
     if (emit) this.emitUpdate()
   }
 
-  /** `#writeChainState` against the identity currently on screen, which is the common case. */
-  #updateChainState(chainId: string, update: Partial<RailgunChainState>) {
-    this.#writeChainState(this.railgunAddress, chainId, update)
+  /**
+   * Writes into a named identity's bucket. A run captures the identity each balance belongs to, so
+   * a result that lands after the user switched accounts goes to the identity it was read for
+   * rather than to whichever one is selected by then.
+   */
+  #writeIdentityChainState(
+    identityAddress: string | null,
+    chainId: string,
+    update: Partial<RailgunIdentityChainState>,
+    { emit }: { emit: boolean } = { emit: true }
+  ) {
+    if (!identityAddress) return
+
+    const identityChains = this.#chainStatesByIdentity[identityAddress] || {}
+
+    this.#chainStatesByIdentity = {
+      ...this.#chainStatesByIdentity,
+      [identityAddress]: {
+        ...identityChains,
+        [chainId]: { ...this.#getIdentityChainState(identityAddress, chainId), ...update }
+      }
+    }
+
+    if (emit) this.emitUpdate()
   }
 
   /**
-   * Marks the chains that will wait their turn, and returns the undo. Scans cannot overlap, so
-   * everything after the first is genuinely queued and saying so beats a spinner that never moves.
-   *
-   * The undo is not optional: a run can end without touching every chain it marked (a fresh chain
-   * is skipped, an abort breaks out early) and a leftover 'queued' waits forever.
+   * Where a chain's plugins are kept. The chain-agnostic 0zk address is the identity part, to match
+   * `#chainStatesByIdentity` - the chain-scoped variant only ever reaches the signer and the
+   * persisted `account:` keys.
    */
-  #markQueued(chainIds: string[]): () => void {
-    const queuedChainIds = chainIds.slice(1)
-    queuedChainIds.forEach((chainId) => this.#updateChainState(chainId, { syncStatus: 'queued' }))
+  #pluginKey(chainId: string, identityAddress: string): string {
+    return `${chainId}:${identityAddress}`
+  }
 
-    return () => {
-      queuedChainIds.forEach((chainId) => {
-        if (this.#getChainState(chainId).syncStatus !== 'queued') return
+  /**
+   * Every identity registered on this chain, the one on screen first - so the balances the user is
+   * looking at are the first the run writes.
+   */
+  #chainPlugins(chainId: string): { identityAddress: string; plugin: RailgunPlugin }[] {
+    const chainPrefix = `${chainId}:`
 
-        // 'ready' means "not doing anything", not "the scan worked" - a chain that has never been
-        // scanned goes back to 'idle' so its row keeps offering to start one.
-        this.#updateChainState(chainId, {
-          syncStatus: this.#getChainState(chainId).lastSyncedAt ? 'ready' : 'idle'
-        })
+    return [...this.#plugins.entries()]
+      .filter(([key]) => key.startsWith(chainPrefix))
+      .map(([key, plugin]) => ({ identityAddress: key.slice(chainPrefix.length), plugin }))
+      .sort(
+        (left, right) =>
+          Number(right.identityAddress === this.railgunAddress) -
+          Number(left.identityAddress === this.railgunAddress)
+      )
+  }
+
+  /** This chain's plugin for the identity on screen, if it has been registered on it. */
+  #getIdentityPlugin(chainId: string): RailgunPlugin | undefined {
+    if (!this.railgunAddress) return undefined
+
+    return this.#plugins.get(this.#pluginKey(chainId, this.railgunAddress))
+  }
+
+  /**
+   * Releases a WASM object's heap allocation. Failures are recorded but never reported: freeing
+   * throws when an abandoned scan still holds a mutable borrow on the object, which is expected on
+   * the teardown paths and nothing the user can act on - the reference is dropped either way.
+   */
+  #freeWasmObject(wasmObject: { free: () => void }) {
+    try {
+      wasmObject.free()
+    } catch (error: any) {
+      this.emitError({
+        message: 'Some Railgun memory could not be released.',
+        level: 'silent',
+        sendCrashReport: false,
+        error: error instanceof Error ? error : new Error('railgun: freeing a WASM object failed')
       })
     }
   }
 
-  #getChainPluginGeneration(chainId: string): number {
-    return this.#chainPluginGenerations.get(chainId) ?? 0
-  }
-
-  /** Does not emit - see #updateChainState. */
-  #teardownChain(chainId: string) {
-    // Before the plugin is dropped: from here on, anything it still writes is a write from a
-    // superseded plugin and has to be refused.
-    this.#chainPluginGenerations.set(chainId, this.#getChainPluginGeneration(chainId) + 1)
-    this.#plugins.delete(chainId)
-    this.#providerInstances.delete(chainId)
-    this.#writeChainState(
-      this.railgunAddress,
-      chainId,
-      { syncStatus: 'idle', syncStartedAt: null },
-      { emit: false }
-    )
-  }
-
   /**
-   * Stops awaiting everything in flight and makes any result that still arrives be discarded.
+   * Drops a chain's provider and every plugin over it, so the next operation on it builds a fresh
+   * one. Does not emit - see #updateChainState.
    *
-   * The work itself cannot be cancelled - the WASM module is single-threaded and offers no abort -
-   * so this is two things at once: stop waiting, which frees the queue for the identity that
-   * replaced this one, and refuse the result, which is what `#writeChainState` guarantees by
-   * writing to the identity the operation started for.
+   * Reached only when the chain's ethers provider was replaced, which means the RPC url changed or
+   * the network was removed. Safe from here precisely because it leaves `#chainRuns` alone: a run in
+   * flight keeps its entry, so the next caller joins it rather than building the replacement, and the
+   * chain never has two providers writing at once.
+   *
+   * Deliberately does not free the WASM objects: a scan may still be running on them. Leaking them
+   * until the next background restart is the lesser evil - see `#teardown` for where they are freed.
    */
-  #abortInFlightOperations() {
-    this.#abortController.abort()
-    this.#abortController = new AbortController()
-  }
-
-  /**
-   * Rejects with `RAILGUN_ABORTED_MESSAGE` as soon as the current operations are aborted, so a call
-   * into the WASM can be given up on. The underlying work keeps running - see
-   * #abortInFlightOperations.
-   */
-  #withAbort<T>(operation: Promise<T>): Promise<T> {
-    const { signal } = this.#abortController
-    if (signal.aborted) return Promise.reject(new Error(RAILGUN_ABORTED_MESSAGE))
-
-    return new Promise<T>((resolve, reject) => {
-      const onAbort = () => reject(new Error(RAILGUN_ABORTED_MESSAGE))
-      signal.addEventListener('abort', onAbort, { once: true })
-
-      operation.then(resolve, reject).finally(() => {
-        signal.removeEventListener('abort', onAbort)
-      })
+  #teardownChain(chainId: string) {
+    const chainPluginKeys = [...this.#plugins.keys()].filter((key) => key.startsWith(`${chainId}:`))
+    chainPluginKeys.forEach((key) => {
+      this.#plugins.delete(key)
+      this.#signers.delete(key)
     })
+
+    this.#chainProviders.delete(chainId)
+    this.#providerInstances.delete(chainId)
+    this.#writeChainSyncState(chainId, { syncStatus: 'idle', syncStartedAt: null }, { emit: false })
   }
 
   /**
@@ -1131,46 +1117,63 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    * `wipeBalances` separates the two reasons this runs. Locking the wallet must not leave balances
    * in memory; selecting another account must, because they belong to an identity that is still
    * perfectly valid and re-scanning for them costs seconds the user does not need to spend.
+   *
+   * Which is also why only locking drops the chains' providers. An account switch is the case the
+   * shared provider exists for: the next identity registers on the provider this one already built,
+   * so its pool is not downloaded a second time, and switching back finds its plugin still there.
+   *
+   * A run in flight is deliberately left alone, and nothing about it is cancelled. Its pool walk
+   * serves every identity registered on the chain, the one being switched to included, so there is
+   * nothing here worth interrupting - and each of its results lands in the bucket of the identity it
+   * was read for.
    */
   #teardown({ wipeBalances }: { wipeBalances: boolean }) {
-    this.#abortInFlightOperations()
     // Whatever the sheet was showing belonged to the identity being dropped, so it must not be
     // presented as the next one's.
     this.privateOperation = null
-    // Same reason as in #teardownChain, for every chain at once.
-    this.#plugins.forEach((_, chainId) =>
-      this.#chainPluginGenerations.set(chainId, this.#getChainPluginGeneration(chainId) + 1)
-    )
-    this.#plugins.clear()
-    this.#providerInstances.clear()
+
+    if (wipeBalances) {
+      // Unlike #teardownChain this does free them: a provider holds every registered identity's
+      // spending key inside the WASM heap, and dropping the reference alone would leave that key
+      // material there for the rest of the session - which is exactly what locking must not do.
+      this.#signers.forEach((signer) => this.#freeWasmObject(signer))
+      this.#chainProviders.forEach((provider) => this.#freeWasmObject(provider))
+      this.#signers.clear()
+      this.#plugins.clear()
+      this.#chainProviders.clear()
+      this.#providerInstances.clear()
+    }
+
     this.#enabledChainIds.clear()
     this.#railgunKeystore = null
     this.#railgunKeystoreSeedId = null
 
-    const identityAddress = this.railgunAddress
     this.railgunAddress = null
 
-    if (identityAddress)
-      Object.keys(this.#chainStatesByIdentity[identityAddress] || {}).forEach((chainId) =>
-        this.#writeChainState(
-          identityAddress,
+    // Only locking touches any of this. On an account switch the chain's status has to stand - a run
+    // may still be under way, and it is as much the next identity's as it was this one's - and the
+    // dropped identity's balances stay in their own bucket, which is what makes switching back
+    // instant.
+    if (wipeBalances) {
+      Object.keys(this.#syncStatesByChain).forEach((chainId) =>
+        this.#writeChainSyncState(
           chainId,
           {
             syncStatus: 'idle',
             syncStartedAt: null,
             // A teardown is not a failure of the chain, so a stale error must not survive into the
             // next attempt.
-            error: null,
-            ...(wipeBalances && { balances: [] })
+            error: null
           },
           { emit: false }
         )
       )
 
-    if (wipeBalances) this.#chainStatesByIdentity = {}
+      this.#chainStatesByIdentity = {}
+    }
 
     // The last writes of an interrupted sync are still only in memory.
-    this.#pluginStorage
+    this.#railgunStorage
       .flush()
       .catch((error) => {
         this.emitError({
@@ -1183,7 +1186,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
         // Only after the flush, and only when locking: the cached blob holds this identity's
         // decrypted notes, which must not stay in memory past the lock. Dropping it on an account
         // switch instead would just force a 140 MB re-read for no benefit.
-        if (wipeBalances) this.#pluginStorage.clearCache()
+        if (wipeBalances) this.#railgunStorage.clearCache()
       })
   }
 
@@ -1195,39 +1198,17 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * Runs `operation` once every previously queued one has settled - see `#wasmQueue` for why
-   * that has to be guaranteed. Every method here that touches a plugin goes through this, and
-   * the ones it calls internally (`#initChain`, `#syncChain`, `#broadcastPrivateOperation`)
-   * assume the queue is already held, so they must never be called from outside one.
-   */
-  #queueWasmOperation<T>(operation: () => Promise<T>): Promise<T> {
-    // Chained off the previous operation's *settlement* rather than its success, so one failure
-    // doesn't wedge the queue for the rest of the session.
-    const operationPromise = this.#wasmQueue.then(operation, operation)
-
-    this.#wasmQueue = operationPromise.then(
-      () => {},
-      () => {}
-    )
-
-    return operationPromise
-  }
-
-  /**
    * Derives the 0zk identity and nothing else: no provider, no pool, no chain data. Cheap enough to
    * run on every visit to the screen, which is what puts the address up - and makes it usable to
-   * receive - before any scan has been started. Deliberately does NOT build the plugins:
-   * `createRailgunPlugin` registers the signer, which for an unseen identity trial-decrypts every
-   * commitment in the pool.
+   * receive - before any scan has been started. Deliberately does NOT bring up the chains:
+   * `#initChain` registers the signer, which for an unseen identity trial-decrypts every commitment
+   * in the pool.
    *
    * Finishes by catching up the chains this identity already has state for - seconds of work, and
    * since `chains` is not persisted it is the only thing that puts those balances back on screen
    * after a background restart.
    */
   async initIdentity() {
-    // Deliberately NOT queued behind #wasmQueue: that queue exists because two concurrent calls on
-    // the same plugin abort the module, and deriving an identity touches no plugin at all. Queueing
-    // it would leave a newly selected account with no address for the length of a private operation.
     await this.withStatus('initIdentity', () => this.#resolveIdentity(), true)
 
     const chainIdsToCatchUp = this.supportedChainIds.filter(
@@ -1235,11 +1216,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     )
     if (!chainIdsToCatchUp.length) return
 
-    await this.withStatus(
-      'init',
-      () => this.#queueWasmOperation(() => this.#init(chainIdsToCatchUp)),
-      true
-    )
+    await this.withStatus('catchUp', () => this.#init(chainIdsToCatchUp), true)
   }
 
   /**
@@ -1248,11 +1225,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    * and ~6 for a further one, and it grows with the pool.
    */
   async init() {
-    await this.withStatus(
-      'init',
-      () => this.#queueWasmOperation(() => this.#init(this.supportedChainIds)),
-      true
-    )
+    await this.withStatus('init', () => this.#init(this.supportedChainIds), true)
   }
 
   /**
@@ -1261,7 +1234,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    * still its own deliberate choice.
    */
   async initChainAndSync(chainId: string) {
-    await this.withStatus('init', () => this.#queueWasmOperation(() => this.#init([chainId])), true)
+    await this.withStatus('init', () => this.#init([chainId]), true)
   }
 
   /**
@@ -1269,9 +1242,9 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    * and each chain holds its own pool, so "which network am I on" is not a question the user should
    * have to answer.
    *
-   * Sequential, and each chain emits as soon as it lands, so the first chain's balances are on
-   * screen while the next is still walking its pool. A failing chain is recorded on its own state
-   * and skipped - only an across-the-board failure is reported as one.
+   * Chains run in parallel: each has its own provider, so nothing about one's pool walk constrains
+   * another's, and each emits as soon as it lands. A failing chain records the reason on its own
+   * state - only an across-the-board failure is reported as one.
    */
   async #init(chainIds: string[]) {
     await this.initialLoadPromise
@@ -1288,48 +1261,56 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     // without `initIdentity` having run - `sync` rebuilds a chain whose provider changed.
     await this.#resolveIdentity()
 
-    const errors: any[] = []
-
-    // Marked up front, so a chain that is going to be scanned says so instead of looking idle:
-    // scans cannot overlap (single-threaded, non-reentrant WASM), so everything after the first is
-    // genuinely waiting its turn.
-    const clearQueuedStatus = this.#markQueued(chainIds)
-
-    try {
-      await this.#initAndSyncChains(chainIds, errors)
-    } finally {
-      clearQueuedStatus()
-    }
+    const errors = await this.#runChains(chainIds, 'Could not enable Railgun on this network.')
 
     // Every chain failed, so there is nothing on screen for the per-chain errors to sit next to -
     // the first one is re-thrown so `withStatus` surfaces it as the reason the scan did nothing.
     if (errors.length === chainIds.length) throw errors[0]
   }
 
-  /** The per-chain loop of #init, split out so its queued markers can be cleared in one place. */
-  async #initAndSyncChains(chainIds: string[], errors: any[]) {
-    for (const chainId of chainIds) {
-      try {
-        // Marked as enabled only once it actually came up: a chain that failed to initialize
-        // (locked keystore, dead RPC) would otherwise stay in the set and make every periodic
-        // sync retry - and fail - on its own, with the user never having a working Railgun to
-        // show for it.
-        await this.#initChain(chainId)
-        this.#enabledChainIds.add(chainId)
+  /**
+   * Runs the given chains and collects what failed. Shared by the first scan and the refresh, which
+   * differ only in which chains they pick and how they report.
+   *
+   * A chain joins `#enabledChainIds` only once it has actually worked - see `#runChain`. One that
+   * failed to come up (locked keystore, dead RPC) would otherwise stay in the set and make every
+   * periodic refresh retry, and fail, on its own.
+   */
+  async #runChains(chainIds: string[], failureMessage: string): Promise<any[]> {
+    const outcomes = await Promise.all(
+      chainIds.map(async (chainId) => {
+        // The budget follows the work the identity on screen faces: a chain it has never scanned is
+        // the full history walk, everything else is the tail. Soft - the run keeps going either way,
+        // this is only how long the screen waits before it stops blocking on it.
+        const timeoutMs = this.#getChainState(chainId).hasIdentityData
+          ? RAILGUN_CATCH_UP_TIMEOUT_IN_MS
+          : RAILGUN_FIRST_SCAN_TIMEOUT_IN_MS
 
-        await this.#syncChain(chainId)
-        this.#updateChainState(chainId, { error: null })
-      } catch (error: any) {
-        // The identity this ran for is no longer selected: #teardown has already reset its chains
-        // and there is nobody left to report to. The rest of the run is equally pointless.
-        if (error?.message === RAILGUN_ABORTED_MESSAGE) break
+        try {
+          await withTimeout(() => this.#syncChain(chainId), {
+            timeoutMs,
+            message: RAILGUN_SYNC_TIMEOUT_MESSAGE
+          })
 
-        errors.push(error)
-        this.#updateChainState(chainId, {
-          error: error?.message || 'Could not enable Railgun on this network.'
-        })
-      }
-    }
+          return null
+        } catch (error: any) {
+          return error
+        }
+      })
+    )
+
+    const errors = outcomes.filter((error) => !!error)
+
+    // A soft timeout is not the chain's failure: the run it gave up on is still going and will write
+    // its own outcome, so overwriting the status now would replace "syncing" with an error the chain
+    // has not actually hit.
+    outcomes.forEach((error, index) => {
+      if (!error || error.message === RAILGUN_SYNC_TIMEOUT_MESSAGE) return
+
+      this.#writeChainSyncState(chainIds[index]!, { error: error?.message || failureMessage })
+    })
+
+    return errors
   }
 
   /**
@@ -1365,26 +1346,83 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     return seedId
   }
 
+  /**
+   * The chain's shared `RailgunProvider`, built on first use. Every identity on the chain registers
+   * on this one instance, which is what makes a second recovery phrase cheap: the trees, the sync
+   * cursor and the POI provider are already there, so all it costs is trial-decrypting what is
+   * already on the device.
+   */
+  async #getChainProvider(
+    chainId: string,
+    chain: ChainConfig,
+    ethersProvider: RPCProvider
+  ): Promise<RailgunProvider> {
+    const existing = this.#chainProviders.get(chainId)
+    if (existing) return existing
+
+    const eip1193Provider = toEip1193Provider(ethersProvider as JsonRpcProvider)
+
+    const railgunProvider = await new RailgunBuilder(chain, eip1193Provider)
+      .withDatabase(this.#railgunStorage.forChain(chainId))
+      // The SDK's own default chains these two as well, but its RPC syncer batch size is not
+      // configurable through the builder. Subsquid reports its head as the last Railgun *transact*,
+      // not the last indexed block, so on a quiet chain the RPC syncer is left a tail of thousands
+      // of blocks - which at the SDK's default of 10 is hundreds of sequential round-trips per sync.
+      // See RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS.
+      .withUtxoSyncer(
+        UtxoSyncer.chained([
+          UtxoSyncer.subsquid(chain),
+          UtxoSyncer.rpc(
+            chain,
+            eip1193Provider,
+            BigInt(
+              RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS[chainId] ??
+                DEFAULT_RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS
+            )
+          )
+        ])
+      )
+      // POI (Proof of Innocence) is on, matching the SDK's own default - the aggregator serves both
+      // chains. With it on, `balance()` tags each amount with a PoiStatus and note selection only
+      // spends 'Valid' ones, which is why balances are kept split per status all the way to the UI:
+      // a freshly shielded amount is 'Missing' for Railgun's ~1h standby period and genuinely cannot
+      // be moved yet.
+      .withPoi()
+      .build()
+
+    this.#chainProviders.set(chainId, railgunProvider)
+    this.#providerInstances.set(chainId, ethersProvider)
+
+    return railgunProvider
+  }
+
+  /**
+   * Brings up one chain for the identity on screen: builds the chain's provider if it is the first
+   * identity to need it, registers this identity's signer on it, and wraps the pair in a plugin.
+   *
+   * Replaces the SDK's `createRailgunPlugin`, which builds a provider of its own per call - and with
+   * it a second database, syncer and POI provider over the same storage keys. That is what made two
+   * recovery phrases on one chain download the same pool twice and overwrite each other's sync
+   * cursor.
+   */
   async #initChain(chainId: string) {
-    if (this.#plugins.has(chainId)) return
+    // The cheap exit for an already-registered identity, so the common no-op path costs nothing.
+    // The authoritative check is the one below, against the address this run resolved.
+    if (this.#getIdentityPlugin(chainId)) return
 
     const seedId = this.#assertAvailableAndGetSeedId()
 
-    const provider = this.#providers.providers[chainId]
-    if (!provider)
+    const ethersProvider = this.#providers.providers[chainId]
+    if (!ethersProvider)
       throw new EmittableError({
         message: 'The RPC provider for this network is not available.',
         level: 'major',
         error: new Error(`railgun: missing provider for chain ${chainId}`)
       })
 
-    this.#updateChainState(chainId, { syncStatus: 'initializing' })
-
     // Must precede any other call into the package: everything else (`chainConfig` included)
-    // reaches into the WASM, and `createRailgunPlugin`'s own `ensureInitialized()` can't load
-    // the bytes itself in this environment. It is a no-op once the module is up, so calling it
-    // per chain is free.
-    //
+    // reaches into the WASM, which can't load the bytes itself in this environment. It is a no-op
+    // once the module is up, so calling it per chain is free.
     await ensureInitialized(await this.#loadWasm())
 
     const chain = chainConfig(BigInt(chainId))
@@ -1398,56 +1436,48 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       })
 
     const railgunKeystore = this.#getRailgunKeystore(seedId)
-
-    // Captured before the plugin exists, so the view it gets is bound to exactly this instance.
-    const pluginGeneration = this.#getChainPluginGeneration(chainId)
-
-    const host: RailgunHost = {
-      keystore: railgunKeystore,
-      storage: this.#pluginStorage.scopedTo(
-        () => this.#getChainPluginGeneration(chainId) === pluginGeneration
-      ),
-      provider: toEthereumProvider(provider as JsonRpcProvider),
-      network: {
-        // node-fetch's Response/RequestInfo (Ambire's Fetch type) and the DOM lib's
-        // Response/RequestInfo (Host.network's declared shape) are structurally
-        // equivalent at runtime but distinct nominal types, hence the local cast here.
-        fetch: (input, init) =>
-          this.#fetch(input as unknown as string, init as any) as unknown as Promise<Response>
-      }
-    }
-
-    // Not cheap: `createRailgunPlugin` loads the persisted pool state and calls
-    // `provider.register(signer)`, which for an identity this pool has never seen trial-decrypts
-    // every existing commitment. The whole cost of a second identity on an already-downloaded chain
-    // sits here, not in the sync below.
-    const plugin = await createRailgunPlugin(host, {
-      keyIndex: RAILGUN_KEY_INDEX,
-      // The SDK chains a Subsquid indexer with an RPC syncer for everything above it, but Subsquid
-      // reports its head as the last Railgun *transact*, not the last indexed block. On a quiet
-      // chain that leaves the RPC syncer a tail of thousands of blocks, which at the SDK's default
-      // batch size of 10 is hundreds of sequential round-trips per sync - see
-      // RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS.
-      rpcBatchSize:
-        RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS[chainId] ??
-        DEFAULT_RAILGUN_RPC_SYNC_BATCH_SIZE_IN_BLOCKS
-      // POI (Proof of Innocence) is left at the SDK's default (enabled) - the aggregator serves
-      // both chains. With it on, `balance()` tags each amount with a PoiStatus and the SDK's note
-      // selection only spends 'Valid' ones, which is why balances are kept split per status all the
-      // way to the UI: a freshly shielded amount is 'Missing' for Railgun's ~1h standby period and
-      // genuinely cannot be moved yet.
-    })
-
-    this.#plugins.set(chainId, plugin)
-    this.#providerInstances.set(chainId, provider)
+    // The plugin is keyed by identity, so the address has to be resolved before it can be stored.
+    // Cheap: both this and the derivation below read the keystore's per-path cache.
     await this.#resolveRailgunAddress(railgunKeystore)
 
-    this.#updateChainState(chainId, {
+    const identityAddress = this.railgunAddress
+    if (!identityAddress)
+      throw new EmittableError({
+        message: 'Railgun is not initialized yet.',
+        level: 'minor',
+        error: new Error(`railgun: no identity to initialize chain ${chainId} for`)
+      })
+
+    const pluginKey = this.#pluginKey(chainId, identityAddress)
+    if (this.#plugins.has(pluginKey)) return
+
+    this.#writeChainSyncState(chainId, { syncStatus: 'initializing' })
+
+    const railgunProvider = await this.#getChainProvider(chainId, chain, ethersProvider)
+
+    const [spendingKey, viewingKey] = await Promise.all([
+      railgunKeystore.deriveAt(RailgunSigner.spendingKeyPath(RAILGUN_KEY_INDEX)),
+      railgunKeystore.deriveAt(RailgunSigner.viewingKeyPath(RAILGUN_KEY_INDEX))
+    ])
+    // Chain-scoped on purpose: the persisted `account:` entry is keyed by this variant of the
+    // address, so passing `undefined` here would point every identity at state it has never written.
+    const signer = RailgunSigner.privateKey(spendingKey, viewingKey, BigInt(chainId))
+
+    // Not cheap: for an identity this pool has never seen, registering trial-decrypts every existing
+    // commitment. The whole cost of a further identity on an already-downloaded chain sits here,
+    // not in the sync below.
+    await railgunProvider.register(signer)
+
+    this.#plugins.set(pluginKey, new RailgunPlugin(chain, railgunProvider, new SignerPool(signer)))
+    this.#signers.set(pluginKey, signer)
+
+    // Only the address, not a status: this runs inside `#runChain`, which owns the chain's status
+    // and moves it on to 'syncing' the moment this returns.
+    this.#writeChainSyncState(chainId, {
       // The chain's wrapped native token (WETH here) - exposed so the UI can label the
       // corresponding shielded balance and the native shield/unshield flows without
       // hardcoding a possibly-stale address.
-      wrappedBaseTokenAddress: chain.wrappedBaseToken,
-      syncStatus: 'ready'
+      wrappedBaseTokenAddress: chain.wrappedBaseToken
     })
   }
 
@@ -1474,7 +1504,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    * exist. What genuinely stays per chain is the balance: each has its own pool and UTXO tree.
    */
   async #resolveRailgunAddress(railgunKeystore: AmbireRailgunKeystore) {
-    // Free after `createRailgunPlugin` derived the same two paths through this same instance -
+    // Free once `#initChain` has derived the same two paths through this same instance -
     // AmbireRailgunKeystore caches per path, so this is a cache hit rather than another pbkdf2.
     const [spendingKey, viewingKey] = await Promise.all([
       railgunKeystore.deriveAt(RailgunSigner.spendingKeyPath(RAILGUN_KEY_INDEX)),
@@ -1497,11 +1527,11 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
           BigInt(chainId)
         ).address
 
-        this.#writeChainState(
+        this.#writeIdentityChainState(
           railgunAddress,
           chainId,
           {
-            hasIdentityData: await this.#pluginStorage.hasStateForIdentity(
+            hasIdentityData: await this.#railgunStorage.hasStateForIdentity(
               chainId,
               chainScopedAddress
             )
@@ -1826,23 +1856,10 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     // would be both redundant and a way to wedge the (non-reentrant) WASM module.
     if (this.#isBroadcastingPrivateOperation) return
 
-    await this.withStatus(
-      'sync',
-      () => this.#queueWasmOperation(() => this.#sync(!!params?.isBackgroundUpdate)),
-      true
-    )
+    await this.withStatus('sync', () => this.#sync(!!params?.isBackgroundUpdate), true)
   }
 
   async #sync(isBackgroundUpdate: boolean) {
-    if (!this.#enabledChainIds.size)
-      throw new EmittableError({
-        message: 'Railgun is not initialized yet.',
-        level: 'minor',
-        error: new Error('railgun: sync called before init')
-      })
-
-    const errors: any[] = []
-
     // A user-initiated refresh retries every supported chain, not just the enabled ones: a chain
     // that failed at Enable time is left out of `#enabledChainIds` so the timer doesn't hammer it,
     // and once one chain is up the UI shows Refresh instead of Enable. Refresh IS the retry.
@@ -1864,15 +1881,12 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       (
         await Promise.all(
           candidateChainIds.map(async (chainId) =>
-            (await this.#pluginStorage.hasPendingPoi(chainId)) ? chainId : null
+            (await this.#railgunStorage.hasPendingPoi(chainId)) ? chainId : null
           )
         )
       ).filter((chainId): chainId is string => !!chainId)
     )
 
-    // Every exclusion is decided here, before anything is marked as queued - marking first and
-    // filtering inside the loop leaves a skipped chain showing "waiting" with nothing left to write
-    // it a terminal status.
     const chainIds = candidateChainIds.filter((chainId) => {
       const { hasIdentityData, lastSyncedAt } = this.#getChainState(chainId)
 
@@ -1888,13 +1902,15 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       return !(isBackgroundUpdate && isFreshEnough)
     })
 
-    const clearQueuedStatus = this.#markQueued(chainIds)
+    // Nothing this identity has ever scanned, so there is nothing to catch up - which is the normal
+    // state right after switching to an account that has never enabled Railgun, and no more an error
+    // than an empty inbox is.
+    if (!chainIds.length) return
 
-    try {
-      await this.#syncChains(chainIds, errors)
-    } finally {
-      clearQueuedStatus()
-    }
+    const errors = await this.#runChains(
+      chainIds,
+      'Could not refresh the shielded balances on this network.'
+    )
 
     if (!errors.length) {
       this.#consecutiveBackgroundSyncFailures = 0
@@ -1920,136 +1936,113 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
   }
 
   /**
-   * The per-chain loop of #sync, split out so its queued markers can be cleared in one place.
+   * The chain's run, shared by everyone who asks for it. Brings the chain up for the selected
+   * identity if needed, then reads every registered identity's balances off the one pool walk the
+   * SDK performs.
    *
-   * Sequentially, never in parallel - see #wasmQueue. This runs inside the queue, so no other WASM
-   * operation can interleave with it either. Each chain's failure is caught and recorded on that
-   * chain, so a refresh still updates the chains that do work.
+   * A caller that finds a run in flight joins it. That is the whole of the concurrency control here:
+   * the provider is not reentrant, and a sync is not per-account work that could sensibly be queued
+   * behind another - it is the chain's work, and everyone registered on it is already in it.
+   *
+   * Registered on the run itself, not on how long a caller waits. Callers apply their own soft
+   * timeout (see `#runChains`), and giving up on waiting leaves the run - and the entry - in place.
    */
-  async #syncChains(chainIds: string[], errors: any[]) {
-    for (const chainId of chainIds) {
-      try {
-        // A chain whose provider was replaced (or that was never built) is rebuilt here, so a
-        // mid-session RPC change recovers on its own instead of needing a restart.
-        if (!this.#plugins.has(chainId)) await this.#initChain(chainId)
+  #syncChain(chainId: string): Promise<void> {
+    const inFlight = this.#chainRuns.get(chainId)
+    // A run is only this identity's run once it is registered on the chain - then the pool walk
+    // decrypts for it too, and there is nothing to add.
+    if (inFlight && this.#getIdentityPlugin(chainId)) return inFlight
 
-        await this.#syncChain(chainId)
-        // Same rule as in #init: a chain joins the periodic refresh only once it has actually
-        // worked, which is what lets a manual refresh recover a chain that failed at Enable.
-        this.#enabledChainIds.add(chainId)
-        this.#updateChainState(chainId, { error: null })
-      } catch (error: any) {
-        // Superseded by another identity: its chains are already reset and the rest of this run is
-        // for an identity nobody is looking at.
-        if (error?.message === RAILGUN_ABORTED_MESSAGE) break
+    // Otherwise this identity has to be registered first, and `register()` is `&mut` on the shared
+    // provider - so it goes after whatever is in flight rather than beside it. The only real wait
+    // left in here, and an unavoidable one.
+    const run = (inFlight ? inFlight.catch(() => {}) : Promise.resolve())
+      .then(() => this.#runChain(chainId))
+      .finally(() => {
+        // Only if it is still the current one: a later caller may already have chained onto it.
+        if (this.#chainRuns.get(chainId) === run) this.#chainRuns.delete(chainId)
+      })
 
-        errors.push(error)
-        this.#updateChainState(chainId, {
-          error: error?.message || 'Could not refresh the shielded balances on this network.'
-        })
+    this.#chainRuns.set(chainId, run)
+
+    return run
+  }
+
+  async #runChain(chainId: string) {
+    // Brought up here rather than by the callers, so it is inside the run: `register()` is `&mut` on
+    // the shared provider, so it cannot overlap a sync, and being part of the run is what guarantees
+    // it does not. A chain whose provider was replaced, or that this identity was never registered
+    // on, recovers on its own instead of needing a restart.
+    await this.#initChain(chainId)
+
+    // Captured before any await: a run outlives an account switch, and each result must land in the
+    // bucket of the identity it was read for.
+    const plugins = this.#chainPlugins(chainId)
+
+    this.#writeChainSyncState(chainId, {
+      syncStatus: 'syncing',
+      syncStartedAt: Date.now(),
+      error: null
+    })
+
+    try {
+      // Sequential, and per identity rather than once for the chain, because `balance()` answers for
+      // one address. Only the first call walks the pool - it syncs before answering - so the rest are
+      // the near-empty tail plus their own balance math.
+      for (const { identityAddress, plugin } of plugins) {
+        await this.#readBalances(chainId, identityAddress, plugin)
       }
+
+      // Recorded by the run, not by whoever started it: a run that lands after its caller stopped
+      // waiting still worked, and the chain still belongs in the periodic refresh.
+      this.#enabledChainIds.add(chainId)
+      this.#writeChainSyncState(chainId, { syncStatus: 'ready', syncStartedAt: null })
+    } catch (error) {
+      // 'idle' rather than 'ready': nothing was read, so the row has to keep offering to try again.
+      // The reason is written by `#runChains`, which is where it can tell a real failure from a
+      // caller that merely stopped waiting.
+      this.#writeChainSyncState(chainId, { syncStatus: 'idle', syncStartedAt: null })
+
+      throw error
     }
   }
 
-  async #syncChain(chainId: string) {
-    const plugin = this.#plugins.get(chainId)
-    if (!plugin)
-      throw new EmittableError({
-        message: 'Railgun is not initialized yet.',
-        level: 'minor',
-        error: new Error(`railgun: sync called before init for chain ${chainId}`)
-      })
+  /**
+   * One identity's balances, written into its own bucket.
+   *
+   * `balance()` syncs the UTXO tree before answering, so on the first call of a run its duration is
+   * the chain scan (and, with POI on, the proving) rather than the balance math. It groups amounts
+   * per (asset, poiStatus) pair, which is what the spendable/pending split relies on.
+   */
+  async #readBalances(chainId: string, identityAddress: string, plugin: RailgunPlugin) {
+    const balances = await plugin.balance(undefined)
 
-    // The identity this scan belongs to, captured before any await. The scan cannot be cancelled -
-    // it keeps running inside WASM even after we stop awaiting it - so every write below goes to
-    // this identity's bucket rather than to whichever one is selected when it finishes.
-    const identityAddress = this.railgunAddress
-    if (!identityAddress)
-      throw new EmittableError({
-        message: 'Railgun is not initialized yet.',
-        level: 'minor',
-        error: new Error(`railgun: sync called without an identity for chain ${chainId}`)
-      })
+    const { balances: previousBalances } = this.#getIdentityChainState(identityAddress, chainId)
+    const shieldedBalances = balances.filter(isErc20Balance).map((balance) => ({
+      tokenAddress: balance.asset.contract,
+      amount: balance.amount,
+      poiStatus: toRailgunPoiStatus(balance.tag)
+    }))
 
-    // Read from the persisted state, not from `lastSyncedAt`. They disagree in exactly the case
-    // that matters: a further identity on an already-scanned chain has no state of its own, so its
-    // scan is a full history walk (measured ~6 min on Ethereum) even though the chain looks synced.
-    // Deriving this from `lastSyncedAt` in a chain-keyed slot is what applied the 3-minute budget to
-    // that walk and left it retrying forever.
-    const { hasIdentityData } = this.#getChainState(chainId)
-    const isFirstScanForIdentity = !hasIdentityData
-    this.#writeChainState(identityAddress, chainId, {
-      syncStatus: 'syncing',
-      syncStartedAt: Date.now()
+    this.#writeIdentityChainState(identityAddress, chainId, {
+      balances: shieldedBalances,
+      lastSyncedAt: Date.now(),
+      // This run is what created the identity's persisted entry, so a later one on this chain is a
+      // catch-up and gets the short budget.
+      hasIdentityData: true
     })
 
-    let hasTimedOut = false
-    let wasAborted = false
-    try {
-      // Soft timeout: the WASM scan keeps running, but giving up on awaiting it is what lets the
-      // status - and with it every action - come back. Because it is still running, this chain's
-      // plugin is discarded in the finally below: the abandoned Rust object is still mutably
-      // borrowed, and touching it again produces "recursive use of an object detected".
-      //
-      // `balance()` syncs the UTXO tree before answering, so its duration is the chain scan (and,
-      // with POI on, the proving) rather than the balance math. It groups amounts per (asset,
-      // poiStatus) pair, which is what the spendable/pending split below relies on.
-      const balances = await this.#withAbort(
-        withTimeout(() => plugin.balance(undefined), {
-          timeoutMs: isFirstScanForIdentity
-            ? RAILGUN_FIRST_SCAN_TIMEOUT_IN_MS
-            : RAILGUN_CATCH_UP_TIMEOUT_IN_MS,
-          message: RAILGUN_SYNC_TIMEOUT_MESSAGE
-        })
-      )
-      const { balances: previousBalances, wrappedBaseTokenAddress } = this.#getChainState(chainId)
-      const shieldedBalances = balances.filter(isErc20Balance).map((balance) => ({
-        tokenAddress: balance.asset.contract,
-        amount: balance.amount,
-        poiStatus: toRailgunPoiStatus(balance.tag)
-      }))
+    // Both only concern the identity on screen: one resolves its pending shields, the other fills
+    // the token metadata its balances are rendered with.
+    if (identityAddress !== this.railgunAddress) return
 
-      this.#writeChainState(identityAddress, chainId, {
-        balances: shieldedBalances,
-        lastSyncedAt: Date.now(),
-        // This run is what created the identity's persisted entry, so a later one on this chain is
-        // a catch-up and gets the short budget.
-        hasIdentityData: true
-      })
+    this.#resolvePendingShields(chainId, previousBalances)
 
-      this.#resolvePendingShields(chainId, previousBalances)
-
-      await this.#resolveTokensData(chainId, [
-        ...shieldedBalances.map((balance) => balance.tokenAddress),
-        ...(wrappedBaseTokenAddress ? [wrappedBaseTokenAddress] : [])
-      ])
-    } catch (error: any) {
-      // Compared against the exact message this call site handed to `withTimeout`, which is how
-      // it reports a soft timeout - as opposed to an error raised by the scan itself.
-      hasTimedOut = error?.message === RAILGUN_SYNC_TIMEOUT_MESSAGE
-      // Handled like a timeout, and for the same reason: the scan keeps running inside WASM, so its
-      // plugin is poisoned and has to be discarded. Unlike a timeout it is not a failure - the
-      // callers drop it instead of reporting it.
-      wasAborted = error?.message === RAILGUN_ABORTED_MESSAGE
-
-      throw error
-    } finally {
-      // The abandoned scan still holds a mutable borrow on this plugin's Rust objects, so the
-      // plugin is dropped rather than reused. It stays in `#enabledChainIds`, so the next sync
-      // builds a fresh one.
-      if (hasTimedOut || wasAborted) this.#teardownChain(chainId)
-
-      // Always leave a terminal status. 'ready' here means "not syncing any more", not "the sync
-      // worked" - a failure is reported through emitError and `statuses.sync`. Without this a
-      // failed or timed-out scan left `syncStatus` on 'syncing' forever, with nothing to reset it.
-      // Skipped when aborted: #teardown has already reset this identity's chains, and writing a
-      // status now would resurrect state for an identity that is no longer selected.
-      if (!wasAborted)
-        this.#writeChainState(identityAddress, chainId, {
-          syncStatus: hasTimedOut ? 'idle' : 'ready',
-          syncStartedAt: null
-        })
-    }
+    const { wrappedBaseTokenAddress } = this.#getChainSyncState(chainId)
+    await this.#resolveTokensData(chainId, [
+      ...shieldedBalances.map((balance) => balance.tokenAddress),
+      ...(wrappedBaseTokenAddress ? [wrappedBaseTokenAddress] : [])
+    ])
   }
 
   /**
@@ -2058,13 +2051,32 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
    * operation through another chain's plugin would prove against the wrong UTXO tree.
    */
   #getChainPlugin(chainId: string): RailgunPlugin {
-    const plugin = this.#plugins.get(chainId)
+    const plugin = this.#getIdentityPlugin(chainId)
 
     if (!plugin)
       throw new EmittableError({
         message: 'Railgun is not ready on this network yet.',
         level: 'minor',
         error: new Error(`railgun: action attempted before init for chain ${chainId}`)
+      })
+
+    // Refused rather than made to wait: the provider is not reentrant, and a run can take minutes -
+    // long enough that silently blocking would read as a hung wallet. The screen already shows the
+    // network as syncing, so this only catches an action started just before it began.
+    if (this.#chainRuns.has(chainId))
+      throw new EmittableError({
+        message:
+          'This network is refreshing your shielded balances. Please try again once it finishes.',
+        level: 'expected',
+        error: new Error(`railgun: action attempted during a run on chain ${chainId}`)
+      })
+
+    // Same reason, for the operations that hold the module for minutes of proving.
+    if (this.#isBroadcastingPrivateOperation)
+      throw new EmittableError({
+        message: 'Another private operation is still running. Please wait for it to finish.',
+        level: 'expected',
+        error: new Error('railgun: action attempted during a private operation')
       })
 
     return plugin
@@ -2092,9 +2104,7 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
       const asset: AssetId = isNative
         ? { __type: 'native' }
         : { __type: 'erc20', contract: tokenAddress }
-      const txs = await this.#queueWasmOperation(() =>
-        plugin.prepareShieldMulti([{ asset, amount }])
-      )
+      const txs = await plugin.prepareShieldMulti([{ asset, amount }])
       const shieldCalls: Call[] = txs.map((tx) => ({ to: tx.to, data: tx.data, value: tx.value }))
 
       // For ERC20 shields the Railgun Smart Wallet pulls the token via `transferFrom`, so it
@@ -2323,50 +2333,46 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     await this.withStatus(
       'buildAndBroadcastUnshield',
       () =>
-        this.#queueWasmOperation(() =>
-          this.#runPrivateOperation({
-            chainId,
-            type: 'unshield',
-            tokenAddress,
-            isNative,
-            amount,
-            recipient: toAddress,
-            // Railgun's cut is arithmetic on the amount, so it is recorded up front: the operation
-            // spends the grossed-up amount, and this is the part the recipient never sees.
-            protocolFee: getRailgunUnshieldAmounts(amount, RAILGUN_FEE_BPS).feeAmount,
-            failureMessage: 'Failed to unshield.',
-            prepare: async (plugin, asset) => {
-              // The pool holds no ETH, so a native unshield is really a WETH unshield followed by
-              // `WETH.withdraw`, which burns from `msg.sender` - the smart account that runs the
-              // UserOp. Unshielding straight to the recipient cannot work (the WETH would sit on an
-              // address the UserOp can't spend from, and the unwrap would revert), so the pool pays
-              // the smart account and a tail call on the same UserOp forwards the ETH on. ERC-20
-              // unshields need none of this and go straight to the recipient.
-              const disposableSigner = isNative
-                ? this.#createDisposableBroadcastSigner()
+        this.#runPrivateOperation({
+          chainId,
+          type: 'unshield',
+          tokenAddress,
+          isNative,
+          amount,
+          recipient: toAddress,
+          // Railgun's cut is arithmetic on the amount, so it is recorded up front: the operation
+          // spends the grossed-up amount, and this is the part the recipient never sees.
+          protocolFee: getRailgunUnshieldAmounts(amount, RAILGUN_FEE_BPS).feeAmount,
+          failureMessage: 'Failed to unshield.',
+          prepare: async (plugin, asset) => {
+            // The pool holds no ETH, so a native unshield is really a WETH unshield followed by
+            // `WETH.withdraw`, which burns from `msg.sender` - the smart account that runs the
+            // UserOp. Unshielding straight to the recipient cannot work (the WETH would sit on an
+            // address the UserOp can't spend from, and the unwrap would revert), so the pool pays
+            // the smart account and a tail call on the same UserOp forwards the ETH on. ERC-20
+            // unshields need none of this and go straight to the recipient.
+            const disposableSigner = isNative ? this.#createDisposableBroadcastSigner() : undefined
+            const unshieldToAddress = disposableSigner ? disposableSigner.address : toAddress
+
+            const op = await plugin.prepareUnshield({ asset, amount }, unshieldToAddress, {
+              tailCalls: disposableSigner
+                ? async (smartAccountAddress) => {
+                    // Guards against the SDK resolving the tails against a different address than
+                    // the one the WETH was unshielded to - that would forward ETH the account
+                    // doesn't hold, reverting the UserOp at best and stranding the funds at worst.
+                    if (smartAccountAddress.toLowerCase() !== unshieldToAddress.toLowerCase())
+                      throw new Error(
+                        `railgun: unshield tail call address mismatch (built for ${unshieldToAddress}, resolved ${smartAccountAddress})`
+                      )
+
+                    return [{ to: toAddress, data: '0x', value: amount }]
+                  }
                 : undefined
-              const unshieldToAddress = disposableSigner ? disposableSigner.address : toAddress
+            })
 
-              const op = await plugin.prepareUnshield({ asset, amount }, unshieldToAddress, {
-                tailCalls: disposableSigner
-                  ? async (smartAccountAddress) => {
-                      // Guards against the SDK resolving the tails against a different address than
-                      // the one the WETH was unshielded to - that would forward ETH the account
-                      // doesn't hold, reverting the UserOp at best and stranding the funds at worst.
-                      if (smartAccountAddress.toLowerCase() !== unshieldToAddress.toLowerCase())
-                        throw new Error(
-                          `railgun: unshield tail call address mismatch (built for ${unshieldToAddress}, resolved ${smartAccountAddress})`
-                        )
-
-                      return [{ to: toAddress, data: '0x', value: amount }]
-                    }
-                  : undefined
-              })
-
-              return { op, disposableSigner }
-            }
-          })
-        ),
+            return { op, disposableSigner }
+          }
+        }),
       true
     )
   }
@@ -2385,26 +2391,24 @@ export class RailgunController extends EventEmitter implements IRailgunControlle
     await this.withStatus(
       'buildAndBroadcastTransfer',
       () =>
-        this.#queueWasmOperation(() =>
-          this.#runPrivateOperation({
-            chainId,
-            type: 'transfer',
-            tokenAddress,
-            // Private transfers never involve the native asset - the pool holds none
-            isNative: false,
-            amount,
-            recipient: toZkAddress,
-            // Nothing crosses the pool's boundary, which is the only place Railgun charges
-            protocolFee: 0n,
-            failureMessage: 'Failed to send privately.',
-            prepare: async (plugin, asset) => ({
-              op: await plugin.prepareTransfer(
-                { asset: asset as ERC20AssetId, amount },
-                toZkAddress as RailgunAddress
-              )
-            })
+        this.#runPrivateOperation({
+          chainId,
+          type: 'transfer',
+          tokenAddress,
+          // Private transfers never involve the native asset - the pool holds none
+          isNative: false,
+          amount,
+          recipient: toZkAddress,
+          // Nothing crosses the pool's boundary, which is the only place Railgun charges
+          protocolFee: 0n,
+          failureMessage: 'Failed to send privately.',
+          prepare: async (plugin, asset) => ({
+            op: await plugin.prepareTransfer(
+              { asset: asset as ERC20AssetId, amount },
+              toZkAddress as RailgunAddress
+            )
           })
-        ),
+        }),
       true
     )
   }
