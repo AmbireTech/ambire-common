@@ -4,7 +4,7 @@ import {
   IRecurringTimeout,
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
-import { STK_WALLET } from '../../consts/addresses'
+import { STK_WALLET, WALLET_STAKING_ADDR } from '../../consts/addresses'
 import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
 import {
   Account,
@@ -70,6 +70,7 @@ import {
   GetOptions,
   NetworkState,
   PortfolioControllerState,
+  PortfolioNetworkResult,
   PortfolioVerification,
   ScheduledUpdates,
   TemporaryTokens,
@@ -84,6 +85,10 @@ import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { getFlags } from '../../libs/portfolio/tokenProcessing'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
+import {
+  WALLET_STAKING_CHAIN_ID,
+  xWalletShareValueCache
+} from '../../libs/walletStaking/shareValue'
 import batcher from '../../utils/batcher'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
@@ -187,6 +192,53 @@ export class PortfolioController
    * Handles token learning, temporary tokens, hints and their storage.
    */
   protected hints: HintsController
+
+  #loadWalletStakingShareValue(
+    accountAddr: string,
+    network: Network,
+    tokens: TokenResult[],
+    state: NetworkState<PortfolioNetworkResult>,
+    provider: RPCProviders[string]
+  ) {
+    if (network.chainId !== WALLET_STAKING_CHAIN_ID) return
+
+    const hasXWalletBalance = tokens.some(
+      (token) =>
+        token.address.toLowerCase() === WALLET_STAKING_ADDR.toLowerCase() &&
+        (token.amount > 0n || (token.amountPostSimulation || 0n) > 0n)
+    )
+    if (!hasXWalletBalance) return
+
+    void xWalletShareValueCache
+      .get(provider)
+      .then(({ shareValue, updatedAt, refreshError }) => {
+        if (refreshError) {
+          this.emitError({
+            level: 'silent',
+            message: 'Unable to refresh the WALLET staking conversion rate.',
+            error: refreshError
+          })
+        }
+
+        if (this.#state[accountAddr]?.[network.chainId.toString()] !== state || !state.result) {
+          return
+        }
+
+        state.result.walletStaking = { shareValue, updatedAt }
+        this.emitUpdate()
+      })
+      .catch((error) => {
+        const shareValueError =
+          error instanceof Error
+            ? error
+            : new Error('Unable to load the WALLET staking conversion rate.')
+        this.emitError({
+          level: 'silent',
+          message: 'Unable to load the WALLET staking conversion rate.',
+          error: shareValueError
+        })
+      })
+  }
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
@@ -1558,12 +1610,23 @@ export class PortfolioController
             : (state.result?.lastExternalApiUpdateData ?? null),
           tokens: combinedTokens,
           total: getTotal(combinedTokens, newDefiState),
-          defiPositions: newDefiState
+          defiPositions: newDefiState,
+          ...(state.result?.walletStaking && { walletStaking: state.result.walletStaking })
         }
       }
       const verifiedState = accountState[network.chainId.toString()]
 
       this.emitUpdate()
+
+      if (verifiedState) {
+        this.#loadWalletStakingShareValue(
+          account.addr,
+          network,
+          combinedTokens,
+          verifiedState,
+          portfolioLib.provider
+        )
+      }
 
       // Fire-and-forget: verify the just-fetched balances against Colibri without
       // blocking the portfolio update (balances are already emitted above). The

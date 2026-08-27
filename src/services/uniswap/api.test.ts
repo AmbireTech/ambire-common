@@ -91,7 +91,8 @@ describe('UniswapAPI', () => {
       sort: 'output',
       isWrapOrUnwrap: false,
       accountNativeBalance: 1n,
-      nativeSymbol: 'ETH'
+      nativeSymbol: 'ETH',
+      feePercent: 0.25
     })
 
     const [, init] = (fetch as any).mock.calls[0]
@@ -100,7 +101,7 @@ describe('UniswapAPI', () => {
     expect((init as any).headers['x-api-key']).toBe('test-key')
     expect((init as any).headers['x-permit2-disabled']).toBe('true')
     expect(body.protocols).toEqual(['V4', 'V3', 'V2'])
-    expect(body.integratorFees).toEqual([{ bips: 50, recipient: expect.any(String) }])
+    expect(body.integratorFees).toEqual([{ bips: 25, recipient: expect.any(String) }])
     expect(quote.routes[0]!.providerId).toBe('uniswap')
     expect(quote.routes[0]!.routeId).toBe('quote-id')
     expect(quote.routes[0]!.inputValueInUsd).toBe(1)
@@ -160,7 +161,8 @@ describe('UniswapAPI', () => {
       sort: 'output',
       isWrapOrUnwrap: false,
       accountNativeBalance: 1n,
-      nativeSymbol: 'ETH'
+      nativeSymbol: 'ETH',
+      feePercent: 0.5
     })
 
     expect(quote.routes[0]!.usedBridgeNames).toEqual(['across'])

@@ -26,6 +26,8 @@ import {
   isNoFeeToken,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
+import type { FeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import {
   AMBIRE_FEE_TAKER_ADDRESS,
   CITREA_CHAIN_ID,
@@ -79,7 +81,8 @@ const normalizeSquidRouteToSwapAndBridgeRoute = ({
   userAddress,
   accountNativeBalance,
   nativeSymbol,
-  withConvenienceFee
+  withConvenienceFee,
+  feeExemptionReason
 }: {
   route: SquidRoute
   fromAsset: SwapAndBridgeToToken
@@ -90,6 +93,7 @@ const normalizeSquidRouteToSwapAndBridgeRoute = ({
   accountNativeBalance: bigint
   nativeSymbol: string
   withConvenienceFee: boolean
+  feeExemptionReason?: FeeExemptionReason
 }): SwapAndBridgeRoute => {
   const fromAmount = route.estimate.fromAmount || route.params?.fromAmount || '0'
   const toAmount = route.estimate.toAmount
@@ -166,7 +170,8 @@ const normalizeSquidRouteToSwapAndBridgeRoute = ({
     disabled,
     disabledReason,
     serviceFee,
-    withConvenienceFee
+    withConvenienceFee,
+    feeExemptionReason
   }
 }
 
@@ -339,7 +344,8 @@ export class SquidAPI implements SwapProvider {
     userAddress,
     isWrapOrUnwrap,
     accountNativeBalance,
-    nativeSymbol
+    nativeSymbol,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     this.#ensureIntegratorId()
 
@@ -357,8 +363,12 @@ export class SquidAPI implements SwapProvider {
       )
 
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESS
-    const shouldIncludeConvenienceFee =
-      !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
+    const feeExemptionReason = getFeeExemptionReason({
+      isWrapOrUnwrap,
+      isFeeExemptToken: isNoFeeToken(fromChainId, fromTokenAddress),
+      isFeeCollectionAvailable: !!feeTakerAddress
+    })
+    const shouldIncludeConvenienceFee = feePercent > 0 && !feeExemptionReason
 
     const body: {
       fromAddress: string
@@ -413,7 +423,8 @@ export class SquidAPI implements SwapProvider {
           userAddress,
           accountNativeBalance,
           nativeSymbol,
-          withConvenienceFee: shouldIncludeConvenienceFee
+          withConvenienceFee: shouldIncludeConvenienceFee,
+          feeExemptionReason
         })
       ],
       selectedRoute: undefined,

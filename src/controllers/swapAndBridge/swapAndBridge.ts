@@ -3,10 +3,12 @@ import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'eth
 import { getAccountNetworks } from '@/libs/networks/networks'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
+import { getFeeExemptionReason, getFeePercent } from '@/libs/swapAndBridge/fee'
 
 import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
+import { STK_WALLET } from '../../consts/addresses'
 import {
   BRIDGE_STATUS_INTERVAL,
   BRIDGE_STATUS_INTERVAL_CEILING,
@@ -64,7 +66,11 @@ import { getBridgeBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
-import { convertApiTokenDataToTokenDataCache, getTokenAmount } from '../../libs/portfolio/helpers'
+import {
+  convertApiTokenDataToTokenDataCache,
+  getTokenAmount,
+  getTokenBalanceInUSD
+} from '../../libs/portfolio/helpers'
 import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import {
@@ -80,6 +86,7 @@ import {
   getIsTokenEligibleForSwapAndBridge,
   getSwapAndBridgeCalls,
   getSwapSponsorship,
+  isNoFeeToken,
   isTxnBridge,
   mapBannedToValidAddr,
   sortPortfolioTokenList,
@@ -110,6 +117,7 @@ import {
 } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
+import type { FeeExemptionReason } from '@/libs/swapAndBridge/fee'
 type SwapAndBridgeErrorType = {
   id: 'to-token-list-fetch-failed' | 'no-routes' | 'all-routes-failed'
   title: string
@@ -321,6 +329,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   toTokenSearchResults: SwapAndBridgeToToken[] = []
 
   quote: SwapAndBridgeQuote | null = null
+
+  feePercent: number = getFeePercent()
 
   quoteRoutesStatuses: { [key: string]: { status: string } } = {}
 
@@ -586,6 +596,24 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     super.emitUpdate()
   }
 
+  #updateFeePercent(portfolioTokens?: TokenResult[]) {
+    const selectedAccountAddress = this.#selectedAccount.account?.addr
+    if (!selectedAccountAddress) {
+      this.feePercent = getFeePercent()
+      return
+    }
+
+    const selectedAccountMainnetTokens =
+      this.#portfolio.getAccountPortfolioState(selectedAccountAddress)['1']?.result?.tokens
+    const stkWalletToken = (portfolioTokens ?? selectedAccountMainnetTokens)?.find(
+      ({ address, chainId }) => chainId === 1n && address.toLowerCase() === STK_WALLET.toLowerCase()
+    )
+
+    this.feePercent = getFeePercent(
+      stkWalletToken ? getTokenBalanceInUSD(stkWalletToken) : undefined
+    )
+  }
+
   #setFromAmountAndNotifyUI(amount: string) {
     this.fromAmount = amount
     this.fromAmountUpdateCounter += 1
@@ -847,6 +875,22 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.quote.routes.length > 0 &&
       this.updateQuoteStatus !== 'LOADING'
     )
+  }
+
+  /** Why the currently selected operation is exempt from the Swap & Bridge fee. */
+  get feeExemptionReason(): FeeExemptionReason | undefined {
+    if (this.quote?.selectedRoute?.feeExemptionReason) {
+      return this.quote.selectedRoute.feeExemptionReason
+    }
+
+    const fromSelectedToken = this.fromSelectedToken
+
+    return getFeeExemptionReason({
+      isWrapOrUnwrap: this.#getIsWrapOrUnwrap(),
+      isFeeExemptToken:
+        !!fromSelectedToken &&
+        isNoFeeToken(Number(fromSelectedToken.chainId), fromSelectedToken.address)
+    })
   }
 
   async initForm(
@@ -1243,6 +1287,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       fromAmount?: string
     }
   ) {
+    this.#updateFeePercent(nextPortfolioTokenList)
+
     // If the user has switched TOKEN -> NULL that would make the fromSelectedToken
     // null, so we need to keep it null, even if the portfolio token list is updated
     // until the user manually selects a new token
@@ -2037,6 +2083,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         const isWrapOrUnwrap = this.#getIsWrapOrUnwrap()
         const toSelectedToken = this.toSelectedToken
         const selectedAccountAddress = this.#selectedAccount.account.addr
+        this.#updateFeePercent()
         const toTokenPricePromise = withTimeout(
           () =>
             this.#portfolio.getTokenPrice(
@@ -2072,7 +2119,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             sort: this.routePriority,
             isWrapOrUnwrap,
             accountNativeBalance: this.#accountNativeBalance(bigintFromAmount),
-            nativeSymbol: network?.nativeAssetSymbol || 'ETH'
+            nativeSymbol: network?.nativeAssetSymbol || 'ETH',
+            feePercent: this.feePercent
           })
         ])
         // sort the routes by value and them by disabled, making disabled last
@@ -2948,7 +2996,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       feeTokenPriceInUsd: feeToken.feeTokenPriceInUsd,
       feeTokenDecimals: feeToken.decimals,
       providerId: this.quote?.selectedRoute?.providerId,
-      isBridge
+      isBridge,
+      feePercent: this.feePercent
     })
 
     if (this.#signAccountOpController) {
@@ -3251,6 +3300,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       activeRoutes: this.activeRoutes,
       isHealthy: this.isHealthy,
       shouldEnableRoutesSelection: this.shouldEnableRoutesSelection,
+      feeExemptionReason: this.feeExemptionReason,
       supportedChainIds: this.supportedChainIds,
       swapSignErrors: this.swapSignErrors,
       signAccountOpController: this.signAccountOpController,

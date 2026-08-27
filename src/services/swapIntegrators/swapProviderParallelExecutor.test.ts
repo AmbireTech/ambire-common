@@ -193,6 +193,7 @@ describe('Swap Provider Parallel execution', () => {
       accountNativeBalance: 1n,
       isWrapOrUnwrap: false,
       nativeSymbol: 'POL',
+      feePercent: 0.5,
       sort: 'output'
     })
 
@@ -282,6 +283,7 @@ describe('Swap Provider Parallel execution', () => {
       accountNativeBalance: 1n,
       isWrapOrUnwrap: false,
       nativeSymbol: 'ETH',
+      feePercent: 0.5,
       sort: 'output'
     })
 

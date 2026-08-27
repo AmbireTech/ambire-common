@@ -11,7 +11,6 @@ import { ethAddress, zeroAddress } from 'viem'
 
 import {
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
-  FEE_PERCENT,
   JPYC_TOKEN,
   SOCKET_EXPLORER_URL
 } from '@/services/socketv3/constants'
@@ -749,7 +748,8 @@ const getSwapSponsorship = ({
   feeTokenPriceInUsd,
   feeTokenDecimals,
   providerId,
-  isBridge
+  isBridge,
+  feePercent
 }: {
   isErc4337Enabled: boolean
   hasConvinienceFee: boolean
@@ -759,6 +759,7 @@ const getSwapSponsorship = ({
   feeTokenDecimals: number | undefined
   providerId: string | undefined
   isBridge: boolean
+  feePercent: number
 }):
   | {
       nativePrice: number
@@ -775,12 +776,13 @@ const getSwapSponsorship = ({
     !feeTokenPriceInUsd ||
     !feeTokenDecimals ||
     providerId === 'squid' ||
-    (providerId === 'uniswap' && isBridge)
+    (providerId === 'uniswap' && isBridge) ||
+    feePercent === 0
   )
     return undefined
   return {
     nativePrice,
-    swapFeeInUsd: (fromAmountInUsd * FEE_PERCENT) / 100,
+    swapFeeInUsd: (fromAmountInUsd * feePercent) / 100,
     feeTokenPriceInUsd,
     feeTokenDecimals
   }

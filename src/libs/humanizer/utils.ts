@@ -107,6 +107,9 @@ export function getImage(content: string): HumanizerVisualization {
 export function getBreak(): HumanizerVisualization {
   return { type: 'break', id: randomId() }
 }
+export function getInfo(content: string): HumanizerVisualization {
+  return { type: 'info', content, id: randomId() }
+}
 
 export function getAddressVisualization(_address: string): HumanizerVisualization {
   const address = _address.toLowerCase()

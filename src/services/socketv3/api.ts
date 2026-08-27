@@ -22,12 +22,9 @@ import {
   convertNullAddressToZeroAddressIfNeeded,
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import { CITREA_CHAIN_ID } from '../squid/constants'
-import {
-  AMBIRE_FEE_TAKER_ADDRESSES,
-  ETH_ON_OPTIMISM_LEGACY_ADDRESS,
-  FEE_PERCENT
-} from './constants'
+import { AMBIRE_FEE_TAKER_ADDRESSES, ETH_ON_OPTIMISM_LEGACY_ADDRESS } from './constants'
 
 type SocketV3Protocol = {
   name: string
@@ -406,7 +403,8 @@ export class SocketV3API implements SwapProvider {
     userAddress,
     isWrapOrUnwrap,
     accountNativeBalance,
-    nativeSymbol
+    nativeSymbol,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     if (!fromAsset || !toAsset)
       throw new SwapAndBridgeProviderApiError(
@@ -424,11 +422,15 @@ export class SocketV3API implements SwapProvider {
       receiverAddress: userAddress
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId] || FEE_COLLECTOR
-    const shouldIncludeConvenienceFee =
-      !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
+    const feeExemptionReason = getFeeExemptionReason({
+      isWrapOrUnwrap,
+      isFeeExemptToken: isNoFeeToken(fromChainId, fromTokenAddress),
+      isFeeCollectionAvailable: !!feeTakerAddress
+    })
+    const shouldIncludeConvenienceFee = feePercent > 0 && !feeExemptionReason
     if (shouldIncludeConvenienceFee) {
       params.append('feeTakerAddress', feeTakerAddress)
-      params.append('feeBps', (FEE_PERCENT * 100).toString())
+      params.append('feeBps', (feePercent * 100).toString())
     }
 
     const url = `${this.#socketApiUrl}/v3/swap/quote?${params.toString()}`
@@ -534,6 +536,7 @@ export class SocketV3API implements SwapProvider {
           : undefined,
         rawRoute: route as any,
         withConvenienceFee: shouldIncludeConvenienceFee,
+        feeExemptionReason,
         usedBridgeNames:
           fromChainId !== normalizedToAsset.chainId ? [protocol.name.toLowerCase()] : [''],
         usedDexName: fromChainId === normalizedToAsset.chainId ? protocol.displayName : undefined
