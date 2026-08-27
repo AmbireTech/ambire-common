@@ -971,7 +971,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       if (this.currentUserRequest?.id === req.id) didRemoveCurrentUserRequest = true
 
       // finishing other requests should not automatically open Safe Queue requests
-      if (req.kind !== 'calls' && req.kind !== 'benzin') didRemoveSkipQueueRequest = true
+      if (req.kind !== 'calls') didRemoveSkipQueueRequest = true
 
       // update the pending stuff to be signed
       const { kind, meta } = req
