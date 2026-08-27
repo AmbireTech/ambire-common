@@ -1,7 +1,5 @@
 import { AbiCoder, getBytes, Interface, keccak256, toBeHex, ZeroAddress } from 'ethers'
 
-import { IrCall } from '@/libs/humanizer/interfaces'
-
 import { EIP7702Auth } from '../../consts/7702'
 import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
@@ -105,8 +103,6 @@ export interface AccountOp {
     speedUp?: {
       enabled: boolean
     }
-    /** Descriptor-backed humanization persisted so activity, history and Benzin show the same clear signing details. */
-    clearSigningHumanization?: IrCall[]
   }
   flags?: {
     /** Excludes it from the "failed transactions" banner and the Activity counter badge,

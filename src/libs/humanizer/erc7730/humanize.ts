@@ -963,7 +963,8 @@ const fieldToRows = (
   return [
     {
       label: resolvedField.label || resolvedField.path || '',
-      value: formatFieldValue(resolvedField, value, context, base)
+      value: formatFieldValue(resolvedField, value, context, base),
+      path: resolvedField.path ?? ''
     }
   ]
 }
@@ -1009,14 +1010,18 @@ const findInterpolationField = (
 // placeholder uses the same field formatter as its corresponding detail row.
 // Interpolation is all-or-nothing: malformed templates, unresolved paths,
 // fields that are not always visible, or missing formatters return null so the
-// UI can fall back to the static `intent` and its rows.
+// UI can fall back to the static `intent` and its rows. Also returns the field
+// paths consumed by a placeholder, so the caller can exclude them from the
+// detail rows shown alongside the interpolated intent (they'd otherwise repeat
+// the same data twice).
 const interpolateIntentParts = (
   template: string,
   fields: Erc7730Field[] | undefined,
   context: FormatContext,
   base: unknown
-): HumanizerVisualization[] | null => {
+): { parts: HumanizerVisualization[]; usedFieldPaths: Set<string> } | null => {
   const parts: HumanizerVisualization[] = []
+  const usedFieldPaths = new Set<string>()
   let currentIndex = 0
 
   // The leading word(s) of an interpolated intent are the verb ("Swap ",
@@ -1090,11 +1095,12 @@ const interpolateIntentParts = (
       return null
     }
     parts.push(...formattedValue)
+    usedFieldPaths.add(path)
 
     currentIndex = placeholderEndIndex + 1
   }
 
-  return parts.length ? parts : null
+  return parts.length ? { parts, usedFieldPaths } : null
 }
 
 const formatToVisualizations = (
@@ -1102,20 +1108,26 @@ const formatToVisualizations = (
   context: FormatContext,
   dapp?: Call['dapp']
 ): HumanizerVisualization[] | null => {
-  const titleParts = format.interpolatedIntent
+  const interpolation = format.interpolatedIntent
     ? interpolateIntentParts(format.interpolatedIntent, format.fields, context, context.root)
     : null
   // `format.intent` is the spec's plain, non-interpolated short title (e.g.
-  // "Swap") and is always used as `title` - it needs no token/decimals lookup,
-  // so it can never fail the way interpolation can. Consumers that need a rich,
-  // fully-interpolated title (e.g. "Swap 0.5 ETH for at least 120 USDC") must
-  // render `titleParts` instead; `title` is only the safe fallback text for
-  // non-rendering consumers (label comparisons, non-rich surfaces) and for
-  // when `titleParts` itself is null (interpolation couldn't be resolved).
+  // "Swap") - it needs no token/decimals lookup, so it can never fail the way
+  // interpolation can, and is the fallback `intent` (as `[action]`) whenever
+  // there's no `interpolatedIntent` or interpolation couldn't be resolved.
   const rows = fieldsToRows(format.fields || [], context, context.root)
   if (!rows) return null
 
-  return [getErc7730Visualization(format.intent, rows, dapp, titleParts ?? undefined)]
+  return [
+    getErc7730Visualization(
+      format.intent,
+      rows,
+      dapp,
+      interpolation
+        ? { parts: interpolation.parts, usedFieldPaths: [...interpolation.usedFieldPaths] }
+        : undefined
+    )
+  ]
 }
 
 const isOneInchFillOrderFormat = (formatKey: string, descriptorPath?: string) =>
@@ -1135,6 +1147,17 @@ const hasResolvableTokenReference = (field: Erc7730Field, context: FormatContext
     (typeof tokenReference === 'string' && isAddress(tokenReference))
   )
 }
+
+// Applies a structural edit (stripping a row, appending one, replacing one) to `fields` - the only
+// stored row array. The displayed rows are derived from `fields` elsewhere, so they stay in sync
+// automatically.
+const updateErc7730Rows = (
+  visualization: HumanizerVisualization & HumanizerErc7730Visualization,
+  transform: (rows: HumanizerErc7730Row[]) => HumanizerErc7730Row[]
+): HumanizerVisualization & HumanizerErc7730Visualization => ({
+  ...visualization,
+  fields: transform(visualization.fields)
+})
 
 const hideOneInchMinimumReceiveWithoutToken = (
   match: DescriptorFormatMatch,
@@ -1157,12 +1180,9 @@ const hideOneInchMinimumReceiveWithoutToken = (
 
   return fullVisualization.map((visualization) =>
     visualization.type === 'erc7730'
-      ? {
-          ...visualization,
-          rows: visualization.rows.filter(
-            (row) => row.label.trim().toLowerCase() !== 'minimum to receive'
-          )
-        }
+      ? updateErc7730Rows(visualization, (rows) =>
+          rows.filter((row) => row.label.trim().toLowerCase() !== 'minimum to receive')
+        )
       : visualization
   )
 }
@@ -1211,13 +1231,13 @@ const getOneInchFillOrderSwapVisualization = (
       visualization.type === 'erc7730'
   )
   const additionalRows =
-    oneInchVisualization?.rows.filter(
+    oneInchVisualization?.fields.filter(
       (row) => !row.value.some((value) => value.type === 'token')
     ) || []
 
   return [
     getErc7730Visualization(
-      oneInchVisualization?.title || 'Fill order',
+      oneInchVisualization?.intent[0]?.content || 'Fill order',
       [
         {
           label: 'Amount to Send',
@@ -1262,12 +1282,12 @@ const capitalizeLabel = (value: string): string => {
 const getRowsFromErc7730CallVisualization = (
   visualization: HumanizerVisualization & HumanizerErc7730Visualization
 ): HumanizerErc7730Row[] | null => {
-  const [firstRow, ...additionalRows] = visualization.rows
+  const [firstRow, ...additionalRows] = visualization.fields
   if (!firstRow) return null
 
   return [
     {
-      label: visualization.title || firstRow.label,
+      label: visualization.intent[0]?.content || firstRow.label,
       value: firstRow.value
     },
     ...additionalRows
@@ -1473,16 +1493,13 @@ const appendNativeValueRow = (
     if (didFindErc7730Visualization || visualization.type !== 'erc7730') return visualization
 
     didFindErc7730Visualization = true
-    return {
-      ...visualization,
-      rows: [
-        ...visualization.rows,
-        {
-          label: 'Send',
-          value: [getToken(ZeroAddress, nativeValue, chainId)]
-        }
-      ]
-    }
+    return updateErc7730Rows(visualization, (rows) => [
+      ...rows,
+      {
+        label: 'Send',
+        value: [getToken(ZeroAddress, nativeValue, chainId)]
+      }
+    ])
   })
 
   return {
@@ -1510,7 +1527,7 @@ const getNativeValueWarnings = (
 // first MAX_DISPLAYED_NESTED_CALLDATA_DEPTH levels are shown in the UI. A transaction
 // nested that deep is unusual, so the user is warned about it.
 const getNestedErc7730Depth = (visualization: HumanizerErc7730Visualization): number => {
-  const nestedDepths = visualization.rows.flatMap((row) =>
+  const nestedDepths = visualization.fields.flatMap((row) =>
     row.value
       .filter(
         (value): value is HumanizerVisualization & HumanizerErc7730Visualization =>
@@ -1678,22 +1695,25 @@ const replaceSafeTxTransactionRow = (
   const safeTxCallRows = getSafeTxCallRows(message, chainId, resolvedDescriptor)
   if (!safeTxCallRows) return fullVisualization
 
-  return fullVisualization.map((visualization) => {
-    if (visualization.type !== 'erc7730') return visualization
-
+  // Computed independently per row list below (not shared), since a "transaction"
+  // placeholder row could in principle be present in one list but not the other.
+  const replaceTransactionRow = (rows: HumanizerErc7730Row[]) => {
     let didReplaceTransactionRow = false
-    const rows = visualization.rows.flatMap((row) => {
+    const nextRows = rows.flatMap((row) => {
       if (row.label.trim().toLowerCase() !== 'transaction') return [row]
 
       didReplaceTransactionRow = true
       return safeTxCallRows
     })
 
-    return {
-      ...visualization,
-      rows: didReplaceTransactionRow ? rows : [...rows, ...safeTxCallRows]
-    }
-  })
+    return didReplaceTransactionRow ? nextRows : [...nextRows, ...safeTxCallRows]
+  }
+
+  return fullVisualization.map((visualization) =>
+    visualization.type === 'erc7730'
+      ? updateErc7730Rows(visualization, replaceTransactionRow)
+      : visualization
+  )
 }
 
 export const humanizeCallWithErc7730 = (

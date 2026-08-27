@@ -620,8 +620,12 @@ describe('ERC-7730 descriptors', () => {
   // {_minAmountOut} to {_receiver}" - exercises interpolateIntentParts()'s
   // per-spec field lookup: {_minAmountOut} resolves through the "Minimum to
   // Receive" field's tokenAmount format/tokenPath, so it renders as a `type:
-  // 'token'` titleParts item, matching the "Minimum to Receive" row below.
-  // `title` itself stays the plain, non-interpolated "Swap" intent.
+  // 'token'` intent item. Since every field referenced by the template
+  // ("Amount to send", "Minimum to Receive", "Recipient") is fully rendered
+  // inline in the intent, `display.rows` ends up empty - none of them should
+  // repeat as a detail row below the intent (this is the exact scenario a
+  // LI.FI enum-formatted destinationChainId field used to leak through on,
+  // before display.rows started excluding fields by path at the source).
   test('humanizes a LI.FI swapTokensSingleV3NativeToERC20 call with its ERC-7730 registry descriptor', () => {
     accountOp.calls = [
       {
@@ -706,17 +710,22 @@ describe('ERC-7730 descriptors', () => {
             }
           ],
           undefined,
-          // Structured title parts, so the UI can render the two amounts as
-          // `type: 'token'` items (live decimals/symbol lookup via TokenOrNft)
-          // instead of relying on a static, possibly incomplete token registry.
-          [
-            getAction('Swap '),
-            getToken(ZeroAddress, 5837776470906329n, 1n),
-            getText(' for at least '),
-            getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n),
-            getText(' to '),
-            getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')
-          ]
+          {
+            // Structured intent parts, so the UI can render the two amounts as
+            // `type: 'token'` items (live decimals/symbol lookup via TokenOrNft)
+            // instead of relying on a static, possibly incomplete token registry.
+            parts: [
+              getAction('Swap '),
+              getToken(ZeroAddress, 5837776470906329n, 1n),
+              getText(' for at least '),
+              getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n),
+              getText(' to '),
+              getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')
+            ],
+            // Every field above is referenced by the template, so all of them
+            // should be excluded from the detail rows below the intent.
+            usedFieldPaths: ['@.value', '_minAmountOut', '_receiver']
+          }
         )
       ]
     ])
@@ -763,8 +772,8 @@ describe('ERC-7730 descriptors', () => {
 
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Swap assets',
-      rows: [
+      intent: [expect.objectContaining({ content: 'Swap assets' })],
+      fields: [
         { label: 'Spender' },
         { label: 'Amount' },
         {
@@ -802,8 +811,8 @@ describe('ERC-7730 descriptors', () => {
     expect(descriptors[0]?.path).toBe('built-in/erc20-approve')
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Approve',
-      rows: [
+      intent: [expect.objectContaining({ content: 'Approve' })],
+      fields: [
         {
           label: 'Spender',
           value: [expect.objectContaining({ address: spender })]
@@ -858,7 +867,7 @@ describe('ERC-7730 descriptors', () => {
 
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      rows: [
+      fields: [
         {
           label: 'Unrelated native amount',
           value: [expect.objectContaining({ address: ZeroAddress, value: 1000000000n })]
@@ -1288,7 +1297,16 @@ describe('ERC-7730 descriptors', () => {
             }
           ],
           undefined,
-          [getAction('Stake '), getToken(ZeroAddress, 1000000000000000n, 1n), getText(' ETH')]
+          {
+            parts: [
+              getAction('Stake '),
+              getToken(ZeroAddress, 1000000000000000n, 1n),
+              getText(' ETH')
+            ],
+            // The only field is the one referenced by the template, so it shouldn't
+            // repeat as a detail row below the intent.
+            usedFieldPaths: ['@.value']
+          }
         )
       ]
     ])
@@ -1353,9 +1371,14 @@ describe('ERC-7730 descriptors', () => {
       })
       const visualization = irCalls[0]!.fullVisualization?.find((item) => item.type === 'erc7730')
 
-      expect(visualization).toMatchObject({ type: 'erc7730', title: 'Stake ETH' })
+      expect(visualization).toMatchObject({
+        type: 'erc7730',
+        intent: [expect.objectContaining({ content: 'Stake ETH' })]
+      })
       if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
-      expect(visualization.titleParts).toBeUndefined()
+      // Interpolation failed, so `display.intent` falls back to the plain `[action]` form -
+      // just the one part, not the richer interpolated breakdown.
+      expect(visualization.intent).toHaveLength(1)
     }
   )
 
@@ -1388,7 +1411,7 @@ describe('ERC-7730 descriptors', () => {
     const visualization = irCalls[0]!.fullVisualization?.find((item) => item.type === 'erc7730')
 
     if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
-    expect(visualization.titleParts?.map((item) => item.content || item.type)).toEqual([
+    expect(visualization.intent.map((item) => item.content || item.type)).toEqual([
       'Stake ',
       '{',
       'ETH',
@@ -1628,7 +1651,7 @@ describe('ERC-7730 descriptors', () => {
     expect(
       irCalls[0]!.fullVisualization
         ?.flatMap((visualization) =>
-          visualization.type === 'erc7730' ? visualization.rows.flatMap((row) => row.value) : []
+          visualization.type === 'erc7730' ? visualization.fields.flatMap((row) => row.value) : []
         )
         .some((visualization) => visualization.content === '0x28530a47')
     ).toBe(false)
@@ -1656,18 +1679,21 @@ describe('ERC-7730 descriptors', () => {
     const multicallVisualization = irCalls[0]?.fullVisualization?.[0]
 
     expect(descriptors[0]?.path).toBe('built-in/multicall')
-    expect(multicallVisualization).toMatchObject({ type: 'erc7730', title: 'Multicall' })
+    expect(multicallVisualization).toMatchObject({
+      type: 'erc7730',
+      intent: [expect.objectContaining({ content: 'Multicall' })]
+    })
     if (multicallVisualization?.type !== 'erc7730') {
       throw new Error('Expected ERC-7730 multicall visualization')
     }
 
-    expect(multicallVisualization.rows).toHaveLength(1)
-    expect(multicallVisualization.rows[0]?.label).toBe('')
-    expect(multicallVisualization.rows[0]?.value).toHaveLength(1)
-    expect(multicallVisualization.rows[0]?.value[0]).toMatchObject({
+    expect(multicallVisualization.fields).toHaveLength(1)
+    expect(multicallVisualization.fields[0]?.label).toBe('')
+    expect(multicallVisualization.fields[0]?.value).toHaveLength(1)
+    expect(multicallVisualization.fields[0]?.value[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Grant approval',
-      rows: [
+      intent: [expect.objectContaining({ content: 'Grant approval' })],
+      fields: [
         {
           label: 'For',
           value: [
@@ -1719,26 +1745,29 @@ describe('ERC-7730 descriptors', () => {
     const irCalls = humanizeAccountOp(multicallAccountOp, { erc7730Descriptors: descriptors })
     const multicallVisualization = irCalls[0]?.fullVisualization?.[0]
 
-    expect(multicallVisualization).toMatchObject({ type: 'erc7730', title: 'Multicall' })
+    expect(multicallVisualization).toMatchObject({
+      type: 'erc7730',
+      intent: [expect.objectContaining({ content: 'Multicall' })]
+    })
     if (multicallVisualization?.type !== 'erc7730') {
       throw new Error('Expected ERC-7730 multicall visualization')
     }
 
-    expect(multicallVisualization.rows).toHaveLength(2)
-    expect(multicallVisualization.rows.map((row) => row.label)).toEqual(['', ''])
-    const approvalVisualization = multicallVisualization.rows[0]?.value[0]
-    const allowanceVisualization = multicallVisualization.rows[1]?.value[0]
+    expect(multicallVisualization.fields).toHaveLength(2)
+    expect(multicallVisualization.fields.map((row) => row.label)).toEqual(['', ''])
+    const approvalVisualization = multicallVisualization.fields[0]?.value[0]
+    const allowanceVisualization = multicallVisualization.fields[1]?.value[0]
     if (approvalVisualization?.type !== 'erc7730' || allowanceVisualization?.type !== 'erc7730') {
       throw new Error('Expected nested ERC-7730 visualizations')
     }
 
-    expect([approvalVisualization.title, allowanceVisualization.title]).toEqual([
-      'Grant approval',
-      'Increase allowance'
-    ])
+    expect([
+      approvalVisualization.intent[0]?.content,
+      allowanceVisualization.intent[0]?.content
+    ]).toEqual(['Grant approval', 'Increase allowance'])
     expect(approvalVisualization).toMatchObject({
       type: 'erc7730',
-      rows: [
+      fields: [
         {
           label: 'For',
           value: [
@@ -1757,7 +1786,7 @@ describe('ERC-7730 descriptors', () => {
     })
     expect(allowanceVisualization).toMatchObject({
       type: 'erc7730',
-      rows: [
+      fields: [
         {
           label: 'Of',
           value: [{ type: 'address', address: spender.toLowerCase() }]
@@ -1798,20 +1827,23 @@ describe('ERC-7730 descriptors', () => {
     const multicallVisualization = irCalls[0]?.fullVisualization?.[0]
 
     expect(descriptors[0]?.path).toBe('built-in/multicall')
-    expect(multicallVisualization).toMatchObject({ type: 'erc7730', title: 'Multicall' })
+    expect(multicallVisualization).toMatchObject({
+      type: 'erc7730',
+      intent: [expect.objectContaining({ content: 'Multicall' })]
+    })
     if (multicallVisualization?.type !== 'erc7730') {
       throw new Error('Expected ERC-7730 multicall visualization')
     }
 
-    const nestedVisualizations = multicallVisualization.rows
+    const nestedVisualizations = multicallVisualization.fields
       .flatMap((row) => row.value)
       .filter((visualization) => visualization.type === 'erc7730')
 
-    expect(nestedVisualizations.map((visualization) => visualization.title)).toEqual([
+    expect(nestedVisualizations.map((visualization) => visualization.intent[0]?.content)).toEqual([
       'Add liquidity',
       'Withdraw'
     ])
-    expect(multicallVisualization.rows.at(-1)).toMatchObject({
+    expect(multicallVisualization.fields.at(-1)).toMatchObject({
       label: 'Send',
       value: [expect.objectContaining({ address: ZeroAddress, value: nativeValue })]
     })
@@ -2000,17 +2032,17 @@ describe('ERC-7730 descriptors', () => {
     const visualization = irCalls[0]!.fullVisualization?.[0]
     expect(visualization).toMatchObject({
       type: 'erc7730',
-      title: 'Bundler3 Multicall'
+      intent: [expect.objectContaining({ content: 'Bundler3 Multicall' })]
     })
     if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
 
-    expect(visualization.rows).toHaveLength(5)
-    expect(visualization.rows.every((row) => row.label === 'Action')).toBe(true)
+    expect(visualization.fields).toHaveLength(5)
+    expect(visualization.fields.every((row) => row.label === 'Action')).toBe(true)
     expect(
-      visualization.rows.map((row) => row.value.find((value) => value.type === 'action')?.content)
+      visualization.fields.map((row) => row.value.find((value) => value.type === 'action')?.content)
     ).toEqual(['Transfer', 'Repay', 'Withdraw', 'Transfer', 'Transfer'])
     expect(
-      visualization.rows.map((row) => row.value.find((value) => value.type === 'token'))
+      visualization.fields.map((row) => row.value.find((value) => value.type === 'token'))
     ).toEqual([
       expect.objectContaining({ address: baseUsdc, value: 2n }),
       expect.objectContaining({ address: baseUsdc, value: 220292767985000000n }),
@@ -2019,10 +2051,10 @@ describe('ERC-7730 descriptors', () => {
       expect.objectContaining({ address: baseCbBtc, value: ethers.MaxUint256 })
     ])
     expect(
-      visualization.rows.flatMap((row) => row.value).some((value) => value.type === 'text')
+      visualization.fields.flatMap((row) => row.value).some((value) => value.type === 'text')
     ).toBe(false)
     expect(
-      visualization.rows
+      visualization.fields
         .flatMap((row) => row.value)
         .some((value) =>
           ['0xd96ca0b9', '0x4d5fcf68', '0x1af3bbc6', '0x3790767d'].includes(value.content || '')
@@ -2111,23 +2143,23 @@ describe('ERC-7730 descriptors', () => {
 
     expect(visualization).toMatchObject({
       type: 'erc7730',
-      title: 'Bundler3 Multicall'
+      intent: [expect.objectContaining({ content: 'Bundler3 Multicall' })]
     })
     if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
 
-    expect(visualization.rows).toHaveLength(1)
-    expect(visualization.rows[0]!.label).toBe('Action')
-    expect(visualization.rows[0]!.value.find((value) => value.type === 'action')?.content).toBe(
+    expect(visualization.fields).toHaveLength(1)
+    expect(visualization.fields[0]!.label).toBe('Action')
+    expect(visualization.fields[0]!.value.find((value) => value.type === 'action')?.content).toBe(
       'Reallocate liquidity'
     )
-    expect(visualization.rows[0]!.value).toEqual(
+    expect(visualization.fields[0]!.value).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: 'label', content: 'To vault' }),
         expect.objectContaining({ type: 'address', address: vault })
       ])
     )
     expect(
-      visualization.rows[0]!.value.some((value) =>
+      visualization.fields[0]!.value.some((value) =>
         ['0x833947fd', 'reallocateTo'].includes(value.content || '')
       )
     ).toBe(false)
@@ -2168,8 +2200,8 @@ describe('ERC-7730 descriptors', () => {
     expect(Object.keys(descriptors)).toEqual(['0', '1'])
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Approve',
-      rows: [
+      intent: [expect.objectContaining({ content: 'Approve' })],
+      fields: [
         { label: 'Spender' },
         { label: 'Amount' },
         {
@@ -2186,8 +2218,8 @@ describe('ERC-7730 descriptors', () => {
     ])
     expect(irCalls[1]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Approve',
-      rows: [
+      intent: [expect.objectContaining({ content: 'Approve' })],
+      fields: [
         { label: 'Spender' },
         { label: 'Amount' },
         { label: 'Approval expires' },
@@ -2350,8 +2382,8 @@ describe('ERC-7730 descriptors', () => {
     expect(descriptors[0]?.path).toBe('built-in/permit2-revoke-approval')
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Revoke approval',
-      rows: [
+      intent: [expect.objectContaining({ content: 'Revoke approval' })],
+      fields: [
         {
           label: 'Spender',
           value: [expect.objectContaining({ address: universalRouter.toLowerCase() })]
@@ -2739,8 +2771,10 @@ describe('ERC-7730 descriptors', () => {
     expect(descriptors[0]?.safeTxTransactionsOnly).toBe(true)
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Execute a Safe{Wallet} Transaction',
-      rows: [
+      display: {
+        intent: [expect.objectContaining({ content: 'Execute a Safe{Wallet} Transaction' })]
+      },
+      fields: [
         {
           label: 'Safe',
           value: [
@@ -2754,7 +2788,7 @@ describe('ERC-7730 descriptors', () => {
           value: [
             expect.objectContaining({
               type: 'erc7730',
-              title: 'Cancel'
+              intent: [expect.objectContaining({ content: 'Cancel' })]
             })
           ]
         }
@@ -3074,8 +3108,8 @@ describe('ERC-7730 descriptors', () => {
     expect(callRelayer).toHaveBeenCalledTimes(1)
     expect(irMessage.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Authorize spending of tokens',
-      rows: [
+      intent: [expect.objectContaining({ content: 'Authorize spending of tokens' })],
+      fields: [
         {
           label: 'Spender',
           value: [{ type: 'address', address: aggregationRouterV6 }]
@@ -3714,7 +3748,7 @@ describe('ERC-7730 descriptors', () => {
 
     expect(irMessage.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Safe'
+      intent: [expect.objectContaining({ content: 'Safe' })]
     })
   })
 
@@ -4567,7 +4601,7 @@ describe('ERC-7730 descriptors', () => {
     // Regression guard: none of the 4 calls should be silently dropped, even the two
     // whose call target (setFallbackHandler self-call / unrecognized settlement call)
     // no humanizer module could decode.
-    const transactionsRow = (irMessage.fullVisualization?.[0] as any)?.rows?.find(
+    const transactionsRow = (irMessage.fullVisualization?.[0] as any)?.fields?.find(
       (row: any) => row.label === 'Transactions'
     )
     expect(transactionsRow?.value).toHaveLength(4)
@@ -4632,8 +4666,8 @@ describe('ERC-7730 descriptors', () => {
         }
       )
     const getErc7730Titles = (visualization: any): string[] => [
-      visualization.title,
-      ...(visualization.rows || []).flatMap((row: any) =>
+      visualization.intent[0]?.content,
+      ...(visualization.fields || []).flatMap((row: any) =>
         (row.value || [])
           .filter((rowValue: any) => rowValue.type === 'erc7730')
           .flatMap((nestedVisualization: any) => getErc7730Titles(nestedVisualization))

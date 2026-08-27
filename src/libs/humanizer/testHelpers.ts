@@ -7,9 +7,13 @@ const stripVisualizationIds = (visualization: HumanizerVisualization): Humanizer
 
   return {
     ...strippedVisualization,
-    titleParts: strippedVisualization.titleParts?.map(stripVisualizationIds),
-    rows: strippedVisualization.rows.map((row) => ({
+    intent: strippedVisualization.intent.map(stripVisualizationIds),
+    // `path` is an internal identity for matching against `excludedFieldPaths`, not part of a
+    // fixture's expected content - most test fixtures don't set it, so it's stripped the same way
+    // `id` is, rather than requiring every hand-built row everywhere to specify a real path.
+    fields: strippedVisualization.fields.map((row) => ({
       ...row,
+      path: undefined,
       value: row.value.map(stripVisualizationIds)
     }))
   }
