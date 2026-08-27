@@ -960,6 +960,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const userRequestsToAdd: UserRequest[] = []
     const safeRejectIds: string[] = []
     let didRemoveCurrentUserRequest = false
+    let didRemoveSkipQueueRequest = false
 
     ids.forEach((id) => {
       const req = this.userRequests.find((uReq) => uReq.id === id)
@@ -968,6 +969,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       this.userRequests.splice(this.userRequests.indexOf(req), 1)
       if (this.currentUserRequest?.id === req.id) didRemoveCurrentUserRequest = true
+
+      // finishing other requests should not automatically open Safe Queue requests
+      if (req.kind !== 'calls' && req.kind !== 'benzin') didRemoveSkipQueueRequest = true
 
       // update the pending stuff to be signed
       const { kind, meta } = req
@@ -1028,7 +1032,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!this.visibleUserRequests.length) {
       await this.#setCurrentUserRequest(null)
     } else if (shouldOpenNextRequest) {
-      await this.#setCurrentUserRequest(this.visibleUserRequests[0] || null, {
+      const shouldSkipSignedSafeCalls =
+        didRemoveSkipQueueRequest && !!this.#selectedAccount.account?.safeCreation
+      const nextRequest = this.visibleUserRequests.find(
+        (request) =>
+          !shouldSkipSignedSafeCalls ||
+          request.kind !== 'calls' ||
+          !request.signAccountOp.accountOp.signed?.length
+      )
+
+      await this.#setCurrentUserRequest(nextRequest || null, {
         skipFocus: true
       })
     } else if (didRemoveCurrentUserRequest) {
