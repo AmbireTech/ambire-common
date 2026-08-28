@@ -56,6 +56,7 @@ import {
 import { networkChainIdToHex } from '../../libs/networks/networks'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { canBeTrustedByUser } from '../phishing/phishing'
 
 const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
 
@@ -93,7 +94,15 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #recentDapps: RecentDappEntry[] = []
 
+  // dApp id -> the moment the user marked it as trusted. Kept apart from #dapps because the record
+  // of a custom dApp is dropped when it disconnects, while the trust must survive that.
+  #trustedDapps = new Map<string, number>()
+
   dappToConnect: Dapp | null = null
+
+  // Set while dappToConnect's status was derived from a dangerous frame context instead of the
+  // dApp's own hosting. The user's trust covers the hosting only, so it must not silence this.
+  #dappToConnectContextStatus: BlacklistedStatus | undefined
 
   isReadyToDisplayDapps: boolean = true
 
@@ -254,7 +263,9 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (domainId !== d.id && filteredMap.has(domainId)) filteredMap.delete(domainId)
     }
 
-    return Array.from(filteredMap.values()).sort(sortDapps)
+    return Array.from(filteredMap.values())
+      .sort(sortDapps)
+      .map((d) => this.#withTrustFlags(d))
   }
 
   get recentDapps(): Dapp[] {
@@ -265,6 +276,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       .sort((a, b) => b.openedAt - a.openedAt)
       .map((entry) => this.#dapps.get(entry.id))
       .filter((d): d is Dapp => !!d)
+      .map((d) => this.#withTrustFlags(d))
   }
 
   get categories(): string[] {
@@ -279,10 +291,11 @@ export class DappsController extends EventEmitter implements IDappsController {
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    const [storedDapps, storedRecentDapps, storedTrending] = await Promise.all([
+    const [storedDapps, storedRecentDapps, storedTrending, storedTrustedDapps] = await Promise.all([
       this.#storage.get('dappsV2', predefinedDapps),
       this.#storage.get('recentDapps', [] as RecentDappEntry[]),
-      this.#storage.get('trending', { updatedAt: 0, tokens: [] as TrendingToken[] })
+      this.#storage.get('trending', { updatedAt: 0, tokens: [] as TrendingToken[] }),
+      this.#storage.get('trustedDapps', [])
     ])
     // Normalize on read so a drifted record (e.g. isConnected: true but connectedSources: [])
     // can't show a dapp as connected in the UI while permission checks force a reconnect.
@@ -298,6 +311,11 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
     })
+    // Ids are canonicalized on read for the same reason the dapp records are: a trailing-dot id
+    // is unreachable by any lookup, so the trust it carries would silently stop applying.
+    this.#trustedDapps = new Map(
+      storedTrustedDapps.map(({ id, addedAt }) => [normalizeHostname(id), addedAt])
+    )
     this.#recentDapps = storedRecentDapps
     this.#trendingTokens = storedTrending.tokens
     this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
@@ -1202,6 +1220,74 @@ export class DappsController extends EventEmitter implements IDappsController {
     return this.#dapps.get(getDomainFromUrl(url)!)
   }
 
+  /**
+   * Stamps a dApp handed to the UI with its trust flags, so no consumer has to resolve the hosting
+   * rules or the trusted list on its own. Both flags are only ever meaningful for a dApp the
+   * hosting check flagged, so the platform lookup is skipped for the rest of the catalog.
+   *
+   * `isStatusFromFrameContext` reports a SUSPICIOUS_HOSTING that came from the dApp's frame context
+   * rather than its own hosting - the user's trust does not cover that, so neither flag is set.
+   */
+  #withTrustFlags(dapp: Dapp, isStatusFromFrameContext = false): Dapp {
+    if (dapp.blacklisted !== 'SUSPICIOUS_HOSTING' || isStatusFromFrameContext)
+      return { ...dapp, isTrustedByUser: false, canBeTrustedByUser: false }
+
+    return {
+      ...dapp,
+      isTrustedByUser: this.#trustedDapps.has(dapp.id),
+      canBeTrustedByUser: canBeTrustedByUser(dapp.url)
+    }
+  }
+
+  /**
+   * Marks the dApp at `url` as trusted, which silences the suspicious-hosting warning for it - and
+   * for it alone. Takes the url rather than the id because the decision is made on the hostname.
+   *
+   * Refused for a dApp that shares its hostname with everything else published on the platform
+   * (see canBeTrustedByUser); the UI hides the action there, but this is the check that counts.
+   */
+  async trustDapp(url: string) {
+    if (!this.isReady) return
+    await this.initialLoadPromise
+
+    if (!canBeTrustedByUser(url)) {
+      this.emitError({
+        message: 'This app cannot be marked as trusted.',
+        error: new Error(`trustDapp: ${url} is not on a platform where one app can be trusted`),
+        level: 'silent'
+      })
+      return
+    }
+
+    const id = getDappIdFromUrl(url)
+    if (this.#trustedDapps.has(id)) return
+
+    this.#trustedDapps.set(id, Date.now())
+    this.emitUpdate()
+
+    await this.#persistTrustedDapps()
+  }
+
+  /** Revokes the trust the user gave a dApp, bringing its suspicious-hosting warning back. */
+  async untrustDapp(id: string) {
+    if (!this.isReady) return
+    await this.initialLoadPromise
+
+    // Canonicalized like every other id lookup, so a trailing-dot id cannot make this a no-op.
+    if (!this.#trustedDapps.delete(normalizeHostname(id))) return
+
+    this.emitUpdate()
+
+    await this.#persistTrustedDapps()
+  }
+
+  async #persistTrustedDapps() {
+    await this.#storage.set(
+      'trustedDapps',
+      Array.from(this.#trustedDapps.entries()).map(([id, addedAt]) => ({ id, addedAt }))
+    )
+  }
+
   async setDappToConnectIfNeeded(currentRequest: UserRequest | null) {
     try {
       if (currentRequest && currentRequest.kind === 'dappConnect') {
@@ -1219,6 +1305,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           this.dappToConnect = dapp
           // Don't persist the preferences after the dapp has been disconnected
           delete this.dappToConnect.accountPreferences
+          this.#dappToConnectContextStatus = undefined
           this.emitUpdate()
 
           const session = dappPromises[0].session
@@ -1237,6 +1324,9 @@ export class DappsController extends EventEmitter implements IDappsController {
 
             if (this.dappToConnect && this.dappToConnect.id === dapp.id) {
               this.dappToConnect.blacklisted = effectiveStatus
+              // Remembered so the trust flags can tell a warning about the dApp's own hosting -
+              // which the user may silence - apart from one about the document embedding it.
+              this.#dappToConnectContextStatus = contextStatus
             }
 
             // Update #dapps with intrinsic status only — never the context-derived one.
@@ -1254,6 +1344,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       if (this.dappToConnect) {
         this.dappToConnect = null
+        this.#dappToConnectContextStatus = undefined
         this.emitUpdate()
       }
     } catch (err: any) {
@@ -1274,7 +1365,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     dappId: string
     currentSessionId?: string
   }) {
-    const dapp = this.#dapps.get(currentSessionId) || this.#dapps.get(dappId) || null
+    const storedDapp = this.#dapps.get(currentSessionId) || this.#dapps.get(dappId) || null
+    const dapp = storedDapp ? this.#withTrustFlags(storedDapp) : null
 
     const message: GetCurrentDappRes = {
       type: 'GetCurrentDappRes',
@@ -1388,8 +1480,15 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       // BLACKLISTED on the dApp itself always wins over any session context status.
       const intrinsic = dapp?.blacklisted
+      // The user's trust covers the dApp's own hosting only - never BLACKLISTED, and never a
+      // dangerous frame context, whose danger belongs to the document embedding the dApp. Reported
+      // as VERIFIED so a trusted dApp stands exactly where any other app outside the catalog does,
+      // and still gets the "not in Ambire's catalog" banner below - trust does not vouch for it.
+      const isTrustedByUser =
+        intrinsic === 'SUSPICIOUS_HOSTING' && !contextStatus && this.#trustedDapps.has(id)
       return {
         id,
+        url,
         // BLACKLISTED on the dApp itself always wins. While the initial storage load is still
         // pending, #dapps may be empty, so a missing record/status doesn't mean verification
         // failed - report LOADING instead (e.g. a sign request right after a service worker wake-up).
@@ -1398,7 +1497,9 @@ export class DappsController extends EventEmitter implements IDappsController {
             ? 'BLACKLISTED'
             : this.initialLoadPromise
               ? 'LOADING'
-              : (contextStatus ?? intrinsic),
+              : isTrustedByUser
+                ? 'VERIFIED'
+                : (contextStatus ?? intrinsic),
         // The canonical hostname, so the banner names the site the user believes they are on
         // instead of the fully-qualified spelling a phishing page may navigate to. Falls back to
         // the raw url for inputs the URL parser rejects, which must not throw here.
@@ -1441,10 +1542,10 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     // 2) dApp is hosted on a user-content platform never used by legitimate DeFi protocols
-    const suspiciousHostingDappNames = getDappNamesByPredicate(
+    const suspiciousHostingDapps = dappVerificationData.filter(
       (dapp) => dapp.status === 'SUSPICIOUS_HOSTING'
     )
-    if (suspiciousHostingDappNames.length) {
+    if (suspiciousHostingDapps.length) {
       return {
         id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
         type: 'warning',
@@ -1452,7 +1553,12 @@ export class DappsController extends EventEmitter implements IDappsController {
         text: withOptionalDappNames(
           'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.',
           '' // We explicitly don't append the dApp name, because here what matters is the suspicious hosting URL, but showing the name could confuse the user, so we simply don't
-        )
+        ),
+        // A dApp flagged for the document embedding it cannot be trusted away, so the action is
+        // offered only while the warning is about the dApps' own hosting.
+        trustableDappUrls: contextStatus
+          ? []
+          : suspiciousHostingDapps.map(({ url }) => url).filter((url) => canBeTrustedByUser(url))
       }
     }
 
@@ -1511,6 +1617,9 @@ export class DappsController extends EventEmitter implements IDappsController {
       ...super.toJSON(),
       dapps: this.dapps,
       recentDapps: this.recentDapps,
+      dappToConnect: this.dappToConnect
+        ? this.#withTrustFlags(this.dappToConnect, !!this.#dappToConnectContextStatus)
+        : null,
       categories: this.categories,
       isReady: this.isReady,
       trendingTokens: this.trendingTokens,

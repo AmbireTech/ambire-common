@@ -5,7 +5,8 @@ import {
   PHISHING_ACTIVE_UPDATE_INTERVAL,
   PHISHING_INACTIVE_UPDATE_INTERVAL
 } from '../../consts/intervals'
-import { SUSPICIOUS_HOSTING_DOMAINS } from './phishing'
+import { canBeTrustedByUser } from './phishing'
+import { SUSPICIOUS_HOSTING_DOMAINS } from './suspiciousHostingDomains'
 
 // Seeds the phishing DB (domains + addresses) so #domains and #addresses are populated.
 const prepareTest = async (
@@ -155,7 +156,7 @@ describe('PhishingController', () => {
     test('getDomainBlacklistedStatus returns SUSPICIOUS_HOSTING for all domains in SUSPICIOUS_HOSTING_DOMAINS', async () => {
       const { controller } = await prepareTest()
 
-      for (const domain of SUSPICIOUS_HOSTING_DOMAINS) {
+      for (const { hostSuffix: domain } of SUSPICIOUS_HOSTING_DOMAINS) {
         expect(controller.getDomainBlacklistedStatus(`https://${domain}/some/path`)).toBe(
           'SUSPICIOUS_HOSTING'
         )
@@ -241,13 +242,59 @@ describe('PhishingController', () => {
       const results: Record<string, string> = {}
 
       await controller.updateDomainsBlacklistedStatus(
-        SUSPICIOUS_HOSTING_DOMAINS.map((d) => `https://${d}/fake-dapp`),
+        SUSPICIOUS_HOSTING_DOMAINS.map(({ hostSuffix }) => `https://${hostSuffix}/fake-dapp`),
         (statuses) => Object.assign(results, statuses)
       )
 
-      for (const domain of SUSPICIOUS_HOSTING_DOMAINS) {
+      for (const { hostSuffix: domain } of SUSPICIOUS_HOSTING_DOMAINS) {
         expect(results[domain]).toBe('SUSPICIOUS_HOSTING')
       }
+    })
+  })
+
+  describe('canBeTrustedByUser', () => {
+    test('allows a dApp on its own subdomain of a platform that hands out one per app', () => {
+      expect(canBeTrustedByUser('https://my-dapp.vercel.app')).toBe(true)
+      expect(canBeTrustedByUser('https://my-dapp.pages.dev/swap')).toBe(true)
+      expect(canBeTrustedByUser('https://bafkrei.ipfs.dweb.link')).toBe(true)
+      // GitHub Pages gives the subdomain to the account and the path to the repo. The account owns
+      // the whole hostname either way, so the hostname is the smallest honest unit of trust.
+      expect(canBeTrustedByUser('https://my-account.github.io/my-dapp')).toBe(true)
+    })
+
+    test("refuses the platform's own hostname, which every app there shares", () => {
+      expect(canBeTrustedByUser('https://vercel.app')).toBe(false)
+      expect(canBeTrustedByUser('https://github.io')).toBe(false)
+      // The path form of a gateway - the hostname is the gateway, shared by all content it serves.
+      expect(canBeTrustedByUser('https://dweb.link/ipfs/bafkrei')).toBe(false)
+      expect(canBeTrustedByUser('https://ipfs.io/ipfs/bafkrei')).toBe(false)
+    })
+
+    test('refuses every platform where unrelated apps share one hostname', () => {
+      const sharedHostnamePlatforms = SUSPICIOUS_HOSTING_DOMAINS.filter(
+        ({ isAppPerSubdomain }) => !isAppPerSubdomain
+      )
+      expect(sharedHostnamePlatforms.length).toBeGreaterThan(0)
+
+      for (const { hostSuffix } of sharedHostnamePlatforms) {
+        expect(canBeTrustedByUser(`https://${hostSuffix}`)).toBe(false)
+        expect(canBeTrustedByUser(`https://${hostSuffix}/some-dapp`)).toBe(false)
+      }
+    })
+
+    test('refuses a dApp that is not on a shared hosting platform at all', () => {
+      expect(canBeTrustedByUser('https://app.uniswap.org')).toBe(false)
+      expect(canBeTrustedByUser('https://google.com')).toBe(false)
+    })
+
+    test('matches the canonical hostname, so a trailing dot cannot dodge the check', () => {
+      expect(canBeTrustedByUser('https://my-dapp.vercel.app./swap')).toBe(true)
+      expect(canBeTrustedByUser('https://sites.google.com./my-dapp')).toBe(false)
+    })
+
+    test('refuses an unparsable url', () => {
+      expect(canBeTrustedByUser('not a url')).toBe(false)
+      expect(canBeTrustedByUser('')).toBe(false)
     })
   })
 

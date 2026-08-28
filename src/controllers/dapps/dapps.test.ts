@@ -900,6 +900,181 @@ describe('DappsController', () => {
     })
   })
 
+  describe('user-trusted dApps on shared hosting', () => {
+    const vercelDapp = makeDapp({
+      id: 'my-dapp.vercel.app',
+      name: 'My Dapp',
+      url: 'https://my-dapp.vercel.app',
+      blacklisted: 'SUSPICIOUS_HOSTING',
+      isCustom: true
+    })
+    const googleSitesDapp = makeDapp({
+      id: 'sites.google.com',
+      name: 'Dapp On Google Sites',
+      url: 'https://sites.google.com/view/my-dapp',
+      blacklisted: 'SUSPICIOUS_HOSTING',
+      isCustom: true
+    })
+
+    const prepareTrustTest = async (dapps: Dapp[] = [vercelDapp]) =>
+      prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, ...dapps])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+    test('the suspicious hosting banner offers the trust action only for dApps that can take it', async () => {
+      const { controller } = await prepareTrustTest([vercelDapp, googleSitesDapp])
+      await controller.fetchAndUpdatePromise
+
+      const vercelBanner = controller.getDappVerificationBanner([vercelDapp.url])
+      expect(vercelBanner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+      expect(vercelBanner?.trustableDappUrls).toEqual([vercelDapp.url])
+
+      // sites.google.com is shared with every other app published there, so there is nothing
+      // smaller than the whole platform the user could trust.
+      const googleSitesBanner = controller.getDappVerificationBanner([googleSitesDapp.url])
+      expect(googleSitesBanner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+      expect(googleSitesBanner?.trustableDappUrls).toEqual([])
+    })
+
+    test('trusting a dApp silences its hosting warning, leaving the not-in-catalog one', async () => {
+      const { controller } = await prepareTrustTest()
+      await controller.fetchAndUpdatePromise
+
+      await controller.trustDapp(vercelDapp.url)
+
+      // Trust does not vouch for the app - it only takes it off the suspicious-hosting footing,
+      // onto the same one every other app outside the catalog stands on.
+      const banner = controller.getDappVerificationBanner([vercelDapp.url])
+      expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG)
+
+      const dapp = controller.dapps.find((d) => d.id === vercelDapp.id)!
+      expect(dapp.isTrustedByUser).toBe(true)
+      expect(dapp.canBeTrustedByUser).toBe(true)
+      // The stored status stays as the checks found it, so the UI can still tell the user why the
+      // app is marked as trusted in the first place.
+      expect(dapp.blacklisted).toBe('SUSPICIOUS_HOSTING')
+    })
+
+    test('revoking the trust brings the hosting warning back', async () => {
+      const { controller, mainCtrl } = await prepareTrustTest()
+      await controller.fetchAndUpdatePromise
+
+      await controller.trustDapp(vercelDapp.url)
+      await controller.untrustDapp(vercelDapp.id)
+
+      expect(controller.getDappVerificationBanner([vercelDapp.url])?.id).toBe(
+        DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING
+      )
+      expect(controller.dapps.find((d) => d.id === vercelDapp.id)!.isTrustedByUser).toBe(false)
+      expect(await mainCtrl.storage.get('trustedDapps', [])).toEqual([])
+    })
+
+    test('the trust is persisted apart from the dApp record, so a disconnect cannot drop it', async () => {
+      const { controller, mainCtrl } = await prepareTrustTest([
+        { ...vercelDapp, isConnected: true, connectedSources: ['injected'] }
+      ])
+      await controller.fetchAndUpdatePromise
+
+      await controller.trustDapp(vercelDapp.url)
+      expect(await mainCtrl.storage.get('trustedDapps', [])).toEqual([
+        { id: vercelDapp.id, addedAt: expect.any(Number) }
+      ])
+
+      // Disconnecting a custom dApp removes its record entirely.
+      controller.updateDapp(vercelDapp.id, { connectedSources: [] })
+      expect(controller.getDapp(vercelDapp.id)).toBeUndefined()
+
+      expect(await mainCtrl.storage.get('trustedDapps', [])).toEqual([
+        { id: vercelDapp.id, addedAt: expect.any(Number) }
+      ])
+    })
+
+    test('a trailing-dot id stored by an older version still resolves to the trusted dApp', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, vercelDapp])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+        await storageCtrl.set('trustedDapps', [{ id: 'my-dapp.vercel.app.', addedAt: Date.now() }])
+      })
+      await controller.fetchAndUpdatePromise
+
+      expect(controller.getDappVerificationBanner([vercelDapp.url])?.id).toBe(
+        DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG
+      )
+    })
+
+    test('SECURITY: trusting a dApp that shares its hostname with the platform is refused', async () => {
+      const { controller, mainCtrl } = await prepareTrustTest([googleSitesDapp])
+      await controller.fetchAndUpdatePromise
+
+      const { restore } = suppressConsole()
+      try {
+        await controller.trustDapp(googleSitesDapp.url)
+      } finally {
+        restore()
+      }
+
+      expect(await mainCtrl.storage.get('trustedDapps', [])).toEqual([])
+      expect(controller.getDappVerificationBanner([googleSitesDapp.url])?.id).toBe(
+        DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING
+      )
+      const dapp = controller.dapps.find((d) => d.id === googleSitesDapp.id)!
+      expect(dapp.canBeTrustedByUser).toBe(false)
+      expect(dapp.isTrustedByUser).toBe(false)
+    })
+
+    test('SECURITY: the trust never silences BLACKLISTED', async () => {
+      // The phishing DB is what makes a dApp BLACKLISTED; on a suspicious hosting platform it
+      // outranks the hosting warning, so this is the status the checks would really report.
+      const updateDomainsSpy = jest
+        .spyOn(PhishingController.prototype, 'updateDomainsBlacklistedStatus')
+        .mockImplementation(async (_urls, callback) => {
+          callback({ [vercelDapp.id]: 'BLACKLISTED' })
+        })
+
+      try {
+        const { controller } = await prepareTrustTest([
+          makeDapp({ ...vercelDapp, blacklisted: 'LOADING' })
+        ])
+        await controller.fetchAndUpdatePromise
+
+        expect(controller.getDapp(vercelDapp.id)?.blacklisted).toBe('BLACKLISTED')
+
+        await controller.trustDapp(vercelDapp.url)
+
+        expect(controller.getDappVerificationBanner([vercelDapp.url])?.id).toBe(
+          DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED
+        )
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
+
+    test('SECURITY: the trust never silences a dangerous frame context', async () => {
+      const { controller } = await prepareTrustTest()
+      await controller.fetchAndUpdatePromise
+
+      await controller.trustDapp(vercelDapp.url)
+
+      // The trusted dApp is embedded in a tab whose top-level document is a phishing page. The
+      // danger belongs to that document, not to the app the user vouched for.
+      const embeddedSession = new Session({
+        tabId: 80,
+        windowId: 1,
+        url: vercelDapp.url,
+        frameId: 3,
+        topFrameUrl: 'https://sites.google.com/view/fake-uniswap'
+      })
+      controller.dappSessions[embeddedSession.sessionId] = embeddedSession
+
+      const banner = controller.getDappVerificationBanner([vercelDapp.url], {
+        sessionId: embeddedSession.sessionId
+      })
+      expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+      expect(banner?.trustableDappUrls).toEqual([])
+    })
+  })
+
   describe('dApp session frame context', () => {
     test('getOrCreateDappSession refreshes the frame context of a reused session', async () => {
       const { controller } = await prepareTest()
