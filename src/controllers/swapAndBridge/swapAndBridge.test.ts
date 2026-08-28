@@ -12,6 +12,7 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
+import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import { Storage } from '../../interfaces/storage'
@@ -339,6 +340,15 @@ const buildSwapAndBridgeController = (controllerStorage: StorageController = sto
 
 const swapAndBridgeController = buildSwapAndBridgeController()
 
+const createDeferred = <T>() => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+
+  return { promise, resolve }
+}
+
 const transferCtrl = new TransferController(
   async () => ({}),
   storageCtrl,
@@ -432,6 +442,40 @@ describe('SwapAndBridge Controller', () => {
     await swapAndBridgeController.setSwapProviderEnabled('socket', true)
     expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
     await expect(storageCtrl.get('disabledSwapProviderIds', [])).resolves.toEqual([])
+  })
+  test('should ignore stale supported chains when provider settings change rapidly', async () => {
+    await swapAndBridgeController.initForm('rapid-provider-toggle-test')
+    await wait(0)
+    swapAndBridgeController.unloadScreen('rapid-provider-toggle-test')
+
+    const staleSupportedChains =
+      createDeferred<Awaited<ReturnType<SocketAPIMock['getSupportedChains']>>>()
+    const latestSupportedChains =
+      createDeferred<Awaited<ReturnType<SocketAPIMock['getSupportedChains']>>>()
+    const getSupportedChainsSpy = jest
+      .spyOn(socketAPIMock, 'getSupportedChains')
+      .mockReturnValueOnce(staleSupportedChains.promise)
+      .mockReturnValueOnce(latestSupportedChains.promise)
+
+    const disablePromise = swapAndBridgeController.setSwapProviderEnabled('socket', false)
+    await wait(0)
+    expect(getSupportedChainsSpy).toHaveBeenCalledTimes(1)
+
+    const enablePromise = swapAndBridgeController.setSwapProviderEnabled('socket', true)
+    await wait(0)
+    expect(getSupportedChainsSpy).toHaveBeenCalledTimes(2)
+
+    const expectedSupportedChains = networks.map(({ chainId }) => ({ chainId }))
+    latestSupportedChains.resolve(expectedSupportedChains)
+    await enablePromise
+
+    staleSupportedChains.resolve([{ chainId: 999999n }])
+    await disablePromise
+
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+    expect(swapAndBridgeController.supportedChainIds).toEqual(
+      expectedSupportedChains.map(({ chainId }) => chainId)
+    )
   })
   test('should restore valid disabled swap providers from storage', async () => {
     const persistedStorage = new StorageController(produceMemoryStore())
