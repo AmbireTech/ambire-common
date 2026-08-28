@@ -712,11 +712,11 @@ describe('ERC-7730 descriptors', () => {
             // `type: 'token'` items (live decimals/symbol lookup via TokenOrNft)
             // instead of relying on a static, possibly incomplete token registry.
             parts: [
-              getAction('Swap '),
+              getAction('Swap'),
               getToken(ZeroAddress, 5837776470906329n, 1n),
-              getText(' for at least '),
+              getText('for at least'),
               getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n),
-              getText(' to '),
+              getText('to'),
               getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')
             ],
             // Every field above is referenced by the template, so all of them
@@ -1296,9 +1296,9 @@ describe('ERC-7730 descriptors', () => {
           undefined,
           {
             parts: [
-              getAction('Stake '),
+              getAction('Stake'),
               getToken(ZeroAddress, 1000000000000000n, 1n),
-              getText(' ETH')
+              getText('ETH')
             ],
             // The only field is the one referenced by the template, so it shouldn't
             // repeat as a detail row below the intent.
@@ -1408,12 +1408,10 @@ describe('ERC-7730 descriptors', () => {
     const visualization = irCalls[0]!.fullVisualization?.find((item) => item.type === 'erc7730')
 
     if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
+    // One part per contiguous run of literal text, so the escaped braces stay
+    // attached to the text between them instead of becoming parts of their own
     expect(visualization.intent.map((item) => item.content || item.type)).toEqual([
-      'Stake ',
-      '{',
-      'ETH',
-      '}',
-      ' ',
+      'Stake {ETH}',
       'token'
     ])
   })

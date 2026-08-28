@@ -1065,9 +1065,24 @@ const interpolateIntentParts = (
   // "Stake ", ...), so render them as an `action` part - same styling as the
   // rest of the app's action verbs (e.g. getAction('Swap') in the Uniswap/
   // CowSwap/etc. modules) - instead of plain text.
+  // Literal text is buffered and flushed as one part per contiguous run between
+  // placeholders (so an escaped brace stays part of the text around it), trimmed
+  // so a part's content is the text itself and nothing else: the spacing the
+  // template puts around a placeholder is layout, and the UI renders the parts
+  // with a gap between them. Trimming also keeps a part comparable to a plain
+  // string (e.g. `intent[0].content === 'Send'`), which a trailing space carried
+  // over from the template would otherwise break.
+  let textBuffer = ''
+
   const pushText = (text: string) => {
-    if (!text) return
-    parts.push(parts.length === 0 ? getAction(text) : getText(text))
+    textBuffer += text
+  }
+
+  const flushText = () => {
+    const trimmedText = textBuffer.trim()
+    textBuffer = ''
+    if (!trimmedText) return
+    parts.push(parts.length === 0 ? getAction(trimmedText) : getText(trimmedText))
   }
 
   while (currentIndex < template.length) {
@@ -1131,11 +1146,14 @@ const interpolateIntentParts = (
     ) {
       return null
     }
+    flushText()
     parts.push(...formattedValue)
     usedFieldPaths.add(path)
 
     currentIndex = placeholderEndIndex + 1
   }
+
+  flushText()
 
   return parts.length ? { parts, usedFieldPaths } : null
 }
