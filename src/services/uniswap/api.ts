@@ -394,7 +394,7 @@ export class UniswapAPI implements SwapProvider {
 
     const params = new URLSearchParams({
       chainId: toChainId.toString(),
-      limit: '1000',
+      limit: '500',
       sort: 'tvl'
     })
     const url = `${UNISWAP_API_BASE_URL}/tokens?${params.toString()}`
