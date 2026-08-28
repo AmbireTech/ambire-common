@@ -3,9 +3,9 @@ import { Interface } from 'ethers'
 import { describe, expect, it, jest } from '@jest/globals'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import { CITREA_CHAIN_ID } from '../../consts/networks'
 import { SwapAndBridgeRoute } from '../../interfaces/swapAndBridge'
 import { ZERO_ADDRESS } from '../socket/constants'
-import { CITREA_CHAIN_ID } from '../squid/constants'
 import { UniswapAPI } from './api'
 
 const erc20Interface = new Interface(ERC20.abi)
@@ -25,12 +25,12 @@ describe('UniswapAPI', () => {
     const uniswapApi = new UniswapAPI({ fetch: jest.fn() as any, apiKey: 'test-key' })
 
     expect(uniswapApi.areChainsSupported({ fromChainId: 1, toChainId: 8453 })).toBe(true)
-    expect(uniswapApi.areChainsSupported({ fromChainId: CITREA_CHAIN_ID, toChainId: 1 })).toBe(
-      false
-    )
+    expect(
+      uniswapApi.areChainsSupported({ fromChainId: Number(CITREA_CHAIN_ID), toChainId: 1 })
+    ).toBe(false)
 
     const chains = await uniswapApi.getSupportedChains()
-    expect(chains.some((chain) => chain.chainId === CITREA_CHAIN_ID)).toBe(false)
+    expect(chains.some((chain) => chain.chainId === Number(CITREA_CHAIN_ID))).toBe(false)
   })
 
   it('requests a direct-approval classic quote and normalizes the route', async () => {
