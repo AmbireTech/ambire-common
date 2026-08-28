@@ -131,9 +131,9 @@ describe('Swap Provider Parallel execution', () => {
       quote: jest.fn(),
       getRouteStatus: jest.fn()
     } as unknown as SwapProvider
-    const squidProvider = {
-      id: 'squid',
-      name: 'Squid',
+    const citreaProvider = {
+      id: 'citrea-provider',
+      name: 'Citrea Provider',
       isHealthy: null,
       supportedChains: [{ chainId: 4114 }],
       updateHealth: jest.fn(),
@@ -168,7 +168,7 @@ describe('Swap Provider Parallel execution', () => {
       getRouteStatus: jest.fn()
     } as unknown as SwapProvider
 
-    const executor = new SwapProviderParallelExecutor([socketProvider, squidProvider])
+    const executor = new SwapProviderParallelExecutor([socketProvider, citreaProvider])
     await executor.quote({
       fromAsset: {
         address: '0x0000000000000000000000000000000000000000',
@@ -197,7 +197,7 @@ describe('Swap Provider Parallel execution', () => {
     })
 
     expect(socketProvider.quote).not.toHaveBeenCalled()
-    expect(squidProvider.quote).toHaveBeenCalled()
+    expect(citreaProvider.quote).toHaveBeenCalled()
   })
 
   it('Returns routes from all providers that complete within the wait window', async () => {
