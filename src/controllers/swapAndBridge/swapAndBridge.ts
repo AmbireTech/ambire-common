@@ -673,6 +673,27 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
+    try {
+      const storedDisabledProviderIds = await this.#storage.get('disabledSwapProviderIds', [])
+      const availableProviderIds = new Set(this.swapProviders.map(({ id }) => id))
+
+      this.disabledSwapProviderIds = [
+        ...new Set(
+          storedDisabledProviderIds.filter(
+            (id) => typeof id === 'string' && availableProviderIds.has(id)
+          )
+        )
+      ]
+    } catch (error) {
+      const loadError =
+        error instanceof Error ? error : new Error('Unable to load swap provider preferences')
+      this.emitError({
+        error: loadError,
+        level: 'silent',
+        message: 'Unable to load saved swap provider preferences.'
+      })
+    }
+
     // FIXME: Temporarily omit getting prev activeRoutes from storage, because of
     // old records with different (unexpected) structure causing crashes.
     // this.activeRoutes = await this.#storage.get('swapAndBridgeActiveRoutes', [])
@@ -960,7 +981,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   /** Enables or disables a provider for future route and supported-chain discovery. */
-  setSwapProviderEnabled(providerId: string, isEnabled: boolean) {
+  async setSwapProviderEnabled(providerId: string, isEnabled: boolean) {
     if (!this.swapProviders.some(({ id }) => id === providerId)) return
 
     const isDisabled = this.disabledSwapProviderIds.includes(providerId)
@@ -974,6 +995,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.quote = null
     this.quoteRoutesStatuses = {}
     this.#emitUpdateIfNeeded()
+
+    try {
+      await this.#storage.set('disabledSwapProviderIds', this.disabledSwapProviderIds)
+    } catch (error) {
+      const saveError =
+        error instanceof Error ? error : new Error('Unable to save swap provider preferences')
+      this.emitError({
+        error: saveError,
+        level: 'silent',
+        message: 'Unable to save swap provider preferences.'
+      })
+    }
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#fetchSupportedChainsIfNeeded()

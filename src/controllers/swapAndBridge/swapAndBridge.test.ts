@@ -311,30 +311,33 @@ const dappsControllerMock = {
   onUpdate: () => () => {}
 } as any
 
-const swapAndBridgeController = new SwapAndBridgeController({
-  callRelayer: async () => ({}),
-  fetch: fetch as any,
-  selectedAccount: selectedAccountCtrl,
-  networks: networksCtrl,
-  accounts: accountsCtrl,
-  activity: activityCtrl,
-  storage: storageCtrl,
-  signAccountOpPreference,
-  featureFlags: featureFlagsCtrl,
-  swapProvider: socketAPIMock as any,
-  keystore,
-  portfolio: portfolioCtrl,
-  providers: providersCtrl,
-  phishing: phishingCtrl,
-  dapps: dappsControllerMock,
-  externalSignerControllers: {},
-  relayerUrl,
-  getUserRequests: () => [],
-  getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
-  onBroadcastSuccess: () => Promise.resolve(),
-  onBroadcastFailed: () => {},
-  ui: uiCtrl
-})
+const buildSwapAndBridgeController = (controllerStorage: StorageController = storageCtrl) =>
+  new SwapAndBridgeController({
+    callRelayer: async () => ({}),
+    fetch: fetch as any,
+    selectedAccount: selectedAccountCtrl,
+    networks: networksCtrl,
+    accounts: accountsCtrl,
+    activity: activityCtrl,
+    storage: controllerStorage,
+    signAccountOpPreference,
+    featureFlags: featureFlagsCtrl,
+    swapProvider: socketAPIMock as any,
+    keystore,
+    portfolio: portfolioCtrl,
+    providers: providersCtrl,
+    phishing: phishingCtrl,
+    dapps: dappsControllerMock,
+    externalSignerControllers: {},
+    relayerUrl,
+    getUserRequests: () => [],
+    getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
+    onBroadcastSuccess: () => Promise.resolve(),
+    onBroadcastFailed: () => {},
+    ui: uiCtrl
+  })
+
+const swapAndBridgeController = buildSwapAndBridgeController()
 
 const transferCtrl = new TransferController(
   async () => ({}),
@@ -413,20 +416,32 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController).toBeDefined()
     // TODO: move these in beforeEach with an exception for the continuous updates tests where mocks are not needed
   })
-  test('should record enabled swap providers and ignore unknown provider ids', () => {
+  test('should persist disabled swap providers and ignore unknown provider ids', async () => {
     expect(swapAndBridgeController.swapProviders).toEqual([{ id: 'socket', name: 'Socket' }])
     expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
 
-    swapAndBridgeController.setSwapProviderEnabled('unknown-provider', false)
+    await swapAndBridgeController.setSwapProviderEnabled('unknown-provider', false)
     expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
 
-    swapAndBridgeController.setSwapProviderEnabled('socket', false)
+    await swapAndBridgeController.setSwapProviderEnabled('socket', false)
     const disabledProviderIds = swapAndBridgeController.getDisabledSwapProviderIds()
     disabledProviderIds.push('mutated-copy')
     expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual(['socket'])
+    await expect(storageCtrl.get('disabledSwapProviderIds', [])).resolves.toEqual(['socket'])
 
-    swapAndBridgeController.setSwapProviderEnabled('socket', true)
+    await swapAndBridgeController.setSwapProviderEnabled('socket', true)
     expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+    await expect(storageCtrl.get('disabledSwapProviderIds', [])).resolves.toEqual([])
+  })
+  test('should restore valid disabled swap providers from storage', async () => {
+    const persistedStorage = new StorageController(produceMemoryStore())
+    await persistedStorage.set('disabledSwapProviderIds', ['socket', 'unknown-provider', 'socket'])
+    const restoredController = buildSwapAndBridgeController(persistedStorage)
+
+    await restoredController.initForm('restore-disabled-providers-test')
+
+    expect(restoredController.getDisabledSwapProviderIds()).toEqual(['socket'])
+    restoredController.unloadScreen('restore-disabled-providers-test', true)
   })
   test('should initForm', async () => {
     await swapAndBridgeController.initForm('1')
