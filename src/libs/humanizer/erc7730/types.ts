@@ -107,10 +107,19 @@ export type Erc7730Descriptor = {
 export type Erc7730ResolvedDescriptor = {
   descriptor: Erc7730Descriptor
   path?: string
-  safeTxCallDescriptor?: Erc7730ResolvedDescriptor
-  safeTxCalls?: Call[]
-  safeTxCallDescriptors?: Record<number, Erc7730ResolvedDescriptor>
-  safeTxTransactionsOnly?: boolean
+  /**
+   * The calls this one only wraps, when the wrapper itself is not worth showing - the batch inside
+   * a Safe `execTransaction`, for example. When present, these are rendered instead of the call.
+   */
+  innerCalls?: Call[]
+  /** The descriptor of each entry of `innerCalls`, by its index in that array */
+  innerCallDescriptors?: Record<number, Erc7730ResolvedDescriptor>
+  /**
+   * The descriptor of each call embedded in this one through a `format: 'calldata'` field, keyed by
+   * `eip155:{chainId}:{address}`. Flat across every nesting level, so an embedded call is described
+   * by its own contract's descriptor instead of by the descriptor of the call that carries it.
+   */
+  nestedCallDescriptors?: Record<string, Erc7730ResolvedDescriptor>
 }
 
 export type Erc7730CallDescriptors = Record<number, Erc7730ResolvedDescriptor>

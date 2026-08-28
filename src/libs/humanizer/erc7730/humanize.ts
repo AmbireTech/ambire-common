@@ -10,6 +10,7 @@ import {
 } from 'ethers'
 
 import { humanizerCallModules } from '../'
+import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import humanizerInfo from '../../../consts/humanizer/humanizerInfo.json'
 import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
@@ -26,7 +27,6 @@ import {
   IrMessage
 } from '../interfaces'
 import { getSetAllowanceResetText } from '../modules/Allowance'
-import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import {
@@ -54,7 +54,12 @@ import {
   Erc7730TypedDataTypes,
   Erc7730VisibleRule
 } from './types'
-import { getSafeTxCallsFromMessage, isPlainObject, parseIntegerLiteral } from './utils'
+import {
+  getRegistryKey,
+  getSafeTxCallsFromMessage,
+  isPlainObject,
+  parseIntegerLiteral
+} from './utils'
 
 type DescriptorFormatMatch = {
   formatKey: string
@@ -74,6 +79,17 @@ type FormatContext = {
    * context is threaded down unchanged.
    */
   collectedWarnings: HumanizerWarning[]
+  /**
+   * The descriptor of every call embedded through a `format: 'calldata'` field, keyed by
+   * `eip155:{chainId}:{address}`. Threaded down unchanged, so a call embedded at any depth is
+   * described by its own contract's descriptor.
+   */
+  nestedCallDescriptors?: Record<string, Erc7730ResolvedDescriptor>
+  /**
+   * Set only when the caller is looking for the embedded calls rather than for their formatting.
+   * Every embedded call found is pushed here, so the registry can ask for a descriptor for it.
+   */
+  collectedNestedCalls?: Call[]
 }
 
 type VisibilityResult = {
@@ -649,14 +665,17 @@ const getFieldValue = (field: Erc7730Field, context: FormatContext, base: unknow
 const getArrayValueAt = (value: unknown, index: number): unknown =>
   Array.isArray(value) ? value[index] : value
 
-const getMorphoGeneralAdapterCalldataValue = (
+/**
+ * A Morpho general adapter carries the action it performs in its own calldata and has no ERC-7730
+ * descriptor of its own, so nothing above this can describe it. Tried only after the embedded call
+ * failed to find a descriptor, so a descriptor always wins over this.
+ */
+const getGeneralAdapterCalldataValue = (
   context: FormatContext,
   calldata: unknown,
   callee: unknown,
   amount: unknown
 ): HumanizerVisualization[] | null => {
-  if (!context.descriptorPath?.includes('registry/morpho/calldata-MorphoBundlerV3.json'))
-    return null
   if (typeof calldata !== 'string' || !calldata.startsWith('0x')) return null
   if (typeof callee !== 'string' || !isAddress(callee)) return null
 
@@ -694,15 +713,33 @@ const getNestedErc7730CalldataValue = (
   const accountAddr = resolvePath('#.@.accountAddr', context, context.root)
   if (typeof accountAddr !== 'string' || !isAddress(accountAddr)) return null
 
+  const nestedCall = {
+    to: callee,
+    data: calldata,
+    value: toBigIntOrNull(amount) || 0n
+  }
+  context.collectedNestedCalls?.push(nestedCall)
+
+  // The descriptor of the contract the embedded call actually goes to, fetched for it by the
+  // registry. The descriptor of the call that carries it stands in only when both go to the same
+  // contract, which is the one case where it describes the embedded call too. For any other
+  // contract the embedded call is left to the plain humanizer modules further down, rather than
+  // described by a format of an unrelated contract that happens to share a selector.
+  const parentCallee = resolvePath('#.@.to', context, context.root)
+  const isSameContract =
+    typeof parentCallee === 'string' && parentCallee.toLowerCase() === callee.toLowerCase()
+  const nestedDescriptor =
+    context.nestedCallDescriptors?.[getRegistryKey(context.chainId, callee)] ||
+    (isSameContract ? { descriptor: context.descriptor, path: context.descriptorPath } : null)
+  if (!nestedDescriptor) return null
+
   const humanizedCall = humanizeCallWithErc7730(
-    {
-      to: callee,
-      data: calldata,
-      value: toBigIntOrNull(amount) || 0n
-    },
+    nestedCall,
     context.chainId,
     accountAddr,
-    { descriptor: context.descriptor, path: context.descriptorPath }
+    { ...nestedDescriptor, nestedCallDescriptors: context.nestedCallDescriptors },
+    undefined,
+    context.collectedNestedCalls
   )
   const erc7730Visualization = humanizedCall?.fullVisualization?.find(
     (visualization) => visualization.type === 'erc7730'
@@ -748,22 +785,22 @@ const getCalldataRows = (
     const callee = getArrayValueAt(calleeValues, index)
     const selector = getArrayValueAt(selectorValues, index)
     const amount = getArrayValueAt(amountValues, index)
-    const decodedValue = getMorphoGeneralAdapterCalldataValue(context, calldata, callee, amount)
-
-    if (decodedValue) {
-      acc.push({
-        label: field.label || field.path || '',
-        value: decodedValue
-      })
-
-      return acc
-    }
 
     const nestedVisualization = getNestedErc7730CalldataValue(context, calldata, callee, amount)
     if (nestedVisualization) {
       acc.push({
         label: nestedRowLabel,
         value: [nestedVisualization]
+      })
+
+      return acc
+    }
+
+    const generalAdapterValue = getGeneralAdapterCalldataValue(context, calldata, callee, amount)
+    if (generalAdapterValue) {
+      acc.push({
+        label: field.label || field.path || '',
+        value: generalAdapterValue
       })
 
       return acc
@@ -1581,7 +1618,7 @@ const getSafeTxMessageWarnings = (message: Message): HumanizerWarning[] => {
   return dedupeWarnings(warnings)
 }
 
-const getSafeTxCallVisualizations = (
+const getInnerCallVisualizations = (
   safeTxCalls: Call[],
   chainId: bigint,
   accountAddr: string,
@@ -1590,15 +1627,14 @@ const getSafeTxCallVisualizations = (
 ): (HumanizerVisualization & HumanizerErc7730Visualization)[] => {
   return safeTxCalls
     .map((safeTxCall, index) => {
-      const safeTxCallDescriptor =
-        resolvedDescriptor.safeTxCallDescriptors?.[index] || resolvedDescriptor.safeTxCallDescriptor
+      const innerCallDescriptor = resolvedDescriptor.innerCallDescriptors?.[index]
 
-      if (safeTxCallDescriptor) {
+      if (innerCallDescriptor) {
         const humanizedCall = humanizeCallWithErc7730(
           safeTxCall,
           chainId,
           accountAddr,
-          safeTxCallDescriptor
+          innerCallDescriptor
         )
         const erc7730Visualization = humanizedCall?.fullVisualization?.find(
           (visualization) => visualization.type === 'erc7730'
@@ -1647,30 +1683,31 @@ const getSafeTxCallRows = (
   const safeTxCalls = getSafeTxCallsFromMessage(message)
   if (!safeTxCalls?.length) return null
 
-  const safeTxCallVisualizations = getSafeTxCallVisualizations(
+  const innerCallVisualizations = getInnerCallVisualizations(
     safeTxCalls,
     chainId,
     message.accountAddr,
     resolvedDescriptor
   )
 
-  if (safeTxCallVisualizations.length) {
+  if (innerCallVisualizations.length) {
     return [
       {
-        label: safeTxCallVisualizations.length === 1 ? 'Transaction' : 'Transactions',
-        value: safeTxCallVisualizations
+        label: innerCallVisualizations.length === 1 ? 'Transaction' : 'Transactions',
+        value: innerCallVisualizations
       }
     ]
   }
 
   const safeTxCall = getSafeTxCallFromMessage(message)
   if (!safeTxCall) return null
-  if (resolvedDescriptor.safeTxCallDescriptor) {
+  const innerCallDescriptor = resolvedDescriptor.innerCallDescriptors?.[0]
+  if (innerCallDescriptor) {
     const humanizedCall = humanizeCallWithErc7730(
       safeTxCall,
       chainId,
       message.accountAddr,
-      resolvedDescriptor.safeTxCallDescriptor
+      innerCallDescriptor
     )
     const erc7730Visualization = humanizedCall?.fullVisualization?.find(
       (visualization) => visualization.type === 'erc7730'
@@ -1721,19 +1758,24 @@ export const humanizeCallWithErc7730 = (
   chainId: bigint,
   accountAddr: string,
   resolvedDescriptor: Erc7730ResolvedDescriptor,
-  nativeAssetSymbol?: string
+  nativeAssetSymbol?: string,
+  /**
+   * Set only by the registry, which runs the formatting to find out which calls are embedded in
+   * this one so it can fetch a descriptor for each of them.
+   */
+  collectedNestedCalls?: Call[]
 ): IrCall | null => {
-  if (resolvedDescriptor.safeTxTransactionsOnly && resolvedDescriptor.safeTxCalls?.length) {
+  if (resolvedDescriptor.innerCalls?.length) {
     const collectedWarnings: HumanizerWarning[] = []
-    const safeTxCallVisualizations = getSafeTxCallVisualizations(
-      resolvedDescriptor.safeTxCalls,
+    const innerCallVisualizations = getInnerCallVisualizations(
+      resolvedDescriptor.innerCalls,
       chainId,
       accountAddr,
       resolvedDescriptor,
       collectedWarnings
     )
 
-    if (!safeTxCallVisualizations.length || !call.to) return null
+    if (!innerCallVisualizations.length || !call.to) return null
 
     return {
       ...call,
@@ -1745,12 +1787,12 @@ export const humanizeCallWithErc7730 = (
           },
           {
             label: '',
-            value: safeTxCallVisualizations
+            value: innerCallVisualizations
           }
         ])
       ],
       warnings: dedupeWarnings([
-        ...resolvedDescriptor.safeTxCalls.flatMap((safeTxCall) => getSafeCallWarnings(safeTxCall)),
+        ...resolvedDescriptor.innerCalls.flatMap((innerCall) => getSafeCallWarnings(innerCall)),
         ...collectedWarnings
       ])
     }
@@ -1774,7 +1816,9 @@ export const humanizeCallWithErc7730 = (
       }
     },
     chainId,
-    collectedWarnings: []
+    collectedWarnings: [],
+    nestedCallDescriptors: resolvedDescriptor.nestedCallDescriptors,
+    collectedNestedCalls
   }
   const fullVisualization = formatToVisualizations(match.format, context, call.dapp)
   const normalizedVisualization = fullVisualization

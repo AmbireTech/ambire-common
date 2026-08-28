@@ -47,22 +47,30 @@ describe('ERC-7730 registry cache', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     })
 
-    const firstDescriptor = await getTestErc7730DescriptorForCall({
+    const firstDescriptor = await getTestErc7730DescriptorForCall(
+      {
         to: contractAddress,
         value: 0n,
         data: '0x12345678'
-      }, 1n as AccountOp['chainId'], callRelayer)
+      },
+      1n as AccountOp['chainId'],
+      callRelayer
+    )
 
     expect(firstDescriptor?.path).toBe(registryPath)
     expect(callRelayer).toHaveBeenCalledTimes(2)
 
     callRelayer.mockClear()
 
-    const cachedDescriptor = await getTestErc7730DescriptorForCall({
+    const cachedDescriptor = await getTestErc7730DescriptorForCall(
+      {
         to: contractAddress,
         value: 0n,
         data: '0x12345678'
-      }, 1n as AccountOp['chainId'], callRelayer)
+      },
+      1n as AccountOp['chainId'],
+      callRelayer
+    )
 
     expect(cachedDescriptor?.path).toBe(registryPath)
     expect(callRelayer).not.toHaveBeenCalled()
@@ -223,11 +231,15 @@ describe('ERC-7730 registry cache', () => {
       chainId: 1n
     }
 
-    const firstDescriptor = await getTestErc7730DescriptorForCall({
+    const firstDescriptor = await getTestErc7730DescriptorForCall(
+      {
         to: contractAddress,
         value: 0n,
         data: '0x12345678'
-      }, 1n as AccountOp['chainId'], callRelayer)
+      },
+      1n as AccountOp['chainId'],
+      callRelayer
+    )
 
     expect(firstDescriptor?.path).toBe(registryPath)
     expect(callRelayer).toHaveBeenCalledTimes(2)
@@ -277,21 +289,29 @@ describe('ERC-7730 registry cache', () => {
     jest.useFakeTimers()
 
     try {
-      const firstDescriptor = getTestErc7730DescriptorForCall({
+      const firstDescriptor = getTestErc7730DescriptorForCall(
+        {
           to: '0x1111111111111111111111111111111111111111',
           value: 0n,
           data: '0x12345678'
-        }, 1n as AccountOp['chainId'], callRelayer)
+        },
+        1n as AccountOp['chainId'],
+        callRelayer
+      )
 
       await jest.advanceTimersByTimeAsync(4000)
       await expect(firstDescriptor).resolves.toBe(null)
       expect(callRelayer).toHaveBeenCalledTimes(1)
 
-      const secondDescriptor = getTestErc7730DescriptorForCall({
+      const secondDescriptor = getTestErc7730DescriptorForCall(
+        {
           to: '0x1111111111111111111111111111111111111111',
           value: 0n,
           data: '0x12345678'
-        }, 1n as AccountOp['chainId'], callRelayer)
+        },
+        1n as AccountOp['chainId'],
+        callRelayer
+      )
 
       await jest.advanceTimersByTimeAsync(4000)
       await expect(secondDescriptor).resolves.toBe(null)
@@ -411,10 +431,14 @@ describe('ERC-7730 registry cache', () => {
       chainId: 8453n
     }
 
-    const descriptor = await getTestErc7730MessageDescriptor(safeTxMessage as any, callRelayer, provider as any)
+    const descriptor = await getTestErc7730MessageDescriptor(
+      safeTxMessage as any,
+      callRelayer,
+      provider as any
+    )
 
     expect(descriptor?.path).toBe(registryPath)
-    expect(descriptor?.safeTxCallDescriptor?.path).toBe('built-in/erc20-transfer')
+    expect(descriptor?.innerCallDescriptors?.[0]?.path).toBe('built-in/erc20-transfer')
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
     expect(callRelayer).toHaveBeenCalledTimes(3)
   })
@@ -550,12 +574,15 @@ describe('ERC-7730 registry cache', () => {
       chainId: 8453n
     }
 
-    const descriptor = await getTestErc7730MessageDescriptor(safeTxMessage as any, callRelayer, provider as any)
+    const descriptor = await getTestErc7730MessageDescriptor(
+      safeTxMessage as any,
+      callRelayer,
+      provider as any
+    )
 
     expect(descriptor?.path).toBe(registryPath)
-    expect(descriptor?.safeTxCallDescriptor).toBeUndefined()
-    expect(descriptor?.safeTxCallDescriptors?.[0]?.path).toBe('built-in/erc20-transfer')
-    expect(descriptor?.safeTxCallDescriptors?.[1]?.path).toBe('built-in/erc20-transfer')
+    expect(descriptor?.innerCallDescriptors?.[0]?.path).toBe('built-in/erc20-transfer')
+    expect(descriptor?.innerCallDescriptors?.[1]?.path).toBe('built-in/erc20-transfer')
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
   })
 
@@ -624,13 +651,21 @@ describe('ERC-7730 registry cache', () => {
     jest.useFakeTimers()
 
     try {
-      const firstDescriptor = getTestErc7730MessageDescriptor(safeTxMessage as any, callRelayer, provider as any)
+      const firstDescriptor = getTestErc7730MessageDescriptor(
+        safeTxMessage as any,
+        callRelayer,
+        provider as any
+      )
 
       await jest.advanceTimersByTimeAsync(4000)
       await expect(firstDescriptor).resolves.toBe(null)
       expect(provider.getStorage).toHaveBeenCalledTimes(1)
 
-      const secondDescriptor = getTestErc7730MessageDescriptor(safeTxMessage as any, callRelayer, provider as any)
+      const secondDescriptor = getTestErc7730MessageDescriptor(
+        safeTxMessage as any,
+        callRelayer,
+        provider as any
+      )
 
       await jest.advanceTimersByTimeAsync(4000)
       await expect(secondDescriptor).resolves.toBe(null)
@@ -697,11 +732,15 @@ describe('ERC-7730 registry cache', () => {
     }
 
     try {
-      const calldataDescriptor = await getTestErc7730DescriptorForCall({
+      const calldataDescriptor = await getTestErc7730DescriptorForCall(
+        {
           to: '0x1111111111111111111111111111111111111111',
           value: 0n,
           data: '0x12345678'
-        }, 1n as AccountOp['chainId'], callRelayer)
+        },
+        1n as AccountOp['chainId'],
+        callRelayer
+      )
       const eip712Descriptor = await getTestErc7730MessageDescriptor(message as any, callRelayer)
 
       expect(calldataDescriptor).toBe(null)

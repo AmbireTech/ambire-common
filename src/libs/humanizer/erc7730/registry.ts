@@ -15,6 +15,7 @@ import { Call } from '../../accountOp/types'
 import { decodeMultiSend } from '../../safe/helpers'
 import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
 import { getEip712EncodeTypeHash } from './eip712'
+import { humanizeCallWithErc7730 } from './humanize'
 import { MULTICALL_DESCRIPTOR, MULTICALL_SELECTOR } from './multicall'
 import {
   Erc7730CalldataIndex,
@@ -29,7 +30,7 @@ import {
   Erc7730TypedDataTypes,
   Erc7730Want
 } from './types'
-import { getSafeTxCallsFromMessage, isHexOfLength, isPlainObject } from './utils'
+import { getRegistryKey, getSafeTxCallsFromMessage, isHexOfLength, isPlainObject } from './utils'
 
 /** How deep `includes` chains and nested calls are followed before giving up. */
 export const ERC7730_MAX_RESOLUTION_DEPTH = 5
@@ -668,9 +669,6 @@ export const selectEip712IndexEntry = (
   )
 }
 
-const getRegistryKey = (chainId: bigint | number | string, address: string): string =>
-  `eip155:${BigInt(chainId).toString()}:${address.toLowerCase()}`
-
 const getEip712Key = (chainId: bigint, verifyingContract: string, primaryType: string): string =>
   `${getRegistryKey(chainId, verifyingContract)}:${primaryType}`
 
@@ -760,22 +758,109 @@ const resolveRegisteredDescriptor = (
   return resolveRegisteredDescriptor(chainId, singleton, known, wants, false)
 }
 
+type Erc7730ResolveOptions = {
+  /** Needed to format the call, which is how the calls embedded in it are found */
+  accountAddr?: string
+}
+
+const hasCalldataFieldCache = new WeakMap<Erc7730Descriptor, boolean>()
+
+const fieldsContainCalldataFormat = (fields: Erc7730Field[] | undefined): boolean =>
+  !!fields?.some(
+    (field) => field.format === 'calldata' || fieldsContainCalldataFormat(field.fields)
+  )
+
+/**
+ * Whether the descriptor describes a call that carries other calls inside it. Formatting a call is
+ * the only way to find those, and it is far too expensive to do for every call, so this decides up
+ * front whether it is worth doing at all.
+ */
+const hasCalldataField = (descriptor: Erc7730Descriptor): boolean => {
+  const cached = hasCalldataFieldCache.get(descriptor)
+  if (cached !== undefined) return cached
+
+  const formats = Object.values(descriptor.display?.formats || {})
+  const definitions = Object.values(descriptor.display?.definitions || {})
+  const result =
+    formats.some((format) => fieldsContainCalldataFormat(format.fields)) ||
+    fieldsContainCalldataFormat(definitions)
+
+  hasCalldataFieldCache.set(descriptor, result)
+
+  return result
+}
+
+/**
+ * The descriptor of every call embedded in `call` through a `format: 'calldata'` field, keyed by
+ * `eip155:{chainId}:{address}`.
+ *
+ * The embedded calls are found by formatting the call in collect mode - the same code that will
+ * later render them - so this can never ask for a descriptor the humanizer does not use, or miss
+ * one it does. Each round feeds the descriptors found so far back in, because an embedded call read
+ * through its own descriptor can reveal calls embedded deeper still.
+ */
+const resolveNestedCalldataDescriptors = (
+  call: Call,
+  chainId: AccountOp['chainId'],
+  resolvedDescriptor: Erc7730ResolvedDescriptor,
+  known: Erc7730Known,
+  wants: Erc7730Want[],
+  accountAddr: string
+): Record<string, Erc7730ResolvedDescriptor> | undefined => {
+  if (!hasCalldataField(resolvedDescriptor.descriptor)) return undefined
+
+  const nestedCallDescriptors: Record<string, Erc7730ResolvedDescriptor> = {}
+
+  for (let round = 0; round < ERC7730_MAX_RESOLUTION_DEPTH; round++) {
+    const collectedNestedCalls: Call[] = []
+    humanizeCallWithErc7730(
+      call,
+      chainId,
+      accountAddr,
+      { ...resolvedDescriptor, nestedCallDescriptors },
+      undefined,
+      collectedNestedCalls
+    )
+
+    let didResolveNewDescriptor = false
+
+    collectedNestedCalls.forEach((nestedCall) => {
+      if (!nestedCall.to || !isAddress(nestedCall.to)) return
+
+      const registryKey = getRegistryKey(chainId, nestedCall.to)
+      if (nestedCallDescriptors[registryKey]) return
+
+      // A proxy lookup costs an RPC read per embedded call, and an embedded call goes to an
+      // arbitrary contract, so it is not worth one
+      const resolution = resolveErc7730CallWithoutNested(nestedCall, chainId, known, false, {
+        accountAddr
+      })
+      wants.push(...resolution.wants)
+
+      if (resolution.descriptor) {
+        nestedCallDescriptors[registryKey] = resolution.descriptor
+        didResolveNewDescriptor = true
+      }
+    })
+
+    if (!didResolveNewDescriptor) break
+  }
+
+  return Object.keys(nestedCallDescriptors).length ? nestedCallDescriptors : undefined
+}
+
 /**
  * Everything one call needs, decided from `known` and recording what is still missing.
  *
  * This is the single traversal that both `planErc7730Wants` and `resolveErc7730Descriptors` read,
  * so the plan can never ask for something the resolve step does not use, or miss something it does.
  */
-export const resolveErc7730Call = (
+const resolveErc7730CallWithoutNested = (
   call: Call,
   chainId: AccountOp['chainId'],
   known: Erc7730Known,
-  /**
-   * Whether an address with no descriptor of its own is worth a proxy-singleton lookup. Off for the
-   * inner calls of a Safe transaction: they go to arbitrary contracts, and reading a singleton slot
-   * off each one is an RPC round trip that almost never finds anything.
-   */
-  followProxy = true
+  followProxy: boolean,
+  options: Erc7730ResolveOptions
 ): Erc7730Resolution => {
   const wants: Erc7730Want[] = []
   if (!call.to || !isAddress(call.to)) return { descriptor: null, wants }
@@ -797,16 +882,11 @@ export const resolveErc7730Call = (
 
     if (singleton && singleton.toLowerCase() !== call.to.toLowerCase()) {
       const safeDescriptor = resolveRegisteredDescriptor(chainId, singleton, known, wants, false)
-      const nested = resolveNestedCalls(safeTxCalls, chainId, known, wants, call.to)
+      const nested = resolveInnerCalls(safeTxCalls, chainId, known, wants, options, call.to)
 
       if (safeDescriptor && !wants.length) {
         return {
-          descriptor: {
-            ...safeDescriptor,
-            safeTxCalls,
-            safeTxTransactionsOnly: true,
-            safeTxCallDescriptors: nested
-          },
+          descriptor: { ...safeDescriptor, innerCalls: safeTxCalls, innerCallDescriptors: nested },
           wants
         }
       }
@@ -841,16 +921,56 @@ export const resolveErc7730Call = (
 }
 
 /**
+ * The descriptor for one call, plus the descriptors of every call embedded in it.
+ *
+ * This is the single traversal that both `planErc7730Wants` and `resolveErc7730Descriptors` read,
+ * so the plan can never ask for something the resolve step does not use, or miss something it does.
+ */
+export const resolveErc7730Call = (
+  call: Call,
+  chainId: AccountOp['chainId'],
+  known: Erc7730Known,
+  /**
+   * Whether an address with no descriptor of its own is worth a proxy-singleton lookup. Off for the
+   * inner calls of a Safe transaction: they go to arbitrary contracts, and reading a singleton slot
+   * off each one is an RPC round trip that almost never finds anything.
+   */
+  followProxy = true,
+  options: Erc7730ResolveOptions = {}
+): Erc7730Resolution => {
+  const resolution = resolveErc7730CallWithoutNested(call, chainId, known, followProxy, options)
+  const { accountAddr } = options
+
+  if (!accountAddr || !resolution.descriptor) return resolution
+
+  const nestedCallDescriptors = resolveNestedCalldataDescriptors(
+    call,
+    chainId,
+    resolution.descriptor,
+    known,
+    resolution.wants,
+    accountAddr
+  )
+  if (!nestedCallDescriptors) return resolution
+
+  return {
+    descriptor: { ...resolution.descriptor, nestedCallDescriptors },
+    wants: resolution.wants
+  }
+}
+
+/**
  * Resolves a list of inner calls, keyed by their index within the parent.
  *
  * Only a call back to `safeAddress` itself is worth a proxy-singleton lookup - that is the Safe,
  * whose descriptor lives on its singleton. The rest go to arbitrary contracts.
  */
-const resolveNestedCalls = (
+const resolveInnerCalls = (
   calls: Call[],
   chainId: AccountOp['chainId'],
   known: Erc7730Known,
   wants: Erc7730Want[],
+  options: Erc7730ResolveOptions,
   safeAddress?: string
 ): Record<number, Erc7730ResolvedDescriptor> => {
   const resolved: Record<number, Erc7730ResolvedDescriptor> = {}
@@ -858,7 +978,7 @@ const resolveNestedCalls = (
   calls.forEach((call, index) => {
     const isSafeItself =
       !!safeAddress && !!call.to && call.to.toLowerCase() === safeAddress.toLowerCase()
-    const resolution = resolveErc7730Call(call, chainId, known, isSafeItself)
+    const resolution = resolveErc7730Call(call, chainId, known, isSafeItself, options)
     wants.push(...resolution.wants)
     if (resolution.descriptor) resolved[index] = resolution.descriptor
   })
@@ -868,7 +988,12 @@ const resolveNestedCalls = (
 
 /** What the controller still has to fetch before an accountOp can be fully described. */
 export const planErc7730Wants = (accountOp: AccountOp, known: Erc7730Known): Erc7730Want[] =>
-  accountOp.calls.flatMap((call) => resolveErc7730Call(call, accountOp.chainId, known).wants)
+  accountOp.calls.flatMap(
+    (call) =>
+      resolveErc7730Call(call, accountOp.chainId, known, true, {
+        accountAddr: accountOp.accountAddr
+      }).wants
+  )
 
 /** The descriptor for each call that has one, given everything fetched so far. */
 export const resolveErc7730Descriptors = (
@@ -878,7 +1003,9 @@ export const resolveErc7730Descriptors = (
   const descriptors: Erc7730CallDescriptors = {}
 
   accountOp.calls.forEach((call, index) => {
-    const { descriptor } = resolveErc7730Call(call, accountOp.chainId, known)
+    const { descriptor } = resolveErc7730Call(call, accountOp.chainId, known, true, {
+      accountAddr: accountOp.accountAddr
+    })
     if (descriptor) descriptors[index] = descriptor
   })
 
@@ -956,18 +1083,18 @@ export const resolveErc7730Message = (message: Message, known: Erc7730Known): Er
   const safeTxCalls = getSafeTxCallsFromMessage(message)
   if (!safeTxCalls?.length) return { descriptor, wants }
 
-  const nested = resolveNestedCalls(safeTxCalls, chainId, known, wants, verifyingContract)
+  const nested = resolveInnerCalls(
+    safeTxCalls,
+    chainId,
+    known,
+    wants,
+    { accountAddr: message.accountAddr },
+    verifyingContract
+  )
   if (wants.length) return { descriptor, wants }
   if (!Object.keys(nested).length) return { descriptor, wants }
 
-  return {
-    descriptor: {
-      ...descriptor,
-      safeTxCallDescriptor: safeTxCalls.length === 1 ? nested[0] : descriptor.safeTxCallDescriptor,
-      safeTxCallDescriptors: nested
-    },
-    wants
-  }
+  return { descriptor: { ...descriptor, innerCallDescriptors: nested }, wants }
 }
 
 export const planErc7730MessageWants = (message: Message, known: Erc7730Known): Erc7730Want[] =>

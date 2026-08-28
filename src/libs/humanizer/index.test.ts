@@ -1689,10 +1689,17 @@ describe('ERC-7730 descriptors', () => {
     expect(multicallVisualization.fields[0]?.value).toHaveLength(1)
     expect(multicallVisualization.fields[0]?.value[0]).toMatchObject({
       type: 'erc7730',
-      intent: [expect.objectContaining({ content: 'Grant approval' })],
+      // The embedded approval goes to the token, not to the multicall contract, so it is
+      // described by the token's own descriptor - the multicall descriptor only happens to
+      // declare a format with the same selector
+      intent: [expect.objectContaining({ content: 'Approve' })],
       fields: [
         {
-          label: 'For',
+          label: 'Spender',
+          value: [{ type: 'address', address: spender.toLowerCase() }]
+        },
+        {
+          label: 'Amount',
           value: [
             {
               type: 'token',
@@ -1700,13 +1707,113 @@ describe('ERC-7730 descriptors', () => {
               value: ethers.MaxUint256
             }
           ]
-        },
-        {
-          label: 'To',
-          value: [{ type: 'address', address: spender.toLowerCase() }]
         }
       ]
     })
+  })
+  test('describes a call embedded in another with the descriptor of the contract it goes to', async () => {
+    const router = '0x1111111111111111111111111111111111111111'
+    const vault = '0x2222222222222222222222222222222222222222'
+    const routerPath = 'registry/test/router.json'
+    const vaultPath = 'registry/test/vault.json'
+    const routerInterface = new ethers.Interface([
+      'function execute(address target, bytes data)',
+      'function deposit(uint256 amount)'
+    ])
+    const embeddedCallAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [
+        {
+          to: router,
+          value: 0n,
+          data: routerInterface.encodeFunctionData('execute', [
+            vault,
+            routerInterface.encodeFunctionData('deposit', [1000n])
+          ])
+        }
+      ]
+    }
+    const fetchedDescriptorPaths: string[] = []
+    let indexFetchCount = 0
+    const callRelayer = async (path: string, _method?: string, body?: any) => {
+      if (path === '/v2/erc7730/account-op') {
+        indexFetchCount += 1
+
+        return {
+          success: true,
+          data: {
+            [`eip155:1:${router.toLowerCase()}`]: routerPath,
+            [`eip155:1:${vault.toLowerCase()}`]: vaultPath
+          },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor') {
+        fetchedDescriptorPaths.push(body.descriptorPath)
+
+        if (body.descriptorPath === `/${routerPath}`) {
+          return {
+            success: true,
+            display: {
+              formats: {
+                'execute(address target, bytes data)': {
+                  intent: 'Run',
+                  fields: [
+                    {
+                      path: 'data',
+                      label: 'Call',
+                      format: 'calldata',
+                      params: { calleePath: 'target' },
+                      visible: 'always'
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+
+        return {
+          success: true,
+          display: {
+            formats: {
+              'deposit(uint256 amount)': {
+                intent: 'Deposit',
+                fields: [{ path: 'amount', label: 'Amount', visible: 'always' }]
+              }
+            }
+          }
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    }
+
+    const descriptors = await getTestErc7730Descriptors(embeddedCallAccountOp, callRelayer)
+    const irCalls = humanizeAccountOp(embeddedCallAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(descriptors[0]?.path).toBe(routerPath)
+    // The descriptor of the embedded call is asked for only because the router descriptor declares
+    // it, and it is fetched in a later round of the same lookup - not once per call
+    expect(descriptors[0]?.nestedCallDescriptors?.[`eip155:1:${vault.toLowerCase()}`]?.path).toBe(
+      vaultPath
+    )
+    expect(indexFetchCount).toBe(1)
+    expect(fetchedDescriptorPaths.sort()).toEqual([`/${routerPath}`, `/${vaultPath}`])
+
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Run', [
+        {
+          // A row labelled "Call" adds nothing next to the intent of the call it holds
+          label: '',
+          value: [
+            getErc7730Visualization('Deposit', [{ label: 'Amount', value: [getText('1000')] }])
+          ]
+        }
+      ])
+    ])
   })
   test('humanizes approval and increase allowance calls nested in a multicall', async () => {
     const token = '0x0bF0164D17469241B6E086dA4016DCc54FEAA334'
@@ -1761,12 +1868,18 @@ describe('ERC-7730 descriptors', () => {
     expect([
       approvalVisualization.intent[0]?.content,
       allowanceVisualization.intent[0]?.content
-    ]).toEqual(['Grant approval', 'Increase allowance'])
+      // The approval is described by the token's own descriptor, the allowance increase has no
+      // descriptor anywhere and falls through to the plain humanizer modules
+    ]).toEqual(['Approve', 'Increase allowance'])
     expect(approvalVisualization).toMatchObject({
       type: 'erc7730',
       fields: [
         {
-          label: 'For',
+          label: 'Spender',
+          value: [{ type: 'address', address: spender.toLowerCase() }]
+        },
+        {
+          label: 'Amount',
           value: [
             {
               type: 'token',
@@ -1774,10 +1887,6 @@ describe('ERC-7730 descriptors', () => {
               value: approvalAmount
             }
           ]
-        },
-        {
-          label: 'To',
-          value: [{ type: 'address', address: spender.toLowerCase() }]
         }
       ]
     })
@@ -2670,8 +2779,7 @@ describe('ERC-7730 descriptors', () => {
     const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
 
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
-    expect(descriptors[0]?.safeTxTransactionsOnly).toBe(true)
-    expect(descriptors[0]?.safeTxCalls).toHaveLength(2)
+    expect(descriptors[0]?.innerCalls).toHaveLength(2)
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
       getErc7730Visualization('Execute a Safe{Wallet} Transaction', [
         {
@@ -2761,7 +2869,7 @@ describe('ERC-7730 descriptors', () => {
     const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
 
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
-    expect(descriptors[0]?.safeTxTransactionsOnly).toBe(true)
+    expect(descriptors[0]?.innerCalls).toHaveLength(1)
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
       intent: [expect.objectContaining({ content: 'Execute a Safe{Wallet} Transaction' })],
@@ -3478,27 +3586,29 @@ describe('ERC-7730 descriptors', () => {
             }
           }
         },
-        safeTxCallDescriptor: {
-          descriptor: {
-            display: {
-              formats: {
-                'transfer(address _to, uint256 _value)': {
-                  intent: 'Send',
-                  fields: [
-                    {
-                      path: '_value',
-                      label: 'Amount',
-                      format: 'tokenAmount',
-                      params: { tokenPath: '@.to' },
-                      visible: 'always'
-                    },
-                    {
-                      path: '_to',
-                      label: 'To',
-                      format: 'addressName',
-                      visible: 'always'
-                    }
-                  ]
+        innerCallDescriptors: {
+          0: {
+            descriptor: {
+              display: {
+                formats: {
+                  'transfer(address _to, uint256 _value)': {
+                    intent: 'Send',
+                    fields: [
+                      {
+                        path: '_value',
+                        label: 'Amount',
+                        format: 'tokenAmount',
+                        params: { tokenPath: '@.to' },
+                        visible: 'always'
+                      },
+                      {
+                        path: '_to',
+                        label: 'To',
+                        format: 'addressName',
+                        visible: 'always'
+                      }
+                    ]
+                  }
                 }
               }
             }
@@ -3889,7 +3999,7 @@ describe('ERC-7730 descriptors', () => {
     })
 
     expect(descriptor?.path).toBe(eip712DescriptorPath)
-    expect(descriptor?.safeTxCallDescriptor?.path).toBe(calldataDescriptorPath)
+    expect(descriptor?.innerCallDescriptors?.[0]?.path).toBe(calldataDescriptorPath)
     expect(fetchedDescriptorPaths).toEqual([
       `/${eip712DescriptorPath}`,
       `/${calldataDescriptorPath}`
