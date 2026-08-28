@@ -71,7 +71,7 @@ describe('ERC-7730 descriptor path values', () => {
       },
       'ETH'
     )
-    const rows = humanizedCall?.fullVisualization?.[0].rows
+    const rows = humanizedCall?.fullVisualization?.[0].fields
 
     expect(rows?.[1].label).toBe('Share ticker')
     expect(rows?.[1].value[0]).toMatchObject({ type: 'text', content: 'steakUSDC' })
@@ -96,7 +96,7 @@ describe('ERC-7730 descriptor path values', () => {
       { descriptor: descriptorWithLiteralValue },
       'ETH'
     )
-    const rows = humanizedCall?.fullVisualization?.[0].rows
+    const rows = humanizedCall?.fullVisualization?.[0].fields
 
     expect(rows?.[0].value[0]).toMatchObject({ type: 'text', content: 'steakUSDC' })
   })
@@ -168,9 +168,9 @@ describe('warnings from nested calls', () => {
     const multicallVisualization = humanizedCall?.fullVisualization?.[0]
     if (multicallVisualization?.type !== 'erc7730') throw new Error('expected an ERC-7730 result')
 
-    expect(multicallVisualization.rows[0]?.value[0]).toMatchObject({
+    expect(multicallVisualization.fields[0]?.value[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Grant approval'
+      intent: [expect.objectContaining({ content: 'Grant approval' })]
     })
   })
 

@@ -1,4 +1,3 @@
-import { clearErc7730RegistryCache } from '@/libs/humanizer'
 import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { describe, expect, jest, test } from '@jest/globals'
 
@@ -126,7 +125,6 @@ describe('SignMessageController', () => {
   let dappsCtrl: IDappsController
 
   beforeEach(() => {
-    clearErc7730RegistryCache()
   })
   beforeAll(async () => {
     const { mainCtrl } = await makeMainController(

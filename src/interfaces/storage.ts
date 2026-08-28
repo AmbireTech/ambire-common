@@ -6,6 +6,7 @@ import { FeatureFlags } from '../consts/featureFlags'
 import { SentToHistory, SignedMessage } from '../controllers/activity/types'
 import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
+import { Erc7730PersistedRegistryCache } from '../libs/humanizer/erc7730/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
 import {
   AccountAssetsState as PortfolioAccountAssetsState,
@@ -122,6 +123,10 @@ export type StorageProps = {
   // Persisted reverse ENS/Namoshi lookup cache, kept indefinitely so accounts
   // don't need to be re-resolved after a service worker restart.
   domainsCache: Domains
+  // Persisted ERC-7730 "clear signing" descriptor cache (calldata/EIP-712 index + resolved
+  // descriptor JSON), so descriptors fetched once from the relayer survive reloads and are
+  // reusable by history/Benzin without a fresh network round trip. Purely a cache - safe to clear.
+  erc7730RegistryCache: Erc7730PersistedRegistryCache
   flags: Partial<FeatureFlags>
   isDefaultWallet: boolean
   shouldSkipTransactionQueuedModal: boolean

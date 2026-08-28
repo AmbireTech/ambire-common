@@ -1,3 +1,7 @@
+import {
+  getTestErc7730Descriptors,
+  getTestErc7730MessageDescriptor
+} from '../../controllers/erc7730/testDescriptors'
 import { ethers, ZeroAddress } from 'ethers'
 import { encodeFunctionData } from 'viem'
 
@@ -8,11 +12,7 @@ import { execTransactionAbi } from '../../consts/safe'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { AccountOp } from '../accountOp/accountOp'
-import {
-  clearErc7730RegistryCache,
-  fetchErc7730DescriptorForMessage,
-  fetchErc7730DescriptorsForAccountOp
-} from './erc7730'
+import { EMPTY_ERC7730_KNOWN, resolveErc7730Descriptors } from './erc7730'
 import { humanizeAccountOp, humanizeMessage } from './index'
 import {
   erc20TransferAbi,
@@ -84,9 +84,6 @@ const keys: Key[] = [
   }
 ]
 
-beforeEach(() => {
-  clearErc7730RegistryCache()
-})
 const transactions = {
   generic: [
     // simple transafer
@@ -802,7 +799,7 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(approveAccountOp)
+    const descriptors = resolveErc7730Descriptors(approveAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(approveAccountOp, {
       erc7730Descriptors: descriptors,
       nativeAssetSymbol: 'ETH'
@@ -1672,7 +1669,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(maliciousMulticallAccountOp)
+    const descriptors = resolveErc7730Descriptors(maliciousMulticallAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(maliciousMulticallAccountOp, {
       erc7730Descriptors: descriptors
     })
@@ -1741,7 +1738,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(multicallAccountOp)
+    const descriptors = resolveErc7730Descriptors(multicallAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(multicallAccountOp, { erc7730Descriptors: descriptors })
     const multicallVisualization = irCalls[0]?.fullVisualization?.[0]
 
@@ -1819,7 +1816,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(multicallAccountOp)
+    const descriptors = resolveErc7730Descriptors(multicallAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(multicallAccountOp, {
       erc7730Descriptors: descriptors,
       nativeAssetSymbol: 'ETH'
@@ -2024,7 +2021,7 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(morphoAccountOp, { callRelayer })
+    const descriptors = await getTestErc7730Descriptors(morphoAccountOp, callRelayer)
     const irCalls = humanizeAccountOp(morphoAccountOp, { erc7730Descriptors: descriptors })
 
     expect(descriptors[0]?.path).toBe(registryPath)
@@ -2191,7 +2188,7 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(batchAccountOp)
+    const descriptors = resolveErc7730Descriptors(batchAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(batchAccountOp, {
       erc7730Descriptors: descriptors,
       nativeAssetSymbol: 'ETH'
@@ -2253,7 +2250,7 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(revokeApprovalAccountOp)
+    const descriptors = resolveErc7730Descriptors(revokeApprovalAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(revokeApprovalAccountOp, { erc7730Descriptors: descriptors })
 
     expect(descriptors[0]?.path).toBe('built-in/erc20-revoke-approval')
@@ -2332,9 +2329,7 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(revokeApprovalAccountOp, {
-      callRelayer
-    })
+    const descriptors = await getTestErc7730Descriptors(revokeApprovalAccountOp, callRelayer)
     const irCalls = humanizeAccountOp(revokeApprovalAccountOp, { erc7730Descriptors: descriptors })
 
     expect(descriptors[0]?.path).toBe(registryPath)
@@ -2376,7 +2371,7 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(revokePermitAccountOp)
+    const descriptors = resolveErc7730Descriptors(revokePermitAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(revokePermitAccountOp, { erc7730Descriptors: descriptors })
 
     expect(descriptors[0]?.path).toBe('built-in/permit2-revoke-approval')
@@ -2412,7 +2407,7 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(transferAccountOp)
+    const descriptors = resolveErc7730Descriptors(transferAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(transferAccountOp, { erc7730Descriptors: descriptors })
 
     expect(Object.keys(descriptors)).toEqual(['0'])
@@ -2481,9 +2476,7 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(transferAccountOp, {
-      callRelayer
-    })
+    const descriptors = await getTestErc7730Descriptors(transferAccountOp, callRelayer)
     const irCalls = humanizeAccountOp(transferAccountOp, { erc7730Descriptors: descriptors })
 
     expect(Object.keys(descriptors)).toEqual(['0'])
@@ -2564,7 +2557,7 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(relayerAccountOp, { callRelayer })
+    const descriptors = await getTestErc7730Descriptors(relayerAccountOp, callRelayer)
     const irCalls = humanizeAccountOp(relayerAccountOp, { erc7730Descriptors: descriptors })
 
     expect(relayerPath).toBe('/v2/erc7730/account-op')
@@ -2601,9 +2594,7 @@ describe('ERC-7730 descriptors', () => {
     }
 
     try {
-      const descriptors = await fetchErc7730DescriptorsForAccountOp(fallbackAccountOp, {
-        callRelayer
-      })
+      const descriptors = await getTestErc7730Descriptors(fallbackAccountOp, callRelayer)
       expect(Object.keys(descriptors)).toEqual(['0'])
       expect(descriptors[0]?.path).toBe('built-in/erc20-approve')
     } finally {
@@ -2671,10 +2662,11 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(safeExecAccountOp, {
+    const descriptors = await getTestErc7730Descriptors(
+      safeExecAccountOp,
       callRelayer,
-      provider: provider as any
-    })
+      provider as any
+    )
     const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
 
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
@@ -2761,19 +2753,18 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(safeExecAccountOp, {
+    const descriptors = await getTestErc7730Descriptors(
+      safeExecAccountOp,
       callRelayer,
-      provider: provider as any
-    })
+      provider as any
+    )
     const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
 
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
     expect(descriptors[0]?.safeTxTransactionsOnly).toBe(true)
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      display: {
-        intent: [expect.objectContaining({ content: 'Execute a Safe{Wallet} Transaction' })]
-      },
+      intent: [expect.objectContaining({ content: 'Execute a Safe{Wallet} Transaction' })],
       fields: [
         {
           label: 'Safe',
@@ -3040,7 +3031,7 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptor = await fetchErc7730DescriptorForMessage(permitMessage as any, callRelayer)
+    const descriptor = await getTestErc7730MessageDescriptor(permitMessage as any, callRelayer)
 
     expect(relayerPath).toBe('/v2/erc7730/eip-712')
     expect(descriptorPaths).toEqual([`/${registryPath}`])
@@ -3099,7 +3090,7 @@ describe('ERC-7730 descriptors', () => {
       }
     })
 
-    const descriptor = await fetchErc7730DescriptorForMessage(permitMessage as any, callRelayer)
+    const descriptor = await getTestErc7730MessageDescriptor(permitMessage as any, callRelayer)
     const irMessage = humanizeMessage(permitMessage as any, {
       erc7730Descriptor: descriptor || undefined
     })
@@ -3888,7 +3879,7 @@ describe('ERC-7730 descriptors', () => {
       })
     }
 
-    const descriptor = await fetchErc7730DescriptorForMessage(
+    const descriptor = await getTestErc7730MessageDescriptor(
       safeTxMessage as any,
       callRelayer,
       provider as any
