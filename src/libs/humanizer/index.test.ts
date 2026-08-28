@@ -619,10 +619,10 @@ describe('ERC-7730 descriptors', () => {
   // Receive" field's tokenAmount format/tokenPath, so it renders as a `type:
   // 'token'` intent item. Since every field referenced by the template
   // ("Amount to send", "Minimum to Receive", "Recipient") is fully rendered
-  // inline in the intent, `display.rows` ends up empty - none of them should
-  // repeat as a detail row below the intent (this is the exact scenario a
-  // LI.FI enum-formatted destinationChainId field used to leak through on,
-  // before display.rows started excluding fields by path at the source).
+  // inline in the intent, every field is excluded and no rows are left to display
+  // below it (this is the exact scenario a LI.FI enum-formatted
+  // destinationChainId field used to leak through on, before the displayed rows
+  // started excluding fields by path at the source).
   test('humanizes a LI.FI swapTokensSingleV3NativeToERC20 call with its ERC-7730 registry descriptor', () => {
     accountOp.calls = [
       {
@@ -1373,7 +1373,7 @@ describe('ERC-7730 descriptors', () => {
         intent: [expect.objectContaining({ content: 'Stake ETH' })]
       })
       if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
-      // Interpolation failed, so `display.intent` falls back to the plain `[action]` form -
+      // Interpolation failed, so `intent` falls back to the plain `[action]` form -
       // just the one part, not the richer interpolated breakdown.
       expect(visualization.intent).toHaveLength(1)
     }

@@ -176,8 +176,9 @@ export function flattenHumanizerVisualizations(
 
     return [
       visualization,
-      // `fields` (not `display.rows`) so nested values that only show up inline
-      // in `display.intent` (e.g. a token amount) are still discovered here.
+      // `fields` (every field, not just the ones displayed as rows) so nested
+      // values that only show up inline in `intent` (e.g. a token amount) are
+      // still discovered here.
       ...flattenHumanizerVisualizations(visualization.fields.flatMap((row) => row.value))
     ]
   })
