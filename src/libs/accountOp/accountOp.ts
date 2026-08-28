@@ -103,6 +103,15 @@ export interface AccountOp {
     speedUp?: {
       enabled: boolean
     }
+    /**
+     * @deprecated No longer written or read anywhere. Used to hold the descriptor-backed
+     * humanization output, persisted so activity/history/Benzin could redisplay a past op without
+     * re-humanizing it. Removed because it coupled storage to the humanizer's internal, frequently
+     * reshaped output type - see the persisted ERC-7730 descriptor cache (`erc7730RegistryCache`
+     * in `interfaces/storage.ts`) for how this is cached now instead. Kept here, loosely typed,
+     * only so the field name stays documented and isn't accidentally reused for something else.
+     */
+    clearSigningHumanization?: unknown[]
   }
   flags?: {
     /** Excludes it from the "failed transactions" banner and the Activity counter badge,
