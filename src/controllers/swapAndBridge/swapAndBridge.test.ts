@@ -413,6 +413,21 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController).toBeDefined()
     // TODO: move these in beforeEach with an exception for the continuous updates tests where mocks are not needed
   })
+  test('should record enabled swap providers and ignore unknown provider ids', () => {
+    expect(swapAndBridgeController.swapProviders).toEqual([{ id: 'socket', name: 'Socket' }])
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+
+    swapAndBridgeController.setSwapProviderEnabled('unknown-provider', false)
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+
+    swapAndBridgeController.setSwapProviderEnabled('socket', false)
+    const disabledProviderIds = swapAndBridgeController.getDisabledSwapProviderIds()
+    disabledProviderIds.push('mutated-copy')
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual(['socket'])
+
+    swapAndBridgeController.setSwapProviderEnabled('socket', true)
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+  })
   test('should initForm', async () => {
     await swapAndBridgeController.initForm('1')
     expect(swapAndBridgeController.sessionIds).toContain('1')

@@ -657,3 +657,14 @@ export interface SwapProvider {
     routeId?: string
   }): Promise<SwapAndBridgeRouteStatusResult>
 }
+
+/** Public metadata used to identify a swap provider in the UI. */
+export interface SwapProviderInfo {
+  id: string
+  name: string
+}
+
+/** A swap provider facade that can also describe the providers it executes. */
+export interface SwapProviderExecutor extends SwapProvider {
+  getProvidersInfo(): SwapProviderInfo[]
+}

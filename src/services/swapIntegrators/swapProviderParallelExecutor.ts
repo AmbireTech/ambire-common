@@ -7,13 +7,15 @@ import {
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken,
-  SwapProvider
+  SwapProvider,
+  SwapProviderExecutor,
+  SwapProviderInfo
 } from '../../interfaces/swapAndBridge'
 import wait, { waitWithAbort } from '../../utils/wait'
 
 const GET_SUPPORTED_CHAINS_TIMEOUT = 10000
 
-export class SwapProviderParallelExecutor {
+export class SwapProviderParallelExecutor implements SwapProviderExecutor {
   id: string = 'parallel'
 
   name = 'Parallel'
@@ -24,15 +26,29 @@ export class SwapProviderParallelExecutor {
 
   #getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[]
 
+  #getDisabledProviders: () => string[]
+
   // Added for compatibility with the type
   supportedChains: SwapProvider['supportedChains'] = []
 
   constructor(
     providers: SwapProvider[],
-    getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[]
+    getFallbackSupportedChains?: () => SwapAndBridgeSupportedChain[],
+    getDisabledProviders: () => string[] = () => []
   ) {
     this.#providers = providers
     this.#getFallbackSupportedChains = getFallbackSupportedChains
+    this.#getDisabledProviders = getDisabledProviders
+  }
+
+  /** Returns serializable metadata without exposing the private provider instances. */
+  getProvidersInfo(): SwapProviderInfo[] {
+    return this.#providers.map(({ id, name }) => ({ id, name }))
+  }
+
+  #getEnabledProviders(): SwapProvider[] {
+    const disabledProviders = this.#getDisabledProviders()
+    return this.#providers.filter(({ id }) => !disabledProviders.includes(id))
   }
 
   /**
@@ -63,7 +79,7 @@ export class SwapProviderParallelExecutor {
 
     const startTime = Date.now()
 
-    const supportedProviders = this.#providers.filter((provider) => {
+    const supportedProviders = this.#getEnabledProviders().filter((provider) => {
       // If the request is not chainId specific, use all providers
       if (!uniqueChainIds.length) return true
       if (reqMeta?.chainIds?.length === 2 && provider.areChainsSupported) {
@@ -190,7 +206,10 @@ export class SwapProviderParallelExecutor {
   }
 
   async getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]> {
-    const promises = this.#providers.map((provider: SwapProvider) =>
+    const enabledProviders = this.#getEnabledProviders()
+    if (!enabledProviders.length) return []
+
+    const promises = enabledProviders.map((provider: SwapProvider) =>
       this.#getSupportedChainsWithTimeout(provider)
     )
     const fetchResults = await Promise.all(promises)
@@ -203,7 +222,9 @@ export class SwapProviderParallelExecutor {
       ...new Map(chainIds.map((item: SwapAndBridgeSupportedChain) => [item.chainId, item])).values()
     ]
 
-    if (uniqueChainIds.length < 10 && this.#getFallbackSupportedChains) {
+    // A broad fallback would reintroduce chains that may only work with a disabled provider.
+    const areAllProvidersEnabled = enabledProviders.length === this.#providers.length
+    if (uniqueChainIds.length < 10 && this.#getFallbackSupportedChains && areAllProvidersEnabled) {
       return this.#getFallbackSupportedChains()
     }
 

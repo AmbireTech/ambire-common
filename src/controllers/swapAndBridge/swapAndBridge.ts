@@ -50,7 +50,8 @@ import {
   SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken,
-  SwapProvider,
+  SwapProviderExecutor,
+  SwapProviderInfo,
   ToTokenMarketDataByToken,
   ToTokenMarketDataStatus
 } from '../../interfaces/swapAndBridge'
@@ -282,7 +283,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #featureFlags: IFeatureFlagsController
 
-  #serviceProviderAPI: SwapProvider
+  #serviceProviderAPI: SwapProviderExecutor
 
   #activeRoutes: SwapAndBridgeActiveRoute[] = []
 
@@ -369,6 +370,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #preselectedToToken: { address: string; chainId: number } | null = null
 
   routePriority: 'output' | 'time' = 'output'
+
+  disabledSwapProviderIds: string[] = []
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise?: Promise<void>
@@ -485,7 +488,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     isCurrentSignAccountOpThrowingAnEstimationError?: Function
     getUserRequests: () => UserRequest[]
     getVisibleUserRequests: () => UserRequest[]
-    swapProvider: SwapProvider
+    swapProvider: SwapProviderExecutor
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
     ui: IUiController
@@ -944,6 +947,40 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   get isHealthy() {
     return this.#serviceProviderAPI.isHealthy
+  }
+
+  /** Returns serializable metadata for all available swap providers. */
+  get swapProviders(): SwapProviderInfo[] {
+    return this.#serviceProviderAPI.getProvidersInfo()
+  }
+
+  /** Returns a copy of the provider ids the user has switched off. */
+  getDisabledSwapProviderIds(): string[] {
+    return [...this.disabledSwapProviderIds]
+  }
+
+  /** Enables or disables a provider for future route and supported-chain discovery. */
+  setSwapProviderEnabled(providerId: string, isEnabled: boolean) {
+    if (!this.swapProviders.some(({ id }) => id === providerId)) return
+
+    const isDisabled = this.disabledSwapProviderIds.includes(providerId)
+    if (isEnabled === !isDisabled) return
+
+    this.disabledSwapProviderIds = isEnabled
+      ? this.disabledSwapProviderIds.filter((id) => id !== providerId)
+      : [...this.disabledSwapProviderIds, providerId]
+    this.#cachedSupportedChains = { lastFetched: 0, data: [] }
+    this.#toTokenList = {}
+    this.quote = null
+    this.quoteRoutesStatuses = {}
+    this.#emitUpdateIfNeeded()
+
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#fetchSupportedChainsIfNeeded()
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.updateToTokenList(false)
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.updateQuote({ skipQuoteUpdateOnSameValues: false })
   }
 
   #fetchSupportedChainsIfNeeded = async (forceUpdate?: boolean) => {
@@ -3252,6 +3289,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       isHealthy: this.isHealthy,
       shouldEnableRoutesSelection: this.shouldEnableRoutesSelection,
       supportedChainIds: this.supportedChainIds,
+      swapProviders: this.swapProviders,
       swapSignErrors: this.swapSignErrors,
       signAccountOpController: this.signAccountOpController,
       banners: this.banners
