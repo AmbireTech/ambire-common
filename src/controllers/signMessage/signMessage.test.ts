@@ -26,6 +26,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import * as safeLib from '../../libs/safe/safe'
+import { Erc7730Controller } from '../erc7730/erc7730'
 import { SignMessageController } from './signMessage'
 
 const account: Account = {
@@ -114,6 +115,27 @@ const createPermitTypedMessage = (): Message => ({
     }
   }
 })
+
+/**
+ * `SignMessageController` reaches the relayer only through `Erc7730Controller`, which owns the
+ * fetching, the descriptor cache and its persistence - so the tests give it a real one over the
+ * mocked relayer, with the cache kept in memory for the duration of the test.
+ */
+const makeErc7730Controller = (callRelayer: any) => {
+  const store: Record<string, any> = {}
+  const storage = {
+    get: async (key: string, defaultValue?: any) => (key in store ? store[key] : defaultValue),
+    set: async (key: string, value: any) => {
+      store[key] = value
+    }
+  }
+
+  return new Erc7730Controller({
+    storage: storage as any,
+    callRelayer,
+    sendUiMessage: () => {}
+  })
+}
 
 describe('SignMessageController', () => {
   let signMessageController: ISignMessageController
@@ -373,7 +395,7 @@ describe('SignMessageController', () => {
       inviteCtrl,
       undefined,
       dappsCtrl,
-      callRelayer
+      makeErc7730Controller(callRelayer)
     )
 
     await signMessageController.init({ messageToSign: typedMessageToSign })
@@ -429,8 +451,8 @@ describe('SignMessageController', () => {
     )
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Authorize spending of tokens',
-      rows: [
+      intent: [{ type: 'action', content: 'Authorize spending of tokens' }],
+      fields: [
         {
           label: 'Spender',
           value: [{ type: 'address', address: '0x0000000000000000000000000000000000000000' }]
@@ -452,7 +474,7 @@ describe('SignMessageController', () => {
     expect(callRelayer).not.toHaveBeenCalled()
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Authorize spending of tokens'
+      intent: [{ type: 'action', content: 'Authorize spending of tokens' }]
     })
   })
 
@@ -580,7 +602,7 @@ describe('SignMessageController', () => {
       inviteCtrl,
       undefined,
       dappsCtrl,
-      callRelayer
+      makeErc7730Controller(callRelayer)
     )
 
     await signMessageController.init({ messageToSign: typedMessageToSign })
@@ -606,29 +628,29 @@ describe('SignMessageController', () => {
     )
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: '1inch Order'
+      intent: [{ type: 'action', content: '1inch Order' }]
     })
     const visualization = signMessageController.humanizedMessage?.fullVisualization?.[0] as any
 
-    expect(visualization.rows.map((row: any) => row.label)).toEqual([
+    expect(visualization.fields.map((row: any) => row.label)).toEqual([
       'From',
       'Send',
       'Receive minimum'
     ])
-    expect(visualization.rows).not.toEqual(
+    expect(visualization.fields).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           label: 'To'
         })
       ])
     )
-    expect(visualization.rows[1].value[0]).toMatchObject({
+    expect(visualization.fields[1].value[0]).toMatchObject({
       type: 'token',
       address: '0x350a791bfc2c21f9ed5d10980dad2e2638ffa7f6',
       value: 366891214241290415n,
       chainId: 10n
     })
-    expect(visualization.rows[2].value[0]).toMatchObject({
+    expect(visualization.fields[2].value[0]).toMatchObject({
       type: 'token',
       address: '0x76fb31fb4af56892a25e32cfc43de717950c9278',
       value: 39061263450812873n,
