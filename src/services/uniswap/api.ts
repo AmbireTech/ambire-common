@@ -42,6 +42,20 @@ import {
 
 const erc20Interface = new Interface(ERC20.abi)
 
+type UniswapTokenListEntry = {
+  address: string
+  chainId: number
+  decimals: number
+  logoURI: string | null
+  name: string
+  symbol: string
+  extensions?: {
+    safetyInfo?: {
+      safetyLevel?: 'verified' | 'info' | 'blocked'
+    }
+  }
+}
+
 const isAcrossBridgeQuote = (quote: UniswapQuote) =>
   quote.exclusiveRelayer !== undefined &&
   quote.exclusivityDeadline !== undefined &&
@@ -226,7 +240,7 @@ const parseApprovalSpender = (approval: UniswapTransactionRequest | null, fallba
   try {
     const decoded = erc20Interface.decodeFunctionData('approve', approval.data)
     return getAddress(decoded[0])
-  } catch (e) {
+  } catch {
     return fallback
   }
 }
@@ -378,7 +392,34 @@ export class UniswapAPI implements SwapProvider {
       )
     }
 
-    return sortNativeTokenFirst(addCustomTokensIfNeeded({ chainId: toChainId, tokens: [] }))
+    const params = new URLSearchParams({
+      chainId: toChainId.toString(),
+      limit: '1000',
+      sort: 'tvl'
+    })
+    const url = `${UNISWAP_API_BASE_URL}/tokens?${params.toString()}`
+
+    const response = await this.#handleResponse<{ tokens?: UniswapTokenListEntry[] }>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix:
+        'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
+    })
+
+    const tokens: SwapAndBridgeToToken[] = (response.tokens || [])
+      .filter(
+        (token) =>
+          token.chainId === toChainId && token.extensions?.safetyInfo?.safetyLevel !== 'blocked'
+      )
+      .map((token) => ({
+        address: normalizeAddress(token.address),
+        chainId: token.chainId,
+        decimals: token.decimals,
+        icon: token.logoURI || '',
+        name: token.name,
+        symbol: token.symbol
+      }))
+
+    return sortNativeTokenFirst(addCustomTokensIfNeeded({ chainId: toChainId, tokens }))
   }
 
   async getToken({
