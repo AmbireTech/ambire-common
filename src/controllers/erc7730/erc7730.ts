@@ -164,12 +164,14 @@ export class Erc7730Controller extends EventEmitter {
 
     this.#persisting = true
     try {
-      this.#persistedRevision = revision
       await this.#storage.set('erc7730RegistryCache', {
         calldataIndex: this.#entryFor<Erc7730CalldataIndex>(CALLDATA_INDEX_KEY),
         eip712Index: this.#entryFor<Erc7730Eip712Index>(EIP712_INDEX_KEY),
         descriptors: this.#descriptorEntries()
       })
+      // Recorded only once the write lands, so a failed one is retried by the next persist
+      // instead of being taken for done
+      this.#persistedRevision = revision
     } catch (error) {
       console.warn('erc7730: failed to persist the descriptor cache', error)
     } finally {
