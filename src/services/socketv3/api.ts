@@ -256,7 +256,7 @@ export class SocketV3API implements SwapProvider {
           timeoutPromise = setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
-                'Our service provider Socket is temporarily unavailable or your internet connection is too slow.'
+                'Our service provider Bungee is temporarily unavailable or your internet connection is too slow.'
               )
             )
           }, this.#requestTimeoutMs)
