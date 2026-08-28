@@ -1482,7 +1482,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
           this.addOrUpdateError({
             id: 'to-token-list-fetch-failed',
-            title: 'Token list on the receiving network is temporarily unavailable.',
+            title: 'Token list fetch failed',
             text: message,
             level: 'error'
           })
