@@ -97,7 +97,8 @@ export class Erc7730Controller extends EventEmitter {
 
   #inFlight = new Map<string, Promise<unknown>>()
 
-  initialLoadPromise: Promise<void>
+  // Private, so it stays out of the controller state serialized to the UI on every update
+  #initialLoadPromise: Promise<void>
 
   constructor({
     storage,
@@ -120,7 +121,7 @@ export class Erc7730Controller extends EventEmitter {
     this.#sendUiMessage = sendUiMessage
     this.#getProvider = getProvider ?? (() => undefined)
 
-    this.initialLoadPromise = this.#load()
+    this.#initialLoadPromise = this.#load()
   }
 
   async #load() {
@@ -387,7 +388,7 @@ export class Erc7730Controller extends EventEmitter {
    * calldata is strictly shorter than its parent; the depth cap is a backstop.
    */
   async #gather(plan: (known: Erc7730Known) => Erc7730Want[]): Promise<Erc7730Known> {
-    await this.initialLoadPromise
+    await this.#initialLoadPromise
 
     const known: Erc7730Known = {
       contractDescriptors: { ...EMPTY_ERC7730_KNOWN.contractDescriptors },
