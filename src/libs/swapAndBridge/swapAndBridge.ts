@@ -18,10 +18,7 @@ import {
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { MAX_UINT256 } from '../../consts/deploy'
-import {
-  BRIDGE_STATUS_INTERVAL,
-  UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
-} from '../../consts/intervals'
+import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import {
   HIGH_PRICE_IMPACT_PERCENT_THRESHOLD,
   SLIPPAGE_MIN_QUOTE_DIFF_USD
@@ -43,7 +40,6 @@ import {
 } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest } from '../../interfaces/userRequest'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
-import { SQUID_EXPLORER_URL } from '../../services/squid/constants'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
@@ -303,12 +299,6 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute
   const serviceTimes: number[] = []
 
   activeRoutes.forEach((r) => {
-    // for squid swaps, make the service time 10s
-    if (r.serviceProviderId === 'squid' && r.fromAsset?.chainId === r.toAsset?.chainId) {
-      serviceTimes.push(BRIDGE_STATUS_INTERVAL / 1000)
-      return
-    }
-
     r.route?.userTxs.forEach((tx) => {
       if (tx.serviceTime) {
         serviceTimes.push(tx.serviceTime)
@@ -491,7 +481,7 @@ const getSwapAndBridgeRequestParams = async (
 }
 
 export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
-  return route.providerId === 'squid' || route.fromChainId !== route.toChainId
+  return route.fromChainId !== route.toChainId
 }
 
 /**
@@ -712,7 +702,7 @@ export const calculateAmountWarnings = (
     }
 
     return null
-  } catch (error) {
+  } catch {
     return null
   }
 }
@@ -721,8 +711,6 @@ const getLink = (route: SwapAndBridgeActiveRoute) => {
   const providerId = route.route ? route.route.providerId : route.serviceProviderId
   if (providerId === 'socket' || providerId === 'socketv3')
     return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
-  if (providerId === 'squid') return `${SQUID_EXPLORER_URL}/${route.userTxHash}`
-
   return `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
 }
 
@@ -774,7 +762,6 @@ const getSwapSponsorship = ({
     !fromAmountInUsd ||
     !feeTokenPriceInUsd ||
     !feeTokenDecimals ||
-    providerId === 'squid' ||
     (providerId === 'uniswap' && isBridge)
   )
     return undefined
