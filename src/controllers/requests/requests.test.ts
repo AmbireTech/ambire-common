@@ -388,6 +388,88 @@ describe('RequestsController ', () => {
     expect(controller.currentUserRequest).toBe(signedRequest)
     signedRequest.signAccountOp.destroy()
   })
+  test('does not auto-select a signed Safe call after rejecting a calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const rejectedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    rejectedRequest.id = 'rejected-request'
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [rejectedRequest, signedRequest]
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(null)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('does not auto-select a signed Safe call after rejecting a non-calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const rejectedRequest = { ...DAPP_CONNECT_REQUEST, id: 'rejected-request' }
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [rejectedRequest, signedRequest]
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(null)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('auto-selects an unsigned Safe call after rejecting a calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const rejectedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    const unsignedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    rejectedRequest.id = 'rejected-request'
+    signedRequest.id = 'signed-request'
+    unsignedRequest.id = 'unsigned-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [rejectedRequest, signedRequest, unsignedRequest]
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(unsignedRequest)
+    signedRequest.signAccountOp.destroy()
+    unsignedRequest.signAccountOp.destroy()
+  })
+  test('keeps auto-selecting signed calls after rejection for non-Safe accounts', async () => {
+    const { controller, getCallsRequest } = await prepareTest()
+    const rejectedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    rejectedRequest.id = 'rejected-request'
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [rejectedRequest, signedRequest]
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(signedRequest)
+    signedRequest.signAccountOp.destroy()
+  })
   test('build dapp request', async () => {
     const { controller } = await prepareTest()
 

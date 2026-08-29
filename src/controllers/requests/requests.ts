@@ -953,9 +953,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     options?: {
       shouldRemoveSwapAndBridgeRoute?: boolean
       shouldOpenNextRequest?: boolean
+      shouldSkipSafeQueueRequests?: boolean
     }
   ) {
-    const { shouldRemoveSwapAndBridgeRoute = true, shouldOpenNextRequest = true } = options || {}
+    const {
+      shouldRemoveSwapAndBridgeRoute = true,
+      shouldOpenNextRequest = true,
+      shouldSkipSafeQueueRequests = false
+    } = options || {}
 
     const userRequestsToAdd: UserRequest[] = []
     const safeRejectIds: string[] = []
@@ -1033,7 +1038,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       await this.#setCurrentUserRequest(null)
     } else if (shouldOpenNextRequest) {
       const shouldSkipSignedSafeCalls =
-        didRemoveSkipQueueRequest && !!this.#selectedAccount.account?.safeCreation
+        (didRemoveSkipQueueRequest || shouldSkipSafeQueueRequests) &&
+        !!this.#selectedAccount.account?.safeCreation
       const nextRequest = this.visibleUserRequests.find(
         (request) =>
           !shouldSkipSignedSafeCalls ||
@@ -1119,7 +1125,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       (r) => !waitingUserRequestsToReject.includes(r)
     )
 
-    await this.removeUserRequests(requestIds, options)
+    await this.removeUserRequests(requestIds, {
+      ...options,
+      shouldSkipSafeQueueRequests: true
+    })
   }
 
   async build({ type, params }: BuildRequest) {
