@@ -80,7 +80,7 @@ describe('UniswapAPI', () => {
     const tokens = await uniswapApi.getToTokenList({ fromChainId: 1, toChainId: 1 })
 
     expect(fetch).toHaveBeenCalledWith(
-      'https://trade-api.gateway.uniswap.org/v1/tokens?chainId=1&limit=1000&sort=tvl',
+      'https://trade-api.gateway.uniswap.org/v1/tokens?chainId=1&limit=500&sort=tvl',
       { headers: expect.any(Object) }
     )
     expect(tokens[0]).toMatchObject({ address: ZERO_ADDRESS, icon: '', symbol: 'ETH' })
