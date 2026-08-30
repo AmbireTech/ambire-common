@@ -426,22 +426,32 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController).toBeDefined()
     // TODO: move these in beforeEach with an exception for the continuous updates tests where mocks are not needed
   })
-  test('should persist disabled swap providers and ignore unknown provider ids', async () => {
+  test('should persist and emit disabled swap providers without an active form session', async () => {
     expect(swapAndBridgeController.swapProviders).toEqual([{ id: 'socket', name: 'Socket' }])
     expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+    expect(swapAndBridgeController.sessionIds).toEqual([])
+
+    const emittedDisabledProviderIds: string[][] = []
+    const unsubscribe = swapAndBridgeController.onUpdate(() => {
+      emittedDisabledProviderIds.push(swapAndBridgeController.getDisabledSwapProviderIds())
+    })
 
     await swapAndBridgeController.setSwapProviderEnabled('unknown-provider', false)
     expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+    expect(emittedDisabledProviderIds).toEqual([])
 
     await swapAndBridgeController.setSwapProviderEnabled('socket', false)
     const disabledProviderIds = swapAndBridgeController.getDisabledSwapProviderIds()
     disabledProviderIds.push('mutated-copy')
     expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual(['socket'])
+    expect(emittedDisabledProviderIds).toContainEqual(['socket'])
     await expect(storageCtrl.get('disabledSwapProviderIds', [])).resolves.toEqual(['socket'])
 
     await swapAndBridgeController.setSwapProviderEnabled('socket', true)
     expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+    expect(emittedDisabledProviderIds).toContainEqual([])
     await expect(storageCtrl.get('disabledSwapProviderIds', [])).resolves.toEqual([])
+    unsubscribe()
   })
   test('should ignore stale supported chains when provider settings change rapidly', async () => {
     await swapAndBridgeController.initForm('rapid-provider-toggle-test')

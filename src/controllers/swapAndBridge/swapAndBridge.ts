@@ -582,8 +582,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       !this.sessionIds.length &&
       // but ALSO there are no active routes (otherwise, banners need the updates)
       !this.activeRoutes.length &&
-      // Force update is needed when the form is reset
-      // as the sessions are cleared
+      // Force update is needed when UI-visible state changes outside an active form session
       !forceUpdate
 
     if (shouldSkipUpdate) return
@@ -998,7 +997,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#updateQuoteId = undefined
     this.quote = null
     this.quoteRoutesStatuses = {}
-    this.#emitUpdateIfNeeded()
+    this.#emitUpdateIfNeeded(true)
 
     try {
       await this.#storage.set('disabledSwapProviderIds', this.disabledSwapProviderIds)
