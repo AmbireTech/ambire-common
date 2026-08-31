@@ -812,21 +812,6 @@ const getCalldataRows = (
       typeof accountAddr === 'string' &&
       context.chainId
     ) {
-      const safeFallbackVisualization = getSafeCallFallbackVisualization({
-        to: callee,
-        data: calldata,
-        value: toBigIntOrNull(amount) || 0n
-      })
-
-      if (safeFallbackVisualization) {
-        acc.push({
-          label: nestedRowLabel,
-          value: [safeFallbackVisualization]
-        })
-
-        return acc
-      }
-
       const moduleFallbackVisualization = getModuleFallbackVisualization(
         {
           to: callee,
@@ -1404,46 +1389,6 @@ const getKnownCallVisualization = (
   return visualization.type === 'erc7730' ? visualization : null
 }
 
-const getSafeCallFallbackVisualization = (
-  call: Call
-): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
-  const safeHumanization = getSafeHumanization(call.to, call.to, call.value, call.data)
-  const action = safeHumanization?.visuals?.find((visualization) => visualization.type === 'action')
-  if (!safeHumanization?.visuals || !action || action.type !== 'action' || !action.content) {
-    return null
-  }
-
-  if (action.content === 'Account setup') {
-    const rows = getRowsFromFlatCallVisualization(safeHumanization.visuals)
-    if (!rows) return null
-
-    const visualization = getErc7730Visualization(action.content, rows)
-
-    return visualization.type === 'erc7730' ? visualization : null
-  }
-
-  const firstActionIndex = safeHumanization.visuals.indexOf(action)
-  const value = safeHumanization.visuals
-    .slice(firstActionIndex + 1)
-    .filter((visualization) => visualization.type !== 'break')
-    .map((visualization) =>
-      visualization.content !== undefined && typeof visualization.content !== 'string'
-        ? { ...visualization, content: String(visualization.content) }
-        : visualization
-    )
-  const rows: HumanizerErc7730Row[] = [
-    {
-      label: action.content,
-      value: value.length || !call.to ? value : [getAddressVisualization(call.to)]
-    }
-  ]
-  if (!rows.length) return null
-
-  const visualization = getErc7730Visualization(action.content, rows)
-
-  return visualization.type === 'erc7730' ? visualization : null
-}
-
 const getModuleFallbackVisualization = (
   call: Call,
   chainId: bigint,
@@ -1662,9 +1607,6 @@ const getInnerCallVisualizations = (
           return erc7730Visualization
         }
       }
-
-      const safeFallbackVisualization = getSafeCallFallbackVisualization(innerCall)
-      if (safeFallbackVisualization) return safeFallbackVisualization
 
       const moduleFallbackVisualization = getModuleFallbackVisualization(
         innerCall,
