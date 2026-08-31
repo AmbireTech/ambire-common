@@ -1,7 +1,10 @@
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { ERC7730_CACHE_TTL_MS } from '../../libs/humanizer/erc7730/consts'
+import {
+  ERC7730_CACHE_TTL_MS,
+  ERC7730_MAX_CACHED_DESCRIPTORS
+} from '../../libs/humanizer/erc7730/consts'
 import { Erc7730Controller } from './erc7730'
 
 const CONTRACT_ADDRESS = '0x1111111111111111111111111111111111111111'
@@ -153,6 +156,31 @@ describe('Erc7730Controller', () => {
     expect(Object.keys(storage.store.erc7730RegistryCache.descriptors)).toEqual([
       `/${REGISTRY_PATH}`
     ])
+  })
+
+  test('drops the least recently used descriptors once the cache is over its cap', async () => {
+    // Without a cap, someone who interacts with many contracts inside one TTL window grows the
+    // stored blob without limit, and the whole blob is rewritten on every newly fetched descriptor
+    const descriptors: Record<string, any> = {}
+    for (let index = 0; index < ERC7730_MAX_CACHED_DESCRIPTORS; index += 1) {
+      descriptors[`/registry/test/${index}.json`] = {
+        value: { display: { formats: {} } },
+        fetchedAt: Date.now()
+      }
+    }
+    const storage = makeStorage({ calldataIndex: null, eip712Index: null, descriptors })
+    const controller = makeController(storage, makeCallRelayer())
+
+    await controller.getDescriptorsForAccountOp(accountOp)
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    const persisted = storage.store.erc7730RegistryCache.descriptors
+    expect(Object.keys(persisted)).toHaveLength(ERC7730_MAX_CACHED_DESCRIPTORS)
+    // The one just fetched is kept, the least recently used one is the one that goes
+    expect(persisted[`/${REGISTRY_PATH}`]).toBeDefined()
+    expect(persisted['/registry/test/0.json']).toBeUndefined()
   })
 
   test('replies to the UI request with the resolved descriptors', async () => {

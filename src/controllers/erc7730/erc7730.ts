@@ -3,16 +3,6 @@ import { IStorageController } from '../../interfaces/storage'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import {
-  CacheEntry,
-  Erc7730CalldataIndex,
-  Erc7730CallDescriptors,
-  Erc7730Descriptor,
-  Erc7730Eip712Index,
-  Erc7730Known,
-  Erc7730PersistedRegistryCache,
-  Erc7730ResolvedDescriptor,
-  Erc7730Want,
-  EMPTY_ERC7730_KNOWN,
   ERC7730_MAX_RESOLUTION_DEPTH,
   getAddressFromStorageSlot,
   normalizeRelayerPath,
@@ -21,17 +11,30 @@ import {
   resolveErc7730Descriptors,
   resolveErc7730MessageDescriptor,
   selectEip712IndexEntry,
-  SafeSingletonProvider,
   validateCalldataIndex,
   validateDescriptor,
   validateEip712Index
-} from '../../libs/humanizer/erc7730'
+} from '../../libs/humanizer/erc7730/registry'
+import {
+  CacheEntry,
+  EMPTY_ERC7730_KNOWN,
+  Erc7730CalldataIndex,
+  Erc7730CallDescriptors,
+  Erc7730Descriptor,
+  Erc7730Eip712Index,
+  Erc7730Known,
+  Erc7730PersistedRegistryCache,
+  Erc7730ResolvedDescriptor,
+  Erc7730Want,
+  SafeSingletonProvider
+} from '../../libs/humanizer/erc7730/types'
 import {
   ERC7730_CACHE_TTL_MS,
   ERC7730_CALLDATA_INDEX_RELAYER_PATH,
   ERC7730_DESCRIPTOR_PATH,
   ERC7730_DESCRIPTOR_WAIT_MS,
   ERC7730_EIP712_INDEX_RELAYER_PATH,
+  ERC7730_MAX_CACHED_DESCRIPTORS,
   SAFE_PROXY_SINGLETON_SLOT,
   SAFE_SINGLETON_CACHE_TTL_MS
 } from '../../libs/humanizer/erc7730/consts'
@@ -50,12 +53,17 @@ type SendUiMessage = (params: {
 }) => void
 
 // One flat store keyed by strings, so the persisted descriptors are the entries under this prefix
-const CALLDATA_INDEX_KEY = 'calldataIndex'
-const EIP712_INDEX_KEY = 'eip712Index'
 const DESCRIPTOR_KEY_PREFIX = 'descriptor:'
 const SINGLETON_KEY_PREFIX = 'safeSingleton:'
 
-const descriptorKey = (relayerPath: string) => `${DESCRIPTOR_KEY_PREFIX}${relayerPath}`
+/** Every kind of entry in the flat cache, so each key format is written in exactly one place. */
+const cacheKey = {
+  calldataIndex: 'calldataIndex',
+  eip712Index: 'eip712Index',
+  descriptor: (relayerPath: string) => `${DESCRIPTOR_KEY_PREFIX}${relayerPath}`,
+  safeSingleton: (chainId: bigint, address: string) =>
+    `${SINGLETON_KEY_PREFIX}${getSafeSingletonKey(chainId, address)}`
+}
 
 const EMPTY_PERSISTED_CACHE: Erc7730PersistedRegistryCache = {
   calldataIndex: null,
@@ -131,10 +139,10 @@ export class Erc7730Controller extends EventEmitter {
 
       // Entries past their TTL are dropped rather than kept and re-checked on every lookup, which
       // is also what keeps the stored blob from growing without bound.
-      this.#hydrate(CALLDATA_INDEX_KEY, persisted.calldataIndex, ERC7730_CACHE_TTL_MS)
-      this.#hydrate(EIP712_INDEX_KEY, persisted.eip712Index, ERC7730_CACHE_TTL_MS)
+      this.#hydrate(cacheKey.calldataIndex, persisted.calldataIndex, ERC7730_CACHE_TTL_MS)
+      this.#hydrate(cacheKey.eip712Index, persisted.eip712Index, ERC7730_CACHE_TTL_MS)
       Object.entries(persisted.descriptors).forEach(([path, entry]) => {
-        this.#hydrate(descriptorKey(path), entry, ERC7730_CACHE_TTL_MS)
+        this.#hydrate(cacheKey.descriptor(path), entry, ERC7730_CACHE_TTL_MS)
       })
     } catch (error: any) {
       this.emitError({
@@ -146,6 +154,9 @@ export class Erc7730Controller extends EventEmitter {
     }
 
     this.#persistedRevision = this.#revision
+    // After the baseline is recorded, so a blob that is already over the cap - an earlier build's,
+    // or one written before the cap was lowered - is trimmed by the next write
+    this.#evictDescriptorsOverCap()
   }
 
   /**
@@ -166,8 +177,8 @@ export class Erc7730Controller extends EventEmitter {
     this.#persisting = true
     try {
       await this.#storage.set('erc7730RegistryCache', {
-        calldataIndex: this.#entryFor<Erc7730CalldataIndex>(CALLDATA_INDEX_KEY),
-        eip712Index: this.#entryFor<Erc7730Eip712Index>(EIP712_INDEX_KEY),
+        calldataIndex: this.#entryFor<Erc7730CalldataIndex>(cacheKey.calldataIndex),
+        eip712Index: this.#entryFor<Erc7730Eip712Index>(cacheKey.eip712Index),
         descriptors: this.#descriptorEntries()
       })
       // Recorded only once the write lands, so a failed one is retried by the next persist
@@ -201,7 +212,14 @@ export class Erc7730Controller extends EventEmitter {
    */
   async #cached<T>(key: string, ttlMs: number, fetcher: () => Promise<T>): Promise<T> {
     const cached = this.#entries.get(key)
-    if (cached && Date.now() - cached.fetchedAt < ttlMs) return cached.value as T
+    if (cached && Date.now() - cached.fetchedAt < ttlMs) {
+      // Re-inserting moves the entry to the back of the map, which is what makes the eviction below
+      // least-recently-used rather than oldest-fetched
+      this.#entries.delete(key)
+      this.#entries.set(key, cached)
+
+      return cached.value as T
+    }
 
     const pending = this.#inFlight.get(key)
     if (pending) return pending as Promise<T>
@@ -210,6 +228,7 @@ export class Erc7730Controller extends EventEmitter {
       .then((value) => {
         this.#entries.set(key, { value, fetchedAt: Date.now() })
         this.#revision += 1
+        this.#evictDescriptorsOverCap()
 
         return value
       })
@@ -225,6 +244,25 @@ export class Erc7730Controller extends EventEmitter {
     this.#inFlight.set(key, promise)
 
     return promise
+  }
+
+  /**
+   * Drops the least recently used descriptors once there are more than the cap.
+   *
+   * The TTL alone does not bound this: someone who interacts with many contracts inside one TTL
+   * window would grow both this map and the persisted blob without limit, and the whole blob is
+   * rewritten on every newly fetched descriptor.
+   */
+  #evictDescriptorsOverCap() {
+    const descriptorKeys = [...this.#entries.keys()].filter((key) =>
+      key.startsWith(DESCRIPTOR_KEY_PREFIX)
+    )
+    if (descriptorKeys.length <= ERC7730_MAX_CACHED_DESCRIPTORS) return
+
+    descriptorKeys
+      .slice(0, descriptorKeys.length - ERC7730_MAX_CACHED_DESCRIPTORS)
+      .forEach((key) => this.#entries.delete(key))
+    this.#revision += 1
   }
 
   /** Seeds one entry from storage, ignoring anything already past its TTL. */
@@ -250,7 +288,7 @@ export class Erc7730Controller extends EventEmitter {
   }
 
   #getCalldataIndex(): Promise<Erc7730CalldataIndex> {
-    return this.#cached(CALLDATA_INDEX_KEY, ERC7730_CACHE_TTL_MS, () =>
+    return this.#cached(cacheKey.calldataIndex, ERC7730_CACHE_TTL_MS, () =>
       fetchRelayerResource<Erc7730CalldataIndex>(
         ERC7730_CALLDATA_INDEX_RELAYER_PATH,
         'GET',
@@ -261,7 +299,7 @@ export class Erc7730Controller extends EventEmitter {
   }
 
   #getEip712Index(): Promise<Erc7730Eip712Index> {
-    return this.#cached(EIP712_INDEX_KEY, ERC7730_CACHE_TTL_MS, () =>
+    return this.#cached(cacheKey.eip712Index, ERC7730_CACHE_TTL_MS, () =>
       fetchRelayerResource<Erc7730Eip712Index>(
         ERC7730_EIP712_INDEX_RELAYER_PATH,
         'GET',
@@ -275,7 +313,7 @@ export class Erc7730Controller extends EventEmitter {
   #getDescriptor(pathOrUrl: string): Promise<Erc7730Descriptor> {
     const relayerPath = normalizeRelayerPath(pathOrUrl)
 
-    return this.#cached(descriptorKey(relayerPath), ERC7730_CACHE_TTL_MS, () =>
+    return this.#cached(cacheKey.descriptor(relayerPath), ERC7730_CACHE_TTL_MS, () =>
       fetchRelayerResource<Erc7730Descriptor>(
         ERC7730_DESCRIPTOR_PATH,
         'POST',
@@ -290,20 +328,22 @@ export class Erc7730Controller extends EventEmitter {
     const provider = this.#getProvider(chainId)
     if (!provider) return null
 
-    const cacheKey = `${SINGLETON_KEY_PREFIX}${chainId.toString()}:${safeAddress.toLowerCase()}`
-
     try {
-      return await this.#cached(cacheKey, SAFE_SINGLETON_CACHE_TTL_MS, async () => {
-        const slotValue = await withTimeout(
-          () => provider.getStorage(safeAddress, SAFE_PROXY_SINGLETON_SLOT),
-          {
-            timeoutMs: ERC7730_DESCRIPTOR_WAIT_MS,
-            message: `Timed out fetching Safe singleton: ${safeAddress}`
-          }
-        )
+      return await this.#cached(
+        cacheKey.safeSingleton(chainId, safeAddress),
+        SAFE_SINGLETON_CACHE_TTL_MS,
+        async () => {
+          const slotValue = await withTimeout(
+            () => provider.getStorage(safeAddress, SAFE_PROXY_SINGLETON_SLOT),
+            {
+              timeoutMs: ERC7730_DESCRIPTOR_WAIT_MS,
+              message: `Timed out fetching Safe singleton: ${safeAddress}`
+            }
+          )
 
-        return getAddressFromStorageSlot(slotValue)
-      })
+          return getAddressFromStorageSlot(slotValue)
+        }
+      )
     } catch (error: any) {
       this.emitError({
         message: `Something went wrong while reading the details of the Safe account ${safeAddress}. Its transactions will still be readable, just with less detail.`,
@@ -339,15 +379,27 @@ export class Erc7730Controller extends EventEmitter {
   }
 
   #recordUnavailable(want: Erc7730Want, known: Erc7730Known) {
-    if (want.kind === 'safeSingleton') {
-      known.safeSingletons[getSafeSingletonKey(want.chainId, want.address)] = null
-    } else if (want.kind === 'includedDescriptor') {
-      known.descriptorsByPath[want.path] = null
-    } else if (want.kind === 'contractDescriptor') {
-      known.contractDescriptors[getRegistryKey(want.chainId, want.address)] = null
-    } else if (want.kind === 'eip712Descriptor') {
-      const registryKey = getRegistryKey(want.chainId, want.verifyingContract)
-      known.eip712Descriptors[`${registryKey}:${want.primaryType}`] = null
+    switch (want.kind) {
+      case 'safeSingleton':
+        known.safeSingletons[getSafeSingletonKey(want.chainId, want.address)] = null
+        break
+      case 'includedDescriptor':
+        known.descriptorsByPath[want.path] = null
+        break
+      case 'contractDescriptor':
+        known.contractDescriptors[getRegistryKey(want.chainId, want.address)] = null
+        break
+      case 'eip712Descriptor': {
+        const registryKey = getRegistryKey(want.chainId, want.verifyingContract)
+        known.eip712Descriptors[`${registryKey}:${want.primaryType}`] = null
+        break
+      }
+      default: {
+        // A new want kind that records nothing here would be re-asked on every round and then
+        // silently dropped, so this makes adding one a compile error instead
+        const unhandled: never = want
+        throw new Error(`Unhandled ERC-7730 want: ${JSON.stringify(unhandled)}`)
+      }
     }
   }
 

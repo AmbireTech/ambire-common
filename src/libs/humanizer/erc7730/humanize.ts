@@ -9,13 +9,12 @@ import {
   ZeroAddress
 } from 'ethers'
 
-import { humanizerCallModules } from '../'
 import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import humanizerInfo from '../../../consts/humanizer/humanizerInfo.json'
 import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
-import { singleCallHumanizerModules } from '../callModules'
+import { humanizerCallModules, singleCallHumanizerModules } from '../callModules'
 import {
   HumanizerCallModule,
   HumanizerErc7730Row,

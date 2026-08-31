@@ -5,7 +5,7 @@ import {
   Erc7730CallDescriptors,
   Erc7730ResolvedDescriptor,
   SafeSingletonProvider
-} from '../../libs/humanizer/erc7730'
+} from '../../libs/humanizer/erc7730/types'
 import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
 import { Erc7730Controller } from './erc7730'
 
