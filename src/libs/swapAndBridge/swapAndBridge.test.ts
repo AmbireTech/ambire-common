@@ -9,6 +9,7 @@ import {
   enrichRouteWithOutputUsdPrice,
   getFeeTokenForSponsorship,
   getIsBridgeRoute,
+  getIsIntentRoute,
   getSwapSponsorship
 } from './swapAndBridge'
 
@@ -107,6 +108,36 @@ describe('swapAndBridge lib', () => {
       if (!selectedRoute) return
 
       expect(getIsBridgeRoute(selectedRoute)).toBe(false)
+    })
+  })
+
+  describe('getIsIntentRoute', () => {
+    test('treats same-network CoW Swap routes as intents', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 99,
+        fromAmount: 1,
+        minAmountOut: 99
+      })!
+      selectedRoute.fromChainId = 1
+      selectedRoute.toChainId = 1
+      selectedRoute.providerId = 'cowswap'
+
+      expect(getIsBridgeRoute(selectedRoute)).toBe(false)
+      expect(getIsIntentRoute(selectedRoute)).toBe(true)
+    })
+
+    test('does not treat regular same-network swaps as intents', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 99,
+        fromAmount: 1,
+        minAmountOut: 99
+      })!
+      selectedRoute.fromChainId = 1
+      selectedRoute.toChainId = 1
+
+      expect(getIsIntentRoute(selectedRoute)).toBe(false)
     })
   })
 
@@ -254,7 +285,7 @@ describe('swapAndBridge lib', () => {
           feeTokenPriceInUsd: 1,
           feeTokenDecimals: 6,
           providerId: 'lifi',
-          isBridge: false
+          isIntent: false
         })
       ).toBeUndefined()
     })

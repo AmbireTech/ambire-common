@@ -943,6 +943,24 @@ describe('SwapAndBridge Controller', () => {
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
     expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('completed')
   })
+  test('should wait for a CoW Swap PreSign transaction before submitting the order', async () => {
+    const activeRoute = swapAndBridgeController.activeRoutes[0]!
+    const originalProviderId = activeRoute.route!.providerId
+    const userTxHash = 'cowswap-presign-pending'
+    const getRouteStatusSpy = jest.spyOn(socketAPIMock, 'getRouteStatus')
+
+    activeRoute.route!.providerId = 'cowswap'
+    swapAndBridgeController.updateActiveRoute(activeRoute.activeRouteId, {
+      routeStatus: 'in-progress',
+      userTxHash
+    })
+    await activityCtrl.addAccountOp(getSubmittedAccountOp(userTxHash))
+
+    await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
+
+    expect(getRouteStatusSpy).not.toHaveBeenCalled()
+    activeRoute.route!.providerId = originalProviderId
+  })
   test('should remove an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
     swapAndBridgeController.removeActiveRoute(activeRouteId)

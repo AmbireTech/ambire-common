@@ -39,6 +39,7 @@ import {
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest } from '../../interfaces/userRequest'
+import { COWSWAP_EXPLORER_URL } from '../../services/cowswap/constants'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { isBasicAccount } from '../account/account'
@@ -484,6 +485,11 @@ export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
   return route.fromChainId !== route.toChainId
 }
 
+/** Returns whether the route completes asynchronously after the user's transaction. */
+export const getIsIntentRoute = (route: SwapAndBridgeRoute) => {
+  return getIsBridgeRoute(route) || route.providerId === 'cowswap' || route.isIntent === true
+}
+
 /**
  * Checks if a network is supported by our Swap & Bridge service provider. As of v4.43.0
  * there are 16 networks supported, so user could have (many) custom networks that are not.
@@ -709,6 +715,9 @@ export const calculateAmountWarnings = (
 
 const getLink = (route: SwapAndBridgeActiveRoute) => {
   const providerId = route.route ? route.route.providerId : route.serviceProviderId
+  if (providerId === 'cowswap') {
+    return `${COWSWAP_EXPLORER_URL}/orders/${route.activeRouteId}`
+  }
   if (providerId === 'socket' || providerId === 'socketv3')
     return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
   return `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
@@ -737,7 +746,7 @@ const getSwapSponsorship = ({
   feeTokenPriceInUsd,
   feeTokenDecimals,
   providerId,
-  isBridge
+  isIntent
 }: {
   isErc4337Enabled: boolean
   hasConvinienceFee: boolean
@@ -746,7 +755,7 @@ const getSwapSponsorship = ({
   feeTokenPriceInUsd: number | undefined
   feeTokenDecimals: number | undefined
   providerId: string | undefined
-  isBridge: boolean
+  isIntent: boolean
 }):
   | {
       nativePrice: number
@@ -762,7 +771,7 @@ const getSwapSponsorship = ({
     !fromAmountInUsd ||
     !feeTokenPriceInUsd ||
     !feeTokenDecimals ||
-    (providerId === 'uniswap' && isBridge)
+    (providerId === 'uniswap' && isIntent)
   )
     return undefined
   return {

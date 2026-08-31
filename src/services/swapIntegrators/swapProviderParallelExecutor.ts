@@ -349,7 +349,8 @@ export class SwapProviderParallelExecutor {
     bridge,
     providerId,
     requestId,
-    routeId
+    routeId,
+    rawRoute
   }: {
     txHash: string
     fromChainId: number
@@ -358,6 +359,7 @@ export class SwapProviderParallelExecutor {
     providerId: string
     requestId?: string
     routeId?: string
+    rawRoute?: SwapAndBridgeRoute['rawRoute']
   }): Promise<SwapAndBridgeRouteStatusResult> {
     return this.#routeTo(providerId, 'getRouteStatus', {
       txHash,
@@ -365,7 +367,8 @@ export class SwapProviderParallelExecutor {
       toChainId,
       bridge,
       requestId,
-      routeId
+      routeId,
+      rawRoute
     })
   }
 }
