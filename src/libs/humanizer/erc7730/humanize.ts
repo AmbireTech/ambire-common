@@ -1637,19 +1637,19 @@ const getSafeTxMessageWarnings = (message: Message): HumanizerWarning[] => {
 }
 
 const getInnerCallVisualizations = (
-  safeTxCalls: Call[],
+  innerCalls: Call[],
   chainId: bigint,
   accountAddr: string,
   resolvedDescriptor: Erc7730ResolvedDescriptor,
   collectedWarnings?: HumanizerWarning[]
 ): (HumanizerVisualization & HumanizerErc7730Visualization)[] => {
-  return safeTxCalls
-    .map((safeTxCall, index) => {
+  return innerCalls
+    .map((innerCall, index) => {
       const innerCallDescriptor = resolvedDescriptor.innerCallDescriptors?.[index]
 
       if (innerCallDescriptor) {
         const humanizedCall = humanizeCallWithErc7730(
-          safeTxCall,
+          innerCall,
           chainId,
           accountAddr,
           innerCallDescriptor
@@ -1664,11 +1664,11 @@ const getInnerCallVisualizations = (
         }
       }
 
-      const safeFallbackVisualization = getSafeCallFallbackVisualization(safeTxCall)
+      const safeFallbackVisualization = getSafeCallFallbackVisualization(innerCall)
       if (safeFallbackVisualization) return safeFallbackVisualization
 
       const moduleFallbackVisualization = getModuleFallbackVisualization(
-        safeTxCall,
+        innerCall,
         chainId,
         accountAddr,
         undefined,
@@ -1676,9 +1676,9 @@ const getInnerCallVisualizations = (
       )
       if (moduleFallbackVisualization) return moduleFallbackVisualization
 
-      const fallbackCall = genericErc20Humanizer({ accountAddr }, safeTxCall)
+      const fallbackCall = genericErc20Humanizer({ accountAddr }, innerCall)
       const rows = getRowsFromFlatCallVisualization(fallbackCall?.fullVisualization)
-      if (!rows) return getKnownCallVisualization(safeTxCall)
+      if (!rows) return getKnownCallVisualization(innerCall)
 
       collectedWarnings?.push(...(fallbackCall?.warnings || []))
 
