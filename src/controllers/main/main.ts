@@ -2088,12 +2088,9 @@ export class MainController extends EventEmitter implements IMainController {
     const sentCallIds = submittedAccountOp.calls
       .filter((call) => call.status !== AccountOpStatus.Rejected)
       .map((call) => call.id)
-    const notSentCalls = signAccountOp.accountOp.calls.filter(
-      (call) => !sentCallIds.includes(call.id)
-    )
+    const notSentCalls = signAccountOp.cleanupAfterBroadcast(sentCallIds)
 
     if (notSentCalls.length) {
-      signAccountOp.update({ accountOpData: { calls: notSentCalls } })
       // Their promises have just been answered, so the request must not hold them
       accountOpRequest.dappPromises = accountOpRequest.dappPromises.filter((promise) =>
         dappHandlers.every((handler) => handler.promise.id !== promise.id)
