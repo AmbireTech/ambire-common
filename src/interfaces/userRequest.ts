@@ -15,6 +15,7 @@ import { EIP7702Signature } from './signatures'
 import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from './swapAndBridge'
 
 import type { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
+import type { HumanizerVisualization } from '../libs/humanizer/interfaces'
 
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
@@ -109,6 +110,7 @@ export interface SiweMessageUserRequest extends UserRequestBase<[DappPromise]> {
 
 export interface TypedMessageUserRequest extends UserRequestBase<[] | [DappPromise]> {
   kind: 'typedMessage'
+  humanization?: HumanizerVisualization[]
   meta: UserRequestBase['meta'] & {
     params: {
       domain: TypedDataDomain
