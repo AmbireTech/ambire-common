@@ -3900,19 +3900,18 @@ describe('broadcasting a batch one transaction at a time', () => {
     expect(getPartialBroadcastError(controller)).toBeUndefined()
   })
 
-  test('records only the calls that were sent when the batch stops part-way', async () => {
+  test('keeps every call but reports only the hashes that went out', async () => {
     const { controller, submittedAccountOps } = await initBatch()
     const { broadcastTransaction } = mockBroadcastChain(1)
 
     await controller.signAndBroadcast().catch(() => {})
 
-    // The first call was signed and sent, the second was refused, so the third was
-    // never reached. Recording all three would list transactions that were never sent
-    // and line their hashes up with the wrong calls.
+    // Only the first went out. Every call is still recorded, with fewer hashes than
+    // calls - that gap is what tells apart the calls that never went out, so they can
+    // be marked as such instead of quietly disappearing from the account op.
     expect(broadcastTransaction).toHaveBeenCalledTimes(1)
     expect(submittedAccountOps).toHaveLength(1)
-    expect(submittedAccountOps[0].calls).toHaveLength(1)
-    expect(submittedAccountOps[0].calls[0].value).toBe(1n)
+    expect(submittedAccountOps[0].calls).toHaveLength(3)
     expect(submittedAccountOps[0].identifiedBy.type).toBe('MultipleTxns')
     expect(submittedAccountOps[0].identifiedBy.identifier.split('-')).toHaveLength(1)
   })

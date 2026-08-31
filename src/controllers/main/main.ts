@@ -946,8 +946,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   async commonHandlerForBroadcastSuccess({
     submittedAccountOp,
-    accountOp,
-    fromRequestId
+    accountOp
   }: OnboardingSuccessProps) {
     // add the txnIds from each transaction to each Call from the accountOp
     // if identifiedBy is MultipleTxns
@@ -971,17 +970,6 @@ export class MainController extends EventEmitter implements IMainController {
       })
 
       submittedAccountOp.calls = calls
-
-      const userRequest = this.requests.userRequests.find((r) => r.id === fromRequestId)
-
-      if (userRequest) {
-        // Handle the calls that weren't signed
-        const rejectedCalls = accountOp.calls.filter((call) =>
-          submittedAccountOp.calls.every((c) => c.id !== call.id)
-        )
-
-        await this.requests.rejectCalls({ callIds: rejectedCalls.map((c) => c.id) })
-      }
     }
 
     if (accountOp.meta?.swapTxn) {
@@ -2095,10 +2083,27 @@ export class MainController extends EventEmitter implements IMainController {
       }
     })
 
-    await this.requests.removeUserRequests([accountOpRequest.id], {
-      shouldRemoveSwapAndBridgeRoute: false,
-      shouldOpenNextRequest: false
-    })
+    // Calls that made it out are done with. Anything left was never signed, so the
+    // request stays with those in it and the user can come back and sign them.
+    const sentCallIds = submittedAccountOp.calls
+      .filter((call) => call.status !== AccountOpStatus.Rejected)
+      .map((call) => call.id)
+    const notSentCalls = signAccountOp.accountOp.calls.filter(
+      (call) => !sentCallIds.includes(call.id)
+    )
+
+    if (notSentCalls.length) {
+      signAccountOp.update({ accountOpData: { calls: notSentCalls } })
+      // Their promises have just been answered, so the request must not hold them
+      accountOpRequest.dappPromises = accountOpRequest.dappPromises.filter((promise) =>
+        dappHandlers.every((handler) => handler.promise.id !== promise.id)
+      )
+    } else {
+      await this.requests.removeUserRequests([accountOpRequest.id], {
+        shouldRemoveSwapAndBridgeRoute: false,
+        shouldOpenNextRequest: false
+      })
+    }
 
     this.resolveDappBroadcast(submittedAccountOp, dappHandlers)
 
