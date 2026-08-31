@@ -608,29 +608,29 @@ describe('SignMessageController', () => {
     )
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: '1inch Order'
+      intent: [expect.objectContaining({ type: 'action', content: '1inch Order' })]
     })
     const visualization = signMessageController.humanizedMessage?.fullVisualization?.[0] as any
 
-    expect(visualization.rows.map((row: any) => row.label)).toEqual([
+    expect(visualization.fields.map((row: any) => row.label)).toEqual([
       'From',
       'Send',
       'Receive minimum'
     ])
-    expect(visualization.rows).not.toEqual(
+    expect(visualization.fields).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           label: 'To'
         })
       ])
     )
-    expect(visualization.rows[1].value[0]).toMatchObject({
+    expect(visualization.fields[1].value[0]).toMatchObject({
       type: 'token',
       address: '0x350a791bfc2c21f9ed5d10980dad2e2638ffa7f6',
       value: 366891214241290415n,
       chainId: 10n
     })
-    expect(visualization.rows[2].value[0]).toMatchObject({
+    expect(visualization.fields[2].value[0]).toMatchObject({
       type: 'token',
       address: '0x76fb31fb4af56892a25e32cfc43de717950c9278',
       value: 39061263450812873n,
