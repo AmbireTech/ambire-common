@@ -1,4 +1,4 @@
-import { describe } from '@jest/globals'
+import { describe, expect, test } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
 import {
@@ -7,7 +7,9 @@ import {
   getHintsError,
   getTotal,
   learnedErc721sToHints,
-  mergeERC721s
+  mergeERC721s,
+  planAssetMetadata,
+  TOKEN_METADATA_MAX_AGE_MS
 } from './helpers'
 import { ERC721s, ExternalHintsAPIResponse, GetOptions } from './interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from './portfolio'
@@ -337,5 +339,58 @@ describe('isSuspectedToken', () => {
   it('returns "suspected" for spoofed token with same symbol but different address', () => {
     const { address, symbol, chainId } = TOKENS.SPOOFED_WITH_VALID_SYMBOL
     expect(isSuspectedToken(address, symbol, chainId)).toBe('suspected')
+  })
+})
+
+describe('planAssetMetadata', () => {
+  const USDT = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+  const ADX = '0xADE00C28244d5CE17D72E40330B1c318cD12B7c3'
+  const now = Date.now()
+  const entry = (symbol: string, fetchedAt = now) => ({
+    symbol,
+    name: `${symbol} token`,
+    decimals: 18,
+    fetchedAt
+  })
+
+  test('asks for the addresses nothing is held for', () => {
+    const plan = planAssetMetadata([USDT, ADX], new Map([[USDT, entry('USDT')]]), now)
+
+    expect([...plan.needsMetadata]).toEqual([ADX])
+    expect(plan.known.get(USDT)?.symbol).toBe('USDT')
+  })
+
+  test('asks for everything when nothing is held at all', () => {
+    const plan = planAssetMetadata([USDT, ADX], undefined, now)
+
+    expect([...plan.needsMetadata]).toEqual([USDT, ADX])
+    expect(plan.known.size).toBe(0)
+  })
+
+  test('asks again for an entry that has aged out', () => {
+    const known = new Map([[USDT, entry('USDT', now - TOKEN_METADATA_MAX_AGE_MS - 1)]])
+    const plan = planAssetMetadata([USDT], known, now)
+
+    expect([...plan.needsMetadata]).toEqual([USDT])
+    expect(plan.known.has(USDT)).toBe(false)
+  })
+
+  test('copies what it holds, so a later eviction cannot change the plan', () => {
+    const known = new Map([[USDT, entry('USDT')]])
+    const plan = planAssetMetadata([USDT], known, now)
+
+    known.delete(USDT)
+
+    expect(plan.known.get(USDT)?.symbol).toBe('USDT')
+  })
+
+  test('leaves out addresses that were not asked about', () => {
+    const known = new Map([
+      [USDT, entry('USDT')],
+      [ADX, entry('ADX')]
+    ])
+    const plan = planAssetMetadata([USDT], known, now)
+
+    expect(plan.known.has(ADX)).toBe(false)
   })
 })
