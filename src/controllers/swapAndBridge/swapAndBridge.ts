@@ -1495,7 +1495,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       try {
         const apiTokens = await this.#serviceProviderAPI.getToTokenList({
           fromChainId,
-          toChainId
+          toChainId,
+          onUpdate: (apiTokens) => {
+            toTokenList.apiTokens = apiTokens
+            toTokenList.tokens = this.#getToTokens(fromChainId, toChainId)
+            toTokenList.lastUpdate = Date.now()
+
+            if (toTokenListKeyAtStart === this.#toTokenListKey) this.#emitUpdateIfNeeded()
+          }
         })
 
         if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return

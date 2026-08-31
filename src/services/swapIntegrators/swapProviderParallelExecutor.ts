@@ -14,6 +14,7 @@ import {
 import wait, { waitWithAbort } from '../../utils/wait'
 
 const GET_SUPPORTED_CHAINS_TIMEOUT = 10000
+const GET_TO_TOKEN_LIST_TIMEOUT = 30000
 
 export class SwapProviderParallelExecutor implements SwapProviderExecutor {
   id: string = 'parallel'
@@ -233,18 +234,69 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
 
   async getToTokenList({
     fromChainId,
-    toChainId
+    toChainId,
+    onUpdate
   }: {
     fromChainId: number
     toChainId: number
+    onUpdate?: (tokens: SwapAndBridgeToToken[]) => void
   }): Promise<SwapAndBridgeToToken[]> {
-    const toTokenList = await this.#fetchFromAll<SwapAndBridgeToToken[]>(
-      (provider: SwapProvider) =>
-        provider.getToTokenList({ fromChainId, toChainId }).catch((e) => e),
-      { chainIds: [fromChainId, toChainId] }
-    )
+    const supportedProviders = this.#providers.filter((provider) => {
+      if (provider.areChainsSupported) {
+        return provider.areChainsSupported({ fromChainId, toChainId })
+      }
 
-    // filter duplicates
+      if (provider.supportedChains === null) return true
+
+      const supportedChainIds = provider.supportedChains.map(({ chainId }) => chainId)
+      return supportedChainIds.includes(fromChainId) && supportedChainIds.includes(toChainId)
+    })
+
+    if (!supportedProviders.length) {
+      throw new SwapAndBridgeProviderApiError(
+        `The requested network(s) are not supported by any available service provider. Chain IDs: ${[
+          ...new Set([fromChainId, toChainId])
+        ].join(', ')}`
+      )
+    }
+
+    let toTokenList: SwapAndBridgeToToken[] = []
+    const requests = supportedProviders.map(async (provider) => {
+      const waitPromise = waitWithAbort(GET_TO_TOKEN_LIST_TIMEOUT)
+
+      try {
+        const result = await Promise.race([
+          provider
+            .getToTokenList({ fromChainId, toChainId })
+            .catch((error) =>
+              error instanceof Error ? error : new Error('Get to token list failed')
+            ),
+          waitPromise.promise.then(() => new Error('Get to token list timeout'))
+        ])
+
+        if (result instanceof Error) return result
+
+        toTokenList = this.#removeDuplicateTokens([...toTokenList, ...result])
+        onUpdate?.(toTokenList)
+
+        return result
+      } finally {
+        if (waitPromise.abort) waitPromise.abort()
+      }
+    })
+
+    const results = await Promise.all(requests)
+
+    if (!results.some((result) => !(result instanceof Error))) {
+      throw new SwapAndBridgeProviderApiError(
+        'Our service providers are currently unavailable. Please try again later.'
+      )
+    }
+
+    return toTokenList
+  }
+
+  #removeDuplicateTokens(toTokenList: SwapAndBridgeToToken[]) {
     return [
       ...new Map(
         toTokenList.map((item: SwapAndBridgeToToken) => [`${item.chainId}-${item.address}`, item])

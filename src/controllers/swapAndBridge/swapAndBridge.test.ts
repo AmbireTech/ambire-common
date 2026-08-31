@@ -16,6 +16,7 @@ import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import { Storage } from '../../interfaces/storage'
+import { SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
@@ -518,6 +519,57 @@ describe('SwapAndBridge Controller', () => {
     )
     expect(swapAndBridgeController.fromChainId).toEqual(10)
     expect(swapAndBridgeController.toChainId).toEqual(10)
+  })
+  test('should emit token list updates while providers are still loading', async () => {
+    const partialToken: SwapAndBridgeToToken = {
+      address: '0x0000000000000000000000000000000000000001',
+      chainId: 137,
+      decimals: 18,
+      name: 'Partial token',
+      symbol: 'PARTIAL'
+    }
+    const finalToken: SwapAndBridgeToToken = {
+      address: '0x0000000000000000000000000000000000000002',
+      chainId: 137,
+      decimals: 18,
+      name: 'Final token',
+      symbol: 'FINAL'
+    }
+    let resolveTokenList!: (tokens: SwapAndBridgeToToken[]) => void
+    const getToTokenListSpy = jest.spyOn(socketAPIMock, 'getToTokenList').mockImplementation(
+      (params: any) =>
+        new Promise((resolve) => {
+          resolveTokenList = resolve
+          params.onUpdate([partialToken])
+        })
+    )
+    let unsubscribe = () => {}
+    const partialUpdatePromise = new Promise<void>((resolve) => {
+      unsubscribe = swapAndBridgeController.onUpdate(() => {
+        if (!swapAndBridgeController.toTokenShortList.includes(partialToken)) return
+
+        unsubscribe()
+        resolve()
+      })
+    })
+
+    const updatePromise = swapAndBridgeController.updateForm(
+      { toChainId: 137 },
+      { updateQuote: false }
+    )
+
+    await partialUpdatePromise
+    expect(swapAndBridgeController.updateToTokenListStatus).toEqual('LOADING')
+    expect(swapAndBridgeController.toTokenShortList).toContain(partialToken)
+
+    resolveTokenList([partialToken, finalToken])
+    await updatePromise
+    expect(swapAndBridgeController.updateToTokenListStatus).toEqual('INITIAL')
+    expect(swapAndBridgeController.toTokenShortList).toContain(finalToken)
+
+    getToTokenListSpy.mockRestore()
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
   })
   test('should sync toChainId to the preselected from token chain when no to token is provided', async () => {
     const preselectedToken = PORTFOLIO_TOKENS[1]!
