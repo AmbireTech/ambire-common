@@ -241,7 +241,7 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
     toChainId: number
     onUpdate?: (tokens: SwapAndBridgeToToken[]) => void
   }): Promise<SwapAndBridgeToToken[]> {
-    const supportedProviders = this.#providers.filter((provider) => {
+    const supportedProviders = this.#getEnabledProviders().filter((provider) => {
       if (provider.areChainsSupported) {
         return provider.areChainsSupported({ fromChainId, toChainId })
       }
