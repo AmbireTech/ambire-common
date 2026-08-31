@@ -5,7 +5,11 @@ import {
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { STK_WALLET } from '../../consts/addresses'
-import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
+import {
+  BLACKLIST_UPDATE_INTERVAL,
+  SCHEDULED_PORTFOLIO_UPDATE_DELAY,
+  SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL
+} from '../../consts/intervals'
 import {
   Account,
   AccountId,
@@ -222,7 +226,8 @@ export class PortfolioController
   #scheduledUpdates: ScheduledUpdates = {}
 
   /**
-   * Runs every 20 seconds and checks if there are any scheduled updates to run. If there are, it runs them and removes them from the schedule.
+   * Runs every SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL and checks if there are any scheduled updates to run.
+   * If there are, it runs them and removes them from the schedule.
    */
   #scheduledUpdatesRunnerInterval: IRecurringTimeout
 
@@ -267,7 +272,7 @@ export class PortfolioController
     )
     this.#scheduledUpdatesRunnerInterval = new RecurringTimeout(
       this.#runScheduledUpdates.bind(this),
-      20 * 1000,
+      SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL,
       this.emitError.bind(this)
     )
 
@@ -725,40 +730,70 @@ export class PortfolioController
     await this.#queue[accountAddr][chainId.toString()]
   }
 
+  /**
+   * Drops the given entries from the schedule, matching them by reference so that a newer entry,
+   * scheduled for the same chain while these were running, is kept.
+   */
+  #forgetScheduledUpdates(accountId: AccountId, updatesToForget: ScheduledUpdates[string]) {
+    const remaining = (this.#scheduledUpdates[accountId] || []).filter(
+      (update) => !updatesToForget.includes(update)
+    )
+
+    if (remaining.length) {
+      this.#scheduledUpdates[accountId] = remaining
+    } else {
+      delete this.#scheduledUpdates[accountId]
+    }
+  }
+
   async #runScheduledUpdates() {
     if (Object.keys(this.#scheduledUpdates).length === 0) return
 
-    const updatesToRun = structuredClone(this.#scheduledUpdates)
+    // The entries are references to the scheduled ones, so flagging them as running below
+    // mutates the schedule itself
+    const dueUpdatesByAccount: ScheduledUpdates = {}
+
+    Object.entries(this.#scheduledUpdates).forEach(([accountId, updates]) => {
+      const dueUpdates = updates.filter(
+        (update) =>
+          !update.isRunning && Date.now() - update.scheduledAt >= SCHEDULED_PORTFOLIO_UPDATE_DELAY
+      )
+
+      if (dueUpdates.length) dueUpdatesByAccount[accountId] = dueUpdates
+    })
+
+    const accountIdsToUpdate = Object.keys(dueUpdatesByAccount)
+
+    if (!accountIdsToUpdate.length) return
+
+    // Flag them as running so a subsequent run doesn't pick them up while the requests are in
+    // flight. They are kept in the schedule (instead of removed upfront) so the UI can tell the
+    // user the update is still happening.
+    accountIdsToUpdate.forEach((accountId) => {
+      dueUpdatesByAccount[accountId]!.forEach((update) => {
+        update.isRunning = true
+      })
+    })
+    this.emitUpdate()
 
     await Promise.all(
-      Object.entries(updatesToRun).map(async ([accountId, updates]) => {
-        const updatesOlderThanThreshold = updates.filter(
-          (update) => Date.now() - update.scheduledAt >= 60 * 1000
-        )
+      accountIdsToUpdate.map(async (accountId) => {
+        const dueUpdates = dueUpdatesByAccount[accountId]!
+        const chainIdsToUpdate = dueUpdates.map((update) => update.chainId)
 
-        if (updatesOlderThanThreshold.length === 0) return
-
-        const networksToUpdate = updatesOlderThanThreshold.map((update) => update.chainId)
-
-        // Remove the updates from the schedule so a second run doesn't pick them up while they are being processed
-        this.#scheduledUpdates[accountId] = updates.filter(
-          (update) => !networksToUpdate.includes(update.chainId)
-        )
-
-        if (this.#scheduledUpdates[accountId].length === 0) {
-          delete this.#scheduledUpdates[accountId]
+        try {
+          await this.updateSelectedAccount(
+            accountId,
+            this.#networks.networks.filter((n) => chainIdsToUpdate.includes(n.chainId)),
+            undefined,
+            {
+              bypassServerSideCache: dueUpdates.some((update) => update.bypassServerSideCache)
+            }
+          )
+        } finally {
+          this.#forgetScheduledUpdates(accountId, dueUpdates)
+          this.emitUpdate()
         }
-
-        await this.updateSelectedAccount(
-          accountId,
-          this.#networks.networks.filter((n) => networksToUpdate.includes(n.chainId)),
-          undefined,
-          {
-            bypassServerSideCache: updatesOlderThanThreshold.some(
-              (update) => update.bypassServerSideCache
-            )
-          }
-        )
       })
     )
   }
@@ -778,22 +813,27 @@ export class PortfolioController
     bypassServerSideCache: true
   }) {
     const existing = this.#scheduledUpdates[accountId] || []
-    const networkAlreadyScheduledForAccount = existing.find((update) => update.chainId === chainId)
+    // A running update is already fetching stale data, so it can't be debounced. The new
+    // transaction gets its own entry, which also keeps the UI indicator up until it runs.
+    const pendingUpdateForNetwork = existing.find(
+      (update) => update.chainId === chainId && !update.isRunning
+    )
 
-    if (networkAlreadyScheduledForAccount) {
-      networkAlreadyScheduledForAccount.bypassServerSideCache =
-        networkAlreadyScheduledForAccount.bypassServerSideCache || bypassServerSideCache
-      // Debounce: start the 60s window from the most recent transaction, not the first
-      networkAlreadyScheduledForAccount.scheduledAt = Date.now()
+    if (pendingUpdateForNetwork) {
+      pendingUpdateForNetwork.bypassServerSideCache =
+        pendingUpdateForNetwork.bypassServerSideCache || bypassServerSideCache
+      // Debounce: start the delay window from the most recent transaction, not the first
+      pendingUpdateForNetwork.scheduledAt = Date.now()
 
       this.debugLog(
         'simulation',
         `${chainId.toString()} Debounced scheduled update for ${accountId}`,
         () => ({
-          bypassServerSideCache: networkAlreadyScheduledForAccount.bypassServerSideCache,
-          scheduledAt: networkAlreadyScheduledForAccount.scheduledAt
+          bypassServerSideCache: pendingUpdateForNetwork.bypassServerSideCache,
+          scheduledAt: pendingUpdateForNetwork.scheduledAt
         })
       )
+      this.emitUpdate()
       return
     }
 
@@ -803,9 +843,23 @@ export class PortfolioController
     }))
 
     this.#scheduledUpdates[accountId] = [
-      ...(this.#scheduledUpdates[accountId] || []),
-      { chainId, bypassServerSideCache, scheduledAt: Date.now() }
+      ...existing,
+      { chainId, bypassServerSideCache, scheduledAt: Date.now(), isRunning: false }
     ]
+    this.emitUpdate()
+  }
+
+  /**
+   * The chains with a portfolio update queued or in flight after a recent transaction, by account.
+   * Read by the UI to tell the user their defi positions are about to refresh.
+   */
+  get scheduledUpdateChainIds(): { [accountId: string]: bigint[] } {
+    return Object.fromEntries(
+      Object.entries(this.#scheduledUpdates).map(([accountId, updates]) => [
+        accountId,
+        updates.map(({ chainId }) => chainId)
+      ])
+    )
   }
 
   /**
@@ -1968,6 +2022,17 @@ export class PortfolioController
             })
           )
 
+          // The manual update just fetched what the scheduled one would have (it forces a defi
+          // refetch when an update is scheduled), so the pending entry is no longer needed. A
+          // running one is kept, as its request is already in flight.
+          if (isManualUpdate && isSuccessful)
+            this.#forgetScheduledUpdates(
+              accountId,
+              (this.#scheduledUpdates[accountId] || []).filter(
+                (update) => !update.isRunning && update.chainId === network.chainId
+              )
+            )
+
           // Learn tokens and nfts from the portfolio lib
           if (isSuccessful && accountState[network.chainId.toString()]?.result) {
             const networkResult = accountState[network.chainId.toString()]!.result
@@ -2229,7 +2294,8 @@ export class PortfolioController
       ...this,
       ...super.toJSON(),
       customTokens: this.customTokens,
-      tokenPreferences: this.tokenPreferences
+      tokenPreferences: this.tokenPreferences,
+      scheduledUpdateChainIds: this.scheduledUpdateChainIds
     }
   }
 }
