@@ -68,6 +68,113 @@ describe('Swap Provider Parallel execution', () => {
     const uniqueIds = new Set(ids)
     expect(uniqueIds.size).toBe(ids.length)
   })
+
+  it('Requests every provider once and reports token lists as providers complete', async () => {
+    const createToken = (address: string, symbol: string) => ({
+      address,
+      chainId: 1,
+      decimals: 18,
+      name: symbol,
+      symbol
+    })
+    const firstToken = createToken('0x0000000000000000000000000000000000000001', 'FIRST')
+    const secondToken = createToken('0x0000000000000000000000000000000000000002', 'SECOND')
+    let resolveFirstProvider!: (tokens: (typeof firstToken)[]) => void
+    let resolveSecondProvider!: (tokens: (typeof firstToken)[]) => void
+    const firstProvider = createProvider(async () => [])
+    const secondProvider = createProvider(async () => [])
+    firstProvider.getToTokenList = jest.fn(
+      () => new Promise<(typeof firstToken)[]>((resolve) => (resolveFirstProvider = resolve))
+    )
+    secondProvider.getToTokenList = jest.fn(
+      () => new Promise<(typeof firstToken)[]>((resolve) => (resolveSecondProvider = resolve))
+    )
+    let resolveFirstUpdate!: () => void
+    const firstUpdatePromise = new Promise<void>((resolve) => (resolveFirstUpdate = resolve))
+    const onUpdate = jest.fn(resolveFirstUpdate)
+    const executor = new SwapProviderParallelExecutor([firstProvider, secondProvider])
+
+    const tokenListPromise = executor.getToTokenList({
+      fromChainId: 1,
+      toChainId: 1,
+      onUpdate
+    })
+
+    expect(firstProvider.getToTokenList).toHaveBeenCalledTimes(1)
+    expect(secondProvider.getToTokenList).toHaveBeenCalledTimes(1)
+
+    resolveSecondProvider([secondToken])
+    await firstUpdatePromise
+    expect(onUpdate).toHaveBeenLastCalledWith([secondToken])
+
+    resolveFirstProvider([firstToken, secondToken])
+    await expect(tokenListPromise).resolves.toEqual([secondToken, firstToken])
+    expect(onUpdate).toHaveBeenLastCalledWith([secondToken, firstToken])
+    expect(onUpdate).toHaveBeenCalledTimes(2)
+  })
+
+  it('Keeps successful token results when another provider times out', async () => {
+    jest.useFakeTimers()
+
+    try {
+      const token = {
+        address: '0x0000000000000000000000000000000000000001',
+        chainId: 1,
+        decimals: 18,
+        name: 'Token',
+        symbol: 'TOKEN'
+      }
+      const successfulProvider = createProvider(async () => [])
+      const hangingProvider = createProvider(async () => [])
+      successfulProvider.getToTokenList = jest.fn(async () => [token])
+      hangingProvider.getToTokenList = jest.fn(() => new Promise(() => {}))
+      let resolveUpdate!: () => void
+      const updatePromise = new Promise<void>((resolve) => (resolveUpdate = resolve))
+      const onUpdate = jest.fn(resolveUpdate)
+      const executor = new SwapProviderParallelExecutor([successfulProvider, hangingProvider])
+      const tokenListPromise = executor.getToTokenList({
+        fromChainId: 1,
+        toChainId: 1,
+        onUpdate
+      })
+
+      await updatePromise
+      expect(onUpdate).toHaveBeenCalledWith([token])
+
+      await jest.advanceTimersByTimeAsync(30000)
+      await expect(tokenListPromise).resolves.toEqual([token])
+      expect(successfulProvider.getToTokenList).toHaveBeenCalledTimes(1)
+      expect(hangingProvider.getToTokenList).toHaveBeenCalledTimes(1)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it('Fails after all providers fail or time out without retrying them automatically', async () => {
+    jest.useFakeTimers()
+
+    try {
+      const failingProvider = createProvider(async () => [])
+      const hangingProvider = createProvider(async () => [])
+      failingProvider.getToTokenList = jest.fn(async () => {
+        throw new Error('Provider failed')
+      })
+      hangingProvider.getToTokenList = jest.fn(() => new Promise(() => {}))
+      const executor = new SwapProviderParallelExecutor([failingProvider, hangingProvider])
+      const tokenListPromise = executor.getToTokenList({ fromChainId: 1, toChainId: 1 })
+      const expectedFailure = expect(tokenListPromise).rejects.toThrow(
+        'Our service providers are currently unavailable. Please try again later.'
+      )
+
+      await jest.advanceTimersByTimeAsync(30000)
+      await expectedFailure
+      expect(failingProvider.getToTokenList).toHaveBeenCalledTimes(1)
+      expect(hangingProvider.getToTokenList).toHaveBeenCalledTimes(1)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
   it('Fetch to token successfully', async () => {
     const toToken = await swapProviderParallelExecutor.getToken({
       address: '0x4200000000000000000000000000000000000042',
@@ -131,9 +238,9 @@ describe('Swap Provider Parallel execution', () => {
       quote: jest.fn(),
       getRouteStatus: jest.fn()
     } as unknown as SwapProvider
-    const squidProvider = {
-      id: 'squid',
-      name: 'Squid',
+    const citreaProvider = {
+      id: 'citrea-provider',
+      name: 'Citrea Provider',
       isHealthy: null,
       supportedChains: [{ chainId: 4114 }],
       updateHealth: jest.fn(),
@@ -168,7 +275,7 @@ describe('Swap Provider Parallel execution', () => {
       getRouteStatus: jest.fn()
     } as unknown as SwapProvider
 
-    const executor = new SwapProviderParallelExecutor([socketProvider, squidProvider])
+    const executor = new SwapProviderParallelExecutor([socketProvider, citreaProvider])
     await executor.quote({
       fromAsset: {
         address: '0x0000000000000000000000000000000000000000',
@@ -197,7 +304,7 @@ describe('Swap Provider Parallel execution', () => {
     })
 
     expect(socketProvider.quote).not.toHaveBeenCalled()
-    expect(squidProvider.quote).toHaveBeenCalled()
+    expect(citreaProvider.quote).toHaveBeenCalled()
   })
 
   it('Returns routes from all providers that complete within the wait window', async () => {
