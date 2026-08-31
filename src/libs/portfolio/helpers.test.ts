@@ -8,6 +8,7 @@ import {
   getErc721Validity,
   getHintsError,
   getSpecialHints,
+  getVisibleCollectibles,
   mergeCollectionHints,
   getTotal,
   learnedErc721sToHints,
@@ -334,6 +335,19 @@ describe('Portfolio helpers', () => {
       ).toEqual({ isValid: true, message: null })
     })
 
+    // ENS NameWrapper is one, and it exposes ownerOf() as well
+    it('rejects a multi edition NFT, even when it looks like a collection', () => {
+      const { isValid, message } = getErc721Validity({
+        supportsERC721: false,
+        supportsERC1155: true,
+        isContract: true,
+        hasDecimals: false
+      })
+
+      expect(isValid).toBe(false)
+      expect(message).toBe('This type of NFT (ERC-1155) is not supported yet')
+    })
+
     it('rejects a token', () => {
       const { isValid, message } = getErc721Validity({
         supportsERC721: false,
@@ -407,6 +421,50 @@ describe('Portfolio helpers', () => {
       })
 
       expect(merged[COLLECTION_ADDR]).toEqual([3n, 1n, 2n])
+    })
+  })
+
+  describe('getVisibleCollectibles', () => {
+    it('shows the whole collection when it was not added by the user', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n, 2n, 3n] })).toEqual([1n, 2n, 3n])
+    })
+
+    // The user adding one collectible must not bring the rest of the collection along
+    it('shows only the added collectibles of a custom collection', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n, 2n, 3n], customIds: [2n] })).toEqual([2n])
+    })
+
+    it('shows every added collectible of a custom collection', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n, 2n, 3n], customIds: [3n, 1n] })).toEqual([
+        1n,
+        3n
+      ])
+    })
+
+    it('leaves out an added collectible the account no longer owns', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n], customIds: [1n, 9n] })).toEqual([1n])
+    })
+
+    // Collections added before the ids were recorded have none
+    it('shows the whole collection when it was added without ids', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n, 2n], customIds: [] })).toEqual([1n, 2n])
+    })
+
+    it('leaves out the hidden collectibles', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n, 2n, 3n], hiddenIds: [2n] })).toEqual([
+        1n,
+        3n
+      ])
+    })
+
+    it('hides an added collectible of a custom collection', () => {
+      expect(
+        getVisibleCollectibles({ collectibles: [1n, 2n], customIds: [1n, 2n], hiddenIds: [1n] })
+      ).toEqual([2n])
+    })
+
+    it('shows nothing of a collection whose collectibles are all hidden', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n], hiddenIds: [1n] })).toEqual([])
     })
   })
 

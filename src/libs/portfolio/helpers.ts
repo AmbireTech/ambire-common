@@ -283,6 +283,7 @@ export const validateERC20Token = async (
 
 const ERC721_INTERFACE_ID = '0x80ac58cd'
 const ERC721_ENUMERABLE_INTERFACE_ID = '0x780e9d63'
+const ERC1155_INTERFACE_ID = '0xd9b67a26'
 
 // Not available in the compiled IERC721 ABI
 const ERC721_METADATA_ABI = [
@@ -293,11 +294,6 @@ const ERC721_METADATA_ABI = [
   'function tokenOfOwnerByIndex(address owner, uint256 index) view returns (uint256)'
 ]
 
-/**
- * Key of a token/collection in the validation and preview caches. The addresses
- * come from user input and from the portfolio, so they have to be normalized to
- * always resolve to the same entry.
- */
 /**
  * Merges every source of ERC-721 hints for a network.
  *
@@ -339,6 +335,36 @@ export const mergeCollectionHints = ({
   return merged
 }
 
+/**
+ * The collectibles of a collection that the account should see.
+ *
+ * A collection added by the user shows only the collectibles they added, so the
+ * rest of it doesn't come along with them. Collections added before the ids
+ * were recorded have none, which means the whole collection.
+ */
+export const getVisibleCollectibles = ({
+  collectibles,
+  customIds,
+  hiddenIds
+}: {
+  collectibles: bigint[]
+  customIds?: bigint[]
+  hiddenIds?: bigint[]
+}) => {
+  const added = customIds?.length
+    ? collectibles.filter((id) => customIds.includes(id))
+    : collectibles
+
+  if (!hiddenIds?.length) return added
+
+  return added.filter((id) => !hiddenIds.includes(id))
+}
+
+/**
+ * Key of a token/collection in the validation and preview caches. The addresses
+ * come from user input and from the portfolio, so they have to be normalized to
+ * always resolve to the same entry.
+ */
 export const getAssetCacheKey = (address: string, chainId: bigint) => {
   let normalizedAddress = address
 
@@ -357,16 +383,23 @@ export const getAssetCacheKey = (address: string, chainId: bigint) => {
  */
 export const getErc721Validity = ({
   supportsERC721,
+  supportsERC1155,
   isContract,
   hasDecimals
 }: {
   supportsERC721?: boolean
+  supportsERC1155?: boolean
   isContract: boolean
   hasDecimals: boolean
 }): { isValid: boolean; message: string | null } => {
   // Some collections (e.g. vote-escrow NFTs) expose decimals() too, so this has
   // to be trusted over the checks below
   if (supportsERC721 === true) return { isValid: true, message: null }
+
+  // Multi edition NFTs are a different standard, which the portfolio can't read.
+  // Some of them expose ownerOf() too, so they would pass the checks below.
+  if (supportsERC1155 === true)
+    return { isValid: false, message: 'This type of NFT (ERC-1155) is not supported yet' }
 
   if (!isContract)
     return { isValid: false, message: "This address doesn't look like an NFT collection" }
@@ -402,15 +435,15 @@ export const validateCollectibleOwnership = async (
 
     if (isNetworkError(e))
       return invalid(
-        'There was a network problem while checking this item. Please try again.',
+        'There was a network problem while checking this NFT. Please try again.',
         'network'
       )
 
-    return invalid("This item doesn't exist in this collection", 'validation')
+    return invalid("This NFT doesn't exist in this collection", 'validation')
   }
 
   if (typeof owner !== 'string' || owner.toLowerCase() !== accountId.toLowerCase())
-    return invalid("You don't own this item", 'validation')
+    return invalid("You don't own this NFT", 'validation')
 
   return { isValid: true, standard: 'erc721', error: { message: null, type: null } }
 }
@@ -433,18 +466,20 @@ export const validateERC721Token = async (
     return undefined
   }
 
-  const [code, supportsERC721, decimals, name, symbol, isEnumerable] = await Promise.all([
-    provider.getCode(collection.address).catch((e: any) => handleError(e, 'code')),
-    metadata.supportsInterface!(ERC721_INTERFACE_ID).catch((e: any) =>
-      handleError(e, 'supportsInterface')
-    ),
-    // Reverting is the expected outcome for a collection, so this isn't an error
-    erc20.decimals!().catch(() => undefined),
-    // Optional, used for the preview
-    metadata.name!().catch(() => undefined),
-    metadata.symbol!().catch(() => undefined),
-    metadata.supportsInterface!(ERC721_ENUMERABLE_INTERFACE_ID).catch(() => undefined)
-  ])
+  const [code, supportsERC721, supportsERC1155, decimals, name, symbol, isEnumerable] =
+    await Promise.all([
+      provider.getCode(collection.address).catch((e: any) => handleError(e, 'code')),
+      metadata.supportsInterface!(ERC721_INTERFACE_ID).catch((e: any) =>
+        handleError(e, 'supportsInterface')
+      ),
+      metadata.supportsInterface!(ERC1155_INTERFACE_ID).catch(() => undefined),
+      // Reverting is the expected outcome for a collection, so this isn't an error
+      erc20.decimals!().catch(() => undefined),
+      // Optional, used for the preview
+      metadata.name!().catch(() => undefined),
+      metadata.symbol!().catch(() => undefined),
+      metadata.supportsInterface!(ERC721_ENUMERABLE_INTERFACE_ID).catch(() => undefined)
+    ])
 
   if (hasNetworkError)
     return {
@@ -458,6 +493,7 @@ export const validateERC721Token = async (
 
   const { isValid, message } = getErc721Validity({
     supportsERC721,
+    supportsERC1155,
     isContract: typeof code === 'string' && code !== '0x',
     hasDecimals: typeof decimals !== 'undefined'
   })

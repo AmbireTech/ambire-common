@@ -34,6 +34,67 @@ contract NFTGetter is Simulation {
     uint nonce;
   }
 
+  // Reads the ids the account owns from a collection that implements the
+  // enumerable extension
+  function enumerateOwned(
+    IAmbireAccount account,
+    NFT collection,
+    uint balance
+  ) internal view returns (uint256[] memory) {
+    uint256[] memory ids = new uint256[](balance);
+    uint owned;
+
+    for (uint i = 0; i != balance; i++) {
+      // A collection can report the enumerable interface and still not
+      // implement it, so a failure must not discard the whole collection
+      try collection.tokenOfOwnerByIndex(address(account), i) returns (uint tokenId) {
+        ids[owned] = tokenId;
+        owned++;
+      } catch {
+        break;
+      }
+    }
+
+    return shrink(ids, owned);
+  }
+
+  // Keeps the ids the account owns out of the given ones
+  function filterOwned(
+    IAmbireAccount account,
+    NFT collection,
+    uint[] memory tokenIds,
+    uint limit
+  ) internal view returns (uint256[] memory) {
+    uint256[] memory ids = new uint256[](tokenIds.length < limit ? tokenIds.length : limit);
+    uint owned;
+
+    for (uint i = 0; i != tokenIds.length; i++) {
+      if (owned == ids.length) break;
+      // catching the call as we can tolerate errors here because:
+      // - on nft mint the token does not exist before the simulation and ownerOf fails
+      // - on nft burn the token does not exist after the simulation and ownerOf fails
+      try collection.ownerOf(tokenIds[i]) returns (address ownerOfCurrentToken) {
+        if (ownerOfCurrentToken == address(account)) {
+          ids[owned] = tokenIds[i];
+          owned++;
+        }
+      } catch {}
+    }
+
+    return shrink(ids, owned);
+  }
+
+  function shrink(uint256[] memory ids, uint length) internal pure returns (uint256[] memory) {
+    if (length == ids.length) return ids;
+
+    uint256[] memory shrunk = new uint256[](length);
+    for (uint i = 0; i != length; i++) {
+      shrunk[i] = ids[i];
+    }
+
+    return shrunk;
+  }
+
   function getCollectionMeta(
     IAmbireAccount account,
     NFT collection,
@@ -50,54 +111,16 @@ contract NFTGetter is Simulation {
 
     uint balance = collection.balanceOf(address(account));
     if (balance > limit) balance = limit;
-    meta.nfts = new uint256[](balance);
+    if (balance == 0) return meta;
 
-    bool isEnumerable = collection.supportsInterface(0x780e9d63);
+    if (collection.supportsInterface(0x780e9d63) || tokenIds.length == 0) {
+      meta.nfts = enumerateOwned(account, collection, balance);
+    }
 
-    if (isEnumerable || tokenIds.length == 0) {
-      // A collection can report the interface and still not implement it, and a
-      // collection with no ids to check is walked as if it were enumerable, so
-      // the enumeration is allowed to fail without discarding the collection
-      uint owned;
-      for (uint i = 0; i != balance; i++) {
-        try collection.tokenOfOwnerByIndex(address(account), i) returns (uint tokenId) {
-          meta.nfts[owned] = tokenId;
-          owned++;
-        } catch {
-          break;
-        }
-      }
-
-      if (owned != balance) {
-        uint256[] memory enumerated = new uint256[](owned);
-        for (uint i = 0; i != owned; i++) {
-          enumerated[i] = meta.nfts[i];
-        }
-        meta.nfts = enumerated;
-      }
-    } else {
-      uint total;
-      for (uint i = 0; i != tokenIds.length; i++) {
-        if (total == limit) break;
-        // catching the call as we can tolerate errors here because:
-        // - on nft mint the token does not exist before the simulation and ownerOf fails
-        // - on nft burn the token does not exist after the simulation and ownerOf fails
-        try collection.ownerOf(tokenIds[i]) returns (address ownerOfCurrentToken) {
-          if (ownerOfCurrentToken == address(account)) {
-            total++;
-          }
-        } catch {}
-      }
-      meta.nfts = new uint256[](total);
-      uint j = 0;
-      for (uint i = 0; i != tokenIds.length; i++) {
-        try collection.ownerOf(tokenIds[i]) returns (address ownerOfCurrentToken) {
-          if (ownerOfCurrentToken == address(account)) {
-            meta.nfts[j] = tokenIds[i];
-            j++;
-          }
-        } catch {}
-      }
+    // The enumeration returns nothing when the collection only claims to
+    // support it, so the known ids are the fallback
+    if (meta.nfts.length == 0) {
+      meta.nfts = filterOwned(account, collection, tokenIds, limit);
     }
   }
 

@@ -21,6 +21,7 @@ import {
   convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
   getHardcodedCitreaPrices,
+  getVisibleCollectibles,
   mergeCollectionHints,
   tokenFilter
 } from './helpers'
@@ -433,10 +434,13 @@ export class Portfolio {
         return result
       })
 
-    // Unlike the deployless ones, preference addresses aren't always checksummed
-    const customCollectionAddresses = new Set(
-      Object.keys(specialErc721Hints?.custom || {}).map((address) => address.toLowerCase())
-    )
+    // Unlike the deployless ones, preference addresses aren't always checksummed.
+    // An empty array of ids means the collection was added before they were
+    // recorded, otherwise the listed collectibles are the added ones
+    const customCollectibles: { [lowercasedAddress: string]: bigint[] } = {}
+    Object.entries(specialErc721Hints?.custom || {}).forEach(([address, ids]) => {
+      customCollectibles[address.toLowerCase()] = ids
+    })
     // An empty array of ids hides the whole collection, otherwise the listed
     // collectibles are the hidden ones
     const hiddenCollectibles: { [lowercasedAddress: string]: bigint[] } = {}
@@ -451,12 +455,15 @@ export class Portfolio {
         if (error !== '0x') return acc
 
         const lowercasedAddress = collection.address.toLowerCase()
-        const isCustom = customCollectionAddresses.has(lowercasedAddress)
+        const customIds = customCollectibles[lowercasedAddress]
+        const isCustom = !!customIds
         const hiddenIds = hiddenCollectibles[lowercasedAddress]
         const isHidden = !!hiddenIds && !hiddenIds.length
-        const visibleCollectibles = hiddenIds?.length
-          ? collection.collectibles.filter((id) => !hiddenIds.includes(id))
-          : collection.collectibles
+        const visibleCollectibles = getVisibleCollectibles({
+          collectibles: collection.collectibles,
+          customIds,
+          hiddenIds
+        })
 
         // Spam filter: hide collections whose symbol/name matches a blacklisted
         // pattern or embeds a phishing domain. Custom (user-added) collections
