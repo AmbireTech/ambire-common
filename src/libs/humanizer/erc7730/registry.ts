@@ -30,7 +30,13 @@ import {
   Erc7730TypedDataTypes,
   Erc7730Want
 } from './types'
-import { getRegistryKey, getSafeTxCallsFromMessage, isHexOfLength, isPlainObject } from './utils'
+import {
+  getRegistryKey,
+  getSafeSingletonKey,
+  getSafeTxCallsFromMessage,
+  isHexOfLength,
+  isPlainObject
+} from './utils'
 
 /** How deep `includes` chains and nested calls are followed before giving up. */
 export const ERC7730_MAX_RESOLUTION_DEPTH = 5
@@ -671,9 +677,6 @@ export const selectEip712IndexEntry = (
 
 const getEip712Key = (chainId: bigint, verifyingContract: string, primaryType: string): string =>
   `${getRegistryKey(chainId, verifyingContract)}:${primaryType}`
-
-const getSafeSingletonKey = (chainId: bigint, address: string): string =>
-  `${chainId.toString()}:${address.toLowerCase()}`
 
 /**
  * Merges a descriptor with everything its `includes` point at, collecting a want for any include

@@ -44,6 +44,14 @@ const getTestController = (
   return controller
 }
 
+/**
+ * The errors the test controller reported for this relayer mock. Descriptor lookups never throw -
+ * a failure degrades to the built-in humanization - so this is how a test asserts that a bad
+ * response was actually reported rather than silently swallowed.
+ */
+export const getTestErc7730Errors = (callRelayer: BindedRelayerCall) =>
+  getTestController(callRelayer).emittedErrors
+
 export const getTestErc7730Descriptors = (
   accountOp: AccountOp,
   callRelayer: BindedRelayerCall,

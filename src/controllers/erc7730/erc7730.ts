@@ -36,6 +36,7 @@ import {
   SAFE_SINGLETON_CACHE_TTL_MS
 } from '../../libs/humanizer/erc7730/consts'
 import { fetchRelayerResource } from '../../libs/humanizer/erc7730/fetch'
+import { getRegistryKey, getSafeSingletonKey } from '../../libs/humanizer/erc7730/utils'
 import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -172,8 +173,13 @@ export class Erc7730Controller extends EventEmitter {
       // Recorded only once the write lands, so a failed one is retried by the next persist
       // instead of being taken for done
       this.#persistedRevision = revision
-    } catch (error) {
-      console.warn('erc7730: failed to persist the descriptor cache', error)
+    } catch (error: any) {
+      this.emitError({
+        message:
+          'Something went wrong while saving transaction details for later. Transactions will still be readable, they may just take a moment longer to describe.',
+        level: 'silent',
+        error
+      })
     } finally {
       this.#persisting = false
       if (this.#persistScheduled) {
@@ -298,8 +304,12 @@ export class Erc7730Controller extends EventEmitter {
 
         return getAddressFromStorageSlot(slotValue)
       })
-    } catch (error) {
-      console.error(error)
+    } catch (error: any) {
+      this.emitError({
+        message: `Something went wrong while reading the details of the Safe account ${safeAddress}. Its transactions will still be readable, just with less detail.`,
+        level: 'silent',
+        error
+      })
 
       return null
     }
@@ -317,22 +327,26 @@ export class Erc7730Controller extends EventEmitter {
   async #answer(want: Erc7730Want, known: Erc7730Known): Promise<void> {
     try {
       await this.#fetchWant(want, known)
-    } catch (error) {
-      console.error(error)
+    } catch (error: any) {
+      this.emitError({
+        message:
+          'Some transaction details could not be loaded. The transaction will still be readable, just with less detail.',
+        level: 'silent',
+        error
+      })
       this.#recordUnavailable(want, known)
     }
   }
 
   #recordUnavailable(want: Erc7730Want, known: Erc7730Known) {
     if (want.kind === 'safeSingleton') {
-      known.safeSingletons[`${want.chainId.toString()}:${want.address.toLowerCase()}`] = null
+      known.safeSingletons[getSafeSingletonKey(want.chainId, want.address)] = null
     } else if (want.kind === 'includedDescriptor') {
       known.descriptorsByPath[want.path] = null
     } else if (want.kind === 'contractDescriptor') {
-      known.contractDescriptors[`eip155:${want.chainId.toString()}:${want.address.toLowerCase()}`] =
-        null
-    } else {
-      const registryKey = `eip155:${want.chainId.toString()}:${want.verifyingContract.toLowerCase()}`
+      known.contractDescriptors[getRegistryKey(want.chainId, want.address)] = null
+    } else if (want.kind === 'eip712Descriptor') {
+      const registryKey = getRegistryKey(want.chainId, want.verifyingContract)
       known.eip712Descriptors[`${registryKey}:${want.primaryType}`] = null
     }
   }
@@ -340,7 +354,7 @@ export class Erc7730Controller extends EventEmitter {
   async #fetchWant(want: Erc7730Want, known: Erc7730Known): Promise<void> {
     if (want.kind === 'safeSingleton') {
       const singleton = await this.#getSafeSingleton(want.chainId, want.address)
-      known.safeSingletons[`${want.chainId.toString()}:${want.address.toLowerCase()}`] = singleton
+      known.safeSingletons[getSafeSingletonKey(want.chainId, want.address)] = singleton
 
       return
     }
@@ -352,7 +366,7 @@ export class Erc7730Controller extends EventEmitter {
     }
 
     if (want.kind === 'contractDescriptor') {
-      const key = `eip155:${want.chainId.toString()}:${want.address.toLowerCase()}`
+      const key = getRegistryKey(want.chainId, want.address)
       const index = await this.#getCalldataIndex()
       const path = index[key]
 
@@ -368,7 +382,7 @@ export class Erc7730Controller extends EventEmitter {
       return
     }
 
-    const registryKey = `eip155:${want.chainId.toString()}:${want.verifyingContract.toLowerCase()}`
+    const registryKey = getRegistryKey(want.chainId, want.verifyingContract)
     const key = `${registryKey}:${want.primaryType}`
     const index = await this.#getEip712Index()
     const entries = index[registryKey]?.[want.primaryType]
@@ -416,8 +430,13 @@ export class Erc7730Controller extends EventEmitter {
       const known = await this.#gather((state) => planErc7730Wants(accountOp, state))
 
       return resolveErc7730Descriptors(accountOp, known)
-    } catch (error) {
-      console.error(error)
+    } catch (error: any) {
+      this.emitError({
+        message:
+          'Some transaction details could not be loaded. The transaction will still be readable, just with less detail.',
+        level: 'silent',
+        error
+      })
 
       // Nothing usable was fetched, but built-in descriptors need no fetching at all
       return resolveErc7730Descriptors(accountOp, EMPTY_ERC7730_KNOWN)
@@ -429,8 +448,13 @@ export class Erc7730Controller extends EventEmitter {
       const known = await this.#gather((state) => planErc7730MessageWants(message, state))
 
       return resolveErc7730MessageDescriptor(message, known)
-    } catch (error) {
-      console.error(error)
+    } catch (error: any) {
+      this.emitError({
+        message:
+          'Some details of this message could not be loaded. The message will still be readable, just with less detail.',
+        level: 'silent',
+        error
+      })
 
       return null
     }

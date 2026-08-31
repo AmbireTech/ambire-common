@@ -1,6 +1,7 @@
 import {
   getTestErc7730DescriptorForCall,
   getTestErc7730Descriptors,
+  getTestErc7730Errors,
   getTestErc7730MessageDescriptor
 } from '../../../controllers/erc7730/testDescriptors'
 import { ethers } from 'ethers'
@@ -283,7 +284,6 @@ describe('ERC-7730 registry cache', () => {
   })
 
   test('does not keep a hanging relayer index promise cached', async () => {
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     const callRelayer = jest.fn(() => new Promise(() => {}))
 
     jest.useFakeTimers()
@@ -318,7 +318,6 @@ describe('ERC-7730 registry cache', () => {
       expect(callRelayer).toHaveBeenCalledTimes(2)
     } finally {
       jest.useRealTimers()
-      consoleErrorSpy.mockRestore()
     }
   })
 
@@ -587,7 +586,6 @@ describe('ERC-7730 registry cache', () => {
   })
 
   test('does not keep a hanging Safe singleton promise cached', async () => {
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
     const callRelayer = jest.fn(async (path: string) => {
       if (path === '/v2/erc7730/eip-712') {
@@ -672,12 +670,10 @@ describe('ERC-7730 registry cache', () => {
       expect(provider.getStorage).toHaveBeenCalledTimes(2)
     } finally {
       jest.useRealTimers()
-      consoleErrorSpy.mockRestore()
     }
   })
 
   test('rejects malformed index responses', async () => {
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     const callRelayer = jest.fn(async (path: string) => {
       if (path === '/v2/erc7730/account-op') {
         return {
@@ -731,28 +727,23 @@ describe('ERC-7730 registry cache', () => {
       chainId: 1n
     }
 
-    try {
-      const calldataDescriptor = await getTestErc7730DescriptorForCall(
-        {
-          to: '0x1111111111111111111111111111111111111111',
-          value: 0n,
-          data: '0x12345678'
-        },
-        1n as AccountOp['chainId'],
-        callRelayer
-      )
-      const eip712Descriptor = await getTestErc7730MessageDescriptor(message as any, callRelayer)
+    const calldataDescriptor = await getTestErc7730DescriptorForCall(
+      {
+        to: '0x1111111111111111111111111111111111111111',
+        value: 0n,
+        data: '0x12345678'
+      },
+      1n as AccountOp['chainId'],
+      callRelayer
+    )
+    const eip712Descriptor = await getTestErc7730MessageDescriptor(message as any, callRelayer)
 
-      expect(calldataDescriptor).toBe(null)
-      expect(eip712Descriptor).toBe(null)
-      expect(consoleErrorSpy).toHaveBeenCalledTimes(2)
-    } finally {
-      consoleErrorSpy.mockRestore()
-    }
+    expect(calldataDescriptor).toBe(null)
+    expect(eip712Descriptor).toBe(null)
+    expect(getTestErc7730Errors(callRelayer as any)).toHaveLength(2)
   })
 
   test('does not cache malformed descriptor responses', async () => {
-    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     const verifyingContract = '0x6666666666666666666666666666666666666666'
     const registryPath = 'registry/test/malformed-descriptor-cache.json'
     let descriptorRequests = 0
@@ -831,17 +822,13 @@ describe('ERC-7730 registry cache', () => {
       chainId: 1n
     }
 
-    try {
-      const malformedDescriptor = await getTestErc7730MessageDescriptor(message as any, callRelayer)
-      const validDescriptor = await getTestErc7730MessageDescriptor(message as any, callRelayer)
+    const malformedDescriptor = await getTestErc7730MessageDescriptor(message as any, callRelayer)
+    const validDescriptor = await getTestErc7730MessageDescriptor(message as any, callRelayer)
 
-      expect(malformedDescriptor).toBe(null)
-      expect(validDescriptor?.path).toBe(registryPath)
-      expect(descriptorRequests).toBe(2)
-      expect(consoleErrorSpy).toHaveBeenCalledTimes(1)
-    } finally {
-      consoleErrorSpy.mockRestore()
-    }
+    expect(malformedDescriptor).toBe(null)
+    expect(validDescriptor?.path).toBe(registryPath)
+    expect(descriptorRequests).toBe(2)
+    expect(getTestErc7730Errors(callRelayer as any)).toHaveLength(1)
   })
 
   test('fetches the calldata index once for an accountOp with many calls', async () => {

@@ -78,3 +78,10 @@ export const getSafeTxCallsFromMessage = (message: Message): Call[] | null => {
 /** The key a descriptor is registered under, both in the relayer index and in the resolved maps */
 export const getRegistryKey = (chainId: bigint | number | string, address: string): string =>
   `eip155:${BigInt(chainId).toString()}:${address.toLowerCase()}`
+
+/**
+ * The key a Safe proxy's implementation is recorded under. Shared with the controller that answers
+ * the lookup, so the two can't drift into writing and reading different keys.
+ */
+export const getSafeSingletonKey = (chainId: bigint, address: string): string =>
+  `${chainId.toString()}:${address.toLowerCase()}`
