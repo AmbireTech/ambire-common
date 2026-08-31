@@ -146,8 +146,7 @@ describe('SignMessageController', () => {
   let inviteCtrl: IInviteController
   let dappsCtrl: IDappsController
 
-  beforeEach(() => {
-  })
+  beforeEach(() => {})
   beforeAll(async () => {
     const { mainCtrl } = await makeMainController(
       async (storageCtrl) => {

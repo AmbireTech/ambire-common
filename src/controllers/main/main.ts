@@ -116,7 +116,6 @@ import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketV3API } from '@/services/socketv3/api'
-import { SquidAPI } from '@/services/squid/api'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
@@ -245,7 +244,6 @@ export class MainController extends EventEmitter implements IMainController {
     velcroUrl,
     liFiApiKey,
     bungeeApiKey,
-    squidIntegratorId,
     uniswapApiKey,
     featureFlags,
     keystoreSigners,
@@ -261,7 +259,6 @@ export class MainController extends EventEmitter implements IMainController {
     velcroUrl: string
     liFiApiKey: string
     bungeeApiKey: string
-    squidIntegratorId: string
     uniswapApiKey: string
     featureFlags: Partial<FeatureFlags>
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
@@ -525,7 +522,6 @@ export class MainController extends EventEmitter implements IMainController {
     })
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
     const SocketProvider = new SocketV3API({ fetch, apiKey: bungeeApiKey })
-    const SquidProvider = new SquidAPI({ fetch, integratorId: squidIntegratorId })
     const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
       eventEmitterRegistry,
@@ -546,7 +542,7 @@ export class MainController extends EventEmitter implements IMainController {
       dapps: this.dapps,
       erc7730: this.erc7730,
       swapProvider: new SwapProviderParallelExecutor(
-        [LiFiProvider, SocketProvider, SquidProvider, UniswapProvider],
+        [LiFiProvider, SocketProvider, UniswapProvider],
         () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) }))
       ),
       relayerUrl,
@@ -960,8 +956,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   async commonHandlerForBroadcastSuccess({
     submittedAccountOp,
-    accountOp,
-    fromRequestId
+    accountOp
   }: OnboardingSuccessProps) {
     // add the txnIds from each transaction to each Call from the accountOp
     // if identifiedBy is MultipleTxns
@@ -985,17 +980,6 @@ export class MainController extends EventEmitter implements IMainController {
       })
 
       submittedAccountOp.calls = calls
-
-      const userRequest = this.requests.userRequests.find((r) => r.id === fromRequestId)
-
-      if (userRequest) {
-        // Handle the calls that weren't signed
-        const rejectedCalls = accountOp.calls.filter((call) =>
-          submittedAccountOp.calls.every((c) => c.id !== call.id)
-        )
-
-        await this.requests.rejectCalls({ callIds: rejectedCalls.map((c) => c.id) })
-      }
     }
 
     if (accountOp.meta?.swapTxn) {
@@ -2109,10 +2093,24 @@ export class MainController extends EventEmitter implements IMainController {
       }
     })
 
-    await this.requests.removeUserRequests([accountOpRequest.id], {
-      shouldRemoveSwapAndBridgeRoute: false,
-      shouldOpenNextRequest: false
-    })
+    // Calls that made it out are done with. Anything left was never signed, so the
+    // request stays with those in it and the user can come back and sign them.
+    const sentCallIds = submittedAccountOp.calls
+      .filter((call) => call.status !== AccountOpStatus.Rejected)
+      .map((call) => call.id)
+    const notSentCalls = signAccountOp.cleanupAfterBroadcast(sentCallIds)
+
+    if (notSentCalls.length) {
+      // Their promises have just been answered, so the request must not hold them
+      accountOpRequest.dappPromises = accountOpRequest.dappPromises.filter((promise) =>
+        dappHandlers.every((handler) => handler.promise.id !== promise.id)
+      )
+    } else {
+      await this.requests.removeUserRequests([accountOpRequest.id], {
+        shouldRemoveSwapAndBridgeRoute: false,
+        shouldOpenNextRequest: false
+      })
+    }
 
     this.resolveDappBroadcast(submittedAccountOp, dappHandlers)
 

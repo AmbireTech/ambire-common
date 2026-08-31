@@ -170,7 +170,7 @@ describe('warnings from nested calls', () => {
 
     expect(multicallVisualization.fields[0]?.value[0]).toMatchObject({
       type: 'erc7730',
-      intent: [expect.objectContaining({ content: 'Grant approval' })]
+      intent: [expect.objectContaining({ type: 'action', content: 'Grant approval' })]
     })
   })
 

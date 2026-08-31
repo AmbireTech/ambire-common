@@ -45,12 +45,7 @@ export const getBridgeBanners = (
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
   const refundedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'refunded')
   const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes, ...refundedRoutes]
-  // if there is one squid swap on the same chain, label it as such
-  const actionWordUppercase = allRoutes.find(
-    (r) => r.serviceProviderId === 'squid' && r.fromAsset?.chainId === r.toAsset?.chainId
-  )
-    ? 'Swap'
-    : 'Bridge'
+  const actionWordUppercase = 'Bridge'
   const actionWordLower = actionWordUppercase.toLowerCase()
 
   let title = ''
