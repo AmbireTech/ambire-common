@@ -2022,17 +2022,6 @@ export class PortfolioController
             })
           )
 
-          // The manual update just fetched what the scheduled one would have (it forces a defi
-          // refetch when an update is scheduled), so the pending entry is no longer needed. A
-          // running one is kept, as its request is already in flight.
-          if (isManualUpdate && isSuccessful)
-            this.#forgetScheduledUpdates(
-              accountId,
-              (this.#scheduledUpdates[accountId] || []).filter(
-                (update) => !update.isRunning && update.chainId === network.chainId
-              )
-            )
-
           // Learn tokens and nfts from the portfolio lib
           if (isSuccessful && accountState[network.chainId.toString()]?.result) {
             const networkResult = accountState[network.chainId.toString()]!.result

@@ -1590,6 +1590,29 @@ describe('Portfolio Controller ', () => {
       forceFlags.forEach((flag: boolean) => expect(flag).toBe(false))
     })
 
+    test('a manual update does not clear a pending scheduled update', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        mockFetchLayer(controller)
+        const updateSpy = jest.spyOn(controller, 'updateSelectedAccount')
+
+        schedule(controller, account.addr, 1n)
+
+        // The user refreshes the portfolio before the scheduled update is due.
+        await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
+          isManualUpdate: true
+        })
+        expect(controller.scheduledUpdateChainIds).toEqual({ [account.addr]: [1n] })
+
+        // The scheduled cache-busting update still fires afterwards.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
     test('without a pending scheduled update, a nonce change does force the server-side bypass (control)', async () => {
       const { controller } = await prepareTest()
       const { discoverySpy } = mockFetchLayer(controller)

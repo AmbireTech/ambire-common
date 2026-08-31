@@ -561,10 +561,6 @@ const getDefiUpdateMode = (params: {
   // An explicit override always bypasses the server-side cache.
   if (bypassServerSideCache) return DefiUpdateMode.Force
 
-  // A manual update takes over the pending post-transaction update and clears it, so no later
-  // refetch will happen. Force, even if the throttle would otherwise serve cached data.
-  if (isManualUpdate && hasScheduledUpdate) return DefiUpdateMode.Force
-
   // There is a scheduled update coming soon that will update defi positions
   const shouldDeferToScheduledUpdate = hasScheduledUpdate && !isManualUpdate
 
