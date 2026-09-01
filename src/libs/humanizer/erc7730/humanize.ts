@@ -10,16 +10,13 @@ import {
 } from 'ethers'
 
 import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
-import humanizerInfo from '../../../consts/humanizer/humanizerInfo.json'
 import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
-import { humanizerCallModules, singleCallHumanizerModules } from '../callModules'
+import { humanizeCallWithModules } from '../callModules'
 import {
-  HumanizerCallModule,
   HumanizerErc7730Row,
   HumanizerErc7730Visualization,
-  HumanizerMeta,
   HumanizerVisualization,
   HumanizerWarning,
   IrCall,
@@ -27,7 +24,6 @@ import {
 } from '../interfaces'
 import { getSetAllowanceResetText } from '../modules/Allowance'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
-import { genericErc20Humanizer } from '../modules/Tokens'
 import {
   dedupeWarnings,
   eToNative,
@@ -38,7 +34,6 @@ import {
   getErc7730RowLabel,
   getErc7730RowValues,
   getErc7730Visualization,
-  getKnownFunctionName as getKnownFunctionNameFromSelector,
   getText,
   getToken,
   getWarning,
@@ -811,20 +806,11 @@ const getCalldataRows = (
         call,
         context.chainId,
         accountAddr,
-        singleCallHumanizerModules,
         context.collectedWarnings
       )
 
       if (moduleFallbackValue) {
         acc.push({ type: 'call', value: moduleFallbackValue })
-
-        return acc
-      }
-
-      const knownCallVisualization = getKnownCallVisualization(call)
-
-      if (knownCallVisualization) {
-        acc.push({ type: 'call', value: [knownCallVisualization] })
 
         return acc
       }
@@ -1292,32 +1278,12 @@ const getFlatCallValue = (
   return visualizations.length ? visualizations : null
 }
 
-const getKnownCallVisualization = (
-  call: Call
-): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
-  const selector = call.data?.slice(0, 10).toLowerCase()
-  const functionName =
-    selector && getKnownFunctionNameFromSelector(humanizerInfo as HumanizerMeta, selector)
-  if (!functionName || !call.to) return null
-
-  const visualization = getErc7730Visualization(functionName, [
-    {
-      type: 'single-value',
-      label: 'Contract',
-      value: getAddressVisualization(call.to)
-    }
-  ])
-
-  return visualization.type === 'erc7730' ? visualization : null
-}
-
 // The flat parts a nested call gets when no ERC-7730 descriptor describes it: the legacy humanizer
 // modules run over it and their own wording is handed back untouched, for a `call` row to render.
 const getModuleFallbackValue = (
   call: Call,
   chainId: bigint,
   accountAddr: string,
-  modules?: HumanizerCallModule[],
   collectedWarnings?: HumanizerWarning[]
 ): HumanizerVisualization[] | null => {
   const accountOp = {
@@ -1326,39 +1292,7 @@ const getModuleFallbackValue = (
     calls: [call]
   } as AccountOp
 
-  let humanizedCall: IrCall | undefined
-
-  if (modules) {
-    let currentCall: IrCall = call as IrCall
-    modules.forEach((module) => {
-      try {
-        currentCall = module(accountOp, currentCall, humanizerInfo as HumanizerMeta)
-      } catch (error) {
-        console.error(error)
-      }
-    })
-    humanizedCall = currentCall
-  } else {
-    // TODO: temporary fix to avoid conflicts in all humanizer modules. This can be refactored
-    // after main and v2 are synced with PR #2551
-    const localFallbackModules: HumanizerCallModule[] = humanizerCallModules
-    localFallbackModules.some((module) => {
-      try {
-        const result = module(accountOp, call as IrCall)
-        if (!result?.fullVisualization?.length) return false
-
-        humanizedCall = result
-        return true
-      } catch (error) {
-        console.error(error)
-        return false
-      }
-    })
-
-    if (!humanizedCall?.fullVisualization?.length) {
-      humanizedCall = genericErc20Humanizer({ accountAddr }, call as IrCall)
-    }
-  }
+  const humanizedCall = humanizeCallWithModules(accountOp, call as IrCall)
 
   const value = getFlatCallValue(humanizedCall?.fullVisualization)
   if (!value) return null
@@ -1525,7 +1459,7 @@ const getInnerCallRows = (
       // No `modules` argument, so this runs the whole module pipeline, which ends in
       // `fallbackHumanizer` - it describes any call with a `to`, down to "Interacting with", and
       // already reads the known-selector names. Nothing is left for a further fallback to add.
-      return getModuleFallbackValue(innerCall, chainId, accountAddr, undefined, collectedWarnings)
+      return getModuleFallbackValue(innerCall, chainId, accountAddr, collectedWarnings)
     })
     .filter((value): value is HumanizerVisualization[] => !!value)
     .map((value) => ({ type: 'call', value }))

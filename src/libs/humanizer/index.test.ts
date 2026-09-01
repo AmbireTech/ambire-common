@@ -3713,7 +3713,7 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
-  test('keeps unknown SafeTx delegatecall calldata as a selector and warns with the target address', async () => {
+  test('describes undecodable SafeTx delegatecall calldata and warns with the target address', async () => {
     const safeProxy = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
     const recipeExecutor = '0xc91305DdE651c899EF8eE1D0C33E7dab1B5ABF0D'
     const safeTxMessage = {
@@ -3797,8 +3797,15 @@ describe('ERC-7730 descriptors', () => {
           value: getText('1')
         },
         {
+          // No module recognises this call, so the pipeline's own last resort describes it rather
+          // than dropping it - the target address is what the user needs, and the delegatecall
+          // warning below names it too
           type: 'call',
-          value: [getAddressVisualization(recipeExecutor), getText('0x0c2c8750')]
+          value: [
+            getAction('Interacting'),
+            getLabel('with'),
+            getAddressVisualization(recipeExecutor)
+          ]
         },
         {
           type: 'single-value',
