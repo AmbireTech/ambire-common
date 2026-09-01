@@ -91,10 +91,12 @@ const truncateFiatAmountDecimals = (fiatAmount: string): string => {
   if (!decimals) return fiatAmount
 
   const decimalsToKeep = getDisplayedDecimalsCount(fiatAmount)
+  const truncated =
+    decimals.length <= decimalsToKeep
+      ? fiatAmount
+      : `${wholePart}.${decimals.slice(0, decimalsToKeep)}`
 
-  if (decimals.length <= decimalsToKeep) return fiatAmount
-
-  return `${wholePart}.${decimals.slice(0, decimalsToKeep)}`
+  return Number(truncated) === 0 ? '0' : truncated
 }
 
 const textToValidDecimal = (text: string) => {

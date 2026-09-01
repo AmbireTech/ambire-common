@@ -39,11 +39,20 @@ describe('truncateFiatAmountDecimals', () => {
     expect(truncateFiatAmountDecimals('12')).toBe('12')
     expect(truncateFiatAmountDecimals('0.0001')).toBe('0.0001')
     expect(truncateFiatAmountDecimals('')).toBe('')
+    expect(truncateFiatAmountDecimals('0.0000000000000001')).toBe('0.0000000000000001')
   })
 
-  it('handles a zero amount with a long decimal tail', () => {
-    expect(truncateFiatAmountDecimals('0.000000000000000000')).toBe('0.00')
-    expect(truncateFiatAmountDecimals('0.0')).toBe('0.0')
+  it('normalizes every zero amount to a plain zero', () => {
+    expect(truncateFiatAmountDecimals('0.000000000000000000')).toBe('0')
+    expect(truncateFiatAmountDecimals('0.0')).toBe('0')
+    expect(truncateFiatAmountDecimals('0.00')).toBe('0')
     expect(truncateFiatAmountDecimals('0')).toBe('0')
+  })
+
+  it('returns zero for amounts too small to be displayed', () => {
+    // `formatDecimals` shows these as `$0.00`, so there are no meaningful
+    // decimals left to keep
+    expect(truncateFiatAmountDecimals('0.00000000000000000012345')).toBe('0')
+    expect(formatDecimals(Number('0.00000000000000000012345'), 'price')).toBe('$0.00')
   })
 })
