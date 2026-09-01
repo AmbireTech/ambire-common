@@ -191,8 +191,9 @@ describe('MetaMorpho', () => {
       expect(irCall.warnings).toBeUndefined()
     })
 
-    // walking into a nested batch would let a hostile app nest as deep as the calldata allows
-    test('shows a batch inside the batch as unknown instead of reading it', () => {
+    // a batch inside the batch is a valid inner call too - see the "nested batches" describe
+    // block below for the full coverage of that recursion
+    test('reads a batch nested inside the batch instead of showing it as unknown', () => {
       const nestedBundle = encodeFunctionData({ abi: multicallAbi, args: [[approveInnerCall]] })
       const irCalls = [vaultMulticall([approveInnerCall, nestedBundle])].map((c) =>
         MetaMorphoModule(accountOp, c)
@@ -206,7 +207,11 @@ describe('MetaMorpho', () => {
           getLabel('to'),
           getAddressVisualization(SPENDER),
           getBreak(),
-          getAction('Unknown call')
+          getAction('Grant approval'),
+          getLabel('for'),
+          getToken(VAULT_ADDRESS, 1000000000000000000n),
+          getLabel('to'),
+          getAddressVisualization(SPENDER)
         ]
       ])
       expect(irCalls[0].warnings).toBeUndefined()
@@ -276,16 +281,84 @@ describe('MetaMorpho', () => {
     })
   })
 
+  // a batch may hold another batch - every level still runs against the same vault, and there
+  // is no depth limit: nested calldata is always part of its parent calldata, so it is always
+  // shorter and the recursion always terminates on its own
+  describe('nested batches', () => {
+    const multicallAbi = parseAbi(['function multicall(bytes[] data)'])
+    const approveAbi = parseAbi(['function approve(address spender, uint256 amount)'])
+
+    const wrapInMulticall = (innerCalls: `0x${string}`[]) =>
+      encodeFunctionData({ abi: multicallAbi, args: [innerCalls] })
+    const nest = (layers: number, innerCall: `0x${string}`): `0x${string}` =>
+      layers === 0 ? innerCall : nest(layers - 1, wrapInMulticall([innerCall]))
+    const approveInnerCall = encodeFunctionData({
+      abi: approveAbi,
+      args: [SPENDER, 1000000000000000000n]
+    })
+    const expectedApprovalVisualization = [
+      getAction('Grant approval'),
+      getLabel('for'),
+      getToken(VAULT_ADDRESS, 1000000000000000000n),
+      getLabel('to'),
+      getAddressVisualization(SPENDER)
+    ]
+
+    test('decodes an approve wrapped in a batch inside a batch', () => {
+      const call: IrCall = { to: VAULT_ADDRESS, value: 0n, data: nest(2, approveInnerCall) }
+      const irCalls = [call].map((c) => MetaMorphoModule(accountOp, c))
+
+      compareHumanizerVisualizations(irCalls, [expectedApprovalVisualization])
+    })
+
+    test('carries an unlimited approval warning up from a nested batch', () => {
+      const unlimitedApprove = encodeFunctionData({ abi: approveAbi, args: [SPENDER, maxUint256] })
+      const call: IrCall = { to: VAULT_ADDRESS, value: 0n, data: nest(3, unlimitedApprove) }
+
+      expect(MetaMorphoModule(accountOp, call).warnings).toEqual([
+        getUnlimitedApprovalWarning(SPENDER)
+      ])
+    })
+
+    // there is no cap on how deep this goes - each level's calldata is strictly shorter than
+    // its parent's, so a very deep batch is unusual but still safe to walk all the way down
+    test('decodes a batch nested many levels deep', () => {
+      const call: IrCall = { to: VAULT_ADDRESS, value: 0n, data: nest(10, approveInnerCall) }
+      const irCalls = [call].map((c) => MetaMorphoModule(accountOp, c))
+
+      compareHumanizerVisualizations(irCalls, [expectedApprovalVisualization])
+    })
+
+    test('leaves an empty nested batch unhumanized', () => {
+      const call: IrCall = { to: VAULT_ADDRESS, value: 0n, data: nest(2, wrapInMulticall([])) }
+
+      expect(MetaMorphoModule(accountOp, call).fullVisualization).toBeUndefined()
+    })
+  })
+
   // the exact bytes a dapp sent: a batch holding a batch, with the outer bytes element not
-  // padded to a full 32 byte word. The nested batch is not read, so nothing here is readable
-  test('leaves a batch that only holds another batch to the other humanizer modules', () => {
+  // padded to a full 32 byte word
+  test('decodes a nested batch whose outer bytes element is not padded', () => {
     const call: IrCall = {
       to: VAULT_ADDRESS,
       value: 0n,
       data: '0xac9650d800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e4ac9650d80000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000000000000000000000000000000000000000beefffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000000000000000000000000000000000000000000000000000'
     }
+    const spender = '0x000000000000000000000000000000000000bEEF'
     const irCall = MetaMorphoModule(accountOp, call)
 
-    expect(irCall.fullVisualization).toBeUndefined()
+    compareHumanizerVisualizations(
+      [irCall],
+      [
+        [
+          getAction('Grant approval'),
+          getLabel('for'),
+          getToken(VAULT_ADDRESS, maxUint256),
+          getLabel('to'),
+          getAddressVisualization(spender)
+        ]
+      ]
+    )
+    expect(irCall.warnings).toEqual([getUnlimitedApprovalWarning(spender)])
   })
 })
