@@ -1,20 +1,25 @@
-import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-import { Fetch } from '../../interfaces/fetch'
-import { IInviteController } from '../../interfaces/invite'
-import { IStorageController } from '../../interfaces/storage'
-import { relayerCall } from '../../libs/relayerCall/relayerCall'
-import EventEmitter from '../eventEmitter/eventEmitter'
+import EmittableError from '@/classes/EmittableError'
+import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
+import { IEventEmitterRegistryController, Statuses } from '@/interfaces/eventEmitter'
+import { Fetch } from '@/interfaces/fetch'
+import { IInviteController } from '@/interfaces/invite'
+import { IStorageController } from '@/interfaces/storage'
+import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 
 export enum INVITE_STATUS {
   UNVERIFIED = 'UNVERIFIED',
   VERIFIED = 'VERIFIED'
 }
 
+export const STATUS_WRAPPED_METHODS = {
+  verify: 'INITIAL'
+} as const
+
 type InviteState = {
   status: INVITE_STATUS
   verifiedAt: null | number // timestamp
   verifiedCode: null | string
-  becameOGAt: null // timestamp
+  becameOGAt: null | number // timestamp
 }
 
 const DEFAULT_STATE = {
@@ -25,51 +30,29 @@ const DEFAULT_STATE = {
 }
 
 /**
- * As of v5.1.0, invite code is no longer required for using the extension. In
- * v4.20.0, a mandatory invite verification flow is introduced as a first step
- * upon extension installation. The controller is still used to manage OG status
- * and other invite-related data.
+ * Manages the invite gate and the OG status.
  *
- * TODO: Bring back a mandatory invite gate, this time for the mobile app only
- * and temporarily. It must live in a scope of its own, so that the legacy flow
- * below stays untouched (deprecated, but still read from). Required changes:
- * 1. A new storage key (e.g. `inviteMobileAccess`) in `StorageProps`, holding
- *    `{ status, verifiedAt, verifiedCode }`. The legacy `invite` key must NOT be
- *    reused nor dropped - it still stores `becameOGAt` (the OG status) and
- *    `verifiedCode` (read by the extension for its analytics instance id).
- * 2. New public state (e.g. `mobileAccessStatus` and `verifiedMobileAccessCode`),
- *    reusing the `INVITE_STATUS` enum, hydrated in `#load()` from the new key.
- * 3. A new `verifyMobileAccess(code)` method, wrapped in `withStatus`, so that
- *    the UI gets the loading state and the duplicate-submit guard for free. The
- *    relayer endpoint is still TBD - `/promotions/extension-key/:code` is
- *    extension-scoped, so the mobile gate most likely needs its own one.
- * 4. Keep the controller platform-agnostic - no `isMobile` checks in here. The
- *    mobile router is the one that decides whether to enforce the gate.
- * 5. Existing mobile users must NOT see the gate, they get auto-access -
- *    otherwise an app update would lock them out. Only fresh installs get gated.
- *    Enforcing the gate only on fresh installs could be based on empty keystore,
- *    i.e. `!keystoreState.isReadyToStoreKeys`. And to not complicate additionally
- *    the controller here - this logic could live in the mobile router only.
- *    Users updating from the legacy v1 app must NOT see the gate either - their
- *    keystore is empty (v1 data lives in a separate storage), but we can bypass
- *    them by `hasLegacyAccounts()` from `@mobile/services/legacyMigration`, NOT by
- *    `shouldShowMigrationOnboarding()` - the latter flips to false once they pass
- *    the onboarding, which would then drop them straight into the invite gate.
+ * The gate was mandatory for the extension between v4.20.0 and v5.1.0, and is mandatory for the
+ * mobile app as of the mobile v2 release. Both use the same relayer endpoint and the same `invite`
+ * storage entry, so verifying is one and the same mechanism - the only difference is that the
+ * extension no longer enforces it.
+ *
+ * The controller is platform-agnostic on purpose - it only stores and verifies. Whether the gate
+ * is enforced at all is decided by the router of the app using it.
  */
 export class InviteController extends EventEmitter implements IInviteController {
   #storage: IStorageController
 
-  #callRelayer: Function
+  #callRelayer: BindedRelayerCall
 
   #state: InviteState = DEFAULT_STATE
 
-  /** @deprecated The legacy (extension) invite gate. Not enforced anymore. */
-  // inviteStatus: InviteState['status'] = INVITE_STATUS.UNVERIFIED // TODO: Delete.
+  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
-  /**
-   * @deprecated Belongs to the legacy (extension) invite gate. Still read by the
-   * extension to build its analytics instance id, so it must be kept as is.
-   */
+  /** Whether the invite gate has been passed. Only the mobile app enforces it. */
+  inviteStatus: InviteState['status'] = INVITE_STATUS.UNVERIFIED
+
+  /** The invite code the gate was passed with. The extension builds its analytics instance id from it. */
   verifiedCode: InviteState['verifiedCode'] = null
 
   /**
@@ -104,60 +87,76 @@ export class InviteController extends EventEmitter implements IInviteController 
     const nextState = await this.#storage.get('invite', this.#state)
     this.#state = { ...DEFAULT_STATE, ...nextState }
 
-    // this.inviteStatus = this.#state.status // TODO: Delete.
+    this.inviteStatus = this.#state.status
     this.verifiedCode = this.#state.verifiedCode
     this.isOG = !!this.#state.becameOGAt
     this.emitUpdate()
   }
 
-  /**
-   * Verifies an invite code and if verified successfully, persists the invite
-   * status (and some meta information) in the storage.
-   *
-   * @deprecated Belongs to the legacy (extension) invite gate - no UI calls it
-   * anymore. The mobile gate gets its own method, see the class TODO above.
-   * TODO: Maybe delete.
-   */
+  async #persistVerified(code: string) {
+    this.#state = {
+      ...this.#state,
+      status: INVITE_STATUS.VERIFIED,
+      verifiedAt: Date.now(),
+      verifiedCode: code
+    }
+
+    this.inviteStatus = this.#state.status
+    this.verifiedCode = this.#state.verifiedCode
+    this.emitUpdate()
+
+    await this.#storage.set('invite', this.#state)
+  }
+
+  /** Verifies an invite code against the relayer and, if valid, passes the gate for good. */
   async verify(code: string) {
     await this.#initialLoadPromise
 
-    try {
-      const res = await this.#callRelayer(`/promotions/extension-key/${code}`, 'GET')
+    await this.withStatus('verify', async () => {
+      try {
+        await this.#callRelayer(`/promotions/extension-key/${code}`, 'GET')
+      } catch (error: any) {
+        throw new EmittableError({
+          message: "This invite code doesn't work. Check for typos and try again.",
+          level: 'major',
+          error
+        })
+      }
 
-      if (!res.success) throw new Error(res.message || "Couldn't verify the invite code")
+      await this.#persistVerified(code)
+    })
+  }
 
-      // this.inviteStatus = INVITE_STATUS.VERIFIED // TODO: Delete
-      this.verifiedCode = code
-      this.emitUpdate()
+  /**
+   * Passes the gate without asking the relayer, for everyone who was already using the app before
+   * the gate got introduced - an app update must never lock them out. The caller passes the code
+   * to record for them, so that their verified code is never blank.
+   */
+  async grantAccess(code: string) {
+    await this.#initialLoadPromise
 
-      const verifiedAt = Date.now()
-      await this.#storage.set('invite', {
-        ...this.#state,
-        status: INVITE_STATUS.VERIFIED,
-        verifiedAt,
-        verifiedCode: code
-      })
-    } catch (error: any) {
-      this.emitError(error)
-    }
+    if (this.inviteStatus === INVITE_STATUS.VERIFIED) return
+
+    await this.#persistVerified(code)
   }
 
   async becomeOG() {
     await this.#initialLoadPromise
 
-    const becameOGAt = Date.now()
-    await this.#storage.set('invite', { ...this.#state, becameOGAt })
-
+    this.#state = { ...this.#state, becameOGAt: Date.now() }
     this.isOG = true
     this.emitUpdate()
+
+    await this.#storage.set('invite', this.#state)
   }
 
   async revokeOG() {
     await this.#initialLoadPromise
 
-    await this.#storage.set('invite', { ...this.#state, becameOGAt: null })
-
+    this.#state = { ...this.#state, becameOGAt: null }
     this.isOG = false
     this.emitUpdate()
+
+    await this.#storage.set('invite', this.#state)
   }
 }
