@@ -111,14 +111,14 @@ contract NFTGetter is Simulation {
 
     uint balance = collection.balanceOf(address(account));
     if (balance > limit) balance = limit;
-    if (balance == 0) return meta;
 
     if (collection.supportsInterface(0x780e9d63) || tokenIds.length == 0) {
       meta.nfts = enumerateOwned(account, collection, balance);
     }
 
-    // The enumeration returns nothing when the collection only claims to
-    // support it, so the known ids are the fallback
+    // A collection can report the enumerable interface and still not implement
+    // it, so the known ids are the fallback. They are not bound by balanceOf,
+    // which some collections don't report correctly.
     if (meta.nfts.length == 0) {
       meta.nfts = filterOwned(account, collection, tokenIds, limit);
     }

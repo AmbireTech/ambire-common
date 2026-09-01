@@ -133,11 +133,62 @@ export class HintsController extends EventEmitter {
   }
 
   /**
+   * Stops requesting a collectible that was added by hand, so removing it takes
+   * it out of the portfolio instead of leaving it to be rediscovered. Without an
+   * id the whole collection was added, so all of it is forgotten.
+   */
+  async #forgetCollectible(
+    collectible: { address: string; chainId: bigint; tokenId?: bigint },
+    accountAddr?: string
+  ) {
+    let checksummed
+    try {
+      checksummed = getAddress(collectible.address)
+    } catch (e: any) {
+      console.error('forgetCollectible: Error while normalizing nft address', e)
+
+      return
+    }
+
+    const toBeLearned = this.#toBeLearnedAssets.erc721s[collectible.chainId.toString()]
+    const toBeLearnedIds = toBeLearned?.[checksummed]
+
+    if (toBeLearned && toBeLearnedIds) {
+      const remaining =
+        typeof collectible.tokenId === 'bigint'
+          ? toBeLearnedIds.filter((id) => id !== collectible.tokenId)
+          : []
+
+      // An empty array requests the whole collection, so the entry goes instead
+      if (remaining.length) toBeLearned[checksummed] = remaining
+      else delete toBeLearned[checksummed]
+    }
+
+    if (!accountAddr) return
+
+    const learnedNfts = this.#learnedAssets.erc721s[`${collectible.chainId}:${accountAddr}`]
+    if (!learnedNfts) return
+
+    if (typeof collectible.tokenId === 'bigint') {
+      delete learnedNfts[`${checksummed}:${collectible.tokenId}`]
+    } else {
+      Object.keys(learnedNfts)
+        .filter((key) => key.startsWith(`${checksummed}:`))
+        .forEach((key) => delete learnedNfts[key])
+    }
+
+    await this.#storage.set('learnedAssets', this.#learnedAssets)
+  }
+
+  /**
    * Removes a custom token and, if a preference for it exists, its preference too.
    * Returns whether anything changed, so the caller can decide whether a portfolio
    * update is needed.
    */
-  async removeCustomToken(customToken: Omit<CustomToken, 'standard'>): Promise<boolean> {
+  async removeCustomToken(
+    customToken: Omit<CustomToken, 'standard'>,
+    accountAddr?: string
+  ): Promise<boolean> {
     await this.initialLoadPromise
     const isTokenBeingRemoved = (token: Omit<CustomToken, 'standard'>) =>
       getAssetPreferenceId(token) === getAssetPreferenceId(customToken)
@@ -146,6 +197,10 @@ export class HintsController extends EventEmitter {
     const removedTokenStandard = this.customTokens.find(isTokenBeingRemoved)?.standard
 
     this.customTokens = this.customTokens.filter((token) => !isTokenBeingRemoved(token))
+
+    if (removedTokenStandard === 'ERC721') {
+      await this.#forgetCollectible(customToken, accountAddr)
+    }
 
     const existingPreference = this.tokenPreferences.some(
       (pref) => getAssetPreferenceId(pref) === getAssetPreferenceId(customToken)

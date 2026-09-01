@@ -315,29 +315,29 @@ describe('Portfolio helpers', () => {
     it('is a collection when it declares the ERC-721 interface', () => {
       expect(
         getErc721Validity({ supportsERC721: true, isContract: true, hasDecimals: false })
-      ).toEqual({ isValid: true, message: null })
+      ).toEqual({ isValid: true, reason: null })
     })
 
     // Vote-escrow NFTs are ERC-721s that also expose decimals()
     it('is a collection when it declares the interface, even with decimals', () => {
       expect(
         getErc721Validity({ supportsERC721: true, isContract: true, hasDecimals: true })
-      ).toEqual({ isValid: true, message: null })
+      ).toEqual({ isValid: true, reason: null })
     })
 
     // Collections like Aavegotchi don't implement ERC-165
     it('is a collection without ERC-165 support, as long as it has no decimals', () => {
       expect(
         getErc721Validity({ supportsERC721: false, isContract: true, hasDecimals: false })
-      ).toEqual({ isValid: true, message: null })
+      ).toEqual({ isValid: true, reason: null })
       expect(
         getErc721Validity({ supportsERC721: undefined, isContract: true, hasDecimals: false })
-      ).toEqual({ isValid: true, message: null })
+      ).toEqual({ isValid: true, reason: null })
     })
 
     // ENS NameWrapper is one, and it exposes ownerOf() as well
     it('rejects a multi edition NFT, even when it looks like a collection', () => {
-      const { isValid, message } = getErc721Validity({
+      const { isValid, reason } = getErc721Validity({
         supportsERC721: false,
         supportsERC1155: true,
         isContract: true,
@@ -345,29 +345,29 @@ describe('Portfolio helpers', () => {
       })
 
       expect(isValid).toBe(false)
-      expect(message).toBe('This type of NFT (ERC-1155) is not supported yet')
+      expect(reason).toBe('erc1155-unsupported')
     })
 
     it('rejects a token', () => {
-      const { isValid, message } = getErc721Validity({
+      const { isValid, reason } = getErc721Validity({
         supportsERC721: false,
         isContract: true,
         hasDecimals: true
       })
 
       expect(isValid).toBe(false)
-      expect(message).toBe('This is a token, not an NFT collection')
+      expect(reason).toBe('is-a-token')
     })
 
     it('rejects an address that is not a contract', () => {
-      const { isValid, message } = getErc721Validity({
+      const { isValid, reason } = getErc721Validity({
         supportsERC721: undefined,
         isContract: false,
         hasDecimals: false
       })
 
       expect(isValid).toBe(false)
-      expect(message).toBe("This address doesn't look like an NFT collection")
+      expect(reason).toBe('not-a-collection')
     })
 
     // A collection is tracked regardless of what the account holds of it, the
@@ -375,7 +375,7 @@ describe('Portfolio helpers', () => {
     it('is a collection even when balanceOf is missing', () => {
       expect(
         getErc721Validity({ supportsERC721: undefined, isContract: true, hasDecimals: false })
-      ).toEqual({ isValid: true, message: null })
+      ).toEqual({ isValid: true, reason: null })
     })
   })
 
@@ -408,6 +408,35 @@ describe('Portfolio helpers', () => {
       const merged = mergeCollectionHints({
         apiHints: {},
         specialHints: { custom: { [CUSTOM_ADDR]: [] }, hidden: {}, learn: {} }
+      })
+
+      expect(merged[CUSTOM_ADDR]).toEqual([])
+    })
+
+    // Velcro can know some ids of a collection but not the one the user added,
+    // which used to leave the added collectible unrequested and invisible
+    it('requests the ids of a custom collection the API does not know', () => {
+      const merged = mergeCollectionHints({
+        apiHints: { [CUSTOM_ADDR]: [7n] },
+        specialHints: { custom: { [CUSTOM_ADDR]: [9n] }, hidden: {}, learn: {} }
+      })
+
+      expect(merged[CUSTOM_ADDR]).toEqual([7n, 9n])
+    })
+
+    it('does not repeat a custom id the API already knows', () => {
+      const merged = mergeCollectionHints({
+        apiHints: { [CUSTOM_ADDR]: [7n, 9n] },
+        specialHints: { custom: { [CUSTOM_ADDR]: [9n] }, hidden: {}, learn: {} }
+      })
+
+      expect(merged[CUSTOM_ADDR]).toEqual([7n, 9n])
+    })
+
+    it('keeps the enumerable marker of another source over the custom ids', () => {
+      const merged = mergeCollectionHints({
+        apiHints: { [CUSTOM_ADDR]: [] },
+        specialHints: { custom: { [CUSTOM_ADDR]: [9n] }, hidden: {}, learn: {} }
       })
 
       expect(merged[CUSTOM_ADDR]).toEqual([])

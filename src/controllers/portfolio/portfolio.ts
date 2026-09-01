@@ -57,6 +57,7 @@ import {
   getHintsError,
   getTotal,
   getAssetCacheKey,
+  getCollectibleCacheKey,
   validateCollectibleOwnership,
   validateERC20Token,
   validateERC721Token
@@ -148,6 +149,9 @@ export class PortfolioController
   #queue: { [accountId: string]: { [chainId: string]: Promise<void> } }
 
   validTokens: AssetValidations = { erc20: {}, erc721: {} }
+
+  // Not part of the state, as the UI has no use for it
+  #assetValidationsInProgress: Set<string> = new Set()
 
   temporaryTokens: TemporaryTokens = {}
 
@@ -562,7 +566,7 @@ export class PortfolioController
     selectedAccountAddr?: string,
     shouldUpdatePortfolio?: boolean
   ) {
-    const didChange = await this.hints.removeCustomToken(customToken)
+    const didChange = await this.hints.removeCustomToken(customToken, selectedAccountAddr)
 
     if (didChange && shouldUpdatePortfolio) {
       await this.#updatePortfolioOnTokenChange(customToken.chainId, selectedAccountAddr)
@@ -882,8 +886,11 @@ export class PortfolioController
     allNetworks: boolean = false
   ) {
     await this.initialLoadPromise
-    if (this.validTokens.erc20[getAssetCacheKey(token.address, token.chainId)]?.isValid === true)
-      return
+
+    const key = getAssetCacheKey(token.address, token.chainId)
+    if (this.validTokens.erc20[key]?.isValid === true) return
+    // Repeated dispatches for the same token are one check, not several
+    if (this.#assetValidationsInProgress.has(key)) return
 
     const provider = this.#providers.providers[token.chainId.toString()]
     if (!provider) {
@@ -893,26 +900,27 @@ export class PortfolioController
       return
     }
 
-    const result: TokenValidationResult = await validateERC20Token(
-      token,
-      accountId,
-      provider,
-      allNetworks
-        ? {
-            allNetworks: this.#networks.networks,
-            allProviders: this.#providers.providers,
-            enableNetworkDetection: true
-          }
-        : undefined
-    )
-    const { isValid, standard, error } = result
+    this.#assetValidationsInProgress.add(key)
 
-    this.validTokens[standard === 'erc721' ? 'erc721' : 'erc20'] = {
-      ...this.validTokens[standard === 'erc721' ? 'erc721' : 'erc20'],
-      [getAssetCacheKey(token.address, token.chainId)]: {
-        isValid,
-        error
-      }
+    try {
+      const result: TokenValidationResult = await validateERC20Token(
+        token,
+        accountId,
+        provider,
+        allNetworks
+          ? {
+              allNetworks: this.#networks.networks,
+              allProviders: this.#providers.providers,
+              enableNetworkDetection: true
+            }
+          : undefined
+      )
+      const { isValid, standard, error } = result
+      const validatedStandard = standard === 'erc721' ? 'erc721' : 'erc20'
+
+      this.#storeAssetValidation(validatedStandard, key, { isValid, error })
+    } finally {
+      this.#assetValidationsInProgress.delete(key)
     }
 
     this.emitUpdate()
@@ -921,16 +929,21 @@ export class PortfolioController
   /**
    * Validates that the address is an ERC-721 collection before it's added as a
    * custom one and stores the result in `validTokens.erc721`.
+   *
+   * `shouldRefetch` runs the check again for an address that already has a
+   * verdict, which the UI asks for after a network problem.
    */
   async updateCollectionValidation(
     collection: { address: TokenResult['address']; chainId: TokenResult['chainId'] },
-    accountId: AccountId
+    accountId: AccountId,
+    shouldRefetch?: boolean
   ) {
     await this.initialLoadPromise
 
     const key = getAssetCacheKey(collection.address, collection.chainId)
-    // A verdict of any kind is enough, as it doesn't change for an address
-    if (this.validTokens.erc721[key]) return
+    // A verdict about the contract itself doesn't change for an address
+    if (this.validTokens.erc721[key] && !shouldRefetch) return
+    if (this.#assetValidationsInProgress.has(key)) return
 
     const provider = this.#providers.providers[collection.chainId.toString()]
     if (!provider) {
@@ -940,15 +953,18 @@ export class PortfolioController
       return
     }
 
-    const {
-      isValid,
-      error,
-      collection: collectionMeta
-    } = await validateERC721Token(collection, accountId, provider)
+    this.#assetValidationsInProgress.add(key)
 
-    this.validTokens.erc721 = {
-      ...this.validTokens.erc721,
-      [key]: { isValid, error, collection: collectionMeta }
+    try {
+      const {
+        isValid,
+        error,
+        collection: collectionMeta
+      } = await validateERC721Token(collection, accountId, provider)
+
+      this.#storeAssetValidation('erc721', key, { isValid, error, collection: collectionMeta })
+    } finally {
+      this.#assetValidationsInProgress.delete(key)
     }
 
     this.emitUpdate()
@@ -957,6 +973,9 @@ export class PortfolioController
   /**
    * Checks whether the account owns the collectible and stores the result in
    * `validTokens.erc721`, keyed by the collection and the id.
+   *
+   * `shouldRefetch` checks again for a collectible that already has a verdict,
+   * which the UI asks for after a network problem.
    */
   async updateCollectibleValidation(
     collectible: {
@@ -964,12 +983,20 @@ export class PortfolioController
       chainId: TokenResult['chainId']
       tokenId: bigint
     },
-    accountId: AccountId
+    accountId: AccountId,
+    shouldRefetch?: boolean
   ) {
     await this.initialLoadPromise
 
-    const key = `${getAssetCacheKey(collectible.address, collectible.chainId)}-${collectible.tokenId}`
-    if (this.validTokens.erc721[key]) return
+    const key = getCollectibleCacheKey(
+      collectible.address,
+      collectible.chainId,
+      collectible.tokenId
+    )
+    // The owner can change, but only a new check would notice, so the verdict is
+    // kept until the user asks again
+    if (this.validTokens.erc721[key] && !shouldRefetch) return
+    if (this.#assetValidationsInProgress.has(key)) return
 
     const provider = this.#providers.providers[collectible.chainId.toString()]
     if (!provider) {
@@ -979,11 +1006,29 @@ export class PortfolioController
       return
     }
 
-    const { isValid, error } = await validateCollectibleOwnership(collectible, accountId, provider)
+    this.#assetValidationsInProgress.add(key)
 
-    this.validTokens.erc721 = { ...this.validTokens.erc721, [key]: { isValid, error } }
+    try {
+      const { isValid, error } = await validateCollectibleOwnership(
+        collectible,
+        accountId,
+        provider
+      )
+
+      this.#storeAssetValidation('erc721', key, { isValid, error })
+    } finally {
+      this.#assetValidationsInProgress.delete(key)
+    }
 
     this.emitUpdate()
+  }
+
+  #storeAssetValidation<S extends keyof AssetValidations>(
+    standard: S,
+    key: string,
+    validation: AssetValidations[S][string]
+  ) {
+    this.validTokens[standard] = { ...this.validTokens[standard], [key]: validation }
   }
 
   initializePortfolioLibIfNeeded(

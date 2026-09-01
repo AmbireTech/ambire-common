@@ -688,10 +688,27 @@ export type AssetValidations = {
   erc721: { [assetKey: string]: Pick<TokenValidationResult, 'isValid' | 'error' | 'collection'> }
 }
 
+/**
+ * Why an asset was rejected. The UI phrases it, so the wording can be translated
+ * and the messages here stay for the logs.
+ */
+export type AssetValidationReason =
+  | 'network-problem'
+  | 'erc1155-unsupported'
+  | 'not-a-collection'
+  | 'is-a-token'
+  | 'collectible-not-found'
+  | 'collectible-not-owned'
+
 export type TokenValidationResult = {
   isValid: boolean
   standard: string
-  error: { message: string | null; type: 'network' | 'validation' | null }
+  error: {
+    message: string | null
+    type: 'network' | 'validation' | null
+    /** What the UI phrases for the user, see `AssetValidationReason` */
+    reason?: AssetValidationReason | null
+  }
   /**
    * Metadata of a valid ERC-721 collection, so it can be previewed before the
    * user adds it. Not set for ERC-20 tokens.
@@ -699,10 +716,5 @@ export type TokenValidationResult = {
   collection?: {
     name: string | null
     symbol: string | null
-    /**
-     * Whether the collection implements ERC-721 Enumerable. If it doesn't, the
-     * collectibles the account holds can't be listed.
-     */
-    isEnumerable: boolean
   }
 }
