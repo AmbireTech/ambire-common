@@ -158,4 +158,134 @@ describe('MetaMorpho', () => {
       expect(irCall.warnings).toBeUndefined()
     })
   })
+
+  // the vault has functions this module does not decode, and a batch may hold another batch.
+  // an inner selector this module does not know is shown as unknown, with no warning:
+  // `multicall(bytes[])` is not unique to MetaMorpho, so the call may be an ordinary one on
+  // some other contract
+  describe('inner calls the module does not decode', () => {
+    const multicallAbi = parseAbi(['function multicall(bytes[] data)'])
+    const approveAbi = parseAbi(['function approve(address spender, uint256 amount)'])
+
+    const vaultMulticall = (innerCalls: `0x${string}`[]): IrCall => ({
+      to: VAULT_ADDRESS,
+      value: 0n,
+      data: encodeFunctionData({ abi: multicallAbi, args: [innerCalls] })
+    })
+    const approveInnerCall = encodeFunctionData({
+      abi: approveAbi,
+      args: [SPENDER, 1000000000000000000n]
+    })
+    // a real vault function this module has no matcher for
+    const unhandledInnerCall = encodeFunctionData({
+      abi: parseAbi(['function setFee(uint256 newFee)']),
+      args: [10n ** 17n]
+    })
+
+    test('does not warn about an inner call it cannot decode', () => {
+      const irCall = MetaMorphoModule(
+        accountOp,
+        vaultMulticall([approveInnerCall, unhandledInnerCall])
+      )
+
+      expect(irCall.warnings).toBeUndefined()
+    })
+
+    // walking into a nested batch would let a hostile app nest as deep as the calldata allows
+    test('shows a batch inside the batch as unknown instead of reading it', () => {
+      const nestedBundle = encodeFunctionData({ abi: multicallAbi, args: [[approveInnerCall]] })
+      const irCalls = [vaultMulticall([approveInnerCall, nestedBundle])].map((c) =>
+        MetaMorphoModule(accountOp, c)
+      )
+
+      compareHumanizerVisualizations(irCalls, [
+        [
+          getAction('Grant approval'),
+          getLabel('for'),
+          getToken(VAULT_ADDRESS, 1000000000000000000n),
+          getLabel('to'),
+          getAddressVisualization(SPENDER),
+          getBreak(),
+          getAction('Unknown call')
+        ]
+      ])
+      expect(irCalls[0].warnings).toBeUndefined()
+    })
+
+    // an approval with no limit still has to reach the user, even next to a call it cannot read
+    test('still reports an unlimited approval batched with an unknown call', () => {
+      const unlimitedApprove = encodeFunctionData({ abi: approveAbi, args: [SPENDER, maxUint256] })
+      const irCall = MetaMorphoModule(
+        accountOp,
+        vaultMulticall([unlimitedApprove, unhandledInnerCall])
+      )
+
+      expect(irCall.warnings).toEqual([getUnlimitedApprovalWarning(SPENDER)])
+    })
+
+    // nothing was recognized, so this may belong to another protocol
+    test('leaves a batch with no readable call to the other humanizer modules', () => {
+      const irCall = MetaMorphoModule(accountOp, vaultMulticall([unhandledInnerCall]))
+
+      expect(irCall.fullVisualization).toBeUndefined()
+      expect(irCall.warnings).toBeUndefined()
+    })
+  })
+
+  // pre solidity 0.5.0 tokens accept calldata shorter than the abi args and treat the missing
+  // bytes as zeroes. The vault's inner calls are padded the same way the token module pads them
+  describe('inner calls with short calldata', () => {
+    const paddedSpender = `000000000000000000000000${SPENDER.substring(2).toLowerCase()}`
+    const vaultMulticall = (innerCall: string): IrCall => ({
+      to: VAULT_ADDRESS,
+      value: 0n,
+      data: encodeFunctionData({
+        abi: parseAbi(['function multicall(bytes[] data)']),
+        args: [[`0x${innerCall}` as `0x${string}`]]
+      })
+    })
+
+    test('reads an inner approve with no amount word as a revoke', () => {
+      const irCalls = [vaultMulticall(`095ea7b3${paddedSpender}`)].map((c) =>
+        MetaMorphoModule(accountOp, c)
+      )
+
+      compareHumanizerVisualizations(irCalls, [
+        [
+          getAction('Revoke approval'),
+          getToken(VAULT_ADDRESS, 0n),
+          getLabel('for'),
+          getAddressVisualization(SPENDER)
+        ]
+      ])
+    })
+
+    test('reads an inner transfer with no amount word', () => {
+      const irCalls = [vaultMulticall(`a9059cbb${paddedSpender}`)].map((c) =>
+        MetaMorphoModule(accountOp, c)
+      )
+
+      compareHumanizerVisualizations(irCalls, [
+        [
+          getAction('Send'),
+          getToken(VAULT_ADDRESS, 0n),
+          getLabel('to'),
+          getAddressVisualization(SPENDER)
+        ]
+      ])
+    })
+  })
+
+  // the exact bytes a dapp sent: a batch holding a batch, with the outer bytes element not
+  // padded to a full 32 byte word. The nested batch is not read, so nothing here is readable
+  test('leaves a batch that only holds another batch to the other humanizer modules', () => {
+    const call: IrCall = {
+      to: VAULT_ADDRESS,
+      value: 0n,
+      data: '0xac9650d800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000e4ac9650d80000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000000000000000000000000000000000000000beefffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000000000000000000000000000000000000000000000000000'
+    }
+    const irCall = MetaMorphoModule(accountOp, call)
+
+    expect(irCall.fullVisualization).toBeUndefined()
+  })
 })
