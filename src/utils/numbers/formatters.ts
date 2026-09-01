@@ -1,6 +1,7 @@
 import { formatUnits, parseUnits } from 'ethers'
 
 import { getSanitizedAmount } from '../../libs/transfer/amount'
+import formatDecimals from '../formatDecimals/formatDecimals'
 
 /**
  * Converts floating point token price to big int
@@ -72,6 +73,30 @@ const getSafeAmountFromFieldValue = (fieldValue: string, tokenDecimals?: number)
   return getSanitizedAmount(parsedFieldValue, tokenDecimals)
 }
 
+const getDisplayedDecimalsCount = (fiatAmount: string): number => {
+  const formatted = formatDecimals(Number(fiatAmount), 'price')
+  const indexOfDot = formatted.indexOf('.')
+
+  return indexOfDot === -1 ? 0 : formatted.length - indexOfDot - 1
+}
+
+/**
+ * Cuts a fiat amount down to the precision a currency field can display. The
+ * number of decimals is taken from what `formatDecimals` shows for the same
+ * amount.
+ */
+const truncateFiatAmountDecimals = (fiatAmount: string): string => {
+  const [wholePart, decimals] = fiatAmount.split('.')
+
+  if (!decimals) return fiatAmount
+
+  const decimalsToKeep = getDisplayedDecimalsCount(fiatAmount)
+
+  if (decimals.length <= decimalsToKeep) return fiatAmount
+
+  return `${wholePart}.${decimals.slice(0, decimalsToKeep)}`
+}
+
 const textToValidDecimal = (text: string) => {
   let formatted = text
 
@@ -99,5 +124,6 @@ export {
   convertTokenPriceToBigInt,
   getSafeAmountFromFieldValue,
   safeTokenAmountAndNumberMultiplication,
-  textToValidDecimal
+  textToValidDecimal,
+  truncateFiatAmountDecimals
 }
