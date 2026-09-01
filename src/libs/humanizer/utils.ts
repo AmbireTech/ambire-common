@@ -143,6 +143,16 @@ export function getText(text: string, mlMi?: boolean): HumanizerVisualization {
   return { type: 'text', content: text, id: randomId(), mlMi }
 }
 
+/** The visualizations a row renders - a `call` row keeps its parts flat, every other row has one. */
+export function getErc7730RowValues(row: HumanizerErc7730Row): HumanizerVisualization[] {
+  return row.type === 'call' ? row.value : [row.value]
+}
+
+/** A `call` row renders an embedded call inline and has no label of its own. */
+export function getErc7730RowLabel(row: HumanizerErc7730Row): string {
+  return row.type === 'call' ? '' : row.label
+}
+
 export function getErc7730Visualization(
   intent: string | undefined,
   rows: HumanizerErc7730Row[],
@@ -179,7 +189,7 @@ export function flattenHumanizerVisualizations(
       // `fields` (every field, not just the ones displayed as rows) so nested
       // values that only show up inline in `intent` (e.g. a token amount) are
       // still discovered here.
-      ...flattenHumanizerVisualizations(visualization.fields.flatMap((row) => row.value))
+      ...flattenHumanizerVisualizations(visualization.fields.flatMap(getErc7730RowValues))
     ]
   })
 }
