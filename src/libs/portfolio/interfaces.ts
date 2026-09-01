@@ -600,6 +600,11 @@ export interface ScheduledUpdates {
      * reset the interval, the approval scheduled update will run for no reason, spending resources
      */
     scheduledAt: number
+    /**
+     * Set when the runner picks the update up, so a second run doesn't pick it up again while the
+     * portfolio request is still in flight. The entry is removed once the request settles.
+     */
+    isRunning: boolean
   }[]
 }
 
