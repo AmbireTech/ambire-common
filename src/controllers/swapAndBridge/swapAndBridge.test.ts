@@ -961,6 +961,107 @@ describe('SwapAndBridge Controller', () => {
     expect(getRouteStatusSpy).not.toHaveBeenCalled()
     activeRoute.route!.providerId = originalProviderId
   })
+  describe('intent activity recording', () => {
+    let originalActiveRoutes: typeof swapAndBridgeController.activeRoutes
+
+    const setActiveRouteForStatusCheck = (providerId: string) => {
+      const baseActiveRoute = originalActiveRoutes[0]!
+      const activeRoute = {
+        ...baseActiveRoute,
+        activeRouteId: `${providerId}-activity-route`,
+        routeStatus: 'in-progress' as const,
+        userTxHash: `${providerId}-source-transaction`,
+        route: {
+          ...baseActiveRoute.route!,
+          routeId: `${providerId}-activity-route`,
+          providerId,
+          fromChainId: 1,
+          toChainId: 1,
+          isIntent: false
+        }
+      }
+
+      swapAndBridgeController.activeRoutes = [activeRoute]
+      jest
+        .spyOn(activityCtrl, 'getAccountOpsForAccount')
+        .mockReturnValue([getSubmittedAccountOp(activeRoute.userTxHash, undefined, 'success', 1n)])
+
+      return activeRoute
+    }
+
+    beforeEach(() => {
+      originalActiveRoutes = swapAndBridgeController.activeRoutes
+    })
+
+    afterEach(() => {
+      swapAndBridgeController.activeRoutes = originalActiveRoutes
+    })
+
+    test('records a completed same-chain CoW Swap settlement in Activity', async () => {
+      const activeRoute = setActiveRouteForStatusCheck('cowswap')
+      const settlementTxnId = 'cowswap-settlement-transaction'
+      jest
+        .spyOn(socketAPIMock, 'getRouteStatus')
+        .mockResolvedValue({ status: 'completed', txnId: settlementTxnId })
+      const recordIntentActivitySpy = jest
+        .spyOn(swapAndBridgeController, 'recordIntentActivity')
+        .mockResolvedValue()
+
+      await swapAndBridgeController.continuouslyUpdateActiveRoutes()
+
+      expect(recordIntentActivitySpy).toHaveBeenCalledTimes(1)
+      expect(recordIntentActivitySpy).toHaveBeenCalledWith(
+        settlementTxnId,
+        activeRoute,
+        'completed'
+      )
+      expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toBe('completed')
+    })
+
+    test('does not create an external Activity record for a regular same-chain swap', async () => {
+      setActiveRouteForStatusCheck('socket')
+      jest.spyOn(socketAPIMock, 'getRouteStatus').mockResolvedValue({
+        status: 'completed',
+        txnId: 'regular-swap-transaction'
+      })
+      const recordIntentActivitySpy = jest
+        .spyOn(swapAndBridgeController, 'recordIntentActivity')
+        .mockResolvedValue()
+
+      await swapAndBridgeController.continuouslyUpdateActiveRoutes()
+
+      expect(recordIntentActivitySpy).not.toHaveBeenCalled()
+    })
+
+    test('does not create an Activity record without a settlement transaction ID', async () => {
+      setActiveRouteForStatusCheck('cowswap')
+      jest
+        .spyOn(socketAPIMock, 'getRouteStatus')
+        .mockResolvedValue({ status: 'completed', txnId: null })
+      const recordIntentActivitySpy = jest
+        .spyOn(swapAndBridgeController, 'recordIntentActivity')
+        .mockResolvedValue()
+
+      await swapAndBridgeController.continuouslyUpdateActiveRoutes()
+
+      expect(recordIntentActivitySpy).not.toHaveBeenCalled()
+    })
+
+    test('does not create a completed Activity record for a failed CoW Swap order', async () => {
+      setActiveRouteForStatusCheck('cowswap')
+      jest
+        .spyOn(socketAPIMock, 'getRouteStatus')
+        .mockResolvedValue({ status: 'failed', txnId: null })
+      const recordIntentActivitySpy = jest
+        .spyOn(swapAndBridgeController, 'recordIntentActivity')
+        .mockResolvedValue()
+
+      await swapAndBridgeController.continuouslyUpdateActiveRoutes()
+
+      expect(recordIntentActivitySpy).not.toHaveBeenCalled()
+      expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toBe('failed')
+    })
+  })
   test('should remove an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
     swapAndBridgeController.removeActiveRoute(activeRouteId)

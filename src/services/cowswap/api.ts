@@ -312,6 +312,8 @@ export class CowSwapAPI implements SwapProvider {
       )
     }
 
+    // TODO: fix this, especially in a setup where CowSwap is the only provider
+
     // CoW Swap does not expose a token-list endpoint. The shared token picker is populated by
     // the other providers, while CoW Swap can quote any selected supported ERC-20 token.
     return []

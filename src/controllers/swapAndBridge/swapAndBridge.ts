@@ -2242,7 +2242,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
   }
 
-  async recordBridgeActivity(
+  async recordIntentActivity(
     txnId: string,
     activeRoute: SwapAndBridgeActiveRoute,
     status: 'completed' | 'refunded'
@@ -2255,7 +2255,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const chainId =
       status === 'completed' ? activeRoute.route?.toChainId : activeRoute.route?.fromChainId
     if (!chainId) {
-      const message = 'recordBridgeActivity: no chainId found'
+      const message = 'recordIntentActivity: no chainId found'
       this.emitError({
         level: 'silent',
         message,
@@ -2266,7 +2266,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const provider = this.#providers.providers[chainId.toString()]
     if (!provider) {
-      const message = 'recordBridgeActivity: no provider found'
+      const message = 'recordIntentActivity: no provider found'
       this.emitError({
         level: 'silent',
         message,
@@ -2277,7 +2277,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const receipt = await provider.getTransactionReceipt(txnId)
     if (!receipt) {
-      const message = `recordBridgeActivity: no receipt found for txnId: ${txnId}`
+      const message = `recordIntentActivity: no receipt found for txnId: ${txnId}`
       this.emitError({
         level: 'silent',
         message,
@@ -2358,10 +2358,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       if (
         routeStatusResult.txnId &&
         (status === 'completed' || status === 'refunded') &&
-        activeRoute.route?.fromChainId !== activeRoute.route?.toChainId
+        activeRoute.route &&
+        getIsIntentRoute(activeRoute.route)
       ) {
         // we shouldn't be awaiting this as it's OK to have it at a later stage
-        this.recordBridgeActivity(routeStatusResult.txnId, activeRoute, status).catch(console.error)
+        this.recordIntentActivity(routeStatusResult.txnId, activeRoute, status).catch((error) => {
+          this.emitError({
+            level: 'silent',
+            message: 'recordIntentActivity failed',
+            error
+          })
+        })
       }
 
       if (status === 'completed') {

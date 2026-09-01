@@ -18,8 +18,7 @@ export const COWSWAP_SUPPORTED_CHAINS: { chainId: number; apiNetwork: string }[]
   { chainId: 42161, apiNetwork: 'arbitrum_one' },
   { chainId: 43114, apiNetwork: 'avalanche' },
   { chainId: 57073, apiNetwork: 'ink' },
-  { chainId: 59144, apiNetwork: 'linea' },
-  { chainId: 11155111, apiNetwork: 'sepolia' }
+  { chainId: 59144, apiNetwork: 'linea' }
 ]
 
 export const COWSWAP_ORDER_VALIDITY_SECONDS = 30 * 60
