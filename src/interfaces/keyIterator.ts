@@ -15,6 +15,12 @@ export interface KeyIterator {
   walletSDK?: any
   /** Needed for the hardware wallets only */
   controller?: ExternalSignerController
+  /**
+   * Which of the offered derivation paths this wallet can browse. Wallets that hand
+   * over a single extended public key (QR, NFC) are limited to the paths that branch
+   * off it. Undefined means every path is available.
+   */
+  derivableHdPathTemplates?: HD_PATH_TEMPLATE_TYPE[]
   /** Retrieves the the public addresses (accounts) from specific indexes */
   retrieve: (
     fromToArr: { from: number; to: number }[],
