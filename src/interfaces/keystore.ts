@@ -261,6 +261,13 @@ export type ParsedQrAccount = {
   deviceModel?: string
   deviceId?: string
   hdPath?: string // For wallets that don't provide the hdPath on each account, but only a general one for the whole export (like Keystone)
+  /**
+   * The path the wallet says its addresses sit at, relative to the exported key and
+   * with a `*` where the address index goes (e.g. `0/*` for the BIP44 standard chain,
+   * `*` for the Ledger Legacy path). Optional in the QR payload - a wallet that omits
+   * it leaves no way to tell which of the two it exported.
+   */
+  childrenPath?: string
   accounts: ParsedQrImportedAccount[]
 }
 
