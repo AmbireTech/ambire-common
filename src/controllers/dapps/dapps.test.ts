@@ -72,7 +72,9 @@ const mockTrending = {
 
 const prepareTest = async (
   storageInit?: (storageController: IStorageController) => Promise<void>,
-  getMockFetchImplementation?: (url: string, ...args: any) => Promise<any>
+  getMockFetchImplementation?: (url: string, ...args: any) => Promise<any>,
+  // Return the controller before init() so a test can observe the pre-load state.
+  skipInit = false
 ) => {
   const mockFetch = jest.fn()
 
@@ -117,14 +119,13 @@ const prepareTest = async (
     {
       awaitInitialLoad: false,
       skipAppsFetchOnLoad: false,
+      skipDappsAndPhishingInit: skipInit,
       overrides: {
         fetch: mockFetch
       }
     }
   )
   const controller = mainCtrl.dapps
-
-  await controller.initialLoadPromise
 
   return { controller, mainCtrl }
 }
@@ -385,6 +386,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
           type: 'warning',
+          title: 'Safety check in progress',
           text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests: AAVE"
         })
       } finally {
@@ -411,6 +413,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
           type: 'warning',
+          title: 'Safety check in progress',
           text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests: AAVE"
         })
 
@@ -419,6 +422,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
           type: 'warning',
+          title: "App couldn't be verified",
           text: "We couldn't verify the app. Make sure you trust it before signing requests: AAVE"
         })
       } finally {
@@ -441,6 +445,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
           type: 'warning',
+          title: "App couldn't be verified",
           text: "We couldn't verify the app. Make sure you trust it before signing requests: AAVE"
         })
       } finally {
@@ -463,6 +468,7 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([aave.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
           type: 'error',
+          title: 'Potentially harmful app',
           text: "This app didn't pass our safety check. Proceed at your own risk: AAVE"
         })
       } finally {
@@ -492,11 +498,33 @@ describe('DappsController', () => {
         expect(controller.getDappVerificationBanner([verifiedCustomDapp.url])).toEqual({
           id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
           type: 'warning',
+          title: "App not in Ambire's catalog",
           text: 'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: Custom Dapp'
         })
       } finally {
         updateDomainsSpy.mockRestore()
       }
+    })
+
+    test('isDappInDefaultCatalog tells default catalog entries from user-added ones', async () => {
+      const customDapp = makeDapp({
+        id: 'custom-dapp.com',
+        name: 'Custom Dapp',
+        url: 'https://custom-dapp.com',
+        isCustom: true
+      })
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, customDapp])
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      expect(controller.isDappInDefaultCatalog(predefinedDapps[0]!.url)).toBe(true)
+      // user-added entries are not part of the catalog we ship, however they got there
+      expect(controller.isDappInDefaultCatalog(customDapp.url)).toBe(false)
+      expect(controller.isDappInDefaultCatalog('https://never-seen-before.com')).toBe(false)
+      expect(controller.isDappInDefaultCatalog('')).toBe(false)
     })
 
     test('should not return banner for verified dapps in the default catalog', async () => {
@@ -1880,6 +1908,83 @@ describe('DappsController', () => {
     })
   })
 
+  describe('disconnectWcSessionByTopic', () => {
+    const wcDapp = (): Dapp =>
+      makeDapp({
+        id: 'aave.com',
+        name: 'Aave',
+        url: 'https://aave.com',
+        isCustom: false,
+        isConnected: true,
+        chainId: 1,
+        blacklisted: 'VERIFIED'
+      })
+
+    const prepareConnectedWcDapp = async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.addDapp(wcDapp(), 'wc')
+
+      return controller
+    }
+
+    test('revokes the wc connection when the dapp terminates its only session', async () => {
+      const controller = await prepareConnectedWcDapp()
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-a'
+      })
+
+      controller.disconnectWcSessionByTopic('topic-a')
+
+      expect(controller.getDappSessionByWcTopic('topic-a')).toBeUndefined()
+      const stored = controller.getDapp('aave.com')!
+      expect(stored.connectedSources).toEqual([])
+      expect(stored.isConnected).toBe(false)
+      // A later pairing must ask the user for approval again instead of auto-connecting.
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(false)
+    })
+
+    test('keeps the wc connection while another session of the same dapp remains', async () => {
+      const controller = await prepareConnectedWcDapp()
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-a'
+      })
+      await controller.getOrCreateDappSession({
+        tabId: 1000002,
+        url: 'https://aave.com',
+        wcTopic: 'topic-b'
+      })
+
+      controller.disconnectWcSessionByTopic('topic-a')
+
+      expect(controller.getDappSessionByWcTopic('topic-b')).toBeDefined()
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['wc'])
+      expect(controller.hasPermission('aave.com', 'wc')).toBe(true)
+    })
+
+    test('leaves the injected connection intact', async () => {
+      const controller = await prepareConnectedWcDapp()
+      await controller.addDapp(wcDapp(), 'injected')
+      await controller.getOrCreateDappSession({
+        tabId: 1000001,
+        url: 'https://aave.com',
+        wcTopic: 'topic-a'
+      })
+
+      controller.disconnectWcSessionByTopic('topic-a')
+
+      const stored = controller.getDapp('aave.com')!
+      expect(stored.connectedSources).toEqual(['injected'])
+      expect(stored.isConnected).toBe(true)
+    })
+  })
+
   describe('disconnectAllDapps', () => {
     const connectedNonCustomDapp = (id: string): Dapp =>
       makeDapp({
@@ -1977,6 +2082,10 @@ describe('DappsController', () => {
         await storageCtrl.set('dappsV2', predefinedDapps)
         await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
       })
+
+      // Let the boot-time catalog fetch settle so its trailing emitUpdate isn't
+      // counted against the disconnect below.
+      await controller.fetchAndUpdatePromise
 
       let updateCount = 0
       const unsubscribe = controller.onUpdate(() => {
@@ -2208,5 +2317,49 @@ describe('DappsController', () => {
       expect(topToken!.totalVolumeUSD).not.toBeNull()
       expect(topToken!.marketCapRank).not.toBeNull()
     }, 40000)
+  })
+  describe('deferred init', () => {
+    const seedAave = async (storageCtrl: IStorageController) => {
+      await storageCtrl.set('dappsV2', [
+        makeDapp({
+          id: 'aave.com',
+          name: 'Aave',
+          url: 'https://aave.com',
+          isCustom: true,
+          isConnected: true,
+          connectedSources: ['injected'],
+          chainId: 1,
+          blacklisted: 'VERIFIED'
+        })
+      ])
+      await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+    }
+
+    test('isReady is false before init() and true after the load completes', async () => {
+      const { controller } = await prepareTest(seedAave, undefined, true)
+
+      expect(controller.isReady).toBe(false)
+
+      await controller.init()
+
+      expect(controller.isReady).toBe(true)
+    })
+
+    test('init() is idempotent: concurrent and repeat calls read storage and fetch once', async () => {
+      const { controller, mainCtrl } = await prepareTest(seedAave, undefined, true)
+
+      const storageGetSpy = jest.spyOn(mainCtrl.storage, 'get')
+      const fetchSpy = jest.spyOn(controller, 'fetchAndUpdateDapps')
+
+      await Promise.all([controller.init(), controller.init(), controller.init()])
+      await controller.init()
+
+      const dappsV2Reads = storageGetSpy.mock.calls.filter(([key]) => key === 'dappsV2')
+      expect(dappsV2Reads).toHaveLength(1)
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
+
+      storageGetSpy.mockRestore()
+      fetchSpy.mockRestore()
+    })
   })
 })

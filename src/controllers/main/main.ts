@@ -1,4 +1,5 @@
 import { ethErrors } from 'eth-rpc-errors'
+import { getBytes } from 'ethers'
 
 import EmittableError from '@/classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
@@ -87,7 +88,7 @@ import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
 import { ITransfersScannerController } from '@/interfaces/transferScanner'
-import { IUiController, UiManager, View } from '@/interfaces/ui'
+import { isExtensionOverlayView, IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
@@ -98,6 +99,12 @@ import {
   SubmittedAccountOp
 } from '@/libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '@/libs/accountOp/types'
+import {
+  ACCOUNTS_SYNC_PAYLOAD_VERSION,
+  AccountsSyncPayload,
+  parseAccountsSyncPayload,
+  serializeAccountsSyncPayload
+} from '@/libs/accountsSync/accountsSync'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
@@ -107,10 +114,10 @@ import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketV3API } from '@/services/socketv3/api'
-import { SquidAPI } from '@/services/squid/api'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
+import { generateUuid } from '@/utils/uuid'
 import wait from '@/utils/wait'
 
 type AccountsUpdate = {
@@ -233,7 +240,6 @@ export class MainController extends EventEmitter implements IMainController {
     velcroUrl,
     liFiApiKey,
     bungeeApiKey,
-    squidIntegratorId,
     uniswapApiKey,
     featureFlags,
     keystoreSigners,
@@ -249,7 +255,6 @@ export class MainController extends EventEmitter implements IMainController {
     velcroUrl: string
     liFiApiKey: string
     bungeeApiKey: string
-    squidIntegratorId: string
     uniswapApiKey: string
     featureFlags: Partial<FeatureFlags>
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
@@ -506,11 +511,11 @@ export class MainController extends EventEmitter implements IMainController {
     })
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
     const SocketProvider = new SocketV3API({ fetch, apiKey: bungeeApiKey })
-    const SquidProvider = new SquidAPI({ fetch, integratorId: squidIntegratorId })
     const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
       eventEmitterRegistry,
       callRelayer: this.callRelayer,
+      fetch,
       accounts: this.accounts,
       keystore: this.keystore,
       portfolio: this.portfolio,
@@ -525,7 +530,7 @@ export class MainController extends EventEmitter implements IMainController {
       phishing: this.phishing,
       dapps: this.dapps,
       swapProvider: new SwapProviderParallelExecutor(
-        [LiFiProvider, SocketProvider, SquidProvider, UniswapProvider],
+        [LiFiProvider, SocketProvider, UniswapProvider],
         () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) }))
       ),
       relayerUrl,
@@ -661,7 +666,7 @@ export class MainController extends EventEmitter implements IMainController {
         )
         await this.commonHandlerForBroadcastSuccess(props)
         // resolve dapp requests, open benzin and etc only if the main sign accountOp
-        this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
+        await this.resolveAccountOpRequest(submittedAccountOp, fromRequestId)
         this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
       },
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
@@ -705,6 +710,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.keystore.onUpdate(() => {
       if (this.keystore.statuses.unlockWithSecret === 'SUCCESS') {
+        // Don't call syncViewRoutes here, because the status is set after
+        // operations different than unlock too (change password, export key etc.)
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.storage.associateAccountKeysWithLegacySavedSeedMigration(
           () =>
@@ -728,7 +735,7 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     this.ui.uiEvent.on('addView', async (view: View) => {
-      if (view.type === 'popup') await this.onPopupOpen(view.id)
+      if (isExtensionOverlayView(view)) await this.onPopupOpen(view.id)
     })
 
     this.ui.uiEvent.on('viewFocus', () => {
@@ -829,6 +836,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   lock() {
     this.keystore.lock()
+    void this.ui.syncViewRoutes()
     this.emailVault?.cleanMagicAndSessionKeys()
     this.selectedAccount.setDashboardNetworkFilter(null)
     this.continuousUpdates?.updatePortfolioInterval.restart({
@@ -934,8 +942,7 @@ export class MainController extends EventEmitter implements IMainController {
 
   async commonHandlerForBroadcastSuccess({
     submittedAccountOp,
-    accountOp,
-    fromRequestId
+    accountOp
   }: OnboardingSuccessProps) {
     // add the txnIds from each transaction to each Call from the accountOp
     // if identifiedBy is MultipleTxns
@@ -959,17 +966,6 @@ export class MainController extends EventEmitter implements IMainController {
       })
 
       submittedAccountOp.calls = calls
-
-      const userRequest = this.requests.userRequests.find((r) => r.id === fromRequestId)
-
-      if (userRequest) {
-        // Handle the calls that weren't signed
-        const rejectedCalls = accountOp.calls.filter((call) =>
-          submittedAccountOp.calls.every((c) => c.id !== call.id)
-        )
-
-        await this.requests.rejectCalls({ callIds: rejectedCalls.map((c) => c.id) })
-      }
     }
 
     if (accountOp.meta?.swapTxn) {
@@ -1656,6 +1652,102 @@ export class MainController extends EventEmitter implements IMainController {
     await this.withStatus('updateAccounts', async () => this.#updateAccounts(accountsUpdate))
   }
 
+  /**
+   * Runs an accounts sync step and replies to the UI request that triggered it, so the
+   * UI can await the result instead of watching a transient status.
+   */
+  async #withSyncResponse(
+    callName: 'exportAccountsForSync' | 'importAccountsFromSync',
+    requestId: string | undefined,
+    fn: () => Promise<any>
+  ) {
+    await this.withStatus(callName, async () => {
+      try {
+        const res = await fn()
+
+        if (requestId) this.ui.message.sendUiMessage({ requestId, ok: true, res })
+      } catch (error: any) {
+        // Rethrown, so that `withStatus` emits (and reports) the error as usual
+        if (requestId)
+          this.ui.message.sendUiMessage({
+            requestId,
+            ok: false,
+            error: error?.message || `${callName} failed`
+          })
+
+        throw error
+      }
+    })
+  }
+
+  /**
+   * Prepares the selected accounts and the keys controlling them for the other Ambire
+   * product and returns the payload, which the UI displays as animated QR codes.
+   * Everything sensitive leaves this device encrypted, see `keystore.exportForSync`.
+   *
+   * `includeSeeds` lets the user leave the recovery phrases of the selected accounts
+   * behind, in which case only the accounts and their keys are sent over.
+   */
+  async exportAccountsForSync(
+    addrs: Account['addr'][],
+    includeSeeds: boolean = true,
+    requestId?: string
+  ) {
+    await this.#withSyncResponse('exportAccountsForSync', requestId, async () => {
+      const accounts = this.accounts.accounts.filter((account) => addrs.includes(account.addr))
+
+      if (!accounts.length)
+        throw new EmittableError({
+          level: 'expected',
+          message: 'Select at least one account to sync.',
+          error: new Error('main: no accounts to sync')
+        })
+
+      const keyAddrs = Array.from(new Set(accounts.flatMap((account) => account.associatedKeys)))
+      const { secret, keys, seeds } = await this.keystore.exportForSync(keyAddrs, includeSeeds)
+
+      return serializeAccountsSyncPayload({
+        v: ACCOUNTS_SYNC_PAYLOAD_VERSION,
+        secret,
+        accounts,
+        keys,
+        seeds
+      })
+    })
+  }
+
+  /**
+   * Takes over the accounts and keys scanned from the other Ambire product's QR codes.
+   * `payload` is the hex encoded data assembled from the scanned codes and `password`
+   * is the device password of the product that exported them.
+   */
+  async importAccountsFromSync(
+    { payload, password }: { payload: string; password: string },
+    requestId?: string
+  ) {
+    await this.#withSyncResponse('importAccountsFromSync', requestId, async () => {
+      let parsedPayload: AccountsSyncPayload
+      try {
+        parsedPayload = parseAccountsSyncPayload(getBytes(payload))
+      } catch (error: any) {
+        throw new EmittableError({
+          level: 'expected',
+          message:
+            'The scanned QR codes do not contain Ambire accounts, or not all of them were scanned. Please try again.',
+          error: error instanceof Error ? error : new Error('main: invalid accounts sync payload')
+        })
+      }
+
+      // The accounts are added only if the keys made it in, so that the user doesn't
+      // end up with accounts they cannot sign with
+      await this.keystore.importFromSync(parsedPayload, password)
+      await this.#updateAccounts({
+        accountsToAdd: parsedPayload.accounts,
+        accountAddressesToRemove: []
+      })
+    })
+  }
+
   async reloadSelectedAccount(options?: {
     chainIds?: bigint[]
     maxDataAgeMs?: number
@@ -1717,6 +1809,12 @@ export class MainController extends EventEmitter implements IMainController {
     return this.#fetchSafeTxnsPromise
   }
 
+  async refreshSafeTxns() {
+    if (this.statuses.refreshSafeTxns === 'LOADING') return
+
+    await this.withStatus('refreshSafeTxns', () => this.fetchSafeTxns([], true), true)
+  }
+
   async #fetchSafeTxns(chainIds: bigint[] = [], forceRefetch = false) {
     if (!this.selectedAccount?.account?.safeCreation) return
     // cache the addr here to prevent race conditions
@@ -1745,50 +1843,58 @@ export class MainController extends EventEmitter implements IMainController {
       threshold: accountState[c.toString()]?.threshold || 0
     }))
 
-    for (let i = 0; i < networksAndThresholds.length; i++) {
-      // wait a second to not hit 5 request per minute API limit
-      if (i !== 0) await wait(600)
+    if (!networksAndThresholds.length) return
 
-      const firstBatch = networksAndThresholds[i]!
-      const res: SafeResults | null = await this.safe
-        .fetchPending(safeAddr, [firstBatch])
-        .catch((e) => {
-          console.log(e)
-          console.log('failed to retrieve pending Safe txns')
-          return null
-        })
+    await this.withStatus(
+      'fetchSafeTxns',
+      async () => {
+        for (let i = 0; i < networksAndThresholds.length; i++) {
+          // wait a second to not hit 5 request per minute API limit
+          if (i !== 0) await wait(600)
 
-      if (!res) continue
+          const firstBatch = networksAndThresholds[i]!
+          const res: SafeResults | null = await this.safe
+            .fetchPending(safeAddr, [firstBatch])
+            .catch((e) => {
+              console.log(e)
+              console.log('failed to retrieve pending Safe txns')
+              return null
+            })
 
-      // build txn requests
-      const txnRequest = toCallsUserRequest(safeAddr, res)
-      for (let i = 0; i < txnRequest.length; i++) {
-        // build the requests only if the selected account hasn't changed
-        if (this.selectedAccount?.account?.addr === safeAddr)
-          await this.requests.build(txnRequest[i]!).catch((e) => e)
-      }
+          if (!res) continue
 
-      // build and resolve message requests
-      const messageRequests = toSigMessageUserRequests(res)
-      for (let i = 0; i < messageRequests.length; i++) {
-        const req = messageRequests[i]!
-        const userRequest = this.requests.userRequests.find(
-          (u) =>
-            u.meta.accountAddr === safeAddr &&
-            u.meta.chainId === req.params.chainId &&
-            (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
-            u.meta.hash === req.params.messageHash
-        )
-        if (!userRequest && !req.isConfirmed) {
-          // build the requests only if the selected account hasn't changed
-          if (this.selectedAccount?.account?.addr === safeAddr)
-            await this.requests.build(req).catch((e) => e)
+          // build txn requests
+          const txnRequest = toCallsUserRequest(safeAddr, res)
+          for (let i = 0; i < txnRequest.length; i++) {
+            // build the requests only if the selected account hasn't changed
+            if (this.selectedAccount?.account?.addr === safeAddr)
+              await this.requests.build(txnRequest[i]!).catch((e) => e)
+          }
+
+          // build and resolve message requests
+          const messageRequests = toSigMessageUserRequests(res)
+          for (let i = 0; i < messageRequests.length; i++) {
+            const req = messageRequests[i]!
+            const userRequest = this.requests.userRequests.find(
+              (u) =>
+                u.meta.accountAddr === safeAddr &&
+                u.meta.chainId === req.params.chainId &&
+                (u.kind === 'typedMessage' || u.kind === 'message' || u.kind === 'siwe') &&
+                u.meta.hash === req.params.messageHash
+            )
+            if (!userRequest && !req.isConfirmed) {
+              // build the requests only if the selected account hasn't changed
+              if (this.selectedAccount?.account?.addr === safeAddr)
+                await this.requests.build(req).catch((e) => e)
+            }
+            if (userRequest && req.isConfirmed) {
+              await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
+            }
+          }
         }
-        if (userRequest && req.isConfirmed) {
-          await this.requests.resolveUserRequest({ hash: req.params.signature }, userRequest.id)
-        }
-      }
-    }
+      },
+      true
+    )
   }
 
   #updateIsOffline() {
@@ -1935,7 +2041,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (openBenzin) {
       const benzinUserRequest: BenzinUserRequest = {
-        id: new Date().getTime(),
+        id: generateUuid(),
         kind: 'benzin',
         meta,
         dappPromises: []
@@ -1951,7 +2057,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     if (safeRequests.length) {
       await this.requests.removeUserRequests(safeRequests, {
-        shouldRejectSafeRequests: false
+        shouldOpenNextRequest: false
       })
     }
 
@@ -1973,9 +2079,24 @@ export class MainController extends EventEmitter implements IMainController {
       }
     })
 
-    await this.requests.removeUserRequests([accountOpRequest.id], {
-      shouldRemoveSwapAndBridgeRoute: false
-    })
+    // Calls that made it out are done with. Anything left was never signed, so the
+    // request stays with those in it and the user can come back and sign them.
+    const sentCallIds = submittedAccountOp.calls
+      .filter((call) => call.status !== AccountOpStatus.Rejected)
+      .map((call) => call.id)
+    const notSentCalls = signAccountOp.cleanupAfterBroadcast(sentCallIds)
+
+    if (notSentCalls.length) {
+      // Their promises have just been answered, so the request must not hold them
+      accountOpRequest.dappPromises = accountOpRequest.dappPromises.filter((promise) =>
+        dappHandlers.every((handler) => handler.promise.id !== promise.id)
+      )
+    } else {
+      await this.requests.removeUserRequests([accountOpRequest.id], {
+        shouldRemoveSwapAndBridgeRoute: false,
+        shouldOpenNextRequest: false
+      })
+    }
 
     this.resolveDappBroadcast(submittedAccountOp, dappHandlers)
 

@@ -28,6 +28,13 @@ export type IStorageController = ControllerInterface<
   InstanceType<typeof import('../controllers/storage/storage').StorageController>
 >
 
+export type AutomaticallyResolvedSafeTxn = {
+  accountAddr?: string
+  chainId?: bigint
+  nonce: bigint
+  txnIds: string[]
+}
+
 export type StorageProps = {
   // Onboarding
   invite: object
@@ -88,13 +95,15 @@ export type StorageProps = {
   // Address book
   contacts: Contacts
   // Safe
-  automaticallyResolvedSafeTxns: { nonce: bigint; txnIds: string[] }[]
+  automaticallyResolvedSafeTxns: AutomaticallyResolvedSafeTxn[]
   rejectedSafeTxns: string[]
   // Other
   signAccountOpFeeTokenPreference: {
     [chainId: string]: string | 'gasTank'
   }
-  signAccountOpFeeSpeedPreference: FeeSpeed
+  signAccountOpFeeSpeedPreference: {
+    [chainId: string]: FeeSpeed
+  }
   networks: { [key: string]: Network }
   accounts: Account[]
   networkPreferences: { [key: string]: Partial<Network> }
@@ -102,6 +111,7 @@ export type StorageProps = {
   lastDappsUpdateVersion: string | null
   isPinned: boolean
   isPrivacyModeEnabled: boolean
+  isSidePanelModeEnabled: boolean
   phishing: {
     version: number
     updatedAt: number

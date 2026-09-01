@@ -6,23 +6,51 @@ export type IUiController = ControllerInterface<
   InstanceType<typeof import('../controllers/ui//ui').UiController>
 >
 
+/** The view type of the window that exists solely to display the current user request. */
+export const REQUEST_VIEW_TYPE = 'request-window'
+
+/** Options forwarded to the UI's router when a controller navigates a view. */
+export type NavigateOptions = {
+  replace?: boolean
+  state?: { [key: string]: any }
+  /**
+   * Marks a navigation as the one that places a freshly registered view on its first screen. The
+   * UI ignores it once the view has moved off its root route, so a late or retried one cannot
+   * throw the user back to where the app started.
+   */
+  isInitialNavigation?: boolean
+}
+
 export type View = {
   id: string
-  type: 'request-window' | 'tab' | 'popup' | 'mobile'
+  type: typeof REQUEST_VIEW_TYPE | 'tab' | 'popup' | 'side-panel' | 'mobile'
   currentRoute?: string
   previousRoute?: string
+  /**
+   * Where a controller last asked the view to go, while that is still unconfirmed. Cleared as
+   * soon as the view reports a route, so a route the UI refused (a redirect guard, for example)
+   * can be requested again instead of being deduped away.
+   */
+  pendingRoute?: string
   isReady?: boolean
   searchParams?: { [key: string]: string }
+}
+
+export const isExtensionOverlayView = (view: Pick<View, 'type'>) =>
+  view.type === 'popup' || view.type === 'side-panel'
+
+export const isSidePanelView = (view: Pick<View, 'type'>) => view.type === 'side-panel'
+
+export type OpenWindowOptions = {
+  route?: string
+  customSize?: { width: number; height: number }
+  baseWindowId?: number
 }
 
 export type UiManager = {
   window: {
     event: EventEmitter
-    open: (options?: {
-      route?: string
-      customSize?: { width: number; height: number }
-      baseWindowId?: number
-    }) => Promise<WindowProps>
+    open: (options?: OpenWindowOptions) => Promise<WindowProps>
     focus: (windowProps: WindowProps, params?: FocusWindowParams) => Promise<WindowProps>
     remove: (winId: WindowId | 'popup') => Promise<void>
     closePopupWithUrl: (url: string) => Promise<void> // remove window of type popup
@@ -48,8 +76,22 @@ export type UiManager = {
       }
     ) => void
     sendUiMessage: (params: {}) => void
-    sendNavigateMessage: (viewId: string, route: string, params: { [key: string]: any }) => void
+    sendNavigateMessage: (viewId: string, route: string, options?: NavigateOptions) => void
   }
+  /**
+   * Tells where a view should be, based on the state of the controllers its screens depend on.
+   * Awaits the initial load of those controllers first, so a `null` answer means the view has
+   * nowhere to go, never that the wallet is not ready yet.
+   */
+  resolveViewRoute: (view: View) => Promise<string | null>
+  /** An always-visible surface that renders requests inline, opened and closed by the user only. */
+  panel?: PanelManager
+  /** Sends a synthetic focus to the dapp's tab, so dapp libraries refetch the state they cache. */
+  dispatchDappTabFocus?: (targets: { tabId: number; windowId?: number }[]) => void
+}
+
+export type PanelManager = {
+  isOpen: () => boolean
 }
 
 export type WindowId = number

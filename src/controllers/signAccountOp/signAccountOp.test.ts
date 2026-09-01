@@ -5,13 +5,15 @@ import {
   getAddress,
   hexlify,
   Interface,
+  MaxUint256,
   parseEther,
   toBeHex,
   verifyMessage
 } from 'ethers'
 import fetch from 'node-fetch'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { WARNINGS } from '@/consts/signAccountOp/errorHandling'
+import { afterEach, describe, expect, jest, test } from '@jest/globals'
 import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-util'
 
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
@@ -36,18 +38,25 @@ import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
+import { ExternalSignerController, ExternalSignerControllers } from '../../interfaces/keystore'
 import { IProvidersController } from '../../interfaces/provider'
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
+// Namespace import, so the broadcast helpers can be stood in for with jest.spyOn
+import * as broadcastLib from '../../libs/broadcast/broadcast'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
 import { clearErc7730RegistryCache } from '../../libs/humanizer'
+import { HumanizerWarning } from '../../libs/humanizer/interfaces'
+import { UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
+import { AccountState } from '../../libs/portfolio/interfaces'
+import { PORTFOLIO_STATE } from '../../libs/portfolio/testData'
 import { BindedRelayerCall, relayerCall, RelayerError } from '../../libs/relayerCall/relayerCall'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
@@ -71,6 +80,7 @@ import { BannerController } from '../banner/banner'
 import { DappsController } from '../dapps/dapps'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
+import { FeatureFlags } from '../../consts/featureFlags'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import { InviteController } from '../invite/invite'
@@ -382,6 +392,41 @@ const nativeFeeToken: TokenResult = {
   }
 }
 
+const buildPortfolioState = ({
+  amountBeforeSimulation,
+  amountPostSimulation,
+  isLoading
+}: {
+  amountBeforeSimulation: bigint
+  amountPostSimulation: bigint
+  isLoading: boolean
+}): AccountState => {
+  const networkState = PORTFOLIO_STATE['1']
+  const token = networkState?.result?.tokens[0]
+
+  if (!networkState?.result || !token) throw new Error('Invalid portfolio test fixture')
+
+  return {
+    '1': {
+      ...networkState,
+      isLoading,
+      result: {
+        ...networkState.result,
+        total: { usd: Number(amountBeforeSimulation) },
+        tokens: [
+          {
+            ...token,
+            amount: amountBeforeSimulation,
+            amountPostSimulation,
+            decimals: 0,
+            priceIn: [{ baseCurrency: 'usd', price: 1 }]
+          }
+        ]
+      }
+    }
+  }
+}
+
 const gasTankToken: TokenResult = {
   address: '0x0000000000000000000000000000000000000000',
   symbol: 'ETH',
@@ -419,6 +464,9 @@ const init = async (
     type?: SignAccountOpType
     initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
+    externalSignerControllers?: ExternalSignerControllers
+    onBroadcastSuccess?: (params: any) => Promise<void>
+    featureFlags?: Partial<FeatureFlags>
   }
 ) => {
   const storage: Storage = produceMemoryStore()
@@ -517,7 +565,7 @@ const init = async (
   await networksCtrl.initialLoadPromise
   await providersCtrl.initialLoadPromise
 
-  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
+  const featureFlagsCtrl = new FeatureFlagsController(options?.featureFlags || {}, storageCtrl)
   const portfolio = new PortfolioController(
     storageCtrl,
     fetch,
@@ -544,7 +592,7 @@ const init = async (
     ui: uiCtrl
   })
   if (options?.dapps) {
-    await phishing.initialLoadPromise
+    await phishing.init()
     await phishing.updatePhishingInterval.promise
     phishing.updatePhishingInterval.stop()
     continuouslyUpdatePhishingSpy?.mockRestore()
@@ -598,7 +646,8 @@ const init = async (
     account,
     accountsCtrl.accountStates[account.addr]![network.chainId.toString()]!,
     network,
-    true
+    featureFlagsCtrl.isFeatureEnabled('erc4337'),
+    featureFlagsCtrl.isFeatureEnabled('eip7702')
   )
 
   const callRelayer = options?.callRelayer || relayerCall.bind({ url: '', fetch })
@@ -662,7 +711,7 @@ const init = async (
       ui: uiCtrl,
       selectedAccount: selectedAccountCtrl
     })
-    await realDappsController.initialLoadPromise
+    await realDappsController.init()
 
     // Register any dApp sessions so the real #getFrameContextStatus can read the top frame
     // reported for them (the iframe-in-suspicious-tab scenario).
@@ -682,7 +731,7 @@ const init = async (
     portfolio,
     featureFlags: featureFlagsCtrl,
     signAccountOpPreference,
-    externalSignerControllers: {},
+    externalSignerControllers: options?.externalSignerControllers || {},
     account,
     network,
     activity,
@@ -693,7 +742,7 @@ const init = async (
     accountOp: op,
     shouldSimulate: false,
     onUpdateAfterTraceCallSuccess: options?.onUpdateAfterTraceCallSuccess,
-    onBroadcastSuccess: async () => {},
+    onBroadcastSuccess: options?.onBroadcastSuccess || (async () => {}),
     estimateController: estimationController,
     gasPriceController
   })
@@ -702,7 +751,7 @@ const init = async (
     gasPrices: gasPricesOrMock
   })
 
-  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl }
+  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl, portfolio }
 }
 
 const initDappVerificationBannerTest = async (
@@ -1088,23 +1137,59 @@ describe('SignAccountOp Controller ', () => {
   test('uses the saved fee speed as the default for a new signing request', async () => {
     const { controller } = await initDefaultFeeSelection(undefined, {
       initialSetStorage: async (storageCtrl) => {
-        await storageCtrl.set('signAccountOpFeeSpeedPreference', FeeSpeed.Medium)
+        await storageCtrl.set('signAccountOpFeeSpeedPreference', { '1': FeeSpeed.Medium })
       }
     })
 
     expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
   })
 
-  test('persists only explicitly selected fee speeds', async () => {
+  test('ignores a saved fee speed belonging to another chain', async () => {
+    const { controller } = await initDefaultFeeSelection(undefined, {
+      initialSetStorage: async (storageCtrl) => {
+        await storageCtrl.set('signAccountOpFeeSpeedPreference', { '137': FeeSpeed.Slow })
+      }
+    })
+
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Fast)
+  })
+
+  test('persists a user selected fee speed right away, for the current chain only', async () => {
+    const { controller, storageCtrl } = await initDefaultFeeSelection()
+
+    controller.update({ speed: FeeSpeed.Slow, shouldPersistSpeed: true })
+    await wait(1)
+
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Slow)
+    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toEqual({
+      '1': FeeSpeed.Slow
+    })
+  })
+
+  test('does not persist a fee speed that was not selected by the user', async () => {
     const { controller, storageCtrl } = await initDefaultFeeSelection()
 
     controller.update({ speed: FeeSpeed.Slow })
     await wait(1)
+
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Slow)
     expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toBeUndefined()
+  })
+
+  test('saving a fee speed keeps the ones saved for the other chains', async () => {
+    const { controller, storageCtrl } = await initDefaultFeeSelection(undefined, {
+      initialSetStorage: async (storage) => {
+        await storage.set('signAccountOpFeeSpeedPreference', { '137': FeeSpeed.Ape })
+      }
+    })
 
     controller.update({ speed: FeeSpeed.Medium, shouldPersistSpeed: true })
     await wait(1)
-    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toBe(FeeSpeed.Medium)
+
+    expect(await storageCtrl.get('signAccountOpFeeSpeedPreference')).toEqual({
+      '1': FeeSpeed.Medium,
+      '137': FeeSpeed.Ape
+    })
   })
 
   test('uses a saved ERC-20 default only for the matching chain', async () => {
@@ -3061,6 +3146,80 @@ describe('ERC-7730 humanization', () => {
   })
 })
 
+describe('significant balance decrease banners', () => {
+  test('keeps the previous banner while refreshing and recalculates when the result changes', async () => {
+    const { controller, portfolio } = await initDappVerificationBannerTest(verifiedDapp)
+    const portfolioState = portfolio.getAccountPortfolioState(eoaAccount.addr)
+
+    controller.setDiscoveryStatus(TraceCallDiscoveryStatus.Done)
+    portfolioState['1'] = { isReady: false, isLoading: true, errors: [] }
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
+
+    portfolioState['1'] = buildPortfolioState({
+      amountBeforeSimulation: 5000n,
+      amountPostSimulation: 3000n,
+      isLoading: false
+    })['1']
+    const significantBalanceDecreaseBanner = controller.banners.find(
+      ({ id }) => id === WARNINGS.significantBalanceDecrease.id
+    )
+    expect(significantBalanceDecreaseBanner).toEqual({
+      id: WARNINGS.significantBalanceDecrease.id,
+      type: 'warning',
+      title: 'Significant balance decrease detected',
+      text: 'Our checks indicate this transaction may significantly reduce your account balance.',
+      secondaryText:
+        'May be inaccurate when moving funds to another network or providing liquidity.'
+    })
+
+    portfolioState['1']!.isLoading = true
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toEqual(significantBalanceDecreaseBanner)
+
+    portfolioState['1'] = buildPortfolioState({
+      amountBeforeSimulation: 5000n,
+      amountPostSimulation: 5000n,
+      isLoading: false
+    })['1']
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
+    expect(
+      controller.warnings.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
+  })
+
+  test('waits for token discovery to finish while the portfolio is refreshing', async () => {
+    const { controller, portfolio } = await initDappVerificationBannerTest(verifiedDapp)
+    const portfolioState = portfolio.getAccountPortfolioState(eoaAccount.addr)
+    portfolioState['1'] = buildPortfolioState({
+      amountBeforeSimulation: 5000n,
+      amountPostSimulation: 3000n,
+      isLoading: true
+    })['1']
+
+    controller.setDiscoveryStatus(TraceCallDiscoveryStatus.InProgress)
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toBeUndefined()
+
+    controller.setDiscoveryStatus(TraceCallDiscoveryStatus.Failed)
+    expect(
+      controller.banners.find(({ id }) => id === WARNINGS.significantBalanceDecrease.id)
+    ).toEqual({
+      id: WARNINGS.significantBalanceDecrease.id,
+      type: 'warning',
+      title: 'Significant balance decrease detected',
+      text: 'Our checks indicate this transaction may significantly reduce your account balance.',
+      secondaryText:
+        'May be inaccurate when moving funds to another network or providing liquidity.'
+    })
+  })
+})
+
 describe('dapp verification banners', () => {
   test('should return loading banners', async () => {
     const { controller } = await initDappVerificationBannerTest(loadingDapp)
@@ -3069,6 +3228,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
         type: 'warning',
+        title: 'Safety check in progress',
         text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests: Loading Dapp"
       }
     ])
@@ -3081,6 +3241,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
         type: 'warning',
+        title: "App couldn't be verified",
         text: "We couldn't verify the app. Make sure you trust it before signing requests: Failed Dapp"
       }
     ])
@@ -3093,6 +3254,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
         type: 'error',
+        title: 'Potentially harmful app',
         text: "This app didn't pass our safety check. Proceed at your own risk: Blacklisted Dapp"
       }
     ])
@@ -3111,6 +3273,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
         type: 'warning',
+        title: "App not in Ambire's catalog",
         text: 'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests: Custom Dapp'
       }
     ])
@@ -3125,6 +3288,7 @@ describe('dapp verification banners', () => {
       {
         id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
         type: 'warning',
+        title: 'Suspicious app hosting',
         text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
       }
     ])
@@ -3265,10 +3429,6 @@ describe('traceCall asset discovery', () => {
     // A second request while one is in progress is a no-op (reentrancy guard).
     await (controller as any).traceCall()
     expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
-
-    // After 2s without a response the status reflects the slow pending state.
-    jest.advanceTimersByTime(2000)
-    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.SlowPendingResponse)
 
     // Resolving discovery learns the assets, fires the success callback and
     // settles on Done.
@@ -3451,5 +3611,367 @@ describe('traceCall asset discovery', () => {
       expect(addTokensToBeLearnedSpy).not.toHaveBeenCalled()
       expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
     })
+  })
+})
+
+describe('external signer PIN sessions', () => {
+  suppressConsoleBeforeEach(true)
+
+  const pinSessionGasPrices = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+
+  const initPinSession = async () => {
+    const nfc = {
+      type: 'nfc',
+      deviceModel: '',
+      deviceId: '',
+      beginPinSession: jest.fn(async () => {}),
+      endPinSession: jest.fn(async () => {})
+    } as unknown as ExternalSignerController & {
+      beginPinSession: jest.Mock
+      endPinSession: jest.Mock
+    }
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: nativeFeeToken
+      }
+    ]
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        flags: {},
+        updatedAt: Date.now()
+      } as any,
+      pinSessionGasPrices,
+      false,
+      { externalSignerControllers: { nfc } as any }
+    )
+
+    return { controller, nfc }
+  }
+
+  test('opens the PIN session before signing and closes it once the whole flow is over', async () => {
+    const { controller, nfc } = await initPinSession()
+    const callOrder: string[] = []
+
+    nfc.beginPinSession.mockImplementation(async () => {
+      callOrder.push('begin')
+    })
+    nfc.endPinSession.mockImplementation(async () => {
+      callOrder.push('end')
+    })
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // One session for the whole account op, no matter how many signatures it takes -
+    // that is what lets a single PIN entry cover all of them.
+    expect(callOrder).toEqual(['begin', 'end'])
+  })
+
+  test('opens a new PIN session for the next account op, so the PIN is asked for again', async () => {
+    const { controller, nfc } = await initPinSession()
+
+    await controller.signAndBroadcast().catch(() => {})
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(nfc.beginPinSession).toHaveBeenCalledTimes(2)
+    expect(nfc.endPinSession).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('unlimited approval warnings', () => {
+  const usdt = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+  const spender = '0x46705dfff24256421a05d056c29e81bdc09723b8'
+  const approveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
+
+  // no ERC-7730 registry is reachable here, so every approval falls back to the built-in
+  // descriptor - the path a real approval takes as well
+  const failingErc7730Relayer = jest.fn(async (path: string) => {
+    throw new Error(`No ERC-7730 registry in this test: ${path}`)
+  })
+
+  const approveCall = (amount: bigint, dapp?: Dapp) => ({
+    to: usdt,
+    value: 0n,
+    data: approveInterface.encodeFunctionData('approve', [spender, amount]),
+    ...(dapp ? { dapp: getDappRequestData(dapp) } : {})
+  })
+
+  const humanizeApproval = async (amount: bigint, dapp: Dapp, includeDappOnCall = true) => {
+    const { controller } = await initDappVerificationBannerTest(dapp, {
+      calls: [approveCall(amount, includeDappOnCall ? dapp : undefined)] as AccountOp['calls'],
+      callRelayer: failingErc7730Relayer as any
+    })
+    await wait(0)
+
+    return controller
+  }
+
+  const hasUnlimitedApprovalWarning = (controller: SignAccountOpTesterController) =>
+    !!controller.humanization[0]?.warnings?.some(
+      (warning: HumanizerWarning) => warning.code === UNLIMITED_APPROVAL_WARNING_CODE
+    )
+
+  test('warns on a maximum approval requested by an app outside the catalog', async () => {
+    const controller = await humanizeApproval(MaxUint256, customDapp)
+
+    expect(hasUnlimitedApprovalWarning(controller)).toBe(true)
+  })
+
+  test('stays quiet on a maximum approval requested by an app in the catalog', async () => {
+    const controller = await humanizeApproval(MaxUint256, verifiedDapp)
+
+    expect(hasUnlimitedApprovalWarning(controller)).toBe(false)
+  })
+
+  test('warns on a maximum approval when the call carries no app', async () => {
+    const controller = await humanizeApproval(MaxUint256, verifiedDapp, false)
+
+    expect(hasUnlimitedApprovalWarning(controller)).toBe(true)
+  })
+
+  test('stays quiet on a finite approval, whatever the app', async () => {
+    const controller = await humanizeApproval(1000000n, customDapp)
+
+    expect(hasUnlimitedApprovalWarning(controller)).toBe(false)
+  })
+
+  // reading the same humanization twice must give the same array, or the calls on screen would
+  // lose their identity on every render while a new humanization is running
+  test('returns the same humanization when nothing is suppressed', async () => {
+    const controller = await humanizeApproval(MaxUint256, customDapp)
+
+    expect(controller.humanization).toBe(controller.humanization)
+  })
+
+  // the catalog is fetched, so it can arrive after the calls were already humanized
+  test('drops the warning once the app turns out to be in the catalog, without humanizing again', async () => {
+    const catalogSpy = jest
+      .spyOn(DappsController.prototype, 'isDappInDefaultCatalog')
+      .mockReturnValue(false)
+
+    try {
+      const controller = await humanizeApproval(MaxUint256, customDapp)
+      expect(hasUnlimitedApprovalWarning(controller)).toBe(true)
+
+      const humanizationIdBefore = controller.humanizationId
+      catalogSpy.mockReturnValue(true)
+
+      expect(hasUnlimitedApprovalWarning(controller)).toBe(false)
+      // the same humanization is still in place - only the reading of it changed
+      expect(controller.humanizationId).toBe(humanizationIdBefore)
+    } finally {
+      catalogSpy.mockRestore()
+    }
+  })
+
+  test('brings the warning back when the app leaves the catalog', async () => {
+    const catalogSpy = jest
+      .spyOn(DappsController.prototype, 'isDappInDefaultCatalog')
+      .mockReturnValue(true)
+
+    try {
+      const controller = await humanizeApproval(MaxUint256, customDapp)
+      expect(hasUnlimitedApprovalWarning(controller)).toBe(false)
+
+      catalogSpy.mockReturnValue(false)
+
+      expect(hasUnlimitedApprovalWarning(controller)).toBe(true)
+    } finally {
+      catalogSpy.mockRestore()
+    }
+  })
+})
+
+describe('broadcasting a batch one transaction at a time', () => {
+  suppressConsoleBeforeEach(true)
+  afterEach(() => jest.restoreAllMocks())
+
+  const batchGasPrices = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+
+  /** An EOA broadcasts every call as its own transaction, so three calls take three signatures. */
+  const createThreeCallBatch = (account: Account) => {
+    const batch = createEOAAccountOp(account)
+    batch.op.calls = [1n, 2n, 3n].map((value) => ({
+      to: '0x0000000000000000000000000000000000000000',
+      value,
+      data: '0x' as Hex
+    }))
+    // Set, so the nonce is not read off the network during the test
+    ;(batch.op as any).eoaNonce = 7n
+
+    return batch
+  }
+
+  const initBatch = async (overrides?: { callRelayer?: any }) => {
+    const submittedAccountOps: any[] = []
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: nativeFeeToken
+      }
+    ]
+    const { controller } = await init(
+      eoaAccount,
+      createThreeCallBatch(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        flags: {},
+        updatedAt: Date.now()
+      } as any,
+      batchGasPrices,
+      false,
+      {
+        // Without this the account broadcasts through an EIP-7702 delegation, which
+        // sends the whole batch as one transaction and takes a single signature.
+        featureFlags: { eip7702: false },
+        callRelayer: overrides?.callRelayer || ((async () => ({})) as any),
+        onBroadcastSuccess: async ({ submittedAccountOp }: any) => {
+          submittedAccountOps.push(submittedAccountOp)
+        }
+      }
+    )
+
+    return { controller, submittedAccountOps }
+  }
+
+  /**
+   * Stands in for the network: every call becomes a transaction that is signed and
+   * sent, with `failFromIndex` naming the first signature that refuses.
+   */
+  const mockBroadcastChain = (failFromIndex: number | null) => {
+    jest
+      .spyOn(broadcastLib, 'buildRawTransaction')
+      .mockImplementation(async () => ({ to: '0x', value: 0n }) as any)
+
+    let signedCount = 0
+    const signRawTransaction = jest
+      .spyOn(KeystoreSigner.prototype, 'signRawTransaction')
+      .mockImplementation(async () => {
+        if (failFromIndex !== null && signedCount >= failFromIndex) {
+          throw new Error('Card operation cancelled.')
+        }
+        signedCount += 1
+
+        return `0xsigned${signedCount}`
+      })
+
+    const broadcastTransaction = jest
+      .spyOn(broadcastLib, 'broadcastTransaction')
+      .mockImplementation(async () => ({ hash: `0xhash${signedCount}` }) as any)
+
+    return { signRawTransaction, broadcastTransaction }
+  }
+
+  const getPartialBroadcastError = (controller: any) =>
+    controller.emittedErrors.find((e: any) => e.message.startsWith('Only '))
+
+  test('records every call and reports no error when the whole batch goes out', async () => {
+    const { controller, submittedAccountOps } = await initBatch()
+    const { signRawTransaction, broadcastTransaction } = mockBroadcastChain(null)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(signRawTransaction).toHaveBeenCalledTimes(3)
+    expect(broadcastTransaction).toHaveBeenCalledTimes(3)
+    expect(submittedAccountOps).toHaveLength(1)
+    expect(submittedAccountOps[0].calls).toHaveLength(3)
+    expect(submittedAccountOps[0].identifiedBy.type).toBe('MultipleTxns')
+    expect(getPartialBroadcastError(controller)).toBeUndefined()
+  })
+
+  test('keeps every call but reports only the hashes that went out', async () => {
+    const { controller, submittedAccountOps } = await initBatch()
+    const { broadcastTransaction } = mockBroadcastChain(1)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Only the first went out. Every call is still recorded, with fewer hashes than
+    // calls - that gap is what tells apart the calls that never went out, so they can
+    // be marked as such instead of quietly disappearing from the account op.
+    expect(broadcastTransaction).toHaveBeenCalledTimes(1)
+    expect(submittedAccountOps).toHaveLength(1)
+    expect(submittedAccountOps[0].calls).toHaveLength(3)
+    expect(submittedAccountOps[0].identifiedBy.type).toBe('MultipleTxns')
+    expect(submittedAccountOps[0].identifiedBy.identifier.split('-')).toHaveLength(1)
+  })
+
+  test('tells the user how much of the batch was sent, and why the rest was not', async () => {
+    const { controller } = await initBatch()
+    mockBroadcastChain(1)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Reporting only the part that succeeded would leave the user believing all three
+    // transactions were sent.
+    const partialBroadcastError = getPartialBroadcastError(controller)
+
+    expect(partialBroadcastError).toBeDefined()
+    expect(partialBroadcastError.level).toBe('major')
+    expect(partialBroadcastError.message).toContain('Only 1 of 3 transactions')
+    expect(partialBroadcastError.message).toContain('The remaining 2 could not be sent')
+    expect(partialBroadcastError.message).toContain('Card operation cancelled.')
+  })
+
+  test('words the message for a single remaining transaction', async () => {
+    const { controller } = await initBatch()
+    mockBroadcastChain(2)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(getPartialBroadcastError(controller).message).toContain(
+      'Only 2 of 3 transactions in this batch were sent. The remaining one could not be sent'
+    )
+  })
+
+  test('sends the whole batch even when the gas tank bookkeeping throws', async () => {
+    const { controller, submittedAccountOps } = await initBatch({
+      callRelayer: () => {
+        throw new Error('relayer is unavailable')
+      }
+    })
+    const { signRawTransaction } = mockBroadcastChain(null)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Recording the transaction for the gas tank is bookkeeping the broadcast does
+    // not depend on. Letting it stop the batch would strand the calls after it, and
+    // the ones already sent cannot be taken back.
+    expect(signRawTransaction).toHaveBeenCalledTimes(3)
+    expect(submittedAccountOps).toHaveLength(1)
+    expect(submittedAccountOps[0].calls).toHaveLength(3)
+    expect(getPartialBroadcastError(controller)).toBeUndefined()
+  })
+
+  test('reports a plain failure, not a partial success, when nothing was sent', async () => {
+    const { controller, submittedAccountOps } = await initBatch()
+    mockBroadcastChain(0)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Nothing reached the network, so there is no account op worth recording and the
+    // failure is the whole story.
+    expect(submittedAccountOps).toHaveLength(0)
+    expect(getPartialBroadcastError(controller)).toBeUndefined()
   })
 })

@@ -352,6 +352,10 @@ export function hasBecomeSmarter(account: Account, state: AccountStates) {
   return false
 }
 
+export function canOrHasBecomeSmarter(account: Account, state: AccountStates, keys: Key[]) {
+  return canBecomeSmarter(account, keys) || hasBecomeSmarter(account, state)
+}
+
 export function shouldUseStateOverrideForEOA(account: Account, state: AccountOnchainState) {
   return isBasicAccount(account, state)
 }

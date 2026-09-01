@@ -181,6 +181,7 @@ describe('Portfolio', () => {
           account,
           accountStates[accountOp.accountAddr]!['1']!,
           ethereum,
+          true,
           true
         ),
         state: accountStates[accountOp.accountAddr]!['1']!
@@ -252,6 +253,7 @@ describe('Portfolio', () => {
             account,
             accountStates[accountOp.accountAddr]!['1']!,
             ethereum,
+            true,
             true
           ),
           state: accountStates[accountOp.accountAddr]![accountOp.chainId.toString()]!
@@ -342,6 +344,7 @@ describe('Portfolio', () => {
           account,
           accountStates[accountOp.accountAddr]!['1']!,
           ethereum,
+          true,
           true
         ),
         state: accountStates[accountOp.accountAddr]!['1']!
@@ -390,6 +393,7 @@ describe('Portfolio', () => {
           account,
           accountStates[accountOp.accountAddr]!['1']!,
           ethereum,
+          true,
           true
         ),
         state: accountStates[accountOp.accountAddr]!['1']!
@@ -441,6 +445,7 @@ describe('Portfolio', () => {
             account,
             accountStates[accountOp.accountAddr]!['1']!,
             ethereum,
+            true,
             true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
@@ -463,6 +468,7 @@ describe('Portfolio', () => {
             account,
             accountStates[accountOp.accountAddr]!['1']!,
             ethereum,
+            true,
             true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
@@ -518,6 +524,7 @@ describe('Portfolio', () => {
             account,
             accountStates[accountOp.accountAddr]!['1']!,
             ethereum,
+            true,
             true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
@@ -567,6 +574,7 @@ describe('Portfolio', () => {
             account,
             accountStates[accountOp.accountAddr]!['1']!,
             ethereum,
+            true,
             true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!
@@ -621,6 +629,7 @@ describe('Portfolio', () => {
           account,
           accountStates[accountOp.accountAddr]!['1']!,
           ethereum,
+          true,
           true
         ),
         state: accountStates[accountOp.accountAddr]!['1']!
@@ -676,6 +685,7 @@ describe('Portfolio', () => {
             account,
             accountStates[accountOp.accountAddr]!['1']!,
             ethereum,
+            true,
             true
           ),
           state: accountStates[accountOp.accountAddr]!['1']!

@@ -9,7 +9,7 @@ import {
 } from 'viem'
 
 import { allowedFallbackHandlers, allowedMulticallContracts } from '../../../../consts/safe'
-import { AccountOp } from '../../../accountOp/accountOp'
+import { AccountOp, isSafeRejectionCall } from '../../../accountOp/accountOp'
 import {
   HumanizerCallModule,
   HumanizerVisualization,
@@ -92,27 +92,25 @@ export const getSafeHumanization = (
   const fullVisualization: HumanizerVisualization[] = []
   const warnings: HumanizerWarning[] = []
 
+  const selector = data.substring(0, 10)
+
   if (
-    to &&
-    safeAddr &&
-    to.toLowerCase() === safeAddr.toLowerCase() &&
-    value?.toString() === '0' &&
-    data === '0x'
+    to !== undefined &&
+    value !== undefined &&
+    isSafeRejectionCall([{ to, value: BigInt(value), data }], safeAddr ?? '')
   ) {
-    // a Safe{WALLET} "reject" is just an empty, 0-value self-call proposed with the same
-    // nonce as the transaction it is meant to replace, so surface that nonce when it's known
-    // instead of showing a blank/empty call
+    // a Safe{WALLET} "cancel" is just an empty, 0-value call to the zero address or to the
+    // Safe itself, proposed with the same nonce as the transaction it is meant to replace, so
+    // surface that nonce when it's known instead of showing a blank/empty call
     fullVisualization.push(
       ...(nonce !== undefined && nonce !== null
-        ? [getAction('Reject'), getLabel('Tx with nonce'), getLabel(nonce, true)]
-        : [getAction('Reject currently queued transaction')])
+        ? [getAction('Cancel'), getLabel('transaction with'), getLabel(`nonce ${nonce}`, true)]
+        : [getAction('Cancel'), getLabel('currently queued transaction')])
     )
     return {
       visuals: fullVisualization
     }
   }
-
-  const selector = data.substring(0, 10)
 
   if (selector === toFunctionSelector(setupAbi[0])) {
     const { args } = decodeFunctionData({ abi: setupAbi, data })
@@ -374,7 +372,14 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
       // this decoded call is a nested `execTransaction` invocation (e.g. a relayer executing on
       // behalf of the Safe), so `accOp.nonce` does not necessarily reflect this inner Safe
       // transaction's nonce and is intentionally not passed here
-      const safeSpecificHumanization = getSafeHumanization(accOp.accountAddr, to, bigintValue, data)
+      const safeSpecificHumanization = getSafeHumanization(
+        accOp.accountAddr,
+        to,
+        bigintValue,
+        data,
+        0,
+        accOp.nonce
+      )
       const fullVisualization = [
         getAction('Execute a Safe{WALLET} transaction'),
         getLabel('from'),
@@ -403,8 +408,6 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
     }
   }
   let newCall = call
-  // for a queued Safe{WALLET} transaction (built in `toCallsUserRequest`), `accOp.nonce` is
-  // set from the Safe transaction's own nonce, so it can be safely surfaced in a reject label
   const safeSpecificHumanization = getSafeHumanization(
     accOp.accountAddr,
     call.to,

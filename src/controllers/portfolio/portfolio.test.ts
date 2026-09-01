@@ -490,6 +490,8 @@ describe('Portfolio Controller ', () => {
       tokens: [makeToken(amount, chainId)],
       feeTokens: [],
       toBeLearned: { erc20s: [], erc721s: {} },
+      fetchedTokenMetadata: [],
+      fetchedCollectionMetadata: [],
       tokenErrors: [],
       collectionErrors: [],
       collections: [],
@@ -1236,6 +1238,8 @@ describe('Portfolio Controller ', () => {
       tokens: [],
       feeTokens: [],
       toBeLearned: { erc20s: [], erc721s: {} },
+      fetchedTokenMetadata: [],
+      fetchedCollectionMetadata: [],
       tokenErrors: [],
       collectionErrors: [],
       collections: [],
@@ -1390,13 +1394,13 @@ describe('Portfolio Controller ', () => {
       }
     })
 
-    test('a slow scheduled update is removed before the await and is not processed twice', async () => {
+    test('a slow scheduled update is flagged as running and is not processed twice', async () => {
       jest.useFakeTimers()
       try {
         const { controller } = await prepareTest({ awaitInitialLoad: false })
 
-        // Make the scheduled update hang so it's still running on the next ticks. The entry is
-        // removed before the await, so it shouldn't be picked up again.
+        // Make the scheduled update hang so it's still running on the next ticks. The entry stays
+        // in the schedule while it runs, but is flagged, so it shouldn't be picked up again.
         let resolveSlowUpdate: () => void = () => {}
         const slowUpdate = new Promise<void>((resolve) => {
           resolveSlowUpdate = () => resolve()
@@ -1421,6 +1425,139 @@ describe('Portfolio Controller ', () => {
         resolveSlowUpdate()
         await jest.advanceTimersByTimeAsync(40 * 1000)
         expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('scheduledUpdateChainIds exposes the chain while the update is pending and while it runs', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+
+        let resolveSlowUpdate: () => void = () => {}
+        const slowUpdate = new Promise<void>((resolve) => {
+          resolveSlowUpdate = () => resolve()
+        })
+        jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockImplementation((...args: any[]) =>
+            args[3]?.bypassServerSideCache ? (slowUpdate as any) : Promise.resolve(undefined)
+          )
+
+        expect(controller.scheduledUpdateChainIds).toEqual({})
+
+        // Pending: visible right away, so the UI can tell the user an update is coming.
+        schedule(controller, account.addr, 1n)
+        expect(controller.scheduledUpdateChainIds).toEqual({ [account.addr]: [1n] })
+
+        // Running: still visible, because the positions haven't been refreshed yet.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(controller.scheduledUpdateChainIds).toEqual({ [account.addr]: [1n] })
+
+        // Done: gone, so the UI stops telling the user anything.
+        resolveSlowUpdate()
+        await jest.advanceTimersByTimeAsync(0)
+        expect(controller.scheduledUpdateChainIds).toEqual({})
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('a confirmation during a running update schedules a separate update instead of debouncing it', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+
+        let resolveSlowUpdate: () => void = () => {}
+        const slowUpdate = new Promise<void>((resolve) => {
+          resolveSlowUpdate = () => resolve()
+        })
+        const updateSpy = jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockImplementation((...args: any[]) =>
+            args[3]?.bypassServerSideCache ? (slowUpdate as any) : Promise.resolve(undefined)
+          )
+
+        schedule(controller, account.addr, 1n)
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+
+        // A second tx confirms while the first update is still fetching. Debouncing onto the
+        // running entry would lose it, since that request can't see the new position changes.
+        schedule(controller, account.addr, 1n)
+        expect(controller.scheduledUpdateChainIds).toEqual({ [account.addr]: [1n, 1n] })
+
+        // The running one finishes, but the newly scheduled one keeps the indicator up.
+        resolveSlowUpdate()
+        await jest.advanceTimersByTimeAsync(0)
+        expect(controller.scheduledUpdateChainIds).toEqual({ [account.addr]: [1n] })
+
+        // And it fires 60s after the second confirmation.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(2)
+        expect(controller.scheduledUpdateChainIds).toEqual({})
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('emits an update when a scheduled update is added, starts running and completes', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+
+        let resolveSlowUpdate: () => void = () => {}
+        const slowUpdate = new Promise<void>((resolve) => {
+          resolveSlowUpdate = () => resolve()
+        })
+        jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockImplementation((...args: any[]) =>
+            args[3]?.bypassServerSideCache ? (slowUpdate as any) : Promise.resolve(undefined)
+          )
+
+        // Without these emits the UI never re-renders and the indicator never appears or hides.
+        const onUpdate = jest.fn()
+        controller.onUpdate(onUpdate)
+
+        schedule(controller, account.addr, 1n)
+        expect(onUpdate).toHaveBeenCalledTimes(1)
+
+        // Debouncing the pending entry changes its scheduledAt, which the UI doesn't read, but the
+        // emit keeps the state the UI holds in sync with the controller.
+        schedule(controller, account.addr, 1n)
+        expect(onUpdate).toHaveBeenCalledTimes(2)
+
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(onUpdate).toHaveBeenCalledTimes(3)
+
+        resolveSlowUpdate()
+        await jest.advanceTimersByTimeAsync(0)
+        expect(onUpdate).toHaveBeenCalledTimes(4)
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
+    test('a scheduled update is forgotten even when the portfolio request fails', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+
+        jest
+          .spyOn(controller, 'updateSelectedAccount')
+          .mockImplementation((...args: any[]) =>
+            args[3]?.bypassServerSideCache
+              ? Promise.reject(new Error('discovery api is down'))
+              : Promise.resolve(undefined)
+          )
+
+        schedule(controller, account.addr, 1n)
+
+        // A failed update must not leave the indicator stuck on forever.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(controller.scheduledUpdateChainIds).toEqual({})
       } finally {
         jest.useRealTimers()
       }
@@ -1451,6 +1588,29 @@ describe('Portfolio Controller ', () => {
       const forceFlags = getForceFlags(discoverySpy)
       expect(forceFlags.length).toBeGreaterThan(0)
       forceFlags.forEach((flag: boolean) => expect(flag).toBe(false))
+    })
+
+    test('a manual update does not clear a pending scheduled update', async () => {
+      jest.useFakeTimers()
+      try {
+        const { controller } = await prepareTest({ awaitInitialLoad: false })
+        mockFetchLayer(controller)
+        const updateSpy = jest.spyOn(controller, 'updateSelectedAccount')
+
+        schedule(controller, account.addr, 1n)
+
+        // The user refreshes the portfolio before the scheduled update is due.
+        await controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
+          isManualUpdate: true
+        })
+        expect(controller.scheduledUpdateChainIds).toEqual({ [account.addr]: [1n] })
+
+        // The scheduled cache-busting update still fires afterwards.
+        await jest.advanceTimersByTimeAsync(60 * 1000)
+        expect(getBypassUpdates(updateSpy)).toHaveLength(1)
+      } finally {
+        jest.useRealTimers()
+      }
     })
 
     test('without a pending scheduled update, a nonce change does force the server-side bypass (control)', async () => {
