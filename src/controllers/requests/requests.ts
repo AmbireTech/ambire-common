@@ -1172,7 +1172,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       calls = calls.map((c) => ({
         ...c,
-        data: c.data || '0x',
+        data: c.data?.toLowerCase() || '0x',
         value: c.value ? getBigInt(c.value) : 0n,
         dapp: dapp ?? undefined,
         dappPromiseId: dappPromise.id
