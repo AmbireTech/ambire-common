@@ -4,13 +4,22 @@ import { describe, expect, it, jest } from '@jest/globals'
 
 import { SwapAndBridgeRoute } from '../../interfaces/swapAndBridge'
 import { CowSwapAPI } from './api'
-import { COWSWAP_SETTLEMENT_ADDRESS, COWSWAP_VAULT_RELAYER_ADDRESS } from './constants'
+import {
+  COWSWAP_ETH_FLOW_ADDRESS,
+  COWSWAP_SETTLEMENT_ADDRESS,
+  COWSWAP_VAULT_RELAYER_ADDRESS
+} from './constants'
 
 const settlementInterface = new Interface(['function setPreSignature(bytes orderUid, bool signed)'])
+const ethFlowInterface = new Interface([
+  'function createOrder((address buyToken,address receiver,uint256 sellAmount,uint256 buyAmount,bytes32 appData,uint256 feeAmount,uint32 validTo,bool partiallyFillable,int64 quoteId) order) payable returns (bytes32 orderHash)'
+])
 
 const userAddress = '0x0000000000000000000000000000000000000001'
 const tokenIn = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
 const tokenOut = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
+const baseUsdc = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
+const baseWeth = '0x4200000000000000000000000000000000000006'
 
 const makeResponse = (body: any, ok = true, status = ok ? 200 : 400) => ({
   ok,
@@ -54,17 +63,21 @@ const makeQuoteParams = (overrides: Record<string, unknown> = {}) => ({
 const makeQuoteFetch = () =>
   jest.fn(async (_url: any, init: any) => {
     const request = JSON.parse(init.body)
+    if (init.method === 'PUT') return makeResponse({ fullAppData: request.fullAppData })
+
+    const totalSellAmount = BigInt(request.sellAmountBeforeFee)
+    const networkFee = totalSellAmount / 100n
     return makeResponse({
       quote: {
         sellToken: request.sellToken,
         buyToken: request.buyToken,
         receiver: request.receiver,
-        sellAmount: '990000',
+        sellAmount: (totalSellAmount - networkFee).toString(),
         buyAmount: '500000000000000',
         validTo: Math.floor(Date.now() / 1000) + 1800,
         appData: request.appData,
         appDataHash: request.appDataHash,
-        feeAmount: '10000',
+        feeAmount: networkFee.toString(),
         gasAmount: '150000',
         gasPrice: '1000000000',
         sellTokenPrice: '1',
@@ -72,7 +85,7 @@ const makeQuoteFetch = () =>
         partiallyFillable: false,
         sellTokenBalance: 'erc20',
         buyTokenBalance: 'erc20',
-        signingScheme: 'presign'
+        signingScheme: request.signingScheme
       },
       from: request.from,
       expiration: new Date(Date.now() + 60000).toISOString(),
@@ -85,6 +98,39 @@ const makeQuoteFetch = () =>
 const makeRouteFixture = async () => {
   const api = new CowSwapAPI({ fetch: makeQuoteFetch() as any })
   return (await api.quote(makeQuoteParams())).routes[0]!
+}
+
+const makeEthFlowQuoteParams = () =>
+  makeQuoteParams({
+    fromAsset: {
+      address: ZeroAddress,
+      amount: 1000000000000000000n,
+      chainId: 8453n,
+      decimals: 18,
+      flags: { canTopUpGasTank: false, isFeeToken: false, onGasTank: false, rewardsType: null },
+      marketDataIn: [],
+      name: 'Ether',
+      priceIn: [{ baseCurrency: 'usd', price: 2000 }],
+      symbol: 'ETH'
+    },
+    fromChainId: 8453,
+    fromTokenAddress: ZeroAddress,
+    toAsset: {
+      address: baseUsdc,
+      chainId: 8453,
+      decimals: 6,
+      name: 'USD Coin',
+      priceUSD: '1',
+      symbol: 'USDC'
+    },
+    toChainId: 8453,
+    toTokenAddress: baseUsdc,
+    fromAmount: 1000000000000000000n
+  })
+
+const makeEthFlowRouteFixture = async () => {
+  const api = new CowSwapAPI({ fetch: makeQuoteFetch() as any })
+  return (await api.quote(makeEthFlowQuoteParams())).routes[0]!
 }
 
 describe('CowSwapAPI', () => {
@@ -181,14 +227,100 @@ describe('CowSwapAPI', () => {
     expect(result.routes[0]!.toAmount).toBe('500000000000000')
   })
 
-  it('rejects native-token sells because they require a different on-chain flow', async () => {
-    const fetch = jest.fn()
+  it('requests an on-chain EIP-1271 quote for a native ETH sell on Base', async () => {
+    const fetch = makeQuoteFetch()
     const api = new CowSwapAPI({ fetch: fetch as any })
 
-    await expect(api.quote(makeQuoteParams({ fromTokenAddress: ZeroAddress }))).rejects.toThrow(
-      'cannot sell the network native token'
+    const result = await api.quote(makeEthFlowQuoteParams())
+    const [, init] = fetch.mock.calls[0]!
+    const request = JSON.parse((init as any).body)
+    const route = result.routes[0]!
+
+    expect(request).toMatchObject({
+      sellToken: baseWeth,
+      buyToken: baseUsdc,
+      from: userAddress,
+      receiver: userAddress,
+      signingScheme: 'eip1271',
+      onchainOrder: true,
+      verificationGasLimit: 0,
+      sellAmountBeforeFee: '1000000000000000000'
+    })
+    expect(route.routeId.toLowerCase()).toMatch(
+      new RegExp(`${COWSWAP_ETH_FLOW_ADDRESS.slice(2).toLowerCase()}ffffffff$`)
     )
-    expect(fetch).not.toHaveBeenCalled()
+    expect(route.rawRoute).toMatchObject({
+      isEthFlow: true,
+      order: {
+        sellToken: baseWeth,
+        signingScheme: 'eip1271',
+        feeAmount: '0',
+        sellAmount: '1000000000000000000',
+        quoteId: 7
+      }
+    })
+  })
+
+  it('uploads AppData and builds a payable ETH Flow createOrder transaction', async () => {
+    const fetch = makeQuoteFetch()
+    const api = new CowSwapAPI({ fetch: fetch as any })
+    const quote = await api.quote(makeEthFlowQuoteParams())
+    const route = quote.routes[0]!
+
+    const transaction = await api.startRoute(route)
+    const [ethFlowOrder] = ethFlowInterface.decodeFunctionData('createOrder', transaction.txData)
+    const [uploadUrl, uploadInit] = fetch.mock.calls[1]!
+    const rawRoute = route.rawRoute as any
+
+    expect(uploadUrl).toContain(`/app_data/${rawRoute.order.appDataHash}`)
+    expect(uploadInit).toMatchObject({ method: 'PUT' })
+    expect(JSON.parse((uploadInit as any).body)).toEqual({
+      fullAppData: rawRoute.order.appData
+    })
+    expect(transaction).toMatchObject({
+      activeRouteId: route.routeId,
+      approvalData: null,
+      chainId: 8453,
+      txTarget: COWSWAP_ETH_FLOW_ADDRESS,
+      value: '1000000000000000000'
+    })
+    expect(ethFlowOrder.buyToken).toBe(baseUsdc)
+    expect(ethFlowOrder.receiver).toBe(userAddress)
+    expect(ethFlowOrder.sellAmount).toBe(1000000000000000000n)
+    expect(ethFlowOrder.buyAmount.toString()).toBe(rawRoute.order.buyAmount)
+    expect(ethFlowOrder.appData).toBe(rawRoute.order.appDataHash)
+    expect(ethFlowOrder.feeAmount).toBe(0n)
+    expect(ethFlowOrder.validTo).toBe(BigInt(rawRoute.order.validTo))
+    expect(ethFlowOrder.partiallyFillable).toBe(false)
+    expect(ethFlowOrder.quoteId).toBe(7n)
+  })
+
+  it('waits for the order service to index a newly mined ETH Flow order', async () => {
+    const route = await makeEthFlowRouteFixture()
+    const fetch = jest.fn(async () => makeResponse({}, false, 404))
+    const api = new CowSwapAPI({ fetch: fetch as any })
+
+    await expect(
+      api.getRouteStatus({
+        txHash: '0x1',
+        fromChainId: 8453,
+        toChainId: 8453,
+        routeId: route.routeId,
+        rawRoute: route.rawRoute
+      })
+    ).resolves.toEqual({ status: null })
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a changed ETH Flow quote id before uploading AppData', async () => {
+    const fetch = makeQuoteFetch()
+    const api = new CowSwapAPI({ fetch: fetch as any })
+    const quote = await api.quote(makeEthFlowQuoteParams())
+    const route = quote.routes[0]!
+    ;(route.rawRoute as any).order.quoteId = 8
+
+    await expect(api.startRoute(route)).rejects.toThrow('ETH order details changed')
+    expect(fetch).toHaveBeenCalledTimes(1)
   })
 
   it('rejects quote details that do not match the requested AppData', async () => {
@@ -209,7 +341,8 @@ describe('CowSwapAPI', () => {
           gasPrice: '1',
           sellTokenPrice: '1',
           kind: 'sell',
-          partiallyFillable: false
+          partiallyFillable: false,
+          signingScheme: request.signingScheme
         },
         expiration: new Date(Date.now() + 60000).toISOString(),
         id: 7,

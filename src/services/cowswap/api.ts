@@ -40,6 +40,7 @@ import {
   COWSWAP_APP_CODE,
   COWSWAP_APP_DATA_VERSION,
   COWSWAP_BUY_NATIVE_TOKEN_ADDRESS,
+  COWSWAP_ETH_FLOW_ADDRESS,
   COWSWAP_ORDER_VALIDITY_SECONDS,
   COWSWAP_SETTLEMENT_ADDRESS,
   COWSWAP_SUPPORTED_CHAINS,
@@ -47,8 +48,12 @@ import {
 } from './constants'
 
 const settlementInterface = new Interface(['function setPreSignature(bytes orderUid, bool signed)'])
+const ethFlowInterface = new Interface([
+  'function createOrder((address buyToken,address receiver,uint256 sellAmount,uint256 buyAmount,bytes32 appData,uint256 feeAmount,uint32 validTo,bool partiallyFillable,int64 quoteId) order) payable returns (bytes32 orderHash)'
+])
 
 const AMBIRE_FEE_BPS = Math.round(FEE_PERCENT * 100)
+const MAX_VALID_TO = 2 ** 32 - 1
 
 const orderTypes = {
   Order: [
@@ -85,6 +90,9 @@ type CowSwapErrorResponse = {
 
 const getApiNetwork = (chainId: number) =>
   COWSWAP_SUPPORTED_CHAINS.find((chain) => chain.chainId === chainId)?.apiNetwork
+
+const getWrappedNativeTokenAddress = (chainId: number) =>
+  COWSWAP_SUPPORTED_CHAINS.find((chain) => chain.chainId === chainId)?.wrappedNativeTokenAddress
 
 const normalizeBuyTokenAddress = (address: string) =>
   address.toLowerCase() === ZeroAddress.toLowerCase()
@@ -141,12 +149,15 @@ const buildAppData = ({
 const computeOrderUid = ({
   chainId,
   order,
-  owner
+  owner,
+  isEthFlow
 }: {
   chainId: number
   order: CowSwapOrderCreation
   owner: string
+  isEthFlow: boolean
 }) => {
+  const validTo = isEthFlow ? MAX_VALID_TO : order.validTo
   const orderDigest = TypedDataEncoder.hash(
     {
       name: 'Gnosis Protocol',
@@ -161,7 +172,7 @@ const computeOrderUid = ({
       receiver: order.receiver,
       sellAmount: order.sellAmount,
       buyAmount: order.buyAmount,
-      validTo: order.validTo,
+      validTo,
       appData: order.appDataHash,
       feeAmount: order.feeAmount,
       kind: order.kind,
@@ -171,7 +182,10 @@ const computeOrderUid = ({
     }
   )
 
-  return solidityPacked(['bytes32', 'address', 'uint32'], [orderDigest, owner, order.validTo])
+  return solidityPacked(
+    ['bytes32', 'address', 'uint32'],
+    [orderDigest, isEthFlow ? COWSWAP_ETH_FLOW_ADDRESS : owner, validTo]
+  )
 }
 
 const getOutputValueInUsd = ({
@@ -344,13 +358,15 @@ export class CowSwapAPI implements SwapProvider {
         'Quote requested, but token details are missing. Please select the tokens again.'
       )
     }
-    if (fromTokenAddress.toLowerCase() === ZeroAddress.toLowerCase()) {
+    const isEthFlow = fromTokenAddress.toLowerCase() === ZeroAddress.toLowerCase()
+    const wrappedNativeTokenAddress = getWrappedNativeTokenAddress(fromChainId)
+    if (isEthFlow && !wrappedNativeTokenAddress) {
       throw new SwapAndBridgeProviderApiError(
-        'CoW Swap cannot sell the network native token in this transaction flow. Please use its wrapped version.'
+        'CoW Swap cannot sell the network native token on this network.'
       )
     }
 
-    const sellToken = getAddress(fromTokenAddress)
+    const sellToken = getAddress(isEthFlow ? wrappedNativeTokenAddress! : fromTokenAddress)
     const buyToken = normalizeBuyTokenAddress(toTokenAddress)
     const owner = getAddress(userAddress)
     const slippageBps = Math.round(Number(getSlippage(fromAsset, fromAmount, '0.5', 0.5)) * 100)
@@ -367,7 +383,13 @@ export class CowSwapAPI implements SwapProvider {
       appData: fullAppData,
       appDataHash,
       priceQuality: 'optimal',
-      signingScheme: 'presign'
+      signingScheme: isEthFlow ? 'eip1271' : 'presign',
+      ...(isEthFlow
+        ? {
+            onchainOrder: true,
+            verificationGasLimit: 0
+          }
+        : {})
     }
     const response = await this.#fetchWithTimeout(this.#getApiUrl(fromChainId, '/quote'), {
       method: 'POST',
@@ -404,10 +426,12 @@ export class CowSwapAPI implements SwapProvider {
       quotedOrder.receiver.toLowerCase() !== owner.toLowerCase() ||
       quotedOrder.kind !== 'sell' ||
       quotedOrder.partiallyFillable !== false ||
+      quotedOrder.signingScheme !== (isEthFlow ? 'eip1271' : 'presign') ||
       returnedAppDataHash?.toLowerCase() !== appDataHash.toLowerCase() ||
       !Number.isInteger(quotedOrder.validTo) ||
       quotedOrder.validTo <= Math.floor(Date.now() / 1000) ||
-      !Number.isInteger(quoteResponse.id)
+      !Number.isSafeInteger(quoteResponse.id) ||
+      Number(quoteResponse.id) < 0
     ) {
       throw new SwapAndBridgeProviderApiError(
         'Unable to fetch the quote. CoW Swap returned order details that do not match your request.'
@@ -469,12 +493,12 @@ export class CowSwapAPI implements SwapProvider {
       partiallyFillable: false,
       sellTokenBalance: 'erc20',
       buyTokenBalance: 'erc20',
-      signingScheme: 'presign',
+      signingScheme: isEthFlow ? 'eip1271' : 'presign',
       signature: '0x',
       from: owner,
       quoteId: quoteResponse.id ?? null
     }
-    const orderUid = computeOrderUid({ chainId: fromChainId, order, owner })
+    const orderUid = computeOrderUid({ chainId: fromChainId, order, owner, isEthFlow })
     const normalizedFromAsset = convertPortfolioTokenToSwapAndBridgeToToken(fromAsset, fromChainId)
     const protocol = { name: 'CoW Swap', displayName: 'CoW Swap', icon: '' }
     const serviceTime = 30
@@ -498,7 +522,7 @@ export class CowSwapAPI implements SwapProvider {
       minAmountOut: minAmountOut.toString()
     }
     const step: SwapAndBridgeStep = { ...userTx, type: 'swap' }
-    const rawRoute: CowSwapRawRoute = { quoteResponse, order }
+    const rawRoute: CowSwapRawRoute = { quoteResponse, order, isEthFlow }
     const route: SwapAndBridgeRoute = {
       providerId: this.id,
       routeId: orderUid,
@@ -560,7 +584,8 @@ export class CowSwapAPI implements SwapProvider {
       orderUid = computeOrderUid({
         chainId: route.fromChainId,
         order: rawRoute.order,
-        owner: route.userAddress
+        owner: route.userAddress,
+        isEthFlow: rawRoute.isEthFlow
       })
     } catch {
       throw new SwapAndBridgeProviderApiError(
@@ -570,6 +595,72 @@ export class CowSwapAPI implements SwapProvider {
     if (orderUid !== route.routeId) {
       throw new SwapAndBridgeProviderApiError(
         'Unable to start the CoW Swap route because the order details changed.'
+      )
+    }
+
+    if (rawRoute.isEthFlow) {
+      const wrappedNativeTokenAddress = getWrappedNativeTokenAddress(route.fromChainId)
+      const quoteId = rawRoute.order.quoteId
+      const quotedOrder = rawRoute.quoteResponse.quote
+      if (
+        !wrappedNativeTokenAddress ||
+        rawRoute.order.signingScheme !== 'eip1271' ||
+        quotedOrder.signingScheme !== 'eip1271' ||
+        rawRoute.order.sellToken.toLowerCase() !== wrappedNativeTokenAddress.toLowerCase() ||
+        rawRoute.order.receiver.toLowerCase() === ZeroAddress.toLowerCase() ||
+        rawRoute.order.validTo !== quotedOrder.validTo ||
+        quoteId !== rawRoute.quoteResponse.id ||
+        !Number.isSafeInteger(quoteId) ||
+        Number(quoteId) < 0 ||
+        keccak256(toUtf8Bytes(rawRoute.order.appData)).toLowerCase() !==
+          rawRoute.order.appDataHash.toLowerCase()
+      ) {
+        throw new SwapAndBridgeProviderApiError(
+          'Unable to start the CoW Swap route because the ETH order details changed.'
+        )
+      }
+
+      await this.#uploadAppData(
+        route.fromChainId,
+        rawRoute.order.appDataHash,
+        rawRoute.order.appData
+      )
+
+      let value: string
+      try {
+        value = (BigInt(rawRoute.order.sellAmount) + BigInt(rawRoute.order.feeAmount)).toString()
+      } catch {
+        throw new SwapAndBridgeProviderApiError(
+          'Unable to start the CoW Swap route because the ETH amount is invalid.'
+        )
+      }
+
+      return {
+        activeRouteId: route.routeId,
+        approvalData: null,
+        chainId: route.fromChainId,
+        txTarget: COWSWAP_ETH_FLOW_ADDRESS,
+        userTxIndex: 0,
+        value,
+        txData: ethFlowInterface.encodeFunctionData('createOrder', [
+          {
+            buyToken: rawRoute.order.buyToken,
+            receiver: rawRoute.order.receiver,
+            sellAmount: rawRoute.order.sellAmount,
+            buyAmount: rawRoute.order.buyAmount,
+            appData: rawRoute.order.appDataHash,
+            feeAmount: rawRoute.order.feeAmount,
+            validTo: rawRoute.order.validTo,
+            partiallyFillable: rawRoute.order.partiallyFillable,
+            quoteId
+          }
+        ])
+      }
+    }
+
+    if (rawRoute.order.signingScheme !== 'presign') {
+      throw new SwapAndBridgeProviderApiError(
+        'Unable to start the CoW Swap route because the order signing method changed.'
       )
     }
 
@@ -601,13 +692,27 @@ export class CowSwapAPI implements SwapProvider {
     )
   }
 
+  async #uploadAppData(chainId: number, appDataHash: string, fullAppData: string) {
+    const response = await this.#fetchWithTimeout(
+      this.#getApiUrl(chainId, `/app_data/${appDataHash}`),
+      {
+        method: 'PUT',
+        headers: this.#headers,
+        body: JSON.stringify({ fullAppData })
+      }
+    )
+
+    await this.#parseResponse(response, 'Unable to prepare the CoW Swap order.')
+  }
+
   async #submitOrder(chainId: number, rawRoute: CowSwapRawRoute, orderUid: string) {
     let computedOrderUid: string
     try {
       computedOrderUid = computeOrderUid({
         chainId,
         order: rawRoute.order,
-        owner: rawRoute.order.from
+        owner: rawRoute.order.from,
+        isEthFlow: false
       })
     } catch {
       throw new SwapAndBridgeProviderApiError(
@@ -693,6 +798,7 @@ export class CowSwapAPI implements SwapProvider {
 
     let order = await this.#getOrder(fromChainId, routeId)
     if (!order) {
+      if (rawRoute.isEthFlow) return { status: null }
       const wasSubmitted = await this.#submitOrder(fromChainId, rawRoute, routeId)
       if (!wasSubmitted) return { status: null }
       order = await this.#getOrder(fromChainId, routeId)

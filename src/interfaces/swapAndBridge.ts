@@ -206,7 +206,7 @@ export interface CowSwapQuoteResponse {
     gasAmount: string
     gasPrice: string
     sellTokenPrice: string
-    signingScheme?: 'presign'
+    signingScheme?: 'presign' | 'eip1271'
   }
   from?: string
   expiration: string
@@ -219,7 +219,7 @@ export interface CowSwapOrderCreation extends CowSwapOrderParameters {
   appDataHash: string
   sellTokenBalance: 'erc20'
   buyTokenBalance: 'erc20'
-  signingScheme: 'presign'
+  signingScheme: 'presign' | 'eip1271'
   signature: '0x'
   from: string
   quoteId: number | null
@@ -228,6 +228,7 @@ export interface CowSwapOrderCreation extends CowSwapOrderParameters {
 export interface CowSwapRawRoute {
   quoteResponse: CowSwapQuoteResponse
   order: CowSwapOrderCreation
+  isEthFlow: boolean
 }
 
 export interface SwapAndBridgeRoute {
