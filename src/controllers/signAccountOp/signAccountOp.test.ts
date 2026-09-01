@@ -50,7 +50,6 @@ import * as broadcastLib from '../../libs/broadcast/broadcast'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
-import { clearErc7730RegistryCache } from '../../libs/humanizer'
 import { HumanizerWarning } from '../../libs/humanizer/interfaces'
 import { UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -89,6 +88,7 @@ import { NetworksController } from '../networks/networks'
 import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
+import { Erc7730Controller } from '../erc7730/erc7730'
 import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
@@ -722,9 +722,17 @@ const init = async (
     fetchAndUpdateSpy.mockRestore()
     dapps = realDappsController
   }
+  // A real controller over the test's storage, not a stub - the ERC-7730 tests assert on
+  // descriptor caching, which is exactly what this controller owns.
+  const erc7730 = new Erc7730Controller({
+    storage: storageCtrl,
+    callRelayer,
+    sendUiMessage: () => {}
+  })
   const controller = new SignAccountOpTesterController({
     type: options?.type,
     callRelayer: options?.callRelayer as BindedRelayerCall,
+    erc7730,
     accounts: accountsCtrl,
     networks: networksCtrl,
     keystore,
@@ -2992,8 +3000,6 @@ test('Signing [V1 with EOA payment]: working case', async () => {
 
 describe('ERC-7730 humanization', () => {
   test('shows loading, uses ERC-7730 data, caches it and fetches a shared batch descriptor once', async () => {
-    clearErc7730RegistryCache()
-
     const tokenAddress = '0x1111111111111111111111111111111111111111'
     const spender = '0x2222222222222222222222222222222222222222'
     const registryPath = 'registry/test/approve.json'
@@ -3073,8 +3079,8 @@ describe('ERC-7730 humanization', () => {
       controller.humanization.forEach((humanizedCall, index) => {
         expect(humanizedCall.fullVisualization?.[0]).toMatchObject({
           type: 'erc7730',
-          title: 'Approve with ERC-7730',
-          rows: [
+          intent: [expect.objectContaining({ content: 'Approve with ERC-7730' })],
+          fields: [
             {
               label: 'Spender',
               value: [{ type: 'address', address: spender }]
@@ -3099,7 +3105,7 @@ describe('ERC-7730 humanization', () => {
       expect(callRelayer).not.toHaveBeenCalled()
       expect(controller.humanization[0]?.fullVisualization?.[0]).toMatchObject({
         type: 'erc7730',
-        title: 'Approve with ERC-7730'
+        intent: [expect.objectContaining({ content: 'Approve with ERC-7730' })]
       })
     } finally {
       controller.destroy()
@@ -3107,8 +3113,6 @@ describe('ERC-7730 humanization', () => {
   })
 
   test('falls back to the old humanizer when no ERC-7730 descriptor is available', async () => {
-    clearErc7730RegistryCache()
-
     const callRelayer = jest.fn(async (path: string, method?: string) => {
       if (path === '/v2/erc7730/account-op') {
         expect(method).toBe('GET')

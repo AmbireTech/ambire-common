@@ -1,6 +1,8 @@
 import MetaMorphoModule from '@/libs/humanizer/modules/MetaMorpho'
 
-import { HumanizerCallModule } from './interfaces'
+import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
+import { AccountOp } from '../accountOp/accountOp'
+import { HumanizerCallModule, HumanizerMeta, IrCall } from './interfaces'
 import OneInchModule from './modules/1Inch'
 import { aaveHumanizer } from './modules/Aave'
 import AcrossModule from './modules/Across'
@@ -38,9 +40,9 @@ import { uniswapHumanizer } from './modules/Uniswap'
 import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
 
-// These modules describe a single call and are safe to reuse for calldata nested in a container.
-// Container expansion and final fallback/post-processing remain exclusive to the top-level pipeline.
-export const singleCallHumanizerModules: HumanizerCallModule[] = [
+// The modules that describe a single call. Kept separate only to compose `humanizerCallModules`
+// below - every caller runs the whole pipeline through `humanizeCallWithModules`.
+const singleCallHumanizerModules: HumanizerCallModule[] = [
   genericErc721Humanizer,
   genericErc20Humanizer,
   daiPermitModule,
@@ -86,3 +88,25 @@ export const humanizerCallModules: HumanizerCallModule[] = [
   fallbackHumanizer,
   postProcessing
 ]
+
+/**
+ * Describes one call with the humanizer modules - the humanization every call gets when no ERC-7730
+ * descriptor covers it.
+ *
+ * The modules run in order, each seeing what the previous one produced, so the least generic module
+ * that matches has the final say. A module that throws is skipped and the call keeps the description
+ * it already had, because one broken decoder must not lose the whole call.
+ *
+ * This is the single entry point for it: a nested call decoded inside an ERC-7730 descriptor is
+ * described by exactly the same modules, in the same order, as a top-level one.
+ */
+export const humanizeCallWithModules = (accountOp: AccountOp, call: IrCall): IrCall =>
+  humanizerCallModules.reduce<IrCall>((currentCall, humanizeWithModule) => {
+    try {
+      return humanizeWithModule(accountOp, currentCall, humanizerInfo as HumanizerMeta)
+    } catch (error) {
+      console.error(error)
+      // No action is needed here; we only update `currentCall` if the module successfully resolves it.
+      return currentCall
+    }
+  }, call)

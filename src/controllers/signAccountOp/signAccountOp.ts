@@ -41,6 +41,7 @@ import { Account, AccountOnchainState, IAccountsController } from '../../interfa
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
+import { IErc7730Controller } from '../../interfaces/erc7730'
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
@@ -96,7 +97,8 @@ import {
   FullEstimationSummary
 } from '../../libs/estimate/interfaces'
 import { calculateFeeAmount } from '../../libs/fees/fees'
-import { fetchErc7730DescriptorsForAccountOp, humanizeAccountOp } from '../../libs/humanizer'
+import { humanizeAccountOp } from '../../libs/humanizer'
+import { Erc7730CallDescriptors } from '../../libs/humanizer/erc7730/types'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import {
   flattenHumanizerVisualizations,
@@ -213,6 +215,8 @@ export class SignAccountOpController
   #type: SignAccountOpType
 
   #callRelayer: BindedRelayerCall
+
+  #erc7730: IErc7730Controller
 
   #accounts: IAccountsController
 
@@ -426,6 +430,7 @@ export class SignAccountOpController
     eventEmitterRegistry,
     type,
     callRelayer,
+    erc7730,
     accounts,
     networks,
     keystore,
@@ -449,6 +454,7 @@ export class SignAccountOpController
     eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
     callRelayer: BindedRelayerCall
+    erc7730: IErc7730Controller
     accounts: IAccountsController
     networks: INetworksController
     keystore: IKeystoreController
@@ -472,6 +478,7 @@ export class SignAccountOpController
     super(eventEmitterRegistry, false)
     this.#type = type || 'default'
     this.#callRelayer = callRelayer
+    this.#erc7730 = erc7730
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
@@ -1020,7 +1027,7 @@ export class SignAccountOpController
 
   #setErc7730Humanization(
     humanizationId: number,
-    erc7730Descriptors: Awaited<ReturnType<typeof fetchErc7730DescriptorsForAccountOp>>
+    erc7730Descriptors: Erc7730CallDescriptors
   ) {
     if (
       !this.isCurrentHumanization(humanizationId) ||
@@ -1052,10 +1059,7 @@ export class SignAccountOpController
     await this.applyDescriptorFirstHumanization({
       humanizationId,
       fetchDescriptor: () =>
-        fetchErc7730DescriptorsForAccountOp(this.accountOp, {
-          callRelayer: this.#callRelayer,
-          provider: this.provider
-        }),
+        this.#erc7730.getDescriptorsForAccountOp(this.accountOp),
       applyDescriptorHumanization: (erc7730Descriptors, currentHumanizationId) =>
         this.#setErc7730Humanization(currentHumanizationId, erc7730Descriptors),
       applyFallbackHumanization: (currentHumanizationId) =>

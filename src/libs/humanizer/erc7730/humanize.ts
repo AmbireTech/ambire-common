@@ -9,26 +9,21 @@ import {
   ZeroAddress
 } from 'ethers'
 
-import { humanizerCallModules } from '../'
-import humanizerInfo from '../../../consts/humanizer/humanizerInfo.json'
+import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
-import { singleCallHumanizerModules } from '../callModules'
+import { humanizeCallWithModules } from '../callModules'
 import {
-  HumanizerCallModule,
   HumanizerErc7730Row,
   HumanizerErc7730Visualization,
-  HumanizerMeta,
   HumanizerVisualization,
   HumanizerWarning,
   IrCall,
   IrMessage
 } from '../interfaces'
 import { getSetAllowanceResetText } from '../modules/Allowance'
-import { decodeGeneralAdapterCall } from '../modules/Bundler3/generalAdapter'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
-import { genericErc20Humanizer } from '../modules/Tokens'
 import {
   dedupeWarnings,
   eToNative,
@@ -36,8 +31,9 @@ import {
   getAction,
   getAddressVisualization,
   getChain,
+  getErc7730RowLabel,
+  getErc7730RowValues,
   getErc7730Visualization,
-  getKnownFunctionName as getKnownFunctionNameFromSelector,
   getText,
   getToken,
   getWarning,
@@ -54,7 +50,12 @@ import {
   Erc7730TypedDataTypes,
   Erc7730VisibleRule
 } from './types'
-import { getSafeTxCallsFromMessage, isPlainObject, parseIntegerLiteral } from './utils'
+import {
+  getRegistryKey,
+  getSafeTxCallsFromMessage,
+  isPlainObject,
+  parseIntegerLiteral
+} from './utils'
 
 type DescriptorFormatMatch = {
   formatKey: string
@@ -74,6 +75,17 @@ type FormatContext = {
    * context is threaded down unchanged.
    */
   collectedWarnings: HumanizerWarning[]
+  /**
+   * The descriptor of every call embedded through a `format: 'calldata'` field, keyed by
+   * `eip155:{chainId}:{address}`. Threaded down unchanged, so a call embedded at any depth is
+   * described by its own contract's descriptor.
+   */
+  nestedCallDescriptors?: Record<string, Erc7730ResolvedDescriptor>
+  /**
+   * Set only when the caller is looking for the embedded calls rather than for their formatting.
+   * Every embedded call found is pushed here, so the registry can ask for a descriptor for it.
+   */
+  collectedNestedCalls?: Call[]
 }
 
 type VisibilityResult = {
@@ -649,14 +661,17 @@ const getFieldValue = (field: Erc7730Field, context: FormatContext, base: unknow
 const getArrayValueAt = (value: unknown, index: number): unknown =>
   Array.isArray(value) ? value[index] : value
 
-const getMorphoGeneralAdapterCalldataValue = (
+/**
+ * A Morpho general adapter carries the action it performs in its own calldata and has no ERC-7730
+ * descriptor of its own, so nothing above this can describe it. Tried only after the embedded call
+ * failed to find a descriptor, so a descriptor always wins over this.
+ */
+const getGeneralAdapterCalldataValue = (
   context: FormatContext,
   calldata: unknown,
   callee: unknown,
   amount: unknown
 ): HumanizerVisualization[] | null => {
-  if (!context.descriptorPath?.includes('registry/morpho/calldata-MorphoBundlerV3.json'))
-    return null
   if (typeof calldata !== 'string' || !calldata.startsWith('0x')) return null
   if (typeof callee !== 'string' || !isAddress(callee)) return null
 
@@ -694,15 +709,33 @@ const getNestedErc7730CalldataValue = (
   const accountAddr = resolvePath('#.@.accountAddr', context, context.root)
   if (typeof accountAddr !== 'string' || !isAddress(accountAddr)) return null
 
+  const nestedCall = {
+    to: callee,
+    data: calldata,
+    value: toBigIntOrNull(amount) || 0n
+  }
+  context.collectedNestedCalls?.push(nestedCall)
+
+  // The descriptor of the contract the embedded call actually goes to, fetched for it by the
+  // registry. The descriptor of the call that carries it stands in only when both go to the same
+  // contract, which is the one case where it describes the embedded call too. For any other
+  // contract the embedded call is left to the plain humanizer modules further down, rather than
+  // described by a format of an unrelated contract that happens to share a selector.
+  const parentCallee = resolvePath('#.@.to', context, context.root)
+  const isSameContract =
+    typeof parentCallee === 'string' && parentCallee.toLowerCase() === callee.toLowerCase()
+  const nestedDescriptor =
+    context.nestedCallDescriptors?.[getRegistryKey(context.chainId, callee)] ||
+    (isSameContract ? { descriptor: context.descriptor, path: context.descriptorPath } : null)
+  if (!nestedDescriptor) return null
+
   const humanizedCall = humanizeCallWithErc7730(
-    {
-      to: callee,
-      data: calldata,
-      value: toBigIntOrNull(amount) || 0n
-    },
+    nestedCall,
     context.chainId,
     accountAddr,
-    { descriptor: context.descriptor, path: context.descriptorPath }
+    { ...nestedDescriptor, nestedCallDescriptors: context.nestedCallDescriptors },
+    undefined,
+    context.collectedNestedCalls
   )
   const erc7730Visualization = humanizedCall?.fullVisualization?.find(
     (visualization) => visualization.type === 'erc7730'
@@ -738,8 +771,6 @@ const getCalldataRows = (
   const selectorValues = resolveCalldataParam(field, context, base, 'selectorPath', 'selector')
   const amountValues = resolveCalldataParam(field, context, base, 'amountPath', 'amount')
   const accountAddr = resolvePath('#.@.accountAddr', context, context.root)
-  const nestedRowLabel =
-    field.label?.trim().toLowerCase() === 'call' ? '' : (field.label ?? field.path ?? '')
 
   return values.reduce<HumanizerErc7730Row[] | null>((acc, calldata, index) => {
     if (!acc) return null
@@ -748,23 +779,17 @@ const getCalldataRows = (
     const callee = getArrayValueAt(calleeValues, index)
     const selector = getArrayValueAt(selectorValues, index)
     const amount = getArrayValueAt(amountValues, index)
-    const decodedValue = getMorphoGeneralAdapterCalldataValue(context, calldata, callee, amount)
 
-    if (decodedValue) {
-      acc.push({
-        label: field.label || field.path || '',
-        value: decodedValue
-      })
+    const nestedVisualization = getNestedErc7730CalldataValue(context, calldata, callee, amount)
+    if (nestedVisualization) {
+      acc.push({ type: 'call', value: [nestedVisualization] })
 
       return acc
     }
 
-    const nestedVisualization = getNestedErc7730CalldataValue(context, calldata, callee, amount)
-    if (nestedVisualization) {
-      acc.push({
-        label: nestedRowLabel,
-        value: [nestedVisualization]
-      })
+    const generalAdapterValue = getGeneralAdapterCalldataValue(context, calldata, callee, amount)
+    if (generalAdapterValue) {
+      acc.push({ type: 'call', value: generalAdapterValue })
 
       return acc
     }
@@ -776,53 +801,16 @@ const getCalldataRows = (
       typeof accountAddr === 'string' &&
       context.chainId
     ) {
-      const safeFallbackVisualization = getSafeCallFallbackVisualization({
-        to: callee,
-        data: calldata,
-        value: toBigIntOrNull(amount) || 0n
-      })
-
-      if (safeFallbackVisualization) {
-        acc.push({
-          label: nestedRowLabel,
-          value: [safeFallbackVisualization]
-        })
-
-        return acc
-      }
-
-      const moduleFallbackVisualization = getModuleFallbackVisualization(
-        {
-          to: callee,
-          data: calldata,
-          value: toBigIntOrNull(amount) || 0n
-        },
+      const call = { to: callee, data: calldata, value: toBigIntOrNull(amount) || 0n }
+      const moduleFallbackValue = getModuleFallbackValue(
+        call,
         context.chainId,
         accountAddr,
-        singleCallHumanizerModules,
         context.collectedWarnings
       )
 
-      if (moduleFallbackVisualization) {
-        acc.push({
-          label: nestedRowLabel,
-          value: [moduleFallbackVisualization]
-        })
-
-        return acc
-      }
-
-      const knownCallVisualization = getKnownCallVisualization({
-        to: callee,
-        data: calldata,
-        value: toBigIntOrNull(amount) || 0n
-      })
-
-      if (knownCallVisualization) {
-        acc.push({
-          label: nestedRowLabel,
-          value: [knownCallVisualization]
-        })
+      if (moduleFallbackValue) {
+        acc.push({ type: 'call', value: moduleFallbackValue })
 
         return acc
       }
@@ -840,10 +828,7 @@ const getCalldataRows = (
       rowValue.push(getText(valueToText(calldata)))
     }
 
-    acc.push({
-      label: field.label || field.path || '',
-      value: rowValue
-    })
+    acc.push({ type: 'call', value: rowValue })
 
     return acc
   }, [])
@@ -960,10 +945,16 @@ const fieldToRows = (
   if (resolvedField.format === 'calldata')
     return getCalldataRows(resolvedField, value, context, base)
 
+  // Every `formatFieldValue` branch renders a field as exactly one visualization, which is what
+  // makes a non-`calldata` row a single labelled value.
+  const [formattedValue] = formatFieldValue(resolvedField, value, context, base)
+  if (!formattedValue) return null
+
   return [
     {
+      type: 'single-value',
       label: resolvedField.label || resolvedField.path || '',
-      value: formatFieldValue(resolvedField, value, context, base),
+      value: formattedValue,
       path: resolvedField.path ?? ''
     }
   ]
@@ -1028,9 +1019,24 @@ const interpolateIntentParts = (
   // "Stake ", ...), so render them as an `action` part - same styling as the
   // rest of the app's action verbs (e.g. getAction('Swap') in the Uniswap/
   // CowSwap/etc. modules) - instead of plain text.
+  // Literal text is buffered and flushed as one part per contiguous run between
+  // placeholders (so an escaped brace stays part of the text around it), trimmed
+  // so a part's content is the text itself and nothing else: the spacing the
+  // template puts around a placeholder is layout, and the UI renders the parts
+  // with a gap between them. Trimming also keeps a part comparable to a plain
+  // string (e.g. `intent[0].content === 'Send'`), which a trailing space carried
+  // over from the template would otherwise break.
+  let textBuffer = ''
+
   const pushText = (text: string) => {
-    if (!text) return
-    parts.push(parts.length === 0 ? getAction(text) : getText(text))
+    textBuffer += text
+  }
+
+  const flushText = () => {
+    const trimmedText = textBuffer.trim()
+    textBuffer = ''
+    if (!trimmedText) return
+    parts.push(parts.length === 0 ? getAction(trimmedText) : getText(trimmedText))
   }
 
   while (currentIndex < template.length) {
@@ -1094,11 +1100,14 @@ const interpolateIntentParts = (
     ) {
       return null
     }
+    flushText()
     parts.push(...formattedValue)
     usedFieldPaths.add(path)
 
     currentIndex = placeholderEndIndex + 1
   }
+
+  flushText()
 
   return parts.length ? { parts, usedFieldPaths } : null
 }
@@ -1181,7 +1190,9 @@ const hideOneInchMinimumReceiveWithoutToken = (
   return fullVisualization.map((visualization) =>
     visualization.type === 'erc7730'
       ? updateErc7730Rows(visualization, (rows) =>
-          rows.filter((row) => row.label.trim().toLowerCase() !== 'minimum to receive')
+          rows.filter(
+            (row) => getErc7730RowLabel(row).trim().toLowerCase() !== 'minimum to receive'
+          )
         )
       : visualization
   )
@@ -1232,7 +1243,7 @@ const getOneInchFillOrderSwapVisualization = (
   )
   const additionalRows =
     oneInchVisualization?.fields.filter(
-      (row) => !row.value.some((value) => value.type === 'token')
+      (row) => !getErc7730RowValues(row).some((value) => value.type === 'token')
     ) || []
 
   return [
@@ -1240,12 +1251,14 @@ const getOneInchFillOrderSwapVisualization = (
       oneInchVisualization?.intent[0]?.content || 'Fill order',
       [
         {
+          type: 'single-value',
           label: 'Amount to Send',
-          value: [getToken(outgoingToken, outgoingAmount, context.chainId)]
+          value: getToken(outgoingToken, outgoingAmount, context.chainId)
         },
         {
+          type: 'single-value',
           label: 'Minimum to Receive',
-          value: [getToken(incomingToken, incomingAmount, context.chainId)]
+          value: getToken(incomingToken, incomingAmount, context.chainId)
         },
         ...additionalRows
       ],
@@ -1254,216 +1267,47 @@ const getOneInchFillOrderSwapVisualization = (
   ]
 }
 
-const getSafeTxCallFromMessage = (message: Message): Call | null => {
-  if (message.content.kind !== 'typedMessage') return null
-  if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return null
-
-  const { to, value, data, operation } = message.content.message
-  if (toBigIntOrNull(operation ?? 0) !== 0n) return null
-  if (typeof to !== 'string' || !isAddress(to)) return null
-  if (typeof data !== 'string' || !isHexString(data)) return null
-
-  const bigintValue = toBigIntOrNull(value ?? 0)
-  if (bigintValue === null) return null
-
-  return {
-    to,
-    data,
-    value: bigintValue
-  }
-}
-
-const capitalizeLabel = (value: string): string => {
-  if (!value) return value
-
-  return `${value[0]!.toUpperCase()}${value.slice(1)}`
-}
-
-const getRowsFromErc7730CallVisualization = (
-  visualization: HumanizerVisualization & HumanizerErc7730Visualization
-): HumanizerErc7730Row[] | null => {
-  const [firstRow, ...additionalRows] = visualization.fields
-  if (!firstRow) return null
-
-  return [
-    {
-      label: visualization.intent[0]?.content || firstRow.label,
-      value: firstRow.value
-    },
-    ...additionalRows
-  ]
-}
-
-const getRowsFromFlatCallVisualization = (
+// A legacy module describes a call as one flat run of parts, starting with the action verb. That
+// run is what a `call` row renders, kept exactly as the module built it - `break`s included, since
+// they are where the module wanted the line to end.
+const getFlatCallValue = (
   visualizations: HumanizerVisualization[] | undefined
-): HumanizerErc7730Row[] | null => {
-  const firstActionIndex =
-    visualizations?.findIndex((visualization) => visualization.type === 'action') ?? -1
-  if (!visualizations || firstActionIndex < 0) return null
+): HumanizerVisualization[] | null => {
+  if (!visualizations?.some((visualization) => visualization.type === 'action')) return null
 
-  const action = visualizations[firstActionIndex]
-  if (!action || action.type !== 'action' || !action.content) return null
-
-  const rows: HumanizerErc7730Row[] = [{ label: action.content, value: [] }]
-  let currentRow = rows[0]!
-
-  visualizations.slice(firstActionIndex + 1).forEach((visualization) => {
-    if (visualization.type === 'break') return
-
-    if (visualization.type === 'label' && visualization.content) {
-      currentRow = { label: capitalizeLabel(visualization.content), value: [] }
-      rows.push(currentRow)
-      return
-    }
-
-    currentRow.value.push(visualization)
-  })
-
-  const rowsWithValues = rows.filter((row) => row.value.length)
-
-  return rowsWithValues.length ? rowsWithValues : null
+  return visualizations.length ? visualizations : null
 }
 
-const getActionTitleFromFlatCallVisualization = (
-  visualizations: HumanizerVisualization[] | undefined
-): string | null => {
-  const action = visualizations?.find((visualization) => visualization.type === 'action')
-
-  return action?.type === 'action' ? action.content || null : null
-}
-
-const getKnownCallVisualization = (
-  call: Call
-): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
-  const selector = call.data?.slice(0, 10).toLowerCase()
-  const functionName =
-    selector && getKnownFunctionNameFromSelector(humanizerInfo as HumanizerMeta, selector)
-  if (!functionName || !call.to) return null
-
-  const visualization = getErc7730Visualization(functionName, [
-    {
-      label: 'Contract',
-      value: [getAddressVisualization(call.to)]
-    }
-  ])
-
-  return visualization.type === 'erc7730' ? visualization : null
-}
-
-const getSafeCallFallbackVisualization = (
-  call: Call
-): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
-  const safeHumanization = getSafeHumanization(call.to, call.to, call.value, call.data)
-  const action = safeHumanization?.visuals?.find((visualization) => visualization.type === 'action')
-  if (!safeHumanization?.visuals || !action || action.type !== 'action' || !action.content) {
-    return null
-  }
-
-  if (action.content === 'Account setup') {
-    const rows = getRowsFromFlatCallVisualization(safeHumanization.visuals)
-    if (!rows) return null
-
-    const visualization = getErc7730Visualization(action.content, rows)
-
-    return visualization.type === 'erc7730' ? visualization : null
-  }
-
-  const firstActionIndex = safeHumanization.visuals.indexOf(action)
-  const value = safeHumanization.visuals
-    .slice(firstActionIndex + 1)
-    .filter((visualization) => visualization.type !== 'break')
-    .map((visualization) =>
-      visualization.content !== undefined && typeof visualization.content !== 'string'
-        ? { ...visualization, content: String(visualization.content) }
-        : visualization
-    )
-  const rows: HumanizerErc7730Row[] = [
-    {
-      label: action.content,
-      value: value.length || !call.to ? value : [getAddressVisualization(call.to)]
-    }
-  ]
-  if (!rows.length) return null
-
-  const visualization = getErc7730Visualization(action.content, rows)
-
-  return visualization.type === 'erc7730' ? visualization : null
-}
-
-const getModuleFallbackVisualization = (
+// The flat parts a nested call gets when no ERC-7730 descriptor describes it: the legacy humanizer
+// modules run over it and their own wording is handed back untouched, for a `call` row to render.
+const getModuleFallbackValue = (
   call: Call,
   chainId: bigint,
   accountAddr: string,
-  modules?: HumanizerCallModule[],
   collectedWarnings?: HumanizerWarning[]
-): (HumanizerVisualization & HumanizerErc7730Visualization) | null => {
+): HumanizerVisualization[] | null => {
   const accountOp = {
     accountAddr,
     chainId,
     calls: [call]
   } as AccountOp
 
-  let humanizedCall: IrCall | undefined
+  const humanizedCall = humanizeCallWithModules(accountOp, call as IrCall)
 
-  if (modules) {
-    let currentCall: IrCall = call as IrCall
-    modules.forEach((module) => {
-      try {
-        currentCall = module(accountOp, currentCall, humanizerInfo as HumanizerMeta)
-      } catch (error) {
-        console.error(error)
-      }
-    })
-    humanizedCall = currentCall
-  } else {
-    // TODO: temporary fix to avoid conflicts in all humanizer modules. This can be refactored
-    // after main and v2 are synced with PR #2551
-    const localFallbackModules: HumanizerCallModule[] = humanizerCallModules
-    localFallbackModules.some((module) => {
-      try {
-        const result = module(accountOp, call as IrCall)
-        if (!result?.fullVisualization?.length) return false
-
-        humanizedCall = result
-        return true
-      } catch (error) {
-        console.error(error)
-        return false
-      }
-    })
-
-    if (!humanizedCall?.fullVisualization?.length) {
-      humanizedCall = genericErc20Humanizer({ accountAddr }, call as IrCall)
-    }
-  }
-
-  const rows = getRowsFromFlatCallVisualization(humanizedCall?.fullVisualization)
-  if (!rows) return null
+  const value = getFlatCallValue(humanizedCall?.fullVisualization)
+  if (!value) return null
 
   const resetText = getSetAllowanceResetText(call as IrCall)
-  const rowsWithReset = resetText
-    ? rows.map((row) =>
-        row.value.some((value) => value.type === 'token')
-          ? {
-              ...row,
-              value: [...row.value, getText(resetText, true)]
-            }
-          : row
-      )
-    : rows
-
-  const visualization = getErc7730Visualization(
-    getActionTitleFromFlatCallVisualization(humanizedCall?.fullVisualization) ||
-      rowsWithReset[0]!.label,
-    rowsWithReset
-  )
-  if (visualization.type !== 'erc7730') return null
+  const valueWithReset =
+    resetText && value.some((item) => item.type === 'token')
+      ? [...value, getText(resetText, true)]
+      : value
 
   // The modules above already found everything worth warning about in this nested call, but only
   // its visualization becomes a row. Hand the warnings to the caller so they reach the top level.
   collectedWarnings?.push(...(humanizedCall?.warnings || []))
 
-  return visualization
+  return valueWithReset
 }
 
 const hasDisplayedNativeTransactionValue = (
@@ -1496,8 +1340,9 @@ const appendNativeValueRow = (
     return updateErc7730Rows(visualization, (rows) => [
       ...rows,
       {
+        type: 'single-value',
         label: 'Send',
-        value: [getToken(ZeroAddress, nativeValue, chainId)]
+        value: getToken(ZeroAddress, nativeValue, chainId)
       }
     ])
   })
@@ -1528,7 +1373,7 @@ const getNativeValueWarnings = (
 // nested that deep is unusual, so the user is warned about it.
 const getNestedErc7730Depth = (visualization: HumanizerErc7730Visualization): number => {
   const nestedDepths = visualization.fields.flatMap((row) =>
-    row.value
+    getErc7730RowValues(row)
       .filter(
         (value): value is HumanizerVisualization & HumanizerErc7730Visualization =>
           value.type === 'erc7730'
@@ -1581,24 +1426,25 @@ const getSafeTxMessageWarnings = (message: Message): HumanizerWarning[] => {
   return dedupeWarnings(warnings)
 }
 
-const getSafeTxCallVisualizations = (
-  safeTxCalls: Call[],
+// One `call` row per call a Safe transaction authorises: the nested visualization when that call
+// has an ERC-7730 descriptor of its own, otherwise the flat parts a legacy module produced for it.
+const getInnerCallRows = (
+  innerCalls: Call[],
   chainId: bigint,
   accountAddr: string,
   resolvedDescriptor: Erc7730ResolvedDescriptor,
   collectedWarnings?: HumanizerWarning[]
-): (HumanizerVisualization & HumanizerErc7730Visualization)[] => {
-  return safeTxCalls
-    .map((safeTxCall, index) => {
-      const safeTxCallDescriptor =
-        resolvedDescriptor.safeTxCallDescriptors?.[index] || resolvedDescriptor.safeTxCallDescriptor
+): HumanizerErc7730Row[] => {
+  return innerCalls
+    .map((innerCall, index): HumanizerVisualization[] | null => {
+      const innerCallDescriptor = resolvedDescriptor.innerCallDescriptors?.[index]
 
-      if (safeTxCallDescriptor) {
+      if (innerCallDescriptor) {
         const humanizedCall = humanizeCallWithErc7730(
-          safeTxCall,
+          innerCall,
           chainId,
           accountAddr,
-          safeTxCallDescriptor
+          innerCallDescriptor
         )
         const erc7730Visualization = humanizedCall?.fullVisualization?.find(
           (visualization) => visualization.type === 'erc7730'
@@ -1606,37 +1452,17 @@ const getSafeTxCallVisualizations = (
         if (erc7730Visualization) {
           collectedWarnings?.push(...(humanizedCall?.warnings || []))
 
-          return erc7730Visualization
+          return [erc7730Visualization]
         }
       }
 
-      const safeFallbackVisualization = getSafeCallFallbackVisualization(safeTxCall)
-      if (safeFallbackVisualization) return safeFallbackVisualization
-
-      const moduleFallbackVisualization = getModuleFallbackVisualization(
-        safeTxCall,
-        chainId,
-        accountAddr,
-        undefined,
-        collectedWarnings
-      )
-      if (moduleFallbackVisualization) return moduleFallbackVisualization
-
-      const fallbackCall = genericErc20Humanizer({ accountAddr }, safeTxCall)
-      const rows = getRowsFromFlatCallVisualization(fallbackCall?.fullVisualization)
-      if (!rows) return getKnownCallVisualization(safeTxCall)
-
-      collectedWarnings?.push(...(fallbackCall?.warnings || []))
-
-      return getErc7730Visualization(
-        getActionTitleFromFlatCallVisualization(fallbackCall?.fullVisualization) || rows[0]!.label,
-        rows
-      )
+      // No `modules` argument, so this runs the whole module pipeline, which ends in
+      // `fallbackHumanizer` - it describes any call with a `to`, down to "Interacting with", and
+      // already reads the known-selector names. Nothing is left for a further fallback to add.
+      return getModuleFallbackValue(innerCall, chainId, accountAddr, collectedWarnings)
     })
-    .filter(
-      (visualization): visualization is HumanizerVisualization & HumanizerErc7730Visualization =>
-        !!visualization && visualization.type === 'erc7730'
-    )
+    .filter((value): value is HumanizerVisualization[] => !!value)
+    .map((value) => ({ type: 'call', value }))
 }
 
 const getSafeTxCallRows = (
@@ -1644,46 +1470,19 @@ const getSafeTxCallRows = (
   chainId: bigint,
   resolvedDescriptor: Erc7730ResolvedDescriptor
 ): HumanizerErc7730Row[] | null => {
+  // Covers a plain `call` too - it reads as a batch of exactly one - so there is no separate
+  // single-call path to keep in step with this one.
   const safeTxCalls = getSafeTxCallsFromMessage(message)
   if (!safeTxCalls?.length) return null
 
-  const safeTxCallVisualizations = getSafeTxCallVisualizations(
+  const innerCallRows = getInnerCallRows(
     safeTxCalls,
     chainId,
     message.accountAddr,
     resolvedDescriptor
   )
 
-  if (safeTxCallVisualizations.length) {
-    return [
-      {
-        label: safeTxCallVisualizations.length === 1 ? 'Transaction' : 'Transactions',
-        value: safeTxCallVisualizations
-      }
-    ]
-  }
-
-  const safeTxCall = getSafeTxCallFromMessage(message)
-  if (!safeTxCall) return null
-  if (resolvedDescriptor.safeTxCallDescriptor) {
-    const humanizedCall = humanizeCallWithErc7730(
-      safeTxCall,
-      chainId,
-      message.accountAddr,
-      resolvedDescriptor.safeTxCallDescriptor
-    )
-    const erc7730Visualization = humanizedCall?.fullVisualization?.find(
-      (visualization) => visualization.type === 'erc7730'
-    )
-    const rows = erc7730Visualization
-      ? getRowsFromErc7730CallVisualization(erc7730Visualization)
-      : null
-    if (rows) return rows
-  }
-
-  const fallbackCall = genericErc20Humanizer({ accountAddr: message.accountAddr }, safeTxCall)
-
-  return getRowsFromFlatCallVisualization(fallbackCall?.fullVisualization)
+  return innerCallRows.length ? innerCallRows : null
 }
 
 const replaceSafeTxTransactionRow = (
@@ -1695,12 +1494,15 @@ const replaceSafeTxTransactionRow = (
   const safeTxCallRows = getSafeTxCallRows(message, chainId, resolvedDescriptor)
   if (!safeTxCallRows) return fullVisualization
 
-  // Computed independently per row list below (not shared), since a "transaction"
-  // placeholder row could in principle be present in one list but not the other.
+  // Computed independently per row list below (not shared), since the placeholder row could in
+  // principle be present in one list but not the other.
   const replaceTransactionRow = (rows: HumanizerErc7730Row[]) => {
     let didReplaceTransactionRow = false
     const nextRows = rows.flatMap((row) => {
-      if (row.label.trim().toLowerCase() !== 'transaction') return [row]
+      // `data` is the only `calldata` field a SafeTx format has, so its row is the placeholder the
+      // decoded inner calls replace - and any further one is that same undecoded blob again.
+      if (row.type !== 'call') return [row]
+      if (didReplaceTransactionRow) return []
 
       didReplaceTransactionRow = true
       return safeTxCallRows
@@ -1721,36 +1523,39 @@ export const humanizeCallWithErc7730 = (
   chainId: bigint,
   accountAddr: string,
   resolvedDescriptor: Erc7730ResolvedDescriptor,
-  nativeAssetSymbol?: string
+  nativeAssetSymbol?: string,
+  /**
+   * Set only by the registry, which runs the formatting to find out which calls are embedded in
+   * this one so it can fetch a descriptor for each of them.
+   */
+  collectedNestedCalls?: Call[]
 ): IrCall | null => {
-  if (resolvedDescriptor.safeTxTransactionsOnly && resolvedDescriptor.safeTxCalls?.length) {
+  if (resolvedDescriptor.innerCalls?.length) {
     const collectedWarnings: HumanizerWarning[] = []
-    const safeTxCallVisualizations = getSafeTxCallVisualizations(
-      resolvedDescriptor.safeTxCalls,
+    const innerCallRows = getInnerCallRows(
+      resolvedDescriptor.innerCalls,
       chainId,
       accountAddr,
       resolvedDescriptor,
       collectedWarnings
     )
 
-    if (!safeTxCallVisualizations.length || !call.to) return null
+    if (!innerCallRows.length || !call.to) return null
 
     return {
       ...call,
       fullVisualization: [
         getErc7730Visualization('Execute a Safe{Wallet} Transaction', [
           {
+            type: 'single-value',
             label: 'Safe',
-            value: [getAddressVisualization(call.to)]
+            value: getAddressVisualization(call.to)
           },
-          {
-            label: '',
-            value: safeTxCallVisualizations
-          }
+          ...innerCallRows
         ])
       ],
       warnings: dedupeWarnings([
-        ...resolvedDescriptor.safeTxCalls.flatMap((safeTxCall) => getSafeCallWarnings(safeTxCall)),
+        ...resolvedDescriptor.innerCalls.flatMap((innerCall) => getSafeCallWarnings(innerCall)),
         ...collectedWarnings
       ])
     }
@@ -1774,7 +1579,9 @@ export const humanizeCallWithErc7730 = (
       }
     },
     chainId,
-    collectedWarnings: []
+    collectedWarnings: [],
+    nestedCallDescriptors: resolvedDescriptor.nestedCallDescriptors,
+    collectedNestedCalls
   }
   const fullVisualization = formatToVisualizations(match.format, context, call.dapp)
   const normalizedVisualization = fullVisualization

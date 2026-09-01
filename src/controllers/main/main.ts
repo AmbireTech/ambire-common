@@ -23,6 +23,7 @@ import { ContractNamesController } from '@/controllers/contractNames/contractNam
 import { DappsController } from '@/controllers/dapps/dapps'
 import { DebugController } from '@/controllers/debug/debug'
 import { DomainsController } from '@/controllers/domains/domains'
+import { Erc7730Controller } from '@/controllers/erc7730/erc7730'
 import { EmailVaultController } from '@/controllers/emailVault/emailVault'
 import { EstimationStatus } from '@/controllers/estimation/types'
 import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
@@ -59,6 +60,7 @@ import { IContractNamesController } from '@/interfaces/contractNames'
 import { IDappsController } from '@/interfaces/dapp'
 import { IDebugController } from '@/interfaces/debug'
 import { IDomainsController } from '@/interfaces/domains'
+import { IErc7730Controller } from '@/interfaces/erc7730'
 import { IEmailVaultController } from '@/interfaces/emailVault'
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '@/interfaces/eventEmitter'
 import { IFeatureFlagsController } from '@/interfaces/featureFlags'
@@ -193,6 +195,8 @@ export class MainController extends EventEmitter implements IMainController {
   addressBook: IAddressBookController
 
   domains: IDomainsController
+
+  erc7730: IErc7730Controller
 
   contractNames: IContractNamesController
 
@@ -475,6 +479,13 @@ export class MainController extends EventEmitter implements IMainController {
       selectedAccount: this.selectedAccount
     })
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
+    this.erc7730 = new Erc7730Controller({
+      storage: this.storage,
+      callRelayer: this.callRelayer,
+      getProvider: (chainId) => this.providers.providers[chainId.toString()],
+      sendUiMessage: this.ui.message.sendUiMessage,
+      eventEmitterRegistry
+    })
     this.signMessage = new SignMessageController(
       this.keystore,
       this.providers,
@@ -484,7 +495,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite,
       eventEmitterRegistry,
       this.dapps,
-      this.callRelayer
+      this.erc7730
     )
 
     this.activity = new ActivityController(
@@ -529,6 +540,7 @@ export class MainController extends EventEmitter implements IMainController {
       featureFlags: this.featureFlags,
       phishing: this.phishing,
       dapps: this.dapps,
+      erc7730: this.erc7730,
       swapProvider: new SwapProviderParallelExecutor(
         [LiFiProvider, SocketProvider, UniswapProvider],
         () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) }))
@@ -586,6 +598,7 @@ export class MainController extends EventEmitter implements IMainController {
       relayerUrl,
       this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
+      this.erc7730,
       eventEmitterRegistry
     )
     this.domains = new DomainsController({
@@ -632,6 +645,7 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       phishing: this.phishing,
       dapps: this.dapps,
+      erc7730: this.erc7730,
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers,

@@ -4,14 +4,28 @@ import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
-export interface HumanizerErc7730Row {
-  label: string
-  value: HumanizerVisualization[]
+export type HumanizerErc7730Row = {
   // The ERC-7730 field path this row was built from - used to match against `excludedFieldPaths`.
   // Absent for rows synthesized outside real ERC-7730 fields (fallback/multicall/Safe rows), which
   // are never candidates for exclusion anyway.
   path?: string
-}
+} & (
+  | {
+      // One embedded call of a `calldata` field, rendered inline on a single line and never split
+      // into rows of its own. Holds the nested `erc7730` visualization when that call had a
+      // descriptor, or the flat parts the legacy humanizer modules produced when it had none - so
+      // a module's own wording (e.g. "Swap X for Y") survives instead of being taken apart. Carries
+      // no label: the parts are the whole row.
+      type: 'call'
+      value: HumanizerVisualization[]
+    }
+  | {
+      // Any other field: its label and the single value the ERC-7730 formatter produced for it.
+      type: 'single-value'
+      label: string
+      value: HumanizerVisualization
+    }
+)
 
 export interface HumanizerErc7730Visualization {
   type: 'erc7730'
