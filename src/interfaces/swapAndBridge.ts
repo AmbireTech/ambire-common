@@ -613,10 +613,13 @@ export interface SwapProvider {
   getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]>
   getToTokenList({
     fromChainId,
-    toChainId
+    toChainId,
+    onUpdate
   }: {
     fromChainId: number
     toChainId: number
+    /** Reports the merged token list whenever another provider completes successfully. */
+    onUpdate?: (tokens: SwapAndBridgeToToken[]) => void
   }): Promise<SwapAndBridgeToToken[]>
   getToken({
     address,

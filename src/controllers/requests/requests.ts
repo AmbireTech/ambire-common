@@ -49,6 +49,7 @@ import {
 } from '../../interfaces/ui'
 import {
   CallsUserRequest,
+  Message,
   OpenRequestWindowParams,
   PlainTextMessageUserRequest,
   RequestExecutionType,
@@ -71,6 +72,7 @@ import {
 } from '../../libs/banners/banners'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getShouldSimulateInTheBackground } from '../../libs/main/main'
+import { humanizeMessage } from '../../libs/humanizer'
 import { TokenResult } from '../../libs/portfolio'
 import { PortfolioRewardsResult } from '../../libs/portfolio/interfaces'
 import {
@@ -549,6 +551,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           await this.rejectUserRequests('User rejected the message request', [
             existingMessageRequest.id
           ])
+        }
+
+        if (req.kind === 'typedMessage') {
+          const messageToSign: Message = {
+            fromRequestId: req.id,
+            content: { kind: req.kind, ...req.meta.params },
+            accountAddr: req.meta.accountAddr,
+            chainId: req.meta.chainId,
+            signature: null
+          }
+
+          req.humanization = humanizeMessage(messageToSign).fullVisualization
         }
 
         userRequestsToAdd.push(req)
