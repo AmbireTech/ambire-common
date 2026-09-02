@@ -1964,9 +1964,7 @@ export class SignAccountOpController
 
     if (isInTheMiddleOfSigning || isDone) return
 
-    // if we have an estimation error, set the state so and return. A failure
-    // that is still being retried is not a dead end, so the screen keeps the
-    // fee section and its "taking longer than usual" warning instead
+    // Set to EstimationError if not retrying
     if (this.estimation.error && !this.estimation.isRetryingFailure()) {
       this.status = { type: SigningStatus.EstimationError }
       this.emitUpdate()

@@ -141,6 +141,7 @@ export class EstimationController extends EventEmitter {
     // estimation was fetched with, and `calculateWarnings` says it may be
     // outdated.
     if (this.isRetryingFailure() && this.estimation) {
+      this.status = EstimationStatus.Success
       return
     }
 
@@ -415,9 +416,7 @@ export class EstimationController extends EventEmitter {
 
     if (!this.isInitialized()) return []
 
-    // Nothing is broken yet - the sign screen keeps the fee section and says
-    // the estimation is taking longer than usual while the loop retries
-    if (this.isRetryingFailure()) return errors
+    if (this.isRetryingFailure() && !this.estimation) return errors
 
     if (this.error) {
       let code = ''
