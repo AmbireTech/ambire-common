@@ -1,4 +1,4 @@
-import { CITREA_CHAIN_ID } from '@/services/squid/constants'
+import { CITREA_CHAIN_ID } from '@/consts/networks'
 import {
   ExtendedChain as LiFiExtendedChain,
   Step as LiFiIncludedStep,
@@ -290,7 +290,7 @@ export class LiFiAPI implements SwapProvider {
 
   /** disable explicitly citrea for lifi */
   areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
-    return fromChainId !== CITREA_CHAIN_ID && toChainId !== CITREA_CHAIN_ID
+    return fromChainId !== Number(CITREA_CHAIN_ID) && toChainId !== Number(CITREA_CHAIN_ID)
   }
 
   /**

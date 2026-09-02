@@ -205,7 +205,7 @@ export interface SwapAndBridgeRoute {
   outputValueInUsd: number
   outputValueAfterGasInUsd?: number
   serviceTime: number
-  rawRoute: SocketAPIRoute | LiFiRoute | SquidRoute | UniswapQuoteResponse
+  rawRoute: SocketAPIRoute | LiFiRoute | UniswapQuoteResponse
   toToken: LiFiToken
   disabled: boolean
   disabledReason?: string
@@ -583,81 +583,6 @@ export interface BungeeBuildTxnResponse {
   txData: BungeeTxData
 }
 
-export interface SquidToken {
-  address: string
-  chainId: number | string
-  decimals: number
-  logoURI?: string
-  name: string
-  symbol: string
-}
-
-export interface SquidRoute {
-  requestId?: string
-  quoteId: string
-  estimate: {
-    aggregatePriceImpact?: string
-    approvalAddress?: string
-    estimatedRouteDuration?: number
-    feeCosts?: {
-      amount: string
-      amountUSD?: string
-      amountUsd?: string
-      included?: boolean
-      token?: SquidToken
-    }[]
-    gasCosts?: {
-      amountUSD?: string
-    }[]
-    fromAmount?: string
-    fromAmountUSD?: string
-    route?: {
-      fromChain?: { dex?: string; logoURI?: string; type?: string }[]
-      toChain?: { dex?: string; logoURI?: string; type?: string }[]
-    }
-    toAmount: string
-    toAmountMin?: string
-    toAmountUSD?: string
-  }
-  params?: {
-    fromAmount?: string
-    fromChain?: number | string
-    fromToken?: string
-    toChain?: number | string
-    toToken?: string
-  }
-  transactionRequest?: {
-    data?: string
-    target?: string
-    to?: string
-    value?: string
-  }
-}
-
-export interface SquidRouteResponse {
-  route: SquidRoute
-}
-
-export interface SquidStatusResponse {
-  axelarTransactionUrl?: string
-  coralTransactionUrl?: string
-  fromChain?: {
-    transactionUrl?: string
-  }
-  isGMPTransaction?: boolean
-  squidTransactionStatus?: string
-  status?: string
-  toChain?: {
-    transactionUrl?: string
-  }
-}
-
-export interface SquidErrorResponse {
-  message?: string
-  statusCode?: number
-  type?: string
-}
-
 export interface ProviderQuoteParams {
   fromAsset: TokenResult | null
   fromChainId: number
@@ -688,10 +613,13 @@ export interface SwapProvider {
   getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]>
   getToTokenList({
     fromChainId,
-    toChainId
+    toChainId,
+    onUpdate
   }: {
     fromChainId: number
     toChainId: number
+    /** Reports the merged token list whenever another provider completes successfully. */
+    onUpdate?: (tokens: SwapAndBridgeToToken[]) => void
   }): Promise<SwapAndBridgeToToken[]>
   getToken({
     address,

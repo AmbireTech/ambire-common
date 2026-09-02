@@ -96,7 +96,8 @@ import { validateSendTransferAmount, Validation } from '../../services/validatio
 import batcher from '../../utils/batcher'
 import {
   convertTokenPriceToBigInt,
-  getSafeAmountFromFieldValue
+  getSafeAmountFromFieldValue,
+  truncateFiatAmountDecimals
 } from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
@@ -658,10 +659,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
       const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
-      this.fromAmountInFiat = formatUnits(
-        formattedAmount * tokenPriceBigInt,
-        // Shift the decimal point by the number of decimals in the token price
-        this.fromSelectedToken.decimals + tokenPriceDecimals
+      // There is absolutely 0 reason to display the same amount of decimals for the usd
+      // amount as it's only used for display and validation purposes and the amount being sent is
+      // the token amount. So we truncate the amount to a reasonable number that can be displayed nicely.
+      this.fromAmountInFiat = truncateFiatAmountDecimals(
+        formatUnits(
+          formattedAmount * tokenPriceBigInt,
+          // Shift the decimal point by the number of decimals in the token price
+          this.fromSelectedToken.decimals + tokenPriceDecimals
+        )
       )
     }
   }
@@ -1402,7 +1408,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       try {
         toTokenList.apiTokens = await this.#serviceProviderAPI.getToTokenList({
           fromChainId,
-          toChainId
+          toChainId,
+          onUpdate: (apiTokens) => {
+            toTokenList.apiTokens = apiTokens
+            toTokenList.tokens = this.#getToTokens(fromChainId, toChainId)
+            toTokenList.lastUpdate = Date.now()
+
+            if (toTokenListKeyAtStart === this.#toTokenListKey) this.#emitUpdateIfNeeded()
+          }
         })
         toTokenList.lastUpdate = Date.now()
       } catch (error: any) {

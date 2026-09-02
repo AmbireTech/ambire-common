@@ -9,7 +9,7 @@ import {
 } from 'viem'
 
 import { allowedFallbackHandlers, allowedMulticallContracts } from '../../../../consts/safe'
-import { AccountOp } from '../../../accountOp/accountOp'
+import { AccountOp, isSafeRejectionCall } from '../../../accountOp/accountOp'
 import {
   HumanizerCallModule,
   HumanizerVisualization,
@@ -25,7 +25,8 @@ import {
   getToken,
   getWarning,
   HexIrCall,
-  isHexCall
+  isHexCall,
+  padCallData
 } from '../../utils'
 
 const addOwnerWithThresholdAbi = parseAbi([
@@ -92,27 +93,25 @@ export const getSafeHumanization = (
   const fullVisualization: HumanizerVisualization[] = []
   const warnings: HumanizerWarning[] = []
 
+  const selector = data.substring(0, 10)
+
   if (
-    to &&
-    safeAddr &&
-    to.toLowerCase() === safeAddr.toLowerCase() &&
-    value?.toString() === '0' &&
-    data === '0x'
+    to !== undefined &&
+    value !== undefined &&
+    isSafeRejectionCall([{ to, value: BigInt(value), data }], safeAddr ?? '')
   ) {
-    // a Safe{WALLET} "reject" is just an empty, 0-value self-call proposed with the same
-    // nonce as the transaction it is meant to replace, so surface that nonce when it's known
-    // instead of showing a blank/empty call
+    // a Safe{WALLET} "cancel" is just an empty, 0-value call to the zero address or to the
+    // Safe itself, proposed with the same nonce as the transaction it is meant to replace, so
+    // surface that nonce when it's known instead of showing a blank/empty call
     fullVisualization.push(
       ...(nonce !== undefined && nonce !== null
-        ? [getAction('Reject'), getLabel('Tx with nonce'), getLabel(nonce, true)]
-        : [getAction('Reject currently queued transaction')])
+        ? [getAction('Cancel'), getLabel('transaction with'), getLabel(`nonce ${nonce}`, true)]
+        : [getAction('Cancel'), getLabel('currently queued transaction')])
     )
     return {
       visuals: fullVisualization
     }
   }
-
-  const selector = data.substring(0, 10)
 
   if (selector === toFunctionSelector(setupAbi[0])) {
     const { args } = decodeFunctionData({ abi: setupAbi, data })
@@ -180,7 +179,7 @@ export const getSafeHumanization = (
   if (selector === toFunctionSelector(addOwnerWithThresholdAbi[0])) {
     const { args } = decodeFunctionData({
       abi: addOwnerWithThresholdAbi,
-      data
+      data: padCallData(data, 2)
     })
     const [newOwner, newThreshold] = args
     fullVisualization.push(
@@ -201,7 +200,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(changeThresholdAbi[0])) {
-    const { args } = decodeFunctionData({ abi: changeThresholdAbi, data })
+    const { args } = decodeFunctionData({ abi: changeThresholdAbi, data: padCallData(data, 1) })
     const [newThreshold] = args
     fullVisualization.push(...[getAction('Set threshold to'), getLabel(newThreshold)])
     warnings.push(
@@ -214,7 +213,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(removeOwnerAbi[0])) {
-    const { args } = decodeFunctionData({ abi: removeOwnerAbi, data })
+    const { args } = decodeFunctionData({ abi: removeOwnerAbi, data: padCallData(data, 3) })
     const [, removedOwner, newThreshold] = args
     fullVisualization.push(
       ...[
@@ -234,7 +233,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(swapOwnerAbi[0])) {
-    const { args } = decodeFunctionData({ abi: swapOwnerAbi, data })
+    const { args } = decodeFunctionData({ abi: swapOwnerAbi, data: padCallData(data, 3) })
     const [, removedOwner, newOwner] = args
     fullVisualization.push(
       ...[
@@ -253,7 +252,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(enableModuleAbi[0])) {
-    const { args } = decodeFunctionData({ abi: enableModuleAbi, data })
+    const { args } = decodeFunctionData({ abi: enableModuleAbi, data: padCallData(data, 1) })
     const [module] = args
     fullVisualization.push(...[getAction('Enable module:'), getAddressVisualization(module)])
     warnings.push(
@@ -269,7 +268,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(disableModuleAbi[0])) {
-    const { args } = decodeFunctionData({ abi: disableModuleAbi, data })
+    const { args } = decodeFunctionData({ abi: disableModuleAbi, data: padCallData(data, 2) })
     const [, module] = args
     fullVisualization.push(...[getAction('Disable module:'), getAddressVisualization(module)])
     return {
@@ -278,7 +277,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(setGuardAbi[0])) {
-    const { args } = decodeFunctionData({ abi: setGuardAbi, data })
+    const { args } = decodeFunctionData({ abi: setGuardAbi, data: padCallData(data, 1) })
     const [guard] = args
     fullVisualization.push(...[getAction('Set guard:'), getAddressVisualization(guard)])
     return {
@@ -287,7 +286,10 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(setFallbackHandlerAbi[0])) {
-    const { args } = decodeFunctionData({ abi: setFallbackHandlerAbi, data })
+    const { args } = decodeFunctionData({
+      abi: setFallbackHandlerAbi,
+      data: padCallData(data, 1)
+    })
     const [handler] = args
     fullVisualization.push(
       ...[getAction('Extend your account functionality with'), getAddressVisualization(handler)]
@@ -317,7 +319,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(setDomainVerifierAbi[0])) {
-    const { args } = decodeFunctionData({ abi: setDomainVerifierAbi, data })
+    const { args } = decodeFunctionData({ abi: setDomainVerifierAbi, data: padCallData(data, 2) })
     const [, newVerifier] = args
     fullVisualization.push(
       ...[
@@ -374,7 +376,14 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
       // this decoded call is a nested `execTransaction` invocation (e.g. a relayer executing on
       // behalf of the Safe), so `accOp.nonce` does not necessarily reflect this inner Safe
       // transaction's nonce and is intentionally not passed here
-      const safeSpecificHumanization = getSafeHumanization(accOp.accountAddr, to, bigintValue, data)
+      const safeSpecificHumanization = getSafeHumanization(
+        accOp.accountAddr,
+        to,
+        bigintValue,
+        data,
+        0,
+        accOp.nonce
+      )
       const fullVisualization = [
         getAction('Execute a Safe{WALLET} transaction'),
         getLabel('from'),
@@ -403,8 +412,6 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
     }
   }
   let newCall = call
-  // for a queued Safe{WALLET} transaction (built in `toCallsUserRequest`), `accOp.nonce` is
-  // set from the Safe transaction's own nonce, so it can be safely surfaced in a reject label
   const safeSpecificHumanization = getSafeHumanization(
     accOp.accountAddr,
     call.to,

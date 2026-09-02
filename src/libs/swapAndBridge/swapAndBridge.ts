@@ -11,17 +11,13 @@ import { ethAddress, zeroAddress } from 'viem'
 
 import {
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
-  FEE_PERCENT,
   JPYC_TOKEN,
   SOCKET_EXPLORER_URL
 } from '@/services/socketv3/constants'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
 import { MAX_UINT256 } from '../../consts/deploy'
-import {
-  BRIDGE_STATUS_INTERVAL,
-  UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL
-} from '../../consts/intervals'
+import { UPDATE_SWAP_AND_BRIDGE_QUOTE_INTERVAL } from '../../consts/intervals'
 import {
   HIGH_PRICE_IMPACT_PERCENT_THRESHOLD,
   SLIPPAGE_MIN_QUOTE_DIFF_USD
@@ -43,7 +39,6 @@ import {
 } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest } from '../../interfaces/userRequest'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
-import { SQUID_EXPLORER_URL } from '../../services/squid/constants'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { isBasicAccount } from '../account/account'
 import { Call } from '../accountOp/types'
@@ -303,12 +298,6 @@ const getActiveRoutesLowestServiceTime = (activeRoutes: SwapAndBridgeActiveRoute
   const serviceTimes: number[] = []
 
   activeRoutes.forEach((r) => {
-    // for squid swaps, make the service time 10s
-    if (r.serviceProviderId === 'squid' && r.fromAsset?.chainId === r.toAsset?.chainId) {
-      serviceTimes.push(BRIDGE_STATUS_INTERVAL / 1000)
-      return
-    }
-
     r.route?.userTxs.forEach((tx) => {
       if (tx.serviceTime) {
         serviceTimes.push(tx.serviceTime)
@@ -357,7 +346,7 @@ const buildRevokeApprovalIfNeeded = async (
       to: userTx.approvalData.approvalTokenAddress,
       data: approveCallData
     })
-  } catch (e) {
+  } catch {
     fails = true
   }
 
@@ -491,7 +480,7 @@ const getSwapAndBridgeRequestParams = async (
 }
 
 export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
-  return route.providerId === 'squid' || route.fromChainId !== route.toChainId
+  return route.fromChainId !== route.toChainId
 }
 
 /**
@@ -623,7 +612,7 @@ export const calculateAmountWarnings = (
 
   try {
     inputValueInUsd = Number(fromAmountInFiat)
-  } catch (error) {
+  } catch {
     // silent fail
   }
   if (!inputValueInUsd) return null
@@ -658,10 +647,11 @@ export const calculateAmountWarnings = (
       Number(inputValueInUsd) < 400
         ? 1.05
         : Number((0.005 / Math.ceil(Number(inputValueInUsd) / 20000)).toPrecision(2)) * 100 + 0.01
-    const possibleSlippage = (1 - minInUsdNumber / outputValueInUsd) * 100
-    // @precautionary if
-    const diffBetweenQuoteAndMinAmount =
-      outputValueInUsd > minInUsdNumber ? outputValueInUsd - minInUsdNumber : 0
+    // Percentage of the loss relative to the amount the user is putting in (not the quote),
+    // so it stays consistent with `estimatedLossUsd` below, which is also input-based. Using
+    // the quote as the denominator would understate this when the quote itself is already
+    // far below the input (large price impact already baked into the quote).
+    const possibleSlippage = (1 - minInUsdNumber / inputValueInUsd) * 100
 
     const quoteLossUsd = getSwapQuoteLossUsd(inputValueInUsd, outputValueInUsd)
     const slippageLossUsd = getSwapSlippageLossUsd(inputValueInUsd, minInUsdNumber)
@@ -675,8 +665,7 @@ export const calculateAmountWarnings = (
     // It seems a bit odd to display a slippage warning only if the difference
     // is > $50?
     const isElevatedSlippage =
-      possibleSlippage > allowedSlippage &&
-      diffBetweenQuoteAndMinAmount > SLIPPAGE_MIN_QUOTE_DIFF_USD
+      possibleSlippage > allowedSlippage && slippageLossUsd > SLIPPAGE_MIN_QUOTE_DIFF_USD
 
     if (isExtreme && slippageLossUsd > quoteLossUsd) {
       return {
@@ -712,7 +701,7 @@ export const calculateAmountWarnings = (
     }
 
     return null
-  } catch (error) {
+  } catch {
     return null
   }
 }
@@ -721,8 +710,6 @@ const getLink = (route: SwapAndBridgeActiveRoute) => {
   const providerId = route.route ? route.route.providerId : route.serviceProviderId
   if (providerId === 'socket' || providerId === 'socketv3')
     return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
-  if (providerId === 'squid') return `${SQUID_EXPLORER_URL}/${route.userTxHash}`
-
   return `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
 }
 
@@ -742,13 +729,21 @@ const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
  * amount in USD to the fee percent
  */
 const getSwapSponsorship = ({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   isErc4337Enabled,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   hasConvinienceFee,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   nativePrice,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   fromAmountInUsd,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   feeTokenPriceInUsd,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   feeTokenDecimals,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   providerId,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   isBridge
 }: {
   isErc4337Enabled: boolean
@@ -767,23 +762,25 @@ const getSwapSponsorship = ({
       feeTokenDecimals: number
     }
   | undefined => {
-  if (
-    !isErc4337Enabled ||
-    !hasConvinienceFee ||
-    !nativePrice ||
-    !fromAmountInUsd ||
-    !feeTokenPriceInUsd ||
-    !feeTokenDecimals ||
-    providerId === 'squid' ||
-    (providerId === 'uniswap' && isBridge)
-  )
-    return undefined
-  return {
-    nativePrice,
-    swapFeeInUsd: (fromAmountInUsd * FEE_PERCENT) / 100,
-    feeTokenPriceInUsd,
-    feeTokenDecimals
-  }
+  // disable sponsorship for now as it's too buggy and inconsistent
+  return undefined
+
+  // if (
+  //   !isErc4337Enabled ||
+  //   !hasConvinienceFee ||
+  //   !nativePrice ||
+  //   !fromAmountInUsd ||
+  //   !feeTokenPriceInUsd ||
+  //   !feeTokenDecimals ||
+  //   (providerId === 'uniswap' && isBridge)
+  // )
+  //   return undefined
+  // return {
+  //   nativePrice,
+  //   swapFeeInUsd: (fromAmountInUsd * FEE_PERCENT) / 100,
+  //   feeTokenPriceInUsd,
+  //   feeTokenDecimals
+  // }
 }
 
 const enrichRouteWithOutputUsdPrice = (

@@ -4,8 +4,18 @@ import {
   IRecurringTimeout,
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
+import { StaleRpcBlockError } from '../../classes/StaleRpcBlockError'
 import { STK_WALLET } from '../../consts/addresses'
-import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
+import {
+  BLACKLIST_UPDATE_INTERVAL,
+  SCHEDULED_PORTFOLIO_UPDATE_DELAY,
+  SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL
+} from '../../consts/intervals'
+import { ETHEREUM_CHAIN_ID, INVICTUS_RPC_URL_IDENTIFIER } from '../../consts/networks'
+import {
+  DEFAULT_STALE_RPC_BLOCK_THRESHOLD,
+  ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
+} from '../../consts/portfolio'
 import {
   Account,
   AccountId,
@@ -70,6 +80,7 @@ import {
   GetOptions,
   NetworkState,
   PortfolioControllerState,
+  PortfolioNetworkResult,
   PortfolioVerification,
   ScheduledUpdates,
   TemporaryTokens,
@@ -222,7 +233,8 @@ export class PortfolioController
   #scheduledUpdates: ScheduledUpdates = {}
 
   /**
-   * Runs every 20 seconds and checks if there are any scheduled updates to run. If there are, it runs them and removes them from the schedule.
+   * Runs every SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL and checks if there are any scheduled updates to run.
+   * If there are, it runs them and removes them from the schedule.
    */
   #scheduledUpdatesRunnerInterval: IRecurringTimeout
 
@@ -267,7 +279,7 @@ export class PortfolioController
     )
     this.#scheduledUpdatesRunnerInterval = new RecurringTimeout(
       this.#runScheduledUpdates.bind(this),
-      20 * 1000,
+      SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL,
       this.emitError.bind(this)
     )
 
@@ -725,40 +737,70 @@ export class PortfolioController
     await this.#queue[accountAddr][chainId.toString()]
   }
 
+  /**
+   * Drops the given entries from the schedule, matching them by reference so that a newer entry,
+   * scheduled for the same chain while these were running, is kept.
+   */
+  #forgetScheduledUpdates(accountId: AccountId, updatesToForget: ScheduledUpdates[string]) {
+    const remaining = (this.#scheduledUpdates[accountId] || []).filter(
+      (update) => !updatesToForget.includes(update)
+    )
+
+    if (remaining.length) {
+      this.#scheduledUpdates[accountId] = remaining
+    } else {
+      delete this.#scheduledUpdates[accountId]
+    }
+  }
+
   async #runScheduledUpdates() {
     if (Object.keys(this.#scheduledUpdates).length === 0) return
 
-    const updatesToRun = structuredClone(this.#scheduledUpdates)
+    // The entries are references to the scheduled ones, so flagging them as running below
+    // mutates the schedule itself
+    const dueUpdatesByAccount: ScheduledUpdates = {}
+
+    Object.entries(this.#scheduledUpdates).forEach(([accountId, updates]) => {
+      const dueUpdates = updates.filter(
+        (update) =>
+          !update.isRunning && Date.now() - update.scheduledAt >= SCHEDULED_PORTFOLIO_UPDATE_DELAY
+      )
+
+      if (dueUpdates.length) dueUpdatesByAccount[accountId] = dueUpdates
+    })
+
+    const accountIdsToUpdate = Object.keys(dueUpdatesByAccount)
+
+    if (!accountIdsToUpdate.length) return
+
+    // Flag them as running so a subsequent run doesn't pick them up while the requests are in
+    // flight. They are kept in the schedule (instead of removed upfront) so the UI can tell the
+    // user the update is still happening.
+    accountIdsToUpdate.forEach((accountId) => {
+      dueUpdatesByAccount[accountId]!.forEach((update) => {
+        update.isRunning = true
+      })
+    })
+    this.emitUpdate()
 
     await Promise.all(
-      Object.entries(updatesToRun).map(async ([accountId, updates]) => {
-        const updatesOlderThanThreshold = updates.filter(
-          (update) => Date.now() - update.scheduledAt >= 60 * 1000
-        )
+      accountIdsToUpdate.map(async (accountId) => {
+        const dueUpdates = dueUpdatesByAccount[accountId]!
+        const chainIdsToUpdate = dueUpdates.map((update) => update.chainId)
 
-        if (updatesOlderThanThreshold.length === 0) return
-
-        const networksToUpdate = updatesOlderThanThreshold.map((update) => update.chainId)
-
-        // Remove the updates from the schedule so a second run doesn't pick them up while they are being processed
-        this.#scheduledUpdates[accountId] = updates.filter(
-          (update) => !networksToUpdate.includes(update.chainId)
-        )
-
-        if (this.#scheduledUpdates[accountId].length === 0) {
-          delete this.#scheduledUpdates[accountId]
+        try {
+          await this.updateSelectedAccount(
+            accountId,
+            this.#networks.networks.filter((n) => chainIdsToUpdate.includes(n.chainId)),
+            undefined,
+            {
+              bypassServerSideCache: dueUpdates.some((update) => update.bypassServerSideCache)
+            }
+          )
+        } finally {
+          this.#forgetScheduledUpdates(accountId, dueUpdates)
+          this.emitUpdate()
         }
-
-        await this.updateSelectedAccount(
-          accountId,
-          this.#networks.networks.filter((n) => networksToUpdate.includes(n.chainId)),
-          undefined,
-          {
-            bypassServerSideCache: updatesOlderThanThreshold.some(
-              (update) => update.bypassServerSideCache
-            )
-          }
-        )
       })
     )
   }
@@ -778,22 +820,27 @@ export class PortfolioController
     bypassServerSideCache: true
   }) {
     const existing = this.#scheduledUpdates[accountId] || []
-    const networkAlreadyScheduledForAccount = existing.find((update) => update.chainId === chainId)
+    // A running update is already fetching stale data, so it can't be debounced. The new
+    // transaction gets its own entry, which also keeps the UI indicator up until it runs.
+    const pendingUpdateForNetwork = existing.find(
+      (update) => update.chainId === chainId && !update.isRunning
+    )
 
-    if (networkAlreadyScheduledForAccount) {
-      networkAlreadyScheduledForAccount.bypassServerSideCache =
-        networkAlreadyScheduledForAccount.bypassServerSideCache || bypassServerSideCache
-      // Debounce: start the 60s window from the most recent transaction, not the first
-      networkAlreadyScheduledForAccount.scheduledAt = Date.now()
+    if (pendingUpdateForNetwork) {
+      pendingUpdateForNetwork.bypassServerSideCache =
+        pendingUpdateForNetwork.bypassServerSideCache || bypassServerSideCache
+      // Debounce: start the delay window from the most recent transaction, not the first
+      pendingUpdateForNetwork.scheduledAt = Date.now()
 
       this.debugLog(
         'simulation',
         `${chainId.toString()} Debounced scheduled update for ${accountId}`,
         () => ({
-          bypassServerSideCache: networkAlreadyScheduledForAccount.bypassServerSideCache,
-          scheduledAt: networkAlreadyScheduledForAccount.scheduledAt
+          bypassServerSideCache: pendingUpdateForNetwork.bypassServerSideCache,
+          scheduledAt: pendingUpdateForNetwork.scheduledAt
         })
       )
+      this.emitUpdate()
       return
     }
 
@@ -803,9 +850,23 @@ export class PortfolioController
     }))
 
     this.#scheduledUpdates[accountId] = [
-      ...(this.#scheduledUpdates[accountId] || []),
-      { chainId, bypassServerSideCache, scheduledAt: Date.now() }
+      ...existing,
+      { chainId, bypassServerSideCache, scheduledAt: Date.now(), isRunning: false }
     ]
+    this.emitUpdate()
+  }
+
+  /**
+   * The chains with a portfolio update queued or in flight after a recent transaction, by account.
+   * Read by the UI to tell the user their defi positions are about to refresh.
+   */
+  get scheduledUpdateChainIds(): { [accountId: string]: bigint[] } {
+    return Object.fromEntries(
+      Object.entries(this.#scheduledUpdates).map(([accountId, updates]) => [
+        accountId,
+        updates.map(({ chainId }) => chainId)
+      ])
+    )
   }
 
   /**
@@ -1191,6 +1252,69 @@ export class PortfolioController
     this.emitUpdate()
   }
 
+  /**
+   * How many blocks behind the stored result a freshly fetched one is.
+   */
+  static #getBlocksBehind(
+    networkState: NetworkState<PortfolioNetworkResult> | undefined,
+    newBlockNumber: number,
+    rpcUrl: string
+  ) {
+    const storedBlockNumber = networkState?.result?.blockNumber
+
+    if (!storedBlockNumber || networkState?.rpcInfo?.url !== rpcUrl) return 0
+
+    return Math.max(storedBlockNumber - newBlockNumber, 0)
+  }
+
+  /**
+   * Records how far behind the RPC is after an update was rejected for being older than
+   * the one already displayed, and reports our own RPC falling behind once per episode.
+   */
+  #onStaleRpcBlock(accountId: AccountId, network: Network, error: StaleRpcBlockError) {
+    const state = this.#state[accountId]?.[network.chainId.toString()]
+
+    if (!state) return
+
+    const rpcUrl = network.selectedRpcUrl
+    const isFirstRejection = !state.rpcInfo?.since
+
+    state.rpcInfo = {
+      url: rpcUrl,
+      behindBy: error.blocksBehind,
+      since: state.rpcInfo?.since ?? Date.now()
+    }
+
+    this.debugLog(
+      'update',
+      `${network.chainId.toString()} update rejected for ${accountId}`,
+      () => ({
+        rpcUrl,
+        receivedBlockNumber: error.receivedBlockNumber,
+        blocksBehind: error.blocksBehind
+      })
+    )
+
+    const message = '[PORTFOLIO_STALE_RPC_BLOCK] The RPC returned the state of an older block'
+    const reportedError = new Error(message)
+
+    ;(reportedError as any).debugInfo = {
+      accountId,
+      chainId: network.chainId.toString(),
+      rpcUrl,
+      receivedBlockNumber: error.receivedBlockNumber,
+      storedBlockNumber: error.receivedBlockNumber + error.blocksBehind,
+      blocksBehind: error.blocksBehind
+    }
+
+    this.emitError({
+      level: 'silent',
+      sendCrashReport: isFirstRejection && rpcUrl.includes(INVICTUS_RPC_URL_IDENTIFIER),
+      message,
+      error: reportedError
+    })
+  }
+
   static #getCanSkipUpdate(networkState?: NetworkState, maxDataAgeMs?: number) {
     const hasImportantErrors = networkState?.errors.some((e) => e.level === 'critical')
 
@@ -1481,6 +1605,8 @@ export class PortfolioController
         portfolioLib.get(account.addr, {
           tokenDataRecency: 60000 * 5,
           tokenDataCache: networkTokenDataCache,
+          knownTokenMetadata: this.hints.getKnownTokenMetadata(network.chainId),
+          knownCollectionMetadata: this.hints.getKnownCollectionMetadata(network.chainId),
           fetchPinned: !hasNonZeroTokens,
           ...allHints,
           ...portfolioProps,
@@ -1526,6 +1652,29 @@ export class PortfolioController
 
       this.tokenDataCache[network.chainId.toString()] = portfolioResult.tokenDataCache
 
+      const rpcUrl = network.selectedRpcUrl
+
+      const blocksBehind = PortfolioController.#getBlocksBehind(
+        accountState[network.chainId.toString()],
+        portfolioResult.blockNumber,
+        rpcUrl
+      )
+
+      // A lagging RPC returns the state of an older block, which would take the portfolio
+      // backwards - outdated balances and an outdated nonce for the simulation. Keep what
+      // is already displayed until the RPC catches up.
+      const staleBlockThreshold =
+        network.chainId === ETHEREUM_CHAIN_ID
+          ? ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
+          : DEFAULT_STALE_RPC_BLOCK_THRESHOLD
+
+      if (blocksBehind > staleBlockThreshold) {
+        throw new StaleRpcBlockError({
+          receivedBlockNumber: portfolioResult.blockNumber,
+          blocksBehind
+        })
+      }
+
       const hasError = combinedErrors.some((e) => e.level !== 'silent')
       let lastSuccessfulUpdate = accountState[network.chainId.toString()]?.lastSuccessfulUpdate || 0
 
@@ -1545,6 +1694,7 @@ export class PortfolioController
         errors: combinedErrors,
         lastSuccessfulUpdate,
         verification,
+        rpcInfo: { url: rpcUrl },
         result: {
           ...portfolioResult,
           // Overwrite the discovery time from the portfolio lib
@@ -1611,11 +1761,16 @@ export class PortfolioController
 
       return [true, discoveryData]
     } catch (e: any) {
-      this.emitError({
-        level: 'silent',
-        message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId})`,
-        error: e
-      })
+      if (e instanceof StaleRpcBlockError) {
+        this.#onStaleRpcBlock(account.addr, network, e)
+      } else {
+        this.emitError({
+          level: 'silent',
+          message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId})`,
+          error: e
+        })
+      }
+
       state.accountOps = portfolioProps?.simulation?.accountOps
       state.isLoading = false
       if (state.verification?.status === 'loading') {
@@ -1977,6 +2132,11 @@ export class PortfolioController
                 accountId,
                 networkResult
               )
+              this.hints.learnTokenMetadata(network.chainId, networkResult.fetchedTokenMetadata)
+              this.hints.learnCollectionMetadata(
+                network.chainId,
+                networkResult.fetchedCollectionMetadata
+              )
             }
 
             // Only update this if all networks where updated so we know for sure that the user
@@ -2137,6 +2297,9 @@ export class PortfolioController
     return this.#networksWithAssetsByAccounts[accountAddr] || {}
   }
 
+  /**
+   * Always pass account ops that belong to the same account & network
+   */
   async simulateAccountOp(op: AccountOp): Promise<void> {
     const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)
     const network = this.#networks.networks.find((net) => net.chainId === op.chainId)
@@ -2219,7 +2382,8 @@ export class PortfolioController
       ...this,
       ...super.toJSON(),
       customTokens: this.customTokens,
-      tokenPreferences: this.tokenPreferences
+      tokenPreferences: this.tokenPreferences,
+      scheduledUpdateChainIds: this.scheduledUpdateChainIds
     }
   }
 }
