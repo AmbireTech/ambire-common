@@ -28,6 +28,13 @@ export type IStorageController = ControllerInterface<
   InstanceType<typeof import('../controllers/storage/storage').StorageController>
 >
 
+export type AutomaticallyResolvedSafeTxn = {
+  accountAddr?: string
+  chainId?: bigint
+  nonce: bigint
+  txnIds: string[]
+}
+
 export type StorageProps = {
   // Onboarding
   invite: object
@@ -88,7 +95,7 @@ export type StorageProps = {
   // Address book
   contacts: Contacts
   // Safe
-  automaticallyResolvedSafeTxns: { nonce: bigint; txnIds: string[] }[]
+  automaticallyResolvedSafeTxns: AutomaticallyResolvedSafeTxn[]
   rejectedSafeTxns: string[]
   // Other
   signAccountOpFeeTokenPreference: {
@@ -112,6 +119,7 @@ export type StorageProps = {
     addresses: string[]
   }
   swapAndBridgeActiveRoutes: SwapAndBridgeActiveRoute[]
+  disabledSwapProviderIds: string[]
   // Persisted reverse ENS/Namoshi lookup cache, kept indefinitely so accounts
   // don't need to be re-resolved after a service worker restart.
   domainsCache: Domains

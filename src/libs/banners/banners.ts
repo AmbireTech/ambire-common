@@ -45,12 +45,7 @@ export const getBridgeBanners = (
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
   const refundedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'refunded')
   const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes, ...refundedRoutes]
-  // if there is one squid swap on the same chain, label it as such
-  const actionWordUppercase = allRoutes.find(
-    (r) => r.serviceProviderId === 'squid' && r.fromAsset?.chainId === r.toAsset?.chainId
-  )
-    ? 'Swap'
-    : 'Bridge'
+  const actionWordUppercase = 'Bridge'
   const actionWordLower = actionWordUppercase.toLowerCase()
 
   let title = ''
@@ -136,7 +131,7 @@ export const getSafeMessageRequestBanners = (
     {
       id: 'safe-message-request-banner',
       type: 'info',
-      title: `You have ${requests.length} pending signature request${requests.length > 1 ? 's' : ''}`,
+      title: `Pending signature request${requests.length > 1 ? 's' : ''}`,
       text: '',
       meta: {
         accountAddr: account.addr
@@ -244,8 +239,16 @@ export const getAccountOpBanners = ({
     if (!!selectedAccount.safeCreation) {
       const network = networks.find((n) => n.chainId.toString() === netId)
       if (!network) return
+
+      // we're displaying dashboard banners only for requests that
+      // aren't in a signing phase
+      const notSignedRequests = requests.filter(
+        (r) => (r.signAccountOp.accountOp.signed || []).length === 0
+      )
+      if (!notSignedRequests.length) return
+
       const safeBanner = getSafeBanner({
-        requests,
+        requests: notSignedRequests,
         network,
         selectedAccount
       })

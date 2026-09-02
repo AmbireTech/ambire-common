@@ -89,6 +89,10 @@ describe('getSafeMessageRequestBanners', () => {
 
     expect(banners).toHaveLength(1)
     expect(banners[0]!.meta?.accountAddr).toEqual(ACCOUNT_ADDR)
+    expect(banners[0]!.title).toEqual('Pending signature request')
+    expect(
+      getSafeMessageRequestBanners(safeAccount, [messageRequest, messageRequest])[0]!.title
+    ).toEqual('Pending signature requests')
   })
 })
 
@@ -96,7 +100,7 @@ describe('getBridgeBanners', () => {
   test('tags the banner with the account the active routes belong to', () => {
     const activeRoutes: SwapAndBridgeActiveRoute[] = [
       {
-        serviceProviderId: 'squid',
+        serviceProviderId: 'lifi',
         fromAssetAddress: '0x0',
         toAssetAddress: '0x0',
         steps: [],

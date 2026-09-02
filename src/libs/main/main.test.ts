@@ -9,6 +9,7 @@ type RequestParams = {
   isSafe?: boolean
   nonce?: bigint | null
   safeTxNonce?: bigint | number | string
+  signed?: string[]
 }
 
 const makeRequest = ({
@@ -16,7 +17,8 @@ const makeRequest = ({
   chainId = 1n,
   isSafe = true,
   nonce = 0n,
-  safeTxNonce
+  safeTxNonce,
+  signed
 }: RequestParams): CallsUserRequest =>
   ({
     id,
@@ -27,6 +29,7 @@ const makeRequest = ({
       accountOp: {
         chainId,
         nonce,
+        signed,
         safeTx:
           typeof safeTxNonce === 'undefined'
             ? undefined
@@ -40,55 +43,24 @@ const makeRequest = ({
 describe('getShouldSimulateInTheBackground', () => {
   test('allows background simulation for non-Safe requests', () => {
     const currentRequest = makeRequest({ id: 'current', isSafe: false, nonce: 2n })
-    const otherRequest = makeRequest({ id: 'other', nonce: 2n })
 
-    expect(getShouldSimulateInTheBackground(currentRequest, [currentRequest, otherRequest])).toBe(
-      true
-    )
+    expect(getShouldSimulateInTheBackground(currentRequest)).toBe(true)
   })
 
-  test('blocks background simulation when a Safe Global request conflicts with a local Safe nonce', () => {
-    const currentRequest = makeRequest({ id: 'current', safeTxNonce: 2 })
-    const otherRequest = makeRequest({ id: 'other', nonce: 2n })
+  test('blocks background simulation for a signed Safe request', () => {
+    const currentRequest = makeRequest({
+      id: 'current',
+      isSafe: true,
+      nonce: 2n,
+      signed: ['0xd6e371526cdaeE04cd8AF225D42e37Bc14688D9E']
+    })
 
-    expect(getShouldSimulateInTheBackground(currentRequest, [currentRequest, otherRequest])).toBe(
-      false
-    )
+    expect(getShouldSimulateInTheBackground(currentRequest)).toBe(false)
   })
 
-  test('blocks background simulation when a local Safe request conflicts with a Safe Global nonce', () => {
-    const currentRequest = makeRequest({ id: 'current', nonce: 2n })
-    const otherRequest = makeRequest({ id: 'other', safeTxNonce: '2' })
+  test('allows background simulation for a not signed Safe request', () => {
+    const currentRequest = makeRequest({ id: 'current', isSafe: true, nonce: 2n, signed: [] })
 
-    expect(getShouldSimulateInTheBackground(currentRequest, [currentRequest, otherRequest])).toBe(
-      false
-    )
-  })
-
-  test('blocks background simulation for conflicting Safe nonce zero', () => {
-    const currentRequest = makeRequest({ id: 'current', safeTxNonce: 0 })
-    const otherRequest = makeRequest({ id: 'other', nonce: 0n })
-
-    expect(getShouldSimulateInTheBackground(currentRequest, [currentRequest, otherRequest])).toBe(
-      false
-    )
-  })
-
-  test('allows background simulation for Safe requests with different nonces', () => {
-    const currentRequest = makeRequest({ id: 'current', safeTxNonce: 2 })
-    const otherRequest = makeRequest({ id: 'other', nonce: 3n })
-
-    expect(getShouldSimulateInTheBackground(currentRequest, [currentRequest, otherRequest])).toBe(
-      true
-    )
-  })
-
-  test('allows background simulation for Safe requests with the same nonce on different chains', () => {
-    const currentRequest = makeRequest({ id: 'current', chainId: 1n, nonce: 2n })
-    const otherRequest = makeRequest({ id: 'other', chainId: 10n, safeTxNonce: 2 })
-
-    expect(getShouldSimulateInTheBackground(currentRequest, [currentRequest, otherRequest])).toBe(
-      true
-    )
+    expect(getShouldSimulateInTheBackground(currentRequest)).toBe(true)
   })
 })

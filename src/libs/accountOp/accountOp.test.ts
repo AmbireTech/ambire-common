@@ -2,7 +2,7 @@ import { ethers } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
 
-import { AccountOp, accountOpSignableHash } from './accountOp'
+import { AccountOp, accountOpSignableHash, isSafeRejectionCall } from './accountOp'
 import { Call } from './types'
 
 describe('AccountOp', () => {
@@ -45,5 +45,64 @@ describe('AccountOp', () => {
     const accountOpHash = accountOpSignableHash(op, 1n)
     // if the above statement does not throw an error, we're good
     expect(ethers.hexlify(accountOpHash)).not.toBe(null)
+  })
+})
+
+describe('isSafeRejectionCall', () => {
+  const safeAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+  const zeroAddress = '0x0000000000000000000000000000000000000000'
+
+  test('marks a single empty call to the zero address as a rejection', () => {
+    const calls: Call[] = [{ to: zeroAddress, value: 0n, data: '0x' }]
+    expect(isSafeRejectionCall(calls, safeAddr)).toBe(true)
+  })
+
+  test('marks a single empty call to the Safe itself as a rejection', () => {
+    const calls: Call[] = [{ to: safeAddr, value: 0n, data: '0x' }]
+    expect(isSafeRejectionCall(calls, safeAddr)).toBe(true)
+  })
+
+  test('is case-insensitive when comparing the call target to the Safe address', () => {
+    const calls: Call[] = [{ to: safeAddr.toUpperCase(), value: 0n, data: '0x' }]
+    expect(isSafeRejectionCall(calls, safeAddr)).toBe(true)
+  })
+
+  test('does not mark a call that carries value', () => {
+    const calls: Call[] = [{ to: zeroAddress, value: 1n, data: '0x' }]
+    expect(isSafeRejectionCall(calls, safeAddr)).toBe(false)
+  })
+
+  test('does not mark a call that carries data', () => {
+    const calls: Call[] = [{ to: zeroAddress, value: 0n, data: '0x01' }]
+    expect(isSafeRejectionCall(calls, safeAddr)).toBe(false)
+  })
+
+  test('does not mark a call to an unrelated address', () => {
+    const calls: Call[] = [
+      { to: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', value: 0n, data: '0x' }
+    ]
+    expect(isSafeRejectionCall(calls, safeAddr)).toBe(false)
+  })
+
+  test('does not mark a contract-deployment call (no `to`)', () => {
+    const calls: Call[] = [{ value: 0n, data: '0x' }]
+    expect(isSafeRejectionCall(calls, safeAddr)).toBe(false)
+  })
+
+  test('does not mark a delegate call', () => {
+    const calls: Call[] = [{ to: zeroAddress, value: 0n, data: '0x' }]
+    expect(isSafeRejectionCall(calls, safeAddr, 1)).toBe(false)
+  })
+
+  test('does not mark a batch of otherwise-qualifying calls', () => {
+    const calls: Call[] = [
+      { to: zeroAddress, value: 0n, data: '0x' },
+      { to: zeroAddress, value: 0n, data: '0x' }
+    ]
+    expect(isSafeRejectionCall(calls, safeAddr)).toBe(false)
+  })
+
+  test('does not mark an empty calls array', () => {
+    expect(isSafeRejectionCall([], safeAddr)).toBe(false)
   })
 })

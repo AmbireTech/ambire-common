@@ -112,3 +112,11 @@ export function getEstimationSummary(estimation: FullEstimation): FullEstimation
     updatedAt: Date.now()
   }
 }
+
+/**
+ * Push extra gas limit for EOA / EOA7702 accounts to avoid OOG.
+ * This extra gas limit is 20% as 10% was might not be enough for swaps
+ */
+export function getGasLimitWithOverhead(gasLimit: bigint): bigint {
+  return gasLimit + gasLimit / 5n
+}

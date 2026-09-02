@@ -19,6 +19,8 @@ export type SelectedAccountBalanceError = {
     | `custom-rpcs-down-${string}`
     | 'rpcs-down'
     | 'portfolio-critical'
+    | 'portfolio-stale-block'
+    | `stale-block-${string}`
     | 'loading-too-long'
     | 'defi-critical'
     | 'defi-prices'
@@ -83,6 +85,53 @@ export const addRPCError = (
       actions
     })
   }
+
+  return newErrors
+}
+
+/**
+ * Tells the user that the network data we are getting is behind, so the displayed balances
+ * are the last ones we could trust. Offers switching the RPC when there is another one.
+ */
+export const addStaleBlockError = (errors: SelectedAccountBalanceError[], network: Network) => {
+  const newErrors = [...errors]
+  const hasMultipleRpcUrls = network.rpcUrls && network.rpcUrls.length > 1
+  // Networks with another RPC to switch to get a banner of their own, so the action
+  // knows which network it applies to. The rest are grouped in a single banner.
+  const errorId: `stale-block-${string}` | 'portfolio-stale-block' = hasMultipleRpcUrls
+    ? `stale-block-${network.chainId.toString()}`
+    : 'portfolio-stale-block'
+  const existingError = newErrors.find((error) => error.id === errorId)
+
+  if (existingError) {
+    if (!existingError.networkNames.includes(network.name)) {
+      existingError.networkNames.push(network.name)
+      existingError.title = `${existingError.networkNames.join(', ')} data is behind`
+    }
+
+    return newErrors
+  }
+
+  const text = hasMultipleRpcUrls
+    ? "The network data we're getting is behind, so balances may be out of date. You can try selecting another RPC URL."
+    : "The network data we're getting is behind, so balances may be out of date. We keep checking and will show the new balances as soon as they arrive."
+
+  newErrors.push({
+    id: errorId,
+    networkNames: [network.name],
+    type: 'error',
+    title: `${network.name} data is behind`,
+    text,
+    actions: hasMultipleRpcUrls
+      ? [
+          {
+            label: 'Select',
+            actionName: 'select-rpc-url',
+            meta: { network }
+          }
+        ]
+      : undefined
+  })
 
   return newErrors
 }
@@ -220,6 +269,13 @@ export const getNetworksWithErrors = ({
 
     if (!networkName) {
       console.error('Network name not found for network in getNetworksWithErrors', chainId)
+      return
+    }
+
+    // The RPC serving older blocks freezes the portfolio, so the user is told about it
+    // right away, without the grace period the other errors have.
+    if (portfolioForNetwork?.rpcInfo?.behindBy) {
+      errors = addStaleBlockError(errors, network)
       return
     }
 

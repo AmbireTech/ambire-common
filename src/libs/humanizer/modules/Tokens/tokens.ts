@@ -1,4 +1,4 @@
-import { parseAbi, decodeFunctionData, toFunctionSelector, zeroAddress, Hex } from 'viem'
+import { parseAbi, decodeFunctionData, toFunctionSelector, zeroAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import {
@@ -18,6 +18,7 @@ import {
   isHexCall,
   isUnlimitedAmount,
   mergeWarnings,
+  padCallData,
   UNLIMITED_APPROVAL_WARNING_CODE
 } from '../../utils'
 
@@ -53,16 +54,6 @@ const erc20IncreaseApprovalAbi = parseAbi([
 const erc20DecreaseApprovalAbi = parseAbi([
   'function decreaseApproval(address _spender, uint256 _subtractedValue) returns (bool)'
 ])
-
-// tokens before solidity 0.5.0 would accept calldata that is shorter then the specified
-// args in the abi and assume they are 0s
-// other tokens fail onchain, so there is no real danger in padding to the end
-// as long as it is kept in the humanizer
-// applicable only to functions whose args are all static (one 32 byte word each)
-const padCallData = (data: Hex, staticArgsCount: number): Hex => {
-  const expectedCallLength = 2 + 8 + staticArgsCount * 64
-  return data.padEnd(expectedCallLength, '0') as Hex
-}
 
 /**
  * What a matcher returns for one call: how to show it, plus a warning when the call turns out to

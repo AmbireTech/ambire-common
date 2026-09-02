@@ -50,7 +50,8 @@ import {
   SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeToToken,
-  SwapProvider,
+  SwapProviderExecutor,
+  SwapProviderInfo,
   ToTokenMarketDataByToken,
   ToTokenMarketDataStatus
 } from '../../interfaces/swapAndBridge'
@@ -96,7 +97,8 @@ import { validateSendTransferAmount, Validation } from '../../services/validatio
 import batcher from '../../utils/batcher'
 import {
   convertTokenPriceToBigInt,
-  getSafeAmountFromFieldValue
+  getSafeAmountFromFieldValue,
+  truncateFiatAmountDecimals
 } from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
@@ -282,7 +284,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #featureFlags: IFeatureFlagsController
 
-  #serviceProviderAPI: SwapProvider
+  #serviceProviderAPI: SwapProviderExecutor
 
   #activeRoutes: SwapAndBridgeActiveRoute[] = []
 
@@ -291,6 +293,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   updateQuoteStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
   #updateQuoteId?: string
+
+  #swapProviderSettingsUpdateId = 0
 
   switchTokensStatus: 'INITIAL' | 'LOADING' = 'INITIAL'
 
@@ -369,6 +373,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #preselectedToToken: { address: string; chainId: number } | null = null
 
   routePriority: 'output' | 'time' = 'output'
+
+  disabledSwapProviderIds: string[] = []
 
   // Holds the initial load promise, so that one can wait until it completes
   #initialLoadPromise?: Promise<void>
@@ -485,7 +491,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     isCurrentSignAccountOpThrowingAnEstimationError?: Function
     getUserRequests: () => UserRequest[]
     getVisibleUserRequests: () => UserRequest[]
-    swapProvider: SwapProvider
+    swapProvider: SwapProviderExecutor
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed: OnBroadcastFailed
     ui: IUiController
@@ -577,8 +583,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       !this.sessionIds.length &&
       // but ALSO there are no active routes (otherwise, banners need the updates)
       !this.activeRoutes.length &&
-      // Force update is needed when the form is reset
-      // as the sessions are cleared
+      // Force update is needed when UI-visible state changes outside an active form session
       !forceUpdate
 
     if (shouldSkipUpdate) return
@@ -658,10 +663,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
       const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
-      this.fromAmountInFiat = formatUnits(
-        formattedAmount * tokenPriceBigInt,
-        // Shift the decimal point by the number of decimals in the token price
-        this.fromSelectedToken.decimals + tokenPriceDecimals
+      // There is absolutely 0 reason to display the same amount of decimals for the usd
+      // amount as it's only used for display and validation purposes and the amount being sent is
+      // the token amount. So we truncate the amount to a reasonable number that can be displayed nicely.
+      this.fromAmountInFiat = truncateFiatAmountDecimals(
+        formatUnits(
+          formattedAmount * tokenPriceBigInt,
+          // Shift the decimal point by the number of decimals in the token price
+          this.fromSelectedToken.decimals + tokenPriceDecimals
+        )
       )
     }
   }
@@ -669,6 +679,27 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   async #load() {
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
+
+    try {
+      const storedDisabledProviderIds = await this.#storage.get('disabledSwapProviderIds', [])
+      const availableProviderIds = new Set(this.swapProviders.map(({ id }) => id))
+
+      this.disabledSwapProviderIds = [
+        ...new Set(
+          storedDisabledProviderIds.filter(
+            (id) => typeof id === 'string' && availableProviderIds.has(id)
+          )
+        )
+      ]
+    } catch (error) {
+      const loadError =
+        error instanceof Error ? error : new Error('Unable to load swap provider preferences')
+      this.emitError({
+        error: loadError,
+        level: 'silent',
+        message: 'Unable to load saved swap provider preferences.'
+      })
+    }
 
     // FIXME: Temporarily omit getting prev activeRoutes from storage, because of
     // old records with different (unexpected) structure causing crashes.
@@ -946,18 +977,85 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return this.#serviceProviderAPI.isHealthy
   }
 
+  /** Returns serializable metadata for all available swap providers. */
+  get swapProviders(): SwapProviderInfo[] {
+    return this.#serviceProviderAPI.getProvidersInfo()
+  }
+
+  /** Returns a copy of the provider ids the user has switched off. */
+  getDisabledSwapProviderIds(): string[] {
+    return [...this.disabledSwapProviderIds]
+  }
+
+  /** Enables or disables a provider for future route and supported-chain discovery. */
+  async setSwapProviderEnabled(providerId: string, isEnabled: boolean) {
+    if (!this.swapProviders.some(({ id }) => id === providerId)) return
+
+    const isDisabled = this.disabledSwapProviderIds.includes(providerId)
+    if (isEnabled === !isDisabled) return
+
+    this.disabledSwapProviderIds = isEnabled
+      ? this.disabledSwapProviderIds.filter((id) => id !== providerId)
+      : [...this.disabledSwapProviderIds, providerId]
+    const providerSettingsUpdateId = ++this.#swapProviderSettingsUpdateId
+    this.#cachedSupportedChains = { lastFetched: 0, data: [] }
+    this.#toTokenList = {}
+    this.#updateQuoteId = undefined
+    this.quote = null
+    this.quoteRoutesStatuses = {}
+    this.#emitUpdateIfNeeded(true)
+
+    try {
+      await this.#storage.set('disabledSwapProviderIds', this.disabledSwapProviderIds)
+    } catch (error) {
+      const saveError =
+        error instanceof Error ? error : new Error('Unable to save swap provider preferences')
+      this.emitError({
+        error: saveError,
+        level: 'silent',
+        message: 'Unable to save swap provider preferences.'
+      })
+    }
+
+    if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return
+
+    try {
+      await Promise.all([
+        this.#fetchSupportedChainsIfNeeded(),
+        this.updateToTokenList(false),
+        this.updateQuote({ skipQuoteUpdateOnSameValues: false })
+      ])
+    } catch (error) {
+      if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return
+
+      const refreshError =
+        error instanceof Error ? error : new Error('Unable to refresh Swap & Bridge')
+      this.emitError({
+        error: refreshError,
+        level: 'silent',
+        message: 'Unable to refresh Swap & Bridge after updating provider preferences.'
+      })
+    }
+  }
+
   #fetchSupportedChainsIfNeeded = async (forceUpdate?: boolean) => {
     const shouldNotReFetchSupportedChains =
       this.#cachedSupportedChains.data.length &&
       Date.now() - this.#cachedSupportedChains.lastFetched < SUPPORTED_CHAINS_CACHE_THRESHOLD
     if (shouldNotReFetchSupportedChains) return
 
+    const providerSettingsUpdateId = this.#swapProviderSettingsUpdateId
+
     try {
       const supportedChains = await this.#serviceProviderAPI.getSupportedChains()
+
+      if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return
 
       this.#cachedSupportedChains = { lastFetched: Date.now(), data: supportedChains }
       this.#emitUpdateIfNeeded(forceUpdate)
     } catch (error: any) {
+      if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return
+
       // Fail silently, as this is not a critical feature, Swap & Bridge is still usable
       this.emitError({ error, level: 'silent', message: error?.message })
     }
@@ -1360,6 +1458,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const fromChainId = this.fromChainId
     const toChainId = this.toChainId
     const toTokenListKeyAtStart = this.#toTokenListKey
+    const providerSettingsUpdateId = this.#swapProviderSettingsUpdateId
 
     if (!toTokenListKeyAtStart || !fromChainId || !toChainId) return
 
@@ -1400,19 +1499,32 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (shouldFetchTokenList) {
       try {
-        toTokenList.apiTokens = await this.#serviceProviderAPI.getToTokenList({
+        const apiTokens = await this.#serviceProviderAPI.getToTokenList({
           fromChainId,
-          toChainId
+          toChainId,
+          onUpdate: (apiTokens) => {
+            toTokenList.apiTokens = apiTokens
+            toTokenList.tokens = this.#getToTokens(fromChainId, toChainId)
+            toTokenList.lastUpdate = Date.now()
+
+            if (toTokenListKeyAtStart === this.#toTokenListKey) this.#emitUpdateIfNeeded()
+          }
         })
+
+        if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return
+
+        toTokenList.apiTokens = apiTokens
         toTokenList.lastUpdate = Date.now()
       } catch (error: any) {
+        if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return
+
         // Display an error only if there is no cached data
         if (!toTokenList.apiTokens.length) {
           const { message } = getHumanReadableSwapAndBridgeError(error)
 
           this.addOrUpdateError({
             id: 'to-token-list-fetch-failed',
-            title: 'Token list on the receiving network is temporarily unavailable.',
+            title: 'Token list fetch failed',
             text: message,
             level: 'error'
           })
@@ -1439,7 +1551,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       // token) in a different case than the service provider's.
       const token =
         toTokenList.tokens.find((t) => t.address.toLowerCase() === addressToSelect.toLowerCase()) ||
-        (await this.#fetchAndCacheToTokenToSelect(addressToSelect))
+        (await this.#fetchAndCacheToTokenToSelect(addressToSelect, providerSettingsUpdateId))
+
+      if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return
 
       if (token) {
         await this.updateForm({ toSelectedTokenAddr: token.address }, { emitUpdate: false })
@@ -1685,7 +1799,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    * so a token preselected from outside Swap & Bridge (e.g. from the trending tokens list) can
    * still be selected. Fails silently, because the selection is not user-initiated.
    */
-  async #fetchAndCacheToTokenToSelect(address: string) {
+  async #fetchAndCacheToTokenToSelect(address: string, providerSettingsUpdateId: number) {
     if (!this.toChainId || !isAddress(address)) return null
 
     const toTokenListKey = this.#toTokenListKey
@@ -1696,6 +1810,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     try {
       const token = await this.#serviceProviderAPI.getToken({ address, chainId: this.toChainId })
 
+      if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return null
+
       if (!token) return null
 
       // Cache it the same way tokens added by address are cached
@@ -1704,6 +1820,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
       return token
     } catch (error: any) {
+      if (providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId) return null
+
       const { message } = getHumanReadableSwapAndBridgeError(error)
 
       this.emitError({ error, level: 'silent', message })
@@ -1991,6 +2109,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // no quote fetch if there are errors
     if (this.swapSignErrors.length) return
 
+    const providerSettingsUpdateId = this.#swapProviderSettingsUpdateId
     const quoteId = generateUuid()
     this.#updateQuoteId = quoteId
 
@@ -2109,7 +2228,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           ? quoteResult.selectedRoute.steps
           : []
 
-        if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteId)) return
+        if (
+          this.#isQuoteIdObsoleteAfterAsyncOperation(quoteId) ||
+          providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId
+        )
+          return
         // no updates if the user has commited
         if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
 
@@ -2140,7 +2263,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
         return true
       } catch (error: any) {
-        if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteId)) return
+        if (
+          this.#isQuoteIdObsoleteAfterAsyncOperation(quoteId) ||
+          providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId
+        )
+          return
 
         const { message } = getHumanReadableSwapAndBridgeError(error)
         this.emitError({ error, level: 'major', message })
@@ -2165,11 +2292,19 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     // Debounce the updateQuote function to avoid multiple calls
     if (debounce) await wait(500)
-    if (this.#updateQuoteId !== quoteId) return
+    if (
+      this.#updateQuoteId !== quoteId ||
+      providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId
+    )
+      return
 
     const isSuccessful = await updateQuoteFunction()
 
-    if (this.#updateQuoteId !== quoteId) return
+    if (
+      this.#updateQuoteId !== quoteId ||
+      providerSettingsUpdateId !== this.#swapProviderSettingsUpdateId
+    )
+      return
 
     this.updateQuoteStatus = 'INITIAL'
     this.#emitUpdateIfNeeded()
@@ -3256,6 +3391,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       isHealthy: this.isHealthy,
       shouldEnableRoutesSelection: this.shouldEnableRoutesSelection,
       supportedChainIds: this.supportedChainIds,
+      swapProviders: this.swapProviders,
       swapSignErrors: this.swapSignErrors,
       signAccountOpController: this.signAccountOpController,
       banners: this.banners

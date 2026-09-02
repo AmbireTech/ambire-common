@@ -16,6 +16,7 @@ import { decodeError } from '../errorDecoder'
 import { DEPLOYLESS_ERRORS } from '../errorHumanizer/errors'
 import { getHumanReadableErrorMessage } from '../errorHumanizer/helpers'
 import {
+  CollectionMetadataFetchPlan,
   CollectionResult,
   DeploylessContractOptions,
   GetOptions,
@@ -23,6 +24,7 @@ import {
   LimitsOptions,
   MetaData,
   TokenError,
+  TokenMetadataFetchPlan,
   TokenResult
 } from './interfaces'
 import { mapToken } from './tokenProcessing'
@@ -137,14 +139,45 @@ export function getDeploylessOpts(
   }
 }
 
+/**
+ * Turns the plan into what the contract takes and what the results are read back with,
+ * for one page. `metaFlags` marks the assets whose metadata has to be read, one byte
+ * per asset, because repeating those assets' addresses in a second array would cost a
+ * whole word each while the caller usually knows most of them already. Trailing assets
+ * are left out, as the contract reads a missing flag as no metadata.
+ * `metaIndexByAddress` says where each flagged asset sits in the returned metadata,
+ * which the contract packs in the same order.
+ */
+export function planMetaRequest(
+  addresses: string[],
+  needsMetadata: Set<string>
+): { metaFlags: string; metaIndexByAddress: Map<string, number> } {
+  const flags: string[] = []
+  const metaIndexByAddress = new Map<string, number>()
+
+  addresses.forEach((address, index) => {
+    if (!needsMetadata.has(address)) return
+
+    // Fill in the assets in between, which need nothing read for them
+    while (flags.length < index) flags.push('00')
+
+    flags.push('01')
+    metaIndexByAddress.set(address, metaIndexByAddress.size)
+  })
+
+  return { metaFlags: `0x${flags.join('')}`, metaIndexByAddress }
+}
+
 export async function getNFTs(
   network: Network,
   deployless: Deployless,
-  opts: Pick<GetOptions, 'simulation' | 'blockTag' | 'deployless'>,
+  opts: Pick<GetOptions, 'simulation' | 'blockTag' | 'deployless'> & {
+    metadataPlan: CollectionMetadataFetchPlan
+  },
   accountAddr: string,
   tokenAddrs: [string, bigint[]][],
   limits: LimitsOptions
-): Promise<[[TokenError, CollectionResult][], {}][]> {
+): Promise<[[TokenError, CollectionResult][], object][]> {
   await yieldToMain()
   const deploylessOpts = getDeploylessOpts(accountAddr, network, {
     ...opts,
@@ -155,35 +188,59 @@ export async function getNFTs(
     deployless: opts.deployless?.erc721
   })
 
-  const mapNft = (token: any, address: string) => {
+  const collectionAddrs = tokenAddrs.map(([address]) => address)
+  const tokenIds = tokenAddrs.map(([, ids]) => ids.slice(0, limits.erc721TokensInput))
+  // The request is built from this page, never from the full, unpaginated hint list
+  const { metaFlags, metaIndexByAddress } = planMetaRequest(
+    collectionAddrs,
+    opts.metadataPlan.needsMetadata
+  )
+
+  /**
+   * Rebuilds a collection from the token ids it holds, taking the name and symbol
+   * either from this call or from the caller's stored copy. The chain reads both with
+   * one call per collection, so a failure of either is reported on the token ids.
+   */
+  const resolveCollection = (
+    address: string,
+    balance: any,
+    metas: any[]
+  ): {
+    error: TokenError
+    collection: Omit<CollectionResult, 'flags' | 'priceIn' | 'marketDataIn'>
+  } => {
+    const metaIndex = metaIndexByAddress.get(address)
+    const fetchedMeta = metaIndex === undefined ? undefined : metas[metaIndex]
+    const knownMeta = fetchedMeta ? undefined : opts.metadataPlan.known.get(address)
+    const collectibles: bigint[] = [...balance.nfts]
+
     return {
-      name: token.name,
-      chainId: network.chainId,
-      address,
-      symbol: token.symbol,
-      amount: BigInt(token.nfts.length),
-      decimals: 1,
-      collectibles: [...token.nfts]
-    } satisfies Omit<CollectionResult, 'flags' | 'priceIn' | 'marketDataIn'>
+      error: balance.error,
+      collection: {
+        name: fetchedMeta?.name ?? knownMeta?.name ?? '',
+        symbol: fetchedMeta?.symbol ?? knownMeta?.symbol ?? '',
+        chainId: network.chainId,
+        address,
+        amount: BigInt(collectibles.length),
+        decimals: 1,
+        collectibles
+      }
+    }
   }
 
   if (!opts.simulation) {
-    const collections = await deployless.call(
+    const [balances, metas] = await deployless.call(
       'getAllNFTs',
-      [
-        accountAddr,
-        tokenAddrs.map(([address]) => address),
-        tokenAddrs.map(([, ids]) => ids.slice(0, limits.erc721TokensInput)),
-        limits.erc721Tokens
-      ],
+      [accountAddr, collectionAddrs, tokenIds, limits.erc721Tokens, metaFlags],
       deploylessOpts
     )
 
     return [
-      collections.map((token: any, index: number) => [
-        token.error,
-        mapNft(token, tokenAddrs[index]![0])
-      ]),
+      balances.map((balance: any, index: number) => {
+        const { error, collection } = resolveCollection(collectionAddrs[index]!, balance, metas)
+
+        return [error, collection]
+      }),
       {}
     ]
   }
@@ -197,14 +254,15 @@ export async function getNFTs(
     nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
     calls: calls.map(toSingletonCall).map(callToTuple)
   }))
-  const [before, after, simulationErr, , , deltaAddressesMapping] = await deployless.call(
+  const [before, after, metas, simulationErr, , , deltaAddressesMapping] = await deployless.call(
     'simulateAndGetAllNFTs',
     [
       accountAddr,
       shouldStateOverride ? [account.addr] : account.associatedKeys,
-      tokenAddrs.map(([address]) => address),
-      tokenAddrs.map(([, ids]) => ids.slice(0, limits.erc721TokensInput)),
+      collectionAddrs,
+      tokenIds,
       limits.erc721Tokens,
+      metaFlags,
       factory,
       factoryCalldata,
       simulationOps.map((op) => Object.values(op))
@@ -220,51 +278,51 @@ export async function getNFTs(
   const hasSimulation = afterNonce !== beforeNonce
 
   // Index all to prevent nested loops
-  const simulationTokensByAddr = new Map<string, any>()
+  const simulationCollectiblesByAddr = new Map<string, bigint[]>()
 
   if (hasSimulation) {
-    after.collections.forEach((simulationToken: any, tokenIndex: number) => {
-      const addr = deltaAddressesMapping[tokenIndex]
+    after.collections.forEach((simulationCollection: any, collectionIndex: number) => {
+      const addr = deltaAddressesMapping[collectionIndex]
 
       if (addr === undefined) return
 
       const key = addr.toLowerCase()
 
-      if (simulationTokensByAddr.has(key)) return
+      if (simulationCollectiblesByAddr.has(key)) return
 
-      simulationTokensByAddr.set(key, { ...mapNft(simulationToken, addr), addr })
+      simulationCollectiblesByAddr.set(key, [...simulationCollection.nfts])
     })
   }
 
   return [
-    before.collections.map((beforeToken: any, i: number) => {
-      const simulationToken = hasSimulation
-        ? simulationTokensByAddr.get(tokenAddrs[i]![0].toLowerCase())
-        : null
-
-      const token = mapNft(beforeToken, tokenAddrs[i]![0])
+    before.collections.map((balance: any, i: number) => {
+      const address = collectionAddrs[i]!
+      const simulationCollectibles = hasSimulation
+        ? simulationCollectiblesByAddr.get(address.toLowerCase())
+        : undefined
+      const { error, collection } = resolveCollection(address, balance, metas)
       const receiving: bigint[] = []
       const sending: bigint[] = []
 
-      token.collectibles.forEach((oldCollectible: bigint) => {
+      collection.collectibles.forEach((oldCollectible: bigint) => {
         // the first check is required because if there are no changes we will always have !undefined from the second check
-        if (
-          simulationToken?.collectibles &&
-          !simulationToken?.collectibles?.includes(oldCollectible)
-        )
+        if (simulationCollectibles && !simulationCollectibles.includes(oldCollectible))
           sending.push(oldCollectible)
       })
-      simulationToken?.collectibles?.forEach((newCollectible: bigint) => {
-        if (!token.collectibles.includes(newCollectible)) receiving.push(newCollectible)
+      simulationCollectibles?.forEach((newCollectible: bigint) => {
+        if (!collection.collectibles.includes(newCollectible)) receiving.push(newCollectible)
       })
 
+      const simulationAmount = simulationCollectibles ? BigInt(simulationCollectibles.length) : null
+
       return [
-        beforeToken.error,
+        error,
         {
-          ...token,
+          ...collection,
           // Please refer to getTokens() for more info regarding `amountBeforeSimulation` calc
-          simulationAmount: simulationToken ? simulationToken.amount - token.amount : undefined,
-          amountPostSimulation: simulationToken ? simulationToken.amount : token.amount,
+          simulationAmount:
+            simulationAmount === null ? undefined : simulationAmount - collection.amount,
+          amountPostSimulation: simulationAmount === null ? collection.amount : simulationAmount,
           postSimulation: { receiving, sending }
         }
       ]
@@ -276,7 +334,9 @@ export async function getNFTs(
 export async function getTokens(
   network: Network,
   deployless: Deployless,
-  opts: Pick<GetOptions, 'simulation' | 'blockTag' | 'specialErc20Hints' | 'deployless'>,
+  opts: Pick<GetOptions, 'simulation' | 'blockTag' | 'specialErc20Hints' | 'deployless'> & {
+    metadataPlan: TokenMetadataFetchPlan
+  },
   accountAddr: string,
   tokenAddrs: string[]
 ): Promise<[[TokenError, TokenResult][], MetaData][]> {
@@ -295,63 +355,92 @@ export async function getTokens(
     deployless: opts.deployless?.erc20
   })
 
-  const getMainResults = async () => {
-    const { accountOps, baseAccount } = opts.simulation || {}
+  // The request is built from this page, never from the full, unpaginated hint list
+  const { metaFlags, metaIndexByAddress } = planMetaRequest(
+    tokenAddrs,
+    opts.metadataPlan.needsMetadata
+  )
 
-    if (!baseAccount) {
-      throw new Error('Base account is required for simulation')
+  /**
+   * Rebuilds what mapToken expects from a balance-only result, taking metadata either
+   * from this call or from the caller's stored copy. The chain reads both with one call
+   * per token, so a failure of either is reported on the balance.
+   */
+  const resolveToken = (address: string, balance: any, metas: any[]) => {
+    const metaIndex = metaIndexByAddress.get(address)
+    const fetchedMeta = metaIndex === undefined ? undefined : metas[metaIndex]
+
+    if (fetchedMeta) {
+      return {
+        amount: balance.amount,
+        symbol: fetchedMeta.symbol,
+        name: fetchedMeta.name,
+        decimals: fetchedMeta.decimals,
+        error: balance.error
+      }
     }
 
-    const account = baseAccount.getAccount()
-    const shouldStateOverride = getShouldStateOverride(network, baseAccount)
-    const simulationOps = accountOps?.map(({ nonce, calls }, idx) => ({
-      // state overriden accounts start from a fake, specified nonce
-      nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
-      calls: calls.map(toSingletonCall).map(callToTuple)
-    }))
-    const [factory, factoryCalldata] = getAccountDeployParams(account)
+    const knownMeta = opts.metadataPlan.known.get(address)
 
     return {
-      simulationOps,
-      result: await deployless.call(
-        'simulateAndGetBalances',
-        [
-          accountAddr,
-          shouldStateOverride ? [account.addr] : account.associatedKeys,
-          tokenAddrs,
-          factory,
-          factoryCalldata,
-          simulationOps?.map((op) => Object.values(op))
-        ],
-        deploylessOpts
-      )
+      amount: balance.amount,
+      symbol: knownMeta?.symbol ?? '',
+      name: knownMeta?.name ?? '',
+      decimals: knownMeta?.decimals ?? 0,
+      error: balance.error
     }
   }
 
   if (!opts.simulation) {
-    const [results, blockNumber] = await deployless.call(
+    const [balances, metas, blockNumber] = await deployless.call(
       'getBalances',
-      [accountAddr, tokenAddrs],
+      [accountAddr, tokenAddrs, metaFlags],
       deploylessOpts
     )
 
     return [
-      results.map((token: any, i: number) => [
-        token.error,
-        mapToken(token, network, tokenAddrs[i]!, opts, undefined, token.amount)
-      ]),
+      balances.map((balance: any, i: number) => {
+        const token = resolveToken(tokenAddrs[i]!, balance, metas)
+
+        return [
+          token.error,
+          mapToken(token, network, tokenAddrs[i]!, opts, undefined, token.amount)
+        ]
+      }),
       {
-        blockNumber
+        // The getter returns a uint256, so it has to be brought back to a number
+        blockNumber: Number(blockNumber)
       }
     ]
   }
 
-  const mainResults = await getMainResults()
-  const [before, after, simulationErr, , blockNumber, deltaAddressesMapping] = mainResults.result
+  const { accountOps, baseAccount } = opts.simulation
+  const account = baseAccount.getAccount()
+  const shouldStateOverride = getShouldStateOverride(network, baseAccount)
+  const simulationOps = accountOps.map(({ nonce, calls }, idx) => ({
+    // state overriden accounts start from a fake, specified nonce
+    nonce: !shouldStateOverride ? nonce : BigInt(EOA_SIMULATION_NONCE) + BigInt(idx),
+    calls: calls.map(toSingletonCall).map(callToTuple)
+  }))
+  const [factory, factoryCalldata] = getAccountDeployParams(account)
+  const [before, after, metas, simulationErr, , blockNumber, deltaAddressesMapping] =
+    await deployless.call(
+      'simulateAndGetBalances',
+      [
+        accountAddr,
+        shouldStateOverride ? [account.addr] : account.associatedKeys,
+        tokenAddrs,
+        metaFlags,
+        factory,
+        factoryCalldata,
+        simulationOps.map((op) => Object.values(op))
+      ],
+      deploylessOpts
+    )
 
   const beforeNonce = before.nonce
   const afterNonce = after.nonce
-  handleSimulationError(simulationErr, beforeNonce, afterNonce, mainResults.simulationOps || [])
+  handleSimulationError(simulationErr, beforeNonce, afterNonce, simulationOps)
 
   // simulation was performed if the nonce is changed
   const hasSimulation = afterNonce !== beforeNonce
@@ -370,7 +459,8 @@ export async function getTokens(
   }
 
   return [
-    before.balances.map((token: any, i: number) => {
+    before.balances.map((balance: any, i: number) => {
+      const token = resolveToken(tokenAddrs[i]!, balance, metas)
       const simulation = hasSimulation ? (simulationTokensByAddr.get(tokenAddrs[i]!) ?? null) : null
 
       const simulationAmount = simulation ? simulation.amount - token.amount : undefined
@@ -397,7 +487,8 @@ export async function getTokens(
       ]
     }),
     {
-      blockNumber,
+      // The getter returns a uint256, so it has to be brought back to a number
+      blockNumber: Number(blockNumber),
       beforeNonce,
       afterNonce
     }
