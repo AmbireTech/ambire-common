@@ -34,6 +34,8 @@ import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
+import { FeatureFlags } from '../../consts/featureFlags'
+import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
@@ -44,8 +46,6 @@ import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
-import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
-// Namespace import, so the broadcast helpers can be stood in for with jest.spyOn
 import * as broadcastLib from '../../libs/broadcast/broadcast'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
@@ -79,8 +79,7 @@ import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { DappsController } from '../dapps/dapps'
 import { EstimationController } from '../estimation/estimation'
-import { EstimationStatus } from '../estimation/types'
-import { FeatureFlags } from '../../consts/featureFlags'
+import { EstimationFailureKind, EstimationStatus } from '../estimation/types'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import { InviteController } from '../invite/invite'
@@ -96,7 +95,7 @@ import { SurveyController } from '../survey/survey'
 import { UiController } from '../ui/ui'
 import { clearDiscoverTxnTokensCache } from './discoverTxnTokens'
 import { getFeeSpeedIdentifier, SignAccountOpType } from './helper'
-import { FeeSpeed, SigningStatus } from './signAccountOp'
+import { FeeSpeed, MAX_REESTIMATES, SignAccountOpController, SigningStatus } from './signAccountOp'
 import { SignAccountOpPreferenceController } from './signAccountOpPreference'
 import { SignAccountOpTesterController } from './signAccountOpTester'
 
@@ -3973,5 +3972,139 @@ describe('broadcasting a batch one transaction at a time', () => {
     // failure is the whole story.
     expect(submittedAccountOps).toHaveLength(0)
     expect(getPartialBroadcastError(controller)).toBeUndefined()
+  })
+})
+
+describe('reestimation loop', () => {
+  const loopGasPrices = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+
+  const initLoop = async () => {
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: nativeFeeToken
+      }
+    ]
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 25000n, feePaymentOptions },
+        flags: {},
+        updatedAt: Date.now()
+      } as any,
+      loopGasPrices,
+      false
+    )
+
+    // The gas price loop is not under test and would otherwise hit the network
+    jest.spyOn(controller.gasPrice, 'fetch').mockImplementation(async () => {})
+
+    return controller
+  }
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+    jest.useRealTimers()
+  })
+
+  /**
+   * Hands the estimate loop over to the fake clock. The interval scheduled while
+   * the controller was built belongs to the real one, so without this no tick
+   * ever fires and every assertion below would pass on an idle loop.
+   */
+  const takeOverLoop = (controller: SignAccountOpController) => {
+    jest.useFakeTimers()
+    controller.pause()
+    controller.resume()
+  }
+
+  /** Advances far enough to cover the give-up limit, including its growing waits. */
+  const runLoop = async (ticks: number) => {
+    for (let i = 0; i < ticks; i += 1) {
+      await jest.advanceTimersByTimeAsync(ESTIMATE_UPDATE_INTERVAL)
+    }
+  }
+
+  const TICKS_PAST_GIVE_UP = 200
+
+  /** Stands in for an attempt that ended with the given failure. */
+  const mockFailingEstimate = (controller: SignAccountOpController, kind: EstimationFailureKind) =>
+    jest.spyOn(controller.estimation, 'estimate').mockImplementation(async () => {
+      controller.estimation.status = EstimationStatus.Error
+      controller.estimation.failureKind = kind
+      controller.estimation.hasEstimated = true
+    })
+
+  test('stops asking once the failure cannot be fixed by asking again', async () => {
+    const controller = await initLoop()
+    const estimate = mockFailingEstimate(controller, EstimationFailureKind.Permanent)
+
+    takeOverLoop(controller)
+    await runLoop(TICKS_PAST_GIVE_UP)
+
+    // The account is gone or the network is off - the answer will not change,
+    // so there is no reason to keep the user's providers busy
+    expect(estimate).toHaveBeenCalledTimes(1)
+  })
+
+  test('keeps asking while the failure may resolve on its own', async () => {
+    const controller = await initLoop()
+    const estimate = mockFailingEstimate(controller, EstimationFailureKind.Retriable)
+
+    takeOverLoop(controller)
+    await runLoop(TICKS_PAST_GIVE_UP)
+
+    // A connection that came back would produce a different answer, so the loop
+    // keeps going until it hits the give-up limit
+    expect(estimate).toHaveBeenCalledTimes(MAX_REESTIMATES + 1)
+  })
+
+  test('gives up on a request the user left open', async () => {
+    const controller = await initLoop()
+    const estimate = jest
+      .spyOn(controller.estimation, 'estimate')
+      .mockImplementation(async () => {})
+
+    takeOverLoop(controller)
+    await runLoop(TICKS_PAST_GIVE_UP)
+    const callsAfterGivingUp = estimate.mock.calls.length
+
+    expect(callsAfterGivingUp).toBe(MAX_REESTIMATES + 1)
+
+    await runLoop(TICKS_PAST_GIVE_UP)
+
+    // Confirms it really stopped rather than merely slowed down
+    expect(estimate.mock.calls.length).toBe(callsAfterGivingUp)
+  })
+
+  test('retry resumes a loop that had stopped refetching', async () => {
+    const controller = await initLoop()
+    const estimate = jest
+      .spyOn(controller.estimation, 'estimate')
+      .mockImplementation(async () => {})
+
+    // pause leaves refetching stopped, the same state the give-up limit leaves behind
+    controller.pause()
+
+    jest.useFakeTimers()
+    await runLoop(2)
+    expect(estimate).not.toHaveBeenCalled()
+
+    await controller.retry('estimate')
+    await runLoop(1)
+
+    // Without clearing the stopped flag the interval shuts itself down again on its
+    // first run, which is what made the retry button do nothing
+    expect(estimate).toHaveBeenCalled()
   })
 })
