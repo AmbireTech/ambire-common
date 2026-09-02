@@ -1,7 +1,6 @@
 import ErrorHumanizerError from '../../classes/ErrorHumanizerError'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
-import { ErrorRef } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -18,7 +17,38 @@ import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getIsViewOnly } from '../../utils/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { EstimationStatus } from './types'
+import { EstimationFailureKind, EstimationStatus } from './types'
+
+type EstimationFailure = {
+  /** Shown to the user as the reason the transaction could not be prepared. */
+  message: string
+  kind: EstimationFailureKind
+}
+
+/** User-facing reasons an estimation attempt could not produce a result. */
+export const ESTIMATION_FAILURES: Record<
+  'missingAccount' | 'missingNetwork' | 'missingAccountState' | 'unexpected',
+  EstimationFailure
+> = {
+  missingAccount: {
+    message: 'This transaction belongs to an account that is no longer in the wallet.',
+    kind: EstimationFailureKind.Permanent
+  },
+  missingNetwork: {
+    message:
+      'This transaction is for a network that is currently turned off. Turn the network back on to continue.',
+    kind: EstimationFailureKind.Permanent
+  },
+  missingAccountState: {
+    message:
+      "We couldn't load the latest information about your account. Please try again in a moment, or contact Ambire support if this keeps happening.",
+    kind: EstimationFailureKind.Retriable
+  },
+  unexpected: {
+    message: "We couldn't prepare your transaction.",
+    kind: EstimationFailureKind.Retriable
+  }
+}
 
 export class EstimationController extends EventEmitter {
   #keystore: IKeystoreController
@@ -45,7 +75,11 @@ export class EstimationController extends EventEmitter {
    */
   hasEstimated: boolean = false
 
-  estimationRetryError: ErrorRef | null = null
+  /**
+   * How the last attempt failed, or null when it produced an answer - even one
+   * the user has to act on, like not enough funds to cover the fee.
+   */
+  failureKind: EstimationFailureKind | null = null
 
   availableFeeOptions: FeePaymentOption[] = []
 
@@ -82,9 +116,11 @@ export class EstimationController extends EventEmitter {
     this.#activity = activity
   }
 
-  #getAvailableFeeOptions(baseAcc: BaseAccount, op: AccountOp): FeePaymentOption[] {
-    const estimation = this.estimation as FullEstimationSummary
-
+  #getAvailableFeeOptions(
+    baseAcc: BaseAccount,
+    op: AccountOp,
+    estimation: FullEstimationSummary
+  ): FeePaymentOption[] {
     return baseAcc.getAvailableFeeOptions(
       estimation,
 
@@ -97,23 +133,76 @@ export class EstimationController extends EventEmitter {
     )
   }
 
+  #setFailure(failure: EstimationFailure) {
+    this.failureKind = failure.kind
+
+    // A failure we will ask about again must not take away an estimation the
+    // user can still broadcast with. The status goes back to the one the kept
+    // estimation was fetched with, and `calculateWarnings` says it may be
+    // outdated.
+    if (this.isRetryingFailure() && this.estimation) {
+      return
+    }
+
+    this.error = new Error(failure.message)
+    this.estimation = null
+    this.status = EstimationStatus.Error
+    this.availableFeeOptions = []
+  }
+
+  #onUnexpectedFailure(error: unknown) {
+    this.#setFailure(ESTIMATION_FAILURES.unexpected)
+
+    this.emitError({
+      level: 'silent',
+      sendCrashReport: true,
+      message: ESTIMATION_FAILURES.unexpected.message,
+      error: error instanceof Error ? error : new Error(String(error))
+    })
+  }
+
   async estimate(op: AccountOp) {
     this.status = EstimationStatus.Loading
     this.emitUpdate()
 
-    const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)!
-    const network = this.#networks.networks.find((net) => net.chainId === op.chainId)!
+    // An estimation that a newer accountOp took over must not resolve the
+    // loading state - the estimation owning `lastAccountOpId` does that instead.
+    let isSupersededByNewerOp = false
+
+    try {
+      await this.#estimate(op, () => {
+        isSupersededByNewerOp = true
+      })
+    } catch (error: unknown) {
+      this.#onUnexpectedFailure(error)
+    } finally {
+      if (!isSupersededByNewerOp) {
+        this.hasEstimated = true
+        this.emitUpdate()
+      }
+    }
+  }
+
+  async #estimate(op: AccountOp, onSupersededByNewerOp: () => void) {
+    const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)
+
+    if (!account) {
+      this.#setFailure(ESTIMATION_FAILURES.missingAccount)
+      return
+    }
+
+    const network = this.#networks.networks.find((net) => net.chainId === op.chainId)
+    if (!network) {
+      this.#setFailure(ESTIMATION_FAILURES.missingNetwork)
+      return
+    }
+
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
       op.accountAddr,
       op.chainId
     )
     if (!accountState) {
-      this.error = new Error(
-        'During the preparation step, required transaction information was found missing (account state). Please try again later or contact support.'
-      )
-      this.status = EstimationStatus.Error
-      this.hasEstimated = true
-      this.emitUpdate()
+      this.#setFailure(ESTIMATION_FAILURES.missingAccountState)
       return
     }
 
@@ -215,25 +304,35 @@ export class EstimationController extends EventEmitter {
         error,
         level: 'silent'
       })
+      onSupersededByNewerOp()
       return
     }
 
-    const isSuccess = !(estimation instanceof Error) && !estimation.criticalError
-    if (isSuccess) {
-      this.estimation = getEstimationSummary(estimation)
+    if (estimation instanceof Error) {
+      this.#onUnexpectedFailure(estimation)
+      return
+    }
+
+    if (!estimation.criticalError) {
+      // Compute before setting as to not leave a partial state in case of an error
+      const summary = getEstimationSummary(estimation)
+      const availableFeeOptions = this.#getAvailableFeeOptions(baseAcc, op, summary)
+
+      this.estimation = summary
       this.error = null
       this.status = EstimationStatus.Success
-      this.estimationRetryError = null
-      this.availableFeeOptions = this.#getAvailableFeeOptions(baseAcc, op)
+      this.failureKind = null
+      this.availableFeeOptions = availableFeeOptions
       this.#notFatalBundlerError =
         estimation.bundler instanceof Error
           ? new Error(estimation.bundler.message, { cause: '4337_ESTIMATION' })
           : undefined
     } else {
       this.estimation = null
-      this.error = estimation instanceof Error ? estimation : estimation.criticalError
+      this.error = estimation.criticalError
       this.status = EstimationStatus.Error
       this.availableFeeOptions = []
+      this.failureKind = null
     }
 
     // estimation.flags.hasNonceDiscrepancy is a signal from the estimation
@@ -248,9 +347,6 @@ export class EstimationController extends EventEmitter {
 
         .catch((e) => console.error(e))
     }
-
-    this.hasEstimated = true
-    this.emitUpdate()
   }
 
   /**
@@ -261,19 +357,30 @@ export class EstimationController extends EventEmitter {
   }
 
   /**
-   * has it estimated at least once without a failure
+   * Whether the last attempt failed for a reason that could resolve on its own.
+   * The reestimation loop keeps going and the sign screen says the estimation
+   * is taking longer than usual instead of showing a dead end.
    */
-  isLoadingOrFailed(): boolean {
-    return this.status === EstimationStatus.Loading || this.error instanceof Error
+  isRetryingFailure(): boolean {
+    return this.failureKind === EstimationFailureKind.Retriable
+  }
+
+  /**
+   * Whether asking again cannot change the outcome, so the reestimation loop
+   * has nothing left to do.
+   */
+  hasPermanentFailure(): boolean {
+    return this.failureKind === EstimationFailureKind.Permanent
   }
 
   calculateWarnings(acc: Account) {
     const warnings: Warning[] = []
 
-    if (this.estimationRetryError && this.status === EstimationStatus.Success) {
+    // The estimation on screen is the last one that worked out
+    if (this.isRetryingFailure() && this.estimation) {
       warnings.push({
         id: 'estimation-retry',
-        title: this.estimationRetryError.message,
+        title: "We couldn't refresh the network fee",
         text: 'You can proceed, but fee estimation is outdated - consider waiting for an updated estimation for a more optimal fee.'
       })
     }
@@ -306,21 +413,11 @@ export class EstimationController extends EventEmitter {
   get errors(): SignAccountOpError[] {
     const errors: SignAccountOpError[] = []
 
-    if (this.isLoadingOrFailed() && this.estimationRetryError) {
-      // If there is a successful estimation we should show this as a warning
-      // as the user can use the old estimation to broadcast
-      errors.push({
-        title: `${this.estimationRetryError.message} ${
-          this.error
-            ? 'We will continue retrying, but please check your internet connection.'
-            : 'Automatically retrying in a few seconds. Please wait...'
-        }`
-      })
-
-      return errors
-    }
-
     if (!this.isInitialized()) return []
+
+    // Nothing is broken yet - the sign screen keeps the fee section and says
+    // the estimation is taking longer than usual while the loop retries
+    if (this.isRetryingFailure()) return errors
 
     if (this.error) {
       let code = ''
