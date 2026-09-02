@@ -1,7 +1,12 @@
 import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../../interfaces'
+import {
+  HumanizerCallModule,
+  HumanizerVisualization,
+  HumanizerWarning,
+  IrCall
+} from '../../interfaces'
 import {
   getAction,
   getAddressVisualization,
@@ -9,8 +14,12 @@ import {
   getLabel,
   getOnBehalfOf,
   getToken,
+  getUnlimitedApprovalWarning,
   HexIrCall,
-  isHexCall
+  isHexCall,
+  isUnlimitedAmount,
+  mergeWarnings,
+  padCallData
 } from '../../utils'
 
 // MetaMorpho vaults are ERC-4626 + ERC-20 + ERC-2612 (permit) + OZ Multicall contracts.
@@ -46,114 +55,187 @@ const erc4626RedeemAbi = parseAbi([
 interface DecodedInnerCall {
   visualization: HumanizerVisualization[]
   matched: boolean
+  // collected while the inner call is decoded, e.g. when it turns out to be an approval with
+  // no limit. A nested bundle carries up every warning the calls inside it produced
+  warnings: HumanizerWarning[]
 }
 
 // inner calls not matching one of these selectors are rendered as "Unknown call" rather
 // than dropping the whole multicall's humanization
+type DecodedInnerCallResult = {
+  visualization: HumanizerVisualization[]
+  warning?: HumanizerWarning
+}
+
 const innerCallMatcher: Record<
   string,
-  (vault: string, accAddr: string, data: HexIrCall['data']) => HumanizerVisualization[]
+  (vault: string, accAddr: string, data: HexIrCall['data']) => DecodedInnerCallResult
 > = {
   [toFunctionSelector(erc20ApproveAbi[0])]: (vault, _accAddr, data) => {
-    const { args } = decodeFunctionData({ abi: erc20ApproveAbi, data })
+    const { args } = decodeFunctionData({ abi: erc20ApproveAbi, data: padCallData(data, 2) })
     const [spender, amount] = args
-    return amount !== 0n
-      ? [
-          getAction('Grant approval'),
-          getLabel('for'),
-          getToken(vault, amount),
-          getLabel('to'),
-          getAddressVisualization(spender)
-        ]
-      : [
+    if (amount === 0n)
+      return {
+        visualization: [
           getAction('Revoke approval'),
           getToken(vault, amount),
           getLabel('for'),
           getAddressVisualization(spender)
         ]
+      }
+
+    return {
+      visualization: [
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken(vault, amount),
+        getLabel('to'),
+        getAddressVisualization(spender)
+      ],
+      warning: isUnlimitedAmount(amount) ? getUnlimitedApprovalWarning(spender) : undefined
+    }
   },
   [toFunctionSelector(permitAbi[0])]: (vault, accAddr, data) => {
-    const { args } = decodeFunctionData({ abi: permitAbi, data })
+    const { args } = decodeFunctionData({ abi: permitAbi, data: padCallData(data, 7) })
     const [owner, spender, value] = args
-    return [
-      getAction('Grant approval'),
-      getLabel('for'),
-      getToken(vault, value),
-      getLabel('to'),
-      getAddressVisualization(spender),
-      ...getOnBehalfOf(owner, accAddr)
-    ]
+    return {
+      visualization: [
+        getAction('Grant approval'),
+        getLabel('for'),
+        getToken(vault, value),
+        getLabel('to'),
+        getAddressVisualization(spender),
+        ...getOnBehalfOf(owner, accAddr)
+      ],
+      warning: isUnlimitedAmount(value) ? getUnlimitedApprovalWarning(spender) : undefined
+    }
   },
   [toFunctionSelector(erc20TransferAbi[0])]: (vault, _accAddr, data) => {
-    const { args } = decodeFunctionData({ abi: erc20TransferAbi, data })
+    const { args } = decodeFunctionData({ abi: erc20TransferAbi, data: padCallData(data, 2) })
     const [to, amount] = args
-    return [getAction('Send'), getToken(vault, amount), getLabel('to'), getAddressVisualization(to)]
+    return {
+      visualization: [
+        getAction('Send'),
+        getToken(vault, amount),
+        getLabel('to'),
+        getAddressVisualization(to)
+      ]
+    }
   },
   [toFunctionSelector(erc20TransferFromAbi[0])]: (vault, _accAddr, data) => {
-    const { args } = decodeFunctionData({ abi: erc20TransferFromAbi, data })
+    const { args } = decodeFunctionData({ abi: erc20TransferFromAbi, data: padCallData(data, 3) })
     const [from, to, amount] = args
-    return [
-      getAction('Transfer'),
-      getToken(vault, amount),
-      getLabel('from'),
-      getAddressVisualization(from),
-      getLabel('to'),
-      getAddressVisualization(to)
-    ]
+    return {
+      visualization: [
+        getAction('Transfer'),
+        getToken(vault, amount),
+        getLabel('from'),
+        getAddressVisualization(from),
+        getLabel('to'),
+        getAddressVisualization(to)
+      ]
+    }
   },
   [toFunctionSelector(erc4626DepositAbi[0])]: (vault, accAddr, data) => {
-    const { args } = decodeFunctionData({ abi: erc4626DepositAbi, data })
+    const { args } = decodeFunctionData({ abi: erc4626DepositAbi, data: padCallData(data, 2) })
     const [assets, receiver] = args
-    return [
-      getAction('Deposit into vault'),
-      getToken(vault, assets),
-      ...getOnBehalfOf(receiver, accAddr)
-    ]
+    return {
+      visualization: [
+        getAction('Deposit into vault'),
+        getToken(vault, assets),
+        ...getOnBehalfOf(receiver, accAddr)
+      ]
+    }
   },
   [toFunctionSelector(erc4626MintAbi[0])]: (vault, accAddr, data) => {
-    const { args } = decodeFunctionData({ abi: erc4626MintAbi, data })
+    const { args } = decodeFunctionData({ abi: erc4626MintAbi, data: padCallData(data, 2) })
     const [shares, receiver] = args
-    return [
-      getAction('Mint vault shares'),
-      getToken(vault, shares),
-      ...getOnBehalfOf(receiver, accAddr)
-    ]
+    return {
+      visualization: [
+        getAction('Mint vault shares'),
+        getToken(vault, shares),
+        ...getOnBehalfOf(receiver, accAddr)
+      ]
+    }
   },
   [toFunctionSelector(erc4626WithdrawAbi[0])]: (vault, accAddr, data) => {
-    const { args } = decodeFunctionData({ abi: erc4626WithdrawAbi, data })
+    const { args } = decodeFunctionData({ abi: erc4626WithdrawAbi, data: padCallData(data, 3) })
     const [assets, , owner] = args
-    return [
-      getAction('Withdraw from vault'),
-      getToken(vault, assets),
-      ...getOnBehalfOf(owner, accAddr)
-    ]
+    return {
+      visualization: [
+        getAction('Withdraw from vault'),
+        getToken(vault, assets),
+        ...getOnBehalfOf(owner, accAddr)
+      ]
+    }
   },
   [toFunctionSelector(erc4626RedeemAbi[0])]: (vault, accAddr, data) => {
-    const { args } = decodeFunctionData({ abi: erc4626RedeemAbi, data })
+    const { args } = decodeFunctionData({ abi: erc4626RedeemAbi, data: padCallData(data, 3) })
     const [shares, , owner] = args
-    return [
-      getAction('Redeem vault shares'),
-      getToken(vault, shares),
-      ...getOnBehalfOf(owner, accAddr)
-    ]
+    return {
+      visualization: [
+        getAction('Redeem vault shares'),
+        getToken(vault, shares),
+        ...getOnBehalfOf(owner, accAddr)
+      ]
+    }
   }
 }
 
+// shown as unknown without a warning on purpose: `multicall(bytes[])` is not unique to
+// MetaMorpho, so an inner selector this module does not know may be an ordinary call on some
+// other contract. Warning here would alarm users about calls that are not a real concern
 const unmatched = (): DecodedInnerCall => ({
   visualization: [getAction('Unknown call')],
-  matched: false
+  matched: false,
+  warnings: []
 })
 
+const multicallSelector = toFunctionSelector(multicallAbi[0])
+
+const joinWithBreaks = (decoded: DecodedInnerCall[]): HumanizerVisualization[] => {
+  const visualization = decoded.flatMap((c) => [getBreak(), ...c.visualization])
+  visualization.shift()
+
+  return visualization
+}
+
+// No depth limit here on purpose: every nested bundle's calldata is part of its parent
+// bundle's calldata, so it is always shorter and the recursion always stops on its own. A
+// depth limit would just hide a deeply nested approval's warning from the user instead.
 const decodeVaultMulticall = (
   vault: string,
   accAddr: string,
   innerCalls: readonly HexIrCall['data'][]
 ): DecodedInnerCall[] =>
   innerCalls.map((data) => {
-    const decodeInnerCall = innerCallMatcher[data.slice(0, 10)]
+    const selector = data.slice(0, 10)
+
+    if (selector === multicallSelector) {
+      try {
+        const { args } = decodeFunctionData({ abi: multicallAbi, data })
+        const [nestedCalls] = args
+        if (!nestedCalls.length) return unmatched()
+        const nested = decodeVaultMulticall(vault, accAddr, nestedCalls)
+        if (!nested.some((c) => c.matched)) return unmatched()
+
+        return {
+          visualization: joinWithBreaks(nested),
+          matched: true,
+          warnings: nested.flatMap((c) => c.warnings)
+        }
+      } catch (error) {
+        console.error('Failed to decode nested MetaMorpho multicall', error)
+        return unmatched()
+      }
+    }
+
+    const decodeInnerCall = innerCallMatcher[selector]
     if (!decodeInnerCall) return unmatched()
     try {
-      return { visualization: decodeInnerCall(vault, accAddr, data), matched: true }
+      const { visualization, warning } = decodeInnerCall(vault, accAddr, data)
+
+      return { visualization, matched: true, warnings: warning ? [warning] : [] }
     } catch (error) {
       console.error('Failed to decode MetaMorpho inner call', error)
       return unmatched()
@@ -166,8 +248,14 @@ const MetaMorphoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): 
   if (!isHexCall(call)) return call
   if (call.data.slice(0, 10) !== toFunctionSelector(multicallAbi[0])) return call
 
-  const { args } = decodeFunctionData({ abi: multicallAbi, data: call.data })
-  const [innerCalls] = args
+  let innerCalls: readonly HexIrCall['data'][]
+  try {
+    const { args } = decodeFunctionData({ abi: multicallAbi, data: call.data })
+    ;[innerCalls] = args
+  } catch (error) {
+    console.error('Failed to decode MetaMorpho multicall', error)
+    return call
+  }
   if (!innerCalls.length) return call
   const decoded: DecodedInnerCall[] = decodeVaultMulticall(call.to, accOp.accountAddr, innerCalls)
 
@@ -176,10 +264,10 @@ const MetaMorphoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): 
   // be left for other modules / the fallback humanizer
   if (!decoded.some((c) => c.matched)) return call
 
-  const fullVisualization = decoded.flatMap((c) => [getBreak(), ...c.visualization])
-  fullVisualization.shift()
+  const fullVisualization = joinWithBreaks(decoded)
+  const warnings = decoded.flatMap((c) => c.warnings)
 
-  return { ...call, fullVisualization }
+  return { ...call, fullVisualization, warnings: mergeWarnings(call.warnings, warnings) }
 }
 
 export default MetaMorphoModule

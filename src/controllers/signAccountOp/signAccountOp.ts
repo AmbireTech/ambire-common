@@ -11,6 +11,7 @@ import {
 } from 'ethers'
 import { maxUint256 } from 'viem'
 
+import { getGasLimitWithOverhead } from '@/libs/estimate/estimate'
 import { isNative } from '@/libs/portfolio/helpers'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
@@ -79,7 +80,7 @@ import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Safe } from '../../libs/account/Safe'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus } from '../../libs/accountOp/types'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getScamDetectedText } from '../../libs/banners/banners'
 import {
   BROADCAST_OPTIONS,
@@ -98,7 +99,11 @@ import {
 import { calculateFeeAmount } from '../../libs/fees/fees'
 import { fetchErc7730DescriptorsForAccountOp, humanizeAccountOp } from '../../libs/humanizer'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
-import { flattenHumanizerVisualizations, hasErc7730Humanization } from '../../libs/humanizer/utils'
+import {
+  flattenHumanizerVisualizations,
+  hasErc7730Humanization,
+  UNLIMITED_APPROVAL_WARNING_CODE
+} from '../../libs/humanizer/utils'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
@@ -169,7 +174,6 @@ import {
 } from './signAccountOpPreference'
 
 import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
-
 // Re-exporting for backwards compatibility with existing importers
 export { FeeSpeed, noStateUpdateStatuses, SigningStatus }
 export type { SpeedCalc, Status }
@@ -329,7 +333,41 @@ export class SignAccountOpController
 
   estimation: EstimationController
 
-  humanization: IrCall[] = []
+  #humanization: IrCall[] = []
+
+  /**
+   * The humanized calls, with the unlimited approval warnings of apps in the default Ambire
+   * catalog taken out. Humanizer modules cannot read the catalog, so they report every unlimited
+   * approval, and the ones from an app we already trust are dropped here.
+   *
+   * The catalog is fetched, so it often arrives after the calls were humanized. Deciding this on
+   * read, rather than baking it into the humanization, means a catalog that lands late needs no
+   * new humanization: the dapps update this controller already listens to emits, the UI reads
+   * again, and the answer is right whether an app joins the catalog or leaves it.
+   *
+   * Returns the stored array itself when nothing was dropped, so the calls on screen keep their
+   * identity while a new humanization is running.
+   */
+  get humanization(): IrCall[] {
+    let didSuppressWarning = false
+
+    const humanization = this.#humanization.map((call, index) => {
+      const dappUrl = this.accountOp.calls[index]?.dapp?.url
+      // an app with no url is never trusted - a request of unknown origin is not a safer one
+      if (!dappUrl || !this.#dapps.isDappInDefaultCatalog(dappUrl)) return call
+
+      const warnings = call.warnings?.filter(
+        (warning) => warning.code !== UNLIMITED_APPROVAL_WARNING_CODE
+      )
+      if (warnings?.length === call.warnings?.length) return call
+
+      didSuppressWarning = true
+
+      return { ...call, warnings }
+    })
+
+    return didSuppressWarning ? humanization : this.#humanization
+  }
 
   humanizationId: number | null = null
 
@@ -914,15 +952,15 @@ export class SignAccountOpController
   }
 
   #setHumanization(humanization: IrCall[], existingHumanizationId?: number) {
-    this.humanization = humanization
+    this.#humanization = humanization
     this.isHumanizing = false
     const currentHumanizationId = existingHumanizationId ?? this.createHumanizationId()
     this.humanizationId = currentHumanizationId
 
-    if (this.humanization.length) {
+    if (this.#humanization.length) {
       const updateBlacklistedStatusPromise = this.#phishing
         .updateAddressesBlacklistedStatus(
-          this.humanization
+          this.#humanization
             .flatMap((call) =>
               flattenHumanizerVisualizations(call.fullVisualization)
                 .filter((v) => v.type === 'token' || v.type === 'address')
@@ -932,7 +970,7 @@ export class SignAccountOpController
           (addressesStatus) => {
             if (!this.isCurrentHumanization(currentHumanizationId)) return
 
-            for (const call of this.humanization) {
+            for (const call of this.#humanization) {
               if (!call.fullVisualization) continue
 
               for (const vis of flattenHumanizerVisualizations(call.fullVisualization)) {
@@ -2423,6 +2461,7 @@ export class SignAccountOpController
           if (!estimation.bundlerEstimation) return
 
           usesPaymaster = !!estimation.bundlerEstimation?.paymaster.isUsable()
+          // no gas overhead for bundler broadcast
           simulatedGasLimit =
             BigInt(gasUsed) +
             BigInt(estimation.bundlerEstimation.preVerificationGas) +
@@ -2435,7 +2474,7 @@ export class SignAccountOpController
           broadcastOption === BROADCAST_OPTIONS.bySelf ||
           broadcastOption === BROADCAST_OPTIONS.bySelf7702
         ) {
-          simulatedGasLimit = gasUsed
+          simulatedGasLimit = getGasLimitWithOverhead(gasUsed)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
           amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
@@ -2448,7 +2487,7 @@ export class SignAccountOpController
         } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
           // Smart account, but EOA pays the fee
           // 7702, and it pays for the fee by itself
-          simulatedGasLimit = gasUsed
+          simulatedGasLimit = getGasLimitWithOverhead(gasUsed)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
           amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
@@ -3493,7 +3532,6 @@ export class SignAccountOpController
       nonce: number
       identifiedBy: AccountOpIdentifiedBy
     } | null = null
-
     // broadcasting by EOA is quite the same:
     // 1) build a rawTxn 2) sign 3) broadcast
     // we have one handle, just a diff rawTxn for each case
@@ -3582,15 +3620,7 @@ export class SignAccountOpController
 
           // record the EOA txn only if isErc4337Enabled as
           // we need this for the gas tank
-          if (this.isErc4337Enabled) {
-            this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
-              rawTxn: signedTxn
-            }).catch((e: any) => {
-              console.log('failed to record EOA txn to relayer', accountOp.chainId)
-
-              console.log(e)
-            })
-          }
+          if (this.isErc4337Enabled) this.#recordEoaTxnForGasTank(accountOp.chainId, signedTxn)
         }
 
         transactionRes = {
@@ -3626,6 +3656,21 @@ export class SignAccountOpController
             },
             txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
           }
+
+          // The part that went out is reported as broadcast, so without saying this
+          // the rest of the batch looks sent when it never was.
+          const sentCount = multipleTxnsBroadcastRes.length
+          const notSentCount = accountOp.calls.length - sentCount
+          const reason = error?.message || 'the transaction could not be signed'
+          this.emitError({
+            level: 'major',
+            message: `Only ${sentCount} of ${accountOp.calls.length} transactions in this batch ${
+              sentCount === 1 ? 'was' : 'were'
+            } sent. The remaining ${notSentCount === 1 ? 'one' : notSentCount} could not be sent: ${
+              reason.endsWith('.') ? reason : `${reason}.`
+            } You can send ${notSentCount === 1 ? 'it' : 'them'} again.`,
+            error
+          })
         } else {
           return this.throwBroadcastAccountOp({ error, accountState })
         }
@@ -3831,6 +3876,26 @@ export class SignAccountOpController
     await this.signAndBroadcastPromise
   }
 
+  /**
+   * Bookkeeping for the gas tank, which the broadcast does not depend on. It is
+   * deliberately not awaited and never allowed to throw: it runs between the
+   * transactions of a batch, where anything escaping it would stop the rest of the
+   * batch from being sent - and the transactions before it cannot be taken back.
+   */
+  #recordEoaTxnForGasTank(chainId: bigint, rawTxn: string) {
+    const onFailedToRecord = (e: any) => {
+      console.log('failed to record EOA txn to relayer', chainId)
+
+      console.log(e)
+    }
+
+    try {
+      this.#callRelayer(`/v2/eoaSubmitTxn/${chainId}`, 'POST', { rawTxn }).catch(onFailedToRecord)
+    } catch (e: any) {
+      onFailedToRecord(e)
+    }
+  }
+
   #hwCleanup() {
     this.hardwareWalletSigningRequest = null
 
@@ -4025,13 +4090,42 @@ export class SignAccountOpController
    * Use this only when you are sure there's no way to continue, or
    * a promise waiting to resolve that might change the state
    */
-  cancelSignReq() {
+  #resetToReadyToSign() {
     this.signPromise = undefined
     this.broadcastPromise = undefined
     this.signAndBroadcastPromise = undefined
     this.status = { type: SigningStatus.ReadyToSign }
     this.#hwCleanup()
+  }
+
+  cancelSignReq() {
+    this.#resetToReadyToSign()
     this.emitUpdate()
+  }
+
+  /**
+   * Winds a broadcast up. The calls that went out are done with, so only the ones left
+   * unsigned stay on the op and the controller goes back to where it was before
+   * signing, ready for them. Its status has to be put back first: while it is signing,
+   * every update to the op is frozen and the calls would not go in.
+   *
+   * Returns the calls still waiting to be signed, so the caller can tell whether the
+   * request is finished with or has to stay.
+   */
+  cleanupAfterBroadcast(sentCallIds: Call['id'][]): Call[] {
+    const notSentCalls = this.accountOp.calls.filter((call) => !sentCallIds.includes(call.id))
+
+    this.#resetToReadyToSign()
+
+    if (!notSentCalls.length) {
+      this.emitUpdate()
+
+      return notSentCalls
+    }
+
+    this.update({ accountOpData: { calls: notSentCalls } })
+
+    return notSentCalls
   }
 
   get type() {
@@ -4181,6 +4275,7 @@ export class SignAccountOpController
       gasSavedUSD: this.gasSavedUSD,
       delegatedContract: this.delegatedContract,
       accountOp: this.accountOp,
+      humanization: this.humanization,
       isSignInProgress: this.isSignInProgress,
       isBroadcastInProgress: this.isBroadcastInProgress,
       isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress,

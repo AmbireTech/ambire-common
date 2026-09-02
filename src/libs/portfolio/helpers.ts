@@ -12,6 +12,7 @@ import { CustomToken, TokenPreference } from './customToken'
 import { PORTFOLIO_LIB_ERROR_NAMES } from './errorNames'
 import {
   AccountState,
+  AssetMetadataFetchPlan,
   AssetValidationReason,
   ERC721s,
   ExtendedErrorWithLevel,
@@ -960,4 +961,52 @@ export const convertApiTokenDataToTokenDataCache = (
       website: website
     }
   }
+}
+
+/**
+ * How long stored token metadata is trusted before it is read from the chain again.
+ * Symbols and names do change on rare occasions, such as a token rebrand behind an
+ * upgradeable proxy.
+ */
+export const TOKEN_METADATA_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000
+
+/**
+ * Whether the chain has to be asked for an asset's metadata (a token's symbol, name
+ * and decimals, or a collection's name and symbol). True when nothing is stored for
+ * it, or when what is stored has aged out.
+ */
+export function isAssetMetadataStale(
+  entry: { fetchedAt: number } | undefined,
+  now: number
+): boolean {
+  if (!entry) return true
+
+  return now - entry.fetchedAt > TOKEN_METADATA_MAX_AGE_MS
+}
+
+/**
+ * Splits the passed addresses into the metadata already held for them and the ones
+ * whose metadata has to be read on this update. The map is copied, so that an update in
+ * flight keeps the metadata it started with even if the caller's store drops entries in
+ * the meantime.
+ */
+export function planAssetMetadata<T extends { fetchedAt: number }>(
+  addresses: string[],
+  known: Map<string, T> | undefined,
+  now: number
+): AssetMetadataFetchPlan<T> {
+  const plan: AssetMetadataFetchPlan<T> = { known: new Map(), needsMetadata: new Set() }
+
+  addresses.forEach((address) => {
+    const entry = known?.get(address)
+
+    if (!entry || isAssetMetadataStale(entry, now)) {
+      plan.needsMetadata.add(address)
+      return
+    }
+
+    plan.known.set(address, entry)
+  })
+
+  return plan
 }

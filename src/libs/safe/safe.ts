@@ -22,8 +22,9 @@ import { Hex } from '../../interfaces/hex'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeAccountByOwner, SafeTx } from '../../interfaces/safe'
 import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
-import { withTimeout } from '../../utils/with-timeout'
+import { paginate } from '../../utils/paginate'
 import wait from '../../utils/wait'
+import { withTimeout } from '../../utils/with-timeout'
 import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
 import { decodeMultiSend, multiCallAbi, parseSafeMessageOrigin } from './helpers'
 
@@ -279,7 +280,10 @@ export async function getMessage({
   messageHash: Hex
 }): Promise<ExtendedSafeMessage | null> {
   const apiKit = getApiKit(chainId)
-  const msg = await apiKit.getMessage(messageHash).catch(() => null)
+  const msg = await apiKit.getMessage(messageHash).catch((e) => {
+    console.log('safe message not found', e)
+    return null
+  })
   if (!msg) return null
   return {
     ...msg,
@@ -326,14 +330,6 @@ export async function getLatestMessages(
     (m) => new Date(m.created).getTime() + oneWeek > currentTime
   )
   return { ...response, results: finalRes, chainId, type: 'message' }
-}
-
-export async function getTransaction(
-  chainId: bigint,
-  safeTxnHash: Hex
-): Promise<SafeMultisigTransactionResponse> {
-  const apiKit = getApiKit(chainId)
-  return apiKit.getTransaction(safeTxnHash)
 }
 
 export async function fetchAllPending(
@@ -586,8 +582,15 @@ export function sortSigs(
   return concat(sorted.map((s) => s.sig)) as Hex
 }
 
+/**
+ * Fetch the Safe transactions of an account on each of the passed chains.
+ * `minNonce` is the smallest nonce we are still waiting on for that chain -
+ * transactions below it can no longer execute, so the API does not have to
+ * return them.
+ */
 export async function fetchExecutedTransactions(
-  txns: { chainId: bigint; safeTxnHash: Hex }[]
+  safeAddr: Hex,
+  chains: { chainId: bigint; minNonce: number }[]
 ): Promise<
   {
     safeTxnHash: Hex
@@ -596,40 +599,60 @@ export async function fetchExecutedTransactions(
     confirmations?: SafeMultisigConfirmationResponse[]
   }[]
 > {
-  let promises = []
   const results: {
     safeTxnHash: Hex
     nonce: string
     transactionHash?: Hex
     confirmations?: SafeMultisigConfirmationResponse[]
   }[] = []
+  const pages = paginate(chains, 3)
 
-  for (let i = 0; i < txns.length; i++) {
-    const txn = txns[i]!
-    promises.push(getTransaction(txn.chainId, txn.safeTxnHash))
-
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i]!
     // we're allowed a max of 5 req to the API per second so we
     // have to be careful - making 3 at a time from here
-    if ((i + 1) % 3 === 0 || i + 1 === txns.length) {
-      const responses = await Promise.all(promises)
-      responses.forEach((r) => {
-        if (r.transactionHash) {
-          results.push({
-            safeTxnHash: r.safeTxHash as Hex,
-            transactionHash: r.transactionHash as Hex,
-            nonce: r.nonce
+    const responses = await Promise.all(
+      page.map(async ({ chainId, minNonce }) => {
+        const apiKit = getApiKit(chainId)
+        // @TODO this method can be used to get safe tx history
+        // @TODO make rate limit tracking for the whole library
+        // Cut the response size down: the account may have a long history, but
+        // everything below minNonce can no longer execute, so it cannot resolve a
+        // request we are waiting on. The double underscore is the filter syntax of
+        // the Safe Transaction Service, not a typo
+        const res = await apiKit
+          .getMultisigTransactions(safeAddr, {
+            ordering: 'nonce',
+            nonce__gte: minNonce
           })
-        } else {
-          results.push({
-            safeTxnHash: r.safeTxHash as Hex,
-            nonce: r.nonce,
-            confirmations: r.confirmations
+          .catch((error: unknown) => {
+            console.log(`failed to call getMultisigTransactions on ${chainId}`, error)
+            return null
           })
-        }
+        return res
       })
-      await wait(1100)
-      promises = []
-    }
+    )
+    responses
+      .filter((response): response is SafeMultisigTransactionListResponse => response !== null)
+      .forEach(({ results: txns }) => {
+        txns.forEach((tx) => {
+          if (tx.transactionHash) {
+            results.push({
+              safeTxnHash: tx.safeTxHash as Hex,
+              transactionHash: tx.transactionHash as Hex,
+              nonce: tx.nonce
+            })
+          } else {
+            results.push({
+              safeTxnHash: tx.safeTxHash as Hex,
+              nonce: tx.nonce,
+              confirmations: tx.confirmations
+            })
+          }
+        })
+      })
+    // no need to throttle after the last page, nothing follows it
+    if (i + 1 < pages.length) await wait(1100)
   }
 
   return results

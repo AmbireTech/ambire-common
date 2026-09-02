@@ -23,6 +23,70 @@ export function getWarning(
 ): HumanizerWarning {
   return { content, blocking, code, address }
 }
+
+/**
+ * Removes repeated warnings, keeping the first of each kind. Warnings for the same call can come
+ * from more than one source (a humanizer module and an ERC-7730 descriptor), so the same concern
+ * can be reported twice. Two warnings are the same only when their code, text and address all
+ * match - warnings that share a code but say different things are all kept.
+ */
+export const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
+  const warningKeys = new Set<string>()
+
+  return warnings.filter((warning) => {
+    const warningKey = `${warning.code}:${warning.content}:${warning.address || ''}`
+    if (warningKeys.has(warningKey)) return false
+    warningKeys.add(warningKey)
+
+    return true
+  })
+}
+
+/**
+ * Adds warnings to the ones a call already carries, without repeating any. Modules run one after
+ * another over the same call, so a module must never replace what an earlier one found. Returns
+ * undefined when there is nothing to report, so calls without warnings keep their original shape.
+ */
+export const mergeWarnings = (
+  existingWarnings: HumanizerWarning[] | undefined,
+  addedWarnings: HumanizerWarning[]
+): HumanizerWarning[] | undefined => {
+  if (!existingWarnings?.length && !addedWarnings.length) return undefined
+
+  return dedupeWarnings([...(existingWarnings || []), ...addedWarnings])
+}
+
+/**
+ * Marks an approval that has no spending limit. `SignAccountOpController` removes warnings with
+ * this code when the app that made the request is in the default Ambire catalog, so every module
+ * that reports an unlimited approval must use this exact code.
+ */
+export const UNLIMITED_APPROVAL_WARNING_CODE = 'UNLIMITED_APPROVAL'
+
+const MAX_AMOUNT_BY_BITS: { [bits: number]: bigint } = {
+  256: 2n ** 256n - 1n,
+  160: 2n ** 160n - 1n
+}
+
+/**
+ * True when the amount is the largest value its type can hold. Contracts use this value to mean
+ * "no limit". Only the exact maximum counts, so a large but finite approval is not reported.
+ */
+export const isUnlimitedAmount = (amount: bigint, bits: 256 | 160 = 256): boolean =>
+  amount === MAX_AMOUNT_BY_BITS[bits]
+
+/**
+ * Warns that an approval lets the spender take any amount of the token, with no limit. The address
+ * is lowercased to match `getAddressVisualization`, so both spellings of it compare as equal.
+ */
+export const getUnlimitedApprovalWarning = (spender: string): HumanizerWarning =>
+  getWarning(
+    'This app can spend this token from your account with no limit. Continue only if you trust it.',
+    UNLIMITED_APPROVAL_WARNING_CODE,
+    false,
+    spender.toLowerCase()
+  )
+
 export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 
 export function getLabel(
@@ -194,3 +258,13 @@ export const uintToAddress = (uint: bigint): string =>
 
 export const eToNative = (address: string): string =>
   address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? zeroAddress : address
+
+// tokens before solidity 0.5.0 would accept calldata that is shorter then the specified
+// args in the abi and assume they are 0s
+// other tokens fail onchain, so there is no real danger in padding to the end
+// as long as it is kept in the humanizer
+// applicable only to functions whose args are all static (one 32 byte word each)
+export const padCallData = (data: Hex, staticArgsCount: number): Hex => {
+  const expectedCallLength = 2 + 8 + staticArgsCount * 64
+  return data.padEnd(expectedCallLength, '0') as Hex
+}

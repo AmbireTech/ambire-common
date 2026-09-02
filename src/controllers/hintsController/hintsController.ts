@@ -7,6 +7,7 @@ import { IKeystoreController } from '@/interfaces/keystore'
 import { Network } from '@/interfaces/network'
 import { IStorageController } from '@/interfaces/storage'
 import { getAllAssetsAsHints } from '@/libs/defiPositions/defiPositions'
+import { AssetMetadataStore } from '@/libs/portfolio/assetMetadataStore'
 import { CustomToken, getAssetPreferenceId, TokenPreference } from '@/libs/portfolio/customToken'
 import {
   erc721CollectionToLearnedAssetKeys,
@@ -15,19 +16,30 @@ import {
   mergeERC721s
 } from '@/libs/portfolio/helpers'
 import {
+  CollectionMetadataEntry,
   GetOptions,
   Hints,
+  KnownCollectionMetadata,
+  KnownTokenMetadata,
   LearnedAssets,
   PortfolioLibGetResult,
   PortfolioNetworkResult,
   PreviousHintsStorage,
-  ToBeLearnedAssets
+  ToBeLearnedAssets,
+  TokenMetadataEntry
 } from '@/libs/portfolio/interfaces'
 
 const LEARNED_UNOWNED_LIMITS = {
   erc20s: 20,
   erc721s: 20
 }
+
+/**
+ * How many tokens or collections keep stored metadata per network. Hints can include
+ * plenty of spam the user never sees, so the oldest entries are dropped past this
+ * point to prevent memory bloat.
+ */
+const ASSET_METADATA_LIMIT_PER_CHAIN = 1000
 
 /**
  * The hints controller owns all the "hints" the portfolio uses to discover which
@@ -79,6 +91,19 @@ export class HintsController extends EventEmitter {
 
   #learnedAssets: LearnedAssets = { erc20s: {}, erc721s: {} }
 
+  /**
+   * Token symbols, names and decimals by chain id. Kept as maps so the portfolio
+   * can look them up without rebuilding anything on every update, and in memory only,
+   * so a restart reads everything in full again. Metadata does not depend on the
+   * account, so all accounts share it.
+   */
+  #tokenMetadata: AssetMetadataStore<TokenMetadataEntry>
+
+  /**
+   * Collection names and symbols by chain id, the NFT counterpart of #tokenMetadata.
+   */
+  #collectionMetadata: AssetMetadataStore<CollectionMetadataEntry>
+
   #storage: IStorageController
 
   initialLoadPromise: Promise<void> | undefined
@@ -92,6 +117,8 @@ export class HintsController extends EventEmitter {
     this.#storage = storage
     this.#accounts = accounts
     this.#keystore = keystore
+    this.#tokenMetadata = new AssetMetadataStore(ASSET_METADATA_LIMIT_PER_CHAIN)
+    this.#collectionMetadata = new AssetMetadataStore(ASSET_METADATA_LIMIT_PER_CHAIN)
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -109,6 +136,37 @@ export class HintsController extends EventEmitter {
     })
     // Don't load fromExternalAPI hints in memory as they are no longer used
     this.#previousHints.fromExternalAPI = {}
+  }
+
+  /**
+   * The token metadata held for a network, for the portfolio to pass to the library
+   * so it can ask the chain for balances alone.
+   */
+  getKnownTokenMetadata(chainId: bigint): KnownTokenMetadata {
+    return this.#tokenMetadata.getKnown(chainId)
+  }
+
+  /**
+   * The collection counterpart of getKnownTokenMetadata.
+   */
+  getKnownCollectionMetadata(chainId: bigint): KnownCollectionMetadata {
+    return this.#collectionMetadata.getKnown(chainId)
+  }
+
+  /**
+   * Keeps token metadata the portfolio library read from the chain. Entries replace
+   * what is already held, which is how aged-out metadata gets refreshed. Returns
+   * whether anything was kept.
+   */
+  learnTokenMetadata(chainId: bigint, entries: [string, TokenMetadataEntry][]): boolean {
+    return this.#tokenMetadata.learn(chainId, entries)
+  }
+
+  /**
+   * The collection counterpart of learnTokenMetadata.
+   */
+  learnCollectionMetadata(chainId: bigint, entries: [string, CollectionMetadataEntry][]): boolean {
+    return this.#collectionMetadata.learn(chainId, entries)
   }
 
   /**

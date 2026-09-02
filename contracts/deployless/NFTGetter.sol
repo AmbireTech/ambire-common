@@ -2,6 +2,7 @@
 pragma solidity ^0.8.11;
 
 import './IAmbireAccount.sol';
+import './MetaFlags.sol';
 import './Simulation.sol';
 
 // Combo of ERC721, enumerable and metadata
@@ -23,14 +24,22 @@ interface NFT {
 }
 
 contract NFTGetter is Simulation {
-  struct NFTCollectionMetadata {
+  struct NFTCollectionInfo {
     string name;
     string symbol;
     uint256[] nfts;
     bytes error;
   }
+  struct NFTCollectionBalance {
+    uint256[] nfts;
+    bytes error;
+  }
+  struct NFTCollectionMeta {
+    string name;
+    string symbol;
+  }
   struct NFTCollectionAtNonce {
-    NFTCollectionMetadata[] collections;
+    NFTCollectionBalance[] collections;
     uint nonce;
   }
 
@@ -95,67 +104,88 @@ contract NFTGetter is Simulation {
     return shrunk;
   }
 
-  function getCollectionMeta(
+  function getCollectionInfo(
     IAmbireAccount account,
     NFT collection,
     uint[] memory tokenIds,
-    uint limit
-  ) external view returns (NFTCollectionMetadata memory meta) {
-    // Optional metadata, missing on collections like the ENS names one
-    try collection.name() returns (string memory name) {
-      meta.name = name;
-    } catch {}
-    try collection.symbol() returns (string memory symbol) {
-      meta.symbol = symbol;
-    } catch {}
+    uint limit,
+    bool withMeta
+  ) external view returns (NFTCollectionInfo memory info) {
+    if (withMeta) {
+      // Optional metadata, missing on collections like the ENS names one
+      try collection.name() returns (string memory name) {
+        info.name = name;
+      } catch {}
+      try collection.symbol() returns (string memory symbol) {
+        info.symbol = symbol;
+      } catch {}
+    }
 
     uint balance = collection.balanceOf(address(account));
     if (balance > limit) balance = limit;
 
     if (collection.supportsInterface(0x780e9d63) || tokenIds.length == 0) {
-      meta.nfts = enumerateOwned(account, collection, balance);
+      info.nfts = enumerateOwned(account, collection, balance);
     }
 
     // A collection can report the enumerable interface and still not implement
     // it, so the known ids are the fallback. They are not bound by balanceOf,
     // which some collections don't report correctly.
-    if (meta.nfts.length == 0) {
-      meta.nfts = filterOwned(account, collection, tokenIds, limit);
+    if (info.nfts.length == 0) {
+      info.nfts = filterOwned(account, collection, tokenIds, limit);
     }
   }
 
+  // Token ids for every collection, metadata for the ones metaFlags points at. A single
+  // call per collection reads both, so asking for metadata costs no extra call and no
+  // extra gas allowance.
   function getAllNFTs(
     IAmbireAccount account,
     NFT[] memory collections,
     uint[][] memory tokenIds,
-    uint tokenPerCollectionLimit
-  ) public view returns (NFTCollectionMetadata[] memory) {
+    uint tokenPerCollectionLimit,
+    // Passing a second array of addresses makes the call more expensive, so we use a single array of flags instead.
+    bytes memory metaFlags
+  ) public view returns (NFTCollectionBalance[] memory, NFTCollectionMeta[] memory) {
     uint len = collections.length;
-    NFTCollectionMetadata[] memory collectionMetas = new NFTCollectionMetadata[](len);
+    NFTCollectionBalance[] memory balances = new NFTCollectionBalance[](len);
+    NFTCollectionMeta[] memory metas = new NFTCollectionMeta[](MetaFlags.count(metaFlags, len));
+    uint metaIndex = 0;
+
     for (uint i = 0; i != len; i++) {
+      bool withMeta = MetaFlags.has(metaFlags, i);
+
       try
-        this.getCollectionMeta{ gas: 50000 * tokenPerCollectionLimit }(
+        this.getCollectionInfo{ gas: 50000 * tokenPerCollectionLimit }(
           account,
           collections[i],
           tokenIds[i],
-          tokenPerCollectionLimit
+          tokenPerCollectionLimit,
+          withMeta
         )
-      returns (NFTCollectionMetadata memory meta) {
-        collectionMetas[i] = meta;
+      returns (NFTCollectionInfo memory info) {
+        balances[i].nfts = info.nfts;
+        if (withMeta) {
+          metas[metaIndex] = NFTCollectionMeta(info.name, info.symbol);
+          metaIndex++;
+        }
       } catch (bytes memory err) {
-        collectionMetas[i].error = err.length == 0 ? bytes('REVERT') : err;
+        balances[i].error = err.length == 0 ? bytes('REVERT') : err;
+        // The entry is left empty, the caller reads the error off the token ids
+        if (withMeta) metaIndex++;
       }
     }
-    return collectionMetas;
+
+    return (balances, metas);
   }
 
   // Compare the collections before (collectionsA) and after simulation (collectionsB)
   // and return the delta (with simulation)
   function getDelta(
-    NFTCollectionMetadata[] memory collectionsA,
-    NFTCollectionMetadata[] memory collectionsB,
+    NFTCollectionBalance[] memory collectionsA,
+    NFTCollectionBalance[] memory collectionsB,
     NFT[] memory collections
-  ) internal pure returns (NFTCollectionMetadata[] memory, address[] memory) {
+  ) internal pure returns (NFTCollectionBalance[] memory, address[] memory) {
     uint deltaSize = 0;
 
     for (uint256 i = 0; i < collectionsA.length; i++) {
@@ -167,7 +197,7 @@ contract NFTGetter is Simulation {
       }
     }
 
-    NFTCollectionMetadata[] memory delta = new NFTCollectionMetadata[](deltaSize);
+    NFTCollectionBalance[] memory delta = new NFTCollectionBalance[](deltaSize);
     address[] memory deltaAddressesMapping = new address[](deltaSize);
 
     // Second loop to populate the delta array
@@ -193,6 +223,7 @@ contract NFTGetter is Simulation {
     NFT[] memory collections,
     uint[][] memory tokenIds,
     uint tokenPerCollectionLimit,
+    bytes memory metaFlags,
     // instead of passing {factory, code, salt}, we'll just have factory and factoryCalldata
     address factory,
     bytes memory factoryCalldata,
@@ -202,6 +233,7 @@ contract NFTGetter is Simulation {
     returns (
       NFTCollectionAtNonce memory before,
       NFTCollectionAtNonce memory afterSimulation,
+      NFTCollectionMeta[] memory metas,
       bytes memory /*simulationError*/,
       uint /*gasLeft*/,
       uint /*blockNum*/,
@@ -209,7 +241,13 @@ contract NFTGetter is Simulation {
     )
   {
     address[] memory deltaAddressesMapping = new address[](0);
-    before.collections = getAllNFTs(account, collections, tokenIds, tokenPerCollectionLimit);
+    (before.collections, metas) = getAllNFTs(
+      account,
+      collections,
+      tokenIds,
+      tokenPerCollectionLimit,
+      metaFlags
+    );
 
     (uint startNonce, bool success, bytes memory err) = Simulation.simulate(
       account,
@@ -221,25 +259,35 @@ contract NFTGetter is Simulation {
     before.nonce = startNonce;
 
     if (!success) {
-      return (before, afterSimulation, err, gasleft(), block.number, deltaAddressesMapping);
+      return (before, afterSimulation, metas, err, gasleft(), block.number, deltaAddressesMapping);
     }
 
     afterSimulation.nonce = account.nonce();
     if (afterSimulation.nonce != before.nonce) {
-      afterSimulation.collections = getAllNFTs(
+      // the metadata cannot change mid-simulation, so only the token ids are read again
+      (NFTCollectionBalance[] memory collectionsAfter, ) = getAllNFTs(
         account,
         collections,
         tokenIds,
-        tokenPerCollectionLimit
+        tokenPerCollectionLimit,
+        bytes('')
       );
 
       (afterSimulation.collections, deltaAddressesMapping) = getDelta(
         before.collections,
-        afterSimulation.collections,
+        collectionsAfter,
         collections
       );
     }
 
-    return (before, afterSimulation, bytes(''), gasleft(), block.number, deltaAddressesMapping);
+    return (
+      before,
+      afterSimulation,
+      metas,
+      bytes(''),
+      gasleft(),
+      block.number,
+      deltaAddressesMapping
+    );
   }
 }

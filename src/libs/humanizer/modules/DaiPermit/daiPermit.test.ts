@@ -6,7 +6,14 @@ import daiPermitModule from '.'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../../utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getLabel,
+  getToken,
+  getUnlimitedApprovalWarning
+} from '../../utils'
 
 const accountOp: AccountOp = {
   id: '1',
@@ -112,5 +119,42 @@ describe('dai permit module', () => {
     const unrelatedCall: IrCall = { to: DAI, value: 0n, data: '0x' }
     const calls = [unrelatedCall].map((c) => daiPermitModule(accountOp, c))
     expect(calls[0]!.fullVisualization).toBeUndefined()
+  })
+
+  // this permit has no amount at all - granting it always means an unlimited allowance
+  test('warns that a granted permit has no spending limit', () => {
+    const call = daiPermitModule(accountOp, getPermitCall(accountOp.accountAddr, expiry, true))
+
+    expect(call.warnings).toEqual([getUnlimitedApprovalWarning(spender)])
+  })
+
+  test('does not warn when the permit revokes', () => {
+    const call = daiPermitModule(accountOp, getPermitCall(accountOp.accountAddr, expiry, false))
+
+    expect(call.warnings).toBeUndefined()
+  })
+
+  // this calldata would still execute onchain - the missing trailing words (v, r and s) are
+  // read as zeroes by the EVM - so the humanizer has to decode it the same way and still show
+  // the warning, rather than silently dropping the whole call
+  test('still warns when the trailing signature words are missing from the calldata', () => {
+    const fullCall = getPermitCall(accountOp.accountAddr, expiry, true)
+    const shortData = fullCall.data.slice(0, -192)
+    const call = daiPermitModule(accountOp, { ...fullCall, data: shortData })
+
+    compareHumanizerVisualizations(
+      [call],
+      [
+        [
+          getAction('Grant approval'),
+          getLabel('for'),
+          getToken(DAI, MaxUint256),
+          getLabel('to'),
+          getAddressVisualization(spender),
+          getDeadline(expiry)
+        ]
+      ]
+    )
+    expect(call.warnings).toEqual([getUnlimitedApprovalWarning(spender)])
   })
 })

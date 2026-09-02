@@ -1,5 +1,7 @@
 import { Interface, toQuantity, TransactionResponse } from 'ethers'
 
+import { getGasLimitWithOverhead } from '@/libs/estimate/estimate'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -28,15 +30,6 @@ export const BROADCAST_OPTIONS = {
 async function waitBeforeRetry(chainId: bigint) {
   // wait a bit longer on ethereum as txn confirmations are slower
   await wait(chainId === 1n ? 2000 : 1000)
-}
-
-/**
- * The default gas limit overhead for all chains is 10%.
- * Robinhood uses 20% because transactions there frequently run out of gas.
- */
-function getGasLimitOverhead(gasLimit: bigint, chainId: bigint) {
-  if (chainId === 4663n) return gasLimit / 5n
-  return gasLimit / 10n
 }
 
 export function getByOtherEOATxnData(
@@ -79,7 +72,7 @@ async function estimateGas(
   counter: number = 0
 ): Promise<bigint> {
   // this should happen only in the case of internet issues
-  if (counter > 10) {
+  if (counter > 9) {
     throw new Error(
       `Failed estimating gas for broadcast${
         error ? `: ${getErrorCodeStringFromReason(error.message)}` : ''
@@ -122,9 +115,12 @@ async function estimateGas(
 
   // Sequential EOA calls can fail temporarily if the RPC pending state is stale.
   if (gasLimit instanceof Error || hasNonceDiscrepancyOnApproval) {
-    // Other estimation errors are deterministic, so return them immediately.
-    const isEoaBatch = broadcastOption === BROADCAST_OPTIONS.bySelf && op.calls.length > 1
-    if (gasLimit instanceof Error && !isEoaBatch) throw gasLimit
+    if (gasLimit instanceof Error) {
+      // Other estimation errors are deterministic, so return them immediately.
+      const isGS013 = gasLimit.message.includes('GS013')
+      const isEoaBatch = broadcastOption === BROADCAST_OPTIONS.bySelf && op.calls.length > 1
+      if (!isGS013 && !isEoaBatch) throw gasLimit
+    }
 
     await waitBeforeRetry(chainId)
     return estimateGas(
@@ -141,7 +137,7 @@ async function estimateGas(
   }
 
   // add gas overhead to prevent OOG
-  return BigInt(gasLimit) + getGasLimitOverhead(BigInt(gasLimit), chainId)
+  return getGasLimitWithOverhead(BigInt(gasLimit))
 }
 
 export async function getTxnData(
