@@ -37,7 +37,7 @@ import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
-import { IUiController, View } from '../../interfaces/ui'
+import { IUiController, View, isExtensionOverlayView } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
 import {
   formatDappName,
@@ -96,6 +96,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   dappToConnect: Dapp | null = null
 
   isReadyToDisplayDapps: boolean = true
+
+  #isReady = false
 
   fetchAndUpdatePromise?: Promise<void>
 
@@ -185,21 +187,30 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.#ui.uiEvent.on('removeView', (removedView: View) => {
       if (
-        removedView.type === 'popup' &&
+        isExtensionOverlayView(removedView) &&
         this.#shouldRetryFetchAndUpdate &&
         this.#retryFetchAndUpdateAttempts < this.#retryFetchAndUpdateMaxAttempts
       ) {
         this.#retryFetchAndUpdateInterval.start()
       }
     })
+  }
 
+  /**
+   * Not called immediately on construction because the data in storage is huge and overwhelming
+   * for the mobile app.
+   */
+  async init() {
+    if (this.initialLoadPromise) return this.initialLoadPromise
+    if (this.#isReady) return
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
+    return this.initialLoadPromise
   }
 
   get isReady() {
-    return !!this.dapps
+    return this.#isReady
   }
 
   get dapps(): Dapp[] {
@@ -290,6 +301,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#recentDapps = storedRecentDapps
     this.#trendingTokens = storedTrending.tokens
     this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
+    this.#isReady = true
+    this.emitUpdate()
 
     void this.fetchAndUpdateDapps()
   }
@@ -306,7 +319,10 @@ export class DappsController extends EventEmitter implements IDappsController {
         this.#shouldRetryFetchAndUpdate = true
 
         // run the interval if the initial fetch failed while the extension is not in use
-        if (!this.#retryFetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
+        if (
+          !this.#retryFetchAndUpdateAttempts &&
+          !this.#ui.views.some((v) => isExtensionOverlayView(v))
+        ) {
           this.#retryFetchAndUpdateInterval.start()
         } else {
           this.#retryFetchAndUpdateInterval.stop()

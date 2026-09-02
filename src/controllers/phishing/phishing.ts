@@ -207,6 +207,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
+  isReady = false
+
   constructor({
     eventEmitterRegistry,
     fetch,
@@ -255,10 +257,19 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       if (shouldSwitchToInactiveUpdateInterval)
         this.#updatePhishingInterval.restart({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
     })
+  }
 
+  /**
+   * Not called immediately on construction because the data in storage is huge and overwhelming
+   * for the mobile app.
+   */
+  async init() {
+    if (this.initialLoadPromise) return this.initialLoadPromise
+    if (this.isReady) return
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
+    return this.initialLoadPromise
   }
 
   async #load() {
@@ -273,9 +284,9 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#updatedAt = phishing.updatedAt
     this.#domains = new Set(phishing.domains)
     this.#addresses = new Set(phishing.addresses)
-
     this.updatePhishingInterval.start({ runImmediately: true })
 
+    this.isReady = true
     this.emitUpdate()
   }
 
@@ -355,15 +366,22 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       )
       ;(phishing.addresses || []).forEach(
         ({ op, address }: { op: 'add' | 'remove'; address: string }) => {
-          if (op === 'add') this.#addresses.add(address)
-          if (op === 'remove') this.#addresses.delete(address)
+          // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup,
+          // regardless of the casing the relayer used.
+          const normalizedAddress = address.toLowerCase()
+          if (op === 'add') this.#addresses.add(normalizedAddress)
+          if (op === 'remove') this.#addresses.delete(normalizedAddress)
         }
       )
     } else {
       // Initial/full update: replace local sets with the server snapshot.
       this.#version = phishing.version || 0
       this.#domains = new Set(phishing.domains || [])
-      this.#addresses = new Set(phishing.addresses || [])
+      // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup, regardless
+      // of the casing the relayer used.
+      this.#addresses = new Set(
+        (phishing.addresses || []).map((address: string) => address.toLowerCase())
+      )
     }
 
     this.#shouldSyncDapps = true
@@ -524,11 +542,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     })
 
     addresses.forEach((addr) => {
-      const status = this.#addresses.size
-        ? this.#addresses.has(addr)
-          ? 'BLACKLISTED'
-          : 'VERIFIED'
-        : undefined
+      const status = this.getAddressBlacklistedStatus(addr)
       if (status) this.#addressesBlacklistedStatus.set(addr, status)
     })
 
@@ -670,6 +684,17 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     // DB not yet loaded - SUSPICIOUS_HOSTING_DOMAINS still detectable without it.
     if (isSuspiciousHostingDomain(url)) return 'SUSPICIOUS_HOSTING'
     return undefined
+  }
+
+  /**
+   * Resolves the blacklisted status of an address from the locally stored phishing list, without a
+   * network request. Returns undefined while the list is not loaded yet, so that callers can tell
+   * "not blacklisted" apart from "not checked yet".
+   */
+  getAddressBlacklistedStatus(address: string): BlacklistedStatus | undefined {
+    if (!this.#addresses.size) return undefined
+
+    return this.#addresses.has(address.toLowerCase()) ? 'BLACKLISTED' : 'VERIFIED'
   }
 
   toJSON() {

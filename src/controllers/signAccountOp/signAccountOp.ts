@@ -11,6 +11,7 @@ import {
 } from 'ethers'
 import { maxUint256 } from 'viem'
 
+import { getGasLimitWithOverhead } from '@/libs/estimate/estimate'
 import { isNative } from '@/libs/portfolio/helpers'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
@@ -173,7 +174,6 @@ import {
 } from './signAccountOpPreference'
 
 import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
-
 // Re-exporting for backwards compatibility with existing importers
 export { FeeSpeed, noStateUpdateStatuses, SigningStatus }
 export type { SpeedCalc, Status }
@@ -2461,6 +2461,7 @@ export class SignAccountOpController
           if (!estimation.bundlerEstimation) return
 
           usesPaymaster = !!estimation.bundlerEstimation?.paymaster.isUsable()
+          // no gas overhead for bundler broadcast
           simulatedGasLimit =
             BigInt(gasUsed) +
             BigInt(estimation.bundlerEstimation.preVerificationGas) +
@@ -2473,7 +2474,7 @@ export class SignAccountOpController
           broadcastOption === BROADCAST_OPTIONS.bySelf ||
           broadcastOption === BROADCAST_OPTIONS.bySelf7702
         ) {
-          simulatedGasLimit = gasUsed
+          simulatedGasLimit = getGasLimitWithOverhead(gasUsed)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
           amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
@@ -2486,7 +2487,7 @@ export class SignAccountOpController
         } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
           // Smart account, but EOA pays the fee
           // 7702, and it pays for the fee by itself
-          simulatedGasLimit = gasUsed
+          simulatedGasLimit = getGasLimitWithOverhead(gasUsed)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
           amountGasPrice = BigInt(receivedPrices.maxFeePerGas)

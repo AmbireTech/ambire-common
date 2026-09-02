@@ -274,4 +274,65 @@ describe('Safe', () => {
       compareHumanizerVisualizations(irCalls, expectedVisualization)
     })
   })
+
+  // this calldata would still execute onchain - the missing trailing words are read as zeroes
+  // by the EVM - so the humanizer has to decode it the same way and still show the config
+  // change warning, rather than silently dropping the whole call
+  describe('short calldata protection', () => {
+    test('changeThreshold with the trailing threshold word missing still warns', () => {
+      const changeThresholdAbi = parseAbi(['function changeThreshold(uint256 _threshold)'])
+      const fullData = encodeFunctionData({ abi: changeThresholdAbi, args: [2n] })
+      const shortData = fullData.slice(0, -64) as `0x${string}`
+
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        accountOp.accountAddr,
+        0n,
+        shortData
+      )
+
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_CONFIG_CHANGE')).toBe(true)
+    })
+
+    test('enableModule with the trailing module address word missing still warns', () => {
+      const enableModuleAbi = parseAbi(['function enableModule(address module)'])
+      const fullData = encodeFunctionData({
+        abi: enableModuleAbi,
+        args: ['0x2f55e8b20D0B9FEFA187AA7d00B6Cbe563605bF5']
+      })
+      const shortData = fullData.slice(0, -64) as `0x${string}`
+
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        accountOp.accountAddr,
+        0n,
+        shortData
+      )
+
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_CONFIG_CHANGE')).toBe(true)
+    })
+
+    test('setDomainVerifier with the trailing verifier address word missing still warns', () => {
+      const setDomainVerifierAbi = parseAbi([
+        'function setDomainVerifier(bytes32 domainSeparator, address newVerifier)'
+      ])
+      const fullData = encodeFunctionData({
+        abi: setDomainVerifierAbi,
+        args: [
+          '0xd72ffa789b6fae41254d0b5a13e6e1e92ed947ec6a251edf1cf0b6c02c257b4',
+          '0xfdaFc9d1902f4e0b84f65F49f244b32b31013b74'
+        ]
+      })
+      const shortData = fullData.slice(0, -64) as `0x${string}`
+
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        accountOp.accountAddr,
+        0n,
+        shortData
+      )
+
+      expect(result?.warnings?.some((w) => w.code === 'SAFE{WALLET}_DOMAIN_VERIFIER')).toBe(true)
+    })
+  })
 })
