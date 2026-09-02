@@ -218,6 +218,28 @@ describe('HintsController', () => {
       expect(getCollectibleHints(hints).hidden[BAYC]).toEqual([2n])
     })
 
+    // Addresses reach the preferences from the portfolio, from dApps and from
+    // what the user pastes, which disagree on casing
+    it('unhides a collectible that was hidden under a different address casing', async () => {
+      const { hints } = getController()
+
+      await hints.toggleHideToken({
+        address: BAYC,
+        chainId: ETHEREUM,
+        standard: 'ERC721',
+        tokenId: 1n
+      })
+      await hints.toggleHideToken({
+        address: BAYC.toLowerCase(),
+        chainId: ETHEREUM,
+        standard: 'ERC721',
+        tokenId: 1n
+      })
+
+      expect(hints.tokenPreferences).toHaveLength(0)
+      expect(getCollectibleHints(hints).hidden[BAYC]).toBeUndefined()
+    })
+
     // A hidden collection has no ids, which asks for every collectible of it
     it('hides a whole collection when no id is given', async () => {
       const { hints } = getController()
