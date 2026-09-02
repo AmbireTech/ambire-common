@@ -410,7 +410,8 @@ export async function getTokens(
         ]
       }),
       {
-        blockNumber
+        // The getter returns a uint256, so it has to be brought back to a number
+        blockNumber: Number(blockNumber)
       }
     ]
   }
@@ -488,7 +489,8 @@ export async function getTokens(
       ]
     }),
     {
-      blockNumber,
+      // The getter returns a uint256, so it has to be brought back to a number
+      blockNumber: Number(blockNumber),
       beforeNonce,
       afterNonce
     }

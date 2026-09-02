@@ -646,8 +646,10 @@ describe('Portfolio Controller ', () => {
     expect(colibriBehindVerification?.error).toBe('Colibri is 6 blocks behind the RPC latest block')
 
     // 5) RPC is more than the threshold behind Colibri -> stale, no Colibri fetch.
-    rpcResultBlockNumber = 100
-    verifiedProvider.getBlockNumber.mockResolvedValue(111)
+    // The block must still move forward, otherwise the update is rejected as stale
+    // by the controller before the verification result lands.
+    rpcResultBlockNumber = 124
+    verifiedProvider.getBlockNumber.mockResolvedValue(135)
     portfolioGetCalls.length = 0
     await controller.updateSelectedAccount(account.addr, [colibriEthereum])
     const staleVerification = await waitForVerification()

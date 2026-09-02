@@ -296,6 +296,180 @@ describe('RequestsController ', () => {
     expect(controller.userRequests.length).toBe(0)
     expect(controller.visibleUserRequests.length).toBe(0)
   })
+  test('does not auto-select a signed Safe call after completing a non-calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const completedRequest = { ...DAPP_CONNECT_REQUEST, id: 'completed-request' }
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [completedRequest, signedRequest]
+
+    await controller.removeUserRequests([completedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(null)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('auto-selects an unsigned Safe call after completing a non-calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const completedRequest = { ...DAPP_CONNECT_REQUEST, id: 'completed-request' }
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const unsignedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    signedRequest.id = 'signed-request'
+    unsignedRequest.id = 'unsigned-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    expect(unsignedRequest.signAccountOp.accountOp.signed).toBeUndefined()
+    controller.userRequests = [completedRequest, signedRequest, unsignedRequest]
+
+    await controller.removeUserRequests([completedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(unsignedRequest)
+    signedRequest.signAccountOp.destroy()
+    unsignedRequest.signAccountOp.destroy()
+  })
+  test('auto-selects a non-calls request after skipping a signed Safe call', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const completedRequest = { ...DAPP_CONNECT_REQUEST, id: 'completed-request' }
+    const nextNonCallsRequest = { ...DAPP_CONNECT_REQUEST, id: 'next-non-calls-request' }
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [completedRequest, signedRequest, nextNonCallsRequest]
+
+    await controller.removeUserRequests([completedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(nextNonCallsRequest)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('keeps auto-selecting signed calls for non-Safe accounts', async () => {
+    const { controller, getCallsRequest } = await prepareTest()
+    const completedRequest = { ...DAPP_CONNECT_REQUEST, id: 'completed-request' }
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [completedRequest, signedRequest]
+
+    await controller.removeUserRequests([completedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(signedRequest)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('keeps auto-selecting signed Safe calls after completing a calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const completedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    completedRequest.id = 'completed-request'
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [completedRequest, signedRequest]
+
+    await controller.removeUserRequests([completedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(signedRequest)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('does not auto-select a signed Safe call after rejecting a calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const rejectedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    rejectedRequest.id = 'rejected-request'
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [rejectedRequest, signedRequest]
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(null)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('does not auto-select a signed Safe call after rejecting a non-calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const rejectedRequest = { ...DAPP_CONNECT_REQUEST, id: 'rejected-request' }
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [rejectedRequest, signedRequest]
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(null)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('auto-selects an unsigned Safe call after rejecting a calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const rejectedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    const unsignedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    rejectedRequest.id = 'rejected-request'
+    signedRequest.id = 'signed-request'
+    unsignedRequest.id = 'unsigned-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [rejectedRequest, signedRequest, unsignedRequest]
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(unsignedRequest)
+    signedRequest.signAccountOp.destroy()
+    unsignedRequest.signAccountOp.destroy()
+  })
+  test('keeps auto-selecting signed calls after rejection for non-Safe accounts', async () => {
+    const { controller, getCallsRequest } = await prepareTest()
+    const rejectedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    rejectedRequest.id = 'rejected-request'
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [rejectedRequest, signedRequest]
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(signedRequest)
+    signedRequest.signAccountOp.destroy()
+  })
   test('build dapp request', async () => {
     const { controller } = await prepareTest()
 
@@ -1486,6 +1660,38 @@ describe('RequestsController ', () => {
       }
     }
 
+    const PERMIT_TYPED_DATA = {
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' },
+          { name: 'verifyingContract', type: 'address' }
+        ],
+        Permit: [
+          { name: 'owner', type: 'address' },
+          { name: 'spender', type: 'address' },
+          { name: 'value', type: 'uint256' },
+          { name: 'nonce', type: 'uint256' },
+          { name: 'deadline', type: 'uint256' }
+        ]
+      },
+      primaryType: 'Permit',
+      domain: {
+        name: 'Test Token',
+        version: '1',
+        chainId: 1,
+        verifyingContract: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+      },
+      message: {
+        owner: FROM,
+        spender: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd',
+        value: 1000,
+        nonce: 0,
+        deadline: 2000000000
+      }
+    }
+
     const buildSignTypedDataRequest = (
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
       typedData: object,
@@ -1539,6 +1745,33 @@ describe('RequestsController ', () => {
       await expect(buildSignTypedDataRequest(controller, VALID_TYPED_DATA)).resolves.toBeUndefined()
       expect(controller.userRequests.length).toBe(1)
       expect(controller.userRequests[0]!.kind).toBe('typedMessage')
+    })
+
+    test('stores a safe preview for a humanized typed message request', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(
+        buildSignTypedDataRequest(controller, PERMIT_TYPED_DATA)
+      ).resolves.toBeUndefined()
+
+      const request = controller.userRequests[0]
+      if (request?.kind !== 'typedMessage') throw new Error('Expected a typed message request')
+
+      expect(request.humanization?.[0]).toMatchObject({
+        type: 'action',
+        content: 'Grant approval'
+      })
+    })
+
+    test('does not expose raw typed data when no safe humanization is available', async () => {
+      const { controller } = await prepareTest(true)
+
+      await expect(buildSignTypedDataRequest(controller, VALID_TYPED_DATA)).resolves.toBeUndefined()
+
+      const request = controller.userRequests[0]
+      if (request?.kind !== 'typedMessage') throw new Error('Expected a typed message request')
+
+      expect(request.humanization).toBeUndefined()
     })
 
     test('rejects when domain.chainId does not match the current network chainId', async () => {

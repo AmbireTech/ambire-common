@@ -483,6 +483,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     return this.keyIterator?.subType || this.initParams?.keyIterator?.subType
   }
 
+  get derivableHdPathTemplates() {
+    return this.keyIterator?.derivableHdPathTemplates
+  }
+
   async reset(resetInitParams: boolean = true) {
     this.#setPageRequestId++
     await this.addAccountsPromise
@@ -1612,7 +1616,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       selectedAccounts: this.selectedAccounts,
       addedAccountsFromCurrentSession: this.addedAccountsFromCurrentSession,
       type: this.type,
-      subType: this.subType
+      subType: this.subType,
+      derivableHdPathTemplates: this.derivableHdPathTemplates
     }
   }
 }

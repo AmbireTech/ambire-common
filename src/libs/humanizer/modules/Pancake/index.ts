@@ -17,7 +17,8 @@ import {
   getUnlimitedApprovalWarning,
   isHexCall,
   isUnlimitedAmount,
-  mergeWarnings
+  mergeWarnings,
+  padCallData
 } from '../../utils'
 
 // This is the Permit2 `approve`, which Pancake's permit contract shares. Permit2 keeps the
@@ -34,7 +35,7 @@ const PancakeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
     (call: HexIrCall) => { visualizations: HumanizerVisualization[]; warning?: HumanizerWarning }
   > = {
     [toFunctionSelector(approveAbi[0])]: (call) => {
-      const { args } = decodeFunctionData({ abi: approveAbi, data: call.data })
+      const { args } = decodeFunctionData({ abi: approveAbi, data: padCallData(call.data, 4) })
       const [token, spender, amount, expiration] = args
       const expirationHumanization = expiration > 0 ? getDeadline(expiration) : getLabel('now')
 
