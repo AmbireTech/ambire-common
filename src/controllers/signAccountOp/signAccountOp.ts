@@ -80,7 +80,7 @@ import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Safe } from '../../libs/account/Safe'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
 import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus } from '../../libs/accountOp/types'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getScamDetectedText } from '../../libs/banners/banners'
 import {
   BROADCAST_OPTIONS,
@@ -3532,7 +3532,6 @@ export class SignAccountOpController
       nonce: number
       identifiedBy: AccountOpIdentifiedBy
     } | null = null
-
     // broadcasting by EOA is quite the same:
     // 1) build a rawTxn 2) sign 3) broadcast
     // we have one handle, just a diff rawTxn for each case
@@ -3621,15 +3620,7 @@ export class SignAccountOpController
 
           // record the EOA txn only if isErc4337Enabled as
           // we need this for the gas tank
-          if (this.isErc4337Enabled) {
-            this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
-              rawTxn: signedTxn
-            }).catch((e: any) => {
-              console.log('failed to record EOA txn to relayer', accountOp.chainId)
-
-              console.log(e)
-            })
-          }
+          if (this.isErc4337Enabled) this.#recordEoaTxnForGasTank(accountOp.chainId, signedTxn)
         }
 
         transactionRes = {
@@ -3665,6 +3656,21 @@ export class SignAccountOpController
             },
             txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
           }
+
+          // The part that went out is reported as broadcast, so without saying this
+          // the rest of the batch looks sent when it never was.
+          const sentCount = multipleTxnsBroadcastRes.length
+          const notSentCount = accountOp.calls.length - sentCount
+          const reason = error?.message || 'the transaction could not be signed'
+          this.emitError({
+            level: 'major',
+            message: `Only ${sentCount} of ${accountOp.calls.length} transactions in this batch ${
+              sentCount === 1 ? 'was' : 'were'
+            } sent. The remaining ${notSentCount === 1 ? 'one' : notSentCount} could not be sent: ${
+              reason.endsWith('.') ? reason : `${reason}.`
+            } You can send ${notSentCount === 1 ? 'it' : 'them'} again.`,
+            error
+          })
         } else {
           return this.throwBroadcastAccountOp({ error, accountState })
         }
@@ -3870,6 +3876,26 @@ export class SignAccountOpController
     await this.signAndBroadcastPromise
   }
 
+  /**
+   * Bookkeeping for the gas tank, which the broadcast does not depend on. It is
+   * deliberately not awaited and never allowed to throw: it runs between the
+   * transactions of a batch, where anything escaping it would stop the rest of the
+   * batch from being sent - and the transactions before it cannot be taken back.
+   */
+  #recordEoaTxnForGasTank(chainId: bigint, rawTxn: string) {
+    const onFailedToRecord = (e: any) => {
+      console.log('failed to record EOA txn to relayer', chainId)
+
+      console.log(e)
+    }
+
+    try {
+      this.#callRelayer(`/v2/eoaSubmitTxn/${chainId}`, 'POST', { rawTxn }).catch(onFailedToRecord)
+    } catch (e: any) {
+      onFailedToRecord(e)
+    }
+  }
+
   #hwCleanup() {
     this.hardwareWalletSigningRequest = null
 
@@ -4064,13 +4090,42 @@ export class SignAccountOpController
    * Use this only when you are sure there's no way to continue, or
    * a promise waiting to resolve that might change the state
    */
-  cancelSignReq() {
+  #resetToReadyToSign() {
     this.signPromise = undefined
     this.broadcastPromise = undefined
     this.signAndBroadcastPromise = undefined
     this.status = { type: SigningStatus.ReadyToSign }
     this.#hwCleanup()
+  }
+
+  cancelSignReq() {
+    this.#resetToReadyToSign()
     this.emitUpdate()
+  }
+
+  /**
+   * Winds a broadcast up. The calls that went out are done with, so only the ones left
+   * unsigned stay on the op and the controller goes back to where it was before
+   * signing, ready for them. Its status has to be put back first: while it is signing,
+   * every update to the op is frozen and the calls would not go in.
+   *
+   * Returns the calls still waiting to be signed, so the caller can tell whether the
+   * request is finished with or has to stay.
+   */
+  cleanupAfterBroadcast(sentCallIds: Call['id'][]): Call[] {
+    const notSentCalls = this.accountOp.calls.filter((call) => !sentCallIds.includes(call.id))
+
+    this.#resetToReadyToSign()
+
+    if (!notSentCalls.length) {
+      this.emitUpdate()
+
+      return notSentCalls
+    }
+
+    this.update({ accountOpData: { calls: notSentCalls } })
+
+    return notSentCalls
   }
 
   get type() {

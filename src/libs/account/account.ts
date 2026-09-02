@@ -6,10 +6,11 @@ import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivat
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import {
   Account,
+  AccountImportInfo,
   AccountOnchainState,
-  AccountOnPage,
   AccountPreferences,
   AccountStates,
+  DerivedAccount,
   ImportStatus
 } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
@@ -218,19 +219,14 @@ export const getAccountImportStatus = ({
   account: Account
   alreadyImportedAccounts: Account[]
   keys: Key[]
-  accountsOnPage?: Omit<AccountOnPage, 'importStatus'>[]
+  accountsOnPage?: DerivedAccount[]
   keyIteratorType?: KeyIterator['type']
-}): ImportStatus => {
-  const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr)
-  if (!isAlreadyImported) return ImportStatus.NotImported
-
+}): AccountImportInfo => {
   // Check if the account has been imported with at least one of the keys
   // that the account was originally associated with, when it was imported.
   const storedAssociatedKeys =
     alreadyImportedAccounts.find((x) => x.addr === account.addr)?.associatedKeys || []
   const importedKeysForThisAcc = keys.filter((key) => storedAssociatedKeys.includes(key.addr))
-  // Could be imported as a view only account (and therefore, without a key)
-  if (!importedKeysForThisAcc.length) return ImportStatus.ImportedWithoutKey
 
   // Merge the `associatedKeys` from the account instances found on the page,
   // with the `associatedKeys` of the account from the extension storage. This
@@ -247,6 +243,23 @@ export const getAccountImportStatus = ({
     ])
   )
 
+  // The stats are key type agnostic on purpose, unlike the import status
+  // below, since they answer how many of this account's keys the user holds.
+  const importInfo = {
+    associatedKeysStats: {
+      total: mergedAssociatedKeys.length,
+      imported: new Set(importedKeysForThisAcc.map((key) => key.addr)).size
+    },
+    importedKeyTypes: Array.from(new Set(importedKeysForThisAcc.map((key) => key.type)))
+  }
+
+  const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr)
+  if (!isAlreadyImported) return { ...importInfo, importStatus: ImportStatus.NotImported }
+
+  // Could be imported as a view only account (and therefore, without a key)
+  if (!importedKeysForThisAcc.length)
+    return { ...importInfo, importStatus: ImportStatus.ImportedWithoutKey }
+
   // Same key in this context means not only the same key address, but the
   // same type too. Because user can opt in to import same key address with
   // many different hardware wallets (Trezor, Ledger, GridPlus, etc.) or
@@ -258,15 +271,16 @@ export const getAccountImportStatus = ({
       (keyIteratorType ? key.type === keyIteratorType : true)
   )
   if (associatedKeysAlreadyImported.length) {
-    const associatedKeysNotImportedYet = mergedAssociatedKeys.filter((keyAddr) =>
-      associatedKeysAlreadyImported.some((x) => x.addr !== keyAddr)
+    const associatedKeysNotImportedYet = mergedAssociatedKeys.filter(
+      (keyAddr) => !associatedKeysAlreadyImported.some((x) => x.addr === keyAddr)
     )
 
     const notImportedYetKeysExistInPage = accountsOnPage.some((x) =>
       associatedKeysNotImportedYet.includes(x.account.addr)
     )
 
-    if (notImportedYetKeysExistInPage) return ImportStatus.ImportedWithSomeOfTheKeys
+    if (notImportedYetKeysExistInPage)
+      return { ...importInfo, importStatus: ImportStatus.ImportedWithSomeOfTheKeys }
 
     // Could happen when user imports a smart account with one associated key.
     // Then imports an EOA. Then makes the EOA a second key
@@ -281,14 +295,17 @@ export const getAccountImportStatus = ({
         return ![...incomingAssociatedKeysSet].every((k) => storedAssociatedKeysSet.has(k))
       })
 
-    return associatedKeysFoundOnPageAreDifferent
-      ? ImportStatus.ImportedWithSomeOfTheKeys
-      : ImportStatus.ImportedWithTheSameKeys
+    return {
+      ...importInfo,
+      importStatus: associatedKeysFoundOnPageAreDifferent
+        ? ImportStatus.ImportedWithSomeOfTheKeys
+        : ImportStatus.ImportedWithTheSameKeys
+    }
   }
 
   // Since there are `importedKeysForThisAcc`, as a fallback -
   // for all other scenarios this account has been imported with different keys.
-  return ImportStatus.ImportedWithDifferentKeys
+  return { ...importInfo, importStatus: ImportStatus.ImportedWithDifferentKeys }
 }
 
 export const getDefaultAccountPreferences = (

@@ -88,3 +88,9 @@ export type BuildRequest =
         dappUrl?: string
       }
     }
+  | {
+      type: 'onchainSafeRejection'
+      params: {
+        requestId: CallsUserRequest['id']
+      }
+    }

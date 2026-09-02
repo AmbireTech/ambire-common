@@ -210,6 +210,8 @@ export async function getDiscoveredAssets(
       foundNftTransfers.map(([address]) => address),
       foundNftTransfers.map(([, x]) => x),
       NFT_COLLECTION_LIMIT,
+      // Only the errors are read here, so no metadata is worth fetching
+      '0x',
       factory,
       factoryCalldata,
       simulationOps
@@ -218,26 +220,35 @@ export async function getDiscoveredAssets(
   )
 
   const result = await Promise.all([
-    deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], deploylessOpts),
+    deploylessTokens.call('getBalances', [op.accountAddr, foundTokens, '0x'], deploylessOpts),
     getNftsPromise
   ])
 
-  const [[tokensWithErr], [before, after, , , , deltaAddressesMapping]] = result
+  const [[tokensWithErr], [before, after, , , , , deltaAddressesMapping]] = result
 
   const beforeNftCollections = before.collections
   const afterNftCollections = after.collections
+  // NFTCollectionBalance is (nfts, error)
+  const collectionError = (collection: any): string | undefined => collection?.[1]
 
   return {
     tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
     nfts: foundNftTransfers.filter((nft, i) => {
-      if (!beforeNftCollections[i][3] || beforeNftCollections[i][3] === '0x') return true
-      const foundAfterToken = afterNftCollections.find(
-        (t: any, j: number) =>
-          deltaAddressesMapping[j].toLowerCase() === foundNftTransfers[i]![0].toLowerCase()
-      )
-      if (!foundAfterToken || !foundAfterToken[0]) return false
+      const beforeError = collectionError(beforeNftCollections[i])
 
-      return !foundAfterToken[i][3] || foundAfterToken[0][3] === '0x'
+      if (!beforeError || beforeError === '0x') return true
+
+      // The delta array and its addresses mapping are parallel, so the collection
+      // after the simulation sits at the same index as its address
+      const afterIndex = deltaAddressesMapping.findIndex(
+        (addr: string) => addr.toLowerCase() === foundNftTransfers[i]![0].toLowerCase()
+      )
+
+      if (afterIndex === -1) return false
+
+      const afterError = collectionError(afterNftCollections[afterIndex])
+
+      return !afterError || afterError === '0x'
     })
   }
 }
