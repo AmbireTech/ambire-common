@@ -1,19 +1,10 @@
-import { Interface, parseUnits } from 'ethers'
-
-import { STK_WALLET, WALLET_STAKING_ADDR } from '../../../../consts/addresses'
+import { WALLETModule } from '.'
+import { STK_WALLET } from '../../../../consts/addresses'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
-import {
-  getAction,
-  getAddressVisualization,
-  getBreak,
-  getInfo,
-  getLabel,
-  getToken
-} from '../../utils'
-import { WALLETModule } from './'
+import { getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
 
 const transactions = {
   WALLET: [
@@ -97,81 +88,5 @@ describe('wallet', () => {
     irCalls = irCalls.map((c) => WALLETModule(accountOp, c, humanizerInfo as HumanizerMeta))
 
     compareHumanizerVisualizations(irCalls, expectedHumanization)
-  })
-
-  test('adds the xWALLET conversion information to an Ethereum stkWALLET unwrap', () => {
-    const xWalletAmount = parseUnits('0.00047', 18)
-    const xWalletShareValue = parseUnits('21.28', 18)
-    const stkWalletInterface = new Interface(['function unwrap(uint256 shareAmount)'])
-    accountOp.chainId = 1n
-    accountOp.calls = [
-      {
-        to: STK_WALLET,
-        value: 0n,
-        data: stkWalletInterface.encodeFunctionData('unwrap', [xWalletAmount])
-      }
-    ]
-
-    const irCalls = accountOp.calls.map((call) =>
-      WALLETModule(accountOp, call, humanizerInfo as HumanizerMeta, { xWalletShareValue })
-    )
-
-    compareHumanizerVisualizations(irCalls, [
-      [
-        getAction('Unwrap'),
-        getToken(STK_WALLET, 0n),
-        getLabel('for'),
-        getToken(WALLET_STAKING_ADDR, xWalletAmount),
-        getBreak(),
-        getInfo('0.00047 xWALLET = 0.01 WALLET')
-      ]
-    ])
-  })
-
-  test('omits conversion information when the share value is unavailable', () => {
-    const xWalletAmount = parseUnits('0.00047', 18)
-    const stkWalletInterface = new Interface(['function unwrap(uint256 shareAmount)'])
-    accountOp.chainId = 1n
-    accountOp.calls = [
-      {
-        to: STK_WALLET,
-        value: 0n,
-        data: stkWalletInterface.encodeFunctionData('unwrap', [xWalletAmount])
-      }
-    ]
-
-    const irCalls = accountOp.calls.map((call) =>
-      WALLETModule(accountOp, call, humanizerInfo as HumanizerMeta)
-    )
-
-    compareHumanizerVisualizations(irCalls, [
-      [
-        getAction('Unwrap'),
-        getToken(STK_WALLET, 0n),
-        getLabel('for'),
-        getToken(WALLET_STAKING_ADDR, xWalletAmount)
-      ]
-    ])
-  })
-
-  test('omits conversion information outside Ethereum', () => {
-    const xWalletAmount = parseUnits('0.00047', 18)
-    const stkWalletInterface = new Interface(['function unwrap(uint256 shareAmount)'])
-    accountOp.chainId = 137n
-    accountOp.calls = [
-      {
-        to: STK_WALLET,
-        value: 0n,
-        data: stkWalletInterface.encodeFunctionData('unwrap', [xWalletAmount])
-      }
-    ]
-
-    const irCalls = accountOp.calls.map((call) =>
-      WALLETModule(accountOp, call, humanizerInfo as HumanizerMeta, {
-        xWalletShareValue: parseUnits('21.28', 18)
-      })
-    )
-
-    expect(irCalls[0]?.fullVisualization?.some(({ type }) => type === 'info')).toBe(false)
   })
 })

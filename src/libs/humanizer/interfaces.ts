@@ -41,7 +41,6 @@ export type HumanizerVisualization = (
         | 'deadline'
         | 'chain'
         | 'image'
-        | 'info'
         | 'link'
         | 'text'
         | 'break'
@@ -95,16 +94,7 @@ export interface Ir {
 
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {
-  (
-    accountOp: AccountOp,
-    call: IrCall,
-    humanizerMeta?: HumanizerMeta,
-    context?: HumanizerContext
-  ): IrCall
-}
-
-export interface HumanizerContext {
-  xWalletShareValue?: bigint
+  (accountOp: AccountOp, call: IrCall, humanizerMeta?: HumanizerMeta): IrCall
 }
 
 export interface HumanizerTypedMessageModule {

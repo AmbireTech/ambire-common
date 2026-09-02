@@ -49,7 +49,6 @@ const humanizerTMModules = [
 type HumanizeAccountOpOptions = {
   erc7730Descriptors?: Erc7730CallDescriptors
   nativeAssetSymbol?: string
-  xWalletShareValue?: bigint
 }
 
 type HumanizeMessageOptions = {
@@ -63,9 +62,7 @@ const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOpt
     let currentCall: IrCall = originalCall
     humanizerCallModules.forEach((hm) => {
       try {
-        currentCall = hm(accountOp, currentCall, humanizerInfo as HumanizerMeta, {
-          xWalletShareValue: options?.xWalletShareValue
-        })
+        currentCall = hm(accountOp, currentCall, humanizerInfo as HumanizerMeta)
       } catch (error) {
         console.error(error)
         // No action is needed here; we only update `currentCall` if the module successfully resolves it.
@@ -90,35 +87,14 @@ const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOpt
           resolvedDescriptor,
           options.nativeAssetSymbol
         )
-
         if (!erc7730Call) return call
-
-        const infoIndex = call.fullVisualization?.findIndex(
-          (visualization) => visualization.type === 'info'
-        )
-        const informationalVisualizations =
-          infoIndex !== undefined && infoIndex >= 0
-            ? call.fullVisualization?.slice(
-                call.fullVisualization[infoIndex - 1]?.type === 'break' ? infoIndex - 1 : infoIndex
-              )
-            : undefined
 
         // The descriptor builds its result from the raw call, so it starts with no warnings. The
         // warnings the modules found are still about the same call, so keep them both.
-        const warnings = dedupeWarnings([...(call.warnings || []), ...(erc7730Call.warnings || [])])
-        return informationalVisualizations?.length
-          ? {
-              ...erc7730Call,
-              warnings,
-              fullVisualization: [
-                ...(erc7730Call.fullVisualization || []),
-                ...informationalVisualizations
-              ]
-            }
-          : {
-              ...erc7730Call,
-              warnings
-            }
+        return {
+          ...erc7730Call,
+          warnings: dedupeWarnings([...(call.warnings || []), ...(erc7730Call.warnings || [])])
+        }
       } catch (error) {
         console.error(error)
         return call
