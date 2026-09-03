@@ -1,3 +1,4 @@
+import { AbiCoder } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
@@ -9,6 +10,8 @@ import {
   getHintsError,
   getSpecialHints,
   getVisibleCollectibles,
+  validateCollectibleOwnership,
+  validateERC721Token,
   mergeCollectionHints,
   getTotal,
   learnedErc721sToHints,
@@ -455,6 +458,175 @@ describe('Portfolio helpers', () => {
     })
   })
 
+  describe('the ERC-721 validators', () => {
+    const COLLECTION = '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272'
+    const ACCOUNT = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const SOMEONE_ELSE = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const SELECTORS = {
+      supportsInterface: '0x01ffc9a7',
+      decimals: '0x313ce567',
+      name: '0x06fdde03',
+      symbol: '0x95d89b41',
+      ownerOf: '0x6352211e'
+    }
+    const ERC721_ID = '80ac58cd'
+    const ERC1155_ID = 'd9b67a26'
+
+    const abiCoder = new AbiCoder()
+    const encode = (type: string, value: unknown) => abiCoder.encode([type], [value])
+    const networkError = () => Object.assign(new Error('network error'), { code: 'NETWORK_ERROR' })
+    const reverted = () => new Error('execution reverted')
+
+    /**
+     * Answers the reads of both validators. `answer` returns undefined to let a
+     * call revert, which is what a real collection does for decimals().
+     */
+    const getProvider = (answer: (data: string) => string | Error | undefined, code = '0x6080') =>
+      ({
+        getCode: async () => code,
+        call: async ({ data }: { data: string }) => {
+          const answered = answer(data)
+
+          if (answered instanceof Error) throw answered
+          if (typeof answered === 'undefined') throw reverted()
+
+          return answered
+        }
+      }) as any
+
+    const collectionOf = (interfaceId: string) => (data: string) => {
+      if (data.startsWith(SELECTORS.supportsInterface))
+        return encode('bool', data.includes(interfaceId))
+      if (data.startsWith(SELECTORS.name)) return encode('string', 'Bored Apes')
+      if (data.startsWith(SELECTORS.symbol)) return encode('string', 'BAYC')
+
+      return undefined
+    }
+
+    const validate = (provider: any) =>
+      validateERC721Token({ address: COLLECTION, chainId: 1n }, ACCOUNT, provider)
+    const validateOwnership = (provider: any) =>
+      validateCollectibleOwnership({ address: COLLECTION, tokenId: 1n }, ACCOUNT, provider)
+
+    describe('validateERC721Token', () => {
+      it('accepts a collection that declares the ERC-721 interface, with its metadata', async () => {
+        const result = await validate(getProvider(collectionOf(ERC721_ID)))
+
+        expect(result.isValid).toBe(true)
+        expect(result.error.type).toBeNull()
+        expect(result.collection).toEqual({ name: 'Bored Apes', symbol: 'BAYC' })
+      })
+
+      it('has no metadata for a collection that answers neither name nor symbol', async () => {
+        const result = await validate(
+          getProvider((data) =>
+            data.startsWith(SELECTORS.supportsInterface)
+              ? encode('bool', data.includes(ERC721_ID))
+              : undefined
+          )
+        )
+
+        expect(result.isValid).toBe(true)
+        expect(result.collection).toEqual({ name: null, symbol: null })
+      })
+
+      it('rejects a multi edition NFT', async () => {
+        const result = await validate(getProvider(collectionOf(ERC1155_ID)))
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.reason).toBe('erc1155-unsupported')
+        expect(result.error.type).toBe('validation')
+      })
+
+      it('rejects an address with no contract at it', async () => {
+        const result = await validate(getProvider(() => undefined, '0x'))
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.reason).toBe('not-a-collection')
+      })
+
+      it('rejects a token, which answers decimals', async () => {
+        const result = await validate(
+          getProvider((data) => {
+            if (data.startsWith(SELECTORS.supportsInterface)) return encode('bool', false)
+            if (data.startsWith(SELECTORS.decimals)) return encode('uint8', 18)
+
+            return undefined
+          })
+        )
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.reason).toBe('is-a-token')
+      })
+
+      // A call that answers nothing must not read as "not an ERC-1155" or "no
+      // decimals", or the contract passes as a collection
+      it('reports a network problem when the ERC-1155 check fails', async () => {
+        const result = await validate(
+          getProvider((data) => {
+            if (data.includes(ERC1155_ID)) return networkError()
+            if (data.startsWith(SELECTORS.supportsInterface)) return encode('bool', false)
+
+            return undefined
+          })
+        )
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.type).toBe('network')
+      })
+
+      it('reports a network problem when the decimals check fails', async () => {
+        const result = await validate(
+          getProvider((data) => {
+            if (data.startsWith(SELECTORS.decimals)) return networkError()
+            if (data.startsWith(SELECTORS.supportsInterface)) return encode('bool', false)
+
+            return undefined
+          })
+        )
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.type).toBe('network')
+      })
+    })
+
+    describe('validateCollectibleOwnership', () => {
+      const ownedBy = (owner: string) => (data: string) =>
+        data.startsWith(SELECTORS.ownerOf) ? encode('address', owner) : undefined
+
+      it('accepts a collectible the account owns, whatever the casing', async () => {
+        const result = await validateOwnership(getProvider(ownedBy(ACCOUNT.toLowerCase())))
+
+        expect(result.isValid).toBe(true)
+        expect(result.error.reason).toBeUndefined()
+      })
+
+      it('rejects a collectible someone else owns', async () => {
+        const result = await validateOwnership(getProvider(ownedBy(SOMEONE_ELSE)))
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.reason).toBe('collectible-not-owned')
+        expect(result.error.type).toBe('validation')
+      })
+
+      // ownerOf reverts for an id that was never minted or was burned
+      it('rejects a collectible that does not exist', async () => {
+        const result = await validateOwnership(getProvider(() => undefined))
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.reason).toBe('collectible-not-found')
+      })
+
+      it('reports a network problem instead of blaming the collectible', async () => {
+        const result = await validateOwnership(getProvider(() => networkError()))
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.reason).toBe('network-problem')
+        expect(result.error.type).toBe('network')
+      })
+    })
+  })
+
   describe('getVisibleCollectibles', () => {
     it('shows the whole collection when it was not added by the user', () => {
       expect(getVisibleCollectibles({ collectibles: [1n, 2n, 3n] })).toEqual([1n, 2n, 3n])
@@ -479,6 +651,17 @@ describe('Portfolio helpers', () => {
     // Collections added before the ids were recorded have none
     it('shows the whole collection when it was added without ids', () => {
       expect(getVisibleCollectibles({ collectibles: [1n, 2n], customIds: [] })).toEqual([1n, 2n])
+    })
+
+    // No ids means the whole collection, the way the hidden hints express it
+    it('shows nothing of a collection that is hidden as a whole', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n, 2n, 3n], hiddenIds: [] })).toEqual([])
+    })
+
+    it('hides a whole custom collection too', () => {
+      expect(
+        getVisibleCollectibles({ collectibles: [1n, 2n], customIds: [1n], hiddenIds: [] })
+      ).toEqual([])
     })
 
     it('leaves out the hidden collectibles', () => {

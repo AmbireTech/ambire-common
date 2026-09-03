@@ -364,11 +364,14 @@ export const getVisibleCollectibles = ({
   customIds?: bigint[]
   hiddenIds?: bigint[]
 }) => {
+  // No hidden ids stands for the whole collection, the same way it does in the hints
+  if (hiddenIds && !hiddenIds.length) return []
+
   const added = customIds?.length
     ? collectibles.filter((id) => customIds.includes(id))
     : collectibles
 
-  if (!hiddenIds?.length) return added
+  if (!hiddenIds) return added
 
   return added.filter((id) => !hiddenIds.includes(id))
 }
@@ -485,9 +488,17 @@ export const validateERC721Token = async (
     metadata.supportsInterface!(ERC721_INTERFACE_ID).catch((e: any) =>
       handleError(e, 'supportsInterface')
     ),
-    metadata.supportsInterface!(ERC1155_INTERFACE_ID).catch(() => undefined),
-    // Reverting is the expected outcome for a collection, so this isn't an error
-    erc20.decimals!().catch(() => undefined),
+    metadata.supportsInterface!(ERC1155_INTERFACE_ID).catch((e: any) => {
+      if (isNetworkError(e)) hasNetworkError = true
+      return undefined
+    }),
+    // A revert is the expected outcome for a collection, but a network problem
+    // must not read as one - it would leave a token looking like a collection
+    erc20.decimals!().catch((e: any) => {
+      if (isNetworkError(e)) hasNetworkError = true
+
+      return undefined
+    }),
     // Optional, used for the preview
     metadata.name!().catch(() => undefined),
     metadata.symbol!().catch(() => undefined)
