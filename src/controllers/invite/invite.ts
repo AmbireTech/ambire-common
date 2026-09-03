@@ -117,7 +117,7 @@ export class InviteController extends EventEmitter implements IInviteController 
         await this.#callRelayer(`/promotions/extension-key/${code}`, 'GET')
       } catch (error: any) {
         throw new EmittableError({
-          message: "This invite code doesn't work. Check for typos and try again.",
+          message: 'Oops, that code didn’t work. Check for a typo and try again.',
           level: 'major',
           error
         })
