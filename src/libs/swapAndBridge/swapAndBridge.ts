@@ -605,6 +605,13 @@ export const calculateAmountWarnings = (
   fromAmount: string,
   fromSelectedTokenDecimals: number
 ): SwapAmountWarning | null => {
+  //test
+  return {
+    type: 'highPriceImpact',
+    percentageDiff: 2,
+    estimatedLossUsd: 20,
+    severity: 'extreme'
+  }
   if (!selectedRoute) return null
 
   let inputValueInUsd = 0
