@@ -1,7 +1,5 @@
 import { AbiCoder, getBytes, Interface, keccak256, toBeHex, ZeroAddress } from 'ethers'
 
-import { IrCall } from '@/libs/humanizer/interfaces'
-
 import { EIP7702Auth } from '../../consts/7702'
 import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
@@ -105,8 +103,15 @@ export interface AccountOp {
     speedUp?: {
       enabled: boolean
     }
-    /** Descriptor-backed humanization persisted so activity, history and Benzin show the same clear signing details. */
-    clearSigningHumanization?: IrCall[]
+    /**
+     * @deprecated No longer written or read anywhere. Used to hold the descriptor-backed
+     * humanization output, persisted so activity/history/Benzin could redisplay a past op without
+     * re-humanizing it. Removed because it coupled storage to the humanizer's internal, frequently
+     * reshaped output type - see the persisted ERC-7730 descriptor cache (`erc7730RegistryCache`
+     * in `interfaces/storage.ts`) for how this is cached now instead. Kept here, loosely typed,
+     * only so the field name stays documented and isn't accidentally reused for something else.
+     */
+    clearSigningHumanization?: unknown[]
   }
   flags?: {
     /** Excludes it from the "failed transactions" banner and the Activity counter badge,
