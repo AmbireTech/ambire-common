@@ -178,6 +178,7 @@ export async function getNFTs(
   tokenAddrs: [string, bigint[]][],
   limits: LimitsOptions
 ): Promise<[[TokenError, CollectionResult][], object][]> {
+  await yieldToMain()
   const deploylessOpts = getDeploylessOpts(accountAddr, network, {
     ...opts,
     blockTag:
@@ -337,14 +338,11 @@ export async function getTokens(
     metadataPlan: TokenMetadataFetchPlan
   },
   accountAddr: string,
-  tokenAddrs: string[],
-  pageIndex?: number
+  tokenAddrs: string[]
 ): Promise<[[TokenError, TokenResult][], MetaData][]> {
-  if (typeof pageIndex === 'number' && pageIndex > 0) {
-    // Allow the main thread to process other tasks before continuing
-    // as encode/decode operations (in deployless) are very CPU intensive
-    await yieldToMain()
-  }
+  // Allow the main thread to process other tasks before continuing
+  // as encode/decode operations (in deployless) are very CPU intensive
+  await yieldToMain()
 
   const isFetchingBothBlocks = opts.blockTag === 'both'
 

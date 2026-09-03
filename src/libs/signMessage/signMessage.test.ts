@@ -5,7 +5,6 @@ import {
   hashMessage,
   hexlify,
   Interface,
-  JsonRpcProvider,
   recoverAddress,
   toBeHex,
   toUtf8Bytes,
@@ -1150,7 +1149,7 @@ describe('Sign Message, Safe accounts', () => {
       value: toBeHex(0) as Hex
     }
     const safeAddr = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
-    const baseProvider = new JsonRpcProvider('https://invictus.ambire.com/base')
+    const baseProvider = getRpcProvider(['https://invictus.ambire.com/base'], 8453n)
     const safeContract = new Contract(safeAddr, Safe, baseProvider) as any
     const validHash = await safeContract.getTransactionHash(
       safeTxn.to,
@@ -1198,7 +1197,7 @@ describe('Sign Message, Safe accounts', () => {
   })
   test('Signing [Safe]: sign plain text message', async () => {
     const safeAddr = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
-    const baseProvider = new JsonRpcProvider('https://invictus.ambire.com/base')
+    const baseProvider = getRpcProvider(['https://invictus.ambire.com/base'], 8453n)
     const msg = hexlify(toUtf8Bytes('testesetgs'))
     const hash = hashMessage(getBytes(msg))
     const isValidSigAbi = ['function isValidSignature(bytes32, bytes) public view returns (bytes4)']
@@ -1215,7 +1214,7 @@ describe('Sign Message, Safe accounts', () => {
   })
   test('Signing [Safe]: sign eip-712 typed data', async () => {
     const safeAddr = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
-    const baseProvider = new JsonRpcProvider('https://invictus.ambire.com/base')
+    const baseProvider = getRpcProvider(['https://invictus.ambire.com/base'], 8453n)
     const hash = `0x2ee323d41725455c8d7b63cb33c7125f91395e7f07b212358ebffd9461ec1491` // a typed data hash
     const isValidSigAbi = ['function isValidSignature(bytes32, bytes) public view returns (bytes4)']
     const isValidSigInt = new Interface(isValidSigAbi)

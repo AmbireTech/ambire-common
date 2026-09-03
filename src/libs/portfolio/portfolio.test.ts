@@ -1,4 +1,4 @@
-import { AbiCoder, Contract, ethers, JsonRpcProvider, ZeroAddress } from 'ethers'
+import { AbiCoder, Contract, ethers, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { describe, expect, jest, test } from '@jest/globals'
@@ -310,6 +310,33 @@ describe('Portfolio', () => {
       })
     ).resolves.toBe(0.99785)
     expect(priceFetch).toHaveBeenCalledTimes(1)
+  })
+
+  test('finds a cached price the price API stored under a differently cased address', async () => {
+    const priceFetch = jest.fn(async () => ({ status: 200, json: async () => ({}) }))
+    const portfolioWithMockedPriceFetch = new Portfolio(
+      priceFetch as any,
+      provider,
+      ethereum,
+      velcroUrl
+    )
+    // Keyed the way the external price API returns it, which is not the casing our
+    // own token results carry. An exact-match lookup misses this entry and refetches
+    // a price that was already there.
+    const tokenDataCache = new Map<string, [number, any]>([
+      [
+        USDT_ADDRESS.toLowerCase(),
+        [Date.now(), { priceIn: [{ baseCurrency: 'usd', price: 1.5 }], marketDataIn: [] }]
+      ]
+    ])
+
+    await expect(
+      portfolioWithMockedPriceFetch.getTokenPrice(USDT_ADDRESS, {
+        tokenDataCache,
+        tokenDataRecency: 60000
+      })
+    ).resolves.toBe(1.5)
+    expect(priceFetch).not.toHaveBeenCalled()
   })
 
   test('simulation works for EOAs', async () => {
@@ -702,7 +729,7 @@ describe('Portfolio', () => {
   })
   test('errors caused by a malfunctioning RPC are not swallowed', async () => {
     const { restore } = suppressConsole()
-    const failingProvider = new JsonRpcProvider('https://invictus.ambire.com/ethereum-fail')
+    const failingProvider = getRpcProvider(['https://invictus.ambire.com/ethereum-fail'], 1n)
 
     const failingPortfolio = new Portfolio(fetch, failingProvider, ethereum, velcroUrl)
 
@@ -727,7 +754,7 @@ describe('Portfolio', () => {
       // mocks can't be reused as functions
       beforeEach(() => {
         // Simulate a Velcro Discovery failure
-        jest.spyOn(global, 'fetch').mockImplementation((url: any) => {
+        jest.spyOn(global, 'fetch').mockImplementation((url: any, init: any) => {
           // @ts-expect-error tests
           const { Response } = jest.requireActual('node-fetch')
           if (url.includes(`${velcroUrl}/multi-hints`)) {
@@ -735,8 +762,10 @@ describe('Portfolio', () => {
             const headers = { status: 200 }
             return Promise.resolve(new Response(body, headers))
           }
+          // Passed on with the init, which the JSON-RPC requests that now come
+          // through here carry their method and body in
           // @ts-expect-error tests
-          return jest.requireActual('node-fetch')(url)
+          return jest.requireActual('node-fetch')(url, init)
         })
       })
       afterEach(() => {

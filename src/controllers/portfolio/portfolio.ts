@@ -1,4 +1,6 @@
-import { getAddress } from 'ethers'
+import { getAddress } from 'viem'
+
+import { yieldToMain } from '@/utils/scheduler'
 
 import {
   IRecurringTimeout,
@@ -64,6 +66,7 @@ import {
   convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
   getHintsError,
+  getTokenDataCacheKey,
   getTotal,
   validateERC20Token
 } from '../../libs/portfolio/helpers'
@@ -1474,7 +1477,7 @@ export class PortfolioController
       for (const [key, priceData] of Object.entries(response.prices)) {
         if (!priceData || !('price' in priceData) || !('baseCurrency' in priceData)) continue
 
-        networkTokenDataCache.set(key, [
+        networkTokenDataCache.set(getTokenDataCacheKey(key), [
           Date.now(),
           convertApiTokenDataToTokenDataCache(priceData as ExternalAPITokenMarketDataResponse)
         ])
@@ -1578,6 +1581,7 @@ export class PortfolioController
         defiMaxDataAgeMs,
         hasKeys: portfolioProps.hasKeys
       })
+      await yieldToMain()
       const allHints = this.hints.getAllHints(
         account.addr,
         network.chainId,
@@ -1632,6 +1636,8 @@ export class PortfolioController
             t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0' &&
             !t.flags.rewardsType
         ) ?? null
+
+      await yieldToMain()
 
       const newDefiState = getNewDefiState(
         state.result,

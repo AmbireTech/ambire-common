@@ -14,6 +14,16 @@ import {
 } from '../../interfaces/ui'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+function areSearchParamsEqual(a: View['searchParams'], b: View['searchParams']): boolean {
+  if (a === b) return true
+  if (!a || !b) return !a && !b
+
+  const aKeys = Object.keys(a)
+  if (aKeys.length !== Object.keys(b).length) return false
+
+  return aKeys.every((key) => a[key] === b[key])
+}
+
 /**
  * The surface that shows a request: the panel when it is open (nothing to open, focus or close
  * there), a dedicated request window otherwise. Consumers only open, focus and close.
@@ -122,8 +132,16 @@ export class UiController extends EventEmitter implements IUiController {
       delete view.pendingRoute
     }
 
-    // @ts-expect-error
-    const shouldUpdate = Object.entries(updatedProps).some(([key, value]) => view[key] !== value)
+    const shouldUpdate = Object.entries(updatedProps).some(([key, value]) => {
+      // searchParams is a plain object rebuilt by the caller on every dispatch,
+      // so a reference check always reports a change. Compare it by value.
+      if (key === 'searchParams') {
+        return !areSearchParamsEqual(view.searchParams, value as View['searchParams'])
+      }
+
+      return view[key as keyof View] !== value
+    })
+
     if (!shouldUpdate) return
 
     let previousRoute = view.previousRoute
