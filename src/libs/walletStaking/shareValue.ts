@@ -22,6 +22,10 @@ const normalizeError = (error: unknown) =>
 export const getWalletAmountFromXWallet = (xWalletAmount: bigint, shareValue: bigint) =>
   (xWalletAmount * shareValue) / WeiPerEther
 
+/** Calculates the xWALLET/stkWALLET shares a WALLET amount would convert into (the inverse of {@link getWalletAmountFromXWallet}). */
+export const getXWalletAmountFromWallet = (walletAmount: bigint, shareValue: bigint) =>
+  shareValue > 0n ? (walletAmount * WeiPerEther) / shareValue : 0n
+
 /** Formats the shared xWALLET-to-WALLET explanation used across the wallet. */
 export const getXWalletConversionText = (xWalletAmount: bigint, walletAmount: bigint) => {
   const formattedXWalletAmount = formatDecimals(Number(formatUnits(xWalletAmount, 18)), 'amount')

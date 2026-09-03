@@ -66,11 +66,7 @@ import { getBridgeBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
-import {
-  convertApiTokenDataToTokenDataCache,
-  getTokenAmount,
-  getTokenBalanceInUSD
-} from '../../libs/portfolio/helpers'
+import { convertApiTokenDataToTokenDataCache, getTokenAmount } from '../../libs/portfolio/helpers'
 import { TokenDataCacheValue } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import {
@@ -610,7 +606,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     )
 
     this.feePercent = getFeePercent(
-      stkWalletToken ? getTokenBalanceInUSD(stkWalletToken) : undefined
+      stkWalletToken
+        ? Number(formatUnits(getTokenAmount(stkWalletToken), stkWalletToken.decimals))
+        : undefined
     )
   }
 
