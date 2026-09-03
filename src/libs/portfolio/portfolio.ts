@@ -388,6 +388,11 @@ export class Portfolio {
     const isValidToken = (error: TokenError, token: TokenResult): boolean =>
       error === '0x' && !!token.symbol
 
+    // A collection is labeled by its name or its address, so a missing symbol is
+    // no evidence that the address isn't one. Only the getter erroring is, and it
+    // does error for an address that holds no collection.
+    const isValidCollection = (error: TokenError): boolean => error === '0x'
+
     const blacklistPatterns = prepareBlacklistPatterns([
       ...STATIC_BLACKLIST.blacklistBySymbols,
       ...(blacklist?.blacklistBySymbols || [])
@@ -691,7 +696,7 @@ export class Portfolio {
         .filter(([error, result]: [string, TokenResult]) => !isValidToken(error, result))
         .map(([error, result]: [string, TokenResult]) => ({ error, address: result.address })),
       collectionErrors: collectionsWithErrResult
-        .filter(([error, result]: [string, CollectionResult]) => !isValidToken(error, result))
+        .filter(([error]: [string, CollectionResult]) => !isValidCollection(error))
         .map(([error, result]: [string, CollectionResult]) => ({ error, address: result.address })),
       collections
     }
