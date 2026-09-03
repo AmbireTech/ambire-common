@@ -1,17 +1,25 @@
+import { AbiCoder } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 
 import { networks } from '../../consts/networks'
 import {
   erc721CollectionToLearnedAssetKeys,
   formatExternalHintsAPIResponse,
+  getAssetCacheKey,
+  getErc721Validity,
   getHintsError,
+  getSpecialHints,
+  getVisibleCollectibles,
+  validateCollectibleOwnership,
+  validateERC721Token,
+  mergeCollectionHints,
   getTotal,
   learnedErc721sToHints,
   mergeERC721s,
   planAssetMetadata,
   TOKEN_METADATA_MAX_AGE_MS
 } from './helpers'
-import { ERC721s, ExternalHintsAPIResponse, GetOptions } from './interfaces'
+import { ERC721s, ExternalHintsAPIResponse, GetOptions, ToBeLearnedAssets } from './interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from './portfolio'
 import { PORTFOLIO_STATE } from './testData'
 import { isSuspectedToken, mapToken } from './tokenProcessing'
@@ -187,6 +195,493 @@ describe('Portfolio helpers', () => {
     expect(hints['0x0000420538CD5AbfBC7Db219B6A1d125f5892Ab0']).toEqual([1001n])
     expect(hints['0x01284C3Ae295bAB7271481b7Ba18387255176f92']).toEqual([])
   })
+  describe('getSpecialHints', () => {
+    const ERC20_ADDR = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+    const COLLECTION_ADDR = '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272'
+    const OTHER_COLLECTION_ADDR = '0x0000420538CD5AbfBC7Db219B6A1d125f5892Ab0'
+    const EMPTY_TO_BE_LEARNED: ToBeLearnedAssets = { erc20s: {}, erc721s: {} }
+
+    it('requests a custom collectible by its id', () => {
+      const { specialErc721Hints } = getSpecialHints(
+        1n,
+        [
+          { address: COLLECTION_ADDR, chainId: 1n, standard: 'ERC721', tokenId: 20n },
+          { address: COLLECTION_ADDR, chainId: 1n, standard: 'ERC721', tokenId: 21n }
+        ],
+        [],
+        EMPTY_TO_BE_LEARNED
+      )
+
+      expect(specialErc721Hints.custom).toEqual({ [COLLECTION_ADDR]: [20n, 21n] })
+    })
+
+    it('hides the listed collectibles, not the collection', () => {
+      const { specialErc721Hints } = getSpecialHints(
+        1n,
+        [],
+        [
+          {
+            address: COLLECTION_ADDR,
+            chainId: 1n,
+            isHidden: true,
+            standard: 'ERC721',
+            tokenId: 5n
+          },
+          { address: COLLECTION_ADDR, chainId: 1n, isHidden: true, standard: 'ERC721', tokenId: 6n }
+        ],
+        EMPTY_TO_BE_LEARNED
+      )
+
+      expect(specialErc721Hints.hidden).toEqual({ [COLLECTION_ADDR]: [5n, 6n] })
+    })
+
+    // Preferences stored before the collectibles were hidden one by one
+    it('hides the whole collection when a preference has no id', () => {
+      const { specialErc721Hints } = getSpecialHints(
+        1n,
+        [],
+        [{ address: COLLECTION_ADDR, chainId: 1n, isHidden: true, standard: 'ERC721' }],
+        EMPTY_TO_BE_LEARNED
+      )
+
+      expect(specialErc721Hints.hidden).toEqual({ [COLLECTION_ADDR]: [] })
+    })
+
+    it('separates custom tokens from custom collections', () => {
+      const { specialErc20Hints, specialErc721Hints } = getSpecialHints(
+        1n,
+        [
+          { address: ERC20_ADDR, chainId: 1n, standard: 'ERC20' },
+          { address: COLLECTION_ADDR, chainId: 1n, standard: 'ERC721' }
+        ],
+        [],
+        EMPTY_TO_BE_LEARNED
+      )
+
+      expect(specialErc20Hints.custom).toEqual([ERC20_ADDR])
+      // An empty array means all collectibles of the collection are requested
+      expect(specialErc721Hints.custom).toEqual({ [COLLECTION_ADDR]: [] })
+    })
+
+    it('separates hidden tokens from hidden collections', () => {
+      const { specialErc20Hints, specialErc721Hints } = getSpecialHints(
+        1n,
+        [],
+        [
+          { address: ERC20_ADDR, chainId: 1n, isHidden: true },
+          { address: COLLECTION_ADDR, chainId: 1n, isHidden: true, standard: 'ERC721' },
+          // A preference that isn't hidden shouldn't be a hint
+          { address: OTHER_COLLECTION_ADDR, chainId: 1n, isHidden: false, standard: 'ERC721' }
+        ],
+        EMPTY_TO_BE_LEARNED
+      )
+
+      // A preference without a standard is a token, as collections couldn't be
+      // hidden when the preference was stored
+      expect(specialErc20Hints.hidden).toEqual([ERC20_ADDR])
+      expect(specialErc721Hints.hidden).toEqual({ [COLLECTION_ADDR]: [] })
+    })
+
+    it("skips assets that aren't on the requested network", () => {
+      const { specialErc20Hints, specialErc721Hints } = getSpecialHints(
+        1n,
+        [{ address: COLLECTION_ADDR, chainId: 10n, standard: 'ERC721' }],
+        [{ address: ERC20_ADDR, chainId: 10n, isHidden: true }],
+        EMPTY_TO_BE_LEARNED
+      )
+
+      expect(specialErc20Hints.hidden).toEqual([])
+      expect(specialErc721Hints.custom).toEqual({})
+    })
+  })
+
+  describe('getAssetCacheKey', () => {
+    const CHECKSUMMED = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+
+    it('resolves to the same key regardless of the address casing', () => {
+      expect(getAssetCacheKey(CHECKSUMMED.toLowerCase(), 1n)).toBe(
+        getAssetCacheKey(CHECKSUMMED, 1n)
+      )
+      expect(getAssetCacheKey(CHECKSUMMED.toUpperCase().replace('0X', '0x'), 1n)).toBe(
+        getAssetCacheKey(CHECKSUMMED, 1n)
+      )
+    })
+
+    it('separates the same address on different networks', () => {
+      expect(getAssetCacheKey(CHECKSUMMED, 1n)).not.toBe(getAssetCacheKey(CHECKSUMMED, 10n))
+    })
+
+    it('falls back to the raw value when the address is not an address', () => {
+      expect(getAssetCacheKey('not-an-address', 1n)).toBe('not-an-address-1')
+    })
+  })
+
+  describe('getErc721Validity', () => {
+    it('is a collection when it declares the ERC-721 interface', () => {
+      expect(
+        getErc721Validity({ supportsERC721: true, isContract: true, hasDecimals: false })
+      ).toEqual({ isValid: true, reason: null })
+    })
+
+    // Vote-escrow NFTs are ERC-721s that also expose decimals()
+    it('is a collection when it declares the interface, even with decimals', () => {
+      expect(
+        getErc721Validity({ supportsERC721: true, isContract: true, hasDecimals: true })
+      ).toEqual({ isValid: true, reason: null })
+    })
+
+    // Collections like Aavegotchi don't implement ERC-165
+    it('is a collection without ERC-165 support, as long as it has no decimals', () => {
+      expect(
+        getErc721Validity({ supportsERC721: false, isContract: true, hasDecimals: false })
+      ).toEqual({ isValid: true, reason: null })
+      expect(
+        getErc721Validity({ supportsERC721: undefined, isContract: true, hasDecimals: false })
+      ).toEqual({ isValid: true, reason: null })
+    })
+
+    // ENS NameWrapper is one, and it exposes ownerOf() as well
+    it('rejects a multi edition NFT, even when it looks like a collection', () => {
+      const { isValid, reason } = getErc721Validity({
+        supportsERC721: false,
+        supportsERC1155: true,
+        isContract: true,
+        hasDecimals: false
+      })
+
+      expect(isValid).toBe(false)
+      expect(reason).toBe('erc1155-unsupported')
+    })
+
+    it('rejects a token', () => {
+      const { isValid, reason } = getErc721Validity({
+        supportsERC721: false,
+        isContract: true,
+        hasDecimals: true
+      })
+
+      expect(isValid).toBe(false)
+      expect(reason).toBe('is-a-token')
+    })
+
+    it('rejects an address that is not a contract', () => {
+      const { isValid, reason } = getErc721Validity({
+        supportsERC721: undefined,
+        isContract: false,
+        hasDecimals: false
+      })
+
+      expect(isValid).toBe(false)
+      expect(reason).toBe('not-a-collection')
+    })
+
+    // A collection is tracked regardless of what the account holds of it, the
+    // same way a custom token is added regardless of its balance
+    it('is a collection even when balanceOf is missing', () => {
+      expect(
+        getErc721Validity({ supportsERC721: undefined, isContract: true, hasDecimals: false })
+      ).toEqual({ isValid: true, reason: null })
+    })
+  })
+
+  describe('mergeCollectionHints', () => {
+    const COLLECTION_ADDR = '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272'
+    const CUSTOM_ADDR = '0x0000420538CD5AbfBC7Db219B6A1d125f5892Ab0'
+
+    it('keeps the ids of a hidden collection', () => {
+      const merged = mergeCollectionHints({
+        apiHints: { [COLLECTION_ADDR]: [1n, 2n] },
+        specialHints: { custom: {}, hidden: { [COLLECTION_ADDR]: [] }, learn: {} }
+      })
+
+      // An empty array marks a collection as enumerable and would replace the ids
+      expect(merged[COLLECTION_ADDR]).toEqual([1n, 2n])
+    })
+
+    // Adding a collection as custom used to replace the ids of the API with the
+    // enumerable marker, losing the collectibles of collections that can't be enumerated
+    it('keeps the ids of the API for a custom collection', () => {
+      const merged = mergeCollectionHints({
+        apiHints: { [CUSTOM_ADDR]: [7n, 8n] },
+        specialHints: { custom: { [CUSTOM_ADDR]: [] }, hidden: {}, learn: {} }
+      })
+
+      expect(merged[CUSTOM_ADDR]).toEqual([7n, 8n])
+    })
+
+    it('requests all collectibles of a custom collection no other source knows', () => {
+      const merged = mergeCollectionHints({
+        apiHints: {},
+        specialHints: { custom: { [CUSTOM_ADDR]: [] }, hidden: {}, learn: {} }
+      })
+
+      expect(merged[CUSTOM_ADDR]).toEqual([])
+    })
+
+    // Velcro can know some ids of a collection but not the one the user added,
+    // which used to leave the added collectible unrequested and invisible
+    it('requests the ids of a custom collection the API does not know', () => {
+      const merged = mergeCollectionHints({
+        apiHints: { [CUSTOM_ADDR]: [7n] },
+        specialHints: { custom: { [CUSTOM_ADDR]: [9n] }, hidden: {}, learn: {} }
+      })
+
+      expect(merged[CUSTOM_ADDR]).toEqual([7n, 9n])
+    })
+
+    it('does not repeat a custom id the API already knows', () => {
+      const merged = mergeCollectionHints({
+        apiHints: { [CUSTOM_ADDR]: [7n, 9n] },
+        specialHints: { custom: { [CUSTOM_ADDR]: [9n] }, hidden: {}, learn: {} }
+      })
+
+      expect(merged[CUSTOM_ADDR]).toEqual([7n, 9n])
+    })
+
+    it('keeps the enumerable marker of another source over the custom ids', () => {
+      const merged = mergeCollectionHints({
+        apiHints: { [CUSTOM_ADDR]: [] },
+        specialHints: { custom: { [CUSTOM_ADDR]: [9n] }, hidden: {}, learn: {} }
+      })
+
+      expect(merged[CUSTOM_ADDR]).toEqual([])
+    })
+
+    it('merges the learned and the additional hints with the API ones', () => {
+      const merged = mergeCollectionHints({
+        additionalHints: { [COLLECTION_ADDR]: [3n] },
+        apiHints: { [COLLECTION_ADDR]: [1n] },
+        specialHints: { custom: {}, hidden: {}, learn: { [COLLECTION_ADDR]: [2n] } }
+      })
+
+      expect(merged[COLLECTION_ADDR]).toEqual([3n, 1n, 2n])
+    })
+  })
+
+  describe('the ERC-721 validators', () => {
+    const COLLECTION = '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272'
+    const ACCOUNT = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const SOMEONE_ELSE = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const SELECTORS = {
+      supportsInterface: '0x01ffc9a7',
+      decimals: '0x313ce567',
+      name: '0x06fdde03',
+      symbol: '0x95d89b41',
+      ownerOf: '0x6352211e'
+    }
+    const ERC721_ID = '80ac58cd'
+    const ERC1155_ID = 'd9b67a26'
+
+    const abiCoder = new AbiCoder()
+    const encode = (type: string, value: unknown) => abiCoder.encode([type], [value])
+    const networkError = () => Object.assign(new Error('network error'), { code: 'NETWORK_ERROR' })
+    const reverted = () => new Error('execution reverted')
+
+    /**
+     * Answers the reads of both validators. `answer` returns undefined to let a
+     * call revert, which is what a real collection does for decimals().
+     */
+    const getProvider = (answer: (data: string) => string | Error | undefined, code = '0x6080') =>
+      ({
+        getCode: async () => code,
+        call: async ({ data }: { data: string }) => {
+          const answered = answer(data)
+
+          if (answered instanceof Error) throw answered
+          if (typeof answered === 'undefined') throw reverted()
+
+          return answered
+        }
+      }) as any
+
+    const collectionOf = (interfaceId: string) => (data: string) => {
+      if (data.startsWith(SELECTORS.supportsInterface))
+        return encode('bool', data.includes(interfaceId))
+      if (data.startsWith(SELECTORS.name)) return encode('string', 'Bored Apes')
+      if (data.startsWith(SELECTORS.symbol)) return encode('string', 'BAYC')
+
+      return undefined
+    }
+
+    const validate = (provider: any) =>
+      validateERC721Token({ address: COLLECTION, chainId: 1n }, ACCOUNT, provider)
+    const validateOwnership = (provider: any) =>
+      validateCollectibleOwnership({ address: COLLECTION, tokenId: 1n }, ACCOUNT, provider)
+
+    describe('validateERC721Token', () => {
+      it('accepts a collection that declares the ERC-721 interface, with its metadata', async () => {
+        const result = await validate(getProvider(collectionOf(ERC721_ID)))
+
+        expect(result.isValid).toBe(true)
+        expect(result.error.type).toBeNull()
+        expect(result.collection).toEqual({ name: 'Bored Apes', symbol: 'BAYC' })
+      })
+
+      it('has no metadata for a collection that answers neither name nor symbol', async () => {
+        const result = await validate(
+          getProvider((data) =>
+            data.startsWith(SELECTORS.supportsInterface)
+              ? encode('bool', data.includes(ERC721_ID))
+              : undefined
+          )
+        )
+
+        expect(result.isValid).toBe(true)
+        expect(result.collection).toEqual({ name: null, symbol: null })
+      })
+
+      it('rejects a multi edition NFT', async () => {
+        const result = await validate(getProvider(collectionOf(ERC1155_ID)))
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.reason).toBe('erc1155-unsupported')
+        expect(result.error.type).toBe('validation')
+      })
+
+      it('rejects an address with no contract at it', async () => {
+        const result = await validate(getProvider(() => undefined, '0x'))
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.reason).toBe('not-a-collection')
+      })
+
+      it('rejects a token, which answers decimals', async () => {
+        const result = await validate(
+          getProvider((data) => {
+            if (data.startsWith(SELECTORS.supportsInterface)) return encode('bool', false)
+            if (data.startsWith(SELECTORS.decimals)) return encode('uint8', 18)
+
+            return undefined
+          })
+        )
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.reason).toBe('is-a-token')
+      })
+
+      // A call that answers nothing must not read as "not an ERC-1155" or "no
+      // decimals", or the contract passes as a collection
+      it('reports a network problem when the ERC-1155 check fails', async () => {
+        const result = await validate(
+          getProvider((data) => {
+            if (data.includes(ERC1155_ID)) return networkError()
+            if (data.startsWith(SELECTORS.supportsInterface)) return encode('bool', false)
+
+            return undefined
+          })
+        )
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.type).toBe('network')
+      })
+
+      it('reports a network problem when the decimals check fails', async () => {
+        const result = await validate(
+          getProvider((data) => {
+            if (data.startsWith(SELECTORS.decimals)) return networkError()
+            if (data.startsWith(SELECTORS.supportsInterface)) return encode('bool', false)
+
+            return undefined
+          })
+        )
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.type).toBe('network')
+      })
+    })
+
+    describe('validateCollectibleOwnership', () => {
+      const ownedBy = (owner: string) => (data: string) =>
+        data.startsWith(SELECTORS.ownerOf) ? encode('address', owner) : undefined
+
+      it('accepts a collectible the account owns, whatever the casing', async () => {
+        const result = await validateOwnership(getProvider(ownedBy(ACCOUNT.toLowerCase())))
+
+        expect(result.isValid).toBe(true)
+        expect(result.error.reason).toBeUndefined()
+      })
+
+      it('rejects a collectible someone else owns', async () => {
+        const result = await validateOwnership(getProvider(ownedBy(SOMEONE_ELSE)))
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.reason).toBe('collectible-not-owned')
+        expect(result.error.type).toBe('validation')
+      })
+
+      // ownerOf reverts for an id that was never minted or was burned
+      it('rejects a collectible that does not exist', async () => {
+        const result = await validateOwnership(getProvider(() => undefined))
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.reason).toBe('collectible-not-found')
+      })
+
+      it('reports a network problem instead of blaming the collectible', async () => {
+        const result = await validateOwnership(getProvider(() => networkError()))
+
+        expect(result.isValid).toBe(false)
+        expect(result.error.reason).toBe('network-problem')
+        expect(result.error.type).toBe('network')
+      })
+    })
+  })
+
+  describe('getVisibleCollectibles', () => {
+    it('shows the whole collection when it was not added by the user', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n, 2n, 3n] })).toEqual([1n, 2n, 3n])
+    })
+
+    // The user adding one collectible must not bring the rest of the collection along
+    it('shows only the added collectibles of a custom collection', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n, 2n, 3n], customIds: [2n] })).toEqual([2n])
+    })
+
+    it('shows every added collectible of a custom collection', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n, 2n, 3n], customIds: [3n, 1n] })).toEqual([
+        1n,
+        3n
+      ])
+    })
+
+    it('leaves out an added collectible the account no longer owns', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n], customIds: [1n, 9n] })).toEqual([1n])
+    })
+
+    // Collections added before the ids were recorded have none
+    it('shows the whole collection when it was added without ids', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n, 2n], customIds: [] })).toEqual([1n, 2n])
+    })
+
+    // No ids means the whole collection, the way the hidden hints express it
+    it('shows nothing of a collection that is hidden as a whole', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n, 2n, 3n], hiddenIds: [] })).toEqual([])
+    })
+
+    it('hides a whole custom collection too', () => {
+      expect(
+        getVisibleCollectibles({ collectibles: [1n, 2n], customIds: [1n], hiddenIds: [] })
+      ).toEqual([])
+    })
+
+    it('leaves out the hidden collectibles', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n, 2n, 3n], hiddenIds: [2n] })).toEqual([
+        1n,
+        3n
+      ])
+    })
+
+    it('hides an added collectible of a custom collection', () => {
+      expect(
+        getVisibleCollectibles({ collectibles: [1n, 2n], customIds: [1n, 2n], hiddenIds: [1n] })
+      ).toEqual([2n])
+    })
+
+    it('shows nothing of a collection whose collectibles are all hidden', () => {
+      expect(getVisibleCollectibles({ collectibles: [1n], hiddenIds: [1n] })).toEqual([])
+    })
+  })
+
   describe('mapToken', () => {
     it('Overrides the symbol if needed', () => {
       const token = mapToken(USDC_DATA, optimism, USDC_ADDR, {

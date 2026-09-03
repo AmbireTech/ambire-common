@@ -12,6 +12,8 @@ const USDT = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
 const PUNKS = '0xb47e3cd837dDF8e4c57F05d70Ab865de6e193BBB'
 const APES = '0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D'
 const ADX = '0xADE00C28244d5CE17D72E40330B1c318cD12B7c3'
+const AZUKI = '0xED5AF388653567Af2F388E6224dC7C4b3241C544'
+const ACCOUNT = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
 
 const entry = (symbol: string, fetchedAt: number): TokenMetadataEntry => ({
   symbol,
@@ -34,6 +36,9 @@ const prepareTest = async () => {
 
   return { hintsCtrl, storageCtrl }
 }
+
+const getCollectibleHints = (hints: HintsController, accountId: string = ACCOUNT) =>
+  hints.getAllHints(accountId, ETHEREUM_CHAIN_ID, undefined).specialErc721Hints
 
 describe('isAssetMetadataStale', () => {
   test('treats a token with nothing stored as stale', () => {
@@ -159,5 +164,253 @@ describe('HintsController collection metadata', () => {
     expect(metadata.has(manyCollections[199]![0])).toBe(false)
     expect(metadata.has(manyCollections[200]![0])).toBe(true)
     expect(metadata.has(manyCollections[1199]![0])).toBe(true)
+  })
+})
+
+describe('HintsController custom and hidden collectibles', () => {
+  describe('custom collectibles', () => {
+    test('adds two collectibles of one collection', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+
+      expect(
+        await hints.addCustomToken({
+          address: APES,
+          chainId: ETHEREUM_CHAIN_ID,
+          standard: 'ERC721',
+          tokenId: 1n
+        })
+      ).toBe(true)
+      expect(
+        await hints.addCustomToken({
+          address: APES,
+          chainId: ETHEREUM_CHAIN_ID,
+          standard: 'ERC721',
+          tokenId: 2n
+        })
+      ).toBe(true)
+
+      expect(hints.customTokens).toHaveLength(2)
+      expect(getCollectibleHints(hints).custom[APES]).toEqual([1n, 2n])
+    })
+
+    test('refuses a collectible that is already added', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+      const collectible = {
+        address: APES,
+        chainId: ETHEREUM_CHAIN_ID,
+        standard: 'ERC721' as const,
+        tokenId: 1n
+      }
+
+      expect(await hints.addCustomToken(collectible)).toBe(true)
+      expect(await hints.addCustomToken(collectible)).toBe(false)
+      expect(hints.customTokens).toHaveLength(1)
+    })
+
+    // The address alone used to be the identity, which made the second id a duplicate
+    test('adds the same id in another collection', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+
+      await hints.addCustomToken({
+        address: APES,
+        chainId: ETHEREUM_CHAIN_ID,
+        standard: 'ERC721',
+        tokenId: 1n
+      })
+
+      expect(
+        await hints.addCustomToken({
+          address: AZUKI,
+          chainId: ETHEREUM_CHAIN_ID,
+          standard: 'ERC721',
+          tokenId: 1n
+        })
+      ).toBe(true)
+      expect(hints.customTokens).toHaveLength(2)
+    })
+
+    test('removes only the collectible it was given', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+
+      await hints.addCustomToken({
+        address: APES,
+        chainId: ETHEREUM_CHAIN_ID,
+        standard: 'ERC721',
+        tokenId: 1n
+      })
+      await hints.addCustomToken({
+        address: APES,
+        chainId: ETHEREUM_CHAIN_ID,
+        standard: 'ERC721',
+        tokenId: 2n
+      })
+      await hints.removeCustomToken(
+        { address: APES, chainId: ETHEREUM_CHAIN_ID, tokenId: 1n },
+        ACCOUNT
+      )
+
+      expect(hints.customTokens).toHaveLength(1)
+      expect(hints.customTokens[0]!.tokenId).toBe(2n)
+    })
+
+    // Otherwise the removed collectible is rediscovered and shows up again
+    test('stops requesting a removed collectible', async () => {
+      const { hintsCtrl: hints, storageCtrl: storage } = await prepareTest()
+
+      await hints.addCustomToken({
+        address: APES,
+        chainId: ETHEREUM_CHAIN_ID,
+        standard: 'ERC721',
+        tokenId: 1n
+      })
+      hints.addErc721sToBeLearned([[APES, [1n, 2n]]], ACCOUNT, ETHEREUM_CHAIN_ID)
+
+      expect(getCollectibleHints(hints).learn[APES]).toEqual([1n, 2n])
+
+      await hints.removeCustomToken(
+        { address: APES, chainId: ETHEREUM_CHAIN_ID, tokenId: 1n },
+        ACCOUNT
+      )
+
+      expect(getCollectibleHints(hints).learn[APES]).toEqual([2n])
+      expect(getCollectibleHints(hints).custom[APES]).toBeUndefined()
+      expect(await storage.get('learnedAssets', null)).toBeDefined()
+    })
+
+    // Collectibles added before the ids were recorded stand for the whole
+    // collection, so removing one forgets all of it
+    test('stops requesting a collection removed without an id', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+
+      await hints.addCustomToken({ address: APES, chainId: ETHEREUM_CHAIN_ID, standard: 'ERC721' })
+      hints.addErc721sToBeLearned([[APES, [1n, 2n]]], ACCOUNT, ETHEREUM_CHAIN_ID)
+      await hints.removeCustomToken({ address: APES, chainId: ETHEREUM_CHAIN_ID }, ACCOUNT)
+
+      expect(getCollectibleHints(hints).learn[APES]).toBeUndefined()
+      expect(getCollectibleHints(hints).custom[APES]).toBeUndefined()
+    })
+
+    test('leaves the hints of a removed token alone', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+
+      await hints.addCustomToken({ address: APES, chainId: ETHEREUM_CHAIN_ID, standard: 'ERC20' })
+      hints.addErc721sToBeLearned([[APES, [1n]]], ACCOUNT, ETHEREUM_CHAIN_ID)
+      await hints.removeCustomToken({ address: APES, chainId: ETHEREUM_CHAIN_ID }, ACCOUNT)
+
+      expect(getCollectibleHints(hints).learn[APES]).toEqual([1n])
+    })
+
+    test('keeps requesting the whole collection it was asked to enumerate', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+
+      hints.addErc721sToBeLearned([[APES, []]], ACCOUNT, ETHEREUM_CHAIN_ID)
+      await hints.removeCustomToken(
+        { address: APES, chainId: ETHEREUM_CHAIN_ID, tokenId: 1n },
+        ACCOUNT
+      )
+
+      expect(getCollectibleHints(hints).learn[APES]).toEqual([])
+    })
+  })
+
+  describe('hidden collectibles', () => {
+    test('hides one collectible of a collection', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+
+      await hints.toggleHideToken({
+        address: APES,
+        chainId: ETHEREUM_CHAIN_ID,
+        standard: 'ERC721',
+        tokenId: 1n
+      })
+
+      expect(hints.tokenPreferences).toHaveLength(1)
+      expect(getCollectibleHints(hints).hidden[APES]).toEqual([1n])
+    })
+
+    test('hides a second collectible without unhiding the first', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+
+      await hints.toggleHideToken({
+        address: APES,
+        chainId: ETHEREUM_CHAIN_ID,
+        standard: 'ERC721',
+        tokenId: 1n
+      })
+      await hints.toggleHideToken({
+        address: APES,
+        chainId: ETHEREUM_CHAIN_ID,
+        standard: 'ERC721',
+        tokenId: 2n
+      })
+
+      expect(getCollectibleHints(hints).hidden[APES]).toEqual([1n, 2n])
+    })
+
+    test('unhides only the collectible it was given', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+      const first = {
+        address: APES,
+        chainId: ETHEREUM_CHAIN_ID,
+        standard: 'ERC721' as const,
+        tokenId: 1n
+      }
+
+      await hints.toggleHideToken(first)
+      await hints.toggleHideToken({ ...first, tokenId: 2n })
+      await hints.toggleHideToken(first)
+
+      expect(getCollectibleHints(hints).hidden[APES]).toEqual([2n])
+    })
+
+    // Addresses reach the preferences from the portfolio, from dApps and from
+    // what the user pastes, which disagree on casing
+    test('unhides a collectible that was hidden under a different address casing', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+
+      await hints.toggleHideToken({
+        address: APES,
+        chainId: ETHEREUM_CHAIN_ID,
+        standard: 'ERC721',
+        tokenId: 1n
+      })
+      await hints.toggleHideToken({
+        address: APES.toLowerCase(),
+        chainId: ETHEREUM_CHAIN_ID,
+        standard: 'ERC721',
+        tokenId: 1n
+      })
+
+      expect(hints.tokenPreferences).toHaveLength(0)
+      expect(getCollectibleHints(hints).hidden[APES]).toBeUndefined()
+    })
+
+    // A hidden collection has no ids, which asks for every collectible of it
+    test('hides a whole collection when no id is given', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+
+      await hints.toggleHideToken({ address: APES, chainId: ETHEREUM_CHAIN_ID, standard: 'ERC721' })
+
+      expect(getCollectibleHints(hints).hidden[APES]).toEqual([])
+    })
+
+    test('keeps the standard of a removed custom collectible, so it stays hidden as an NFT', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+      const collectible = {
+        address: APES,
+        chainId: ETHEREUM_CHAIN_ID,
+        standard: 'ERC721' as const,
+        tokenId: 1n
+      }
+
+      await hints.addCustomToken(collectible)
+      await hints.toggleHideToken(collectible)
+      await hints.removeCustomToken(
+        { address: APES, chainId: ETHEREUM_CHAIN_ID, tokenId: 1n },
+        ACCOUNT
+      )
+
+      expect(hints.tokenPreferences).toHaveLength(0)
+    })
   })
 })
