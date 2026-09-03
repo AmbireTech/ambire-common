@@ -1,13 +1,19 @@
-import { describe, expect, jest, test } from '@jest/globals'
+import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globals'
 
+import { AMBIRE_ACCOUNT_FACTORY, SINGLETON } from '../../consts/deploy'
 import { networks as predefinedNetworks } from '../../consts/networks'
-import { Network, NetworkInfo, RelayerNetwork } from '../../interfaces/network'
+import { Fetch } from '../../interfaces/fetch'
+import { Network, NetworkInfo, NetworkInfoLoading, RelayerNetwork } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { getRpcProvider } from '../../services/provider'
+import wait from '../../utils/wait'
 import {
   getFeaturesByNetworkProperties,
+  getLoadingNetworkInfo,
+  getNetworkInfo,
   getNetworksUpdatedWithRelayerNetworks,
-  getStateOverrideSupport
+  getStateOverrideSupport,
+  isNetworkInfoPending
 } from './networks'
 
 const getByKey = <T>(record: Record<string, T>, key: string): T => {
@@ -306,6 +312,208 @@ describe('Networks lib', () => {
 
         expect(getByKey(result, '1').refreshInterval).toBeUndefined()
       })
+    })
+  })
+})
+
+describe('getNetworkInfo emissions', () => {
+  const TEST_CHAIN_ID = 424242n
+  // Mirrors the timeout `getNetworkInfo` races its probes against
+  const NETWORK_INFO_TIMEOUT_MS = 30000
+  const DEPLOYED_CONTRACT_CODE = '0x1234'
+  const COINGECKO_PLATFORM_ID = 'test-platform'
+  const COINGECKO_NATIVE_ASSET_ID = 'test-native-asset'
+  // How many microtask turns to give the ungated probes before asserting that they
+  // produced no emission of their own.
+  const MICROTASK_TURNS_TO_SETTLE = 25
+
+  const createGate = () => {
+    let release: () => void = () => {}
+    const promise = new Promise<void>((resolve) => {
+      release = resolve
+    })
+
+    return { promise, release }
+  }
+
+  const okFetch = jest.fn(async () => ({
+    status: 200,
+    json: async () => ({
+      platformId: COINGECKO_PLATFORM_ID,
+      nativeAssetId: COINGECKO_NATIVE_ASSET_ID
+    })
+  })) as unknown as Fetch
+
+  /**
+   * A provider whose smart-account probes can be held back, so the four concurrent
+   * probes inside `getNetworkInfo` resolve in a deliberately awkward order.
+   */
+  const createProviderStub = ({
+    gateSmartAccountProbes = false,
+    failSingletonCode = false
+  }: { gateSmartAccountProbes?: boolean; failSingletonCode?: boolean } = {}) => {
+    const smartAccountGate = createGate()
+    const calls: string[] = []
+
+    const provider = {
+      getCode: async (address: string) => {
+        calls.push(`getCode:${address}`)
+        const isSmartAccountProbe = address === SINGLETON || address === AMBIRE_ACCOUNT_FACTORY
+
+        if (isSmartAccountProbe && gateSmartAccountProbes) await smartAccountGate.promise
+        if (failSingletonCode && address === SINGLETON)
+          throw new Error(`the RPC did not respond for ${address}`)
+
+        return DEPLOYED_CONTRACT_CODE
+      },
+      getBlock: async () => {
+        calls.push('getBlock')
+        return { baseFeePerGas: 1n }
+      },
+      send: async () => {
+        calls.push('send')
+        return '0x'
+      },
+      call: async () => {
+        calls.push('call')
+        return '0x'
+      }
+    } as unknown as RPCProvider
+
+    return { provider, calls, releaseSmartAccountProbes: smartAccountGate.release }
+  }
+
+  const getLoadingFieldNames = (info: NetworkInfoLoading<NetworkInfo>) =>
+    Object.entries(info)
+      .filter(([, value]) => value === 'LOADING')
+      .map(([field]) => field)
+
+  test('streams the prices fields before the gated smart-account ones', async () => {
+    const { provider, releaseSmartAccountProbes } = createProviderStub({
+      gateSmartAccountProbes: true
+    })
+    const emissions: NetworkInfoLoading<NetworkInfo>[] = []
+
+    const infoPromise = getNetworkInfo(
+      okFetch,
+      TEST_CHAIN_ID,
+      provider,
+      (info) => emissions.push(info),
+      undefined
+    )
+
+    // The coingecko probe settles here, while the smart-account ones are still held back.
+    for (let turn = 0; turn < MICROTASK_TURNS_TO_SETTLE; turn++) await wait(0)
+
+    expect(emissions).toHaveLength(2)
+    expect(emissions[0]).toEqual(getLoadingNetworkInfo(TEST_CHAIN_ID))
+    // The prices row can already render while the smart-account ones still spin.
+    expect(emissions[1]!.platformId).toBe(COINGECKO_PLATFORM_ID)
+    expect(emissions[1]!.nativeAssetId).toBe(COINGECKO_NATIVE_ASSET_ID)
+    expect(getLoadingFieldNames(emissions[1]!)).toContain('isSAEnabled')
+    expect(
+      getFeaturesByNetworkProperties(emissions[1]!, undefined).map((feature) => feature.level)
+    ).toEqual(['loading', 'loading', 'success'])
+
+    releaseSmartAccountProbes()
+    await infoPromise
+
+    expect(getLoadingFieldNames(emissions[emissions.length - 1]!)).toEqual([])
+  })
+
+  test('resolves each field once and only reports complete on the last emission', async () => {
+    const { provider } = createProviderStub()
+    const emissions: NetworkInfoLoading<NetworkInfo>[] = []
+
+    await getNetworkInfo(
+      okFetch,
+      TEST_CHAIN_ID,
+      provider,
+      (info) => emissions.push(info),
+      undefined
+    )
+
+    expect(emissions.length).toBeGreaterThan(2)
+
+    // A field only ever goes from 'LOADING' to a value, so the pending set shrinks
+    // monotonically and no row that already rendered falls back to a spinner.
+    const pendingFieldsPerEmission = emissions.map(getLoadingFieldNames)
+    pendingFieldsPerEmission.forEach((pendingFields, index) => {
+      if (index === 0) return
+      expect(pendingFieldsPerEmission[index - 1]).toEqual(expect.arrayContaining(pendingFields))
+    })
+    expect(pendingFieldsPerEmission[pendingFieldsPerEmission.length - 1]).toEqual([])
+
+    // Every emission but the last still counts as pending, so a button gated on
+    // `isNetworkInfoPending` can never become clickable mid-stream.
+    expect(emissions.map(isNetworkInfoPending)).toEqual([
+      ...emissions.slice(0, -1).map(() => true),
+      false
+    ])
+  })
+
+  test('keeps flagged pending until the last emission, after the features already read as resolved', async () => {
+    const { provider } = createProviderStub({ failSingletonCode: true })
+    const emissions: NetworkInfoLoading<NetworkInfo>[] = []
+
+    await getNetworkInfo(
+      okFetch,
+      TEST_CHAIN_ID,
+      provider,
+      (info) => emissions.push(info),
+      undefined
+    )
+
+    const finalInfo = emissions[emissions.length - 1]!
+    expect(finalInfo.flagged).toBe(true)
+    expect(getLoadingFieldNames(finalInfo)).toEqual([])
+
+    // The regression test for the enabled -> disabled flip. There IS an emission whose
+    // features all read as resolved while `flagged` is still pending, so a gate only gets
+    // the answer right if it asks `isNetworkInfoPending` instead of the feature levels.
+    const misleadingEmissions = emissions
+      .slice(0, -1)
+      .filter(
+        (info) =>
+          !getFeaturesByNetworkProperties(info, undefined).some(
+            (feature) => feature.level === 'loading'
+          )
+      )
+    expect(misleadingEmissions.length).toBeGreaterThan(0)
+    expect(emissions.slice(0, -1).map(isNetworkInfoPending)).not.toContain(false)
+
+    // Once the verdict is in, the list collapses to the single RPC error row.
+    expect(
+      getFeaturesByNetworkProperties(finalInfo, undefined).map((feature) => feature.level)
+    ).toEqual(['danger'])
+  })
+
+  describe('timer cleanup', () => {
+    let setTimeoutSpy: jest.SpiedFunction<typeof setTimeout>
+    let clearTimeoutSpy: jest.SpiedFunction<typeof clearTimeout>
+
+    beforeEach(() => {
+      setTimeoutSpy = jest.spyOn(global, 'setTimeout')
+      clearTimeoutSpy = jest.spyOn(global, 'clearTimeout')
+    })
+
+    afterEach(() => {
+      setTimeoutSpy.mockRestore()
+      clearTimeoutSpy.mockRestore()
+    })
+
+    test('clears its own timeout once the probes win the race', async () => {
+      const { provider } = createProviderStub()
+
+      await getNetworkInfo(okFetch, TEST_CHAIN_ID, provider, () => {}, undefined)
+
+      const timeoutCallIndex = setTimeoutSpy.mock.calls.findIndex(
+        (call) => call[1] === NETWORK_INFO_TIMEOUT_MS
+      )
+      expect(timeoutCallIndex).toBeGreaterThanOrEqual(0)
+
+      const timerId = setTimeoutSpy.mock.results[timeoutCallIndex]!.value
+      expect(clearTimeoutSpy).toHaveBeenCalledWith(timerId)
     })
   })
 })

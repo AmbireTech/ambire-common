@@ -122,22 +122,11 @@ export async function getStateOverrideSupport(provider: RPCProvider): Promise<bo
 }
 
 /**
- * Fetches detailed network information from an RPC provider.
- * Used when adding a new network, updating network info, or when the RPC provider is changed,
- * And once every 24 hours for custom networks.
- *
- * - Checks smart account (SA) support, singleton contract, and state override capabilities.
- * - Determines if the network supports ERC-4337 and Account Abstraction.
- * - Fetches additional metadata from external sources (e.g., CoinGecko).
+ * The network info shape before any RPC probe has resolved. Every field is
+ * 'LOADING' except the chain id.
  */
-export async function getNetworkInfo(
-  fetch: Fetch,
-  chainId: bigint,
-  provider: RPCProvider,
-  callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void,
-  network: Network | undefined
-) {
-  let networkInfo: NetworkInfoLoading<NetworkInfo> = {
+export function getLoadingNetworkInfo(chainId: bigint): NetworkInfoLoading<NetworkInfo> {
+  return {
     chainId,
     isSAEnabled: 'LOADING',
     hasSingleton: 'LOADING',
@@ -150,11 +139,35 @@ export async function getNetworkInfo(
     nativeAssetId: 'LOADING',
     flagged: 'LOADING'
   }
+}
+
+/**
+ * True while any of the probes behind the network info is still running.
+ */
+export function isNetworkInfoPending(info?: NetworkInfoLoading<NetworkInfo>): boolean {
+  return !info || Object.values(info).some((prop) => prop === 'LOADING')
+}
+
+/**
+ * Fetches a network's capabilities from an RPC provider - smart account support, ERC-4337,
+ * fee options and price metadata.
+ *
+ * Streams progress through `callback`.
+ */
+export async function getNetworkInfo(
+  fetch: Fetch,
+  chainId: bigint,
+  provider: RPCProvider,
+  callback: (networkInfo: NetworkInfoLoading<NetworkInfo>) => void,
+  network: Network | undefined
+) {
+  let networkInfo: NetworkInfoLoading<NetworkInfo> = getLoadingNetworkInfo(chainId)
   callback(networkInfo)
 
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
   const timeout = (time: number = 30000): Promise<'timeout reached'> => {
     return new Promise((resolve) => {
-      setTimeout(resolve, time, 'timeout reached')
+      timeoutId = setTimeout(resolve, time, 'timeout reached')
     }) as unknown as Promise<'timeout reached'>
   }
 
@@ -168,96 +181,97 @@ export async function getNetworkInfo(
     return returnData
   }
 
-  const info = await Promise.race([
-    Promise.all([
-      (async () => {
-        const responses = await Promise.all([
-          retryRequest(() => provider.getCode(SINGLETON)),
-          retryRequest(() => provider.getCode(AMBIRE_ACCOUNT_FACTORY)),
-          retryRequest(() => getSASupport(provider)),
-          retryRequest(() => getStateOverrideSupport(provider)),
-          Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
-          // retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
-        ]).catch((e: Error) =>
-          raiseFlagged(e, ['0x', '0x', { addressMatches: false }, false, false])
-        )
-        const [singletonCode, factoryCode, saSupport, supportsStateOverride, hasBundlerSupport] =
-          responses
-        const areContractsDeployed = factoryCode !== '0x'
-        // const has4337 = entryPointCode !== '0x' && hasBundler
-
-        // Ambire support is as follows:
-        // - either the addresses match after simulation, that's perfect
-        // - or we can't do the simulation with this RPC but we have the factory
-        // deployed on the network
-        const supportsAmbire =
-          saSupport.addressMatches || (!supportsStateOverride && areContractsDeployed)
-        networkInfo = {
-          ...networkInfo,
-          hasSingleton: singletonCode !== '0x',
-          isSAEnabled: supportsAmbire && singletonCode !== '0x',
-          areContractsDeployed,
-          rpcNoStateOverride: !supportsStateOverride,
-          erc4337: {
-            enabled: is4337Enabled(hasBundlerSupport, network),
-            hasPaymaster: network ? network.erc4337.hasPaymaster : false,
-            hasBundlerSupport
-          }
-        }
-
-        callback(networkInfo)
-      })(),
-      (async () => {
-        const oracleCode = await retryRequest(() => provider.getCode(OPTIMISTIC_ORACLE)).catch(
-          (e: Error) => raiseFlagged(e, '0x')
-        )
-        const isOptimistic = oracleCode !== '0x'
-
-        networkInfo = { ...networkInfo, isOptimistic }
-
-        callback(networkInfo)
-      })(),
-      (async () => {
-        const block = await retryRequest(() => provider.getBlock('latest')).catch((e: Error) =>
-          raiseFlagged(e, null)
-        )
-        const feeOptions = { is1559: block?.baseFeePerGas !== null }
-
-        networkInfo = { ...networkInfo, feeOptions }
-
-        callback(networkInfo)
-      })(),
-      (async () => {
-        // Keep the old value if the request fails
-        let platformId = network?.platformId || ''
-        let nativeAssetId = network?.nativeAssetId || ''
-
-        try {
-          const coingeckoRequest = await fetch(
-            `https://cena.ambire.com/api/v3/platform/${Number(chainId)}`
+  let info: unknown
+  try {
+    info = await Promise.race([
+      Promise.all([
+        (async () => {
+          const responses = await Promise.all([
+            retryRequest(() => provider.getCode(SINGLETON)),
+            retryRequest(() => provider.getCode(AMBIRE_ACCOUNT_FACTORY)),
+            retryRequest(() => getSASupport(provider)),
+            retryRequest(() => getStateOverrideSupport(provider)),
+            Bundler.isNetworkSupported(fetch, chainId).catch(() => false)
+            // retryRequest(() => provider.getCode(ERC_4337_ENTRYPOINT)),
+          ]).catch((e: Error) =>
+            raiseFlagged(e, ['0x', '0x', { addressMatches: false }, false, false])
           )
-          const coingeckoInfo = await coingeckoRequest.json()
+          const [singletonCode, factoryCode, saSupport, supportsStateOverride, hasBundlerSupport] =
+            responses
+          const areContractsDeployed = factoryCode !== '0x'
+          // const has4337 = entryPointCode !== '0x' && hasBundler
 
-          if (!coingeckoInfo.error) {
-            // Coingecko info found
-            platformId = coingeckoInfo.platformId
-            nativeAssetId = coingeckoInfo.nativeAssetId
+          // Ambire support is as follows:
+          // - either the addresses match after simulation, that's perfect
+          // - or we can't do the simulation with this RPC but we have the factory
+          // deployed on the network
+          const supportsAmbire =
+            saSupport.addressMatches || (!supportsStateOverride && areContractsDeployed)
+          networkInfo = {
+            ...networkInfo,
+            hasSingleton: singletonCode !== '0x',
+            isSAEnabled: supportsAmbire && singletonCode !== '0x',
+            areContractsDeployed,
+            rpcNoStateOverride: !supportsStateOverride,
+            erc4337: {
+              enabled: is4337Enabled(hasBundlerSupport, network),
+              hasPaymaster: network ? network.erc4337.hasPaymaster : false,
+              hasBundlerSupport
+            }
           }
-        } catch (e) {
-          console.error('Error fetching coingecko info', e)
-        }
 
-        networkInfo = {
-          ...networkInfo,
-          platformId,
-          nativeAssetId
-        }
+          callback(networkInfo)
+        })(),
+        (async () => {
+          const oracleCode = await retryRequest(() => provider.getCode(OPTIMISTIC_ORACLE)).catch(
+            (e: Error) => raiseFlagged(e, '0x')
+          )
+          const isOptimistic = oracleCode !== '0x'
 
-        callback(networkInfo)
-      })()
-    ]),
-    timeout()
-  ])
+          networkInfo = { ...networkInfo, isOptimistic }
+        })(),
+        (async () => {
+          const block = await retryRequest(() => provider.getBlock('latest')).catch((e: Error) =>
+            raiseFlagged(e, null)
+          )
+          const feeOptions = { is1559: block?.baseFeePerGas !== null }
+
+          networkInfo = { ...networkInfo, feeOptions }
+        })(),
+        (async () => {
+          // Keep the old value if the request fails
+          let platformId = network?.platformId || ''
+          let nativeAssetId = network?.nativeAssetId || ''
+
+          try {
+            const coingeckoRequest = await fetch(
+              `https://cena.ambire.com/api/v3/platform/${Number(chainId)}`
+            )
+            const coingeckoInfo = await coingeckoRequest.json()
+
+            if (!coingeckoInfo.error) {
+              // Coingecko info found
+              platformId = coingeckoInfo.platformId
+              nativeAssetId = coingeckoInfo.nativeAssetId
+            }
+          } catch (e) {
+            console.error('Error fetching coingecko info', e)
+          }
+
+          networkInfo = {
+            ...networkInfo,
+            platformId,
+            nativeAssetId
+          }
+
+          callback(networkInfo)
+        })()
+      ]),
+      timeout()
+    ])
+  } finally {
+    clearTimeout(timeoutId)
+  }
 
   networkInfo = { ...networkInfo, flagged: flagged || info === 'timeout reached' }
   callback(networkInfo)
@@ -401,6 +415,14 @@ export function getFeaturesByNetworkProperties(
   }
 
   return features
+}
+
+/** The feature list to render while a network's info is still being fetched. */
+export function getLoadingFeatures(): NetworkFeature[] {
+  return getFeaturesByNetworkProperties(undefined, undefined).map((feature) => ({
+    ...feature,
+    level: 'loading'
+  }))
 }
 
 // call this if you have only the rpcUrls and chainId
