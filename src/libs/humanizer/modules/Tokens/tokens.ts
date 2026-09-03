@@ -123,7 +123,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp
 
       return {
         visualizations: [
-          getAction('Grant approval', { warning: true }),
+          getAction('Grant approval'),
           getLabel('for all NFTs of'),
           getAddressVisualization(call.to),
           getLabel('to'),
@@ -131,6 +131,8 @@ export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp
         ],
         // there is no amount to check here - granting this hands over every item in the
         // collection, including items bought later, until it is revoked
+        // the `warning` below already flags the whole call element; marking the action itself
+        // as a warning too just makes the text harder to read without adding information
         warning: getWarning(
           'This app can transfer any item you own from this collection, now or later. Continue only if you trust it.',
           UNLIMITED_APPROVAL_WARNING_CODE,

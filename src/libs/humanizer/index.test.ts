@@ -354,6 +354,50 @@ describe('Humanizer main function', () => {
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
 
+  test('setApprovalForAll on the Uniswap V3 Position Manager keeps the NFT approval humanization', async () => {
+    // The Uniswap V3 NonfungiblePositionManager is an ERC-721 contract (LP positions are NFTs),
+    // but it's also in the Uniswap module's address list. setApprovalForAll isn't one of the
+    // Uniswap-specific actions that module recognizes, so it must not clobber the more specific
+    // visualization genericErc721Humanizer already produced with the vague 'Uniswap action' fallback.
+    const positionManager = '0xC36442b4a4522E871399CD717aBDD847Ab11FE88'
+    const operator = '0x77c417980798a3b6aa21b2b1d5f218a598eb0a83'
+    accountOp.calls = [
+      {
+        to: positionManager,
+        value: 0n,
+        data: encodeFunctionData({
+          abi: [
+            {
+              name: 'setApprovalForAll',
+              type: 'function',
+              inputs: [
+                { name: 'operator', type: 'address' },
+                { name: 'approved', type: 'bool' }
+              ],
+              outputs: [],
+              stateMutability: 'nonpayable'
+            }
+          ],
+          functionName: 'setApprovalForAll',
+          args: [operator, true]
+        })
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp)
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('Grant approval'),
+        getLabel('for all NFTs of'),
+        getAddressVisualization(positionManager),
+        getLabel('to'),
+        getAddressVisualization(operator)
+      ]
+    ])
+    expect(irCalls[0]!.warnings?.length).toBe(1)
+  })
+
   test('aave not to be parsed by uniswap', async () => {
     // const ir: Ir = []
     const expectedVisualizations = [

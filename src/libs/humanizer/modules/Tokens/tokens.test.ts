@@ -322,7 +322,7 @@ describe('Tokens', () => {
         getToken('0x59468516a8259058bad1ca5f8f4bff190d30e066', 1n)
       ],
       [
-        getAction('Grant approval', { warning: true }),
+        getAction('Grant approval'),
         getLabel('for all NFTs of'),
         getAddressVisualization('0x59468516a8259058bad1ca5f8f4bff190d30e066'),
         getLabel('to'),
