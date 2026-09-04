@@ -25,7 +25,8 @@ import {
   getToken,
   getWarning,
   HexIrCall,
-  isHexCall
+  isHexCall,
+  padCallData
 } from '../../utils'
 
 const addOwnerWithThresholdAbi = parseAbi([
@@ -178,7 +179,7 @@ export const getSafeHumanization = (
   if (selector === toFunctionSelector(addOwnerWithThresholdAbi[0])) {
     const { args } = decodeFunctionData({
       abi: addOwnerWithThresholdAbi,
-      data
+      data: padCallData(data, 2)
     })
     const [newOwner, newThreshold] = args
     fullVisualization.push(
@@ -199,7 +200,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(changeThresholdAbi[0])) {
-    const { args } = decodeFunctionData({ abi: changeThresholdAbi, data })
+    const { args } = decodeFunctionData({ abi: changeThresholdAbi, data: padCallData(data, 1) })
     const [newThreshold] = args
     fullVisualization.push(...[getAction('Set threshold to'), getLabel(newThreshold)])
     warnings.push(
@@ -212,7 +213,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(removeOwnerAbi[0])) {
-    const { args } = decodeFunctionData({ abi: removeOwnerAbi, data })
+    const { args } = decodeFunctionData({ abi: removeOwnerAbi, data: padCallData(data, 3) })
     const [, removedOwner, newThreshold] = args
     fullVisualization.push(
       ...[
@@ -232,7 +233,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(swapOwnerAbi[0])) {
-    const { args } = decodeFunctionData({ abi: swapOwnerAbi, data })
+    const { args } = decodeFunctionData({ abi: swapOwnerAbi, data: padCallData(data, 3) })
     const [, removedOwner, newOwner] = args
     fullVisualization.push(
       ...[
@@ -251,7 +252,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(enableModuleAbi[0])) {
-    const { args } = decodeFunctionData({ abi: enableModuleAbi, data })
+    const { args } = decodeFunctionData({ abi: enableModuleAbi, data: padCallData(data, 1) })
     const [module] = args
     fullVisualization.push(...[getAction('Enable module:'), getAddressVisualization(module)])
     warnings.push(
@@ -267,7 +268,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(disableModuleAbi[0])) {
-    const { args } = decodeFunctionData({ abi: disableModuleAbi, data })
+    const { args } = decodeFunctionData({ abi: disableModuleAbi, data: padCallData(data, 2) })
     const [, module] = args
     fullVisualization.push(...[getAction('Disable module:'), getAddressVisualization(module)])
     return {
@@ -276,7 +277,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(setGuardAbi[0])) {
-    const { args } = decodeFunctionData({ abi: setGuardAbi, data })
+    const { args } = decodeFunctionData({ abi: setGuardAbi, data: padCallData(data, 1) })
     const [guard] = args
     fullVisualization.push(...[getAction('Set guard:'), getAddressVisualization(guard)])
     return {
@@ -285,7 +286,10 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(setFallbackHandlerAbi[0])) {
-    const { args } = decodeFunctionData({ abi: setFallbackHandlerAbi, data })
+    const { args } = decodeFunctionData({
+      abi: setFallbackHandlerAbi,
+      data: padCallData(data, 1)
+    })
     const [handler] = args
     fullVisualization.push(
       ...[getAction('Extend your account functionality with'), getAddressVisualization(handler)]
@@ -315,7 +319,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(setDomainVerifierAbi[0])) {
-    const { args } = decodeFunctionData({ abi: setDomainVerifierAbi, data })
+    const { args } = decodeFunctionData({ abi: setDomainVerifierAbi, data: padCallData(data, 2) })
     const [, newVerifier] = args
     fullVisualization.push(
       ...[
