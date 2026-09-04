@@ -4,7 +4,11 @@ import { IEventEmitterRegistryController, Statuses } from '@/interfaces/eventEmi
 import { Fetch } from '@/interfaces/fetch'
 import { IInviteController } from '@/interfaces/invite'
 import { IStorageController } from '@/interfaces/storage'
-import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
+import {
+  BindedRelayerCall,
+  relayerCall,
+  RELAYER_DOWN_MESSAGE
+} from '@/libs/relayerCall/relayerCall'
 
 export enum INVITE_STATUS {
   UNVERIFIED = 'UNVERIFIED',
@@ -20,6 +24,30 @@ type InviteState = {
   verifiedAt: null | number // timestamp
   verifiedCode: null | string
   becameOGAt: null | number // timestamp
+}
+
+const INVALID_CODE_MESSAGE = "Oops, that code didn't work. Check for a typo and try again."
+const UNREACHABLE_MESSAGE =
+  'We could not check your code right now. Please check your connection and try again.'
+
+/**
+ * Prefers the explanation the relayer sent back, because it knows best why a code got rejected.
+ * Anything that never got a verdict out of the relayer (no internet, a timeout, the relayer being
+ * down) must not blame the code the user entered - it could be a perfectly valid one.
+ */
+const getVerifyErrorMessage = (error: any) => {
+  const response = error?.output?.res
+
+  if (
+    !response?.status ||
+    response.status >= 500 ||
+    // What the relayer call falls back to when the response body is not readable at all.
+    response.message === RELAYER_DOWN_MESSAGE
+  )
+    return UNREACHABLE_MESSAGE
+
+  // A rejected code comes back as a 200 with success: false and the reason at the top level.
+  return response.message || INVALID_CODE_MESSAGE
 }
 
 const DEFAULT_STATE = {
@@ -119,7 +147,7 @@ export class InviteController extends EventEmitter implements IInviteController 
       try {
         await this.#callRelayer(`/promotions/extension-key/${code}`, 'GET')
       } catch (error: any) {
-        this.errorMessage = "Oops, that code didn't work. Check for a typo and try again."
+        this.errorMessage = getVerifyErrorMessage(error)
         this.emitUpdate()
 
         // Silent, because the message is displayed in the form, right below the code field,
