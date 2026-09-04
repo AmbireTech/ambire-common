@@ -26,8 +26,11 @@ type InviteState = {
   becameOGAt: null | number // timestamp
 }
 
-const INVALID_CODE_MESSAGE = "Oops, that code didn't work. Check for a typo and try again."
-const UNREACHABLE_MESSAGE =
+/** Shown when the relayer rejected the code, but did not say why. */
+export const INVALID_CODE_MESSAGE = "Oops, that code didn't work. Check for a typo and try again."
+
+/** Shown when the code never got a verdict, so it must not be blamed. */
+export const UNREACHABLE_MESSAGE =
   'We could not check your code right now. Please check your connection and try again.'
 
 /**
