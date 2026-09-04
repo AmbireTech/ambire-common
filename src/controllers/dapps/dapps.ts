@@ -37,7 +37,7 @@ import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
-import { IUiController, View, isExtensionOverlayView } from '../../interfaces/ui'
+import { isExtensionOverlayView, IUiController, View } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
 import {
   formatDappName,
@@ -92,6 +92,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   #dapps = new Map<string, Dapp>()
 
   #recentDapps: RecentDappEntry[] = []
+
+  #disguisedAsMetaMaskDappIds: string[] = []
 
   dappToConnect: Dapp | null = null
 
@@ -267,6 +269,10 @@ export class DappsController extends EventEmitter implements IDappsController {
       .filter((d): d is Dapp => !!d)
   }
 
+  get disguisedAsMetaMaskDappIds(): string[] {
+    return this.#disguisedAsMetaMaskDappIds
+  }
+
   get categories(): string[] {
     return [
       ...new Set(
@@ -279,11 +285,13 @@ export class DappsController extends EventEmitter implements IDappsController {
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    const [storedDapps, storedRecentDapps, storedTrending] = await Promise.all([
-      this.#storage.get('dappsV2', predefinedDapps),
-      this.#storage.get('recentDapps', [] as RecentDappEntry[]),
-      this.#storage.get('trending', { updatedAt: 0, tokens: [] as TrendingToken[] })
-    ])
+    const [storedDapps, storedRecentDapps, storedTrending, storedDisguisedAsMetaMaskDapps] =
+      await Promise.all([
+        this.#storage.get('dappsV2', predefinedDapps),
+        this.#storage.get('recentDapps', [] as RecentDappEntry[]),
+        this.#storage.get('trending', { updatedAt: 0, tokens: [] as TrendingToken[] }),
+        this.#storage.get('disguisedAsMetaMaskDapps', [] as string[])
+      ])
     // Normalize on read so a drifted record (e.g. isConnected: true but connectedSources: [])
     // can't show a dapp as connected in the UI while permission checks force a reconnect.
     // Ids are canonicalized as well: a record stored before trailing-dot normalization
@@ -299,6 +307,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
     })
     this.#recentDapps = storedRecentDapps
+    this.#disguisedAsMetaMaskDappIds = storedDisguisedAsMetaMaskDapps
     this.#trendingTokens = storedTrending.tokens
     this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
     this.#isReady = true
@@ -1202,6 +1211,27 @@ export class DappsController extends EventEmitter implements IDappsController {
     return this.#dapps.get(getDomainFromUrl(url)!)
   }
 
+  isDappDisguisedAsMetaMask(id: string) {
+    return this.#disguisedAsMetaMaskDappIds.includes(id)
+  }
+
+  async setDappDisguisedAsMetaMask(id: string, isDisguisedAsMetaMask: boolean, requestId?: string) {
+    await this.initialLoadPromise
+
+    const isCurrentlyDisguised = this.isDappDisguisedAsMetaMask(id)
+
+    if (isCurrentlyDisguised !== isDisguisedAsMetaMask) {
+      this.#disguisedAsMetaMaskDappIds = isDisguisedAsMetaMask
+        ? [...this.#disguisedAsMetaMaskDappIds, id]
+        : this.#disguisedAsMetaMaskDappIds.filter((dappId) => dappId !== id)
+
+      await this.#storage.set('disguisedAsMetaMaskDapps', this.#disguisedAsMetaMaskDappIds)
+      this.emitUpdate()
+    }
+
+    if (requestId) this.#ui.message.sendUiMessage({ requestId, ok: true })
+  }
+
   async setDappToConnectIfNeeded(currentRequest: UserRequest | null) {
     try {
       if (currentRequest && currentRequest.kind === 'dappConnect') {
@@ -1511,6 +1541,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       ...super.toJSON(),
       dapps: this.dapps,
       recentDapps: this.recentDapps,
+      disguisedAsMetaMaskDappIds: this.disguisedAsMetaMaskDappIds,
       categories: this.categories,
       isReady: this.isReady,
       trendingTokens: this.trendingTokens,
