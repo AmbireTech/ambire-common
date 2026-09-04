@@ -6,8 +6,8 @@ import { IInviteController } from '@/interfaces/invite'
 import { IStorageController } from '@/interfaces/storage'
 import {
   BindedRelayerCall,
-  relayerCall,
-  RELAYER_DOWN_MESSAGE
+  RELAYER_DOWN_MESSAGE,
+  relayerCall
 } from '@/libs/relayerCall/relayerCall'
 
 export enum INVITE_STATUS {
@@ -61,9 +61,9 @@ const DEFAULT_STATE = {
  * Manages the invite gate and the OG status.
  *
  * The gate was mandatory for the extension between v4.20.0 and v5.1.0, and is mandatory for the
- * mobile app as of the mobile v2 release. Both use the same relayer endpoint and the same `invite`
- * storage entry, so verifying is one and the same mechanism - the only difference is that the
- * extension no longer enforces it.
+ * mobile app as of the mobile v6 series release since v6.21.0. Both use the same Relayer endpoint
+ * and the same `invite` storage entry, so verifying is one and the same mechanism - the only
+ * difference is that the extension no longer enforces it.
  *
  * The controller is platform-agnostic on purpose - it only stores and verifies. Whether the gate
  * is enforced at all is decided by the router of the app using it.
