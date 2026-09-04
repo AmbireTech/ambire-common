@@ -10,6 +10,7 @@ export interface RequestInitWithCustomHeaders extends RequestInit {
   headers: HeadersInit & {
     'x-app-source'?: string // used internally to identify the source of the request
     'x-app-version'?: string // used internally to identify the app v that sends the request
+    'x-app-env'?: string // used internally to identify the app env (prod, dev, ...)
     'x-api-key'?: string // Jiffy Scan API key
     'x-lifi-api-key'?: string // Lifi API key
     'x-permit2-disabled'?: string // Uniswap direct approval flow
