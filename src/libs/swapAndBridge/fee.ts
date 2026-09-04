@@ -1,3 +1,9 @@
+import { formatUnits } from 'ethers'
+
+import { getTokenAmount } from '../portfolio/helpers'
+
+import type { TokenResult } from '../portfolio'
+
 /** Returns the Swap & Bridge fee percentage based on the amount of stkWALLET held. */
 export const getFeePercent = (stkWalletHeld?: number): number => {
   if (
@@ -11,6 +17,20 @@ export const getFeePercent = (stkWalletHeld?: number): number => {
 
   return 0
 }
+
+/**
+ * Returns the Swap & Bridge fee percentage for a stkWALLET token, based on the confirmed
+ * on-chain balance rather than any pending/simulated one - the fee is baked into the swap route
+ * that gets signed and broadcast, so it must reflect only stkWALLET the account actually holds
+ * right now, not a not-yet-settled balance that could still be reverted (e.g. a pending stake
+ * that never confirms). Shared by SwapAndBridgeController and the UI so both stay in sync.
+ */
+export const getFeePercentForStkWalletToken = (stkWalletToken?: TokenResult): number =>
+  getFeePercent(
+    stkWalletToken
+      ? Number(formatUnits(getTokenAmount(stkWalletToken, true), stkWalletToken.decimals))
+      : undefined
+  )
 
 export type FeeExemptionReason =
   | 'wrap-or-unwrap'

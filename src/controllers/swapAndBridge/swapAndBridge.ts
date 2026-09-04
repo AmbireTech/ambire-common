@@ -3,7 +3,11 @@ import { formatUnits, getAddress, isAddress, parseUnits, ZeroAddress } from 'eth
 import { getAccountNetworks } from '@/libs/networks/networks'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
-import { getFeeExemptionReason, getFeePercent } from '@/libs/swapAndBridge/fee'
+import {
+  getFeeExemptionReason,
+  getFeePercent,
+  getFeePercentForStkWalletToken
+} from '@/libs/swapAndBridge/fee'
 
 import EmittableError from '../../classes/EmittableError'
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -605,11 +609,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       ({ address, chainId }) => chainId === 1n && address.toLowerCase() === STK_WALLET.toLowerCase()
     )
 
-    this.feePercent = getFeePercent(
-      stkWalletToken
-        ? Number(formatUnits(getTokenAmount(stkWalletToken), stkWalletToken.decimals))
-        : undefined
-    )
+    this.feePercent = getFeePercentForStkWalletToken(stkWalletToken)
   }
 
   #setFromAmountAndNotifyUI(amount: string) {
