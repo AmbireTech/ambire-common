@@ -52,6 +52,9 @@ export class InviteController extends EventEmitter implements IInviteController 
   /** Whether the invite gate has been passed. Only the mobile app enforces it. */
   inviteStatus: InviteState['status'] = INVITE_STATUS.UNVERIFIED
 
+  /** Why the last verification failed, so that the screen can show it in the form itself. */
+  errorMessage: string = ''
+
   /** The invite code the gate was passed with. The extension builds its analytics instance id from it. */
   verifiedCode: InviteState['verifiedCode'] = null
 
@@ -116,13 +119,20 @@ export class InviteController extends EventEmitter implements IInviteController 
       try {
         await this.#callRelayer(`/promotions/extension-key/${code}`, 'GET')
       } catch (error: any) {
+        this.errorMessage = "Oops, that code didn't work. Check for a typo and try again."
+        this.emitUpdate()
+
+        // Silent, because the message is displayed in the form, right below the code field,
+        // instead of in a toast.
         throw new EmittableError({
-          message: 'Oops, that code didn’t work. Check for a typo and try again.',
-          level: 'major',
-          error
+          message: this.errorMessage,
+          level: 'silent',
+          error,
+          sendCrashReport: false
         })
       }
 
+      this.errorMessage = ''
       await this.#persistVerified(code)
     })
   }
@@ -138,6 +148,12 @@ export class InviteController extends EventEmitter implements IInviteController 
     if (this.inviteStatus === INVITE_STATUS.VERIFIED) return
 
     await this.#persistVerified(code)
+  }
+
+  /** Clears the last verification error, so that the form stops showing it. */
+  resetErrorState() {
+    this.errorMessage = ''
+    this.emitUpdate()
   }
 
   async becomeOG() {
