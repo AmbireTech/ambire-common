@@ -134,20 +134,25 @@ const getBannedToTokenList = (chainId: string): string[] => {
   return Object.keys(list[chainId])
 }
 
-const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
-  // Pending tokens go on top
-  const isAPending =
-    typeof a.amountPostSimulation === 'bigint' && a.amountPostSimulation !== BigInt(a.amount)
-  const isBPending =
-    typeof b.amountPostSimulation === 'bigint' && b.amountPostSimulation !== BigInt(b.amount)
+type TokenSortKey = { isPending: boolean; balanceInUSD: number }
 
-  if (isAPending && !isBPending) return -1
-  if (!isAPending && isBPending) return 1
+/**
+ * Everything the order of a token depends on, read once per token instead of on
+ * every comparison - which for a large portfolio is around twenty times each.
+ */
+const getTokenSortKey = (token: TokenResult): TokenSortKey => ({
+  isPending:
+    typeof token.amountPostSimulation === 'bigint' &&
+    token.amountPostSimulation !== BigInt(token.amount),
+  balanceInUSD: getTokenBalanceInUSD(token)
+})
+
+const compareTokenSortKeys = (a: TokenSortKey, b: TokenSortKey) => {
+  // Pending tokens go on top
+  if (a.isPending !== b.isPending) return a.isPending ? -1 : 1
 
   // Otherwise, higher balance comes first
-  const aBalanceUSD = getTokenBalanceInUSD(a)
-  const bBalanceUSD = getTokenBalanceInUSD(b)
-  if (aBalanceUSD !== bBalanceUSD) return bBalanceUSD - aBalanceUSD
+  if (a.balanceInUSD !== b.balanceInUSD) return b.balanceInUSD - a.balanceInUSD
 
   return 0
 }
@@ -207,20 +212,20 @@ export const sortTokenListResponse = (
   tokenListResponse: SwapAndBridgeToToken[],
   accountPortfolioTokenList: TokenResult[]
 ) => {
-  const portfolioTokenByAddress = new Map(
-    accountPortfolioTokenList.map((t) => [t.address.toLowerCase(), t])
+  const sortKeyByAddress = new Map(
+    accountPortfolioTokenList.map((t) => [t.address.toLowerCase(), getTokenSortKey(t)])
   )
 
   return tokenListResponse.sort((a: SwapAndBridgeToToken, b: SwapAndBridgeToToken) => {
-    const aInPortfolio = portfolioTokenByAddress.get(a.address.toLowerCase())
-    const bInPortfolio = portfolioTokenByAddress.get(b.address.toLowerCase())
+    const aInPortfolio = sortKeyByAddress.get(a.address.toLowerCase())
+    const bInPortfolio = sortKeyByAddress.get(b.address.toLowerCase())
 
     // Tokens in portfolio should come first
     if (aInPortfolio && !bInPortfolio) return -1
     if (!aInPortfolio && bInPortfolio) return 1
 
     if (aInPortfolio && bInPortfolio) {
-      const comparisonResult = sortTokensByPendingAndBalance(aInPortfolio, bInPortfolio)
+      const comparisonResult = compareTokenSortKeys(aInPortfolio, bInPortfolio)
       if (comparisonResult !== 0) return comparisonResult
     }
 
@@ -230,13 +235,16 @@ export const sortTokenListResponse = (
 }
 
 export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[]) => {
-  return accountPortfolioTokenList.sort((a, b) => {
-    const comparisonResult = sortTokensByPendingAndBalance(a, b)
-    if (comparisonResult !== 0) return comparisonResult
+  return accountPortfolioTokenList
+    .map((token) => ({ token, sortKey: getTokenSortKey(token), symbol: token.symbol || '' }))
+    .sort((a, b) => {
+      const comparisonResult = compareTokenSortKeys(a.sortKey, b.sortKey)
+      if (comparisonResult !== 0) return comparisonResult
 
-    // Otherwise, just alphabetical
-    return (a.symbol || '').localeCompare(b.symbol || '')
-  })
+      // Otherwise, just alphabetical
+      return a.symbol.localeCompare(b.symbol)
+    })
+    .map(({ token }) => token)
 }
 
 /**

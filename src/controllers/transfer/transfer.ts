@@ -32,7 +32,7 @@ import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
-import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpers'
+import { getTokenAmount, sortTokensByBalanceInUSD } from '../../libs/portfolio/helpers'
 import {
   getAmountAfterFeeReserve,
   getAmountAfterFeeSync,
@@ -342,41 +342,34 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   #setTokens() {
-    const tokens = this.#selectedAccount.portfolio.tokens
-      .filter((token) => {
-        const hasAmount = Number(getTokenAmount(token)) > 0
-        const isVisible = !token.flags.isHidden
+    const tokens = this.#selectedAccount.portfolio.tokens.filter((token) => {
+      const hasAmount = Number(getTokenAmount(token)) > 0
+      const isVisible = !token.flags.isHidden
 
-        if (this.isTopUp) {
-          const tokenNetwork = this.#networks.networks.find(
-            (network) => network.chainId === token.chainId
-          )
-
-          return (
-            hasAmount &&
-            isVisible &&
-            tokenNetwork?.hasRelayer &&
-            token.flags.canTopUpGasTank &&
-            !token.flags.onGasTank
-          )
-        }
+      if (this.isTopUp) {
+        const tokenNetwork = this.#networks.networks.find(
+          (network) => network.chainId === token.chainId
+        )
 
         return (
           hasAmount &&
           isVisible &&
-          !token.flags.onGasTank &&
-          !token.flags.rewardsType &&
-          token.flags.defiTokenType !== AssetType.Borrow
+          tokenNetwork?.hasRelayer &&
+          token.flags.canTopUpGasTank &&
+          !token.flags.onGasTank
         )
-      })
-      .sort((a, b) => {
-        const tokenAinUSD = getTokenBalanceInUSD(a)
-        const tokenBinUSD = getTokenBalanceInUSD(b)
+      }
 
-        return tokenBinUSD - tokenAinUSD
-      })
+      return (
+        hasAmount &&
+        isVisible &&
+        !token.flags.onGasTank &&
+        !token.flags.rewardsType &&
+        token.flags.defiTokenType !== AssetType.Borrow
+      )
+    })
 
-    this.#tokens = tokens
+    this.#tokens = sortTokensByBalanceInUSD(tokens)
 
     if (this.selectedToken) {
       this.selectedToken =
