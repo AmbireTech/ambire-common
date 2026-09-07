@@ -2723,6 +2723,110 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  // Regression test for Attack A from the leaked safe-poc.html on the AccountOp/tx path (a
+  // broadcast execTransaction call resolved through the Safe singleton, not a signed EIP-712
+  // message). baseGas/gasPrice/gasToken/refundReceiver are static execTransaction fields, decoded
+  // directly from call.data by getExecTransactionGasRefund (erc7730/humanize.ts) - the "Gas
+  // refund to" row and warning must appear even though the resolved descriptor's own `formats`
+  // never mention them (they only ever describe the inner Safe singleton calls, not the outer
+  // execTransaction wrapper).
+  test('shows the gas refund receiver and amount for a broadcast execTransaction call', async () => {
+    const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
+    const safeSingleton = '0x29fcb43b46531bca003ddc8fcb67ffe91900c762'
+    const multiSend = '0x9641d764fc13c8b624c04430c7356c1c7c8102e2'
+    const tokenAddress = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
+    const spender = '0xc92e8bdf79f0507f65a392b0ab4667716bfe0110'
+    const settlement = '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
+    const refundReceiver = getAddress('0x1234567890123456789012345678901234567890')
+    const gasToken = getAddress('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf')
+    const multiSendData =
+      '0x8d80ff0a0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000019200cbb7c0000ab88b473b1f5afd9ef808440eed33bf00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe011000000000000000000000000000000000000000000000000000000000000005ea009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a4ec6cb13f000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000038cc9abd7869bc44faf6552057bc09b84f0d691eb0b0e484600012cca91d529763714fd3db837e72bd49b8eda02b8f4d53dfdde5ce6a11965300000000000000000000000000000000000000000000'
+    const execTransactionData = new ethers.Interface(execTransactionAbi).encodeFunctionData(
+      'execTransaction',
+      [multiSend, 0, multiSendData, 1, 0, 500000, 1, gasToken, refundReceiver, '0x']
+    )
+    const safeExecAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: safeProxy,
+          value: 0n,
+          data: execTransactionData
+        }
+      ]
+    }
+    const provider = {
+      getStorage: jest.fn(async () => ethers.zeroPadValue(safeSingleton, 32))
+    }
+    const descriptorPath = 'registry/safe/calldata-SafeL2-1.4.1.json'
+    const callRelayer = async (path: string) => {
+      if (path === '/v2/erc7730/account-op') {
+        return {
+          success: true,
+          data: { [`eip155:8453:${safeSingleton}`]: descriptorPath },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor') {
+        return { success: true, display: { formats: {} } }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(safeExecAccountOp, {
+      callRelayer,
+      provider: provider as any
+    })
+    const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
+
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Execute a Safe{Wallet} Transaction', [
+        {
+          label: 'Safe',
+          value: [getAddressVisualization(safeProxy)]
+        },
+        {
+          label: '',
+          value: [
+            getErc7730Visualization('Approve', [
+              {
+                label: 'Spender',
+                value: [getAddressVisualization(spender)]
+              },
+              {
+                label: 'Amount',
+                value: [getToken(tokenAddress, 1514n, 8453n)]
+              }
+            ]),
+            getErc7730Visualization('SetPreSignature', [
+              {
+                label: 'On',
+                value: [getAddressVisualization(settlement)]
+              }
+            ])
+          ]
+        },
+        {
+          label: 'Gas refund to',
+          value: [getAddressVisualization(refundReceiver), getToken(gasToken, 500000n)]
+        }
+      ])
+    ])
+    expect(irCalls[0]?.warnings).toEqual(
+      expect.arrayContaining([
+        getWarning(
+          'This transaction also sends a separate payment to the address below as a "gas refund", on top of what is shown above. Only proceed if you expect this',
+          'SAFE{WALLET}_GAS_REFUND',
+          undefined,
+          refundReceiver
+        )
+      ])
+    )
+  })
+
   test('humanizes a Safe execTransaction reject call with ERC-7730', async () => {
     const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
     const safeSingleton = '0x29fcb43b46531bca003ddc8fcb67ffe91900c762'
@@ -2858,6 +2962,162 @@ describe('ERC-7730 descriptors', () => {
         recipeExecutor
       )
     ])
+  })
+
+  // Regression test for Attack A on the AccountOp/tx path when the call itself matches a
+  // registry `execTransaction(...)` format directly (as opposed to being routed through the Safe
+  // singleton descriptor, covered separately above). The descriptor's own `fields` deliberately
+  // omit baseGas/gasPrice/gasToken/refundReceiver - getSafeExecTransactionGasRefund
+  // (erc7730/humanize.ts) reads them from the already fully-decoded match.values regardless.
+  test('shows the gas refund receiver and amount for an execTransaction format match', () => {
+    const safeProxy = '0x043faB48aCC3DD066fcf33cA3e3f2E2Ba5be9018'
+    const recipeExecutor = '0xc91305DdE651c899EF8eE1D0C33E7dab1B5ABF0D'
+    const refundReceiver = getAddress('0x1234567890123456789012345678901234567890')
+    const gasToken = getAddress('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf')
+    const execTransactionData = new ethers.Interface(execTransactionAbi).encodeFunctionData(
+      'execTransaction',
+      [recipeExecutor, 0, '0x0c2c8750', 0, 0, 500000, 1, gasToken, refundReceiver, '0x']
+    )
+    const safeExecAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: safeProxy,
+          value: 0n,
+          data: execTransactionData
+        }
+      ]
+    }
+    const irCalls = humanizeAccountOp(safeExecAccountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'execTransaction(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,bytes signatures)':
+                  {
+                    intent: 'sign multisig operation',
+                    fields: [
+                      { path: 'operation', label: 'Operation type' },
+                      {
+                        path: 'data',
+                        label: 'Transaction',
+                        format: 'calldata',
+                        params: { calleePath: 'to' }
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    expect(irCalls[0]?.warnings).toEqual(
+      expect.arrayContaining([
+        getWarning(
+          'This transaction also sends a separate payment to the address below as a "gas refund", on top of what is shown above. Only proceed if you expect this',
+          'SAFE{WALLET}_GAS_REFUND',
+          undefined,
+          refundReceiver
+        )
+      ])
+    )
+    expect(irCalls[0]?.fullVisualization).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'erc7730',
+          rows: expect.arrayContaining([
+            {
+              label: 'Gas refund to',
+              value: [
+                expect.objectContaining({ type: 'address', address: refundReceiver.toLowerCase() }),
+                expect.objectContaining({
+                  type: 'token',
+                  address: gasToken.toLowerCase(),
+                  value: 500000n
+                })
+              ]
+            }
+          ])
+        })
+      ])
+    )
+  })
+
+  // Regression test for a real broadcast execTransaction call: baseGas=0, gasPrice=6000000,
+  // gasToken=zero address (native), refundReceiver equal to the visible recipient. Safe.sol only
+  // gates the refund on `gasPrice > 0` (see buildSafeTxGasRefund) - baseGas being 0 does NOT mean
+  // no refund is paid, it just means the payment is entirely `gasUsed * gasPrice`, unknowable
+  // ahead of time, so no hard token amount can be shown - the row must still appear, with a
+  // placeholder amount rather than a misleading "0".
+  test('shows the gas refund row even when baseGas is 0 and only gasPrice is nonzero', () => {
+    const safeProxy = '0x043faB48aCC3DD066fcf33cA3e3f2E2Ba5be9018'
+    const recipient = getAddress('0x6969174FD72466430a46e18234D0b530c9FD5f49')
+    const execTransactionData = new ethers.Interface(execTransactionAbi).encodeFunctionData(
+      'execTransaction',
+      [recipient, 1, '0x', 0, 120000, 0, 6000000, ZeroAddress, recipient, '0x']
+    )
+    const safeExecAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: safeProxy,
+          value: 0n,
+          data: execTransactionData
+        }
+      ]
+    }
+    const irCalls = humanizeAccountOp(safeExecAccountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'execTransaction(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,bytes signatures)':
+                  {
+                    intent: 'sign multisig operation',
+                    fields: [
+                      { path: 'to', label: 'To', format: 'addressName' },
+                      { path: 'value', label: 'Value', format: 'tokenAmount' }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    expect(irCalls[0]?.warnings).toEqual(
+      expect.arrayContaining([
+        getWarning(
+          'This transaction also sends a separate payment to the address below as a "gas refund", on top of what is shown above. Only proceed if you expect this',
+          'SAFE{WALLET}_GAS_REFUND',
+          undefined,
+          recipient
+        )
+      ])
+    )
+    expect(irCalls[0]?.fullVisualization).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'erc7730',
+          rows: expect.arrayContaining([
+            {
+              label: 'Gas refund to',
+              value: [
+                expect.objectContaining({ type: 'address', address: recipient.toLowerCase() }),
+                expect.objectContaining({ type: 'text', content: 'amount depends on gas used' })
+              ]
+            }
+          ])
+        })
+      ])
+    )
   })
 
   // Regression test for a broadcast execTransaction call (AccountOp/tx path, no EIP-712 SafeTx
@@ -4168,6 +4428,125 @@ describe('ERC-7730 descriptors', () => {
         }
       ])
     ])
+  })
+
+  // Regression test for Attack A from the leaked safe-poc.html: `baseGas`/`gasPrice`/`gasToken`/
+  // `refundReceiver` let a SafeTx pay an arbitrary amount to an arbitrary address as a "gas
+  // refund", separate from whatever transfer the descriptor's own fields show. The registry
+  // descriptor below deliberately does NOT declare any of those fields (only `operation` and
+  // `data`, matching what the PoC found Ambire actually displays), so this proves the refund row
+  // and warning are injected unconditionally by addSafeTxGasRefundRow/getSafeTxMessageWarnings
+  // (erc7730/humanize.ts) rather than depending on the external descriptor to surface them.
+  test('shows the gas refund receiver and amount even when the descriptor does not declare those fields', async () => {
+    const recipient = getAddress('0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01')
+    const refundReceiver = getAddress('0x1234567890123456789012345678901234567890')
+    const gasToken = getAddress('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf')
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          verifyingContract: '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce',
+          chainId: 8453
+        },
+        message: {
+          to: recipient,
+          value: '1',
+          data: '0x',
+          operation: 0,
+          baseGas: '500000',
+          gasPrice: '1',
+          gasToken,
+          refundReceiver,
+          nonce: 81,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    const irMessage = humanizeMessage(safeTxMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                {
+                  intent: 'Safe',
+                  fields: [
+                    { path: 'operation', label: 'Operation type' },
+                    {
+                      path: 'data',
+                      label: 'Transaction',
+                      format: 'calldata',
+                      params: { calleePath: '#.to' }
+                    }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('Safe', [
+        {
+          label: 'Operation type',
+          value: [getText('0')]
+        },
+        {
+          label: 'Transaction',
+          value: [
+            getErc7730Visualization('Send', [
+              {
+                label: 'Send',
+                value: [getToken(ZeroAddress, 1n)]
+              },
+              {
+                label: 'To',
+                value: [getAddressVisualization(recipient)]
+              }
+            ])
+          ]
+        },
+        {
+          label: 'Gas refund to',
+          value: [getAddressVisualization(refundReceiver), getToken(gasToken, 500000n)]
+        }
+      ])
+    ])
+    expect(irMessage.warnings).toEqual(
+      expect.arrayContaining([
+        getWarning(
+          'This transaction also sends a separate payment to the address below as a "gas refund", on top of what is shown above. Only proceed if you expect this',
+          'SAFE{WALLET}_GAS_REFUND',
+          undefined,
+          refundReceiver
+        )
+      ])
+    )
   })
 
   // Regression test for a SafeTx message batching a leg with operation=1 (DELEGATECALL) to a
