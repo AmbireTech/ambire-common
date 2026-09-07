@@ -1,10 +1,10 @@
-import { ethers, ZeroAddress } from 'ethers'
+import { ethers, getAddress, ZeroAddress } from 'ethers'
 import { encodeFunctionData } from 'viem'
 
 import { beforeEach, describe, jest, test } from '@jest/globals'
 
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { execTransactionAbi } from '../../consts/safe'
+import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { AccountOp } from '../accountOp/accountOp'
@@ -2860,6 +2860,71 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  // Regression test for a broadcast execTransaction call (AccountOp/tx path, no EIP-712 SafeTx
+  // message involved). `embeddedAmbireOperationHumanizer` (callModules.ts) used to run before
+  // SafeModule and unconditionally overwrite `fullVisualization` with a generic "Allow multiple
+  // actions from this account!" warning for ANY call whose `to` equals `accountOp.accountAddr` —
+  // which every direct Safe execTransaction call is, by construction (you call the Safe's own
+  // address to execute a SafeTx on it). That pre-empted SafeModule's execTransaction matcher,
+  // which is gated behind `if (!call.fullVisualization && match)` (modules/Safe/index.ts), so
+  // getDelegateCallWarning() was never reached for this call shape, independent of
+  // MultiSend/whitelisting. Fixed by running embeddedAmbireOperationHumanizer last and having it
+  // defer to any visualization a more specific module already produced.
+  test('warns about a hidden delegatecall leg inside a whitelisted MultiSend tx (no message involved)', () => {
+    const safeProxy = '0x043faB48aCC3DD066fcf33cA3e3f2E2Ba5be9018'
+    const benignRecipient = getAddress('0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01')
+    const delegateCallTarget = getAddress('0x1234567890123456789012345678901234567890') // NOT in allowedMulticallContracts
+    const pwnData = '0xdd365b8b' // Takeover.pwn() selector from the PoC
+    const transactionsData = ethers.concat([
+      ethers.solidityPacked(
+        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+        [0, benignRecipient, 0n, 0, '0x']
+      ),
+      ethers.solidityPacked(
+        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+        [1, delegateCallTarget, 0n, BigInt(ethers.getBytes(pwnData).length), pwnData]
+      )
+    ])
+    const multiSendData = new ethers.Interface([
+      'function multiSend(bytes transactions)'
+    ]).encodeFunctionData('multiSend', [transactionsData])
+    // multiSendAddr is Safe's canonical, whitelisted MultiSend router (allowedMulticallContracts)
+    const execTransactionData = new ethers.Interface(execTransactionAbi).encodeFunctionData(
+      'execTransaction',
+      [multiSendAddr, 0, multiSendData, 1, 0, 0, 0, ZeroAddress, ZeroAddress, '0x']
+    )
+    const safeExecAccountOp: AccountOp = {
+      ...accountOp,
+      accountAddr: safeProxy,
+      chainId: 8453n,
+      calls: [
+        {
+          to: safeProxy,
+          value: 0n,
+          data: execTransactionData
+        }
+      ]
+    }
+
+    // no ERC-7730 descriptors at all here — this is a plain broadcast tx, decoded purely by
+    // the local humanizer modules, same as what a block explorer / signing prompt would show
+    const irCalls = humanizeAccountOp(safeExecAccountOp, {})
+
+    // A hidden delegatecall leg into a non-whitelisted contract, smuggled inside a batch routed
+    // through the whitelisted MultiSend, must surface the same warning a top-level delegatecall
+    // to that contract would get.
+    expect(irCalls[0]?.warnings).toEqual(
+      expect.arrayContaining([
+        getWarning(
+          'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+          'SAFE{WALLET}_DELEGATE_CALL',
+          undefined,
+          delegateCallTarget
+        )
+      ])
+    )
+  })
+
   test('humanizes Safe setup calldata nested in a factory initializer with ERC-7730', () => {
     const safeProxyFactory = '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67'
     const safeSingleton = '0x41675c099f32341bf84bfc5382af534df5c7461a'
@@ -4103,6 +4168,121 @@ describe('ERC-7730 descriptors', () => {
         }
       ])
     ])
+  })
+
+  // Regression test for a SafeTx message batching a leg with operation=1 (DELEGATECALL) to a
+  // contract that isn't whitelisted by Safe, routed through the whitelisted MultiSend router.
+  // `getDelegateCallWarning` in modules/Safe/index.ts is only ever evaluated against the *outer*
+  // SafeTx call (to, operation), which here targets the whitelisted router, so it stays silent
+  // on its own. Two things had to be fixed for this warning to surface: (1) `getSafeHumanization`
+  // now decodes `multiSend` batches itself (via `decodeMultiSend`, src/libs/safe/helpers.ts) and
+  // recurses per leg, checking each leg's own `operation`, since the ERC-7730 pipeline's `Call`
+  // type has no `operation` field and can't carry it (erc7730/utils.ts#getSafeTxCallsFromMessage,
+  // erc7730/registry.ts); (2) `humanizeMessage` now merges the warnings humanizerTMModules found
+  // (which is where that recursive check runs, via safeMessageModule) into the ERC-7730 result
+  // instead of discarding them when an ERC-7730 descriptor resolves the message. This is the
+  // exact "Attack B" pattern from the leaked safe-poc.html: a benign leg 0 plus a hidden
+  // delegatecall leg 1 into attacker-controlled code that runs in the Safe's own storage context.
+  test('warns about a hidden delegatecall leg inside a whitelisted SafeTx multisend batch', async () => {
+    const benignRecipient = getAddress('0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01')
+    const delegateCallTarget = getAddress('0x1234567890123456789012345678901234567890') // NOT in allowedMulticallContracts
+    const pwnData = '0xdd365b8b' // Takeover.pwn() selector from the PoC
+    const transactionsData = ethers.concat([
+      ethers.solidityPacked(
+        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+        [0, benignRecipient, 0n, 0, '0x']
+      ),
+      ethers.solidityPacked(
+        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+        [1, delegateCallTarget, 0n, BigInt(ethers.getBytes(pwnData).length), pwnData]
+      )
+    ])
+    const multiSendData = new ethers.Interface([
+      'function multiSend(bytes transactions)'
+    ]).encodeFunctionData('multiSend', [transactionsData])
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          // the whitelisted MultiSend v1.1.1 router, so the outer-call delegatecall check
+          // (shouldDisplaySafeDelegateCallWarning) never fires either
+          verifyingContract: '0x8D29bE29923b68abfDD21e541b9374737B49cdAD',
+          chainId: 8453
+        },
+        message: {
+          to: '0x8D29bE29923b68abfDD21e541b9374737B49cdAD',
+          value: '0',
+          data: multiSendData,
+          operation: 1,
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: ZeroAddress,
+          refundReceiver: ZeroAddress,
+          nonce: 1,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    const irMessage = humanizeMessage(safeTxMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                {
+                  intent: 'Safe',
+                  fields: [
+                    { path: 'operation', label: 'Operation type' },
+                    {
+                      path: 'data',
+                      label: 'Transaction',
+                      format: 'calldata',
+                      params: { calleePath: '#.to' }
+                    }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    // A hidden delegatecall leg into a non-whitelisted contract must surface the same
+    // "not whitelisted by Safe" warning that a top-level delegatecall would get.
+    expect(irMessage.warnings).toEqual(
+      expect.arrayContaining([
+        getWarning(
+          'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+          'SAFE{WALLET}_DELEGATE_CALL',
+          undefined,
+          getAddress(delegateCallTarget)
+        )
+      ])
+    )
   })
 
   test('humanizes SafeTx multisend with truncated ABI padding as separate transaction rows', async () => {
