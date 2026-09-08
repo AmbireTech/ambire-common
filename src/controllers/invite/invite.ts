@@ -95,6 +95,12 @@ export class InviteController extends EventEmitter implements IInviteController 
    */
   isOG: boolean = false
 
+  /**
+   * Whether the stored invite state has been read. The UI gates its own readiness on this flag,
+   * because a state emitted before the load would show the gate to an already verified user.
+   */
+  isReady: boolean = false
+
   #initialLoadPromise?: Promise<void>
 
   constructor({
@@ -124,6 +130,7 @@ export class InviteController extends EventEmitter implements IInviteController 
     this.inviteStatus = this.#state.status
     this.verifiedCode = this.#state.verifiedCode
     this.isOG = !!this.#state.becameOGAt
+    this.isReady = true
     this.emitUpdate()
   }
 
