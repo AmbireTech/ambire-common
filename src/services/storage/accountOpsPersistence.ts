@@ -1,5 +1,5 @@
 import { IActivityOpsBackend, InternalAccountsOps } from '../../interfaces/activity'
-import { IStorageController } from '../../interfaces/storage'
+import { IStorageController, StorageProps } from '../../interfaces/storage'
 import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { ActivityIdbStorage, ActivityKeyValueStorage } from './activityIdb'
 import { AmbireIdbDatabase } from './idbDatabase'
@@ -41,10 +41,6 @@ export class AccountOpsPersistence {
 
   #onError: ReportPersistenceError
 
-  // Must be a flag, not a length check: pending ops are exempt from the startup cap, so a
-  // group can exceed the window without having been expanded.
-  #fullyLoadedGroups = new Set<string>()
-
   // Only used with a partially-loading adapter; otherwise the cache is summed live.
   #totalOpsCount = new Map<string, number>()
 
@@ -55,8 +51,14 @@ export class AccountOpsPersistence {
     this.#adapter = this.#pickAdapter(idb)
   }
 
+  #activeBackend: StorageProps['activityStorageBackend'] = 'keyValue'
+
   #pickAdapter(idb?: AmbireIdbDatabase): IActivityOpsBackend {
-    if (idb) return new ActivityIdbStorage(idb)
+    if (idb) {
+      this.#activeBackend = 'idb'
+
+      return new ActivityIdbStorage(idb)
+    }
 
     return new ActivityKeyValueStorage(this.#storage, this.#getCache)
   }
@@ -87,43 +89,56 @@ export class AccountOpsPersistence {
    * init() would delay the first paint of the history for no benefit.
    */
   async finalizeInit(ops: InternalAccountsOps): Promise<void> {
-    await this.#recordMigrationCompleted(ops)
+    await this.#recordActiveBackend(ops)
     await this.#refreshAllCounts(ops)
   }
 
   /**
-   * Every stored op, for the one-time recipient backfill. Never rejects; an empty result
-   * means the caller must not record the backfill as done.
+   * Merge the newest `limit` ops of each given chain into the cache, so a caller can render
+   * one page without loading the whole history.
+   *
+   * Per chain rather than account-wide because the caller renders a chain subset: an
+   * account-wide fetch would spend part of `limit` on chains the caller drops, leaving a
+   * short page.
+   *
+   * Never rejects; a chain that fails keeps whatever the cache had for it.
    */
-  async getAllOps(): Promise<InternalAccountsOps | null> {
-    try {
-      return await this.#adapter.getAllOps()
-    } catch (error) {
-      this.#report('Your transaction history could not be read.', error, 'read all ops')
+  async ensureRecentLoaded(
+    accountAddr: string,
+    limit: number,
+    chainIds: (bigint | string)[]
+  ): Promise<void> {
+    if (!this.#adapter.loadsPartially) return
 
-      return null
-    }
+    await Promise.all(
+      chainIds.map(async (chainId) => {
+        try {
+          const ops = await this.#adapter.getRecentOps(accountAddr, limit, chainId)
+          if (ops.length) this.#mergeIntoCache(accountAddr, chainId.toString(), ops)
+        } catch (error) {
+          this.#report('Older transactions could not be loaded.', error, 'load a page')
+        }
+      })
+    )
   }
 
   /**
-   * Expand one (account, chain) group, for pagination past the startup window.
+   * Every stored op of one chain, for a caller that has to compare against the whole group
+   * rather than the loaded window.
    *
-   * On failure the group stays unmarked and the cache keeps the startup window — a subset
-   * rather than wrong data — so the caller can always page over whatever is there.
+   * @returns null when the read failed, so the caller can tell "nothing stored" apart from
+   *          "unknown" — the two warrant opposite decisions when guarding against duplicates.
    */
-  async ensureGroupLoaded(accountAddr: string, chainId: bigint | string): Promise<void> {
-    const chainIdStr = chainId.toString()
-    if (this.#isGroupLoaded(accountAddr, chainIdStr)) return
-
+  async getStoredOpsForChain(
+    accountAddr: string,
+    chainId: bigint | string
+  ): Promise<SubmittedAccountOp[] | null> {
     try {
-      const fullOps = await this.#adapter.getOpsForAccountAndChain(accountAddr, chainId)
-      if (fullOps) this.#mergeIntoCache(accountAddr, chainIdStr, fullOps)
-
-      // Marked even when empty: undefined means nothing to expand, not a failure. Marking
-      // only on a hit would re-query every call for chains the account never used.
-      this.#fullyLoadedGroups.add(this.#groupKey(accountAddr, chainIdStr))
+      return (await this.#adapter.getOpsForAccountAndChain(accountAddr, chainId)) ?? []
     } catch (error) {
-      this.#report('Older transactions could not be loaded.', error, 'expand a group')
+      this.#report('Your transaction history could not be checked.', error, 'read a chain group')
+
+      return null
     }
   }
 
@@ -154,10 +169,6 @@ export class AccountOpsPersistence {
 
   /** Drop an account's rows and every marker keyed to it. */
   async removeAccount(accountAddr: string): Promise<void> {
-    // First, so a failed delete cannot leave markers claiming the history is loaded.
-    for (const key of this.#fullyLoadedGroups) {
-      if (key.startsWith(this.#groupKey(accountAddr))) this.#fullyLoadedGroups.delete(key)
-    }
     this.#totalOpsCount.delete(accountAddr)
 
     try {
@@ -194,8 +205,8 @@ export class AccountOpsPersistence {
     try {
       await this.#adapter.ensureMigrated(
         () => this.#storage.get('accountsOps', {}),
-        // Kept as a safety-net copy; the flag is recorded instead of removing it.
-        async () => this.#setMigratedFlag(true)
+        // Deliberately a no-op: the legacy key is kept as a safety-net copy.
+        async () => {}
       )
 
       return true
@@ -214,6 +225,7 @@ export class AccountOpsPersistence {
   #fallBackToKeyValue(): void {
     if (!this.#adapter.loadsPartially) return
 
+    this.#activeBackend = 'keyValue'
     this.#adapter = new ActivityKeyValueStorage(this.#storage, this.#getCache)
   }
 
@@ -235,31 +247,33 @@ export class AccountOpsPersistence {
    * works. A second writer is needed because ensureMigrated only sets it after moving a legacy
    * blob, which never happens for users who installed after IDB became the default.
    */
-  async #recordMigrationCompleted(ops: InternalAccountsOps): Promise<void> {
-    if (!this.#adapter.loadsPartially) return
+  async #recordActiveBackend(ops: InternalAccountsOps): Promise<void> {
+    // Only once there is history to lose. Recording a backend for an empty wallet would make
+    // the stranded check below fire at a user who never had a transaction.
     if (!Object.keys(ops).length) return
 
     try {
-      if (await this.#getMigratedFlag()) return
-      await this.#setMigratedFlag(true)
+      // Defaulted to null, not to the current backend — otherwise the comparison below is
+      // always equal on a first run and the value never gets written.
+      const previous = await this.#storage.get('activityStorageBackend', null)
+
+      // Written to IndexedDB last session, key-value this one: the history is in a store this
+      // session cannot open. The retained legacy blob keeps the wallet usable, but it is
+      // frozen at migration time, so what the user sees is missing everything written since.
+      if (previous === 'idb' && this.#activeBackend === 'keyValue') {
+        this.#report(
+          'Some of your recent transactions could not be loaded.',
+          new Error('AccountOpsPersistence: IDB unavailable after history was written to it'),
+          'reach the transaction history'
+        )
+      }
+
+      if (previous !== this.#activeBackend) {
+        await this.#storage.set('activityStorageBackend', this.#activeBackend)
+      }
     } catch (error) {
-      this.#report('Your transaction history could not be checked.', error, 'record the flag')
+      this.#report('Your transaction history could not be checked.', error, 'record the backend')
     }
-  }
-
-  // Deliberately not in StorageProps — a provisional migration detail, hence the casts.
-  #getMigratedFlag(): Promise<boolean> {
-    return (this.#storage.get as (key: string, defaultValue: boolean) => Promise<boolean>)(
-      'activityIdbMigrated',
-      false
-    )
-  }
-
-  #setMigratedFlag(value: boolean): Promise<void> {
-    return (this.#storage.set as (key: string, value: boolean) => Promise<void>)(
-      'activityIdbMigrated',
-      value
-    )
   }
 
   /**
@@ -290,18 +304,6 @@ export class AccountOpsPersistence {
     )
   }
 
-  /** Marker key. With no chainId this is the prefix removeAccount clears by. */
-  #groupKey(accountAddr: string, chainId = ''): string {
-    return `${accountAddr}:${chainId}`
-  }
-
-  #isGroupLoaded(accountAddr: string, chainId: string): boolean {
-    // A fully-loading adapter has everything already, so every group is loaded by definition
-    if (!this.#adapter.loadsPartially) return true
-
-    return this.#fullyLoadedGroups.has(this.#groupKey(accountAddr, chainId))
-  }
-
   #countInCache(accountAddr: string): number {
     return Object.values(this.#getCache()[accountAddr] ?? {}).reduce(
       (total, ops) => total + (ops?.length ?? 0),
@@ -317,6 +319,26 @@ export class AccountOpsPersistence {
     if (!this.#adapter.loadsPartially) return
 
     await Promise.all(Object.keys(ops).map((addr) => this.#refreshCount(addr)))
+  }
+
+  /**
+   * Exact stored count over the given chains, for a pager whose navigation depends on the
+   * total. Scoped to chains rather than the whole account so the count matches the subset the
+   * caller renders — an account-wide count includes chains the caller drops, and would offer
+   * pages that render empty.
+   */
+  async countOps(accountAddr: string, chainIds: (bigint | string)[]): Promise<number> {
+    try {
+      const counts = await Promise.all(
+        chainIds.map((chainId) => this.#adapter.countOpsForAccount(accountAddr, chainId))
+      )
+
+      return counts.reduce((total, count) => total + count, 0)
+    } catch (error) {
+      this.#report('Your transaction history could not be counted.', error, 'count ops')
+
+      return 0
+    }
   }
 
   async #refreshCount(accountAddr: string): Promise<void> {

@@ -92,7 +92,7 @@ The networks controller that reads the network list from storage (which is async
 > startup order, invariants, and the cost of each operation. This section is the recipe for
 > putting a new controller on IDB; read that one to understand what already runs.
 
-Most controllers persist through `StorageController` (`chrome.storage.local` / `AsyncStorage`), which reads and writes a whole key as one blob. Controllers whose data grows without bound (transaction history, caches) can instead persist row-by-row in IndexedDB. `ActivityController` is the reference implementation.
+Most controllers persist through `StorageController` (`chrome.storage.local` / `AsyncStorage`), which reads and writes a whole key as one blob. Controllers whose data grows without bound, or whose blob is large enough that richJson-stringifying it hurts, can persist in IndexedDB instead — row-per-record where the access pattern allows it, as a single document where it does not. `ActivityController` is the reference implementation.
 
 IDB is **not available everywhere**. The extension/web background calls `openAmbireIdb()` and passes the connection down through `MainController`; on mobile it passes `undefined`.
 

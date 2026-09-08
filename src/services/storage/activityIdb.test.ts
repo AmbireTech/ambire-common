@@ -1270,4 +1270,53 @@ describe('ActivityKeyValueStorage', () => {
     expect(getOpsSpy).not.toHaveBeenCalled()
     expect(removeSpy).not.toHaveBeenCalled()
   })
+  describe('getRecentOps', () => {
+    test('returns the newest ops first, capped at the limit', async () => {
+      const backend = new ActivityIdbStorage(db)
+      // Inserted in a deliberately shuffled order, so passing cannot come from insertion order
+      await backend.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [
+            makeOp('mid', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000),
+            makeOp('oldest', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000),
+            makeOp('newest', ACC_A, CHAIN_1, AccountOpStatus.Success, 3000)
+          ]
+        }
+      ])
+
+      expect((await backend.getRecentOps(ACC_A, 2, CHAIN_1)).map((op) => op.id)).toEqual([
+        'newest',
+        'mid'
+      ])
+    })
+
+    test('reads only the requested chain', async () => {
+      const backend = new ActivityIdbStorage(db)
+      await backend.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [makeOp('chain-1-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)]
+        },
+        {
+          // Newer, so an unscoped read would return this one first
+          accountAddr: ACC_A,
+          chainId: CHAIN_137,
+          ops: [makeOp('chain-137-op', ACC_A, CHAIN_137, AccountOpStatus.Success, 5000)]
+        }
+      ])
+
+      expect((await backend.getRecentOps(ACC_A, 10, CHAIN_1)).map((op) => op.id)).toEqual([
+        'chain-1-op'
+      ])
+    })
+
+    test('returns an empty array for an account with no ops', async () => {
+      const backend = new ActivityIdbStorage(db)
+
+      expect(await backend.getRecentOps(ACC_B, 10, CHAIN_1)).toEqual([])
+    })
+  })
 })

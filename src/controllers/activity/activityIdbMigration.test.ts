@@ -24,7 +24,11 @@ import { afterEach, beforeEach, describe, expect, jest, test } from '@jest/globa
 
 import { IStorageController } from '../../interfaces/storage'
 import { AccountOpStatus } from '../../libs/accountOp/types'
-import { ActivityIdbStorage } from '../../services/storage/activityIdb'
+import {
+  ActivityIdbStorage,
+  ActivityKeyValueStorage,
+  MAX_OPS_PER_GROUP
+} from '../../services/storage/activityIdb'
 import {
   AmbireIdbDatabase,
   openAmbireIdb,
@@ -103,23 +107,9 @@ async function awaitLoad(controller: ActivityController) {
  */
 const awaitLoadOnly = (controller: ActivityController) => controller.findMessage(ACC, () => true)
 
-/**
- * 'activityIdbMigrated' is not part of the shared StorageProps schema (see the
- * comment next to ActivityController#getActivityIdbMigrated) — reading and
- * writing it from outside the controller needs the same narrow casts.
- */
-function getActivityIdbMigrated(storageToRead: IStorageController): Promise<boolean> {
-  return (storageToRead.get as (key: string, defaultValue: boolean) => Promise<boolean>)(
-    'activityIdbMigrated',
-    false
-  )
-}
-
-function getSentToHistoryBackfilled(storageToRead: IStorageController): Promise<boolean> {
-  return (storageToRead.get as (key: string, defaultValue: boolean) => Promise<boolean>)(
-    'sentToHistoryBackfilled',
-    false
-  )
+/** Which backend the history was last written to — see StorageProps.activityStorageBackend. */
+function getActiveBackend(storageToRead: IStorageController) {
+  return storageToRead.get('activityStorageBackend', 'keyValue')
 }
 
 let db: AmbireIdbDatabase
@@ -135,6 +125,16 @@ beforeEach(async () => {
   rawStore = produceMemoryStore()
   storage = new StorageController(rawStore)
 })
+
+/**
+ * Seeds the legacy blob and rebuilds StorageController, so its sentToHistory migration sees
+ * the history. Production reads the blob off disk before construction, which tests cannot.
+ */
+async function seedLegacyOps(ops: unknown) {
+  await rawStore.set('accountsOps', ops as any)
+  storage = new StorageController(rawStore)
+  await storage.get('accountsOps', {})
+}
 
 // A test whose assertion throws never reaches its own spy.mockRestore(), which used to leave
 // a prototype mock installed and cascade failures into every test below it.
@@ -153,14 +153,14 @@ describe('ActivityController — IDB migration on load', () => {
     expect(rows?.[0]?.id).toBe('legacy-1')
   })
 
-  test('keeps the legacy key as a safety-net copy and records the migrated flag', async () => {
+  test('keeps the legacy key as a safety-net copy and records the active backend', async () => {
     // The legacy key is intentionally NOT removed for now — see #migrateOpsToIdb.
     await storage.set('accountsOps', legacyBlob([makeOp('legacy-1', 1000)]) as any)
 
     await awaitLoad(makeController(storage, db))
 
     expect(await storage.get('accountsOps', {})).not.toEqual({})
-    expect(await getActivityIdbMigrated(storage)).toBe(true)
+    expect(await getActiveBackend(storage)).toBe('idb')
   })
 
   test('a restart skips migration and keeps reading IDB, ignoring later legacy writes', async () => {
@@ -180,17 +180,17 @@ describe('ActivityController — IDB migration on load', () => {
     expect(ids).not.toContain('stale')
   })
 
-  test('does nothing when there is no legacy data — no flag, no error', async () => {
+  test('does nothing when there is no legacy data — no backend recorded, no error', async () => {
     const controller = makeController(storage, db)
     await awaitLoad(controller)
 
     expect(await new ActivityIdbStorage(db).isEmpty()).toBe(true)
-    expect(await getActivityIdbMigrated(storage)).toBe(false)
+    expect(await getActiveBackend(storage)).toBe('keyValue')
     expect(controller.emittedErrors).toHaveLength(0)
   })
 
   test('an unusable legacy op does not block the rest of the history', async () => {
-    await storage.set('accountsOps', {
+    await seedLegacyOps({
       [ACC]: {
         '1': [
           makeOp('good-1', 1000),
@@ -208,7 +208,7 @@ describe('ActivityController — IDB migration on load', () => {
     )
     expect(ids).toEqual(['good-2', 'good-1'])
     // Migration completed despite the bad row, so the flag is recorded
-    expect(await getActivityIdbMigrated(storage)).toBe(true)
+    expect(await getActiveBackend(storage)).toBe('idb')
   })
 
   test('a failed migration keeps the legacy key so the next start can retry', async () => {
@@ -228,7 +228,7 @@ describe('ActivityController — IDB migration on load', () => {
     expect(controller.emittedErrors.length).toBeGreaterThan(0)
     expect(await new ActivityIdbStorage(db).isEmpty()).toBe(true)
     expect(await storage.get('accountsOps', {})).not.toEqual({})
-    expect(await getActivityIdbMigrated(storage)).toBe(false)
+    expect(await getActiveBackend(storage)).toBe('keyValue')
   })
 
   test('a failed migration still shows history, read from the retained legacy blob', async () => {
@@ -236,7 +236,7 @@ describe('ActivityController — IDB migration on load', () => {
     // would show an empty history for the whole session even though the legacy copy
     // is intact — the fallback is what keeping that copy is for.
     const RECIPIENT = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
-    await storage.set('accountsOps', legacyBlob([makeOpTo('legacy-op', 1000, RECIPIENT)]) as any)
+    await seedLegacyOps(legacyBlob([makeOpTo('legacy-op', 1000, RECIPIENT)]))
 
     const spy = jest
       .spyOn(ActivityIdbStorage.prototype, 'migrateFromStorage')
@@ -295,7 +295,7 @@ describe('ActivityController — key-value path (no IDB)', () => {
 
     // The blob stays exactly where it is — it is already the source of truth here
     expect(await storage.get('accountsOps', {})).not.toEqual({})
-    expect(await getActivityIdbMigrated(storage)).toBe(false)
+    expect(await getActiveBackend(storage)).toBe('keyValue')
     expect(controller.emittedErrors).toHaveLength(0)
   })
 
@@ -335,18 +335,18 @@ describe('ActivityController — key-value path (no IDB)', () => {
 // from existing history once — otherwise known recipients read as first-time.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('ActivityController — recipient backfill', () => {
+describe('ActivityController — recipients indexed by the storage migration', () => {
   const OLD_RECIPIENT = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
 
   /** Seeds IDB with `count` ops; the OLDEST one sends to OLD_RECIPIENT. */
+  // Seeds the legacy blob, so the storage migration indexes the recipients and the controller
+  // then moves the ops into IDB — the path a real upgrading user takes.
   async function seedBeyondStartupWindow(count: number) {
     const ops = [
       makeOpTo('oldest', 1, OLD_RECIPIENT),
       ...Array.from({ length: count - 1 }, (_, i) => makeOp(`recent-${i}`, 1000 + i))
     ]
-    await new ActivityIdbStorage(db).putMultiple([
-      { accountAddr: ACC, chainId: CHAIN_1, ops: ops as any }
-    ])
+    await seedLegacyOps({ [ACC]: { '1': ops } })
   }
 
   test('finds a recipient from an op older than the startup window', async () => {
@@ -391,7 +391,7 @@ describe('ActivityController — recipient backfill', () => {
   })
 
   test('does not touch IDB on the key-value path', async () => {
-    await storage.set('accountsOps', legacyBlob([makeOpTo('kv', 1, OLD_RECIPIENT)]) as any)
+    await seedLegacyOps(legacyBlob([makeOpTo('kv', 1, OLD_RECIPIENT)]))
     const spy = jest.spyOn(ActivityIdbStorage.prototype, 'getOpsForAccountAndChain')
 
     const controller = makeController(storage, undefined)
@@ -401,28 +401,6 @@ describe('ActivityController — recipient backfill', () => {
     expect(result.found).toBe(true)
     expect(spy).not.toHaveBeenCalled()
     spy.mockRestore()
-  })
-
-  test('a failed backfill leaves the flag unset so the next startup retries', async () => {
-    // Recording the flag after a failed read would strand the map half-populated forever,
-    // silently disabling poisoning detection for that user.
-    await seedBeyondStartupWindow(25)
-    jest
-      .spyOn(ActivityIdbStorage.prototype, 'getAllOps')
-      .mockRejectedValueOnce(new Error('idb read failed') as never)
-
-    const failed = makeController(storage, db)
-    await awaitLoadOnly(failed)
-
-    expect(await getSentToHistoryBackfilled(storage)).toBe(false)
-    expect(failed.emittedErrors.length).toBeGreaterThan(0)
-
-    // A fresh session retries and succeeds
-    const retried = makeController(storage, db)
-    await awaitLoadOnly(retried)
-
-    expect(await getSentToHistoryBackfilled(storage)).toBe(true)
-    expect((await retried.hasAccountOpsSentTo(OLD_RECIPIENT, ACC)).found).toBe(true)
   })
 })
 
@@ -503,15 +481,22 @@ describe('ActivityController — method interactions', () => {
 
     const controller = makeController(storage, db)
     await awaitLoad(controller)
-    await controller.filterAccountsOps('session-1', { account: ACC, chainId: CHAIN_1 })
 
-    // All 35 must be reachable, not just the startup slice
-    const ids = controller.getAccountOpsForAccount({ accountAddr: ACC }).map((op) => op.id)
-    expect(ids).toHaveLength(35)
+    // The pager must report all 35 even though only a page is loaded, and paging to the last
+    // page must reach the oldest op.
+    await controller.filterAccountsOps('session-1', { account: ACC, chainId: CHAIN_1 })
+    expect(controller.accountsOps['session-1']!.result.itemsTotal).toBe(35)
+
+    await controller.filterAccountsOps(
+      'session-1',
+      { account: ACC, chainId: CHAIN_1 },
+      { fromPage: 3, itemsPerPage: 10 }
+    )
+    const ids = controller.accountsOps['session-1']!.result.items.map((op) => op.id)
     expect(ids).toContain('final-0')
   })
 
-  test('an IDB user with no legacy blob still arms the stranded-history flag', async () => {
+  test('an IDB user with no legacy blob records idb as the active backend', async () => {
     // Regression: ensureMigrated only set the flag after moving a legacy blob, which
     // never happens for someone who installed after IDB became the default. The safety
     // net therefore never armed for new users: a later IDB failure showed an empty
@@ -519,19 +504,19 @@ describe('ActivityController — method interactions', () => {
     await new ActivityIdbStorage(db).putMultiple([
       { accountAddr: ACC, chainId: CHAIN_1, ops: [makeOp('idb-native', 1000) as any] }
     ])
-    expect(await getActivityIdbMigrated(storage)).toBe(false)
+    expect(await getActiveBackend(storage)).toBe('keyValue')
 
     await awaitLoad(makeController(storage, db))
 
-    expect(await getActivityIdbMigrated(storage)).toBe(true)
+    expect(await getActiveBackend(storage)).toBe('idb')
   })
 
-  test('a brand-new wallet with no ops does not arm the flag', async () => {
+  test('a brand-new wallet with no ops records no backend', async () => {
     // The flag means "history lives in IDB". With no history there is nothing to warn
     // about, so a fresh wallet must not be told it lost something.
     await awaitLoad(makeController(storage, db))
 
-    expect(await getActivityIdbMigrated(storage)).toBe(false)
+    expect(await getActiveBackend(storage)).toBe('keyValue')
   })
 
   test('init survives the post-load history checks throwing', async () => {
@@ -652,38 +637,53 @@ describe('ActivityController — merge-not-replace on lazy-load', () => {
 })
 
 describe('ActivityController — in-memory eviction reaches persistence', () => {
-  const awaitLoadOnlyLocal = (c: ActivityController) => c.findMessage(ACC, () => true)
+  test('the op trim() pops is the id forwarded to persistence', async () => {
+    // Tested on the key-value backend, where the cache IS the whole history so trim() actually
+    // fires. On IDB the cache holds a page, so the in-memory cap is rarely reached and the
+    // backend's own MAX_OPS_PER_GROUP check does the eviction instead.
+    // Newest first, which is how the controller maintains the blob (it unshifts) and therefore
+    // how the key-value backend reads it back — trim() pops from the end.
+    const ops = Array.from({ length: MAX_OPS_PER_GROUP }, (_, i) =>
+      makeOp(`op-${i}`, 1000 + i)
+    ).reverse()
+    await seedLegacyOps({ [ACC]: { '1': ops } })
 
-  test('the op trim() pops is the op deleted from the backend', async () => {
-    // trim() returns the evicted item and addAccountOp forwards its id, so the controller
-    // never has to predict which op will go or repeat the 1000 cap. If the two ever disagree
-    // the group grows past the cap in IDB while memory stays at it.
-    const ops = Array.from({ length: 1000 }, (_, i) => makeOp(`op-${i}`, 1000 + i) as any)
-    const store = new ActivityIdbStorage(db)
-    await store.putMultiple([{ accountAddr: ACC, chainId: CHAIN_1, ops }])
+    const controller = makeController(storage, undefined)
+    await awaitLoadOnly(controller)
+    expect(controller.getAccountOpsForAccount({ accountAddr: ACC })).toHaveLength(MAX_OPS_PER_GROUP)
 
-    const controller = makeController(storage, db)
-    await awaitLoadOnlyLocal(controller)
-    // Expand so the in-memory group is at the cap and trim() will actually fire
-    await controller.filterAccountsOps('session-1', { account: ACC, chainId: CHAIN_1 })
-    expect(controller.getAccountOpsForAccount({ accountAddr: ACC })).toHaveLength(1000)
-
-    const putSingleOp = jest.spyOn(ActivityIdbStorage.prototype, 'putSingleOp')
+    const putSingleOp = jest.spyOn(ActivityKeyValueStorage.prototype, 'putSingleOp')
     await controller.addAccountOp(makeOp('newest', 9_000_000) as any)
 
-    // Asserted on the ARGUMENT, not the outcome. putSingleOp has its own
-    // MAX_OPS_PER_GROUP fallback that evicts the oldest row when no id is passed, so the
-    // stored result is identical whether or not the controller forwards the right one — the
-    // redundancy is deliberate, but it means only the call itself proves the wiring.
+    // op-0 is the oldest by timestamp, so it is the one trim() popped
     expect(putSingleOp).toHaveBeenCalledTimes(1)
     expect(putSingleOp.mock.calls[0]![3]).toBe('op-0')
+  })
+})
 
-    // ...and the outcome still holds: cap respected, newest kept, oldest gone
-    const persisted = (await store.getOpsForAccountAndChain(ACC, CHAIN_1)) ?? []
-    const ids = persisted.map((op) => op.id)
-    expect(persisted).toHaveLength(1000)
-    expect(ids).toContain('newest')
-    expect(ids).not.toContain('op-0')
+describe('ActivityController — the recorded backend is read, not just written', () => {
+  test('reports when history was written to IDB but this session cannot reach it', async () => {
+    // The value earns its place here: 'idb' recorded last session and key-value this one means
+    // the history is in a store we cannot open, and the retained blob is frozen at migration
+    // time — so what renders is missing everything written since.
+    await storage.set('activityStorageBackend', 'idb')
+    await seedLegacyOps(legacyBlob([makeOp('kv-1', 1000)]))
+
+    const controller = makeController(storage, undefined)
+    await awaitLoadOnly(controller)
+
+    expect(controller.emittedErrors.some((e) => e.level === 'silent')).toBe(true)
+    expect(await getActiveBackend(storage)).toBe('keyValue')
+  })
+
+  test('stays quiet when the backend has not changed', async () => {
+    await storage.set('activityStorageBackend', 'keyValue')
+    await seedLegacyOps(legacyBlob([makeOp('kv-1', 1000)]))
+
+    const controller = makeController(storage, undefined)
+    await awaitLoadOnly(controller)
+
+    expect(controller.emittedErrors).toHaveLength(0)
   })
 })
 
@@ -765,19 +765,131 @@ describe('ActivityController — startup read is scoped to the selected account'
     expect(spy).not.toHaveBeenCalled()
   })
 
-  test('the on-demand load happens once per group', async () => {
+  test('each load asks for a page, never the whole history', async () => {
     await seedTwoAccounts()
 
     const controller = makeControllerWithSelected(ACC)
     await awaitLoadOnly(controller)
 
-    const spy = jest.spyOn(ActivityIdbStorage.prototype, 'getOpsForAccountAndChain')
+    const spy = jest.spyOn(ActivityIdbStorage.prototype, 'getRecentOps')
     await controller.filterAccountsOps('session-other', { account: OTHER })
     await controller.filterAccountsOps('session-other', { account: OTHER })
     await controller.filterAccountsOps('session-other', { account: OTHER })
 
-    const otherChain1 = spy.mock.calls.filter(([a, c]) => a === OTHER && String(c) === '1')
-    expect(otherChain1).toHaveLength(1)
+    // Bounded reads are cheap and idempotent, so they are not deduplicated — what matters is
+    // that each one asks for a page, not the whole history.
+    expect(spy.mock.calls.every(([, limit]) => limit <= 10)).toBe(true)
+  })
+})
+
+describe('ActivityController — paginated reads', () => {
+  test('serves a page without reading the whole history', async () => {
+    const ops = Array.from({ length: 200 }, (_, i) => makeOp(`op-${i}`, 1000 + i) as any)
+    await new ActivityIdbStorage(db).putMultiple([{ accountAddr: ACC, chainId: CHAIN_1, ops }])
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    const spy = jest.spyOn(ActivityIdbStorage.prototype, 'getRecentOps')
+    await controller.filterAccountsOps('s', { account: ACC, chainId: CHAIN_1 })
+
+    // Asked for one page, not 200
+    expect(spy.mock.calls[0]![1]).toBe(10)
+    const result = controller.accountsOps.s!.result
+    expect(result.items).toHaveLength(10)
+    // ...but the pager still knows the true size, which is what gates navigation
+    expect(result.itemsTotal).toBe(200)
+    expect(result.maxPages).toBe(20)
+  })
+
+  test('a page ignores chains the user has disabled, in both its items and its total', async () => {
+    // 999 is absent from networksStub, so nothing on it may reach the rendered page. It also
+    // holds the NEWEST ops, which is what makes an account-wide fetch spend the whole page
+    // budget on rows that are then dropped.
+    const disabledChainOps = Array.from({ length: 10 }, (_, i) => ({
+      ...makeOp(`disabled-${i}`, 9000 + i),
+      chainId: 999n
+    }))
+    const enabledChainOps = Array.from({ length: 40 }, (_, i) => makeOp(`enabled-${i}`, 1000 + i))
+    await new ActivityIdbStorage(db).putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: enabledChainOps as any },
+      { accountAddr: ACC, chainId: 999n, ops: disabledChainOps as any }
+    ])
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+    // Page 2 on purpose: the startup window already covers the first two pages, so only a
+    // page beyond it is actually served by the paginated fetch.
+    await controller.filterAccountsOps('s', { account: ACC }, { fromPage: 2, itemsPerPage: 10 })
+
+    const result = controller.accountsOps.s!.result
+    // A full page of enabled-chain ops. An account-wide fetch would spend 10 of its 30-row
+    // budget on the disabled chain, leaving this page empty.
+    expect(result.items).toHaveLength(10)
+    expect(result.items.every((op) => op.chainId === CHAIN_1)).toBe(true)
+    // The total counts only reachable ops, so it cannot offer a page that renders empty
+    expect(result.itemsTotal).toBe(40)
+    expect(result.maxPages).toBe(4)
+  })
+
+  test('an external op duplicating a per-call txnId of a stored internal op is rejected', async () => {
+    // The MultipleTxns case: the internal op carries no top-level txnId, only one per call.
+    // A txnId index on the row could never match this — it indexes op.txnId alone. Reading the
+    // group and applying the same predicate the render uses does catch it.
+    // Placed oldest of 30 so it sits outside the startup window, forcing the stored read.
+    const txnId = `0x${'b'.repeat(64)}`
+    const internalMultiTxn = {
+      ...makeOp('internal-multi-txn', 1),
+      txnId: undefined,
+      calls: [{ to: PROBE_ADDRESS, value: 0n, data: '0x', txnId }]
+    }
+    await new ActivityIdbStorage(db).putMultiple([
+      {
+        accountAddr: ACC,
+        chainId: CHAIN_1,
+        ops: [
+          internalMultiTxn,
+          ...Array.from({ length: 29 }, (_, i) => makeOp(`recent-${i}`, 1000 + i))
+        ] as any
+      }
+    ])
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+    await controller.addExternalAccountOp({
+      accountAddr: ACC,
+      chainId: CHAIN_1,
+      txnId,
+      receipt: { status: 1, blockNumber: 1, blockHash: '0x', gasUsed: 1n, logs: [] } as any
+    })
+
+    expect(await storage.get('externalAccountOps', {})).toEqual({})
+  })
+
+  test('an external op duplicating an internal one is rejected at write time', async () => {
+    // This is what keeps itemsTotal exact: overlap between the two stores is zero by
+    // construction, so the total is a stored count plus an in-memory count.
+    // The duplicate must sit OUTSIDE the startup window, or the in-memory check catches it and
+    // the store lookup is never exercised. The oldest of 30 is well past the 20-op window.
+    const txnId = `0x${'a'.repeat(64)}`
+    const ops = [
+      { ...makeOp('internal-oldest', 1), txnId },
+      ...Array.from({ length: 29 }, (_, i) => makeOp(`recent-${i}`, 1000 + i))
+    ]
+    await new ActivityIdbStorage(db).putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: ops as any }
+    ])
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+    await controller.addExternalAccountOp({
+      accountAddr: ACC,
+      chainId: CHAIN_1,
+      txnId,
+      receipt: { status: 1, blockNumber: 1, blockHash: '0x', gasUsed: 1n, logs: [] } as any
+    })
+
+    expect(await storage.get('externalAccountOps', {})).toEqual({})
   })
 })
 
@@ -857,7 +969,7 @@ describe('ActivityController — total transaction count', () => {
     const NEW_ADDR = '0x2222222222222222222222222222222222222222'
 
     // Stored newest-first, exactly how a group comes back from the backend
-    await storage.set('accountsOps', {
+    await seedLegacyOps({
       [ACC]: {
         '1': [
           {
@@ -914,7 +1026,7 @@ describe('ActivityController — total transaction count', () => {
   })
 })
 
-describe('ActivityController — bookkeeping around the expansion markers', () => {
+describe('ActivityController — empty and edge groups', () => {
   test('removing an account clears its expansion markers so a re-add re-reads IDB', async () => {
     // AccountOpsPersistence keys its expansion markers `${account}:${chainId}`, so removal has to clear by
     // prefix. A stale marker would make a re-added account look already-expanded and
@@ -939,7 +1051,7 @@ describe('ActivityController — bookkeeping around the expansion markers', () =
     expect(ids).toContain('second-life')
   })
 
-  test('a chain with no history is queried once, not on every update', async () => {
+  test('a chain the account never used returns an empty page without error', async () => {
     // getOpsForAccountAndChain returns undefined for zero rows. Marking the group
     // loaded only on a non-empty result left every never-transacted-on chain unmarked,
     // so it was re-queried on each filterAccountsOps call — which runs on every
@@ -951,17 +1063,14 @@ describe('ActivityController — bookkeeping around the expansion markers', () =
     const controller = makeController(storage, db)
     await awaitLoadOnly(controller)
 
-    const spy = jest.spyOn(ActivityIdbStorage.prototype, 'getOpsForAccountAndChain')
-
     // Chain 137 is in the networks stub but the account has never used it
     await controller.filterAccountsOps('session-empty', { account: ACC, chainId: 137n })
-    await controller.filterAccountsOps('session-empty', { account: ACC, chainId: 137n })
-    await controller.filterAccountsOps('session-empty', { account: ACC, chainId: 137n })
 
-    const emptyChainCalls = spy.mock.calls.filter(([, chainId]) => chainId === 137n)
-    expect(emptyChainCalls).toHaveLength(1)
-
-    spy.mockRestore()
+    const result = controller.accountsOps['session-empty']!.result
+    expect(result.items).toHaveLength(0)
+    expect(result.itemsTotal).toBe(0)
+    expect(result.maxPages).toBe(0)
+    expect(controller.emittedErrors).toHaveLength(0)
   })
 
   // NOTE: there is deliberately no test asserting that persistence happens before

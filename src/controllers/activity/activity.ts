@@ -40,6 +40,7 @@ import {
   SubmittedAccountOpLike,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
+import { recordRecipient } from '../../libs/activity/sentToHistory'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { filterStaticBlacklistedAddrs } from '../../libs/portfolio/blacklist'
@@ -110,12 +111,22 @@ const trim = <T>(items: T[], maxSize: number): T | undefined => {
   return items.pop()
 }
 
-const paginate = (items: any[], fromPage: number, itemsPerPage: number) => {
+/**
+ * `itemsTotal` accepts an override because a caller that only loaded one page cannot derive
+ * the total from `items`. Both screens gate navigation on it — the dashboard's "load more" and
+ * the settings Next button — so an estimate would show controls that lead nowhere.
+ */
+const paginate = (
+  items: any[],
+  fromPage: number,
+  itemsPerPage: number,
+  itemsTotal = items.length
+) => {
   return {
     items: items.slice(fromPage * itemsPerPage, fromPage * itemsPerPage + itemsPerPage),
-    itemsTotal: items.length,
+    itemsTotal,
     currentPage: fromPage, // zero/index based
-    maxPages: Math.ceil(items.length / itemsPerPage)
+    maxPages: Math.ceil(itemsTotal / itemsPerPage)
   }
 }
 
@@ -376,7 +387,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // After the update on purpose — nothing here is rendered.
     await this.#persistence.finalizeInit(accountsOps)
-    await this.#backfillSentToHistory()
   }
 
   /**
@@ -475,14 +485,24 @@ export class ActivityController extends EventEmitter implements IActivityControl
     let internalAccountOpsByChain = this.#accountsOps[filters.account] || {}
     const externalAccountOpsByChain = this.#externalAccountOps[filters.account] || {}
 
-    // So pagination can page past the startup window, which holds finalized ops for the
-    // selected account only. With no chain filter every enabled chain has to be expanded, or a
-    // just-switched-to account would render its pending ops and nothing else.
-    await Promise.all(
-      (filters.chainId ? [filters.chainId] : enabledNetworkChainIds).map((chainId) =>
-        this.#persistence.ensureGroupLoaded(filters.account, chainId)
-      )
-    )
+    // The chains this call will actually render. A chainId filter that names a disabled network
+    // is ignored, matching how filteredItems is built below.
+    const chainIdsToRender =
+      filters.chainId && enabledNetworkChainIds.includes(String(filters.chainId))
+        ? [String(filters.chainId)]
+        : enabledNetworkChainIds
+
+    // Load only what the requested page can need, rather than the whole history.
+    //
+    // The page is a union of stored ops, all pending ops (already in memory from startup) and
+    // all external ops (always in memory). Fetching the newest (fromPage + 1) x itemsPerPage
+    // stored ops of every rendered chain is sufficient: any item in the union's first N is
+    // either pending, external, or among the newest N of its own chain.
+    //
+    // Per chain and not account-wide: an account-wide fetch spends part of its budget on
+    // disabled networks, which are dropped below, and would render a short page.
+    const pageEnd = (pagination.fromPage + 1) * pagination.itemsPerPage
+    await this.#persistence.ensureRecentLoaded(filters.account, pageEnd, chainIdsToRender)
     internalAccountOpsByChain = this.#accountsOps[filters.account] || internalAccountOpsByChain
 
     const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(
@@ -499,6 +519,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const internalTxnIds = new Set(
       [...internalAccountOps].flatMap((op) => getInternalAccountOpTxnIds(op).map(normalizeTxnId))
     )
+    const isNotDuplicateOfInternal = (extOp: SubmittedAccountOpLike) =>
+      !extOp.txnId || !internalTxnIds.has(normalizeTxnId(extOp.txnId))
 
     const accountOpsEntriesOnEnabledNetworks = enabledNetworkChainIds
       .map(
@@ -507,9 +529,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
             chainId,
             [
               ...(internalAccountOpsByChain[chainId] || []),
-              ...(externalAccountOpsByChain[chainId] || []).filter(
-                (extOp) => !extOp.txnId || !internalTxnIds.has(normalizeTxnId(extOp.txnId))
-              )
+              ...(externalAccountOpsByChain[chainId] || []).filter(isNotDuplicateOfInternal)
             ]
           ] as const
       )
@@ -538,7 +558,31 @@ export class ActivityController extends EventEmitter implements IActivityControl
       )
     }
 
-    const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
+    // Counted over the same chains and with the same dedup as filteredItems, so the total
+    // cannot promise pages that render empty.
+    //
+    // An identifiedBy filter narrows to a single transaction and has no stored equivalent to
+    // count, so there the loaded items ARE the total.
+    const storedTotal = filters.identifiedBy
+      ? 0
+      : await this.#persistence.countOps(filters.account, chainIdsToRender)
+    const externalTotal = filters.identifiedBy
+      ? 0
+      : chainIdsToRender.reduce(
+          (sum, chainId) =>
+            sum +
+            (externalAccountOpsByChain[chainId] || []).filter(isNotDuplicateOfInternal).length,
+          0
+        )
+
+    const result = paginate(
+      filteredItems,
+      pagination.fromPage,
+      pagination.itemsPerPage,
+      // Never below what is already loaded: a failed count returns 0, and dedup against the
+      // loaded window cannot see stored ops outside it, so the total can only undershoot.
+      Math.max(storedTotal + externalTotal, filteredItems.length)
+    )
 
     this.setDashboardBannersSeen(sessionId, filters.account)
     this.accountsOps[sessionId] = { result, filters, pagination }
@@ -761,7 +805,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const evicted = trim(group, MAX_OPS_PER_GROUP)
 
     getAccountOpRecipients(accountOp).forEach((recipient) =>
-      this.#recordRecipient(accountAddr, recipient.address, recipient.domain, accountOp.timestamp)
+      recordRecipient(
+        this.#sentToHistory,
+        accountAddr,
+        recipient.address,
+        recipient.domain,
+        accountOp.timestamp
+      )
     )
 
     await this.syncFilteredAccountsOps()
@@ -782,89 +832,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // hasAccountOpsSentTo survive a service worker restart — without this the map
     // is rebuilt empty on every wake-up and every recipient looks new again.
     await this.#storage.set('sentToHistory', this.#sentToHistory)
-  }
-
-  /**
-   * One-time population of sentToHistory.recipients from existing history. Without it a user
-   * with existing history starts with an empty map — every known recipient reads as first-time
-   * and poisoning warnings silently stop.
-   */
-  async #backfillSentToHistory(): Promise<void> {
-    try {
-      if (await this.#getSentToHistoryBackfilled()) return
-
-      const allOps = await this.#persistence.getAllOps()
-      // Null means the read failed; leaving the flag unset retries on the next startup.
-      if (!allOps) return
-
-      for (const [accountAddr, byChain] of Object.entries(allOps)) {
-        for (const ops of Object.values(byChain)) {
-          for (const op of ops ?? []) {
-            getAccountOpRecipients(op).forEach((recipient) =>
-              this.#recordRecipient(accountAddr, recipient.address, recipient.domain, op.timestamp)
-            )
-          }
-        }
-      }
-
-      await this.#storage.set('sentToHistory', this.#sentToHistory)
-      await this.#setSentToHistoryBackfilled(true)
-      this.emitUpdate()
-    } catch (error) {
-      this.emitError({
-        level: 'silent',
-        message: 'Your past recipients could not be indexed.',
-        error:
-          error instanceof Error
-            ? error
-            : new Error('ActivityController: sentToHistory backfill failed')
-      })
-    }
-  }
-
-  // Provisional like activityIdbMigrated, so deliberately not in StorageProps — one narrow
-  // cast each for read and write.
-  #getSentToHistoryBackfilled(): Promise<boolean> {
-    return (this.#storage.get as (key: string, defaultValue: boolean) => Promise<boolean>)(
-      'sentToHistoryBackfilled',
-      false
-    )
-  }
-
-  #setSentToHistoryBackfilled(value: boolean): Promise<void> {
-    return (this.#storage.set as (key: string, value: boolean) => Promise<void>)(
-      'sentToHistoryBackfilled',
-      value
-    )
-  }
-
-  #recordRecipient(
-    accountId: AccountId,
-    toAddress: string,
-    toDomain: string | undefined,
-    timestamp: number
-  ) {
-    const checksummedAddress = getAddressCaught(toAddress)
-    if (!checksummedAddress) return
-
-    if (!this.#sentToHistory.recipients[accountId]) this.#sentToHistory.recipients[accountId] = {}
-
-    const existing = this.#sentToHistory.recipients[accountId]![checksummedAddress] || 0
-    this.#sentToHistory.recipients[accountId]![checksummedAddress] = Math.max(existing, timestamp)
-
-    const normalized = toDomain?.toLowerCase().trim()
-    if (!normalized) return
-
-    // Keep the newest: #backfillSentToHistory walks history out of order, so last-write-wins
-    // could point a domain at an older address — feeding a wrong "previous address" to the
-    // send-screen domain-change warning.
-    const existingDomain = this.#sentToHistory.domains[normalized]
-    if (existingDomain && existingDomain.sentAt > timestamp) return
-
-    this.#sentToHistory.domains[normalized] = {
-      address: checksummedAddress,
-      sentAt: timestamp
-    }
   }
 
   /** Returns the address a domain last resolved to when the user sent to it, or null if never. */
@@ -914,8 +881,24 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // a duplication guard
     const chainIdString = chainId.toString()
-    const hasExistingAccountOpWithTxnId = () => {
-      const internalAccountOps = getAccountOpsForAccountAndChain(
+    // Compared against the whole stored chain group, not just the in-memory window. The
+    // window is a page, so an internal op it does not hold would otherwise go unnoticed and
+    // the duplicate would be stored permanently — rendering the same transaction twice
+    // whenever its internal twin is out of the window.
+    const hasExistingAccountOpWithTxnId = async () => {
+      const storedInternalOps = await this.#persistence.getStoredOpsForChain(
+        accountAddr,
+        chainIdString
+      )
+
+      // Read failed, so absence proves nothing. Treated as a duplicate: a stored duplicate is
+      // permanent, while a skipped op is re-offered on the scanner's next pass.
+      if (!storedInternalOps) return true
+
+      // Kept alongside the stored read because IDB keys are exact while this lookup is
+      // case-insensitive — the same account addressed with different casing is stored under a
+      // key the read above cannot find.
+      const inMemoryInternalOps = getAccountOpsForAccountAndChain(
         this.#accountsOps,
         accountAddr,
         chainIdString
@@ -927,12 +910,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
       )
 
       return (
-        internalAccountOps.some((accountOp) => internalAccountOpHasTxnId(accountOp, txnId)) ||
+        storedInternalOps.some((accountOp) => internalAccountOpHasTxnId(accountOp, txnId)) ||
+        inMemoryInternalOps.some((accountOp) => internalAccountOpHasTxnId(accountOp, txnId)) ||
         existingExternalAccountOps.some((accountOp) => externalAccountOpHasTxnId(accountOp, txnId))
       )
     }
 
-    if (hasExistingAccountOpWithTxnId()) return
+    if (await hasExistingAccountOpWithTxnId()) return
 
     const network = this.#networks.networks.find((n) => n.chainId === chainId)
     const provider = this.#providers.providers[chainIdString]
@@ -1010,7 +994,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       submittedAccountOpLike.balanceChanges = undefined
     }
 
-    if (hasExistingAccountOpWithTxnId()) return
+    if (await hasExistingAccountOpWithTxnId()) return
 
     if (!this.#externalAccountOps[accountAddr]) this.#externalAccountOps[accountAddr] = {}
     if (!this.#externalAccountOps[accountAddr]![chainIdString]) {
@@ -1630,10 +1614,10 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     delete this.#accountsOps[address]
     delete this.#signedMessages[address]
-    // Recipients are keyed per account, so they go with it. `domains` is
-    // deliberately left alone — it is a global index shared across accounts
-    // (see SentToHistory in ./types.ts).
-    delete this.#sentToHistory.recipients[address]
+    // sentToHistory is deliberately left intact, both the global `domains` map and this
+    // account's `recipients`. It is a few bytes per recipient, and keeping it means a
+    // re-imported account still recognises the addresses it has sent to before rather than
+    // treating every one as first-time — which is what drives the poisoning warning.
 
     await this.syncFilteredAccountsOps()
     await this.syncSignedMessages()

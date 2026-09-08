@@ -1,8 +1,21 @@
 # IndexedDB persistence layer
 
-Persistence for controller data that key-value storage handles badly. Two consumers:
-`ActivityController` (transaction history, row-per-op) and `PhishingController` (one snapshot
-document).
+Persistence for controller data that key-value storage handles badly. Two consumers, and they
+get different things out of it:
+
+| | `ActivityController` | `PhishingController` |
+|---|---|---|
+| Layout | one row per op | one document under `snapshot` |
+| Read | bounded window, expanded on demand | **whole document**, every load |
+| Write | one row per broadcast | **whole document**, per list update |
+| What it buys | row-level reads and writes on data that grows without bound | structured clone instead of a richJson string, and relief from the `chrome.storage.local` quota |
+
+Phishing is deliberately **not** row-level. `getDomainBlacklistedStatus` is synchronous — it is
+called from inside `.filter()` and `.forEach()` predicates in `DappsController`, with an
+explicit "do NOT await this" note — so the domain and address sets have to live in memory,
+which means every load reads the entire list whatever the layout. Splitting it into a row per
+domain would make the frequent operation (a load on every service-worker wake-up) slower to
+make the rare one (a write every 15 minutes at most, 6 hours at rest) faster.
 
 This file covers the **runtime picture**: what each module does, the order things happen in,
 the invariants, and what each operation costs. For the step-by-step recipe to put a *new*
@@ -22,9 +35,9 @@ startup read.
 | `idbSchema.ts` | Declarative manifest: stores, keyPaths, indexes, `dbVersion`. The single source of truth for *structure*. Read by `reconcileSchema()`; contains no logic. |
 | `idbDatabase.ts` | Connection lifecycle (`openAmbireIdb()` singleton, `blocking`, `terminated`, invalidation) and upgrade orchestration (`reconcileSchema()`, `applyMigrations()`). |
 | `accountOpsPersistence.ts` | **The coordinator `ActivityController` talks to.** Picks an adapter, runs the data migration, falls back on failure, and keeps the in-memory cache coherent with a partially-loaded backend. |
-| `phishingPersistence.ts` | The coordinator `PhishingController` talks to. Simpler shape — no cache to keep coherent — and the better template to copy. |
+| `phishingPersistence.ts` | The coordinator `PhishingController` talks to. No cache to keep coherent, so it is the smaller template to copy. |
 | `activityIdb.ts` | Two `IActivityOpsBackend` adapters: `ActivityIdbStorage` (rows) and `ActivityKeyValueStorage` (blob, used on mobile). |
-| `phishingIdb.ts` | The two `IPhishingOpsBackend` adapters. |
+| `phishingIdb.ts` | The two `IPhishingOpsBackend` adapters. Single-document, read and written whole — see the table above. |
 | `persistenceError.ts` | The `onError` contract both coordinators report through instead of throwing. |
 
 ## Adapters, and adding a service
@@ -169,10 +182,11 @@ Two mechanisms exist because of that:
 |---|---|
 | `loadStartupOps()` | 2 transactions. Key-only cursor enumerates groups, then per-group queries run in parallel. Bounded by group count, not history size. |
 | `putSingleOp()` | 1 row write, plus one `count()` when the caller passed no `trimmedId` (the common case on IDB, since groups start at 20 and rarely hit the in-memory cap). |
-| `getOpsForAccountAndChain()` | Full group read. Triggered by pagination past the window, once per group per session. |
+| `getRecentOps()` | Backwards cursor over `by-account-chain-timestamp`, one step per row, stopping at `limit`. Run once per rendered chain per pagination call. IDB indexes only sort ascending, so newest-first needs a reverse walk. |
+| `getOpsForAccountAndChain()` | Full group read. Called by `addExternalAccountOp`'s duplicate guard, which has to compare against the whole group rather than the loaded window. Deliberately not a txnId index: an internal op can carry a txnId per call (MultipleTxns), which a row-level index on `op.txnId` cannot see. |
 | `countOpsForAccount()` | `count()` over a key range — served from the index without deserializing rows. |
 | `hasAccountOpsSentTo()` | No backend read at all. Answers from `sentToHistory.recipients` — an O(1) key lookup, plus an O(recipients) comparison only for a first-time address. |
-| `getAllOps()` | Whole-store read. Called **once ever**, by the recipient backfill; never on a user-facing path. |
+| `loadSnapshot()` / `saveSnapshot()` | The whole phishing document, read on every load and rewritten per list update. See the table at the top for why it is not row-level. |
 
 ### The recipient index
 
@@ -188,13 +202,17 @@ produces it — and is **strictly more complete**, because entries survive the
 `MAX_OPS_PER_GROUP` eviction that drops old ops. A recipient you used 2,000 transactions ago
 still raises a lookalike warning; under the old scan it had aged out.
 
-**The backfill is what makes the map authoritative.** `#recordRecipient` only writes on
+**A storage migration is what makes the map authoritative.** `recordRecipient()` only writes on
 broadcast, so a user with pre-existing history would start with it empty — every known
-recipient flagged as first-time and poisoning warnings silently gone. `#backfillSentToHistory()`
-therefore reads the whole history once, guarded by a persisted `sentToHistoryBackfilled` flag
-and run after the first `emitUpdate` so it never delays rendering. On a failed read the flag
-stays **unset** so the next startup retries — recording it would strand the map
-half-populated forever.
+recipient flagged as first-time and poisoning warnings silently gone.
+`#indexSentToHistoryFromAccountsOps()` in `StorageController` seeds it from existing history,
+guarded by `passedMigrations` like every other migration there.
+
+It lives there rather than in `ActivityController` for a reason beyond consistency: storage
+migrations complete before any controller reads, which is also the last moment `accountsOps`
+still holds the full history in key-value storage — `ActivityController` moves it into IDB
+during its own load. Both it and the controller call the same `recordRecipient()` from
+`libs/activity/sentToHistory.ts`, so the domain-recency rule has one implementation.
 
 Because the map is durable and independent of op retention, clearing `accountsOps` does *not*
 clear recipient memory. Anything that assumes "no history implies no recipients" — a test, a

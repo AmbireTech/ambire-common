@@ -376,31 +376,76 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
   }
 
   /**
-   * One getAll rather than a query per group — only used by the one-time recipient backfill,
-   * where a single large read beats N round trips.
+   * The newest `limit` ops for an account, newest first — across all chains, or one chain.
+   *
+   * This is what lets a caller serve a page without reading the whole history. The
+   * cross-chain case needs by-account-timestamp; by-account-chain-timestamp cannot answer it.
    */
-  async getAllOps(): Promise<InternalAccountsOps> {
+  async getRecentOps(
+    accountAddr: string,
+    limit: number,
+    chainId: bigint | string
+  ): Promise<SubmittedAccountOp[]> {
     const tx = await this.#openTx('readonly')
-    const rows = await tx.objectStore(this.#storeName).getAll()
+    const store = tx.objectStore(this.#storeName)
 
-    const result: InternalAccountsOps = {}
-    for (const row of rows) {
-      if (!result[row.accountAddr]) result[row.accountAddr] = {}
-      if (!result[row.accountAddr]![row.chainId]) result[row.accountAddr]![row.chainId] = []
-      result[row.accountAddr]![row.chainId]!.push(row.op as SubmittedAccountOp)
+    // Walked backwards over the ascending timestamp index, because IDB indexes only sort
+    // ascending and newest-first is what a page needs. Each step is its own round trip, so
+    // the cost is proportional to `limit` — bounded by the page size the caller asks for.
+    const chainIdStr = chainId.toString()
+    const range = IDBKeyRange.bound(
+      [accountAddr, chainIdStr, 0],
+      [accountAddr, chainIdStr, Number.MAX_SAFE_INTEGER]
+    )
+
+    const ops: SubmittedAccountOp[] = []
+    let cursor = await store.index('by-account-chain-timestamp').openCursor(range, 'prev')
+    while (cursor && ops.length < limit) {
+      ops.push(cursor.value.op as SubmittedAccountOp)
+
+      cursor = await cursor.continue()
     }
 
-    return result
+    return ops
   }
 
+  /** Exact stored count for an account, or for one of its chains. */
+  async countOps(accountAddr: string, chainId?: bigint | string): Promise<number> {
+    const tx = await this.#openTx('readonly')
+    const store = tx.objectStore(this.#storeName)
+
+    if (chainId === undefined) {
+      return store.count(
+        IDBKeyRange.bound([accountAddr, '', ''], [accountAddr, RANGE_HIGH, RANGE_HIGH])
+      )
+    }
+
+    return store.count(
+      IDBKeyRange.bound(
+        [accountAddr, chainId.toString(), ''],
+        [accountAddr, chainId.toString(), RANGE_HIGH]
+      )
+    )
+  }
+
+  /**
+   * Whether the account already has a stored op with this txnId. Checked at write time so an
+   * external op never duplicates an internal one, which keeps the paginated total exact.
+   */
   /**
    * Count every row for an account across all chains.
    *
    * count() on a key range is served from the index structure without reading or
    * deserializing any record, so this stays cheap even for a heavy account.
    */
-  async countOpsForAccount(accountAddr: string): Promise<number> {
-    const range = IDBKeyRange.bound([accountAddr, '', ''], [accountAddr, RANGE_HIGH, RANGE_HIGH])
+  async countOpsForAccount(accountAddr: string, chainId?: bigint | string): Promise<number> {
+    const range =
+      chainId === undefined
+        ? IDBKeyRange.bound([accountAddr, '', ''], [accountAddr, RANGE_HIGH, RANGE_HIGH])
+        : IDBKeyRange.bound(
+            [accountAddr, chainId.toString(), ''],
+            [accountAddr, chainId.toString(), RANGE_HIGH]
+          )
     const tx = await this.#openTx('readonly')
 
     return tx.objectStore(this.#storeName).count(range)
@@ -547,18 +592,26 @@ export class ActivityKeyValueStorage implements IActivityOpsBackend {
     await this.#storage.set('accountsOps', this.#getOps())
   }
 
-  /** The in-memory blob already IS every stored op. */
-  async getAllOps(): Promise<InternalAccountsOps> {
-    return this.#getOps()
+  // The whole blob is in memory, so these are all served from it.
+  async getRecentOps(
+    accountAddr: string,
+    limit: number,
+    chainId: bigint | string
+  ): Promise<SubmittedAccountOp[]> {
+    const ops = this.#getOps()[accountAddr]?.[chainId.toString()] ?? []
+
+    return [...ops].sort((a, b) => b.timestamp - a.timestamp).slice(0, limit)
   }
 
   /**
    * On this backend the in-memory blob IS the complete history, so summing the group
    * lengths is already the true total.
    */
-  async countOpsForAccount(accountAddr: string): Promise<number> {
+  async countOpsForAccount(accountAddr: string, chainId?: bigint | string): Promise<number> {
     const chainMap = this.#getOps()[accountAddr]
     if (!chainMap) return 0
+
+    if (chainId !== undefined) return (chainMap[chainId.toString()] ?? []).length
 
     return Object.values(chainMap).reduce((total, ops) => total + (ops?.length ?? 0), 0)
   }

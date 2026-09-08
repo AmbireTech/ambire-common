@@ -51,11 +51,24 @@ export interface IActivityOpsBackend {
     chainId: bigint | string
   ): Promise<SubmittedAccountOp[] | undefined>
 
-  /** For the one-time sentToHistory backfill only — never call this on a user-facing path. */
-  getAllOps(): Promise<InternalAccountsOps>
-
   deleteAccount(accountAddr: string): Promise<void>
 
-  /** Needed because the IDB startup read is a window, so in-memory lengths are not a total. */
-  countOpsForAccount(accountAddr: string): Promise<number>
+  /**
+   * Exact stored count, for the whole account or one of its chains. Needed because the IDB
+   * startup read is a window, so in-memory lengths are not a total.
+   */
+  countOpsForAccount(accountAddr: string, chainId?: bigint | string): Promise<number>
+
+  /**
+   * The newest `limit` ops of one of an account's chains, newest first. Lets a caller serve
+   * one page without reading the whole history.
+   *
+   * Per chain and not account-wide because callers render a chain subset: an account-wide
+   * read would spend part of `limit` on chains the caller drops, leaving a short page.
+   */
+  getRecentOps(
+    accountAddr: string,
+    limit: number,
+    chainId: bigint | string
+  ): Promise<SubmittedAccountOp[]>
 }

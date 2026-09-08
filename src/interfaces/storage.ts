@@ -43,6 +43,13 @@ export type StorageProps = {
   externalAccountOps: { [key: string]: { [key: string]: SubmittedAccountOpLike[] } }
   signedMessages: { [key: AccountId]: SignedMessage[] }
   sentToHistory: SentToHistory
+  /**
+   * Which backend the transaction history was last written to. Recorded rather than a
+   * "migrated" boolean because it says what is true rather than what happened: a session that
+   * finds 'idb' here but cannot open IndexedDB knows the history exists and is unreachable,
+   * which is indistinguishable from "no transactions yet" otherwise.
+   */
+  activityStorageBackend: 'idb' | 'keyValue'
   // Migrations
   passedMigrations: string[]
   migrations: string[]
