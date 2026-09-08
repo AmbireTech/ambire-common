@@ -1,5 +1,7 @@
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { IUiController } from '../../interfaces/ui'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import {
@@ -25,8 +27,7 @@ import {
   Erc7730Known,
   Erc7730PersistedRegistryCache,
   Erc7730ResolvedDescriptor,
-  Erc7730Want,
-  SafeSingletonProvider
+  Erc7730Want
 } from '../../libs/humanizer/erc7730/types'
 import {
   ERC7730_CACHE_TTL_MS,
@@ -43,14 +44,6 @@ import { getRegistryKey, getSafeSingletonKey } from '../../libs/humanizer/erc773
 import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
-
-/** Replies to a UI request made through `dispatchAndWait`, which awaits by `requestId`. */
-type SendUiMessage = (params: {
-  requestId: string
-  ok: boolean
-  res?: unknown
-  error?: string
-}) => void
 
 // One flat store keyed by strings, so the persisted descriptors are the entries under this prefix
 const DESCRIPTOR_KEY_PREFIX = 'descriptor:'
@@ -88,9 +81,10 @@ export class Erc7730Controller extends EventEmitter {
 
   #callRelayer: BindedRelayerCall
 
-  #sendUiMessage: SendUiMessage
+  #ui: IUiController
 
-  #getProvider: (chainId: bigint) => SafeSingletonProvider | undefined
+  /** Reads a Safe proxy's singleton slot; undefined where no RPC access is available. */
+  #providers: IProvidersController | undefined
 
   #persisting = false
 
@@ -112,28 +106,32 @@ export class Erc7730Controller extends EventEmitter {
   constructor({
     storage,
     callRelayer,
-    getProvider,
-    sendUiMessage,
+    providers,
+    ui,
     eventEmitterRegistry
   }: {
     storage: IStorageController
     callRelayer: BindedRelayerCall
-    /** Reads a Safe proxy's singleton slot; omit where no RPC access is available. */
-    getProvider?: (chainId: bigint) => SafeSingletonProvider | undefined
-    sendUiMessage: SendUiMessage
+    /** Omit where no RPC access is available. */
+    providers?: IProvidersController
+    ui: IUiController
     eventEmitterRegistry?: IEventEmitterRegistryController
   }) {
     super(eventEmitterRegistry)
 
     this.#storage = storage
     this.#callRelayer = callRelayer
-    this.#sendUiMessage = sendUiMessage
-    this.#getProvider = getProvider ?? (() => undefined)
+    this.#ui = ui
+    this.#providers = providers
 
     this.#initialLoadPromise = this.#load()
   }
 
   async #load() {
+    // Providers are constructed after their networks load, so a lookup here before that settles
+    // would find nothing and permanently record a Safe as having no singleton.
+    await this.#providers?.initialLoadPromise
+
     try {
       const persisted = await this.#storage.get('erc7730RegistryCache', EMPTY_PERSISTED_CACHE)
 
@@ -325,7 +323,7 @@ export class Erc7730Controller extends EventEmitter {
   }
 
   async #getSafeSingleton(chainId: bigint, safeAddress: string): Promise<string | null> {
-    const provider = this.#getProvider(chainId)
+    const provider = this.#providers?.providers[chainId.toString()]
     if (!provider) return null
 
     try {
@@ -521,9 +519,9 @@ export class Erc7730Controller extends EventEmitter {
     try {
       const descriptors = await this.getDescriptorsForAccountOp(accountOp)
 
-      this.#sendUiMessage({ requestId, ok: true, res: descriptors })
+      this.#ui.message.sendUiMessage({ requestId, ok: true, res: descriptors })
     } catch (error: any) {
-      this.#sendUiMessage({
+      this.#ui.message.sendUiMessage({
         requestId,
         ok: false,
         error: error?.message || 'Failed to resolve the transaction details'

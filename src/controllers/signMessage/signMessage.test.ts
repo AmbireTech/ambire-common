@@ -12,6 +12,7 @@ import {
   verifiedDapp
 } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { InternalSigner } from '../../../test/keystore'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
@@ -27,6 +28,7 @@ import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import * as safeLib from '../../libs/safe/safe'
 import { Erc7730Controller } from '../erc7730/erc7730'
+import { UiController } from '../ui/ui'
 import { SignMessageController } from './signMessage'
 
 const account: Account = {
@@ -121,6 +123,9 @@ const createPermitTypedMessage = (): Message => ({
  * fetching, the descriptor cache and its persistence - so the tests give it a real one over the
  * mocked relayer, with the cache kept in memory for the duration of the test.
  */
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
+
 const makeErc7730Controller = (callRelayer: any) => {
   const store: Record<string, any> = {}
   const storage = {
@@ -133,7 +138,7 @@ const makeErc7730Controller = (callRelayer: any) => {
   return new Erc7730Controller({
     storage: storage as any,
     callRelayer,
-    sendUiMessage: () => {}
+    ui: uiCtrl
   })
 }
 

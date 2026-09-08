@@ -482,8 +482,8 @@ export class MainController extends EventEmitter implements IMainController {
     this.erc7730 = new Erc7730Controller({
       storage: this.storage,
       callRelayer: this.callRelayer,
-      getProvider: (chainId) => this.providers.providers[chainId.toString()],
-      sendUiMessage: this.ui.message.sendUiMessage,
+      providers: this.providers,
+      ui: this.ui,
       eventEmitterRegistry
     })
     this.signMessage = new SignMessageController(

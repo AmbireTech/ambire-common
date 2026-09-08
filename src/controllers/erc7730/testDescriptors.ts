@@ -1,4 +1,6 @@
+import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { IUiController } from '../../interfaces/ui'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import {
@@ -18,6 +20,18 @@ const makeMemoryStorage = (): IStorageController =>
     set: async () => {}
   }) as any
 
+/** A no-op sink, since these tests only assert on the returned descriptors. */
+const makeUiStub = (): IUiController =>
+  ({ message: { sendUiMessage: () => {} } }) as unknown as IUiController
+
+/** Answers every chainId with the same provider, which is all these tests ever pass in. */
+const makeProvidersStub = (provider?: SafeSingletonProvider): IProvidersController | undefined =>
+  provider &&
+  ({
+    providers: new Proxy({}, { get: () => provider }),
+    initialLoadPromise: undefined
+  } as unknown as IProvidersController)
+
 /**
  * Runs the real plan/fetch loop against a test's relayer mock.
  *
@@ -36,8 +50,8 @@ const getTestController = (
   const controller = new Erc7730Controller({
     storage: makeMemoryStorage(),
     callRelayer,
-    getProvider: () => provider,
-    sendUiMessage: () => {}
+    providers: makeProvidersStub(provider),
+    ui: makeUiStub()
   })
   controllersByRelayer.set(callRelayer, controller)
 

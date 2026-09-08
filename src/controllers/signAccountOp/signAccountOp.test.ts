@@ -727,7 +727,7 @@ const init = async (
   const erc7730 = new Erc7730Controller({
     storage: storageCtrl,
     callRelayer,
-    sendUiMessage: () => {}
+    ui: uiCtrl
   })
   const controller = new SignAccountOpTesterController({
     type: options?.type,

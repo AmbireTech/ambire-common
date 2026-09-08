@@ -1,5 +1,6 @@
 import { describe, expect, jest, test } from '@jest/globals'
 
+import { IUiController } from '../../interfaces/ui'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import {
   ERC7730_CACHE_TTL_MS,
@@ -45,8 +46,11 @@ const accountOp = {
   calls: [{ to: CONTRACT_ADDRESS, value: 0n, data: '0x12345678' }]
 } as AccountOp
 
+const makeUi = (sendUiMessage = jest.fn()): IUiController =>
+  ({ message: { sendUiMessage } }) as unknown as IUiController
+
 const makeController = (storage: any, callRelayer: any) =>
-  new Erc7730Controller({ storage, callRelayer, sendUiMessage: jest.fn() })
+  new Erc7730Controller({ storage, callRelayer, ui: makeUi() })
 
 describe('Erc7730Controller', () => {
   test('persists the fetched descriptors as a full snapshot', async () => {
@@ -188,7 +192,7 @@ describe('Erc7730Controller', () => {
     const controller = new Erc7730Controller({
       storage: makeStorage(),
       callRelayer: makeCallRelayer() as any,
-      sendUiMessage
+      ui: makeUi(sendUiMessage)
     })
 
     await controller.resolveDescriptorsForAccountOp(accountOp, 'request-1')
