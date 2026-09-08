@@ -99,11 +99,6 @@ const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): I
   const message = parse(stringify(_message))
 
   try {
-    if (options?.erc7730Descriptor) {
-      const erc7730Message = humanizeMessageWithErc7730(message, options.erc7730Descriptor)
-      if (erc7730Message) return erc7730Message
-    }
-
     // runs all modules and takes the first non empty array
     const { fullVisualization, warnings, canHideDropdownArrow } =
       humanizerTMModules
@@ -116,6 +111,18 @@ const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): I
           }
         })
         .filter((p) => p.fullVisualization?.length)[0] || {}
+
+    if (options?.erc7730Descriptor) {
+      const erc7730Message = humanizeMessageWithErc7730(message, options.erc7730Descriptor)
+      if (erc7730Message) {
+        // The descriptor builds its result from the raw message, so it starts with no warnings.
+        // The warnings humanizerTMModules found are still about the same message, so keep both.
+        return {
+          ...erc7730Message,
+          warnings: dedupeWarnings([...(warnings || []), ...(erc7730Message.warnings || [])])
+        }
+      }
+    }
 
     return { ...message, fullVisualization, warnings, canHideDropdownArrow }
   } catch (error) {

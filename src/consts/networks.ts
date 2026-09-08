@@ -1,6 +1,8 @@
 import { Network } from '../interfaces/network'
 import { PIMLICO } from './bundlers'
 
+export const INVICTUS_RPC_URL_IDENTIFIER = 'invictus.ambire.com'
+
 const networks: Network[] = [
   {
     name: 'Ethereum',

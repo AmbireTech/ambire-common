@@ -122,7 +122,14 @@ const uniAddresses = [
 export const uniswapHumanizer: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   if (!call.to || !isAddress(call.to) || !uniAddresses.includes(getAddress(call.to))) return call
 
-  if (!isHexCall(call)) return { ...call, fullVisualization: [getAction('Uniswap action')] }
+  // A call to a known Uniswap address that isn't a recognized Uniswap-specific action (e.g. an
+  // ERC-721 approval on the Position Manager NFT contract) may already carry a more specific
+  // visualization from an earlier, more generic module (e.g. genericErc721Humanizer) — keep it
+  // instead of overwriting it with the vague 'Uniswap action' fallback.
+  if (!isHexCall(call))
+    return call.fullVisualization
+      ? call
+      : { ...call, fullVisualization: [getAction('Uniswap action')] }
 
   const sigHash = call.data.substring(0, 10)
   if (fullUniswapHumanizerMapping[sigHash])
@@ -131,5 +138,7 @@ export const uniswapHumanizer: HumanizerCallModule = (accountOp: AccountOp, call
       fullVisualization: fullUniswapHumanizerMapping[sigHash](accountOp, call)
     }
 
-  return { ...call, fullVisualization: [getAction('Uniswap action')] }
+  return call.fullVisualization
+    ? call
+    : { ...call, fullVisualization: [getAction('Uniswap action')] }
 }

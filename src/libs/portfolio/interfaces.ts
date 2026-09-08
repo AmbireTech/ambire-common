@@ -502,6 +502,18 @@ export type PortfolioKeyResult =
   | PortfolioNetworkResult
   | PortfolioDefiAppsResult
 
+export type PortfolioRpcInfo = {
+  /** The RPC that produced the currently stored result. */
+  url: string
+  /**
+   * How many blocks behind the stored result the RPC's latest response was.
+   * Absent while the RPC is up to date.
+   */
+  behindBy?: number
+  /** When the RPC first started serving older blocks. Absent while the RPC is up to date. */
+  since?: number
+}
+
 export type NetworkState<T = PortfolioKeyResult> = {
   isReady: boolean
   isLoading: boolean
@@ -509,6 +521,7 @@ export type NetworkState<T = PortfolioKeyResult> = {
   errors: ExtendedErrorWithLevel[]
   lastSuccessfulUpdate?: number
   verification?: PortfolioVerification
+  rpcInfo?: PortfolioRpcInfo
   result?: T
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.

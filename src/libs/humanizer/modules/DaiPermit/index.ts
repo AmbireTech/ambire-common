@@ -12,7 +12,8 @@ import {
   getToken,
   getUnlimitedApprovalWarning,
   isHexCall,
-  mergeWarnings
+  mergeWarnings,
+  padCallData
 } from '../../utils'
 
 // DAI predates EIP-2612, so its permit has no `value` param - only a boolean
@@ -25,7 +26,7 @@ const daiPermitModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
   if (call.fullVisualization || !isHexCall(call) || !call.to) return call
   if (call.data.slice(0, 10) !== toFunctionSelector(daiPermitAbi[0])) return call
 
-  const { args } = decodeFunctionData({ abi: daiPermitAbi, data: call.data })
+  const { args } = decodeFunctionData({ abi: daiPermitAbi, data: padCallData(call.data, 8) })
   const [holder, spender, , expiry, allowed] = args
 
   if (!allowed)

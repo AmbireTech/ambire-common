@@ -444,6 +444,7 @@ export class MainController extends EventEmitter implements IMainController {
       externalSignerControllers: this.#externalSignerControllers,
       relayerUrl,
       fetch: this.fetch,
+      sendUiMessage: this.ui.message.sendUiMessage,
       /**
        * callback that gets triggered as a finalization step of adding new
        * accounts via the AccountPickerController.
@@ -543,7 +544,8 @@ export class MainController extends EventEmitter implements IMainController {
       erc7730: this.erc7730,
       swapProvider: new SwapProviderParallelExecutor(
         [LiFiProvider, SocketProvider, UniswapProvider],
-        () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) }))
+        () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) })),
+        () => this.swapAndBridge?.getDisabledSwapProviderIds() ?? []
       ),
       relayerUrl,
       portfolioUpdate: (chainsToUpdate: Network['chainId'][]) => {
@@ -738,6 +740,7 @@ export class MainController extends EventEmitter implements IMainController {
               externalSignerControllers: this.#externalSignerControllers,
               relayerUrl,
               fetch: this.fetch,
+              sendUiMessage: this.ui.message.sendUiMessage,
               onAddAccountsSuccessCallback: async () => {}
             }),
           this.keystore,
