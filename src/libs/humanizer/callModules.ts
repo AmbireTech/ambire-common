@@ -80,9 +80,9 @@ export const singleCallHumanizerModules: HumanizerCallModule[] = [
 // the final humanization is the final triggered module
 export const humanizerCallModules: HumanizerCallModule[] = [
   preProcessHumanizer,
-  embeddedAmbireOperationHumanizer,
   deploymentModule,
   ...singleCallHumanizerModules,
+  embeddedAmbireOperationHumanizer,
   fallbackHumanizer,
   postProcessing
 ]
