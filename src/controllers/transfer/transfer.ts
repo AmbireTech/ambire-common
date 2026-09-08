@@ -342,14 +342,16 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   #setTokens() {
+    // Indexed once rather than scanned inside the filter below, which runs for every
+    // token the account holds - a large portfolio runs to thousands of them.
+    const networkByChainId = new Map(this.#networks.networks.map((n) => [n.chainId, n]))
+
     const tokens = this.#selectedAccount.portfolio.tokens.filter((token) => {
       const hasAmount = Number(getTokenAmount(token)) > 0
       const isVisible = !token.flags.isHidden
 
       if (this.isTopUp) {
-        const tokenNetwork = this.#networks.networks.find(
-          (network) => network.chainId === token.chainId
-        )
+        const tokenNetwork = networkByChainId.get(token.chainId)
 
         return (
           hasAmount &&

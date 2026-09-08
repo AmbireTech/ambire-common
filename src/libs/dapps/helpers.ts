@@ -62,11 +62,29 @@ const getDappIconFromUrl = (url: string, dapps: Dapp[]): string => {
   return dapps.find((d) => d.id === id)?.icon || ''
 }
 
-const getDomainFromUrl = (url: string) => {
-  const predefinedDapp = predefinedDapps.find((d) => d.url === url)
-  if (predefinedDapp) return predefinedDapp.id
+// Indexed once instead of scanning the predefined list on every call. This runs per dapp
+// while the catalog is being derived, which is on every update of the dapps controller.
+const predefinedDappIdByUrl = new Map(predefinedDapps.map((d) => [d.url, d.id]))
 
-  return getDomain(url)
+/**
+ * Resolved domains, kept because `getDomain` walks a public-suffix trie and the catalog
+ * is re-derived per dapp on every update of the dapps controller. The result depends only
+ * on the url, so a cached entry can never go stale, and the keys are bounded by the dapps
+ * the app has seen.
+ */
+const domainByUrl = new Map<string, string | null>()
+
+const getDomainFromUrl = (url: string) => {
+  const predefinedDappId = predefinedDappIdByUrl.get(url)
+  if (predefinedDappId) return predefinedDappId
+
+  const cached = domainByUrl.get(url)
+  if (cached !== undefined) return cached
+
+  const domain = getDomain(url)
+  domainByUrl.set(url, domain)
+
+  return domain
 }
 
 const formatDappName = (name: string) => {
