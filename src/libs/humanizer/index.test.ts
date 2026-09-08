@@ -2924,11 +2924,10 @@ describe('ERC-7730 descriptors', () => {
           })
         },
         {
+          type: 'call',
           value: [
-            expect.objectContaining({
-              type: 'erc7730',
-              intent: [expect.objectContaining({ content: 'Cancel' })]
-            })
+            expect.objectContaining({ type: 'action', content: 'Cancel' }),
+            expect.objectContaining({ type: 'label', content: 'currently queued transaction' })
           ]
         }
       ]

@@ -1428,10 +1428,17 @@ const getSafeTxMessageWarnings = (message: Message): HumanizerWarning[] => {
 
 // One `call` row per call a Safe transaction authorises: the nested visualization when that call
 // has an ERC-7730 descriptor of its own, otherwise the flat parts a legacy module produced for it.
+//
+// `safeAddr` is the Safe executing these inner calls (not necessarily the accountOp/message's own
+// `accountAddr` - e.g. an execTransaction can be called on a Safe by an unrelated account). Every
+// inner call is humanized as if the Safe itself were the acting account, which is what lets the
+// legacy Safe module recognize a self-referential "reject" call as a rejection instead of an
+// opaque "Empty call to <address>": `isSafeRejectionCall` matches a call's `to` against the acting
+// account, so that account has to be the Safe, not whoever asked the Safe to run it.
 const getInnerCallRows = (
   innerCalls: Call[],
   chainId: bigint,
-  accountAddr: string,
+  safeAddr: string,
   resolvedDescriptor: Erc7730ResolvedDescriptor,
   collectedWarnings?: HumanizerWarning[]
 ): HumanizerErc7730Row[] => {
@@ -1443,7 +1450,7 @@ const getInnerCallRows = (
         const humanizedCall = humanizeCallWithErc7730(
           innerCall,
           chainId,
-          accountAddr,
+          safeAddr,
           innerCallDescriptor
         )
         const erc7730Visualization = humanizedCall?.fullVisualization?.find(
@@ -1459,7 +1466,7 @@ const getInnerCallRows = (
       // No `modules` argument, so this runs the whole module pipeline, which ends in
       // `fallbackHumanizer` - it describes any call with a `to`, down to "Interacting with", and
       // already reads the known-selector names. Nothing is left for a further fallback to add.
-      return getModuleFallbackValue(innerCall, chainId, accountAddr, collectedWarnings)
+      return getModuleFallbackValue(innerCall, chainId, safeAddr, collectedWarnings)
     })
     .filter((value): value is HumanizerVisualization[] => !!value)
     .map((value) => ({ type: 'call', value }))
@@ -1475,6 +1482,8 @@ const getSafeTxCallRows = (
   const safeTxCalls = getSafeTxCallsFromMessage(message)
   if (!safeTxCalls?.length) return null
 
+  // A SafeTx message is signed as/for the Safe itself, so `message.accountAddr` already is the
+  // Safe executing these inner calls.
   const innerCallRows = getInnerCallRows(
     safeTxCalls,
     chainId,
@@ -1531,16 +1540,20 @@ export const humanizeCallWithErc7730 = (
   collectedNestedCalls?: Call[]
 ): IrCall | null => {
   if (resolvedDescriptor.innerCalls?.length) {
+    if (!call.to) return null
+
+    // These inner calls are executed by the Safe itself (`call.to`), not by whoever asked it to -
+    // see `getInnerCallRows` for why that distinction matters for its "reject" detection.
     const collectedWarnings: HumanizerWarning[] = []
     const innerCallRows = getInnerCallRows(
       resolvedDescriptor.innerCalls,
       chainId,
-      accountAddr,
+      call.to,
       resolvedDescriptor,
       collectedWarnings
     )
 
-    if (!innerCallRows.length || !call.to) return null
+    if (!innerCallRows.length) return null
 
     return {
       ...call,

@@ -3082,14 +3082,14 @@ describe('ERC-7730 humanization', () => {
           intent: [expect.objectContaining({ content: 'Approve with ERC-7730' })],
           fields: [
             {
+              type: 'single-value',
               label: 'Spender',
-              value: [{ type: 'address', address: spender }]
+              value: { type: 'address', address: spender }
             },
             {
+              type: 'single-value',
               label: 'Amount',
-              value: [
-                { type: 'token', address: tokenAddress, value: BigInt(index + 1), chainId: 1n }
-              ]
+              value: { type: 'token', address: tokenAddress, value: BigInt(index + 1), chainId: 1n }
             }
           ]
         })

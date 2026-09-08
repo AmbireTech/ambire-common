@@ -458,12 +458,14 @@ describe('SignMessageController', () => {
       intent: [{ type: 'action', content: 'Authorize spending of tokens' }],
       fields: [
         {
+          type: 'single-value',
           label: 'Spender',
-          value: [{ type: 'address', address: '0x0000000000000000000000000000000000000000' }]
+          value: { type: 'address', address: '0x0000000000000000000000000000000000000000' }
         },
         {
+          type: 'single-value',
           label: 'Max spending amount',
-          value: [{ type: 'token', address: usdc, value: 133700n, chainId: 1n }]
+          value: { type: 'token', address: usdc, value: 133700n, chainId: 1n }
         }
       ]
     })
@@ -648,13 +650,13 @@ describe('SignMessageController', () => {
         })
       ])
     )
-    expect(visualization.fields[1].value[0]).toMatchObject({
+    expect(visualization.fields[1].value).toMatchObject({
       type: 'token',
       address: '0x350a791bfc2c21f9ed5d10980dad2e2638ffa7f6',
       value: 366891214241290415n,
       chainId: 10n
     })
-    expect(visualization.fields[2].value[0]).toMatchObject({
+    expect(visualization.fields[2].value).toMatchObject({
       type: 'token',
       address: '0x76fb31fb4af56892a25e32cfc43de717950c9278',
       value: 39061263450812873n,
