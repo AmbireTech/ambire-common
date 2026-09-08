@@ -216,22 +216,23 @@ export const sortTokenListResponse = (
     accountPortfolioTokenList.map((t) => [t.address.toLowerCase(), getTokenSortKey(t)])
   )
 
-  return tokenListResponse.sort((a: SwapAndBridgeToToken, b: SwapAndBridgeToToken) => {
-    const aInPortfolio = sortKeyByAddress.get(a.address.toLowerCase())
-    const bInPortfolio = sortKeyByAddress.get(b.address.toLowerCase())
+  // The portfolio lookup is done once per token rather than on every comparison. The
+  // service provider's list runs to thousands of tokens, so the sort makes tens of
+  // thousands of comparisons, and lowercasing both addresses in each one is what made
+  // deriving this list block the JS thread for hundreds of milliseconds.
+  return tokenListResponse
+    .map((token) => ({ token, sortKey: sortKeyByAddress.get(token.address.toLowerCase()) }))
+    .sort((a, b) => {
+      // Tokens in portfolio should come first
+      if (a.sortKey && !b.sortKey) return -1
+      if (!a.sortKey && b.sortKey) return 1
 
-    // Tokens in portfolio should come first
-    if (aInPortfolio && !bInPortfolio) return -1
-    if (!aInPortfolio && bInPortfolio) return 1
+      if (a.sortKey && b.sortKey) return compareTokenSortKeys(a.sortKey, b.sortKey)
 
-    if (aInPortfolio && bInPortfolio) {
-      const comparisonResult = compareTokenSortKeys(aInPortfolio, bInPortfolio)
-      if (comparisonResult !== 0) return comparisonResult
-    }
-
-    // Otherwise, don't change, persist the order from the service provider
-    return 0
-  })
+      // Otherwise, don't change, persist the order from the service provider
+      return 0
+    })
+    .map(({ token }) => token)
 }
 
 export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[]) => {

@@ -372,6 +372,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    */
   #preselectedToToken: { address: string; chainId: number } | null = null
 
+  /**
+   * Signature of the portfolio tokens the "to" token list was last derived from, so a
+   * portfolio refresh that does not affect that list does not rebuild it.
+   */
+  #toTokenPortfolioSignature: string = ''
+
   routePriority: 'output' | 'time' = 'output'
 
   disabledSwapProviderIds: string[] = []
@@ -722,8 +728,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           await this.updatePortfolioTokenList(
             structuredClone(this.#selectedAccount.portfolio.tokens)
           )
-          // To token list includes selected account portfolio tokens, it should get an update too
-          await this.updateToTokenList(false)
+          // To token list includes selected account portfolio tokens, it should get an update too.
+          // Deriving it sorts the service provider's whole list and emits twice, so it is only
+          // redone when the portfolio tokens it actually reads have changed - or when its cached
+          // copy of the provider's list is due for a refetch. Without this, every portfolio
+          // refresh rebuilt an identical list and took the JS thread away from the screen.
+          const portfolioSignature = this.#getToTokenPortfolioSignature()
+
+          if (
+            portfolioSignature !== this.#toTokenPortfolioSignature ||
+            this.#isToTokenApiListStale()
+          ) {
+            this.#toTokenPortfolioSignature = portfolioSignature
+            await this.updateToTokenList(false)
+          }
         }
       })
     })
@@ -1753,6 +1771,38 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return tokens.slice(0, TO_TOKEN_LIST_LIMIT)
   }
 
+  /**
+   * Everything `#getToTokens` reads off the portfolio, as a comparable string: which of the
+   * account's tokens sit on the "to" chain, and the values their order depends on.
+   */
+  #getToTokenPortfolioSignature() {
+    if (!this.toChainId) return ''
+
+    const toChainIdBigInt = BigInt(this.toChainId)
+
+    return this.portfolioTokenList
+      .filter((t) => t.chainId === toChainIdBigInt)
+      .map((t) => {
+        const priceUSD = t.priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')?.price
+
+        return `${t.address}:${t.amount}:${t.amountPostSimulation ?? ''}:${priceUSD ?? ''}`
+      })
+      .join()
+  }
+
+  /** Whether the service provider's cached "to" token list is due for a refetch. */
+  #isToTokenApiListStale() {
+    const toTokenListKey = this.#toTokenListKey
+    const toTokenList = toTokenListKey ? this.#toTokenList[toTokenListKey] : undefined
+
+    if (!toTokenList) return true
+
+    return (
+      !toTokenList.apiTokens.length ||
+      Date.now() - toTokenList.lastUpdate >= TO_TOKEN_LIST_CACHE_THRESHOLD
+    )
+  }
+
   #getToTokens(fromChainId: number | null, toChainId: number | null) {
     const toTokenListKey = SwapAndBridgeController.getToTokenListKey(fromChainId, toChainId)
 
@@ -1764,7 +1814,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         chainId: toChainId,
         tokens: []
       })
-    const portfolioTokens = this.portfolioTokenList.filter((t) => t.chainId === BigInt(toChainId))
+    const toChainIdBigInt = BigInt(toChainId)
+    const portfolioTokens = this.portfolioTokenList.filter((t) => t.chainId === toChainIdBigInt)
 
     const apiTokenAddresses = new Set(apiTokens.map((t) => t.address.toLowerCase()))
     const additionalTokensFromPortfolio = portfolioTokens
