@@ -43,6 +43,87 @@ describe('Swap Provider Parallel execution', () => {
     await expect(executor.getSupportedChains()).resolves.toEqual(fallbackSupportedChains)
   })
 
+  it('Returns provider information without exposing the private providers list', () => {
+    const provider = createProvider(async () => [])
+    const executor = new SwapProviderParallelExecutor([provider])
+
+    expect(executor.getProvidersInfo()).toEqual([{ id: 'test-provider', name: 'Test Provider' }])
+  })
+
+  it('Does not fetch from disabled providers', async () => {
+    const disabledProvider = createProvider(async () => [])
+    disabledProvider.getToTokenList = jest.fn().mockResolvedValue([])
+    const enabledProvider = {
+      ...createProvider(async () => []),
+      id: 'enabled-provider',
+      getToTokenList: jest.fn().mockResolvedValue([
+        {
+          address: '0x0000000000000000000000000000000000000000',
+          chainId: 1,
+          decimals: 18,
+          name: 'Ether',
+          symbol: 'ETH'
+        }
+      ])
+    } as SwapProvider
+    const executor = new SwapProviderParallelExecutor(
+      [disabledProvider, enabledProvider],
+      undefined,
+      () => [disabledProvider.id]
+    )
+
+    await expect(executor.getToTokenList({ fromChainId: 1, toChainId: 1 })).resolves.toEqual([
+      expect.objectContaining({ name: 'Ether' })
+    ])
+    expect(disabledProvider.getToTokenList).not.toHaveBeenCalled()
+    expect(enabledProvider.getToTokenList).toHaveBeenCalled()
+  })
+
+  it('Returns no supported chains when all providers are disabled', async () => {
+    const provider = createProvider(async () => [{ chainId: 1 }])
+    provider.getSupportedChains = jest.fn().mockResolvedValue([{ chainId: 1 }])
+    const fallbackSupportedChains = jest.fn(() => [{ chainId: 1 }])
+    const executor = new SwapProviderParallelExecutor([provider], fallbackSupportedChains, () => [
+      provider.id
+    ])
+
+    await expect(executor.getSupportedChains()).resolves.toEqual([])
+    expect(provider.getSupportedChains).not.toHaveBeenCalled()
+    expect(fallbackSupportedChains).not.toHaveBeenCalled()
+  })
+
+  it('Gets supported chains only from enabled providers', async () => {
+    const disabledProvider = createProvider(async () => [{ chainId: 1 }])
+    disabledProvider.getSupportedChains = jest.fn().mockResolvedValue([{ chainId: 1 }])
+    const enabledProvider = {
+      ...createProvider(async () => [{ chainId: 10 }]),
+      id: 'enabled-provider',
+      getSupportedChains: jest.fn().mockResolvedValue([{ chainId: 10 }])
+    } as SwapProvider
+    const fallbackSupportedChains = jest.fn(() => [{ chainId: 1 }, { chainId: 10 }])
+    const executor = new SwapProviderParallelExecutor(
+      [disabledProvider, enabledProvider],
+      fallbackSupportedChains,
+      () => [disabledProvider.id]
+    )
+
+    await expect(executor.getSupportedChains()).resolves.toEqual([{ chainId: 10 }])
+    expect(disabledProvider.getSupportedChains).not.toHaveBeenCalled()
+    expect(enabledProvider.getSupportedChains).toHaveBeenCalled()
+    expect(fallbackSupportedChains).not.toHaveBeenCalled()
+  })
+
+  it('Routes existing operations to a disabled provider', async () => {
+    const provider = createProvider(async () => [])
+    provider.startRoute = jest.fn().mockResolvedValue({ activeRouteId: 'active-route-id' })
+    const executor = new SwapProviderParallelExecutor([provider], undefined, () => [provider.id])
+
+    await expect(executor.startRoute({ providerId: provider.id } as any)).resolves.toEqual({
+      activeRouteId: 'active-route-id'
+    })
+    expect(provider.startRoute).toHaveBeenCalled()
+  })
+
   it('Times out supported chains requests after 10 seconds', async () => {
     jest.useFakeTimers()
 

@@ -1,3 +1,5 @@
+import { INVICTUS_RPC_URL_IDENTIFIER } from '../consts/networks'
+
 export class ProviderError extends Error {
   isProviderInvictus?: boolean
 
@@ -18,7 +20,7 @@ export class ProviderError extends Error {
     // Copy all properties from the original error to this error
     Object.assign(this, originalError)
     const statusCode = originalError?.response?.statusCode
-    const isProviderInvictus = providerUrl?.includes('invictus')
+    const isProviderInvictus = providerUrl?.includes(INVICTUS_RPC_URL_IDENTIFIER)
 
     this.name = 'ProviderError'
     this.providerUrl = providerUrl

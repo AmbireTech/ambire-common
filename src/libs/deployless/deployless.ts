@@ -12,6 +12,7 @@ import { decodeFunctionResult, encodeFunctionData } from 'viem'
 
 import DeploylessCompiled from '../../../contracts/compiled/Deployless.json'
 import { ProviderError } from '../../classes/ProviderError'
+import { INVICTUS_RPC_URL_IDENTIFIER } from '../../consts/networks'
 
 // this is a magic contract that is constructed like `constructor(bytes memory contractBytecode, bytes memory data)` and returns the result from the call
 // compiled from relayer:a7ea373559d8c419577ac05527bd37fbee8856ae/src/velcro-v3/contracts/Deployless.sol with solc 0.8.17
@@ -94,7 +95,7 @@ export class Deployless {
 
     if (provider && provider instanceof JsonRpcProvider) {
       this.providerUrl = provider._getConnection().url
-      this.isProviderInvictus = this.providerUrl?.includes('invictus')
+      this.isProviderInvictus = this.providerUrl?.includes(INVICTUS_RPC_URL_IDENTIFIER)
     }
 
     if (codeAtRuntime !== undefined) {
