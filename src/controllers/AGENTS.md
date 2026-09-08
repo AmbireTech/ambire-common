@@ -117,6 +117,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **DappsController** – Manages dApp connections, sessions, verification status, and the dApp catalog.
 - **DebugController** – Toggles per-controller debug logging at runtime (developer tool); persists toggles and hydrates the `debugLogger` module.
 - **DomainsController** – Resolves and caches names (and avatars/expiry) for addresses across name services (ENS, Namoshi and more)
+- **Erc7730Controller** – Owns the ERC-7730 "clear signing" descriptor cache (relayer indexes + descriptor JSON), persisting it so descriptors survive a service worker restart.
 - **EmailVaultController** – Handles email-based recovery, magic-link flows, and vault secret management.
 - **FeatureFlagsController** – Toggles application features at runtime for roll-outs and A/B testing.
 - **EstimationController** – Estimates gas, fees, and payment options for smart-account transactions.

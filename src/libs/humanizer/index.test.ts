@@ -1,3 +1,7 @@
+import {
+  getTestErc7730Descriptors,
+  getTestErc7730MessageDescriptor
+} from '../../controllers/erc7730/testDescriptors'
 import { ethers, getAddress, ZeroAddress } from 'ethers'
 import { encodeFunctionData } from 'viem'
 
@@ -8,11 +12,7 @@ import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { AccountOp } from '../accountOp/accountOp'
-import {
-  clearErc7730RegistryCache,
-  fetchErc7730DescriptorForMessage,
-  fetchErc7730DescriptorsForAccountOp
-} from './erc7730'
+import { EMPTY_ERC7730_KNOWN, resolveErc7730Descriptors } from './erc7730'
 import { humanizeAccountOp, humanizeMessage } from './index'
 import {
   erc20TransferAbi,
@@ -26,6 +26,9 @@ import {
   getAction,
   getAddressVisualization,
   getDeadline,
+  getBreak,
+  getErc7730RowLabel,
+  getErc7730RowValues,
   getErc7730Visualization,
   getLabel,
   getText,
@@ -84,9 +87,6 @@ const keys: Key[] = [
   }
 ]
 
-beforeEach(() => {
-  clearErc7730RegistryCache()
-})
 const transactions = {
   generic: [
     // simple transafer
@@ -544,12 +544,14 @@ describe('ERC-7730 descriptors', () => {
       [
         getErc7730Visualization('Authorize', [
           {
+            type: 'single-value',
             label: 'Spender',
-            value: [getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8')]
+            value: getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8')
           },
           {
+            type: 'single-value',
             label: 'Amount allowance',
-            value: [getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, 1n)]
+            value: getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, 1n)
           }
         ])
       ]
@@ -638,18 +640,19 @@ describe('ERC-7730 descriptors', () => {
       [
         getErc7730Visualization('Swap', [
           {
+            type: 'single-value',
             label: 'Amount to Send',
-            value: [
-              getToken('0xade00c28244d5ce17d72e40330b1c318cd12b7c3', 15000000000000000000n, 1n)
-            ]
+            value: getToken('0xade00c28244d5ce17d72e40330b1c318cd12b7c3', 15000000000000000000n, 1n)
           },
           {
+            type: 'single-value',
             label: 'Beneficiary',
-            value: [getAddressVisualization(accountOp.accountAddr)]
+            value: getAddressVisualization(accountOp.accountAddr)
           },
           {
+            type: 'single-value',
             label: 'Last pool',
-            value: [getAddressVisualization('0x397ff1542f962076d0bfe58ea045ffa2d347aca0')]
+            value: getAddressVisualization('0x397ff1542f962076d0bfe58ea045ffa2d347aca0')
           }
         ])
       ]
@@ -666,10 +669,10 @@ describe('ERC-7730 descriptors', () => {
   // Receive" field's tokenAmount format/tokenPath, so it renders as a `type:
   // 'token'` intent item. Since every field referenced by the template
   // ("Amount to send", "Minimum to Receive", "Recipient") is fully rendered
-  // inline in the intent, `display.rows` ends up empty - none of them should
-  // repeat as a detail row below the intent (this is the exact scenario a
-  // LI.FI enum-formatted destinationChainId field used to leak through on,
-  // before display.rows started excluding fields by path at the source).
+  // inline in the intent, every field is excluded and no rows are left to display
+  // below it (this is the exact scenario a LI.FI enum-formatted
+  // destinationChainId field used to leak through on, before the displayed rows
+  // started excluding fields by path at the source).
   test('humanizes a LI.FI swapTokensSingleV3NativeToERC20 call with its ERC-7730 registry descriptor', () => {
     accountOp.calls = [
       {
@@ -741,16 +744,19 @@ describe('ERC-7730 descriptors', () => {
           'Swap',
           [
             {
+              type: 'single-value',
               label: 'Amount to send',
-              value: [getToken(ZeroAddress, 5837776470906329n, 1n)]
+              value: getToken(ZeroAddress, 5837776470906329n, 1n)
             },
             {
+              type: 'single-value',
               label: 'Minimum to Receive',
-              value: [getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n)]
+              value: getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n)
             },
             {
+              type: 'single-value',
               label: 'Recipient',
-              value: [getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')]
+              value: getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')
             }
           ],
           undefined,
@@ -759,11 +765,11 @@ describe('ERC-7730 descriptors', () => {
             // `type: 'token'` items (live decimals/symbol lookup via TokenOrNft)
             // instead of relying on a static, possibly incomplete token registry.
             parts: [
-              getAction('Swap '),
+              getAction('Swap'),
               getToken(ZeroAddress, 5837776470906329n, 1n),
-              getText(' for at least '),
+              getText('for at least'),
               getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n),
-              getText(' to '),
+              getText('to'),
               getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')
             ],
             // Every field above is referenced by the template, so all of them
@@ -821,8 +827,9 @@ describe('ERC-7730 descriptors', () => {
         { label: 'Spender' },
         { label: 'Amount' },
         {
+          type: 'single-value',
           label: 'Send',
-          value: [expect.objectContaining({ address: ZeroAddress, value: 1n })]
+          value: expect.objectContaining({ address: ZeroAddress, value: 1n })
         }
       ]
     })
@@ -846,7 +853,7 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(approveAccountOp)
+    const descriptors = resolveErc7730Descriptors(approveAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(approveAccountOp, {
       erc7730Descriptors: descriptors,
       nativeAssetSymbol: 'ETH'
@@ -858,16 +865,19 @@ describe('ERC-7730 descriptors', () => {
       intent: [expect.objectContaining({ content: 'Approve' })],
       fields: [
         {
+          type: 'single-value',
           label: 'Spender',
-          value: [expect.objectContaining({ address: spender })]
+          value: expect.objectContaining({ address: spender })
         },
         {
+          type: 'single-value',
           label: 'Amount',
-          value: [expect.objectContaining({ address: token.toLowerCase(), value: 1n })]
+          value: expect.objectContaining({ address: token.toLowerCase(), value: 1n })
         },
         {
+          type: 'single-value',
           label: 'Send',
-          value: [expect.objectContaining({ address: ZeroAddress, value: nativeValue })]
+          value: expect.objectContaining({ address: ZeroAddress, value: nativeValue })
         }
       ]
     })
@@ -913,12 +923,14 @@ describe('ERC-7730 descriptors', () => {
       type: 'erc7730',
       fields: [
         {
+          type: 'single-value',
           label: 'Unrelated native amount',
-          value: [expect.objectContaining({ address: ZeroAddress, value: 1000000000n })]
+          value: expect.objectContaining({ address: ZeroAddress, value: 1000000000n })
         },
         {
+          type: 'single-value',
           label: 'Send',
-          value: [expect.objectContaining({ address: ZeroAddress, value: 1n })]
+          value: expect.objectContaining({ address: ZeroAddress, value: 1n })
         }
       ]
     })
@@ -1016,24 +1028,28 @@ describe('ERC-7730 descriptors', () => {
       [
         getErc7730Visualization('Swap', [
           {
+            type: 'single-value',
             label: 'Amount to Send',
-            value: [getToken(WETH_ADDRESS, 1000000000000000000n, 1n)]
+            value: getToken(WETH_ADDRESS, 1000000000000000000n, 1n)
           },
           {
+            type: 'single-value',
             label: 'Minimum to Receive',
-            value: [getToken(tokenOut, 1000000n, 1n)]
+            value: getToken(tokenOut, 1000000n, 1n)
           }
         ])
       ],
       [
         getErc7730Visualization('Swap', [
           {
+            type: 'single-value',
             label: 'Amount to Send',
-            value: [getToken(WETH_ADDRESS, 2000000000000000000n, 1n)]
+            value: getToken(WETH_ADDRESS, 2000000000000000000n, 1n)
           },
           {
+            type: 'single-value',
             label: 'Minimum to Receive',
-            value: [getToken(tokenOut, 2000000n, 1n)]
+            value: getToken(tokenOut, 2000000n, 1n)
           }
         ])
       ]
@@ -1139,16 +1155,19 @@ describe('ERC-7730 descriptors', () => {
       [
         getErc7730Visualization('Fill order', [
           {
+            type: 'single-value',
             label: 'Amount to Send',
-            value: [getToken(makerAsset, 3235n, 8453n)]
+            value: getToken(makerAsset, 3235n, 8453n)
           },
           {
+            type: 'single-value',
             label: 'Minimum to Receive',
-            value: [getToken(takerAsset, 1161246143601818n, 8453n)]
+            value: getToken(takerAsset, 1161246143601818n, 8453n)
           },
           {
+            type: 'single-value',
             label: 'Additional action',
-            value: [getText('Unwrap')]
+            value: getText('Unwrap')
           }
         ])
       ]
@@ -1212,12 +1231,14 @@ describe('ERC-7730 descriptors', () => {
       [
         getErc7730Visualization('Swap', [
           {
+            type: 'single-value',
             label: 'Amount to Send',
-            value: [getToken(tokenIn, 1000000n, 1n)]
+            value: getToken(tokenIn, 1000000n, 1n)
           },
           {
+            type: 'single-value',
             label: 'Minimum to Receive',
-            value: [getToken(ZeroAddress, 1341586354762554134n, 1n)]
+            value: getToken(ZeroAddress, 1341586354762554134n, 1n)
           }
         ])
       ]
@@ -1280,12 +1301,14 @@ describe('ERC-7730 descriptors', () => {
       [
         getErc7730Visualization('Swap', [
           {
+            type: 'single-value',
             label: 'Amount to Send',
-            value: [getToken(tokenIn, 1000000n, 1n)]
+            value: getToken(tokenIn, 1000000n, 1n)
           },
           {
+            type: 'single-value',
             label: 'Minimum to Receive',
-            value: [getToken(ZeroAddress, 1341586354762554134n, 1n)]
+            value: getToken(ZeroAddress, 1341586354762554134n, 1n)
           }
         ])
       ]
@@ -1336,16 +1359,17 @@ describe('ERC-7730 descriptors', () => {
           'Stake ETH',
           [
             {
+              type: 'single-value',
               label: 'Amount',
-              value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
+              value: getToken(ZeroAddress, 1000000000000000n, 1n)
             }
           ],
           undefined,
           {
             parts: [
-              getAction('Stake '),
+              getAction('Stake'),
               getToken(ZeroAddress, 1000000000000000n, 1n),
-              getText(' ETH')
+              getText('ETH')
             ],
             // The only field is the one referenced by the template, so it shouldn't
             // repeat as a detail row below the intent.
@@ -1420,7 +1444,7 @@ describe('ERC-7730 descriptors', () => {
         intent: [expect.objectContaining({ content: 'Stake ETH' })]
       })
       if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
-      // Interpolation failed, so `display.intent` falls back to the plain `[action]` form -
+      // Interpolation failed, so `intent` falls back to the plain `[action]` form -
       // just the one part, not the richer interpolated breakdown.
       expect(visualization.intent).toHaveLength(1)
     }
@@ -1455,12 +1479,10 @@ describe('ERC-7730 descriptors', () => {
     const visualization = irCalls[0]!.fullVisualization?.find((item) => item.type === 'erc7730')
 
     if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
+    // One part per contiguous run of literal text, so the escaped braces stay
+    // attached to the text between them instead of becoming parts of their own
     expect(visualization.intent.map((item) => item.content || item.type)).toEqual([
-      'Stake ',
-      '{',
-      'ETH',
-      '}',
-      ' ',
+      'Stake {ETH}',
       'token'
     ])
   })
@@ -1507,8 +1529,9 @@ describe('ERC-7730 descriptors', () => {
       [
         getErc7730Visualization('Stake ETH', [
           {
+            type: 'single-value',
             label: 'Send',
-            value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
+            value: getToken(ZeroAddress, 1000000000000000n, 1n)
           }
         ])
       ]
@@ -1578,16 +1601,18 @@ describe('ERC-7730 descriptors', () => {
       [
         getErc7730Visualization('Execute with permit', [
           {
-            label: '',
+            type: 'call',
             value: [
               getErc7730Visualization('Swap', [
                 {
+                  type: 'single-value',
                   label: 'Amount to Send',
-                  value: [getToken(aave, 39259598598468034n, 10n)]
+                  value: getToken(aave, 39259598598468034n, 10n)
                 },
                 {
+                  type: 'single-value',
                   label: 'Minimum to Receive',
-                  value: [getToken(uni, 975332774259516356n, 10n)]
+                  value: getToken(uni, 975332774259516356n, 10n)
                 }
               ])
             ]
@@ -1667,23 +1692,21 @@ describe('ERC-7730 descriptors', () => {
       [
         getErc7730Visualization('Multicall', [
           {
-            label: '',
+            type: 'call',
             value: [
-              getErc7730Visualization('Enable cbBTC stablecoin efficiency mode', [
-                {
-                  label: 'Category',
-                  value: [getText('cbBTC / stablecoins')]
-                }
-              ])
+              getAction('Enable cbBTC stablecoin efficiency mode'),
+              getLabel('Category'),
+              getText('cbBTC / stablecoins')
             ]
           },
           {
-            label: '',
+            type: 'call',
             value: [
               getErc7730Visualization('Supply', [
                 {
+                  type: 'single-value',
                   label: 'Amount',
-                  value: [getToken(cbBtc, 2838n, 8453n)]
+                  value: getToken('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', 2838n, 8453n)
                 }
               ])
             ]
@@ -1695,7 +1718,7 @@ describe('ERC-7730 descriptors', () => {
     expect(
       irCalls[0]!.fullVisualization
         ?.flatMap((visualization) =>
-          visualization.type === 'erc7730' ? visualization.fields.flatMap((row) => row.value) : []
+          visualization.type === 'erc7730' ? visualization.fields.flatMap(getErc7730RowValues) : []
         )
         .some((visualization) => visualization.content === '0x28530a47')
     ).toBe(false)
@@ -1716,7 +1739,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(maliciousMulticallAccountOp)
+    const descriptors = resolveErc7730Descriptors(maliciousMulticallAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(maliciousMulticallAccountOp, {
       erc7730Descriptors: descriptors
     })
@@ -1732,28 +1755,141 @@ describe('ERC-7730 descriptors', () => {
     }
 
     expect(multicallVisualization.fields).toHaveLength(1)
-    expect(multicallVisualization.fields[0]?.label).toBe('')
-    expect(multicallVisualization.fields[0]?.value).toHaveLength(1)
-    expect(multicallVisualization.fields[0]?.value[0]).toMatchObject({
+    expect(getErc7730RowLabel(multicallVisualization.fields[0]!)).toBe('')
+    expect(getErc7730RowValues(multicallVisualization.fields[0]!)).toHaveLength(1)
+    expect(getErc7730RowValues(multicallVisualization.fields[0]!)[0]).toMatchObject({
       type: 'erc7730',
-      intent: [expect.objectContaining({ content: 'Grant approval' })],
+      // The embedded approval goes to the token, not to the multicall contract, so it is
+      // described by the token's own descriptor - the multicall descriptor only happens to
+      // declare a format with the same selector
+      intent: [expect.objectContaining({ content: 'Approve' })],
       fields: [
         {
-          label: 'For',
-          value: [
-            {
-              type: 'token',
-              address: token.toLowerCase(),
-              value: ethers.MaxUint256
-            }
-          ]
+          type: 'single-value',
+          label: 'Spender',
+          value: { type: 'address', address: spender.toLowerCase() }
         },
         {
-          label: 'To',
-          value: [{ type: 'address', address: spender.toLowerCase() }]
+          type: 'single-value',
+          label: 'Amount',
+          value: {
+            type: 'token',
+            address: token.toLowerCase(),
+            value: ethers.MaxUint256
+          }
         }
       ]
     })
+  })
+  test('describes a call embedded in another with the descriptor of the contract it goes to', async () => {
+    const router = '0x1111111111111111111111111111111111111111'
+    const vault = '0x2222222222222222222222222222222222222222'
+    const routerPath = 'registry/test/router.json'
+    const vaultPath = 'registry/test/vault.json'
+    const routerInterface = new ethers.Interface([
+      'function execute(address target, bytes data)',
+      'function deposit(uint256 amount)'
+    ])
+    const embeddedCallAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 1n,
+      calls: [
+        {
+          to: router,
+          value: 0n,
+          data: routerInterface.encodeFunctionData('execute', [
+            vault,
+            routerInterface.encodeFunctionData('deposit', [1000n])
+          ])
+        }
+      ]
+    }
+    const fetchedDescriptorPaths: string[] = []
+    let indexFetchCount = 0
+    const callRelayer = async (path: string, _method?: string, body?: any) => {
+      if (path === '/v2/erc7730/account-op') {
+        indexFetchCount += 1
+
+        return {
+          success: true,
+          data: {
+            [`eip155:1:${router.toLowerCase()}`]: routerPath,
+            [`eip155:1:${vault.toLowerCase()}`]: vaultPath
+          },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor') {
+        fetchedDescriptorPaths.push(body.descriptorPath)
+
+        if (body.descriptorPath === `/${routerPath}`) {
+          return {
+            success: true,
+            display: {
+              formats: {
+                'execute(address target, bytes data)': {
+                  intent: 'Run',
+                  fields: [
+                    {
+                      path: 'data',
+                      label: 'Call',
+                      format: 'calldata',
+                      params: { calleePath: 'target' },
+                      visible: 'always'
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+
+        return {
+          success: true,
+          display: {
+            formats: {
+              'deposit(uint256 amount)': {
+                intent: 'Deposit',
+                fields: [{ path: 'amount', label: 'Amount', visible: 'always' }]
+              }
+            }
+          }
+        }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    }
+
+    const descriptors = await getTestErc7730Descriptors(embeddedCallAccountOp, callRelayer)
+    const irCalls = humanizeAccountOp(embeddedCallAccountOp, { erc7730Descriptors: descriptors })
+
+    expect(descriptors[0]?.path).toBe(routerPath)
+    // The descriptor of the embedded call is asked for only because the router descriptor declares
+    // it, and it is fetched in a later round of the same lookup - not once per call
+    expect(descriptors[0]?.nestedCallDescriptors?.[`eip155:1:${vault.toLowerCase()}`]?.path).toBe(
+      vaultPath
+    )
+    expect(indexFetchCount).toBe(1)
+    expect(fetchedDescriptorPaths.sort()).toEqual([`/${routerPath}`, `/${vaultPath}`])
+
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Run', [
+        {
+          // A row labelled "Call" adds nothing next to the intent of the call it holds
+          type: 'call',
+          value: [
+            getErc7730Visualization('Deposit', [
+              {
+                type: 'single-value',
+                label: 'Amount',
+                value: getText('1000')
+              }
+            ])
+          ]
+        }
+      ])
+    ])
   })
   test('humanizes approval and increase allowance calls nested in a multicall', async () => {
     const token = '0x0bF0164D17469241B6E086dA4016DCc54FEAA334'
@@ -1785,7 +1921,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(multicallAccountOp)
+    const descriptors = resolveErc7730Descriptors(multicallAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(multicallAccountOp, { erc7730Descriptors: descriptors })
     const multicallVisualization = irCalls[0]?.fullVisualization?.[0]
 
@@ -1798,55 +1934,42 @@ describe('ERC-7730 descriptors', () => {
     }
 
     expect(multicallVisualization.fields).toHaveLength(2)
-    expect(multicallVisualization.fields.map((row) => row.label)).toEqual(['', ''])
-    const approvalVisualization = multicallVisualization.fields[0]?.value[0]
-    const allowanceVisualization = multicallVisualization.fields[1]?.value[0]
-    if (approvalVisualization?.type !== 'erc7730' || allowanceVisualization?.type !== 'erc7730') {
-      throw new Error('Expected nested ERC-7730 visualizations')
+    expect(multicallVisualization.fields.map(getErc7730RowLabel)).toEqual(['', ''])
+    const approvalVisualization = getErc7730RowValues(multicallVisualization.fields[0]!)[0]
+    if (approvalVisualization?.type !== 'erc7730') {
+      throw new Error('Expected a nested ERC-7730 visualization')
     }
 
-    expect([
-      approvalVisualization.intent[0]?.content,
-      allowanceVisualization.intent[0]?.content
-    ]).toEqual(['Grant approval', 'Increase allowance'])
+    // The approval is described by the token's own descriptor, so it keeps its own rows
+    expect(approvalVisualization.intent[0]?.content).toBe('Approve')
     expect(approvalVisualization).toMatchObject({
       type: 'erc7730',
       fields: [
         {
-          label: 'For',
-          value: [
-            {
-              type: 'token',
-              address: token.toLowerCase(),
-              value: approvalAmount
-            }
-          ]
+          type: 'single-value',
+          label: 'Spender',
+          value: { type: 'address', address: spender.toLowerCase() }
         },
         {
-          label: 'To',
-          value: [{ type: 'address', address: spender.toLowerCase() }]
+          type: 'single-value',
+          label: 'Amount',
+          value: {
+            type: 'token',
+            address: token.toLowerCase(),
+            value: approvalAmount
+          }
         }
       ]
     })
-    expect(allowanceVisualization).toMatchObject({
-      type: 'erc7730',
-      fields: [
-        {
-          label: 'Of',
-          value: [{ type: 'address', address: spender.toLowerCase() }]
-        },
-        {
-          label: 'With',
-          value: [
-            {
-              type: 'token',
-              address: token.toLowerCase(),
-              value: allowanceIncrease
-            }
-          ]
-        }
-      ]
-    })
+    // The allowance increase has no descriptor anywhere and falls through to the plain humanizer
+    // modules, so its own wording is kept flat on the row instead of being split into rows
+    expect(getErc7730RowValues(multicallVisualization.fields[1]!)).toMatchObject([
+      { type: 'action', content: 'Increase allowance' },
+      { type: 'label', content: 'of' },
+      { type: 'address', address: spender.toLowerCase() },
+      { type: 'label', content: 'with' },
+      { type: 'token', address: token.toLowerCase(), value: allowanceIncrease }
+    ])
   })
   test('humanizes known protocol calls nested in a multicall', async () => {
     const nativeValue = ethers.parseEther('0.000097814288231747')
@@ -1863,7 +1986,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(multicallAccountOp)
+    const descriptors = resolveErc7730Descriptors(multicallAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(multicallAccountOp, {
       erc7730Descriptors: descriptors,
       nativeAssetSymbol: 'ETH'
@@ -1879,17 +2002,20 @@ describe('ERC-7730 descriptors', () => {
       throw new Error('Expected ERC-7730 multicall visualization')
     }
 
-    const nestedVisualizations = multicallVisualization.fields
-      .flatMap((row) => row.value)
-      .filter((visualization) => visualization.type === 'erc7730')
+    // Neither nested call has a descriptor, so each is humanized by the plain modules and its
+    // wording stays flat on its own `call` row
+    const nestedActions = multicallVisualization.fields
+      .flatMap(getErc7730RowValues)
+      .filter((visualization) => visualization.type === 'action')
 
-    expect(nestedVisualizations.map((visualization) => visualization.intent[0]?.content)).toEqual([
+    expect(nestedActions.map((visualization) => visualization.content)).toEqual([
       'Add liquidity',
       'Withdraw'
     ])
     expect(multicallVisualization.fields.at(-1)).toMatchObject({
+      type: 'single-value',
       label: 'Send',
-      value: [expect.objectContaining({ address: ZeroAddress, value: nativeValue })]
+      value: expect.objectContaining({ address: ZeroAddress, value: nativeValue })
     })
     expect(irCalls[0]!.warnings).toEqual([
       getWarning('This transaction will send ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
@@ -2068,7 +2194,7 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(morphoAccountOp, { callRelayer })
+    const descriptors = await getTestErc7730Descriptors(morphoAccountOp, callRelayer)
     const irCalls = humanizeAccountOp(morphoAccountOp, { erc7730Descriptors: descriptors })
 
     expect(descriptors[0]?.path).toBe(registryPath)
@@ -2081,12 +2207,16 @@ describe('ERC-7730 descriptors', () => {
     if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
 
     expect(visualization.fields).toHaveLength(5)
-    expect(visualization.fields.every((row) => row.label === 'Action')).toBe(true)
+    expect(visualization.fields.every((row) => row.type === 'call')).toBe(true)
     expect(
-      visualization.fields.map((row) => row.value.find((value) => value.type === 'action')?.content)
+      visualization.fields.map(
+        (row) => getErc7730RowValues(row).find((value) => value.type === 'action')?.content
+      )
     ).toEqual(['Transfer', 'Repay', 'Withdraw', 'Transfer', 'Transfer'])
     expect(
-      visualization.fields.map((row) => row.value.find((value) => value.type === 'token'))
+      visualization.fields.map((row) =>
+        getErc7730RowValues(row).find((value) => value.type === 'token')
+      )
     ).toEqual([
       expect.objectContaining({ address: baseUsdc, value: 2n }),
       expect.objectContaining({ address: baseUsdc, value: 220292767985000000n }),
@@ -2095,11 +2225,11 @@ describe('ERC-7730 descriptors', () => {
       expect.objectContaining({ address: baseCbBtc, value: ethers.MaxUint256 })
     ])
     expect(
-      visualization.fields.flatMap((row) => row.value).some((value) => value.type === 'text')
+      visualization.fields.flatMap(getErc7730RowValues).some((value) => value.type === 'text')
     ).toBe(false)
     expect(
       visualization.fields
-        .flatMap((row) => row.value)
+        .flatMap(getErc7730RowValues)
         .some((value) =>
           ['0xd96ca0b9', '0x4d5fcf68', '0x1af3bbc6', '0x3790767d'].includes(value.content || '')
         )
@@ -2192,18 +2322,19 @@ describe('ERC-7730 descriptors', () => {
     if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
 
     expect(visualization.fields).toHaveLength(1)
-    expect(visualization.fields[0]!.label).toBe('Action')
-    expect(visualization.fields[0]!.value.find((value) => value.type === 'action')?.content).toBe(
-      'Reallocate liquidity'
-    )
-    expect(visualization.fields[0]!.value).toEqual(
+    expect(visualization.fields[0]!.type).toBe('call')
+    expect(
+      getErc7730RowValues(visualization.fields[0]!).find((value) => value.type === 'action')
+        ?.content
+    ).toBe('Reallocate liquidity')
+    expect(getErc7730RowValues(visualization.fields[0]!)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: 'label', content: 'To vault' }),
         expect.objectContaining({ type: 'address', address: vault })
       ])
     )
     expect(
-      visualization.fields[0]!.value.some((value) =>
+      getErc7730RowValues(visualization.fields[0]!).some((value) =>
         ['0x833947fd', 'reallocateTo'].includes(value.content || '')
       )
     ).toBe(false)
@@ -2235,7 +2366,7 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(batchAccountOp)
+    const descriptors = resolveErc7730Descriptors(batchAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(batchAccountOp, {
       erc7730Descriptors: descriptors,
       nativeAssetSymbol: 'ETH'
@@ -2249,8 +2380,9 @@ describe('ERC-7730 descriptors', () => {
         { label: 'Spender' },
         { label: 'Amount' },
         {
+          type: 'single-value',
           label: 'Send',
-          value: [expect.objectContaining({ address: ZeroAddress, value: nativeValue })]
+          value: expect.objectContaining({ address: ZeroAddress, value: nativeValue })
         }
       ]
     })
@@ -2268,8 +2400,9 @@ describe('ERC-7730 descriptors', () => {
         { label: 'Amount' },
         { label: 'Approval expires' },
         {
+          type: 'single-value',
           label: 'Send',
-          value: [expect.objectContaining({ address: ZeroAddress, value: nativeValue })]
+          value: expect.objectContaining({ address: ZeroAddress, value: nativeValue })
         }
       ]
     })
@@ -2297,19 +2430,21 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(revokeApprovalAccountOp)
+    const descriptors = resolveErc7730Descriptors(revokeApprovalAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(revokeApprovalAccountOp, { erc7730Descriptors: descriptors })
 
     expect(descriptors[0]?.path).toBe('built-in/erc20-revoke-approval')
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
       getErc7730Visualization('Revoke approval', [
         {
+          type: 'single-value',
           label: 'Spender',
-          value: [getAddressVisualization(spender)]
+          value: getAddressVisualization(spender)
         },
         {
+          type: 'single-value',
           label: 'Amount',
-          value: [getToken(usdt, 0n, 1n)]
+          value: getToken(usdt, 0n, 1n)
         }
       ])
     ])
@@ -2376,21 +2511,21 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(revokeApprovalAccountOp, {
-      callRelayer
-    })
+    const descriptors = await getTestErc7730Descriptors(revokeApprovalAccountOp, callRelayer)
     const irCalls = humanizeAccountOp(revokeApprovalAccountOp, { erc7730Descriptors: descriptors })
 
     expect(descriptors[0]?.path).toBe(registryPath)
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
       getErc7730Visualization('Revoke approval', [
         {
+          type: 'single-value',
           label: 'Spender',
-          value: [getAddressVisualization(aggregationRouterV6)]
+          value: getAddressVisualization(aggregationRouterV6)
         },
         {
+          type: 'single-value',
           label: 'Amount',
-          value: [getToken(usdt, 0n, 1n)]
+          value: getToken(usdt, 0n, 1n)
         }
       ])
     ])
@@ -2420,7 +2555,7 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(revokePermitAccountOp)
+    const descriptors = resolveErc7730Descriptors(revokePermitAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(revokePermitAccountOp, { erc7730Descriptors: descriptors })
 
     expect(descriptors[0]?.path).toBe('built-in/permit2-revoke-approval')
@@ -2429,12 +2564,14 @@ describe('ERC-7730 descriptors', () => {
       intent: [expect.objectContaining({ content: 'Revoke approval' })],
       fields: [
         {
+          type: 'single-value',
           label: 'Spender',
-          value: [expect.objectContaining({ address: universalRouter.toLowerCase() })]
+          value: expect.objectContaining({ address: universalRouter.toLowerCase() })
         },
         {
+          type: 'single-value',
           label: 'Amount',
-          value: [expect.objectContaining({ address: baseCbBtc.toLowerCase(), value: 0n })]
+          value: expect.objectContaining({ address: baseCbBtc.toLowerCase(), value: 0n })
         },
         { label: 'Approval expires' }
       ]
@@ -2456,19 +2593,21 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     }
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(transferAccountOp)
+    const descriptors = resolveErc7730Descriptors(transferAccountOp, EMPTY_ERC7730_KNOWN)
     const irCalls = humanizeAccountOp(transferAccountOp, { erc7730Descriptors: descriptors })
 
     expect(Object.keys(descriptors)).toEqual(['0'])
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
       getErc7730Visualization('Send', [
         {
+          type: 'single-value',
           label: 'Amount',
-          value: [getToken(usdt, 1000000000n, 1n)]
+          value: getToken(usdt, 1000000000n, 1n)
         },
         {
+          type: 'single-value',
           label: 'To',
-          value: [getAddressVisualization(recipient)]
+          value: getAddressVisualization(recipient)
         }
       ])
     ])
@@ -2525,21 +2664,21 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(transferAccountOp, {
-      callRelayer
-    })
+    const descriptors = await getTestErc7730Descriptors(transferAccountOp, callRelayer)
     const irCalls = humanizeAccountOp(transferAccountOp, { erc7730Descriptors: descriptors })
 
     expect(Object.keys(descriptors)).toEqual(['0'])
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
       getErc7730Visualization('Send', [
         {
+          type: 'single-value',
           label: 'Amount',
-          value: [getToken(WETH_ADDRESS, 1000000000n, 1n)]
+          value: getToken(WETH_ADDRESS, 1000000000n, 1n)
         },
         {
+          type: 'single-value',
           label: 'To',
-          value: [getAddressVisualization(recipient)]
+          value: getAddressVisualization(recipient)
         }
       ])
     ])
@@ -2608,7 +2747,7 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(relayerAccountOp, { callRelayer })
+    const descriptors = await getTestErc7730Descriptors(relayerAccountOp, callRelayer)
     const irCalls = humanizeAccountOp(relayerAccountOp, { erc7730Descriptors: descriptors })
 
     expect(relayerPath).toBe('/v2/erc7730/account-op')
@@ -2617,16 +2756,19 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
       getErc7730Visualization('Authorize via relayer', [
         {
+          type: 'single-value',
           label: 'Spender',
-          value: [getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8')]
+          value: getAddressVisualization('0x46705dfff24256421a05d056c29e81bdc09723b8')
         },
         {
+          type: 'single-value',
           label: 'Amount allowance',
-          value: [getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, 1n)]
+          value: getToken('0xdac17f958d2ee523a2206206994597c13d831ec7', 1000000000n, 1n)
         },
         {
+          type: 'single-value',
           label: 'Send',
-          value: [getToken(ZeroAddress, nativeValue, 1n)]
+          value: getToken(ZeroAddress, nativeValue, 1n)
         }
       ])
     ])
@@ -2645,9 +2787,7 @@ describe('ERC-7730 descriptors', () => {
     }
 
     try {
-      const descriptors = await fetchErc7730DescriptorsForAccountOp(fallbackAccountOp, {
-        callRelayer
-      })
+      const descriptors = await getTestErc7730Descriptors(fallbackAccountOp, callRelayer)
       expect(Object.keys(descriptors)).toEqual(['0'])
       expect(descriptors[0]?.path).toBe('built-in/erc20-approve')
     } finally {
@@ -2715,41 +2855,42 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(safeExecAccountOp, {
+    const descriptors = await getTestErc7730Descriptors(
+      safeExecAccountOp,
       callRelayer,
-      provider: provider as any
-    })
+      provider as any
+    )
     const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
 
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
-    expect(descriptors[0]?.safeTxTransactionsOnly).toBe(true)
-    expect(descriptors[0]?.safeTxCalls).toHaveLength(2)
+    expect(descriptors[0]?.innerCalls).toHaveLength(2)
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
       getErc7730Visualization('Execute a Safe{Wallet} Transaction', [
         {
+          type: 'single-value',
           label: 'Safe',
-          value: [getAddressVisualization(safeProxy)]
+          value: getAddressVisualization('0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce')
         },
         {
-          label: '',
+          type: 'call',
           value: [
             getErc7730Visualization('Approve', [
               {
+                type: 'single-value',
                 label: 'Spender',
-                value: [getAddressVisualization(spender)]
+                value: getAddressVisualization(spender)
               },
               {
+                type: 'single-value',
                 label: 'Amount',
-                value: [getToken(tokenAddress, 1514n, 8453n)]
-              }
-            ]),
-            getErc7730Visualization('SetPreSignature', [
-              {
-                label: 'On',
-                value: [getAddressVisualization(settlement)]
+                value: getToken(tokenAddress, 1514n, 8453n)
               }
             ])
           ]
+        },
+        {
+          type: 'call',
+          value: [getAction('SetPreSignature'), getLabel('on'), getAddressVisualization(settlement)]
         }
       ])
     ])
@@ -2808,42 +2949,44 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(safeExecAccountOp, {
-      callRelayer,
-      provider: provider as any
-    })
+    const descriptors = await getTestErc7730Descriptors(safeExecAccountOp, callRelayer, provider)
     const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
 
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
       getErc7730Visualization('Execute a Safe{Wallet} Transaction', [
         {
+          type: 'single-value',
           label: 'Safe',
-          value: [getAddressVisualization(safeProxy)]
+          value: getAddressVisualization(safeProxy)
         },
         {
-          label: '',
+          type: 'call',
           value: [
             getErc7730Visualization('Approve', [
               {
+                type: 'single-value',
                 label: 'Spender',
-                value: [getAddressVisualization(spender)]
+                value: getAddressVisualization(spender)
               },
               {
+                type: 'single-value',
                 label: 'Amount',
-                value: [getToken(tokenAddress, 1514n, 8453n)]
-              }
-            ]),
-            getErc7730Visualization('SetPreSignature', [
-              {
-                label: 'On',
-                value: [getAddressVisualization(settlement)]
+                value: getToken(tokenAddress, 1514n, 8453n)
               }
             ])
           ]
         },
         {
-          label: 'Gas refund to',
-          value: [getAddressVisualization(refundReceiver), getToken(gasToken, 500000n)]
+          type: 'call',
+          value: [getAction('SetPreSignature'), getLabel('on'), getAddressVisualization(settlement)]
+        },
+        {
+          type: 'call',
+          value: [
+            getLabel('Gas refund to'),
+            getAddressVisualization(refundReceiver),
+            getToken(gasToken, 500000n)
+          ]
         }
       ])
     ])
@@ -2909,35 +3052,32 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptors = await fetchErc7730DescriptorsForAccountOp(safeExecAccountOp, {
+    const descriptors = await getTestErc7730Descriptors(
+      safeExecAccountOp,
       callRelayer,
-      provider: provider as any
-    })
+      provider as any
+    )
     const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
 
     expect(provider.getStorage).toHaveBeenCalledTimes(1)
-    expect(descriptors[0]?.safeTxTransactionsOnly).toBe(true)
+    expect(descriptors[0]?.innerCalls).toHaveLength(1)
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      display: {
-        intent: [expect.objectContaining({ content: 'Execute a Safe{Wallet} Transaction' })]
-      },
+      intent: [expect.objectContaining({ content: 'Execute a Safe{Wallet} Transaction' })],
       fields: [
         {
+          type: 'single-value',
           label: 'Safe',
-          value: [
-            expect.objectContaining({
-              type: 'address',
-              address: safeProxy
-            })
-          ]
+          value: expect.objectContaining({
+            type: 'address',
+            address: safeProxy
+          })
         },
         {
+          type: 'call',
           value: [
-            expect.objectContaining({
-              type: 'erc7730',
-              intent: [expect.objectContaining({ content: 'Cancel' })]
-            })
+            expect.objectContaining({ type: 'action', content: 'Cancel' }),
+            expect.objectContaining({ type: 'label', content: 'currently queued transaction' })
           ]
         }
       ]
@@ -3063,10 +3203,11 @@ describe('ERC-7730 descriptors', () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: 'erc7730',
-          rows: expect.arrayContaining([
+          fields: expect.arrayContaining([
             {
-              label: 'Gas refund to',
+              type: 'call',
               value: [
+                expect.objectContaining({ type: 'label', content: 'Gas refund to' }),
                 expect.objectContaining({ type: 'address', address: refundReceiver.toLowerCase() }),
                 expect.objectContaining({
                   type: 'token',
@@ -3140,10 +3281,11 @@ describe('ERC-7730 descriptors', () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: 'erc7730',
-          rows: expect.arrayContaining([
+          fields: expect.arrayContaining([
             {
-              label: 'Gas refund to',
+              type: 'call',
               value: [
+                expect.objectContaining({ type: 'label', content: 'Gas refund to' }),
                 expect.objectContaining({ type: 'address', address: recipient.toLowerCase() }),
                 expect.objectContaining({ type: 'text', content: 'amount depends on gas used' })
               ]
@@ -3287,35 +3429,30 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irCalls[0]!.fullVisualization || [], [
       getErc7730Visualization('Create Safe', [
         {
-          label: 'Account setup',
+          type: 'call',
           value: [
-            getErc7730Visualization('Account setup', [
-              {
-                label: 'Owner',
-                value: [getAddressVisualization(owner)]
-              },
-              {
-                label: 'Threshold',
-                value: [getText('1')]
-              },
-              {
-                label: 'Fallback handler',
-                value: [getAddressVisualization(fallbackHandler)]
-              },
-              {
-                label: 'Setup transaction',
-                value: [getAction('Enable module:'), getAddressVisualization(module)]
-              }
-            ])
+            getAction('Account setup'),
+            getLabel('Owner'),
+            getAddressVisualization('0xbd89a1ce4dde368ffab0ec35506eece0b1ffdc54'),
+            getLabel('Threshold'),
+            getText('1'),
+            getLabel('Fallback handler'),
+            getAddressVisualization('0xfd0732dc9e303f09fcef3a7388ad10a83459ec99'),
+            getBreak(),
+            getLabel('Setup transaction'),
+            getAction('Enable module:'),
+            getAddressVisualization('0xd8293ad21678c6f09da139b4b62d38e514a03b78')
           ]
         },
         {
+          type: 'single-value',
           label: 'Safe singleton',
-          value: [getAddressVisualization(safeSingleton)]
+          value: getAddressVisualization('0x41675c099f32341bf84bfc5382af534df5c7461a')
         },
         {
+          type: 'single-value',
           label: 'Salt nonce',
-          value: [getText('1')]
+          value: getText('1')
         }
       ])
     ])
@@ -3409,7 +3546,7 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     }
 
-    const descriptor = await fetchErc7730DescriptorForMessage(permitMessage as any, callRelayer)
+    const descriptor = await getTestErc7730MessageDescriptor(permitMessage as any, callRelayer)
 
     expect(relayerPath).toBe('/v2/erc7730/eip-712')
     expect(descriptorPaths).toEqual([`/${registryPath}`])
@@ -3468,7 +3605,7 @@ describe('ERC-7730 descriptors', () => {
       }
     })
 
-    const descriptor = await fetchErc7730DescriptorForMessage(permitMessage as any, callRelayer)
+    const descriptor = await getTestErc7730MessageDescriptor(permitMessage as any, callRelayer)
     const irMessage = humanizeMessage(permitMessage as any, {
       erc7730Descriptor: descriptor || undefined
     })
@@ -3480,12 +3617,14 @@ describe('ERC-7730 descriptors', () => {
       intent: [expect.objectContaining({ content: 'Authorize spending of tokens' })],
       fields: [
         {
+          type: 'single-value',
           label: 'Spender',
-          value: [{ type: 'address', address: aggregationRouterV6 }]
+          value: { type: 'address', address: aggregationRouterV6 }
         },
         {
+          type: 'single-value',
           label: 'Max spending amount',
-          value: [{ type: 'token', address: moneriumEure, value: ethers.MaxUint256, chainId: 1n }]
+          value: { type: 'token', address: moneriumEure, value: ethers.MaxUint256, chainId: 1n }
         },
         {
           label: 'Valid until'
@@ -3567,16 +3706,19 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irMessage.fullVisualization || [], [
       getErc7730Visualization('Authorize spending of tokens', [
         {
+          type: 'single-value',
           label: 'Spender',
-          value: [getAddressVisualization(address2)]
+          value: getAddressVisualization(address2)
         },
         {
+          type: 'single-value',
           label: 'Max spending amount',
-          value: [getToken(WETH_ADDRESS, 133700n, 1n)]
+          value: getToken(WETH_ADDRESS, 133700n, 1n)
         },
         {
+          type: 'single-value',
           label: 'Valid until',
-          value: [getText('No expiration')]
+          value: getText('No expiration')
         }
       ])
     ])
@@ -3656,24 +3798,29 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irMessage.fullVisualization || [], [
       getErc7730Visualization('Authorize spending of tokens', [
         {
+          type: 'single-value',
           label: 'Spender',
-          value: [getAddressVisualization(address2)]
+          value: getAddressVisualization(address2)
         },
         {
+          type: 'single-value',
           label: 'Amount allowance',
-          value: [getToken(WETH_ADDRESS, 133700n, 1n)]
+          value: getToken(WETH_ADDRESS, 133700n, 1n)
         },
         {
+          type: 'single-value',
           label: 'Amount allowance',
-          value: [getToken(usdtAddress, 500000000n, 1n)]
+          value: getToken(usdtAddress, 500000000n, 1n)
         },
         {
+          type: 'single-value',
           label: 'Approval expires',
-          value: [getText(new Date(1999999999 * 1000).toLocaleString())]
+          value: getText(new Date(1999999999 * 1000).toLocaleString())
         },
         {
+          type: 'single-value',
           label: 'Approval expires',
-          value: [getText(new Date(1888888888 * 1000).toLocaleString())]
+          value: getText(new Date(1888888888 * 1000).toLocaleString())
         }
       ])
     ])
@@ -3766,16 +3913,19 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irMessage.fullVisualization || [], [
       getErc7730Visualization('1inch Order', [
         {
+          type: 'single-value',
           label: 'From',
-          value: [getAddressVisualization('0xd8293ad21678c6f09da139b4b62d38e514a03b78')]
+          value: getAddressVisualization('0xd8293ad21678c6f09da139b4b62d38e514a03b78')
         },
         {
+          type: 'single-value',
           label: 'Send',
-          value: [getToken(makerAsset, 366891214241290415n, 10n)]
+          value: getToken(makerAsset, 366891214241290415n, 10n)
         },
         {
+          type: 'single-value',
           label: 'Receive minimum',
-          value: [getToken(takerAsset, 39061263450812873n, 10n)]
+          value: getToken(takerAsset, 39061263450812873n, 10n)
         }
       ])
     ])
@@ -3856,27 +4006,29 @@ describe('ERC-7730 descriptors', () => {
             }
           }
         },
-        safeTxCallDescriptor: {
-          descriptor: {
-            display: {
-              formats: {
-                'transfer(address _to, uint256 _value)': {
-                  intent: 'Send',
-                  fields: [
-                    {
-                      path: '_value',
-                      label: 'Amount',
-                      format: 'tokenAmount',
-                      params: { tokenPath: '@.to' },
-                      visible: 'always'
-                    },
-                    {
-                      path: '_to',
-                      label: 'To',
-                      format: 'addressName',
-                      visible: 'always'
-                    }
-                  ]
+        innerCallDescriptors: {
+          0: {
+            descriptor: {
+              display: {
+                formats: {
+                  'transfer(address _to, uint256 _value)': {
+                    intent: 'Send',
+                    fields: [
+                      {
+                        path: '_value',
+                        label: 'Amount',
+                        format: 'tokenAmount',
+                        params: { tokenPath: '@.to' },
+                        visible: 'always'
+                      },
+                      {
+                        path: '_to',
+                        label: 'To',
+                        format: 'addressName',
+                        visible: 'always'
+                      }
+                    ]
+                  }
                 }
               }
             }
@@ -3888,45 +4040,52 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irMessage.fullVisualization || [], [
       getErc7730Visualization('Safe', [
         {
+          type: 'single-value',
           label: 'Operation type',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
-          label: 'Transaction',
+          type: 'call',
           value: [
             getErc7730Visualization('Send', [
               {
+                type: 'single-value',
                 label: 'Amount',
-                value: [getToken(tokenAddress, 100n, 8453n)]
+                value: getToken('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', 100n, 8453n)
               },
               {
+                type: 'single-value',
                 label: 'To',
-                value: [getAddressVisualization(recipient)]
+                value: getAddressVisualization('0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01')
               }
             ])
           ]
         },
         {
+          type: 'single-value',
           label: 'Gas amount',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas price',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas token',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization('0x0000000000000000000000000000000000000000')
         },
         {
+          type: 'single-value',
           label: 'Gas receiver',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization('0x0000000000000000000000000000000000000000')
         }
       ])
     ])
   })
 
-  test('keeps unknown SafeTx delegatecall calldata as a selector and warns with the target address', async () => {
+  test('describes undecodable SafeTx delegatecall calldata and warns with the target address', async () => {
     const safeProxy = '0x8c8979A7d79C4CdDA170C008b797d466F00dD167'
     const recipeExecutor = '0xc91305DdE651c899EF8eE1D0C33E7dab1B5ABF0D'
     const safeTxMessage = {
@@ -4005,28 +4164,40 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irMessage.fullVisualization || [], [
       getErc7730Visualization('Safe', [
         {
+          type: 'single-value',
           label: 'Operation type',
-          value: [getText('1')]
+          value: getText('1')
         },
         {
-          label: 'Transaction',
-          value: [getAddressVisualization(recipeExecutor), getText('0x0c2c8750')]
+          // No module recognises this call, so the pipeline's own last resort describes it rather
+          // than dropping it - the target address is what the user needs, and the delegatecall
+          // warning below names it too
+          type: 'call',
+          value: [
+            getAction('Interacting'),
+            getLabel('with'),
+            getAddressVisualization(recipeExecutor)
+          ]
         },
         {
+          type: 'single-value',
           label: 'Gas amount',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas price',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas token',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization(ZeroAddress)
         },
         {
+          type: 'single-value',
           label: 'Gas receiver',
-          value: [getAddressVisualization('0x25aa0f9a42eE4Ea2Dc7f3c9fF02F558dcb0445a3')]
+          value: getAddressVisualization('0x25aa0f9a42eE4Ea2Dc7f3c9fF02F558dcb0445a3')
         }
       ])
     ])
@@ -4257,7 +4428,7 @@ describe('ERC-7730 descriptors', () => {
       })
     }
 
-    const descriptor = await fetchErc7730DescriptorForMessage(
+    const descriptor = await getTestErc7730MessageDescriptor(
       safeTxMessage as any,
       callRelayer,
       provider as any
@@ -4267,7 +4438,7 @@ describe('ERC-7730 descriptors', () => {
     })
 
     expect(descriptor?.path).toBe(eip712DescriptorPath)
-    expect(descriptor?.safeTxCallDescriptor?.path).toBe(calldataDescriptorPath)
+    expect(descriptor?.innerCallDescriptors?.[0]?.path).toBe(calldataDescriptorPath)
     expect(fetchedDescriptorPaths).toEqual([
       `/${eip712DescriptorPath}`,
       `/${calldataDescriptorPath}`
@@ -4276,39 +4447,38 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irMessage.fullVisualization || [], [
       getErc7730Visualization('Safe', [
         {
+          type: 'single-value',
           label: 'Operation type',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
-          label: 'Transaction',
+          type: 'call',
           value: [
-            getErc7730Visualization('Add owner', [
-              {
-                label: 'Add owner',
-                value: [
-                  getAddressVisualization(newOwner),
-                  getAction('and set threshold to'),
-                  getLabel('3')
-                ]
-              }
-            ])
+            getAction('Add owner'),
+            getAddressVisualization('0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01'),
+            getAction('and set threshold to'),
+            getLabel('3')
           ]
         },
         {
+          type: 'single-value',
           label: 'Gas amount',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas price',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas token',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization('0x0000000000000000000000000000000000000000')
         },
         {
+          type: 'single-value',
           label: 'Gas receiver',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization('0x0000000000000000000000000000000000000000')
         }
       ])
     ])
@@ -4416,49 +4586,47 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irMessage.fullVisualization || [], [
       getErc7730Visualization('Safe', [
         {
+          type: 'single-value',
           label: 'Operation type',
-          value: [getText('1')]
+          value: getText('1')
         },
         {
-          label: 'Transactions',
+          type: 'call',
           value: [
-            getErc7730Visualization('Send', [
-              {
-                label: 'Send',
-                value: [getToken(tokenAddress, 100n)]
-              },
-              {
-                label: 'To',
-                value: [getAddressVisualization(recipientOne)]
-              }
-            ]),
-            getErc7730Visualization('Send', [
-              {
-                label: 'Send',
-                value: [getToken(tokenAddress, 200n)]
-              },
-              {
-                label: 'To',
-                value: [getAddressVisualization(recipientTwo)]
-              }
-            ])
+            getAction('Send'),
+            getToken('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', 100n),
+            getLabel('to'),
+            getAddressVisualization('0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01')
           ]
         },
         {
+          type: 'call',
+          value: [
+            getAction('Send'),
+            getToken('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf', 200n),
+            getLabel('to'),
+            getAddressVisualization('0xd8293ad21678c6f09da139b4b62d38e514a03b78')
+          ]
+        },
+        {
+          type: 'single-value',
           label: 'Gas amount',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas price',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas token',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization('0x0000000000000000000000000000000000000000')
         },
         {
+          type: 'single-value',
           label: 'Gas receiver',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization('0x0000000000000000000000000000000000000000')
         }
       ])
     ])
@@ -4547,27 +4715,26 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irMessage.fullVisualization || [], [
       getErc7730Visualization('Safe', [
         {
+          type: 'single-value',
           label: 'Operation type',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
-          label: 'Transaction',
+          type: 'call',
           value: [
-            getErc7730Visualization('Send', [
-              {
-                label: 'Send',
-                value: [getToken(ZeroAddress, 1n)]
-              },
-              {
-                label: 'To',
-                value: [getAddressVisualization(recipient)]
-              }
-            ])
+            getAction('Send'),
+            getToken(ZeroAddress, 1n),
+            getLabel('to'),
+            getAddressVisualization(recipient)
           ]
         },
         {
-          label: 'Gas refund to',
-          value: [getAddressVisualization(refundReceiver), getToken(gasToken, 500000n)]
+          type: 'call',
+          value: [
+            getLabel('Gas refund to'),
+            getAddressVisualization(refundReceiver),
+            getToken(gasToken, 500000n)
+          ]
         }
       ])
     ])
@@ -4778,45 +4945,43 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irMessage.fullVisualization || [], [
       getErc7730Visualization('Safe', [
         {
+          type: 'single-value',
           label: 'Operation type',
-          value: [getText('1')]
+          value: getText('1')
         },
         {
-          label: 'Transactions',
+          type: 'call',
           value: [
-            getErc7730Visualization('Grant approval', [
-              {
-                label: 'For',
-                value: [getToken(tokenAddress, 1514n)]
-              },
-              {
-                label: 'To',
-                value: [getAddressVisualization(spender)]
-              }
-            ]),
-            getErc7730Visualization('SetPreSignature', [
-              {
-                label: 'On',
-                value: [getAddressVisualization(settlement)]
-              }
-            ])
+            getAction('Grant approval'),
+            getLabel('for'),
+            getToken(tokenAddress, 1514n),
+            getLabel('to'),
+            getAddressVisualization(spender)
           ]
         },
         {
+          type: 'call',
+          value: [getAction('SetPreSignature'), getLabel('on'), getAddressVisualization(settlement)]
+        },
+        {
+          type: 'single-value',
           label: 'Gas amount',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas price',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas token',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization('0x0000000000000000000000000000000000000000')
         },
         {
+          type: 'single-value',
           label: 'Gas receiver',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization('0x0000000000000000000000000000000000000000')
         }
       ])
     ])
@@ -4902,54 +5067,52 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irMessage.fullVisualization || [], [
       getErc7730Visualization('Enable module:', [
         {
+          type: 'single-value',
           label: 'Enable module:',
-          value: [getAddressVisualization('0x9641d764fc13c8b624c04430c7356c1c7c8102e2')]
+          value: getAddressVisualization('0x9641d764fc13c8b624c04430c7356c1c7c8102e2')
         },
         {
+          type: 'single-value',
           label: 'Operation type',
-          value: [getText('1')]
+          value: getText('1')
         },
         {
+          type: 'single-value',
           label: 'Gas amount',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas price',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas token',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization('0x0000000000000000000000000000000000000000')
         },
         {
+          type: 'single-value',
           label: 'Gas receiver',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization('0x0000000000000000000000000000000000000000')
         },
         {
-          label: 'Transactions',
+          type: 'call',
+          value: [getAction('Enable module:'), getAddressVisualization(allowanceModule)]
+        },
+        {
+          type: 'call',
+          value: [getAction('Add delegate'), getAddressVisualization(delegate)]
+        },
+        {
+          type: 'call',
           value: [
-            getErc7730Visualization('Enable module:', [
-              {
-                label: 'Enable module:',
-                value: [getAddressVisualization(allowanceModule)]
-              }
-            ]),
-            getErc7730Visualization('Add delegate', [
-              {
-                label: 'Add delegate',
-                value: [getAddressVisualization(delegate)]
-              }
-            ]),
-            getErc7730Visualization('Allow', [
-              {
-                label: 'Allow',
-                value: [getAddressVisualization(delegate)]
-              },
-              {
-                label: 'To spend',
-                value: [getToken(ZeroAddress, 1000000000000000000n), getText('No reset', true)]
-              }
-            ])
+            getAction('Allow'),
+            getAddressVisualization(delegate),
+            getLabel('to spend'),
+            getToken('0x0000000000000000000000000000000000000000', 1000000000000000000n),
+            getLabel('No reset'),
+            getText('No reset', true)
           ]
         }
       ])
@@ -5033,24 +5196,29 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irMessage.fullVisualization || [], [
       getErc7730Visualization('Safe', [
         {
+          type: 'single-value',
           label: 'Operation type',
-          value: [getText('1')]
+          value: getText('1')
         },
         {
+          type: 'single-value',
           label: 'Gas amount',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas price',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas token',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization(ZeroAddress)
         },
         {
+          type: 'single-value',
           label: 'Gas receiver',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization(ZeroAddress)
         }
       ])
     ])
@@ -5146,68 +5314,74 @@ describe('ERC-7730 descriptors', () => {
     compareVisualizations(irMessage.fullVisualization || [], [
       getErc7730Visualization('Safe', [
         {
+          type: 'single-value',
           label: 'Operation type',
-          value: [getText('1')]
+          value: getText('1')
         },
         {
-          label: 'Transactions',
+          type: 'call',
           value: [
-            getErc7730Visualization('Extend your account functionality with', [
-              {
-                label: 'Extend your account functionality with',
-                value: [getAddressVisualization('0x2f55e8b20d0b9fefa187aa7d00b6cbe563605bf5')]
-              }
-            ]),
-            getErc7730Visualization('Authorize custom access rights to your account for', [
-              {
-                label: 'Authorize custom access rights to your account for',
-                value: [getAddressVisualization(settlementContract)]
-              }
-            ]),
-            getErc7730Visualization('Grant approval', [
-              {
-                label: 'For',
-                value: [getToken(usdc, ethers.MaxUint256)]
-              },
-              {
-                label: 'To',
-                value: [getAddressVisualization(spender)]
-              }
-            ]),
-            // The call no humanizer module can decode falls back to a plain "Interacting with" row
-            getErc7730Visualization('Interacting', [
-              {
-                label: 'With',
-                value: [getAddressVisualization(undecodableContract)]
-              }
-            ])
+            getAction('Extend your account functionality with'),
+            getAddressVisualization('0x2f55e8b20d0b9fefa187aa7d00b6cbe563605bf5')
           ]
         },
         {
+          type: 'call',
+          value: [
+            getAction('Authorize custom access rights to your account for'),
+            getAddressVisualization(settlementContract)
+          ]
+        },
+        {
+          type: 'call',
+          value: [
+            getAction('Grant approval'),
+            getLabel('for'),
+            getToken(
+              usdc,
+              115792089237316195423570985008687907853269984665640564039457584007913129639935n
+            ),
+            getLabel('to'),
+            getAddressVisualization(spender)
+          ]
+        },
+        {
+          type: 'call',
+          value: [
+            getAction('Interacting'),
+            getLabel('with'),
+            getAddressVisualization(undecodableContract)
+          ]
+        },
+        {
+          type: 'single-value',
           label: 'Gas amount',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas price',
-          value: [getText('0')]
+          value: getText('0')
         },
         {
+          type: 'single-value',
           label: 'Gas token',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization('0x0000000000000000000000000000000000000000')
         },
         {
+          type: 'single-value',
           label: 'Gas receiver',
-          value: [getAddressVisualization(ZeroAddress)]
+          value: getAddressVisualization('0x0000000000000000000000000000000000000000')
         }
       ])
     ])
     // Regression guard: none of the 4 calls should be silently dropped, even the two
     // whose call target (setFallbackHandler self-call / unrecognized settlement call)
     // no humanizer module could decode.
-    const transactionsRow = (irMessage.fullVisualization?.[0] as any)?.fields?.find(
-      (row: any) => row.label === 'Transactions'
+    const callRows = (irMessage.fullVisualization?.[0] as any)?.fields?.filter(
+      (row: any) => row.type === 'call'
     )
-    expect(transactionsRow?.value).toHaveLength(4)
+    expect(callRows).toHaveLength(4)
   })
   test('humanizes calls nested deeper than the displayed depth and warns about it', async () => {
     const router = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5'
@@ -5271,7 +5445,7 @@ describe('ERC-7730 descriptors', () => {
     const getErc7730Titles = (visualization: any): string[] => [
       visualization.intent[0]?.content,
       ...(visualization.fields || []).flatMap((row: any) =>
-        (row.value || [])
+        (getErc7730RowValues(row) || [])
           .filter((rowValue: any) => rowValue.type === 'erc7730')
           .flatMap((nestedVisualization: any) => getErc7730Titles(nestedVisualization))
       )
