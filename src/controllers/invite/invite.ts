@@ -163,6 +163,8 @@ export class InviteController extends EventEmitter implements IInviteController 
         })
       }
 
+      // Deliberately outside the try block, because the catch above always throws and blames the
+      // code the user entered - a storage failure here must never be shown as a rejected code.
       this.errorMessage = ''
       await this.#persistVerified(code)
     })
