@@ -1073,6 +1073,60 @@ describe('DappsController', () => {
       expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
       expect(banner?.trustableDappUrls).toEqual([])
     })
+
+    /**
+     * Opens the connect prompt for a dApp the user already trusts and returns dappToConnect the
+     * way the UI receives it - the trust flags are stamped on serialization, so they are only
+     * visible on toJSON(), not on the controller field.
+     */
+    const connectTrustedVercelDappFrom = async (session: Session) => {
+      const { controller } = await prepareTrustTest()
+      await controller.fetchAndUpdatePromise
+      await controller.trustDapp(vercelDapp.url)
+
+      await controller.setDappToConnectIfNeeded({
+        id: 1,
+        kind: 'dappConnect',
+        meta: { params: {} },
+        dappPromises: [{ id: '', resolve: () => {}, reject: () => {}, meta: {}, session }]
+      })
+      // The status is filled in by the phishing check that setDappToConnectIfNeeded deliberately
+      // does not await, so let it settle before reading the flags.
+      await wait(1)
+
+      return controller.toJSON().dappToConnect!
+    }
+
+    test('a trusted dApp connecting as the top frame keeps its hosting warning silenced', async () => {
+      const dappToConnect = await connectTrustedVercelDappFrom(
+        new Session({ tabId: 90, windowId: 1, url: vercelDapp.url, frameId: 0 })
+      )
+
+      expect(dappToConnect.blacklisted).toBe('SUSPICIOUS_HOSTING')
+      expect(dappToConnect.canBeTrustedByUser).toBe(true)
+      expect(dappToConnect.isTrustedByUser).toBe(true)
+    })
+
+    test('SECURITY: the trust never silences a dangerous frame context on the connect prompt', async () => {
+      // The trusted dApp asks to connect from inside a tab whose top-level document is a phishing
+      // page. The danger belongs to that document, not to the app the user vouched for.
+      const dappToConnect = await connectTrustedVercelDappFrom(
+        new Session({
+          tabId: 91,
+          windowId: 1,
+          url: vercelDapp.url,
+          frameId: 3,
+          topFrameUrl: 'https://sites.google.com/view/fake-uniswap'
+        })
+      )
+
+      expect(dappToConnect.blacklisted).toBe('SUSPICIOUS_HOSTING')
+      // Both false even though this dApp is on a platform where a single app can be trusted and
+      // the user trusted this exact one - the warning on screen is not about its hosting, so it
+      // can neither be silenced by the trust already given nor by the action being offered again.
+      expect(dappToConnect.canBeTrustedByUser).toBe(false)
+      expect(dappToConnect.isTrustedByUser).toBe(false)
+    })
   })
 
   describe('dApp session frame context', () => {

@@ -37,16 +37,19 @@ function isSuspiciousHostingDomain(url: string): boolean {
  * for it. True only for a dApp on its own subdomain of a platform that hands out one per app: the
  * hostname is then a boundary the browser enforces, so the trust cannot reach anything else
  * published on the platform.
- *
- * The platform's own hostname is never trustable ("sites.google.com", "dweb.link/ipfs/<cid>") -
- * it is shared with every other app published there, and the path that tells them apart keeps
- * nothing out of a same-origin page: a page on the shared hostname can drive a trusted one it
- * embeds or opens. Trusting it would mean trusting the whole platform.
  */
 export function canBeTrustedByUser(url: string): boolean {
   const hostname = getNormalizedHostnameFromUrl(url)
   if (hostname === null) return false
 
+  // The leading dot demands a label to the left of the suffix, which is the whole point: it tells
+  // one app under the platform apart from the platform's own hostname. "my-dapp.vercel.app" passes,
+  // a bare "ipfs.io" does not. Note that isAppPerSubdomain alone does not cover this - a platform
+  // that hands out subdomains ("<cid>.ipfs.dweb.link") usually serves by path as well, and a dApp
+  // id is only the hostname, so every app on "ipfs.io/ipfs/<cid>" collapses to the same "ipfs.io".
+  // Offering the trust action there would let one tap silence the warning for the whole platform.
+  // Scoping the trust by path instead would not help: pages on a shared hostname are same-origin,
+  // so one of them can drive a trusted one it embeds or opens.
   return SUSPICIOUS_HOSTING_DOMAINS.some(
     ({ hostSuffix, isAppPerSubdomain }) => isAppPerSubdomain && hostname.endsWith(`.${hostSuffix}`)
   )
