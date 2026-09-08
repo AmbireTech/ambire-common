@@ -1,7 +1,4 @@
-import { RPCProvider } from '../../../interfaces/provider'
 import { Call } from '../../accountOp/types'
-
-export type SafeSingletonProvider = Pick<RPCProvider, 'getStorage'>
 
 /**
  * A resource the library found it needs but does not have yet. The library never fetches: it

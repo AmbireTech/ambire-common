@@ -5,8 +5,7 @@ import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import {
   Erc7730CallDescriptors,
-  Erc7730ResolvedDescriptor,
-  SafeSingletonProvider
+  Erc7730ResolvedDescriptor
 } from '../../libs/humanizer/erc7730/types'
 import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
 import { Erc7730Controller } from './erc7730'
@@ -25,7 +24,7 @@ const makeUiStub = (): IUiController =>
   ({ message: { sendUiMessage: () => {} } }) as unknown as IUiController
 
 /** Answers every chainId with the same provider, which is all these tests ever pass in. */
-const makeProvidersStub = (provider?: SafeSingletonProvider): IProvidersController | undefined =>
+const makeProvidersStub = (provider?: any): IProvidersController | undefined =>
   provider &&
   ({
     providers: new Proxy({}, { get: () => provider }),
@@ -40,10 +39,7 @@ const makeProvidersStub = (provider?: SafeSingletonProvider): IProvidersControll
  * isolated. Tests of the library itself should pass a plain `known` object instead; this is for
  * tests that assert on relayer traffic.
  */
-const getTestController = (
-  callRelayer: BindedRelayerCall,
-  provider?: SafeSingletonProvider
-): Erc7730Controller => {
+const getTestController = (callRelayer: BindedRelayerCall, provider?: any): Erc7730Controller => {
   const existing = controllersByRelayer.get(callRelayer)
   if (existing) return existing
 
@@ -69,7 +65,7 @@ export const getTestErc7730Errors = (callRelayer: BindedRelayerCall) =>
 export const getTestErc7730Descriptors = (
   accountOp: AccountOp,
   callRelayer: BindedRelayerCall,
-  provider?: SafeSingletonProvider
+  provider?: any
 ): Promise<Erc7730CallDescriptors> =>
   getTestController(callRelayer, provider).getDescriptorsForAccountOp(accountOp)
 
@@ -78,7 +74,7 @@ export const getTestErc7730DescriptorForCall = async (
   call: AccountOp['calls'][number],
   chainId: bigint,
   callRelayer: BindedRelayerCall,
-  provider?: SafeSingletonProvider
+  provider?: any
 ): Promise<Erc7730ResolvedDescriptor | null> => {
   const descriptors = await getTestErc7730Descriptors(
     { chainId, calls: [call] } as AccountOp,
@@ -92,6 +88,6 @@ export const getTestErc7730DescriptorForCall = async (
 export const getTestErc7730MessageDescriptor = (
   message: Message,
   callRelayer: BindedRelayerCall,
-  provider?: SafeSingletonProvider
+  provider?: any
 ): Promise<Erc7730ResolvedDescriptor | null> =>
   getTestController(callRelayer, provider).getDescriptorForMessage(message)
