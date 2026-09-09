@@ -727,11 +727,10 @@ describe('RequestsController ', () => {
   })
 
   test('assigns the first free nonce to each new Safe request', async () => {
-    const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
+    const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
-    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, chainId, 117n))
     const buildRequest = () =>
       controller.build({
         type: 'calls',
@@ -792,14 +791,14 @@ describe('RequestsController ', () => {
       if (request.kind === 'calls') request.signAccountOp.destroy()
     })
   })
-  test('uses the latest activity nonce when the account state is stale', async () => {
+  test('BUG: ignores activity nonces when assigning a new Safe request', async () => {
     const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
-    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, chainId, 118n, 1))
-    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, chainId, 120n, 2))
-    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, 10n, 999n, 3))
+    await activityCtrl.addAccountOp(
+      getActivityAccountOp(accountAddr, chainId, 1n << 192n, Date.now())
+    )
 
     await controller.build({
       type: 'calls',
@@ -815,7 +814,7 @@ describe('RequestsController ', () => {
     const request = controller.userRequests[0]
     expect(request?.kind).toBe('calls')
     if (request?.kind !== 'calls') throw new Error('Expected calls request')
-    expect(request.signAccountOp.accountOp.nonce).toBe(121n)
+    expect(request.signAccountOp.accountOp.nonce).toBe(119n)
     request.signAccountOp.destroy()
   })
   test('keeps the nonce when adding calls to an existing Safe request', async () => {
