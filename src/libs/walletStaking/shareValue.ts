@@ -3,9 +3,11 @@ import { Contract, formatUnits, WeiPerEther } from 'ethers'
 import { WALLET_STAKING_ADDR } from '../../consts/addresses'
 import { RPCProvider } from '../../interfaces/provider'
 import formatDecimals from '../../utils/formatDecimals/formatDecimals'
+import { withTimeout } from '../../utils/with-timeout'
 
 export const WALLET_STAKING_CHAIN_ID = 1n
 export const X_WALLET_SHARE_VALUE_CACHE_TTL = 60 * 60 * 1000
+export const X_WALLET_SHARE_VALUE_RPC_TIMEOUT_MS = 6000
 
 const X_WALLET_SHARE_VALUE_ABI = 'function shareValue() view returns (uint256)'
 
@@ -72,7 +74,12 @@ export class XWalletShareValueCache {
       if (typeof getShareValue !== 'function') {
         throw new Error('The WALLET staking conversion rate is unavailable.')
       }
-      const shareValue = BigInt(await getShareValue())
+      const shareValue = BigInt(
+        await withTimeout(() => getShareValue(), {
+          timeoutMs: X_WALLET_SHARE_VALUE_RPC_TIMEOUT_MS,
+          message: 'The WALLET staking conversion rate took too long to load.'
+        })
+      )
 
       if (shareValue <= 0n) {
         throw new Error('The WALLET staking conversion rate is unavailable.')

@@ -4,6 +4,7 @@ import { ethAddress, zeroAddress } from 'viem'
 import { FEE_COLLECTOR } from '@/consts/addresses'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
+import { CITREA_CHAIN_ID } from '../../consts/networks'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   ProviderQuoteParams,
@@ -17,13 +18,12 @@ import {
   SwapAndBridgeToToken,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
-import { CITREA_CHAIN_ID } from '../squid/constants'
 import { AMBIRE_FEE_TAKER_ADDRESSES, ETH_ON_OPTIMISM_LEGACY_ADDRESS } from './constants'
 
 type SocketV3Protocol = {
@@ -157,8 +157,8 @@ const getRouteProtocol = (route: SocketV3Route): SocketV3Protocol => {
   if (protocol) return protocol
 
   return {
-    name: details?.name || 'Socket',
-    displayName: details?.name || 'Socket',
+    name: details?.name || 'Bungee',
+    displayName: details?.name || 'Bungee',
     icon: details?.logoURI || ''
   }
 }
@@ -181,7 +181,7 @@ const getStatusTxnId = (response: SocketV3StatusResponse, fallbackTxnId: string)
 export class SocketV3API implements SwapProvider {
   id: string = 'socketv3'
 
-  name = 'Socket'
+  name = 'Bungee'
 
   #fetch: Fetch
 
@@ -229,7 +229,7 @@ export class SocketV3API implements SwapProvider {
 
   /** disable explicitly citrea for socket */
   areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
-    return fromChainId !== CITREA_CHAIN_ID && toChainId !== CITREA_CHAIN_ID
+    return fromChainId !== Number(CITREA_CHAIN_ID) && toChainId !== Number(CITREA_CHAIN_ID)
   }
 
   /**
@@ -253,7 +253,7 @@ export class SocketV3API implements SwapProvider {
           timeoutPromise = setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
-                'Our service provider Socket is temporarily unavailable or your internet connection is too slow.'
+                'Our service provider Bungee is temporarily unavailable or your internet connection is too slow.'
               )
             )
           }, this.#requestTimeoutMs)
@@ -322,7 +322,9 @@ export class SocketV3API implements SwapProvider {
     })
 
     const chains = response
-      .filter((c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== CITREA_CHAIN_ID)
+      .filter(
+        (c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== Number(CITREA_CHAIN_ID)
+      )
       .map(({ chainId }) => ({
         chainId
       }))

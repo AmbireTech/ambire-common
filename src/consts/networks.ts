@@ -1,5 +1,7 @@
 import { Network } from '../interfaces/network'
-import { BICONOMY, PIMLICO } from './bundlers'
+import { PIMLICO } from './bundlers'
+
+export const INVICTUS_RPC_URL_IDENTIFIER = 'invictus.ambire.com'
 
 const networks: Network[] = [
   {
@@ -39,7 +41,7 @@ const networks: Network[] = [
       enabled: false,
       hasPaymaster: true,
       hasBundlerSupport: true,
-      bundlers: [PIMLICO, BICONOMY],
+      bundlers: [PIMLICO],
       defaultBundler: PIMLICO
     },
     isSAEnabled: true,
@@ -69,8 +71,8 @@ const networks: Network[] = [
       enabled: true,
       hasPaymaster: true,
       hasBundlerSupport: true,
-      bundlers: [PIMLICO, BICONOMY],
-      defaultBundler: BICONOMY,
+      bundlers: [PIMLICO],
+      defaultBundler: PIMLICO,
       increasePreVerGas: 5
     },
     isSAEnabled: true,
@@ -134,7 +136,7 @@ const networks: Network[] = [
       enabled: true,
       hasPaymaster: true,
       hasBundlerSupport: true,
-      bundlers: [PIMLICO, BICONOMY],
+      bundlers: [PIMLICO],
       defaultBundler: PIMLICO
     },
     isSAEnabled: true,
@@ -165,7 +167,7 @@ const networks: Network[] = [
       enabled: true,
       hasPaymaster: true,
       hasBundlerSupport: true,
-      bundlers: [PIMLICO, BICONOMY],
+      bundlers: [PIMLICO],
       defaultBundler: PIMLICO,
       increasePreVerGas: 5
     },
@@ -226,7 +228,7 @@ const networks: Network[] = [
       enabled: false,
       hasPaymaster: true,
       hasBundlerSupport: true,
-      bundlers: [PIMLICO, BICONOMY],
+      bundlers: [PIMLICO],
       defaultBundler: PIMLICO
     },
     isSAEnabled: true,

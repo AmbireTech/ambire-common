@@ -1,14 +1,4 @@
-import { CollectionResult, MetaData, TokenError, TokenResult } from './interfaces'
-
-export function paginate<T>(input: T[], limit: number): T[][] {
-  const pages = []
-  let from = 0
-  for (let i = 1; i <= Math.ceil(input.length / limit); i++) {
-    pages.push(input.slice(from, i * limit))
-    from += limit
-  }
-  return pages
-}
+import { MetaData, TokenError } from './interfaces'
 
 export function flattenResults<T>(
   everything: Promise<[[string, T][], MetaData][]>[]
