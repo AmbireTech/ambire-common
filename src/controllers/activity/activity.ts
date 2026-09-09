@@ -519,8 +519,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const internalTxnIds = new Set(
       [...internalAccountOps].flatMap((op) => getInternalAccountOpTxnIds(op).map(normalizeTxnId))
     )
-    const isNotDuplicateOfInternal = (extOp: SubmittedAccountOpLike) =>
-      !extOp.txnId || !internalTxnIds.has(normalizeTxnId(extOp.txnId))
 
     const accountOpsEntriesOnEnabledNetworks = enabledNetworkChainIds
       .map(
@@ -529,7 +527,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
             chainId,
             [
               ...(internalAccountOpsByChain[chainId] || []),
-              ...(externalAccountOpsByChain[chainId] || []).filter(isNotDuplicateOfInternal)
+              ...(externalAccountOpsByChain[chainId] || []).filter(
+                (extOp) => !extOp.txnId || !internalTxnIds.has(normalizeTxnId(extOp.txnId))
+              )
             ]
           ] as const
       )
@@ -558,9 +558,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       )
     }
 
-    // Counted over the same chains and with the same dedup as filteredItems, so the total
-    // cannot promise pages that render empty.
-    //
+    // Counted over the chains this call renders, so a disabled chain cannot inflate the total.
     // An identifiedBy filter narrows to a single transaction and has no stored equivalent to
     // count, so there the loaded items ARE the total.
     const storedTotal = filters.identifiedBy
@@ -569,9 +567,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const externalTotal = filters.identifiedBy
       ? 0
       : chainIdsToRender.reduce(
-          (sum, chainId) =>
-            sum +
-            (externalAccountOpsByChain[chainId] || []).filter(isNotDuplicateOfInternal).length,
+          (sum, chainId) => sum + (externalAccountOpsByChain[chainId] || []).length,
           0
         )
 
@@ -579,8 +575,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       filteredItems,
       pagination.fromPage,
       pagination.itemsPerPage,
-      // Never below what is already loaded: a failed count returns 0, and dedup against the
-      // loaded window cannot see stored ops outside it, so the total can only undershoot.
+      // Floored at what is already loaded, because a failed count returns 0.
       Math.max(storedTotal + externalTotal, filteredItems.length)
     )
 

@@ -409,29 +409,6 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
     return ops
   }
 
-  /** Exact stored count for an account, or for one of its chains. */
-  async countOps(accountAddr: string, chainId?: bigint | string): Promise<number> {
-    const tx = await this.#openTx('readonly')
-    const store = tx.objectStore(this.#storeName)
-
-    if (chainId === undefined) {
-      return store.count(
-        IDBKeyRange.bound([accountAddr, '', ''], [accountAddr, RANGE_HIGH, RANGE_HIGH])
-      )
-    }
-
-    return store.count(
-      IDBKeyRange.bound(
-        [accountAddr, chainId.toString(), ''],
-        [accountAddr, chainId.toString(), RANGE_HIGH]
-      )
-    )
-  }
-
-  /**
-   * Whether the account already has a stored op with this txnId. Checked at write time so an
-   * external op never duplicates an internal one, which keeps the paginated total exact.
-   */
   /**
    * Count every row for an account across all chains.
    *
