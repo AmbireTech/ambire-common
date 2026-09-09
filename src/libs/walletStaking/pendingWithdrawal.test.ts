@@ -7,6 +7,7 @@ import { BindedRelayerCall } from '../relayerCall/relayerCall'
 import {
   getPendingWalletWithdrawalCommitmentId,
   PendingWalletWithdrawal,
+  WALLET_STAKING_COMMITMENT_RPC_TIMEOUT_MS,
   WALLET_STAKING_PENDING_WITHDRAWALS_CACHE_TTL,
   WalletStakingPendingWithdrawalsCache,
   walletStakingInterface
@@ -46,6 +47,7 @@ const getProvider = (commitments: Map<string, bigint>) =>
 
 describe('WalletStakingPendingWithdrawalsCache', () => {
   afterEach(() => {
+    jest.useRealTimers()
     jest.restoreAllMocks()
   })
 
@@ -166,5 +168,22 @@ describe('WalletStakingPendingWithdrawalsCache', () => {
     await expect(cache.get(params)).rejects.toThrow('relayer unavailable')
     await expect(cache.get(params)).rejects.toThrow('relayer unavailable')
     expect(callRelayer).toHaveBeenCalledTimes(1)
+  })
+
+  test('rejects when a commitment RPC call does not settle', async () => {
+    jest.useFakeTimers()
+    const callRelayer = getCallRelayer([getLog(ACCOUNT, withdrawals[0]!)])
+    const provider = {
+      call: jest.fn<RPCProvider['call']>(() => new Promise(() => {}))
+    } as RPCProvider
+    const cache = new WalletStakingPendingWithdrawalsCache()
+    const request = cache.get({ accountAddr: ACCOUNT, provider, callRelayer })
+    const expectation = expect(request).rejects.toThrow(
+      'Pending WALLET withdrawals took too long to load.'
+    )
+
+    await jest.advanceTimersByTimeAsync(WALLET_STAKING_COMMITMENT_RPC_TIMEOUT_MS)
+
+    await expectation
   })
 })

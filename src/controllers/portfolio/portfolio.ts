@@ -1740,6 +1740,17 @@ export class PortfolioController
             verifiedState.result.walletStaking = walletStaking
             this.emitUpdate()
           })
+          .catch((error) => {
+            const walletStakingError =
+              error instanceof Error
+                ? error
+                : new Error('Unable to update the WALLET staking conversion rate.')
+            this.emitError({
+              level: 'silent',
+              message: 'Unable to update the WALLET staking conversion rate.',
+              error: walletStakingError
+            })
+          })
       }
 
       // Fire-and-forget: verify the just-fetched balances against Colibri without

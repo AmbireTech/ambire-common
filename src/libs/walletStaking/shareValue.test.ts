@@ -6,6 +6,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import {
   getWalletAmountFromXWallet,
   getXWalletConversionText,
+  X_WALLET_SHARE_VALUE_RPC_TIMEOUT_MS,
   X_WALLET_SHARE_VALUE_CACHE_TTL,
   XWalletShareValueCache
 } from './shareValue'
@@ -22,6 +23,7 @@ describe('XWalletShareValueCache', () => {
   })
 
   afterEach(() => {
+    jest.useRealTimers()
     jest.restoreAllMocks()
   })
 
@@ -103,6 +105,20 @@ describe('XWalletShareValueCache', () => {
     await expect(cache.get(getProvider(call))).rejects.toThrow(
       'The WALLET staking conversion rate is unavailable.'
     )
+  })
+
+  test('rejects when the share value RPC call does not settle', async () => {
+    jest.useFakeTimers()
+    const call = jest.fn<RPCProvider['call']>(() => new Promise(() => {}))
+    const cache = new XWalletShareValueCache()
+    const request = cache.get(getProvider(call))
+    const expectation = expect(request).rejects.toThrow(
+      'The WALLET staking conversion rate took too long to load.'
+    )
+
+    await jest.advanceTimersByTimeAsync(X_WALLET_SHARE_VALUE_RPC_TIMEOUT_MS)
+
+    await expectation
   })
 })
 

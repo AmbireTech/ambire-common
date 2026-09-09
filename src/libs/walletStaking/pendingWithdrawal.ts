@@ -2,9 +2,11 @@ import { AbiCoder, Contract, Interface, keccak256, parseUnits } from 'ethers'
 
 import { WALLET_STAKING_ADDR } from '../../consts/addresses'
 import { RPCProvider } from '../../interfaces/provider'
+import { withTimeout } from '../../utils/with-timeout'
 import { BindedRelayerCall } from '../relayerCall/relayerCall'
 
 export const WALLET_STAKING_PENDING_WITHDRAWALS_CACHE_TTL = 60 * 1000
+export const WALLET_STAKING_COMMITMENT_RPC_TIMEOUT_MS = 6000
 
 export interface PendingWalletWithdrawal {
   shares: bigint
@@ -317,7 +319,12 @@ export class WalletStakingPendingWithdrawalsCache {
         await Promise.all(
           Array.from(withdrawalsById.values()).map(async (withdrawal) => {
             const commitmentId = getPendingWalletWithdrawalCommitmentId(accountAddr, withdrawal)
-            const maxTokens = BigInt(await getCommitment(commitmentId))
+            const maxTokens = BigInt(
+              await withTimeout(() => getCommitment(commitmentId), {
+                timeoutMs: WALLET_STAKING_COMMITMENT_RPC_TIMEOUT_MS,
+                message: 'Pending WALLET withdrawals took too long to load.'
+              })
+            )
             return maxTokens > 0n ? { ...withdrawal, maxTokens } : null
           })
         )
