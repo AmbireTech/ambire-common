@@ -1985,7 +1985,10 @@ export class MainController extends EventEmitter implements IMainController {
     ) as CallsUserRequest | undefined
 
     if (userRequest) {
-      await this.requests.rejectCalls({ activeRouteIds: [activeRouteId] })
+      await this.requests.rejectCalls({
+        activeRouteIds: [activeRouteId],
+        isUserInitiated: false
+      })
     } else {
       this.swapAndBridge.removeActiveRoute(activeRouteId)
     }
