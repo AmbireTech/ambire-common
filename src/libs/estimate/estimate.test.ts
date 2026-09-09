@@ -43,32 +43,10 @@ arbitrum.areContractsDeployed = true
 const avalanche = networks.find((x) => x.chainId === 43114n)!
 avalanche.areContractsDeployed = true
 const polygon = networks.find((x) => x.chainId === 137n)
-networks.push({
-  name: 'Cronos',
-  nativeAssetSymbol: 'CRO',
-  has7702: false,
-  nativeAssetName: 'Cronos',
-  rpcUrls: ['https://evm.cronos.org'],
-  selectedRpcUrl: 'https://evm.cronos.org',
-  rpcNoStateOverride: false,
-  chainId: 25n,
-  explorerUrl: '',
-  erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false },
-  isSAEnabled: false,
-  areContractsDeployed: false,
-  hasRelayer: false,
-  platformId: 'cronos',
-  nativeAssetId: 'crypto-com-chain',
-  hasSingleton: false,
-  features: [],
-  feeOptions: { is1559: true },
-  predefined: false,
-  disableEstimateGas: true
-})
+
 if (!ethereum || !optimism || !arbitrum || !avalanche || !polygon) throw new Error('no network')
 const provider = getRpcProvider(ethereum.rpcUrls, ethereum.chainId)
 const providerOptimism = getRpcProvider(optimism.rpcUrls, optimism.chainId)
-const providerArbitrum = getRpcProvider(arbitrum.rpcUrls, arbitrum.chainId)
 // const providerAvalanche = getRpcProvider(avalanche.rpcUrls, avalanche.chainId)
 const providerPolygon = getRpcProvider(polygon.rpcUrls, polygon.chainId)
 const addrWithDeploySignature = '0x52C37FD54BD02E9240e8558e28b11e0Dc22d8e85'
@@ -792,57 +770,6 @@ describe('estimate', () => {
     })
   })
 
-  // skipping this one as we don't handle the deprycated account anymore
-  it.skip('estimates an arbitrum request with the deprycated ambire v2 account', async () => {
-    const eoaAddr = '0x40b38765696e3d5d8d9d834d8aad4bb6e418e489'
-    const usdtAddr = '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9'
-    const v2AccAbi = new Contract(deprycatedV2.addr, AmbireAccount.abi, providerArbitrum)
-    const ERC20Interface = new Interface(ERC20.abi)
-    const opArbitrum = {
-      accountAddr: deprycatedV2.addr,
-      signingKeyAddr: deprycatedV2.associatedKeys[0]!,
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      chainId: 42161n,
-      nonce: await (v2AccAbi as any).nonce(),
-      signature: spoofSig,
-      calls: [
-        {
-          to: usdtAddr,
-          value: 0n,
-          data: ERC20Interface.encodeFunctionData('transfer', [eoaAddr, 1])
-        }
-      ],
-      id: 'random'
-    }
-
-    const accountStates = await getAccountsInfo([deprycatedV2])
-    const accountState = accountStates[deprycatedV2.addr]![arbitrum.chainId.toString()]!
-    const baseAcc = getBaseAccount(deprycatedV2, accountState, arbitrum, true, true)
-    const response = await getEstimation(
-      baseAcc,
-      accountState,
-      opArbitrum,
-      arbitrum,
-      providerArbitrum,
-      feeTokens,
-      getNativeToCheckFromEOAs(nativeToCheck, deprycatedV2),
-      new BundlerSwitcher(arbitrum, areUpdatesForbidden)
-    )
-
-    expect(response instanceof Error).toBe(false)
-    const res = response as FullEstimation
-    expect(res.ambire instanceof Error).toBe(false)
-    const ambireGas = res.ambire as AmbireEstimation
-    ambireGas.feePaymentOptions.forEach((feeToken) => {
-      expect(feeToken.addedNative).toBe(0n)
-    })
-    // this is true because it's an outdate smart account here
-    // and we're testing ambire estimate only
-    expect(res.bundler instanceof Error).toBe(true)
-  })
-
   it('Optimism | deployed account | should put a lower account nonce in account op and ambire etimation should raise a nonce discrepancy flag', async () => {
     const opOptimism = {
       accountAddr: smartAccDeployed.addr,
@@ -1562,46 +1489,5 @@ describe('estimate', () => {
 
     expect(response.criticalError).not.toBe(undefined)
     expect(response.criticalError!.message).toBe('Transaction invalid: out of gas')
-  })
-
-  it('[EOA]:Cronos | should estimate correctly without OOG', async () => {
-    const call = {
-      to: v1Acc.addr,
-      value: 1n,
-      data: '0x'
-    }
-    const cronosProvider = getRpcProvider(['https://evm.cronos.org'], 25n)
-    const opCronos = {
-      accountAddr: localRelayer.addr,
-      signingKeyAddr: localRelayer.addr,
-      signingKeyType: null,
-      gasLimit: null,
-      gasFeePayment: null,
-      chainId: 25n,
-      nonce: BigInt(await cronosProvider.getTransactionCount(localRelayer.addr)),
-      signature: '0x',
-      calls: [call],
-      id: 'random'
-    }
-    const accountStates = await getAccountsInfo([localRelayer])
-    const accountState = accountStates[localRelayer.addr]!['25']!
-    const cronos = networks.find((n) => n.chainId === 25n)!
-    const baseAcc = getBaseAccount(localRelayer, accountState, cronos, true, true)
-    const response = await getEstimation(
-      baseAcc,
-      accountState,
-      opCronos,
-      cronos,
-      cronosProvider,
-      [],
-      [],
-      new BundlerSwitcher(cronos, areUpdatesForbidden)
-    )
-
-    expect(response instanceof Error).toBe(false)
-    const res = response as FullEstimation
-    expect(res.provider instanceof Error).toBe(false)
-    const providerGas = res.provider as ProviderEstimation
-    expect(providerGas.gasUsed).toBe(21000n)
   })
 })

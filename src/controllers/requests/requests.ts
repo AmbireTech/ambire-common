@@ -953,13 +953,19 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     options?: {
       shouldRemoveSwapAndBridgeRoute?: boolean
       shouldOpenNextRequest?: boolean
+      shouldSkipSafeQueueRequests?: boolean
     }
   ) {
-    const { shouldRemoveSwapAndBridgeRoute = true, shouldOpenNextRequest = true } = options || {}
+    const {
+      shouldRemoveSwapAndBridgeRoute = true,
+      shouldOpenNextRequest = true,
+      shouldSkipSafeQueueRequests = false
+    } = options || {}
 
     const userRequestsToAdd: UserRequest[] = []
     const safeRejectIds: string[] = []
     let didRemoveCurrentUserRequest = false
+    let didRemoveSkipQueueRequest = false
 
     ids.forEach((id) => {
       const req = this.userRequests.find((uReq) => uReq.id === id)
@@ -968,6 +974,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       this.userRequests.splice(this.userRequests.indexOf(req), 1)
       if (this.currentUserRequest?.id === req.id) didRemoveCurrentUserRequest = true
+
+      // finishing other requests should not automatically open Safe Queue requests
+      if (req.kind !== 'calls') didRemoveSkipQueueRequest = true
 
       // update the pending stuff to be signed
       const { kind, meta } = req
@@ -1028,7 +1037,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!this.visibleUserRequests.length) {
       await this.#setCurrentUserRequest(null)
     } else if (shouldOpenNextRequest) {
-      await this.#setCurrentUserRequest(this.visibleUserRequests[0] || null, {
+      const shouldSkipSignedSafeCalls =
+        (didRemoveSkipQueueRequest || shouldSkipSafeQueueRequests) &&
+        !!this.#selectedAccount.account?.safeCreation
+      const nextRequest = this.visibleUserRequests.find(
+        (request) =>
+          !shouldSkipSignedSafeCalls ||
+          request.kind !== 'calls' ||
+          !request.signAccountOp.accountOp.signed?.length
+      )
+
+      await this.#setCurrentUserRequest(nextRequest || null, {
         skipFocus: true
       })
     } else if (didRemoveCurrentUserRequest) {
@@ -1106,7 +1125,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       (r) => !waitingUserRequestsToReject.includes(r)
     )
 
-    await this.removeUserRequests(requestIds, options)
+    await this.removeUserRequests(requestIds, {
+      ...options,
+      shouldSkipSafeQueueRequests: true
+    })
   }
 
   async build({ type, params }: BuildRequest) {
@@ -1293,7 +1315,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       calls = calls.map((c) => ({
         ...c,
-        data: c.data || '0x',
+        data: c.data?.toLowerCase() || '0x',
         value: c.value ? getBigInt(c.value) : 0n,
         dapp: dapp ?? undefined,
         dappPromiseId: dappPromise.id

@@ -100,7 +100,7 @@ describe('getBridgeBanners', () => {
   test('tags the banner with the account the active routes belong to', () => {
     const activeRoutes: SwapAndBridgeActiveRoute[] = [
       {
-        serviceProviderId: 'squid',
+        serviceProviderId: 'lifi',
         fromAssetAddress: '0x0',
         toAssetAddress: '0x0',
         steps: [],

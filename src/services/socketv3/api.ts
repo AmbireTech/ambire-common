@@ -4,6 +4,7 @@ import { ethAddress, zeroAddress } from 'viem'
 import { FEE_COLLECTOR } from '@/consts/addresses'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
+import { CITREA_CHAIN_ID } from '../../consts/networks'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   ProviderQuoteParams,
@@ -17,17 +18,13 @@ import {
   SwapAndBridgeToToken,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { CITREA_CHAIN_ID } from '../squid/constants'
-import {
-  AMBIRE_FEE_TAKER_ADDRESSES,
-  ETH_ON_OPTIMISM_LEGACY_ADDRESS,
-  FEE_PERCENT
-} from './constants'
+import { AMBIRE_FEE_TAKER_ADDRESSES, ETH_ON_OPTIMISM_LEGACY_ADDRESS } from './constants'
 
 type SocketV3Protocol = {
   name: string
@@ -160,8 +157,8 @@ const getRouteProtocol = (route: SocketV3Route): SocketV3Protocol => {
   if (protocol) return protocol
 
   return {
-    name: details?.name || 'Socket',
-    displayName: details?.name || 'Socket',
+    name: details?.name || 'Bungee',
+    displayName: details?.name || 'Bungee',
     icon: details?.logoURI || ''
   }
 }
@@ -184,7 +181,7 @@ const getStatusTxnId = (response: SocketV3StatusResponse, fallbackTxnId: string)
 export class SocketV3API implements SwapProvider {
   id: string = 'socketv3'
 
-  name = 'Socket'
+  name = 'Bungee'
 
   #fetch: Fetch
 
@@ -232,7 +229,7 @@ export class SocketV3API implements SwapProvider {
 
   /** disable explicitly citrea for socket */
   areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
-    return fromChainId !== CITREA_CHAIN_ID && toChainId !== CITREA_CHAIN_ID
+    return fromChainId !== Number(CITREA_CHAIN_ID) && toChainId !== Number(CITREA_CHAIN_ID)
   }
 
   /**
@@ -256,7 +253,7 @@ export class SocketV3API implements SwapProvider {
           timeoutPromise = setTimeout(() => {
             reject(
               new SwapAndBridgeProviderApiError(
-                'Our service provider Socket is temporarily unavailable or your internet connection is too slow.'
+                'Our service provider Bungee is temporarily unavailable or your internet connection is too slow.'
               )
             )
           }, this.#requestTimeoutMs)
@@ -325,7 +322,9 @@ export class SocketV3API implements SwapProvider {
     })
 
     const chains = response
-      .filter((c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== CITREA_CHAIN_ID)
+      .filter(
+        (c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== Number(CITREA_CHAIN_ID)
+      )
       .map(({ chainId }) => ({
         chainId
       }))
@@ -406,7 +405,8 @@ export class SocketV3API implements SwapProvider {
     userAddress,
     isWrapOrUnwrap,
     accountNativeBalance,
-    nativeSymbol
+    nativeSymbol,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     if (!fromAsset || !toAsset)
       throw new SwapAndBridgeProviderApiError(
@@ -424,11 +424,15 @@ export class SocketV3API implements SwapProvider {
       receiverAddress: userAddress
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId] || FEE_COLLECTOR
-    const shouldIncludeConvenienceFee =
-      !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
+    const feeExemptionReason = getFeeExemptionReason({
+      isWrapOrUnwrap,
+      isFeeExemptToken: isNoFeeToken(fromChainId, fromTokenAddress),
+      isFeeCollectionAvailable: !!feeTakerAddress
+    })
+    const shouldIncludeConvenienceFee = feePercent > 0 && !feeExemptionReason
     if (shouldIncludeConvenienceFee) {
       params.append('feeTakerAddress', feeTakerAddress)
-      params.append('feeBps', (FEE_PERCENT * 100).toString())
+      params.append('feeBps', (feePercent * 100).toString())
     }
 
     const url = `${this.#socketApiUrl}/v3/swap/quote?${params.toString()}`
@@ -534,6 +538,7 @@ export class SocketV3API implements SwapProvider {
           : undefined,
         rawRoute: route as any,
         withConvenienceFee: shouldIncludeConvenienceFee,
+        feeExemptionReason,
         usedBridgeNames:
           fromChainId !== normalizedToAsset.chainId ? [protocol.name.toLowerCase()] : [''],
         usedDexName: fromChainId === normalizedToAsset.chainId ? protocol.displayName : undefined

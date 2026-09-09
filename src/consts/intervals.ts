@@ -21,3 +21,8 @@ export const TRENDING_TOKENS_FAILED_UPDATE_INTERVAL = 60 * 1000 // 1 minute
 export const ESTIMATE_UPDATE_INTERVAL = 30000
 export const GAS_PRICE_UPDATE_INTERVAL = 12000
 export const FETCH_SAFE_TXNS = 3 * 60 * 1000 // 3 minutes
+// How often the runner checks whether any scheduled portfolio update is due
+export const SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL = 20 * 1000 // 20 seconds
+// How long a scheduled portfolio update waits before the runner executes it, giving the
+// discovery API time to index the defi position changes caused by the transaction
+export const SCHEDULED_PORTFOLIO_UPDATE_DELAY = 60 * 1000 // 1 minute

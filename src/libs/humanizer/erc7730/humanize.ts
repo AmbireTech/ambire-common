@@ -1,6 +1,7 @@
 import {
   formatUnits,
   FunctionFragment,
+  getAddress,
   Interface,
   isAddress,
   isHexString,
@@ -10,6 +11,7 @@ import {
 } from 'ethers'
 
 import { humanizerCallModules } from '../'
+import { execTransactionAbi } from '../../../consts/safe'
 import humanizerInfo from '../../../consts/humanizer/humanizerInfo.json'
 import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
@@ -83,6 +85,7 @@ type VisibilityResult = {
 
 const MAX_INTERPOLATED_VALUE_LENGTH = 80
 const ABI_WORD_HEX_LENGTH = 64
+const safeExecTransactionInterface = new Interface(execTransactionAbi)
 
 const isMapReference = (value: unknown): value is Erc7730MapReference =>
   isPlainObject(value) && typeof value.map === 'string' && typeof value.keyPath === 'string'
@@ -387,6 +390,21 @@ const getSafeExecTransactionWarnings = (match: DescriptorFormatMatch): Humanizer
   if (operation === null || typeof to !== 'string') return []
 
   return getDelegateCallWarning(operation, to)
+}
+
+// `getCalldataFormatMatch` already ABI-decodes every execTransaction argument regardless of which
+// ones the resolved descriptor's own fields declare, so baseGas/gasPrice/gasToken/refundReceiver
+// are available here the same way they are for a SafeTx message - see buildSafeTxGasRefund.
+const getSafeExecTransactionGasRefund = (match: DescriptorFormatMatch): SafeTxGasRefund | null => {
+  const fragment = getFunctionFragment(match.formatKey)
+  if (fragment?.name !== 'execTransaction') return null
+
+  return buildSafeTxGasRefund(
+    match.values.baseGas,
+    match.values.gasPrice,
+    match.values.gasToken,
+    match.values.refundReceiver
+  )
 }
 
 const getTypedMessageFormatMatch = (
@@ -1546,6 +1564,114 @@ const getSafeCallWarnings = (call: Call, safeAddr = call.to): HumanizerWarning[]
   return getSafeHumanization(safeAddr, call.to, call.value, call.data)?.warnings || []
 }
 
+type SafeTxGasRefund = {
+  // undefined when `refundReceiver` is the zero address - Safe.sol's handlePayment then pays
+  // tx.origin (whoever broadcasts this transaction) instead of a fixed address, it does NOT mean
+  // no refund is paid
+  refundReceiver?: string
+  gasToken: string
+  // `gasUsed * effectiveGasPrice` is always added on top of this at execution time and can't be
+  // known ahead of time, so this is only the extra, fully attacker-controlled additive component
+  // (`baseGas * gasPrice`) - a guaranteed floor when nonzero, but frequently zero on its own
+  // (baseGas defaults to 0), in which case the real payment still happens, its size just isn't
+  // predictable from calldata alone
+  minAmount: bigint
+}
+
+// Safe.sol's execTransaction only pays a gas refund at all when `gasPrice > 0` - see the
+// `if (gasPrice > 0) { payment = handlePayment(...) }` guard - independent of `baseGas`, which
+// only adds to the payment on top of the real (unknowable ahead of time) execution gas cost. Both
+// are static SafeTx/execTransaction fields, decodable without a relayer or ERC-7730 descriptor, so
+// this never depends on what fields an external descriptor declares - it works the same whether
+// the source is a signed SafeTx message or a broadcast execTransaction call.
+const buildSafeTxGasRefund = (
+  baseGas: unknown,
+  gasPrice: unknown,
+  gasToken: unknown,
+  refundReceiver: unknown
+): SafeTxGasRefund | null => {
+  const bigintBaseGas = toBigIntOrNull(baseGas ?? 0)
+  const bigintGasPrice = toBigIntOrNull(gasPrice ?? 0)
+  if (bigintBaseGas === null || bigintGasPrice === null || bigintGasPrice <= 0n) return null
+
+  const receiver =
+    typeof refundReceiver === 'string' && isAddress(refundReceiver)
+      ? getAddress(refundReceiver)
+      : null
+
+  return {
+    refundReceiver: receiver && receiver !== ZeroAddress ? receiver : undefined,
+    gasToken:
+      typeof gasToken === 'string' && isAddress(gasToken) ? getAddress(gasToken) : ZeroAddress,
+    minAmount: bigintBaseGas * bigintGasPrice
+  }
+}
+
+const getSafeTxGasRefund = (message: Message): SafeTxGasRefund | null => {
+  if (message.content.kind !== 'typedMessage') return null
+  if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return null
+
+  const { baseGas, gasPrice, gasToken, refundReceiver } = message.content.message
+  return buildSafeTxGasRefund(baseGas, gasPrice, gasToken, refundReceiver)
+}
+
+// Same fields as getSafeTxGasRefund, decoded straight from a broadcast execTransaction call's
+// calldata instead of a signed SafeTx message.
+const getExecTransactionGasRefund = (data: string): SafeTxGasRefund | null => {
+  if (!isHexString(data)) return null
+
+  try {
+    const [, , , , , baseGas, gasPrice, gasToken, refundReceiver] =
+      safeExecTransactionInterface.decodeFunctionData('execTransaction', data)
+    return buildSafeTxGasRefund(baseGas, gasPrice, gasToken, refundReceiver)
+  } catch {
+    return null
+  }
+}
+
+const getGasRefundWarning = (gasRefund: SafeTxGasRefund | null): HumanizerWarning[] =>
+  gasRefund
+    ? [
+        getWarning(
+          gasRefund.refundReceiver
+            ? 'This transaction also sends a separate payment to the address below as a "gas refund", on top of what is shown above. Only proceed if you expect this'
+            : 'This transaction also sends a separate payment to whoever broadcasts it, as a "gas refund", on top of what is shown above. Only proceed if you expect this',
+          'SAFE{WALLET}_GAS_REFUND',
+          undefined,
+          gasRefund.refundReceiver
+        )
+      ]
+    : []
+
+// Always adds a "gas refund" row when the transaction pays one, regardless of whether the
+// resolved ERC-7730 descriptor's own fields happen to surface `refundReceiver`/`gasToken`/
+// `gasPrice` - this is what actually renders, so it must not depend on what an external
+// descriptor declares.
+const appendGasRefundRow = (
+  fullVisualization: HumanizerVisualization[],
+  gasRefund: SafeTxGasRefund | null
+): HumanizerVisualization[] => {
+  if (!gasRefund) return fullVisualization
+
+  const refundRow: HumanizerErc7730Row = {
+    label: 'Gas refund to',
+    value: [
+      gasRefund.refundReceiver
+        ? getAddressVisualization(gasRefund.refundReceiver)
+        : getText('whoever broadcasts this transaction'),
+      gasRefund.minAmount > 0n
+        ? getToken(gasRefund.gasToken, gasRefund.minAmount)
+        : getText('amount depends on gas used')
+    ]
+  }
+
+  return fullVisualization.map((visualization) =>
+    visualization.type === 'erc7730'
+      ? { ...visualization, rows: [...visualization.rows, refundRow] }
+      : visualization
+  )
+}
+
 const getSafeTxMessageWarnings = (message: Message): HumanizerWarning[] => {
   if (message.content.kind !== 'typedMessage') return []
   if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return []
@@ -1557,6 +1683,8 @@ const getSafeTxMessageWarnings = (message: Message): HumanizerWarning[] => {
   if (bigintOperation !== null && typeof to === 'string') {
     warnings.push(...getDelegateCallWarning(bigintOperation, to))
   }
+
+  warnings.push(...getGasRefundWarning(getSafeTxGasRefund(message)))
 
   const safeTxCalls = getSafeTxCallsFromMessage(message) || []
   safeTxCalls.forEach((safeTxCall) => warnings.push(...getSafeCallWarnings(safeTxCall)))
@@ -1715,22 +1843,28 @@ export const humanizeCallWithErc7730 = (
 
     if (!safeTxCallVisualizations.length || !call.to) return null
 
+    const gasRefund = getExecTransactionGasRefund(call.data)
+
     return {
       ...call,
-      fullVisualization: [
-        getErc7730Visualization('Execute a Safe{Wallet} Transaction', [
-          {
-            label: 'Safe',
-            value: [getAddressVisualization(call.to)]
-          },
-          {
-            label: '',
-            value: safeTxCallVisualizations
-          }
-        ])
-      ],
+      fullVisualization: appendGasRefundRow(
+        [
+          getErc7730Visualization('Execute a Safe{Wallet} Transaction', [
+            {
+              label: 'Safe',
+              value: [getAddressVisualization(call.to)]
+            },
+            {
+              label: '',
+              value: safeTxCallVisualizations
+            }
+          ])
+        ],
+        gasRefund
+      ),
       warnings: dedupeWarnings([
         ...resolvedDescriptor.safeTxCalls.flatMap((safeTxCall) => getSafeCallWarnings(safeTxCall)),
+        ...getGasRefundWarning(gasRefund),
         ...collectedWarnings
       ])
     }
@@ -1766,24 +1900,29 @@ export const humanizeCallWithErc7730 = (
   const visualizationWithNativeValue = oneInchVisualization
     ? appendNativeValueRow(oneInchVisualization, call.value, chainId)
     : null
+  if (!visualizationWithNativeValue?.fullVisualization.length) return null
 
-  return visualizationWithNativeValue?.fullVisualization.length
-    ? {
-        ...call,
-        fullVisualization: visualizationWithNativeValue.fullVisualization,
-        warnings: dedupeWarnings([
-          ...getSafeCallWarnings(call, accountAddr),
-          ...getSafeExecTransactionWarnings(match),
-          ...getNativeValueWarnings(
-            visualizationWithNativeValue.didAppendNativeValueRow,
-            nativeAssetSymbol
-          ),
-          ...getNestedCalldataDepthWarnings(visualizationWithNativeValue.fullVisualization),
-          // warnings the nested calls produced while this call was being formatted
-          ...context.collectedWarnings
-        ])
-      }
-    : null
+  const gasRefund = getSafeExecTransactionGasRefund(match)
+
+  return {
+    ...call,
+    fullVisualization: appendGasRefundRow(
+      visualizationWithNativeValue.fullVisualization,
+      gasRefund
+    ),
+    warnings: dedupeWarnings([
+      ...getSafeCallWarnings(call, accountAddr),
+      ...getSafeExecTransactionWarnings(match),
+      ...getGasRefundWarning(gasRefund),
+      ...getNativeValueWarnings(
+        visualizationWithNativeValue.didAppendNativeValueRow,
+        nativeAssetSymbol
+      ),
+      ...getNestedCalldataDepthWarnings(visualizationWithNativeValue.fullVisualization),
+      // warnings the nested calls produced while this call was being formatted
+      ...context.collectedWarnings
+    ])
+  }
 }
 
 export const humanizeMessageWithErc7730 = (
@@ -1814,7 +1953,10 @@ export const humanizeMessageWithErc7730 = (
   const fullVisualization = formatToVisualizations(match.format, context)
   const safeTxVisualization =
     fullVisualization && message.content.primaryType === SAFE_TX_PRIMARY_TYPE
-      ? replaceSafeTxTransactionRow(fullVisualization, message, chainId, resolvedDescriptor)
+      ? appendGasRefundRow(
+          replaceSafeTxTransactionRow(fullVisualization, message, chainId, resolvedDescriptor),
+          getSafeTxGasRefund(message)
+        )
       : fullVisualization
 
   return safeTxVisualization?.length

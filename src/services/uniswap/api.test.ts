@@ -3,9 +3,9 @@ import { Interface } from 'ethers'
 import { describe, expect, it, jest } from '@jest/globals'
 
 import ERC20 from '../../../contracts/compiled/IERC20.json'
+import { CITREA_CHAIN_ID } from '../../consts/networks'
 import { SwapAndBridgeRoute } from '../../interfaces/swapAndBridge'
 import { ZERO_ADDRESS } from '../socket/constants'
-import { CITREA_CHAIN_ID } from '../squid/constants'
 import { UniswapAPI } from './api'
 
 const erc20Interface = new Interface(ERC20.abi)
@@ -25,12 +25,94 @@ describe('UniswapAPI', () => {
     const uniswapApi = new UniswapAPI({ fetch: jest.fn() as any, apiKey: 'test-key' })
 
     expect(uniswapApi.areChainsSupported({ fromChainId: 1, toChainId: 8453 })).toBe(true)
-    expect(uniswapApi.areChainsSupported({ fromChainId: CITREA_CHAIN_ID, toChainId: 1 })).toBe(
-      false
-    )
+    expect(
+      uniswapApi.areChainsSupported({ fromChainId: Number(CITREA_CHAIN_ID), toChainId: 1 })
+    ).toBe(false)
 
     const chains = await uniswapApi.getSupportedChains()
-    expect(chains.some((chain) => chain.chainId === CITREA_CHAIN_ID)).toBe(false)
+    expect(chains.some((chain) => chain.chainId === Number(CITREA_CHAIN_ID))).toBe(false)
+  })
+
+  it('requests the top destination-chain tokens and normalizes the response', async () => {
+    const fetch = jest.fn(async () =>
+      makeResponse({
+        requestId: 'request-id',
+        tokens: [
+          {
+            address: tokenIn.toLowerCase(),
+            chainId: 1,
+            decimals: 6,
+            logoURI: 'https://example.com/usdc.png',
+            name: 'USD Coin',
+            symbol: 'USDC',
+            extensions: { safetyInfo: { safetyLevel: 'verified' } }
+          },
+          {
+            address: ZERO_ADDRESS,
+            chainId: 1,
+            decimals: 18,
+            logoURI: null,
+            name: 'Ether',
+            symbol: 'ETH'
+          },
+          {
+            address: tokenOut,
+            chainId: 1,
+            decimals: 6,
+            logoURI: null,
+            name: 'Blocked token',
+            symbol: 'BLOCKED',
+            extensions: { safetyInfo: { safetyLevel: 'blocked' } }
+          },
+          {
+            address: tokenIn,
+            chainId: 8453,
+            decimals: 6,
+            logoURI: null,
+            name: 'Wrong-chain token',
+            symbol: 'WRONG'
+          }
+        ]
+      })
+    )
+    const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
+
+    const tokens = await uniswapApi.getToTokenList({ fromChainId: 1, toChainId: 1 })
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://trade-api.gateway.uniswap.org/v1/tokens?chainId=1&limit=500&sort=tvl',
+      { headers: expect.any(Object) }
+    )
+    expect(tokens[0]).toMatchObject({ address: ZERO_ADDRESS, icon: '', symbol: 'ETH' })
+    expect(tokens).toContainEqual(
+      expect.objectContaining({
+        address: tokenIn,
+        chainId: 1,
+        icon: 'https://example.com/usdc.png',
+        symbol: 'USDC'
+      })
+    )
+    expect(tokens.some((token) => token.symbol === 'BLOCKED')).toBe(false)
+    expect(tokens.some((token) => token.chainId !== 1)).toBe(false)
+  })
+
+  it('handles an empty token-list response', async () => {
+    const fetch = jest.fn(async () => makeResponse({ requestId: 'request-id' }))
+    const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
+
+    await expect(
+      uniswapApi.getToTokenList({ fromChainId: 8453, toChainId: 8453 })
+    ).resolves.toEqual([])
+  })
+
+  it('does not request tokens for an unsupported network pair', async () => {
+    const fetch = jest.fn()
+    const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
+
+    await expect(
+      uniswapApi.getToTokenList({ fromChainId: Number(CITREA_CHAIN_ID), toChainId: 1 })
+    ).rejects.toThrow('The requested network pair is not supported')
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('requests a direct-approval classic quote and normalizes the route', async () => {
@@ -91,7 +173,8 @@ describe('UniswapAPI', () => {
       sort: 'output',
       isWrapOrUnwrap: false,
       accountNativeBalance: 1n,
-      nativeSymbol: 'ETH'
+      nativeSymbol: 'ETH',
+      feePercent: 0.25
     })
 
     const [, init] = (fetch as any).mock.calls[0]
@@ -100,7 +183,7 @@ describe('UniswapAPI', () => {
     expect((init as any).headers['x-api-key']).toBe('test-key')
     expect((init as any).headers['x-permit2-disabled']).toBe('true')
     expect(body.protocols).toEqual(['V4', 'V3', 'V2'])
-    expect(body.integratorFees).toEqual([{ bips: 50, recipient: expect.any(String) }])
+    expect(body.integratorFees).toEqual([{ bips: 25, recipient: expect.any(String) }])
     expect(quote.routes[0]!.providerId).toBe('uniswap')
     expect(quote.routes[0]!.routeId).toBe('quote-id')
     expect(quote.routes[0]!.inputValueInUsd).toBe(1)
@@ -160,7 +243,8 @@ describe('UniswapAPI', () => {
       sort: 'output',
       isWrapOrUnwrap: false,
       accountNativeBalance: 1n,
-      nativeSymbol: 'ETH'
+      nativeSymbol: 'ETH',
+      feePercent: 0.5
     })
 
     expect(quote.routes[0]!.usedBridgeNames).toEqual(['across'])

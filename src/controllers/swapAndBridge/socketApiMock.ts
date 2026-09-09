@@ -41,6 +41,10 @@ export class SocketAPIMock {
     this.isHealthy = null
   }
 
+  getProvidersInfo() {
+    return [{ id: this.id, name: this.name }]
+  }
+
   async getSupportedChains() {
     return networks.map((network) => ({ chainId: network.chainId }))
   }
