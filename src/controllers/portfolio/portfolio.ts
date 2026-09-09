@@ -5,7 +5,7 @@ import {
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { StaleRpcBlockError } from '../../classes/StaleRpcBlockError'
-import { STK_WALLET, WALLET_STAKING_ADDR } from '../../consts/addresses'
+import { STK_WALLET } from '../../consts/addresses'
 import {
   BLACKLIST_UPDATE_INTERVAL,
   SCHEDULED_PORTFOLIO_UPDATE_DELAY,
@@ -95,13 +95,10 @@ import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { getFlags } from '../../libs/portfolio/tokenProcessing'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
-import {
-  WALLET_STAKING_CHAIN_ID,
-  xWalletShareValueCache
-} from '../../libs/walletStaking/shareValue'
 import batcher from '../../utils/batcher'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
+import { WalletTokenController } from '../walletToken/walletToken'
 
 const EXTERNAL_API_HINTS_TTL = {
   dynamic: 15 * 60 * 1000,
@@ -203,52 +200,7 @@ export class PortfolioController
    */
   protected hints: HintsController
 
-  #loadWalletStakingShareValue(
-    accountAddr: string,
-    network: Network,
-    tokens: TokenResult[],
-    state: NetworkState<PortfolioNetworkResult>,
-    provider: RPCProviders[string]
-  ) {
-    if (network.chainId !== WALLET_STAKING_CHAIN_ID) return
-
-    const hasXWalletBalance = tokens.some(
-      (token) =>
-        token.address.toLowerCase() === WALLET_STAKING_ADDR.toLowerCase() &&
-        (token.amount > 0n || (token.amountPostSimulation || 0n) > 0n)
-    )
-    if (!hasXWalletBalance) return
-
-    void xWalletShareValueCache
-      .get(provider)
-      .then(({ shareValue, updatedAt, refreshError }) => {
-        if (refreshError) {
-          this.emitError({
-            level: 'silent',
-            message: 'Unable to refresh the WALLET staking conversion rate.',
-            error: refreshError
-          })
-        }
-
-        if (this.#state[accountAddr]?.[network.chainId.toString()] !== state || !state.result) {
-          return
-        }
-
-        state.result.walletStaking = { shareValue, updatedAt }
-        this.emitUpdate()
-      })
-      .catch((error) => {
-        const shareValueError =
-          error instanceof Error
-            ? error
-            : new Error('Unable to load the WALLET staking conversion rate.')
-        this.emitError({
-          level: 'silent',
-          message: 'Unable to load the WALLET staking conversion rate.',
-          error: shareValueError
-        })
-      })
-  }
+  #walletToken: WalletTokenController
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
@@ -320,6 +272,8 @@ export class PortfolioController
     this.#banner = banner
     this.#featureFlags = featureFlags
     this.hints = new HintsController(storage, accounts, keystore)
+    this.#walletToken = new WalletTokenController()
+    this.#walletToken.onError((error) => this.emitError(error))
     // Re-emit hints updates as portfolio updates so the re-exposed getters
     // (customTokens, tokenPreferences) reach the UI when they change.
     this.hints.onUpdate((forceEmit) => this.propagateUpdate(forceEmit))
@@ -1768,13 +1722,24 @@ export class PortfolioController
       this.emitUpdate()
 
       if (verifiedState) {
-        this.#loadWalletStakingShareValue(
-          account.addr,
-          network,
-          combinedTokens,
-          verifiedState,
-          portfolioLib.provider
-        )
+        void this.#walletToken
+          .getWalletStakingShareValue({
+            chainId: network.chainId,
+            tokens: combinedTokens,
+            provider: portfolioLib.provider
+          })
+          .then((walletStaking) => {
+            if (
+              !walletStaking ||
+              this.#state[account.addr]?.[network.chainId.toString()] !== verifiedState ||
+              !verifiedState.result
+            ) {
+              return
+            }
+
+            verifiedState.result.walletStaking = walletStaking
+            this.emitUpdate()
+          })
       }
 
       // Fire-and-forget: verify the just-fetched balances against Colibri without
