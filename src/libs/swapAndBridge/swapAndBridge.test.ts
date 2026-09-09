@@ -244,27 +244,6 @@ describe('swapAndBridge lib', () => {
   })
 
   describe('getSwapSponsorship', () => {
-    test('calculates the sponsorship with the provided fee percentage', () => {
-      expect(
-        getSwapSponsorship({
-          isErc4337Enabled: true,
-          hasConvinienceFee: true,
-          nativePrice: 3000,
-          fromAmountInUsd: 100,
-          feeTokenPriceInUsd: 1,
-          feeTokenDecimals: 6,
-          providerId: 'lifi',
-          isBridge: false,
-          feePercent: 0.25
-        })
-      ).toEqual({
-        nativePrice: 3000,
-        swapFeeInUsd: 0.25,
-        feeTokenPriceInUsd: 1,
-        feeTokenDecimals: 6
-      })
-    })
-
     test('returns undefined when ERC-4337 is disabled', () => {
       expect(
         getSwapSponsorship({
