@@ -122,7 +122,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **EstimationController** – Estimates gas, fees, and payment options for smart-account transactions.
 - **GasPriceController** – Fetches and formats gas-price recommendations and bundler gas speeds.
 - **HintsController** – Owns the portfolio's token/NFT hints (learned assets, to-be-learned assets, custom tokens, token preferences) and their storage; a sub-controller of the PortfolioController.
-- **InviteController** – Manages invite codes and OG status (legacy; now used for status tracking only).
+- **InviteController** – Verifies invite codes against the Relayer and stores the OG status; the gate itself (`verify`/`grantAccess`) is enforced only by the mobile router, the extension no longer enforces it.
 - **KeystoreController** – Encrypts seeds and private keys under a multi-secret–wrapped main key, manages unlock state, and routes signing to internal or hardware-backed keys.
 - **NetworksController** – Manages blockchain networks and their configuration
 - **ProvidersController** – Initializes and manages JSON-RPC providers for each configured network.
