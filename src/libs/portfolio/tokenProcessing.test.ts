@@ -3,12 +3,15 @@ import { ZeroAddress } from 'ethers'
 import { describe, expect, it } from '@jest/globals'
 
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { getFeeToken, getFlags } from './tokenProcessing'
+import { getFeeToken, getFlags, isSuspectedRegardsKnownAddresses } from './tokenProcessing'
 
 const USDT_ETHEREUM = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
 const WETH_OPTIMISM = '0x4200000000000000000000000000000000000006'
 const DUPLICATED_ON_AVALANCHE = '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E'
 const NOT_A_FEE_TOKEN = '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
+// The only entry in the known addresses carrying the symbol OP, and only on Optimism
+const OP_OPTIMISM = '0x4200000000000000000000000000000000000042'
+const SPOOFED_ADDRESS = '0x000000000000000000000000000000000000dEaD'
 
 describe('getFeeToken', () => {
   it('returns the first of two entries sharing an address and a chain', () => {
@@ -48,6 +51,41 @@ describe('getFeeToken', () => {
 
   it('reuses the index across calls instead of rebuilding it', () => {
     expect(getFeeToken(USDT_ETHEREUM, 1n)).toBe(getFeeToken(USDT_ETHEREUM, 1n))
+  })
+})
+
+describe('isSuspectedRegardsKnownAddresses', () => {
+  it('does not suspect the known token itself, whichever case its address is given in', () => {
+    expect(isSuspectedRegardsKnownAddresses(OP_OPTIMISM, 'OP', 10n)).toBe(false)
+    expect(isSuspectedRegardsKnownAddresses(OP_OPTIMISM.toLowerCase(), 'OP', 10n)).toBe(false)
+  })
+
+  it('suspects another address holding a known symbol on the same chain', () => {
+    expect(isSuspectedRegardsKnownAddresses(SPOOFED_ADDRESS, 'OP', 10n)).toBe(true)
+  })
+
+  it('does not suspect a known symbol on a chain the known token is not on', () => {
+    expect(isSuspectedRegardsKnownAddresses(SPOOFED_ADDRESS, 'OP', 1n)).toBe(false)
+  })
+
+  it('does not suspect a symbol no known token carries', () => {
+    expect(isSuspectedRegardsKnownAddresses(SPOOFED_ADDRESS, 'NOTASYMBOL', 10n)).toBe(false)
+  })
+
+  it('sees through characters that are dropped from a symbol', () => {
+    expect(isSuspectedRegardsKnownAddresses(SPOOFED_ADDRESS, 'O\u200bP', 10n)).toBe(true)
+    expect(isSuspectedRegardsKnownAddresses(SPOOFED_ADDRESS, 'oр', 10n)).toBe(false)
+  })
+
+  it('needs both an address and a symbol to suspect anything', () => {
+    expect(isSuspectedRegardsKnownAddresses('', 'OP', 10n)).toBe(false)
+    expect(isSuspectedRegardsKnownAddresses(SPOOFED_ADDRESS, '', 10n)).toBe(false)
+  })
+
+  it('answers the same on every call, so the index it builds is reused as it is', () => {
+    expect(isSuspectedRegardsKnownAddresses(SPOOFED_ADDRESS, 'OP', 10n)).toBe(true)
+    expect(isSuspectedRegardsKnownAddresses(OP_OPTIMISM, 'OP', 10n)).toBe(false)
+    expect(isSuspectedRegardsKnownAddresses(SPOOFED_ADDRESS, 'OP', 10n)).toBe(true)
   })
 })
 
