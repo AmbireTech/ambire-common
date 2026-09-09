@@ -87,8 +87,7 @@ export class EOA extends BaseAccount {
       estimation.providerEstimation.gasUsed > ambireGasUsed
         ? estimation.providerEstimation.gasUsed
         : ambireGasUsed
-    // add a 10% overhead to prevent OOG
-    return gasUsed + gasUsed / 10n + revokeGas
+    return gasUsed + revokeGas
   }
 
   getBroadcastOption(

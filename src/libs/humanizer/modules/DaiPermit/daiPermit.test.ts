@@ -133,4 +133,28 @@ describe('dai permit module', () => {
 
     expect(call.warnings).toBeUndefined()
   })
+
+  // this calldata would still execute onchain - the missing trailing words (v, r and s) are
+  // read as zeroes by the EVM - so the humanizer has to decode it the same way and still show
+  // the warning, rather than silently dropping the whole call
+  test('still warns when the trailing signature words are missing from the calldata', () => {
+    const fullCall = getPermitCall(accountOp.accountAddr, expiry, true)
+    const shortData = fullCall.data.slice(0, -192)
+    const call = daiPermitModule(accountOp, { ...fullCall, data: shortData })
+
+    compareHumanizerVisualizations(
+      [call],
+      [
+        [
+          getAction('Grant approval'),
+          getLabel('for'),
+          getToken(DAI, MaxUint256),
+          getLabel('to'),
+          getAddressVisualization(spender),
+          getDeadline(expiry)
+        ]
+      ]
+    )
+    expect(call.warnings).toEqual([getUnlimitedApprovalWarning(spender)])
+  })
 })

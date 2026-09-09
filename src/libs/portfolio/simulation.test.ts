@@ -87,6 +87,12 @@ const BASE_LIFI_CURL_TOKEN_HINTS = [
   '0x60a3e35cc302Bfa44CB288BC5A4F316FdB1ADB42'
 ].map((address) => address.toLowerCase())
 
+/**
+ * Metadata flags with every asset of a page requested, the way a caller that knows
+ * nothing yet asks for it.
+ */
+const allMetaFlags = (len: number): string => `0x${'01'.repeat(len)}`
+
 describe('Portfolio simulation', () => {
   const ethereum = networks.find((n) => n.chainId === 1n)
   if (!ethereum) throw new Error('unable to find ethereum network in consts')
@@ -186,6 +192,8 @@ describe('Portfolio simulation', () => {
       ACCOUNT_ADDR,
       [ACCOUNT_ADDR],
       BASE_LIFI_CURL_TOKEN_HINTS,
+      // The heaviest shape of the call, with the metadata of every token read too
+      allMetaFlags(BASE_LIFI_CURL_TOKEN_HINTS.length),
       ZeroAddress,
       '0x',
       [
@@ -216,14 +224,16 @@ describe('Portfolio simulation', () => {
       }
     ])
 
-    const [before, afterSimulation, simulationError, gasLeft] =
+    const [before, afterSimulation, metas, simulationError, gasLeft] =
       balanceGetterInterface.decodeFunctionResult('simulateAndGetBalances', result)
 
     expect(result).toMatch(/^0x/)
     expect(before.balances).toHaveLength(BASE_LIFI_CURL_TOKEN_HINTS.length)
+    expect(metas).toHaveLength(BASE_LIFI_CURL_TOKEN_HINTS.length)
     expect(
       before.balances[BASE_LIFI_CURL_TOKEN_HINTS.indexOf(BASE_LIFI_INVALID_TOKEN)].error
     ).not.toBe('0x')
+    expect(metas[BASE_LIFI_CURL_TOKEN_HINTS.indexOf(BASE_LIFI_INVALID_TOKEN)].error).not.toBe('0x')
     expect(afterSimulation.nonce).toBeGreaterThan(before.nonce)
     expect(simulationError).toBe('0x')
     expect(gasLeft).toBeGreaterThan(0n)

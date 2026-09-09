@@ -1,7 +1,8 @@
 import { ZeroAddress } from 'ethers'
 
+import { paginate } from '@/utils/paginate'
+
 import { QueueElement, Request } from '../../utils/batcher'
-import { paginate } from '../portfolio/pagination'
 
 // Max tokens per request, mirroring the portfolio's gecko batcher
 const BATCH_LIMIT = 40
