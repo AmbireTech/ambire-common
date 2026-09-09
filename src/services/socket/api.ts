@@ -23,7 +23,7 @@ import {
   convertNullAddressToZeroAddressIfNeeded,
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { CITREA_CHAIN_ID } from '../squid/constants'
+import { CITREA_CHAIN_ID } from '../../consts/networks'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
@@ -105,7 +105,7 @@ export class SocketAPI implements SwapProvider {
 
   /** disable explicitly citrea for socket */
   areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
-    return fromChainId !== CITREA_CHAIN_ID && toChainId !== CITREA_CHAIN_ID
+    return fromChainId !== Number(CITREA_CHAIN_ID) && toChainId !== Number(CITREA_CHAIN_ID)
   }
 
   /**
@@ -192,7 +192,9 @@ export class SocketAPI implements SwapProvider {
     })
 
     const chains = response
-      .filter((c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== CITREA_CHAIN_ID)
+      .filter(
+        (c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== Number(CITREA_CHAIN_ID)
+      )
       .map(({ chainId }) => ({
         chainId
       }))

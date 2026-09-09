@@ -1,5 +1,6 @@
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
+import { AccountOnchainState } from '@/interfaces/account'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
 import wait from '@/utils/wait'
@@ -86,6 +87,107 @@ describe('Main Controller ', () => {
     // Assert the emailVault sub-controller is present and its status was updated
     expect(controller.emailVault).not.toBeNull()
     expect(controller.emailVault?.statuses).toBeDefined()
+  })
+
+  test('refreshes Safe transactions once while a manual refresh is in progress', async () => {
+    let finishRefresh: (() => void) | undefined
+    let markRefreshAsStarted: (() => void) | undefined
+    const refreshStarted = new Promise<void>((resolve) => {
+      markRefreshAsStarted = resolve
+    })
+    const fetchSafeTxnsSpy = jest.spyOn(controller, 'fetchSafeTxns').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRefresh = resolve
+          markRefreshAsStarted?.()
+        })
+    )
+
+    const firstRefresh = controller.refreshSafeTxns()
+    await refreshStarted
+    const secondRefresh = controller.refreshSafeTxns()
+
+    expect(controller.statuses.refreshSafeTxns).toBe('LOADING')
+    expect(fetchSafeTxnsSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSafeTxnsSpy).toHaveBeenCalledWith([], true)
+
+    if (!finishRefresh) throw new Error('Safe transaction refresh did not start')
+    finishRefresh()
+    await Promise.all([firstRefresh, secondRefresh])
+
+    expect(controller.statuses.refreshSafeTxns).toBe('INITIAL')
+    fetchSafeTxnsSpy.mockRestore()
+  })
+
+  test('tracks the Safe pending transaction API fetch while it is in progress', async () => {
+    const originalSelectedAccount = controller.selectedAccount.account
+    const account = controller.accounts.accounts[0]
+    if (!account) throw new Error('Expected an account')
+
+    controller.selectedAccount.account = {
+      ...account,
+      creation: null,
+      safeCreation: {
+        factoryAddr: '0x1',
+        singleton: '0x1',
+        saltNonce: '0x00',
+        setupData: '0x',
+        version: '1.4.1'
+      }
+    }
+
+    const accountState: AccountOnchainState = {
+      accountAddr: account.addr,
+      isDeployed: true,
+      eoaNonce: null,
+      nonce: 0n,
+      erc4337Nonce: 0n,
+      associatedKeys: account.associatedKeys,
+      importedAccountKeys: [],
+      balance: 0n,
+      isEOA: false,
+      isErc4337Enabled: false,
+      isErc4337Nonce: false,
+      isV2: false,
+      currentBlock: 0n,
+      isSmarterEoa: false,
+      delegatedContract: null,
+      delegatedContractName: null,
+      threshold: 2,
+      updatedAt: 0
+    }
+    const getAccountStatesSpy = jest
+      .spyOn(controller.accounts, 'getOrFetchAccountStates')
+      .mockResolvedValue({ '1': accountState })
+    let finishFetch: (() => void) | undefined
+    let markFetchAsStarted: (() => void) | undefined
+    const fetchStarted = new Promise<void>((resolve) => {
+      markFetchAsStarted = resolve
+    })
+    const fetchPendingSpy = jest.spyOn(controller.safe, 'fetchPending').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishFetch = () => resolve({})
+          markFetchAsStarted?.()
+        })
+    )
+
+    try {
+      const fetchPromise = controller.fetchSafeTxns([1n])
+      await fetchStarted
+
+      expect(controller.statuses.fetchSafeTxns).toBe('LOADING')
+
+      if (!finishFetch) throw new Error('Safe transaction fetch did not start')
+      finishFetch()
+      await fetchPromise
+
+      expect(controller.statuses.fetchSafeTxns).toBe('INITIAL')
+    } finally {
+      controller.selectedAccount.account = originalSelectedAccount
+      getAccountStatesSpy.mockRestore()
+      fetchPendingSpy.mockRestore()
+    }
   })
 
   // @TODO - have to rewrite this test and it should be part of email vault tests.
