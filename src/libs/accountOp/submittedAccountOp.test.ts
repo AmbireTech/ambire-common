@@ -1,6 +1,28 @@
-import { getAccountOpRecipients, SubmittedAccountOp } from './submittedAccountOp'
+import {
+  getAccountOpRecipients,
+  getSubmittedAccountOpNonce,
+  SubmittedAccountOp
+} from './submittedAccountOp'
 
 describe('SubmittedAccountOp', () => {
+  describe('getSubmittedAccountOpNonce', () => {
+    const userOperationNonce = 1n << 192n
+
+    test('keeps the Safe transaction nonce when the broadcast uses a UserOperation nonce', () => {
+      expect(getSubmittedAccountOpNonce(30n, userOperationNonce, true)).toBe(30n)
+    })
+
+    test('keeps using the broadcast nonce for non-Safe transactions', () => {
+      expect(getSubmittedAccountOpNonce(30n, userOperationNonce, false)).toBe(
+        userOperationNonce
+      )
+    })
+
+    test('falls back to the broadcast nonce when a Safe transaction nonce is unavailable', () => {
+      expect(getSubmittedAccountOpNonce(null, 7, true)).toBe(7n)
+    })
+  })
+
   describe('getAccountOpRecipients', () => {
     const op = {
       accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
