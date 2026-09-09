@@ -11,12 +11,14 @@ import { Session } from '../../classes/session'
 import { predefinedDapps } from '../../consts/dapps/dapps'
 import mockChains from '../../consts/dapps/mockChains'
 import mockDapps from '../../consts/dapps/mockDapps'
+import { DAPP_SILENCE_DURATION } from '../../consts/safeguards/dappRequestSpam'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp'
 import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
 import { PhishingController } from '../phishing/phishing'
 
 const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
+const NOW = 1_700_000_000_000
 
 // Two valid entries plus one invalid (no price) to exercise normalization + filtering.
 // Mirrors the trimmed endpoint shape: a { tokens: [...] } wrapper of minimal coin objects
@@ -2360,6 +2362,58 @@ describe('DappsController', () => {
 
       storageGetSpy.mockRestore()
       fetchSpy.mockRestore()
+    })
+  })
+
+  describe('request spam tracking', () => {
+    const DAPP_ID = 'spamming-dapp.com'
+
+    test('offers to silence only after the app has been rejected enough times', async () => {
+      const { controller } = await prepareTest()
+
+      expect(controller.shouldOfferToSilenceDapp(DAPP_ID)).toBe(false)
+
+      controller.recordDappRejection(DAPP_ID)
+      expect(controller.shouldOfferToSilenceDapp(DAPP_ID)).toBe(false)
+
+      controller.recordDappRejection(DAPP_ID)
+      expect(controller.shouldOfferToSilenceDapp(DAPP_ID)).toBe(true)
+    })
+
+    test('one rejection is never enough, however soon the app asks again', async () => {
+      const { controller } = await prepareTest()
+
+      controller.recordDappRejection(DAPP_ID)
+
+      expect(controller.shouldOfferToSilenceDapp(DAPP_ID)).toBe(false)
+    })
+
+    test('one approved request clears everything held against the app', async () => {
+      const { controller } = await prepareTest()
+
+      controller.recordDappRejection(DAPP_ID)
+      controller.recordDappRejection(DAPP_ID)
+      controller.clearDappRejections(DAPP_ID)
+
+      expect(controller.shouldOfferToSilenceDapp(DAPP_ID)).toBe(false)
+    })
+
+    test('silencing lasts a minute and leaves the connection alone', async () => {
+      const { controller } = await prepareTest()
+      const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(NOW)
+
+      expect(controller.isDappSilenced(DAPP_ID)).toBe(false)
+
+      controller.silenceDapp(DAPP_ID)
+      expect(controller.isDappSilenced(DAPP_ID)).toBe(true)
+
+      nowSpy.mockReturnValue(NOW + DAPP_SILENCE_DURATION - 1)
+      expect(controller.isDappSilenced(DAPP_ID)).toBe(true)
+
+      nowSpy.mockReturnValue(NOW + DAPP_SILENCE_DURATION)
+      expect(controller.isDappSilenced(DAPP_ID)).toBe(false)
+
+      nowSpy.mockRestore()
     })
   })
 })

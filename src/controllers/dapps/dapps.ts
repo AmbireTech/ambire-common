@@ -37,8 +37,15 @@ import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
-import { IUiController, View, isExtensionOverlayView } from '../../interfaces/ui'
+import { isExtensionOverlayView, IUiController, View } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
+import {
+  DappSpamRecord,
+  getEmptyDappSpamRecord,
+  isSilenced,
+  recordRejection,
+  shouldOfferSilence
+} from '../../libs/dapps/dappRequestSpam'
 import {
   formatDappName,
   getAccountsForDapp,
@@ -90,6 +97,11 @@ export class DappsController extends EventEmitter implements IDappsController {
   dappSessions: { [sessionId: string]: Session } = {}
 
   #dapps = new Map<string, Dapp>()
+
+  /**
+   * Rejection counters and quiet periods, keyed by dapp id.
+   */
+  #dappSpamRecords = new Map<string, DappSpamRecord>()
 
   #recentDapps: RecentDappEntry[] = []
 
@@ -1177,6 +1189,36 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#recentDapps = []
     await this.#storage.set('recentDapps', this.#recentDapps)
     this.emitUpdate()
+  }
+
+  /**
+   * Remembers that the user rejected a request this app sent. Only user-initiated rejections
+   * belong here - the wallet's own auto-rejections must not count against the app.
+   */
+  recordDappRejection(id: string) {
+    if (!id) return
+
+    this.#dappSpamRecords.set(id, recordRejection(this.#dappSpamRecords.get(id), Date.now()))
+  }
+
+  /** One approved request clears all suspicion the app has accumulated. */
+  clearDappRejections(id: string) {
+    this.#dappSpamRecords.delete(id)
+  }
+
+  shouldOfferToSilenceDapp(id: string): boolean {
+    return shouldOfferSilence(this.#dappSpamRecords.get(id), Date.now())
+  }
+
+  isDappSilenced(id: string): boolean {
+    return isSilenced(this.#dappSpamRecords.get(id), Date.now())
+  }
+
+  silenceDapp(id: string) {
+    if (!id) return
+
+    const record = this.#dappSpamRecords.get(id) ?? getEmptyDappSpamRecord()
+    this.#dappSpamRecords.set(id, { ...record, silencedAt: Date.now() })
   }
 
   hasPermission(id: string, source?: ConnectionSource) {
