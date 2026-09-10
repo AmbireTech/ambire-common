@@ -1077,6 +1077,48 @@ describe('SwapAndBridge Controller', () => {
     expect(getRouteStatusSpy).not.toHaveBeenCalled()
     activeRoute.route!.providerId = originalProviderId
   })
+  test('should check a CoW Swap order immediately after the PreSign transaction succeeds', () => {
+    const originalActiveRoutes = swapAndBridgeController.activeRoutes
+    const activeRoute = originalActiveRoutes[0]!
+    const submittedAccountOp = getSubmittedAccountOp(
+      'cowswap-presign-success',
+      activeRoute.activeRouteId,
+      'success'
+    )
+    submittedAccountOp.calls[0]!.id = activeRoute.activeRouteId
+
+    swapAndBridgeController.activeRoutes = [
+      {
+        ...activeRoute,
+        routeStatus: 'in-progress',
+        userTxHash: submittedAccountOp.txnId,
+        route: {
+          ...activeRoute.route!,
+          providerId: 'cowswap',
+          userTxs: activeRoute.route!.userTxs.map((userTx) => ({
+            ...userTx,
+            serviceTime: 10
+          }))
+        }
+      }
+    ]
+    const updateActiveRoutesIntervalRestartSpy = jest.spyOn(
+      swapAndBridgeController.updateActiveRoutesInterval,
+      'restart'
+    )
+    updateActiveRoutesIntervalRestartSpy.mockClear()
+
+    swapAndBridgeController.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(
+      submittedAccountOp
+    )
+
+    expect(updateActiveRoutesIntervalRestartSpy).toHaveBeenCalledWith({
+      timeout: 10000,
+      runImmediately: true
+    })
+
+    swapAndBridgeController.activeRoutes = originalActiveRoutes
+  })
   describe('intent activity recording', () => {
     let originalActiveRoutes: typeof swapAndBridgeController.activeRoutes
 

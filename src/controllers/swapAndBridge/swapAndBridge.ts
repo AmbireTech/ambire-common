@@ -2947,6 +2947,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const activeRoute = this.activeRoutes.find((r) => r.activeRouteId === callId)
     if (!activeRoute || !activeRoute.route) return
 
+    if (
+      activeRoute.route.providerId === 'cowswap' &&
+      activeRoute.routeStatus === 'in-progress' &&
+      opStatus === AccountOpStatus.Success
+    ) {
+      this.#updateActiveRoutesInterval.restart({
+        timeout: getActiveRoutesLowestServiceTime(this.activeRoutesInProgress),
+        runImmediately: true
+      })
+    }
+
     let shouldUpdateActiveRouteStatus = false
 
     const isSwap = !getIsIntentRoute(activeRoute.route)
