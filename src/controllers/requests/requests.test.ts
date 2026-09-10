@@ -5,7 +5,10 @@ import { describe, expect, test } from '@jest/globals'
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
-import { DAPP_SILENCE_DURATION } from '../../consts/safeguards/dappRequestSpam'
+import {
+  DAPP_REJECTS_BEFORE_OFFERING_SILENCE,
+  DAPP_SILENCE_DURATION
+} from '../../consts/safeguards/dappRequestSpam'
 import { Hex } from '../../interfaces/hex'
 import {
   BenzinUserRequest,
@@ -1694,6 +1697,69 @@ describe('RequestsController ', () => {
       callsRequests[0]!.signAccountOp.destroy()
     })
 
+    test('a transaction with no parameters does not take its batch down with it', async () => {
+      const { controller } = await prepareTest(true)
+      const sendRaw = (dappPromise: { id: string; reject: (err: any) => void }, params: any[]) =>
+        controller.build({
+          type: 'dappRequest',
+          params: {
+            request: { method: 'eth_sendTransaction', params, session: MOCK_SESSION },
+            dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...dappPromise }
+          }
+        })
+
+      const [noParams, noFrom] = makeRejectMocks(2) as [
+        { id: string; reject: jest.Mock },
+        { id: string; reject: jest.Mock }
+      ]
+
+      // Neither payload yields a `from`, so both land on the same queue and are built together
+      const outcomes = await Promise.allSettled([
+        sendRaw(noParams, []),
+        sendRaw(noFrom, [{ to: TO, value: '0x0', data: '0x' }])
+      ])
+
+      expect(outcomes.map((o) => o.status)).toEqual(['rejected', 'rejected'])
+
+      const [noParamsReason, noFromReason] = outcomes.map(
+        (o) => (o as PromiseRejectedResult).reason
+      )
+
+      // The empty payload is answered with what was wrong, not with a TypeError from reading it
+      expect(noParamsReason.message).toContain('no parameters')
+      // ...and the other app is told about its own payload rather than inheriting that failure
+      expect(noFromReason.message).not.toBe(noParamsReason.message)
+
+      expect(controller.userRequests.filter((r) => r.kind === 'calls')).toHaveLength(0)
+    })
+
+    test('every transaction turned away for one already signing is answered', async () => {
+      const { controller, getCallsRequest } = await prepareTest()
+      const inProgress = await getCallsRequest({ addr: FROM, chainId: 1n })
+
+      await controller.addUserRequests([inProgress])
+
+      // A signing/broadcasting run is under way for this account and chain
+      ;(inProgress.signAccountOp as any).signAndBroadcastPromise = new Promise(() => {})
+
+      const second = await getCallsRequest({ addr: FROM, chainId: 1n })
+      const third = await getCallsRequest({ addr: FROM, chainId: 1n })
+      const rejectSecond = jest.fn()
+      const rejectThird = jest.fn()
+      second.dappPromises[0]!.reject = rejectSecond
+      third.dappPromises[0]!.reject = rejectThird
+
+      await controller.addUserRequests([second, third])
+
+      // Answering only the first leaves every app behind it waiting on a promise nobody settles
+      expect(rejectSecond).toHaveBeenCalled()
+      expect(rejectThird).toHaveBeenCalled()
+
+      inProgress.signAccountOp.destroy()
+      second.signAccountOp.destroy()
+      third.signAccountOp.destroy()
+    })
+
     test('supersedes every message fired at once down to exactly one', async () => {
       const { controller, uiCtrl } = await prepareTest(true)
       const sideEffects = watchSideEffects(uiCtrl)
@@ -1837,6 +1903,32 @@ describe('RequestsController ', () => {
       await controller.rejectUserRequests('Superseded', [second.id], { isUserInitiated: false })
 
       expect(dappsCtrl.shouldOfferToSilenceDapp(MOCK_SESSION.id)).toBe(false)
+    })
+
+    test('does not count the requests the wallet drops when it closes the view itself', async () => {
+      const { controller, dappsCtrl } = await prepareTest()
+      await dappsCtrl.addDapp(TEST_DAPP)
+
+      // Twice, because one rejection is never enough to offer silencing anyway
+      for (let i = 0; i < DAPP_REJECTS_BEFORE_OFFERING_SILENCE; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await buildDappRequest(controller, { resolve: () => {}, reject: () => {} })
+        // What `selectAccount` does - the user acted on the wallet, not on the app
+        // eslint-disable-next-line no-await-in-loop
+        await controller.closeRequestWindow({ isUserInitiated: false })
+      }
+
+      expect(dappsCtrl.shouldOfferToSilenceDapp(MOCK_SESSION.id)).toBe(false)
+
+      // The same close, but this time it really is the user turning the app away
+      for (let i = 0; i < DAPP_REJECTS_BEFORE_OFFERING_SILENCE; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await buildDappRequest(controller, { resolve: () => {}, reject: () => {} })
+        // eslint-disable-next-line no-await-in-loop
+        await controller.closeRequestWindow()
+      }
+
+      expect(dappsCtrl.shouldOfferToSilenceDapp(MOCK_SESSION.id)).toBe(true)
     })
 
     test('one approved request clears what was held against the app', async () => {

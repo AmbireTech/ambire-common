@@ -52,8 +52,7 @@ export const recordRejection = (
 /**
  * Whether the app has been refused enough for the user to be offered a way to shut it up.
  * What the app asked for never comes into it: refusing the same request twice and refusing
- * two different ones weigh the same. Asking again for something the user turned down by
- * mistake is ordinary, so on its own it says nothing about the app.
+ * two different ones weigh the same.
  */
 export const shouldOfferSilence = (record: DappSpamRecord | undefined, now: number): boolean => {
   if (!record) return false

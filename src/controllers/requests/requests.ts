@@ -49,7 +49,10 @@ import {
 } from '../../interfaces/ui'
 import {
   CallsUserRequest,
+  DappCallsRequestParams,
+  DappRequestQueueItem,
   OpenRequestWindowParams,
+  PendingDappPromise,
   PlainTextMessageUserRequest,
   RequestExecutionType,
   RequestPosition,
@@ -109,35 +112,6 @@ const STATUS_WRAPPED_METHODS = {
 const ONE_CLICK_WINDOW_SIZE = {
   width: 600,
   height: 600
-}
-
-/** What an app's request flow hands over, before it is attached to a user request. */
-type DappPromise = {
-  id: string
-  session: DappProviderRequest['session']
-  resolve: (data: any) => void
-  reject: (data: any) => void
-}
-
-/**
- * One app request waiting its turn behind the requests it would collide with. `settle` and
- * `fail` answer the caller that is waiting on `build`, which is a different thing from the
- * app's own promise - a request can be added successfully and still leave the app waiting for
- * the user.
- */
-type DappRequestQueueItem = {
-  request: DappProviderRequest
-  dappPromise: DappPromise
-  dapp: Dapp | null
-  settle: () => void
-  fail: (error: any) => void
-}
-
-/** One transaction request, validated and ready to go into a batch. */
-type DappCallsRequestParams = {
-  calls: Call[]
-  meta: CallsUserRequest['meta']
-  dappPromise: CallsUserRequest['dappPromises'][number]
 }
 
 /**
@@ -239,19 +213,22 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   /**
    * App requests that would collide with one another, waiting their turn behind the one being
-   * built, keyed by what they collide on. Building a request takes slow account state fetches,
-   * so ten transactions fired in the same tick all reach the "is there already a batch for this
-   * account and chain?" check before any of them has answered it - and all ten build one. The
-   * queue turns that into a single build over all ten, and the entry is dropped once it drains.
+   * built, keyed by what they collide on.
    */
   #dappRequestQueues = new Map<string, DappRequestQueueItem[]>()
 
   /**
-   * Requests that have been built and are about to be added. A request superseding another one
-   * takes the old one out first, so for a moment nothing is left to show - and tearing the view
-   * down over that costs the user a window that closes and reopens under them.
+   * Requests that have been built and are about to be added. Prevents opening and closing
+   * the request window in a quick succession.
    */
   #userRequestsBeingAdded = 0
+
+  /**
+   * Set while the wallet is closing the request view itself. Closing it fires `windowRemoved`,
+   * which is the same event the user closing the window produces, so without this the two are
+   * indistinguishable and the apps that were waiting look like they were refused.
+   */
+  #isWalletInitiatedClose = false
 
   private shouldSimulateAccountOps = true
 
@@ -512,20 +489,23 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         //  Main issue: https://github.com/AmbireTech/ambire-app/issues/4771
         if (accountOpRequest?.signAccountOp.signAndBroadcastPromise) {
           // Make sure to show the error once
-          if (!hasTxInProgressErrorShown) {
-            const errorMessage =
-              'Please wait until the previous transaction is fully processed before adding a new one.'
+          const errorMessage =
+            'Please wait until the previous transaction is fully processed before adding a new one.'
 
+          // Every request turned away here is answered, however many there are - the app is
+          // waiting on a promise nobody else will ever settle. Only what the user sees is
+          // shown once, so a batch of ten does not produce ten identical toasts.
+          dappPromises.forEach((p) => {
+            p.reject(ethErrors.rpc.transactionRejected({ message: errorMessage }))
+          })
+
+          if (!hasTxInProgressErrorShown) {
             this.emitError({
               level: 'major',
               message: errorMessage,
               error: new Error(
                 'requestsController: Cannot add a new request (addUserRequests) while a signing or broadcasting process is still running.'
               )
-            })
-
-            dappPromises.forEach((p) => {
-              p.reject(ethErrors.rpc.transactionRejected({ message: errorMessage }))
             })
 
             await this.#ui.notification.create({ title: 'Rejected!', message: errorMessage })
@@ -719,9 +699,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    // Clearing the current request is not the same as having nothing left to show. Whoever
-    // cleared it - a request on its way in, a request that was just removed - picks the next
-    // one up straight after, and closing the view in between would tear it down and reopen it.
+    // Don't close the request window if there are still visible requests or if a request is being added
     if (this.visibleUserRequests.length || this.#userRequestsBeingAdded) return
 
     await this.closeRequestWindow()
@@ -749,14 +727,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       try {
-        // Nothing above may await between the check and this assignment, so a request arriving in
-        // the same tick always sees the open that is already running. windowProps is set inside the
-        // chain rather than after awaiting it, so it lands before openWindowPromise is cleared -
-        // otherwise a waiter wakes up to both being empty and opens a second window.
+        // Keep this right after the check above with no await in between, so a second request
+        // arriving now finds the open already in progress instead of starting its own.
         this.requestWindow.openWindowPromise = this.#ui.requestView
           .open({ customSize, baseWindowId })
           .then((windowProps) => {
             // Stays null when the request is rendered in the panel instead of a window
+            // Set here, not after the await below, so it is already recorded by the time
+            // anyone waiting on this promise wakes up and looks for it.
             this.requestWindow.windowProps = windowProps
 
             return windowProps
@@ -813,13 +791,21 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
-  async closeRequestWindow() {
+  /**
+   * Closes the request view and refuses whatever was still waiting in it. Pass
+   * `isUserInitiated: false` when the wallet is the one closing it (switching accounts, for
+   * example) so the apps that lose their requests are not treated as having been refused.
+   */
+  async closeRequestWindow({ isUserInitiated = true }: { isUserInitiated?: boolean } = {}) {
     await this.#awaitPendingPromises()
+
+    this.#isWalletInitiatedClose = !isUserInitiated
 
     if (!this.requestWindow.windowProps) {
       // Rendered inline (in the panel), so closing means dismissing the active request.
       // Guarded, because clearing the current request calls this method too.
-      if (this.currentUserRequest) await this.#handleRequestWindowClose()
+      if (this.currentUserRequest)
+        await this.#handleRequestWindowClose(undefined, { isUserInitiated })
 
       return
     }
@@ -840,10 +826,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (!this.requestWindow.windowProps) return
 
-    await this.#handleRequestWindowClose(
-      this.requestWindow.windowProps.id,
-      requestIdsSnapshotAtClose
-    )
+    await this.#handleRequestWindowClose(this.requestWindow.windowProps.id, {
+      requestIdsSnapshot: requestIdsSnapshotAtClose,
+      isUserInitiated
+    })
   }
 
   /**
@@ -851,8 +837,21 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * `requestIdsSnapshot` is passed by `closeRequestWindow` so the requests to reject are the
    * ones that existed when the close started, not when the close animation finished. It is
    * omitted on the `windowRemoved` event path, where the close was not initiated here.
+   * `isUserInitiated` is false when the wallet closed the view on its own behalf.
    */
-  async #handleRequestWindowClose(winId?: number, requestIdsSnapshot?: Set<UserRequest['id']>) {
+  async #handleRequestWindowClose(
+    winId?: number,
+    // `isUserInitiated` is deliberately left without a default - undefined means "the caller
+    // did not say", which is what lets the remembered flag below answer for the event path
+    {
+      requestIdsSnapshot,
+      isUserInitiated
+    }: { requestIdsSnapshot?: Set<UserRequest['id']>; isUserInitiated?: boolean } = {}
+  ) {
+    // The `windowRemoved` path has no caller to say who asked for the close, so it falls back
+    // to what the wallet recorded when it started one.
+    const isUserInitiatedClose = isUserInitiated ?? !this.#isWalletInitiatedClose
+
     const isInlineRequestClosed = winId === undefined && !this.requestWindow.windowProps
 
     if (
@@ -862,6 +861,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.currentUserRequest &&
         this.requestWindow.windowProps)
     ) {
+      // Cleared only once the close is actually going ahead, so a `windowRemoved` that turns
+      // out to be for a different window (the focus fallback swapping one) doesn't eat it.
+      this.#isWalletInitiatedClose = false
+
       // Snapshot IDs synchronously before any awaits so requests that arrive
       // during async operations below are not incorrectly bulk-rejected.
       const requestIdsSnapshotAtClose =
@@ -908,7 +911,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // For example: if the user has both a sign message and sign account op request,
         // closing the window will reject the sign message request but immediately
         // reopen the window for the sign account op request.
-        { shouldOpenNextRequest: false }
+        { shouldOpenNextRequest: false, isUserInitiated: isUserInitiatedClose }
       )
 
       this.userRequestsWaitingAccountSwitch = []
@@ -1432,14 +1435,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * through. Resolves once the request has been added (or answered on the spot), and rejects
    * with what the app should be told, which is what `rpcFlow` turns into the RPC error.
    */
-  async #processDappRequest(request: DappProviderRequest, dappPromise: DappPromise) {
+  async #processDappRequest(request: DappProviderRequest, dappPromise: PendingDappPromise) {
     await this.initialLoadPromise
 
-    // Refusing a silenced app before its request is built or queued is what keeps it from
-    // costing a simulation, an estimation or a window. The error is the one a manual rejection
-    // produces, so a spamming site can't tell it is being ignored and tune around it. Read-only
-    // calls never reach this point, so a site the user silenced but stayed connected to keeps
-    // rendering.
     if (this.#dapps.isDappSilenced(request.session.id)) {
       dappPromise.reject(ethErrors.provider.userRejectedRequest<any>('User rejected the request.'))
       return
@@ -1477,8 +1475,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return `calls:${String(params?.from).toLowerCase()}:${chainId}`
     }
 
-    // A plain message and a SIWE one share a key: which of the two a `personal_sign` payload is
-    // only becomes clear once it is parsed, well after this point.
     if (kind === 'message' || kind === 'typedMessage') {
       const accountAddr = kind === 'message' ? request.params?.[1] : request.params?.[0]
       if (!accountAddr) return null
@@ -1522,18 +1518,26 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const queue = this.#dappRequestQueues.get(key)
     if (!queue) return
 
-    while (queue.length) {
-      const batch = queue.splice(0)
+    try {
+      while (queue.length) {
+        const batch = queue.splice(0)
 
-      // Every item is answered inside, so this never throws - and it must not, because nothing
-      // awaits the drain.
-      await this.#buildDappRequestBatch(batch)
+        // Every item is answered inside, so this never throws - and it must not, because
+        // nothing awaits the drain.
+        await this.#buildDappRequestBatch(batch)
+      }
+    } finally {
+      // Just in case, should never happen - a queue left in the map is never drained again,
+      // so everything the app sends on this key afterwards waits forever. On the normal path
+      // the queue is already empty here and there is nothing left to answer.
+      this.#dappRequestQueues.delete(key)
+      queue.splice(0).forEach(({ fail }) => fail(ethErrors.rpc.internal()))
     }
-
-    this.#dappRequestQueues.delete(key)
   }
 
   async #buildDappRequestBatch(batch: DappRequestQueueItem[]) {
+    // Everything in a batch is the same kind of request, so the first one decides where the
+    // whole batch goes. The guard is only here to satisfy the type - a batch is never empty.
     const [first] = batch
     if (!first) return
 
@@ -1542,10 +1546,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    // Only one message per account is ever shown, so the wallet supersedes the rest here rather
-    // than adding each one and rejecting it again a moment later. That is the wallet's own
-    // decision, not the user refusing the app, so it must not count towards spam detection -
-    // which is why these promises are rejected directly instead of through `rejectUserRequests`.
+    // Only the newest message is ever shown, so the older ones are turned down here. Not via
+    // `rejectUserRequests` - that needs built requests, and these were never built.
     const superseded = batch.slice(0, -1)
     superseded.forEach(({ dappPromise, settle }) => {
       dappPromise.reject(
@@ -1638,14 +1640,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   /**
    * The chain a transaction request is for. `wallet_sendCalls` (ERC-5792) carries its own,
-   * everything else goes on the chain the app is connected to.
+   * everything else goes on the chain the app is connected to. Reads the payload the same
+   * defensive way the key does, so a malformed one falls back to the app's chain instead of
+   * throwing and taking the rest of the batch down with it.
    */
   #getDappCallsChainId(request: DappProviderRequest, dapp: Dapp | null) {
-    const isWalletSendCalls = !!request.params[0].calls
+    const params = request.params?.[0]
 
-    return isWalletSendCalls && request.params[0].chainId
-      ? Number(request.params[0].chainId)
-      : dapp?.chainId
+    return params?.calls && params.chainId ? Number(params.chainId) : dapp?.chainId
   }
 
   /**
@@ -1657,6 +1659,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     network: Network,
     baseAcc: ReturnType<typeof getBaseAccount>
   ): DappCallsRequestParams {
+    if (!request.params?.[0])
+      throw ethErrors.rpc.invalidParams('The transaction request has no parameters.')
+
     const isWalletSendCalls = !!request.params[0].calls
     const accountAddr = getAddress(request.params[0].from)
 
@@ -1741,7 +1746,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    */
   async #buildDappMessageRequest(
     request: DappProviderRequest,
-    dappPromise: DappPromise,
+    dappPromise: PendingDappPromise,
     dapp: Dapp | null
   ): Promise<UserRequest | null> {
     if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
@@ -1848,7 +1853,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #buildDappTypedMessageRequest(
     request: DappProviderRequest,
-    dappPromise: DappPromise,
+    dappPromise: PendingDappPromise,
     dapp: Dapp | null
   ): UserRequest {
     if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
