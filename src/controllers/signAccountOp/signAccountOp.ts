@@ -1509,7 +1509,8 @@ export class SignAccountOpController
       const feeTokenHasPrice = this.feeSpeeds[identifier]?.every((speed) => !!speed.amountUsd)
       const feeTokenPriceUnavailableWarning = getFeeTokenPriceUnavailableWarning(
         !!this.hasSpeeds(identifier),
-        !!feeTokenHasPrice
+        !!feeTokenHasPrice,
+        this.#featureFlags.isFeatureEnabled('tokenPrices')
       )
 
       // push the warning only if the txn is not sponsored
