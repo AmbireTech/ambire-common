@@ -100,9 +100,9 @@ function getEoaBatchOp() {
 
 describe('broadcast', () => {
   test.each([
-    { chainId: 6342n, expectedGasLimit: 110000n },
+    { chainId: 6342n, expectedGasLimit: 120000n },
     { chainId: 4663n, expectedGasLimit: 120000n }
-  ])('adds the expected gas overhead on chain $chainId', async ({ chainId, expectedGasLimit }) => {
+  ])('adds 20% gas overhead on chain $chainId', async ({ chainId, expectedGasLimit }) => {
     const provider = getProvider('0x186a0')
 
     const rawTxn = await buildRawTransaction(
@@ -145,8 +145,27 @@ describe('broadcast', () => {
       op.calls[0]
     )
 
-    expect(rawTxn.gasLimit).toBe(110000n)
+    expect(rawTxn.gasLimit).toBe(120000n)
     expect(provider.send).toHaveBeenCalledTimes(2)
+  })
+
+  test('keeps the simulated gas limit with 20% overhead for an EIP-7702 broadcast', async () => {
+    const provider = getProvider('0x186a0')
+    const op = getEoaBatchOp()
+    op.gasFeePayment!.simulatedGasLimit = 120000n
+
+    const rawTxn = await buildRawTransaction(
+      eoaAccount,
+      op,
+      accountState,
+      provider,
+      network,
+      7,
+      BROADCAST_OPTIONS.bySelf7702
+    )
+
+    expect(rawTxn.gasLimit).toBe(120000n)
+    expect(provider.send).not.toHaveBeenCalled()
   })
 
   test('stops retrying a failed estimate for a multi-call EOA broadcast at the threshold', async () => {
@@ -167,7 +186,7 @@ describe('broadcast', () => {
       )
     ).rejects.toThrow('Failed estimating gas for broadcast')
 
-    expect(provider.send).toHaveBeenCalledTimes(11)
+    expect(provider.send).toHaveBeenCalledTimes(10)
   })
 
   test('returns an estimate error immediately for a broadcast that is not a multi-call EOA', async () => {

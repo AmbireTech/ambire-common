@@ -58,6 +58,8 @@ const PORTFOLIO_STATE: AccountState = {
         erc20s: [],
         erc721s: {}
       },
+      fetchedTokenMetadata: [],
+      fetchedCollectionMetadata: [],
       updateStarted: 1753192918299,
       discoveryTime: 415,
       oracleCallTime: 364,
@@ -442,6 +444,8 @@ const PORTFOLIO_STATE: AccountState = {
         erc20s: [],
         erc721s: {}
       },
+      fetchedTokenMetadata: [],
+      fetchedCollectionMetadata: [],
       priceUpdateTime: 1585,
       tokens: [
         {

@@ -82,6 +82,34 @@ describe('PhishingController', () => {
     ).not.toBe('BLACKLISTED') // addresses are checked separately via updateAddressesBlacklistedStatus
   })
 
+  describe('getAddressBlacklistedStatus', () => {
+    const LOWERCASE_SCAM_ADDRESS = '0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e'
+    const CHECKSUMMED_SCAM_ADDRESS = '0x20A9Ff01B49cD8967Cdd8081C547236EED1D1a4e'
+    const SAFE_ADDRESS = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+
+    test('should return BLACKLISTED for a listed address, whatever the casing of the checked address', async () => {
+      const { controller } = await prepareTest([], [LOWERCASE_SCAM_ADDRESS])
+      expect(controller.getAddressBlacklistedStatus(LOWERCASE_SCAM_ADDRESS)).toBe('BLACKLISTED')
+      expect(controller.getAddressBlacklistedStatus(CHECKSUMMED_SCAM_ADDRESS)).toBe('BLACKLISTED')
+    })
+
+    test('should return VERIFIED for an address that is not in the list', async () => {
+      const { controller } = await prepareTest([], [LOWERCASE_SCAM_ADDRESS])
+      expect(controller.getAddressBlacklistedStatus(SAFE_ADDRESS)).toBe('VERIFIED')
+    })
+
+    test('should return VERIFIED and never throw for input that is not an address', async () => {
+      const { controller } = await prepareTest([], [LOWERCASE_SCAM_ADDRESS])
+      expect(controller.getAddressBlacklistedStatus('not-an-address')).toBe('VERIFIED')
+      expect(controller.getAddressBlacklistedStatus('')).toBe('VERIFIED')
+    })
+
+    test('should return undefined while the list is empty, so that callers can tell it apart from a checked address', async () => {
+      const { controller } = await prepareTest()
+      expect(controller.getAddressBlacklistedStatus(LOWERCASE_SCAM_ADDRESS)).toBeUndefined()
+    })
+  })
+
   test('should switch phishing update interval to active when an active view is added and back to inactive when all active views are closed', async () => {
     const { controller, ui } = await prepareTest()
 
@@ -228,9 +256,7 @@ describe('PhishingController', () => {
       const { controller } = await prepareTest(['example.web.app'])
 
       expect(controller.getDomainBlacklistedStatus('https://example.web.app')).toBe('BLACKLISTED')
-      expect(controller.getDomainBlacklistedStatus('https://example.web.app./')).toBe(
-        'BLACKLISTED'
-      )
+      expect(controller.getDomainBlacklistedStatus('https://example.web.app./')).toBe('BLACKLISTED')
       expect(controller.getDomainBlacklistedStatus('https://example.web.app./claim?ref=1')).toBe(
         'BLACKLISTED'
       )

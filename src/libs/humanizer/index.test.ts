@@ -1,10 +1,10 @@
-import { ethers, ZeroAddress } from 'ethers'
+import { ethers, getAddress, ZeroAddress } from 'ethers'
 import { encodeFunctionData } from 'viem'
 
 import { beforeEach, describe, jest, test } from '@jest/globals'
 
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { execTransactionAbi } from '../../consts/safe'
+import { execTransactionAbi, multiSendAddr } from '../../consts/safe'
 import { Account } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
 import { AccountOp } from '../accountOp/accountOp'
@@ -30,6 +30,7 @@ import {
   getLabel,
   getText,
   getToken,
+  getUnlimitedApprovalWarning,
   getWarning,
   hasErc7730Humanization
 } from './utils'
@@ -353,6 +354,50 @@ describe('Humanizer main function', () => {
     compareHumanizerVisualizations(irCalls, expectedVisualizations)
   })
 
+  test('setApprovalForAll on the Uniswap V3 Position Manager keeps the NFT approval humanization', async () => {
+    // The Uniswap V3 NonfungiblePositionManager is an ERC-721 contract (LP positions are NFTs),
+    // but it's also in the Uniswap module's address list. setApprovalForAll isn't one of the
+    // Uniswap-specific actions that module recognizes, so it must not clobber the more specific
+    // visualization genericErc721Humanizer already produced with the vague 'Uniswap action' fallback.
+    const positionManager = '0xC36442b4a4522E871399CD717aBDD847Ab11FE88'
+    const operator = '0x77c417980798a3b6aa21b2b1d5f218a598eb0a83'
+    accountOp.calls = [
+      {
+        to: positionManager,
+        value: 0n,
+        data: encodeFunctionData({
+          abi: [
+            {
+              name: 'setApprovalForAll',
+              type: 'function',
+              inputs: [
+                { name: 'operator', type: 'address' },
+                { name: 'approved', type: 'bool' }
+              ],
+              outputs: [],
+              stateMutability: 'nonpayable'
+            }
+          ],
+          functionName: 'setApprovalForAll',
+          args: [operator, true]
+        })
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp)
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getAction('Grant approval'),
+        getLabel('for all NFTs of'),
+        getAddressVisualization(positionManager),
+        getLabel('to'),
+        getAddressVisualization(operator)
+      ]
+    ])
+    expect(irCalls[0]!.warnings?.length).toBe(1)
+  })
+
   test('aave not to be parsed by uniswap', async () => {
     // const ir: Ir = []
     const expectedVisualizations = [
@@ -607,6 +652,116 @@ describe('ERC-7730 descriptors', () => {
             value: [getAddressVisualization('0x397ff1542f962076d0bfe58ea045ffa2d347aca0')]
           }
         ])
+      ]
+    ])
+  })
+
+  // Real world tx (mainnet) calling LI.FI Diamond's swapTokensSingleV3NativeToERC20
+  // (selector 0xaf7060fd - confirmed via 4byte.directory). Descriptor fields below
+  // are copied verbatim from the LI.FI entry in the ERC-7730 registry:
+  // https://github.com/ethereum/clear-signing-erc7730-registry/blob/master/registry/lifi/calldata-LIFIDiamond.json
+  // The descriptor's "interpolatedIntent" - "Swap {@.value} for at least
+  // {_minAmountOut} to {_receiver}" - exercises interpolateIntentParts()'s
+  // per-spec field lookup: {_minAmountOut} resolves through the "Minimum to
+  // Receive" field's tokenAmount format/tokenPath, so it renders as a `type:
+  // 'token'` titleParts item, matching the "Minimum to Receive" row below.
+  // `title` itself stays the plain, non-interpolated "Swap" intent.
+  test('humanizes a LI.FI swapTokensSingleV3NativeToERC20 call with its ERC-7730 registry descriptor', () => {
+    accountOp.calls = [
+      {
+        to: '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE',
+        value: 5837776470906329n,
+        data: '0xaf7060fdedbb23ef4269219df4d4d0183bea7af79cc46298a7df01a4e949e02b9384f19b00000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001000000000000000000000000006969174fd72466430a46e18234d0b530c9fd5f490000000000000000000000000000000000000000000000000014bd6d40d395d900000000000000000000000000000000000000000000000000000000000001600000000000000000000000000000000000000000000000000000000000000015616d626972652d657874656e73696f6e2d70726f640000000000000000000000000000000000000000000000000000000000000000000000000000000000002a307830303030303030303030303030303030303030303030303030303030303030303030303030303030000000000000000000000000000000000000000000000000000000000000000000005c57cf61e473ae865e733a3a23fbb7618b4621f60000000000000000000000005c57cf61e473ae865e733a3a23fbb7618b4621f60000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000000000000000000000000000000014bd6d40d395d900000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000004d0e30db000000000000000000000000000000000000000000000000000000000'
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: {
+          path: 'registry/lifi/calldata-LIFIDiamond.json',
+          descriptor: {
+            display: {
+              formats: {
+                'swapTokensSingleV3NativeToERC20(bytes32 _transactionId, string _integrator, string _referrer, address _receiver, uint256 _minAmountOut, (address callTo, address approveTo, address sendingAssetId, address receivingAssetId, uint256 fromAmount, bytes callData, bool requiresDeposit) _swapData)':
+                  {
+                    intent: 'Swap',
+                    interpolatedIntent:
+                      'Swap {@.value} for at least {_minAmountOut} to {_receiver}',
+                    fields: [
+                      { path: '@.value', label: 'Amount to send', format: 'amount' },
+                      {
+                        path: '_minAmountOut',
+                        label: 'Minimum to Receive',
+                        format: 'tokenAmount',
+                        params: { tokenPath: '_swapData.receivingAssetId' },
+                        visible: 'always'
+                      },
+                      {
+                        path: '_receiver',
+                        label: 'Recipient',
+                        format: 'addressName',
+                        params: { types: ['eoa', 'contract'], sources: ['local', 'ens'] },
+                        visible: 'always'
+                      },
+                      { path: '_transactionId', label: 'Transaction Id', visible: 'never' },
+                      { path: '_integrator', label: 'Integrator', visible: 'never' },
+                      { path: '_referrer', label: 'Referrer', visible: 'never' },
+                      {
+                        path: '_swapData.callData',
+                        label: 'Swap Data Call Data',
+                        visible: 'never'
+                      },
+                      { path: '_swapData.callTo', label: 'Swap Data Call To', visible: 'never' },
+                      {
+                        path: '_swapData.approveTo',
+                        label: 'Swap Data Approve To',
+                        visible: 'never'
+                      },
+                      {
+                        path: '_swapData.requiresDeposit',
+                        label: 'Swap Data Requires Deposit',
+                        visible: 'never'
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    compareHumanizerVisualizations(irCalls, [
+      [
+        getErc7730Visualization(
+          'Swap',
+          [
+            {
+              label: 'Amount to send',
+              value: [getToken(ZeroAddress, 5837776470906329n, 1n)]
+            },
+            {
+              label: 'Minimum to Receive',
+              value: [getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n)]
+            },
+            {
+              label: 'Recipient',
+              value: [getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')]
+            }
+          ],
+          undefined,
+          // Structured title parts, so the UI can render the two amounts as
+          // `type: 'token'` items (live decimals/symbol lookup via TokenOrNft)
+          // instead of relying on a static, possibly incomplete token registry.
+          [
+            getAction('Swap '),
+            getToken(ZeroAddress, 5837776470906329n, 1n),
+            getText(' for at least '),
+            getToken('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', 5837776470906329n, 1n),
+            getText(' to '),
+            getAddressVisualization('0x6969174fd72466430a46e18234d0b530c9fd5f49')
+          ]
+        )
       ]
     ])
   })
@@ -1168,15 +1323,123 @@ describe('ERC-7730 descriptors', () => {
 
     compareHumanizerVisualizations(irCalls, [
       [
-        getErc7730Visualization('Stake 0.001 ETH', [
-          {
-            label: 'Amount',
-            value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
-          }
-        ])
+        getErc7730Visualization(
+          'Stake ETH',
+          [
+            {
+              label: 'Amount',
+              value: [getToken(ZeroAddress, 1000000000000000n, 1n)]
+            }
+          ],
+          undefined,
+          [getAction('Stake '), getToken(ZeroAddress, 1000000000000000n, 1n), getText(' ETH')]
+        )
       ]
     ])
     expect(irCalls[0]!.warnings).toEqual([])
+  })
+
+  test.each([
+    {
+      name: 'malformed braces',
+      interpolatedIntent: 'Stake {@.value ETH',
+      fields: [{ label: 'Amount', format: 'amount', path: '@.value' }]
+    },
+    {
+      name: 'a missing field formatter',
+      interpolatedIntent: 'Stake {_referral}',
+      fields: [{ label: 'Amount', format: 'amount', path: '@.value' }]
+    },
+    {
+      name: 'a field that is not always visible',
+      interpolatedIntent: 'Stake {@.value} ETH',
+      fields: [{ label: 'Amount', format: 'amount', path: '@.value', visible: 'optional' as const }]
+    },
+    {
+      name: 'a token amount with an invalid token reference',
+      interpolatedIntent: 'Stake {_referral}',
+      fields: [
+        {
+          label: 'Amount',
+          format: 'tokenAmount',
+          path: '_referral',
+          params: { token: 'not-an-address' }
+        }
+      ]
+    }
+  ])(
+    'falls back to the static intent when interpolation has $name',
+    ({ interpolatedIntent, fields }) => {
+      accountOp.calls = [
+        {
+          to: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
+          value: ethers.parseEther('0.001'),
+          data: '0xa1903eab00000000000000000000000011d00000000000000000000000000000000011d0'
+        }
+      ]
+
+      const irCalls = humanizeAccountOp(accountOp, {
+        erc7730Descriptors: {
+          0: {
+            descriptor: {
+              display: {
+                formats: {
+                  'submit(address _referral)': {
+                    intent: 'Stake ETH',
+                    interpolatedIntent,
+                    fields
+                  }
+                }
+              }
+            }
+          }
+        }
+      })
+      const visualization = irCalls[0]!.fullVisualization?.find((item) => item.type === 'erc7730')
+
+      expect(visualization).toMatchObject({ type: 'erc7730', title: 'Stake ETH' })
+      if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
+      expect(visualization.titleParts).toBeUndefined()
+    }
+  )
+
+  test('supports escaped braces in an interpolated intent', () => {
+    accountOp.calls = [
+      {
+        to: '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84',
+        value: ethers.parseEther('0.001'),
+        data: '0xa1903eab00000000000000000000000011d00000000000000000000000000000000011d0'
+      }
+    ]
+
+    const irCalls = humanizeAccountOp(accountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'submit(address _referral)': {
+                  intent: 'Stake ETH',
+                  interpolatedIntent: 'Stake {{ETH}} {@.value}',
+                  fields: [{ label: 'Amount', format: 'amount', path: '@.value' }]
+                }
+              }
+            }
+          }
+        }
+      }
+    })
+    const visualization = irCalls[0]!.fullVisualization?.find((item) => item.type === 'erc7730')
+
+    if (visualization?.type !== 'erc7730') throw new Error('Expected ERC-7730 visualization')
+    expect(visualization.titleParts?.map((item) => item.content || item.type)).toEqual([
+      'Stake ',
+      '{',
+      'ETH',
+      '}',
+      ' ',
+      'token'
+    ])
   })
 
   test('does not warn when an ERC-7730 descriptor displays the native transaction value', () => {
@@ -1959,7 +2222,10 @@ describe('ERC-7730 descriptors', () => {
         }
       ]
     })
+    // both approvals in this batch are for the maximum amount, and the modules that found them
+    // keep their warnings even though the ERC-7730 descriptors replaced the visualization
     expect(irCalls[0]!.warnings).toEqual([
+      getUnlimitedApprovalWarning(permit2),
       getWarning('This transaction will send ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
     ])
     expect(irCalls[1]!.fullVisualization?.[0]).toMatchObject({
@@ -1976,6 +2242,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     })
     expect(irCalls[1]!.warnings).toEqual([
+      getUnlimitedApprovalWarning(universalRouter),
       getWarning('This transaction will send ETH', 'ERC7730_REQUIRES_NATIVE_VALUE')
     ])
     expect(irCalls[2]!.fullVisualization?.[0]).toMatchObject({
@@ -2456,6 +2723,110 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  // Regression test for Attack A from the leaked safe-poc.html on the AccountOp/tx path (a
+  // broadcast execTransaction call resolved through the Safe singleton, not a signed EIP-712
+  // message). baseGas/gasPrice/gasToken/refundReceiver are static execTransaction fields, decoded
+  // directly from call.data by getExecTransactionGasRefund (erc7730/humanize.ts) - the "Gas
+  // refund to" row and warning must appear even though the resolved descriptor's own `formats`
+  // never mention them (they only ever describe the inner Safe singleton calls, not the outer
+  // execTransaction wrapper).
+  test('shows the gas refund receiver and amount for a broadcast execTransaction call', async () => {
+    const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
+    const safeSingleton = '0x29fcb43b46531bca003ddc8fcb67ffe91900c762'
+    const multiSend = '0x9641d764fc13c8b624c04430c7356c1c7c8102e2'
+    const tokenAddress = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
+    const spender = '0xc92e8bdf79f0507f65a392b0ab4667716bfe0110'
+    const settlement = '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
+    const refundReceiver = getAddress('0x1234567890123456789012345678901234567890')
+    const gasToken = getAddress('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf')
+    const multiSendData =
+      '0x8d80ff0a0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000019200cbb7c0000ab88b473b1f5afd9ef808440eed33bf00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe011000000000000000000000000000000000000000000000000000000000000005ea009008d19f58aabd9ed0d60971565aa8510560ab41000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000a4ec6cb13f000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000038cc9abd7869bc44faf6552057bc09b84f0d691eb0b0e484600012cca91d529763714fd3db837e72bd49b8eda02b8f4d53dfdde5ce6a11965300000000000000000000000000000000000000000000'
+    const execTransactionData = new ethers.Interface(execTransactionAbi).encodeFunctionData(
+      'execTransaction',
+      [multiSend, 0, multiSendData, 1, 0, 500000, 1, gasToken, refundReceiver, '0x']
+    )
+    const safeExecAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: safeProxy,
+          value: 0n,
+          data: execTransactionData
+        }
+      ]
+    }
+    const provider = {
+      getStorage: jest.fn(async () => ethers.zeroPadValue(safeSingleton, 32))
+    }
+    const descriptorPath = 'registry/safe/calldata-SafeL2-1.4.1.json'
+    const callRelayer = async (path: string) => {
+      if (path === '/v2/erc7730/account-op') {
+        return {
+          success: true,
+          data: { [`eip155:8453:${safeSingleton}`]: descriptorPath },
+          errorState: []
+        }
+      }
+
+      if (path === '/v2/erc7730/fetch-descriptor') {
+        return { success: true, display: { formats: {} } }
+      }
+
+      throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
+    }
+
+    const descriptors = await fetchErc7730DescriptorsForAccountOp(safeExecAccountOp, {
+      callRelayer,
+      provider: provider as any
+    })
+    const irCalls = humanizeAccountOp(safeExecAccountOp, { erc7730Descriptors: descriptors })
+
+    compareVisualizations(irCalls[0]!.fullVisualization || [], [
+      getErc7730Visualization('Execute a Safe{Wallet} Transaction', [
+        {
+          label: 'Safe',
+          value: [getAddressVisualization(safeProxy)]
+        },
+        {
+          label: '',
+          value: [
+            getErc7730Visualization('Approve', [
+              {
+                label: 'Spender',
+                value: [getAddressVisualization(spender)]
+              },
+              {
+                label: 'Amount',
+                value: [getToken(tokenAddress, 1514n, 8453n)]
+              }
+            ]),
+            getErc7730Visualization('SetPreSignature', [
+              {
+                label: 'On',
+                value: [getAddressVisualization(settlement)]
+              }
+            ])
+          ]
+        },
+        {
+          label: 'Gas refund to',
+          value: [getAddressVisualization(refundReceiver), getToken(gasToken, 500000n)]
+        }
+      ])
+    ])
+    expect(irCalls[0]?.warnings).toEqual(
+      expect.arrayContaining([
+        getWarning(
+          'This transaction also sends a separate payment to the address below as a "gas refund", on top of what is shown above. Only proceed if you expect this',
+          'SAFE{WALLET}_GAS_REFUND',
+          undefined,
+          refundReceiver
+        )
+      ])
+    )
+  })
+
   test('humanizes a Safe execTransaction reject call with ERC-7730', async () => {
     const safeProxy = '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce'
     const safeSingleton = '0x29fcb43b46531bca003ddc8fcb67ffe91900c762'
@@ -2531,7 +2902,7 @@ describe('ERC-7730 descriptors', () => {
           value: [
             expect.objectContaining({
               type: 'erc7730',
-              title: 'Reject currently queued transaction'
+              title: 'Cancel'
             })
           ]
         }
@@ -2591,6 +2962,227 @@ describe('ERC-7730 descriptors', () => {
         recipeExecutor
       )
     ])
+  })
+
+  // Regression test for Attack A on the AccountOp/tx path when the call itself matches a
+  // registry `execTransaction(...)` format directly (as opposed to being routed through the Safe
+  // singleton descriptor, covered separately above). The descriptor's own `fields` deliberately
+  // omit baseGas/gasPrice/gasToken/refundReceiver - getSafeExecTransactionGasRefund
+  // (erc7730/humanize.ts) reads them from the already fully-decoded match.values regardless.
+  test('shows the gas refund receiver and amount for an execTransaction format match', () => {
+    const safeProxy = '0x043faB48aCC3DD066fcf33cA3e3f2E2Ba5be9018'
+    const recipeExecutor = '0xc91305DdE651c899EF8eE1D0C33E7dab1B5ABF0D'
+    const refundReceiver = getAddress('0x1234567890123456789012345678901234567890')
+    const gasToken = getAddress('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf')
+    const execTransactionData = new ethers.Interface(execTransactionAbi).encodeFunctionData(
+      'execTransaction',
+      [recipeExecutor, 0, '0x0c2c8750', 0, 0, 500000, 1, gasToken, refundReceiver, '0x']
+    )
+    const safeExecAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: safeProxy,
+          value: 0n,
+          data: execTransactionData
+        }
+      ]
+    }
+    const irCalls = humanizeAccountOp(safeExecAccountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'execTransaction(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,bytes signatures)':
+                  {
+                    intent: 'sign multisig operation',
+                    fields: [
+                      { path: 'operation', label: 'Operation type' },
+                      {
+                        path: 'data',
+                        label: 'Transaction',
+                        format: 'calldata',
+                        params: { calleePath: 'to' }
+                      }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    expect(irCalls[0]?.warnings).toEqual(
+      expect.arrayContaining([
+        getWarning(
+          'This transaction also sends a separate payment to the address below as a "gas refund", on top of what is shown above. Only proceed if you expect this',
+          'SAFE{WALLET}_GAS_REFUND',
+          undefined,
+          refundReceiver
+        )
+      ])
+    )
+    expect(irCalls[0]?.fullVisualization).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'erc7730',
+          rows: expect.arrayContaining([
+            {
+              label: 'Gas refund to',
+              value: [
+                expect.objectContaining({ type: 'address', address: refundReceiver.toLowerCase() }),
+                expect.objectContaining({
+                  type: 'token',
+                  address: gasToken.toLowerCase(),
+                  value: 500000n
+                })
+              ]
+            }
+          ])
+        })
+      ])
+    )
+  })
+
+  // Regression test for a real broadcast execTransaction call: baseGas=0, gasPrice=6000000,
+  // gasToken=zero address (native), refundReceiver equal to the visible recipient. Safe.sol only
+  // gates the refund on `gasPrice > 0` (see buildSafeTxGasRefund) - baseGas being 0 does NOT mean
+  // no refund is paid, it just means the payment is entirely `gasUsed * gasPrice`, unknowable
+  // ahead of time, so no hard token amount can be shown - the row must still appear, with a
+  // placeholder amount rather than a misleading "0".
+  test('shows the gas refund row even when baseGas is 0 and only gasPrice is nonzero', () => {
+    const safeProxy = '0x043faB48aCC3DD066fcf33cA3e3f2E2Ba5be9018'
+    const recipient = getAddress('0x6969174FD72466430a46e18234D0b530c9FD5f49')
+    const execTransactionData = new ethers.Interface(execTransactionAbi).encodeFunctionData(
+      'execTransaction',
+      [recipient, 1, '0x', 0, 120000, 0, 6000000, ZeroAddress, recipient, '0x']
+    )
+    const safeExecAccountOp: AccountOp = {
+      ...accountOp,
+      chainId: 8453n,
+      calls: [
+        {
+          to: safeProxy,
+          value: 0n,
+          data: execTransactionData
+        }
+      ]
+    }
+    const irCalls = humanizeAccountOp(safeExecAccountOp, {
+      erc7730Descriptors: {
+        0: {
+          descriptor: {
+            display: {
+              formats: {
+                'execTransaction(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,bytes signatures)':
+                  {
+                    intent: 'sign multisig operation',
+                    fields: [
+                      { path: 'to', label: 'To', format: 'addressName' },
+                      { path: 'value', label: 'Value', format: 'tokenAmount' }
+                    ]
+                  }
+              }
+            }
+          }
+        }
+      }
+    })
+
+    expect(irCalls[0]?.warnings).toEqual(
+      expect.arrayContaining([
+        getWarning(
+          'This transaction also sends a separate payment to the address below as a "gas refund", on top of what is shown above. Only proceed if you expect this',
+          'SAFE{WALLET}_GAS_REFUND',
+          undefined,
+          recipient
+        )
+      ])
+    )
+    expect(irCalls[0]?.fullVisualization).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'erc7730',
+          rows: expect.arrayContaining([
+            {
+              label: 'Gas refund to',
+              value: [
+                expect.objectContaining({ type: 'address', address: recipient.toLowerCase() }),
+                expect.objectContaining({ type: 'text', content: 'amount depends on gas used' })
+              ]
+            }
+          ])
+        })
+      ])
+    )
+  })
+
+  // Regression test for a broadcast execTransaction call (AccountOp/tx path, no EIP-712 SafeTx
+  // message involved). `embeddedAmbireOperationHumanizer` (callModules.ts) used to run before
+  // SafeModule and unconditionally overwrite `fullVisualization` with a generic "Allow multiple
+  // actions from this account!" warning for ANY call whose `to` equals `accountOp.accountAddr` —
+  // which every direct Safe execTransaction call is, by construction (you call the Safe's own
+  // address to execute a SafeTx on it). That pre-empted SafeModule's execTransaction matcher,
+  // which is gated behind `if (!call.fullVisualization && match)` (modules/Safe/index.ts), so
+  // getDelegateCallWarning() was never reached for this call shape, independent of
+  // MultiSend/whitelisting. Fixed by running embeddedAmbireOperationHumanizer last and having it
+  // defer to any visualization a more specific module already produced.
+  test('warns about a hidden delegatecall leg inside a whitelisted MultiSend tx (no message involved)', () => {
+    const safeProxy = '0x043faB48aCC3DD066fcf33cA3e3f2E2Ba5be9018'
+    const benignRecipient = getAddress('0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01')
+    const delegateCallTarget = getAddress('0x1234567890123456789012345678901234567890') // NOT in allowedMulticallContracts
+    const pwnData = '0xdd365b8b' // Takeover.pwn() selector from the PoC
+    const transactionsData = ethers.concat([
+      ethers.solidityPacked(
+        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+        [0, benignRecipient, 0n, 0, '0x']
+      ),
+      ethers.solidityPacked(
+        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+        [1, delegateCallTarget, 0n, BigInt(ethers.getBytes(pwnData).length), pwnData]
+      )
+    ])
+    const multiSendData = new ethers.Interface([
+      'function multiSend(bytes transactions)'
+    ]).encodeFunctionData('multiSend', [transactionsData])
+    // multiSendAddr is Safe's canonical, whitelisted MultiSend router (allowedMulticallContracts)
+    const execTransactionData = new ethers.Interface(execTransactionAbi).encodeFunctionData(
+      'execTransaction',
+      [multiSendAddr, 0, multiSendData, 1, 0, 0, 0, ZeroAddress, ZeroAddress, '0x']
+    )
+    const safeExecAccountOp: AccountOp = {
+      ...accountOp,
+      accountAddr: safeProxy,
+      chainId: 8453n,
+      calls: [
+        {
+          to: safeProxy,
+          value: 0n,
+          data: execTransactionData
+        }
+      ]
+    }
+
+    // no ERC-7730 descriptors at all here — this is a plain broadcast tx, decoded purely by
+    // the local humanizer modules, same as what a block explorer / signing prompt would show
+    const irCalls = humanizeAccountOp(safeExecAccountOp, {})
+
+    // A hidden delegatecall leg into a non-whitelisted contract, smuggled inside a batch routed
+    // through the whitelisted MultiSend, must surface the same warning a top-level delegatecall
+    // to that contract would get.
+    expect(irCalls[0]?.warnings).toEqual(
+      expect.arrayContaining([
+        getWarning(
+          'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+          'SAFE{WALLET}_DELEGATE_CALL',
+          undefined,
+          delegateCallTarget
+        )
+      ])
+    )
   })
 
   test('humanizes Safe setup calldata nested in a factory initializer with ERC-7730', () => {
@@ -3838,6 +4430,240 @@ describe('ERC-7730 descriptors', () => {
     ])
   })
 
+  // Regression test for Attack A from the leaked safe-poc.html: `baseGas`/`gasPrice`/`gasToken`/
+  // `refundReceiver` let a SafeTx pay an arbitrary amount to an arbitrary address as a "gas
+  // refund", separate from whatever transfer the descriptor's own fields show. The registry
+  // descriptor below deliberately does NOT declare any of those fields (only `operation` and
+  // `data`, matching what the PoC found Ambire actually displays), so this proves the refund row
+  // and warning are injected unconditionally by addSafeTxGasRefundRow/getSafeTxMessageWarnings
+  // (erc7730/humanize.ts) rather than depending on the external descriptor to surface them.
+  test('shows the gas refund receiver and amount even when the descriptor does not declare those fields', async () => {
+    const recipient = getAddress('0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01')
+    const refundReceiver = getAddress('0x1234567890123456789012345678901234567890')
+    const gasToken = getAddress('0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf')
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          verifyingContract: '0x714fd3db837e72bd49b8eda02b8f4d53dfdde5ce',
+          chainId: 8453
+        },
+        message: {
+          to: recipient,
+          value: '1',
+          data: '0x',
+          operation: 0,
+          baseGas: '500000',
+          gasPrice: '1',
+          gasToken,
+          refundReceiver,
+          nonce: 81,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    const irMessage = humanizeMessage(safeTxMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                {
+                  intent: 'Safe',
+                  fields: [
+                    { path: 'operation', label: 'Operation type' },
+                    {
+                      path: 'data',
+                      label: 'Transaction',
+                      format: 'calldata',
+                      params: { calleePath: '#.to' }
+                    }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    compareVisualizations(irMessage.fullVisualization || [], [
+      getErc7730Visualization('Safe', [
+        {
+          label: 'Operation type',
+          value: [getText('0')]
+        },
+        {
+          label: 'Transaction',
+          value: [
+            getErc7730Visualization('Send', [
+              {
+                label: 'Send',
+                value: [getToken(ZeroAddress, 1n)]
+              },
+              {
+                label: 'To',
+                value: [getAddressVisualization(recipient)]
+              }
+            ])
+          ]
+        },
+        {
+          label: 'Gas refund to',
+          value: [getAddressVisualization(refundReceiver), getToken(gasToken, 500000n)]
+        }
+      ])
+    ])
+    expect(irMessage.warnings).toEqual(
+      expect.arrayContaining([
+        getWarning(
+          'This transaction also sends a separate payment to the address below as a "gas refund", on top of what is shown above. Only proceed if you expect this',
+          'SAFE{WALLET}_GAS_REFUND',
+          undefined,
+          refundReceiver
+        )
+      ])
+    )
+  })
+
+  // Regression test for a SafeTx message batching a leg with operation=1 (DELEGATECALL) to a
+  // contract that isn't whitelisted by Safe, routed through the whitelisted MultiSend router.
+  // `getDelegateCallWarning` in modules/Safe/index.ts is only ever evaluated against the *outer*
+  // SafeTx call (to, operation), which here targets the whitelisted router, so it stays silent
+  // on its own. Two things had to be fixed for this warning to surface: (1) `getSafeHumanization`
+  // now decodes `multiSend` batches itself (via `decodeMultiSend`, src/libs/safe/helpers.ts) and
+  // recurses per leg, checking each leg's own `operation`, since the ERC-7730 pipeline's `Call`
+  // type has no `operation` field and can't carry it (erc7730/utils.ts#getSafeTxCallsFromMessage,
+  // erc7730/registry.ts); (2) `humanizeMessage` now merges the warnings humanizerTMModules found
+  // (which is where that recursive check runs, via safeMessageModule) into the ERC-7730 result
+  // instead of discarding them when an ERC-7730 descriptor resolves the message. This is the
+  // exact "Attack B" pattern from the leaked safe-poc.html: a benign leg 0 plus a hidden
+  // delegatecall leg 1 into attacker-controlled code that runs in the Safe's own storage context.
+  test('warns about a hidden delegatecall leg inside a whitelisted SafeTx multisend batch', async () => {
+    const benignRecipient = getAddress('0xa04d21b7ae298d8e4a61a507de2b7ceafd90ba01')
+    const delegateCallTarget = getAddress('0x1234567890123456789012345678901234567890') // NOT in allowedMulticallContracts
+    const pwnData = '0xdd365b8b' // Takeover.pwn() selector from the PoC
+    const transactionsData = ethers.concat([
+      ethers.solidityPacked(
+        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+        [0, benignRecipient, 0n, 0, '0x']
+      ),
+      ethers.solidityPacked(
+        ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+        [1, delegateCallTarget, 0n, BigInt(ethers.getBytes(pwnData).length), pwnData]
+      )
+    ])
+    const multiSendData = new ethers.Interface([
+      'function multiSend(bytes transactions)'
+    ]).encodeFunctionData('multiSend', [transactionsData])
+    const safeTxMessage = {
+      fromRequestId: 1,
+      accountAddr: accountOp.accountAddr,
+      content: {
+        kind: 'typedMessage',
+        types: {
+          EIP712Domain: [
+            { name: 'chainId', type: 'uint256' },
+            { name: 'verifyingContract', type: 'address' }
+          ],
+          SafeTx: [
+            { type: 'address', name: 'to' },
+            { type: 'uint256', name: 'value' },
+            { type: 'bytes', name: 'data' },
+            { type: 'uint8', name: 'operation' },
+            { type: 'uint256', name: 'safeTxGas' },
+            { type: 'uint256', name: 'baseGas' },
+            { type: 'uint256', name: 'gasPrice' },
+            { type: 'address', name: 'gasToken' },
+            { type: 'address', name: 'refundReceiver' },
+            { type: 'uint256', name: 'nonce' }
+          ]
+        },
+        domain: {
+          // the whitelisted MultiSend v1.1.1 router, so the outer-call delegatecall check
+          // (shouldDisplaySafeDelegateCallWarning) never fires either
+          verifyingContract: '0x8D29bE29923b68abfDD21e541b9374737B49cdAD',
+          chainId: 8453
+        },
+        message: {
+          to: '0x8D29bE29923b68abfDD21e541b9374737B49cdAD',
+          value: '0',
+          data: multiSendData,
+          operation: 1,
+          baseGas: '0',
+          gasPrice: '0',
+          gasToken: ZeroAddress,
+          refundReceiver: ZeroAddress,
+          nonce: 1,
+          safeTxGas: '0'
+        },
+        primaryType: 'SafeTx'
+      },
+      signature: null,
+      chainId: 8453n
+    }
+
+    const irMessage = humanizeMessage(safeTxMessage as any, {
+      erc7730Descriptor: {
+        descriptor: {
+          display: {
+            formats: {
+              'SafeTx(address to,uint256 value,bytes data,uint8 operation,uint256 safeTxGas,uint256 baseGas,uint256 gasPrice,address gasToken,address refundReceiver,uint256 nonce)':
+                {
+                  intent: 'Safe',
+                  fields: [
+                    { path: 'operation', label: 'Operation type' },
+                    {
+                      path: 'data',
+                      label: 'Transaction',
+                      format: 'calldata',
+                      params: { calleePath: '#.to' }
+                    }
+                  ]
+                }
+            }
+          }
+        }
+      }
+    })
+
+    // A hidden delegatecall leg into a non-whitelisted contract must surface the same
+    // "not whitelisted by Safe" warning that a top-level delegatecall would get.
+    expect(irMessage.warnings).toEqual(
+      expect.arrayContaining([
+        getWarning(
+          'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
+          'SAFE{WALLET}_DELEGATE_CALL',
+          undefined,
+          getAddress(delegateCallTarget)
+        )
+      ])
+    )
+  })
+
   test('humanizes SafeTx multisend with truncated ABI padding as separate transaction rows', async () => {
     const tokenAddress = '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf'
     const spender = '0xc92e8bdf79f0507f65a392b0ab4667716bfe0110'
@@ -4207,7 +5033,6 @@ describe('ERC-7730 descriptors', () => {
     const spender = '0xc92e8bdf79f0507f65a392b0ab4667716bfe0110'
     const settlementContract = '0xfdafc9d1902f4e0b84f65f49f244b32b31013b74'
     const undecodableContract = '0xa1b2c3d4e5f60718293a4b5c6d7e8f9012345678'
-    const undecodableSelector = '0xb0f3f1c2'
     const multiSendData =
       '0x8d80ff0a00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000244002c5d356f2244b942c72ddfccbfa2e61529dc9c8d00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000024f08a03230000000000000000000000002f55e8b20d0b9fefa187aa7d00b6cbe563605bf5002c5d356f2244b942c72ddfccbfa2e61529dc9c8d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000443365582cd72ffa789b6fae41254d0b5a13e6e1e92ed947ec6a251edf1cf0b6c02c257b4b000000000000000000000000fdafc9d1902f4e0b84f65f49f244b32b31013b7400833589fcd6edb6e08f4c7c32d4f71b54bda0291300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000c92e8bdf79f0507f65a392b0ab4667716bfe0110ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00a1b2c3d4e5f60718293a4b5c6d7e8f901234567800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000044b0f3f1c2000000000000000000000000000000000000000000000000000000000000002a0000000000000000000000006cf1e9ca41f7611def408122793c358a3d11e5a500000000000000000000000000000000000000000000000000000000'
 
@@ -4349,6 +5174,112 @@ describe('ERC-7730 descriptors', () => {
       (row: any) => row.label === 'Transactions'
     )
     expect(transactionsRow?.value).toHaveLength(4)
+  })
+  test('humanizes calls nested deeper than the displayed depth and warns about it', async () => {
+    const router = '0xA238Dd80C259a72e81d7e4664a9801593F98d1c5'
+    const beneficiary = '0x0012b7C5D4310915bB2d58C0b14C72546D320C05'
+    const routerInterface = new ethers.Interface([
+      'function multicall(bytes[] data)',
+      'function deepestCall(address beneficiary)'
+    ])
+    const getNestedMulticallData = (nestingLevels: number) => {
+      let data = routerInterface.encodeFunctionData('deepestCall', [beneficiary])
+
+      for (let level = 0; level < nestingLevels; level += 1) {
+        data = routerInterface.encodeFunctionData('multicall', [[data]])
+      }
+
+      return data
+    }
+    const humanizeNestedMulticall = (nestingLevels: number) =>
+      humanizeAccountOp(
+        {
+          ...accountOp,
+          chainId: 8453n,
+          calls: [{ to: router, value: 0n, data: getNestedMulticallData(nestingLevels) }]
+        },
+        {
+          erc7730Descriptors: {
+            0: {
+              descriptor: {
+                display: {
+                  formats: {
+                    'multicall(bytes[] data)': {
+                      intent: 'Multicall',
+                      fields: [
+                        {
+                          path: 'data',
+                          label: 'Call',
+                          format: 'calldata',
+                          params: { calleePath: '@.to' },
+                          visible: 'always'
+                        }
+                      ]
+                    },
+                    'deepestCall(address beneficiary)': {
+                      intent: 'Deepest call',
+                      fields: [
+                        {
+                          path: 'beneficiary',
+                          label: 'Beneficiary',
+                          format: 'addressName',
+                          visible: 'always'
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      )
+    const getErc7730Titles = (visualization: any): string[] => [
+      visualization.title,
+      ...(visualization.rows || []).flatMap((row: any) =>
+        (row.value || [])
+          .filter((rowValue: any) => rowValue.type === 'erc7730')
+          .flatMap((nestedVisualization: any) => getErc7730Titles(nestedVisualization))
+      )
+    ]
+    const depthWarning = getWarning(
+      'This transaction hides many other transactions one inside another. This is unusual - continue only if you fully trust this app.',
+      'ERC7730_SUSPICIOUS_NESTED_CALLDATA_DEPTH'
+    )
+
+    // 6 multicalls one inside another - the innermost call is 6 levels deep, way past
+    // the depth the UI shows, but the humanizer still decodes it so its warnings are kept
+    const deeplyNestedCalls = humanizeNestedMulticall(6)
+    expect(getErc7730Titles(deeplyNestedCalls[0]!.fullVisualization?.[0])).toEqual([
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Deepest call'
+    ])
+    expect(deeplyNestedCalls[0]!.warnings).toContainEqual(depthWarning)
+
+    // exactly at the depth the UI stops showing calls
+    const nestedCallsAtTheDisplayLimit = humanizeNestedMulticall(4)
+    expect(getErc7730Titles(nestedCallsAtTheDisplayLimit[0]!.fullVisualization?.[0])).toEqual([
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Multicall',
+      'Deepest call'
+    ])
+    expect(nestedCallsAtTheDisplayLimit[0]!.warnings).toContainEqual(depthWarning)
+
+    // shallow nesting is normal and should not warn
+    const shallowNestedCalls = humanizeNestedMulticall(2)
+    expect(getErc7730Titles(shallowNestedCalls[0]!.fullVisualization?.[0])).toEqual([
+      'Multicall',
+      'Multicall',
+      'Deepest call'
+    ])
+    expect(shallowNestedCalls[0]!.warnings).not.toContainEqual(depthWarning)
   })
 })
 

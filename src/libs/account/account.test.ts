@@ -9,8 +9,8 @@ import {
   Account,
   AccountCreation,
   AccountOnchainState,
-  AccountOnPage,
   AccountStates,
+  DerivedAccount,
   ImportStatus
 } from '../../interfaces/account'
 import { dedicatedToOneSAPriv, Key } from '../../interfaces/keystore'
@@ -151,7 +151,7 @@ describe('Account', () => {
       },
       isExternallyStored: false
     }
-    const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
+    const accountsOnPage: DerivedAccount[] = [
       {
         account: {
           ...basicAccount,
@@ -170,7 +170,7 @@ describe('Account', () => {
         keys: [key],
         accountsOnPage,
         keyIteratorType: 'internal'
-      })
+      }).importStatus
     ).toBe(ImportStatus.ImportedWithTheSameKeys)
 
     expect(
@@ -180,7 +180,7 @@ describe('Account', () => {
         keys: [key],
         accountsOnPage,
         keyIteratorType: 'ledger'
-      })
+      }).importStatus
     ).toBe(ImportStatus.ImportedWithDifferentKeys)
   })
   test('Should resolve Smart account import status to either ImportStatus.ImportedWithTheSameKeys, ImportStatus.ImportedWithDifferentKeys or ImportStatus.ImportedWithSomeOfTheKeys', async () => {
@@ -203,7 +203,7 @@ describe('Account', () => {
       },
       isExternallyStored: false
     }
-    const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
+    const accountsOnPage: DerivedAccount[] = [
       {
         account: {
           ...basicAccount,
@@ -231,7 +231,7 @@ describe('Account', () => {
         keys: [key],
         accountsOnPage,
         keyIteratorType: 'trezor'
-      })
+      }).importStatus
     ).toBe(ImportStatus.ImportedWithTheSameKeys)
 
     expect(
@@ -241,7 +241,7 @@ describe('Account', () => {
         keys: [key],
         accountsOnPage,
         keyIteratorType: 'internal'
-      })
+      }).importStatus
     ).toBe(ImportStatus.ImportedWithDifferentKeys)
   })
 
@@ -304,7 +304,7 @@ describe('Account', () => {
       isExternallyStored: false
     }
 
-    const accountsOnPageWithUpToDateAssociatedKeys: Omit<AccountOnPage, 'importStatus'>[] = [
+    const accountsOnPageWithUpToDateAssociatedKeys: DerivedAccount[] = [
       {
         account: { ...anotherBasicAccount, usedOnNetworks: [] },
         slot: 1,
@@ -334,7 +334,7 @@ describe('Account', () => {
         keys: [oneOfTheSmartAccountKeys],
         accountsOnPage: accountsOnPageWithUpToDateAssociatedKeys,
         keyIteratorType: 'trezor'
-      })
+      }).importStatus
     ).toBe(ImportStatus.ImportedWithSomeOfTheKeys)
 
     expect(
@@ -348,7 +348,7 @@ describe('Account', () => {
         accountsOnPage: accountsOnPageWithUpToDateAssociatedKeys,
         // same key iterator type as the `oneOfTheSmartAccountKeys`
         keyIteratorType: 'trezor'
-      })
+      }).importStatus
     ).toBe(ImportStatus.ImportedWithSomeOfTheKeys)
 
     expect(
@@ -363,7 +363,7 @@ describe('Account', () => {
         // Same key iterator type as `anotherBasicAccountKeyWithTheSameKeyType`
         // (that is different from `oneOfTheSmartAccountKeys`)
         keyIteratorType: 'internal'
-      })
+      }).importStatus
     ).toBe(ImportStatus.ImportedWithDifferentKeys)
 
     expect(
@@ -377,7 +377,7 @@ describe('Account', () => {
         accountsOnPage: accountsOnPageWithUpToDateAssociatedKeys,
         // Different key iterator type as the `oneOfTheSmartAccountKeys`
         keyIteratorType: 'internal'
-      })
+      }).importStatus
     ).toBe(ImportStatus.ImportedWithDifferentKeys)
 
     expect(
@@ -391,12 +391,140 @@ describe('Account', () => {
         accountsOnPage: accountsOnPageWithUpToDateAssociatedKeys,
         // completely different key iterator than both keys found!
         keyIteratorType: 'ledger'
-      })
+      }).importStatus
     ).toBe(ImportStatus.ImportedWithDifferentKeys)
   })
 
+  test('Should resolve a smart account with all of its multiple associated keys already imported to ImportStatus.ImportedWithTheSameKeys', async () => {
+    const secondSignerAddr = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const smartAccount = await getSmartAccount(
+      [{ addr: keyPublicAddress, hash: dedicatedToOneSAPriv }],
+      []
+    )
+    const smartAccountWithTwoSigners: Account = {
+      ...smartAccount,
+      associatedKeys: [keyPublicAddress, secondSignerAddr]
+    }
+
+    const firstKey: Key = {
+      addr: keyPublicAddress,
+      type: 'trezor',
+      dedicatedToOneSA: true,
+      label: 'Key 1',
+      meta: {
+        deviceId: '123',
+        deviceModel: '1',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        index: 0,
+        createdAt: new Date().getTime()
+      },
+      isExternallyStored: false
+    }
+    const secondKey: Key = {
+      ...firstKey,
+      addr: secondSignerAddr,
+      dedicatedToOneSA: false,
+      label: 'Key 2',
+      meta: { ...firstKey.meta, index: 1 }
+    }
+
+    const accountsOnPage: DerivedAccount[] = [
+      {
+        account: { ...basicAccount, usedOnNetworks: [] },
+        slot: 1,
+        index: 0,
+        isLinked: false
+      },
+      {
+        account: { ...smartAccountWithTwoSigners, usedOnNetworks: [] },
+        slot: 1,
+        index: 0,
+        isLinked: false
+      }
+    ]
+
+    expect(
+      getAccountImportStatus({
+        account: smartAccountWithTwoSigners,
+        alreadyImportedAccounts: [smartAccountWithTwoSigners],
+        // Both associated keys are already imported and up-to-date, so there is
+        // nothing left to import for this account.
+        keys: [firstKey, secondKey],
+        accountsOnPage,
+        keyIteratorType: 'trezor'
+      }).importStatus
+    ).toBe(ImportStatus.ImportedWithTheSameKeys)
+  })
+
+  test('Should count all associated keys and the key types the account is imported with, regardless of the key type being imported right now', async () => {
+    const secondSignerAddr = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+    const thirdSignerAddr = '0xF7A2A0B9e0BE96f0C1f0E0A0a0d0f0b0c0D0e0F0'
+    const smartAccount = await getSmartAccount(
+      [{ addr: keyPublicAddress, hash: dedicatedToOneSAPriv }],
+      []
+    )
+    const smartAccountWithThreeSigners: Account = {
+      ...smartAccount,
+      associatedKeys: [keyPublicAddress, secondSignerAddr, thirdSignerAddr]
+    }
+
+    const firstSignerInternalKey: Key = {
+      addr: keyPublicAddress,
+      type: 'internal',
+      dedicatedToOneSA: true,
+      label: 'Key 1',
+      meta: { createdAt: new Date().getTime() },
+      isExternallyStored: false
+    }
+    const secondSignerTrezorKey: Key = {
+      addr: secondSignerAddr,
+      type: 'trezor',
+      dedicatedToOneSA: false,
+      label: 'Key 2',
+      meta: {
+        deviceId: '123',
+        deviceModel: '1',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        index: 1,
+        createdAt: new Date().getTime()
+      },
+      isExternallyStored: false
+    }
+
+    // The third signer is not imported yet, but is found on the current page.
+    const accountsOnPage: DerivedAccount[] = [
+      {
+        account: {
+          ...getBasicAccount(thirdSignerAddr, []),
+          usedOnNetworks: []
+        },
+        slot: 1,
+        index: 0,
+        isLinked: false
+      },
+      {
+        account: { ...smartAccountWithThreeSigners, usedOnNetworks: [] },
+        slot: 1,
+        index: 0,
+        isLinked: true
+      }
+    ]
+
+    const { importStatus, associatedKeysStats, importedKeyTypes } = getAccountImportStatus({
+      account: smartAccountWithThreeSigners,
+      alreadyImportedAccounts: [smartAccountWithThreeSigners],
+      keys: [firstSignerInternalKey, secondSignerTrezorKey],
+      accountsOnPage,
+      keyIteratorType: 'trezor'
+    })
+
+    expect(importStatus).toBe(ImportStatus.ImportedWithSomeOfTheKeys)
+    expect(associatedKeysStats).toEqual({ total: 3, imported: 2 })
+    expect(importedKeyTypes).toEqual(['internal', 'trezor'])
+  })
+
   test('Should resolve view only account import status to ImportStatus.ImportedWithoutKey', () => {
-    const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
+    const accountsOnPage: DerivedAccount[] = [
       {
         account: {
           ...basicAccount,
@@ -415,12 +543,12 @@ describe('Account', () => {
         keys: [],
         accountsOnPage,
         keyIteratorType: 'internal'
-      })
+      }).importStatus
     ).toBe(ImportStatus.ImportedWithoutKey)
   })
 
   test('Should resolve the import status of an account that has not been imported yet to ImportStatus.NotImported', () => {
-    const accountsOnPage: Omit<AccountOnPage, 'importStatus'>[] = [
+    const accountsOnPage: DerivedAccount[] = [
       {
         account: {
           ...basicAccount,
@@ -439,7 +567,7 @@ describe('Account', () => {
         keys: [],
         accountsOnPage,
         keyIteratorType: 'internal'
-      })
+      }).importStatus
     ).toBe(ImportStatus.NotImported)
   })
 

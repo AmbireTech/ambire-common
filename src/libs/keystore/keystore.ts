@@ -6,6 +6,7 @@ import {
   KeystoreEncryptedPayload,
   MainKey,
   MainKeyOld,
+  ScryptParams,
   StoredKey,
   StoredKeystoreSeed
 } from '@/interfaces/keystore'
@@ -101,6 +102,35 @@ export const encryptMainKeyWithSecret = async (
 }
 
 /**
+ * The counterpart of `encryptMainKeyWithSecret` - decrypts a main key that was wrapped with a secret.
+ * Throws an `OperationError` if the secret is wrong (or the ciphertext was tampered with).
+ */
+export const decryptMainKeyWithSecret = async (
+  secretKey: Uint8Array<ArrayBuffer>,
+  aesEncrypted: AESGCMEncrypted
+): Promise<MainKey> => {
+  const importedSecretKey = await crypto.subtle.importKey(
+    'raw',
+    // use 256 bits (first 32 bytes)
+    secretKey.slice(0, 32),
+    { name: CIPHER },
+    false,
+    ['encrypt', 'decrypt']
+  )
+
+  const decrypted = await crypto.subtle.decrypt(
+    { name: CIPHER, iv: new Uint8Array(getBytes(aesEncrypted.iv)), tagLength: 128 },
+    importedSecretKey,
+    new Uint8Array(getBytes(aesEncrypted.ciphertext))
+  )
+
+  return crypto.subtle.importKey('raw', decrypted.slice(0, 32), { name: CIPHER }, true, [
+    'encrypt',
+    'decrypt'
+  ])
+}
+
+/**
  * As the type is string | AESGCMEncrypted, we need to check if it's a GCM payload or a legacy string payload
  */
 export const tryParseGcmPayload = (payload: KeystoreEncryptedPayload): AESGCMEncrypted | null => {
@@ -159,6 +189,61 @@ export const decryptWithKey = async (
 }
 
 /**
+ * Decrypts a stored seed entry with the main key it was encrypted with. Handles both
+ * the entropy bytes seeds are stored as after the GCM migration and the plain mnemonic
+ * legacy ones stored before it.
+ */
+export const decryptStoredSeed = async (
+  mainKey: MainKey,
+  storedSeed: Pick<StoredKeystoreSeed, 'seed' | 'seedPassphrase'>
+): Promise<{ seed: string; seedPassphrase: string | null }> => {
+  const seedBytes = await decryptWithKey(mainKey, storedSeed.seed)
+
+  let seedPassphrase: string | null = null
+  if (storedSeed.seedPassphrase) {
+    const seedPassphraseBytes = await decryptWithKey(mainKey, storedSeed.seedPassphrase)
+
+    seedPassphrase = new TextDecoder().decode(seedPassphraseBytes) || null
+  }
+
+  // Seeds after the GCM migration are stored as entropy bytes, so the mnemonic has to
+  // be reconstructed from them. Legacy ones decrypt to the mnemonic itself.
+  if (typeof storedSeed.seed !== 'string')
+    return { seed: reconstructSeedFromEntropy(seedBytes, seedPassphrase), seedPassphrase }
+
+  const seed = new TextDecoder().decode(seedBytes)
+  if (!Mnemonic.isValidMnemonic(seed)) throw new Error('keystore: invalid seed stored')
+
+  return { seed, seedPassphrase }
+}
+
+/**
+ * Unwraps the main key of another device from a scanned accounts sync payload. Imported
+ * as non-extractable and for decryption only, so that its raw bytes never reach the
+ * importing app and it cannot be used to encrypt anything - decrypting the synced keys
+ * and seeds is all it is ever needed for.
+ */
+export const decryptSyncedMainKeyWithSecret = async (
+  secretKey: Uint8Array<ArrayBuffer>,
+  aesEncrypted: AESGCMEncrypted
+): Promise<MainKey> => {
+  const importedSecretKey = await crypto.subtle.importKey(
+    'raw',
+    // use 256 bits (first 32 bytes)
+    secretKey.slice(0, 32),
+    { name: CIPHER },
+    false,
+    ['decrypt']
+  )
+
+  const decrypted = await decryptWithKey(importedSecretKey, aesEncrypted)
+
+  return crypto.subtle.importKey('raw', decrypted.slice(0, 32), { name: CIPHER }, false, [
+    'decrypt'
+  ])
+}
+
+/**
  * Used during migration to read legacy payloads
  */
 export const decryptWithKeyOld = async (
@@ -207,15 +292,18 @@ export const decryptSeedWithKeyOld = async (
 export const deriveSecret = async (
   scryptAdapter: ScryptAdapter,
   secretValue: string,
-  salt: string
+  scryptParams: ScryptParams
 ): Promise<Uint8Array<ArrayBuffer>> => {
+  const { salt, N, r, p, dkLen } = scryptParams
+
   // Use wait(0) to yield to the event loop and avoid blocking the UI
   await wait(0)
+
   const secretKey = await scryptAdapter.scrypt(getBytesForSecret(secretValue), getBytes(salt), {
-    N: SCRYPT_PARAMS.N,
-    r: SCRYPT_PARAMS.r,
-    p: SCRYPT_PARAMS.p,
-    dkLen: SCRYPT_PARAMS.dkLen
+    N,
+    r,
+    p,
+    dkLen
   })
   await wait(0)
 

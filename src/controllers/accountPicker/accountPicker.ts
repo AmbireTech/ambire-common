@@ -23,8 +23,8 @@ import {
 } from '../../interfaces/account'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-import { Fetch } from '../../interfaces/fetch'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
+import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   dedicatedToOneSAPriv,
@@ -77,6 +77,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #featureFlags?: IFeatureFlagsController
 
   #externalSignerControllers: ExternalSignerControllers
+
+  #sendUiMessage: (params: {}) => void
 
   initParams: {
     keyIterator: KeyIterator | null
@@ -172,6 +174,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   #addAccountsOnKeystoreReady: {
     accounts?: SelectedAccountForImport[]
+    requestId?: string
   } | null = null
 
   constructor({
@@ -184,6 +187,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     relayerUrl,
     fetch,
     featureFlags,
+    sendUiMessage,
     onAddAccountsSuccessCallback
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
@@ -195,6 +199,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     relayerUrl: string
     fetch: Fetch
     featureFlags?: IFeatureFlagsController
+    sendUiMessage: (params: {}) => void
     onAddAccountsSuccessCallback: () => Promise<void>
   }) {
     super(eventEmitterRegistry)
@@ -205,6 +210,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#featureFlags = featureFlags
     this.#externalSignerControllers = externalSignerControllers
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#sendUiMessage = sendUiMessage
     this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
 
     this.#controllerSubscriptions.push(
@@ -225,7 +231,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#controllerSubscriptions.push(
       this.#keystore.onUpdate(() => {
         if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
-          this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
+          this.addAccounts(
+            this.#addAccountsOnKeystoreReady.accounts,
+            this.#addAccountsOnKeystoreReady.requestId
+          )
           this.#addAccountsOnKeystoreReady = null
         }
       })
@@ -252,7 +261,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           (acc) => isSmartAccount(acc.account) && acc.slot === derivedAccount.slot
         )
 
-        let accountsToReturn: Omit<AccountOnPage, 'importStatus'>[] = []
+        let accountsToReturn: DerivedAccount[] = []
 
         if (!isSmartAccount(derivedAccount.account)) {
           accountsToReturn.push(derivedAccount)
@@ -330,9 +339,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       return prioritizeAccountType(a) - prioritizeAccountType(b) || a.slot - b.slot
     })
 
-    const accountsWithStatus = mergedAccounts.map((acc) => ({
+    const accountsWithStatus: AccountOnPage[] = mergedAccounts.map((acc) => ({
       ...acc,
-      importStatus: getAccountImportStatus({
+      ...getAccountImportStatus({
         account: acc.account,
         alreadyImportedAccounts: this.#alreadyImportedAccounts,
         keys: this.#keystore.keys,
@@ -350,7 +359,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (nextUnusedSmartAcc) {
       accountsWithStatus.push({
         ...nextUnusedSmartAcc,
-        importStatus: getAccountImportStatus({
+        ...getAccountImportStatus({
           account: nextUnusedSmartAcc.account,
           alreadyImportedAccounts: this.#alreadyImportedAccounts,
           keys: this.#keystore.keys,
@@ -478,6 +487,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   get subType() {
     return this.keyIterator?.subType || this.initParams?.keyIterator?.subType
+  }
+
+  get derivableHdPathTemplates() {
+    return this.keyIterator?.derivableHdPathTemplates
   }
 
   async reset(resetInitParams: boolean = true) {
@@ -898,19 +911,45 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    * triggered, which uses the `readyToAdd...` properties to further set
    * the newly added accounts data (like preferences, keys and others)
    */
-  async addAccounts(accounts?: SelectedAccountForImport[]) {
-    this.addAccountsPromise = this.#addAccounts(accounts).finally(() => {
+  async addAccounts(accounts?: SelectedAccountForImport[], requestId?: string) {
+    this.addAccountsPromise = this.#addAccounts(accounts, requestId).finally(() => {
       this.addAccountsPromise = undefined
     })
-    await this.addAccountsPromise
+
+    try {
+      await this.addAccountsPromise
+    } catch (error: any) {
+      this.#replyToImportRequest(requestId, error?.message || 'Adding the accounts failed')
+
+      throw error
+    }
   }
 
-  async #addAccounts(accounts?: SelectedAccountForImport[]) {
-    if (!this.isInitialized) return this.#throwNotInitialized()
-    if (!this.keyIterator) return this.#throwMissingKeyIterator()
+  /**
+   * Replies to the UI request that triggered the import (if there is one), so the UI can
+   * await the import completing instead of watching the transient `addAccountsStatus`.
+   */
+  #replyToImportRequest(requestId?: string, error?: string) {
+    if (!requestId) return
+
+    this.#sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true })
+  }
+
+  async #addAccounts(accounts?: SelectedAccountForImport[], requestId?: string) {
+    if (!this.isInitialized) {
+      this.#replyToImportRequest(requestId, 'The account picker is not initialized')
+
+      return this.#throwNotInitialized()
+    }
+    if (!this.keyIterator) {
+      this.#replyToImportRequest(requestId, 'The account picker is missing a key iterator')
+
+      return this.#throwMissingKeyIterator()
+    }
 
     if (!this.#keystore.isReadyToStoreKeys) {
-      this.#addAccountsOnKeystoreReady = { accounts }
+      // The import resumes (and replies to the request) once the keystore is ready.
+      this.#addAccountsOnKeystoreReady = { accounts, requestId }
       return
     }
 
@@ -1029,6 +1068,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     await this.forceEmitUpdate()
 
     this.#updateStateWithTheLatestFromAccounts()
+
+    this.#replyToImportRequest(requestId)
 
     // reset the addAccountsStatus in the next tick to ensure the FE receives the 'SUCCESS' state
     this.addAccountsStatus = 'INITIAL'
@@ -1595,7 +1636,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       selectedAccounts: this.selectedAccounts,
       addedAccountsFromCurrentSession: this.addedAccountsFromCurrentSession,
       type: this.type,
-      subType: this.subType
+      subType: this.subType,
+      derivableHdPathTemplates: this.derivableHdPathTemplates
     }
   }
 }

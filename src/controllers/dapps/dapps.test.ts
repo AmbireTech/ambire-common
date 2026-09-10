@@ -506,6 +506,27 @@ describe('DappsController', () => {
       }
     })
 
+    test('isDappInDefaultCatalog tells default catalog entries from user-added ones', async () => {
+      const customDapp = makeDapp({
+        id: 'custom-dapp.com',
+        name: 'Custom Dapp',
+        url: 'https://custom-dapp.com',
+        isCustom: true
+      })
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, customDapp])
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      expect(controller.isDappInDefaultCatalog(predefinedDapps[0]!.url)).toBe(true)
+      // user-added entries are not part of the catalog we ship, however they got there
+      expect(controller.isDappInDefaultCatalog(customDapp.url)).toBe(false)
+      expect(controller.isDappInDefaultCatalog('https://never-seen-before.com')).toBe(false)
+      expect(controller.isDappInDefaultCatalog('')).toBe(false)
+    })
+
     test('should not return banner for verified dapps in the default catalog', async () => {
       const updateDomainsSpy = jest.spyOn(
         PhishingController.prototype,
@@ -1962,7 +1983,6 @@ describe('DappsController', () => {
       expect(stored.connectedSources).toEqual(['injected'])
       expect(stored.isConnected).toBe(true)
     })
-
   })
 
   describe('disconnectAllDapps', () => {

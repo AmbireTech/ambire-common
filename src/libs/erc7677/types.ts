@@ -9,7 +9,7 @@ export interface PaymasterService {
       decimals: number
     }
   }
-  id: number
+  id: string
   failed?: boolean
 }
 

@@ -1,3 +1,5 @@
+import { ETHEREUM_CHAIN_ID } from '@/consts/networks'
+
 import {
   EXTREME_GAS_FEE_THRESHOLD_DEFAULT_USD,
   EXTREME_GAS_FEE_THRESHOLD_MAINNET_GWEI
@@ -5,7 +7,6 @@ import {
 import { getFeeSpeedIdentifier } from '../../controllers/signAccountOp/helper'
 import { FeeSpeed, ISignAccountOpController } from '../../interfaces/signAccountOp'
 
-const ETHEREUM_CHAIN_ID = 1n
 const WEI_PER_GWEI = 10n ** 9n
 
 // On Ethereum the gas price (in gwei) is the meaningful signal for an

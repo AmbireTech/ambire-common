@@ -17,3 +17,8 @@ export const PERMIT2_APPROVE_SELECTOR = '0x87517c45'
 export const PERMIT2_ADDRESS = '0x000000000022d473030f116ddee9f6b43ac78ba3'
 export const SAFE_TX_PRIMARY_TYPE = 'SafeTx'
 export const SAFE_PROXY_SINGLETON_SLOT = 0n
+
+// How many levels of calls embedded in other calls are shown in the UI. The humanizer
+// itself decodes all the levels, so that the warnings of the deeply embedded calls are
+// not lost, but showing all of them makes the transaction impossible to read.
+export const MAX_DISPLAYED_NESTED_CALLDATA_DEPTH = 4
