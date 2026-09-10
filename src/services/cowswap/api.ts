@@ -2,6 +2,7 @@ import {
   formatUnits,
   getAddress,
   Interface,
+  isAddress,
   keccak256,
   solidityPacked,
   toUtf8Bytes,
@@ -29,12 +30,13 @@ import {
   SwapAndBridgeUserTx,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import {
+  addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
   getSlippage,
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import {
   COWSWAP_API_BASE_URL,
   COWSWAP_APP_CODE,
@@ -44,6 +46,7 @@ import {
   COWSWAP_ORDER_VALIDITY_SECONDS,
   COWSWAP_SETTLEMENT_ADDRESS,
   COWSWAP_SUPPORTED_CHAINS,
+  COWSWAP_TOKEN_LIST_URL,
   COWSWAP_VAULT_RELAYER_ADDRESS
 } from './constants'
 
@@ -53,6 +56,7 @@ const ethFlowInterface = new Interface([
 ])
 
 const MAX_VALID_TO = 2 ** 32 - 1
+const CENA_API_BASE_URL = 'https://cena.ambire.com'
 
 const orderTypes = {
   Order: [
@@ -86,6 +90,70 @@ type CowSwapErrorResponse = {
   description?: string
   message?: string
 }
+
+type CowSwapTokenListEntry = {
+  address: string
+  chainId: number
+  decimals: number
+  logoURI?: string
+  name: string
+  symbol: string
+}
+
+type CenaPlatformResponse = {
+  platformId?: string
+}
+
+type CenaTokenResponse = {
+  blacklist?: boolean
+  decimals?: Record<string, number>
+  image?: {
+    large?: string
+    small?: string
+    thumb?: string
+  }
+  name?: string
+  platforms?: Record<string, string>
+  removed?: boolean
+  symbol?: string
+}
+
+const isCowSwapTokenListEntry = (value: unknown): value is CowSwapTokenListEntry => {
+  if (!value || typeof value !== 'object') return false
+  if (
+    !('address' in value) ||
+    !('chainId' in value) ||
+    !('decimals' in value) ||
+    !('name' in value) ||
+    !('symbol' in value)
+  )
+    return false
+
+  return (
+    typeof value.address === 'string' &&
+    isAddress(value.address) &&
+    typeof value.chainId === 'number' &&
+    Number.isInteger(value.chainId) &&
+    typeof value.decimals === 'number' &&
+    Number.isInteger(value.decimals) &&
+    value.decimals >= 0 &&
+    value.decimals <= 255 &&
+    typeof value.name === 'string' &&
+    !!value.name &&
+    typeof value.symbol === 'string' &&
+    !!value.symbol &&
+    (!('logoURI' in value) || value.logoURI === undefined || typeof value.logoURI === 'string')
+  )
+}
+
+const normalizeCowSwapToken = (token: CowSwapTokenListEntry): SwapAndBridgeToToken => ({
+  address: getAddress(token.address),
+  chainId: token.chainId,
+  decimals: token.decimals,
+  icon: token.logoURI || '',
+  name: token.name,
+  symbol: token.symbol
+})
 
 const getApiNetwork = (chainId: number) =>
   COWSWAP_SUPPORTED_CHAINS.find((chain) => chain.chainId === chainId)?.apiNetwork
@@ -306,6 +374,21 @@ export class CowSwapAPI implements SwapProvider {
     return chains
   }
 
+  async #getTokenList(): Promise<CowSwapTokenListEntry[]> {
+    const response = await this.#parseResponse<{ tokens?: unknown }>(
+      await this.#fetchWithTimeout(COWSWAP_TOKEN_LIST_URL, { headers: this.#headers }),
+      'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
+    )
+
+    if (!Array.isArray(response.tokens)) {
+      throw new SwapAndBridgeProviderApiError(
+        'Unable to retrieve the list of supported receive tokens. CoW Swap returned an unexpected token list.'
+      )
+    }
+
+    return response.tokens.filter(isCowSwapTokenListEntry)
+  }
+
   async getToTokenList({
     fromChainId,
     toChainId
@@ -319,15 +402,89 @@ export class CowSwapAPI implements SwapProvider {
       )
     }
 
-    // TODO: fix this, especially in a setup where CowSwap is the only provider
+    const tokens = (await this.#getTokenList())
+      .filter((token) => token.chainId === toChainId)
+      .map(normalizeCowSwapToken)
 
-    // CoW Swap does not expose a token-list endpoint. The shared token picker is populated by
-    // the other providers, while CoW Swap can quote any selected supported ERC-20 token.
-    return []
+    return addCustomTokensIfNeeded({ chainId: toChainId, tokens })
   }
 
-  async getToken(): Promise<SwapAndBridgeToToken | null> {
-    return null
+  async getToken({
+    address,
+    chainId
+  }: {
+    address: string
+    chainId: number
+  }): Promise<SwapAndBridgeToToken | null> {
+    if (!getApiNetwork(chainId) || !isAddress(address)) return null
+
+    const normalizedAddress = getAddress(address)
+    const listedToken = (await this.#getTokenList()).find(
+      (token) =>
+        token.chainId === chainId && token.address.toLowerCase() === normalizedAddress.toLowerCase()
+    )
+    if (listedToken) return normalizeCowSwapToken(listedToken)
+
+    const nativePriceResponse = await this.#fetchWithTimeout(
+      this.#getApiUrl(chainId, `/token/${normalizedAddress}/native_price`),
+      { headers: this.#headers }
+    )
+    if (nativePriceResponse.status === 404) return null
+    await this.#parseResponse(
+      nativePriceResponse,
+      'Unable to check whether the token is supported.'
+    )
+
+    const platformResponse = await this.#fetchWithTimeout(
+      `${CENA_API_BASE_URL}/api/v3/platform/${chainId}`,
+      { headers: this.#headers }
+    )
+    if (platformResponse.status === 404) return null
+    const { platformId } = await this.#parseResponse<CenaPlatformResponse>(
+      platformResponse,
+      'Unable to retrieve token information by address.'
+    )
+    if (typeof platformId !== 'string' || !platformId) return null
+
+    const tokenResponse = await this.#fetchWithTimeout(
+      `${CENA_API_BASE_URL}/api/v3/coins/${encodeURIComponent(
+        platformId
+      )}/contract/${normalizedAddress}`,
+      { headers: this.#headers }
+    )
+    if (tokenResponse.status === 404) return null
+    const token = await this.#parseResponse<CenaTokenResponse>(
+      tokenResponse,
+      'Unable to retrieve token information by address.'
+    )
+    const platformAddress = token.platforms?.[platformId]
+    const decimals = token.decimals?.[platformId]
+
+    if (
+      token.blacklist ||
+      token.removed ||
+      !platformAddress ||
+      !isAddress(platformAddress) ||
+      platformAddress.toLowerCase() !== normalizedAddress.toLowerCase() ||
+      !Number.isInteger(decimals) ||
+      decimals === undefined ||
+      decimals < 0 ||
+      decimals > 255 ||
+      typeof token.name !== 'string' ||
+      !token.name ||
+      typeof token.symbol !== 'string' ||
+      !token.symbol
+    )
+      return null
+
+    return {
+      address: normalizedAddress,
+      chainId,
+      decimals,
+      icon: token.image?.large || token.image?.small || token.image?.thumb || '',
+      name: token.name,
+      symbol: token.symbol
+    }
   }
 
   async quote({
@@ -498,7 +655,7 @@ export class CowSwapAPI implements SwapProvider {
     const orderUid = computeOrderUid({ chainId: fromChainId, order, owner, isEthFlow })
     const normalizedFromAsset = convertPortfolioTokenToSwapAndBridgeToToken(fromAsset, fromChainId)
     const protocol = { name: 'CoW Swap', displayName: 'CoW Swap', icon: '' }
-    const serviceTime = 30
+    const serviceTime = 10
     const inputValueInUsd = Number(getTokenUsdAmount(fromAsset, sellAmount) || 0)
     const outputValueInUsd = getOutputValueInUsd({
       inputValueInUsd,

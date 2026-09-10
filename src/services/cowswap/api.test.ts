@@ -1,4 +1,4 @@
-import { Interface, ZeroAddress } from 'ethers'
+import { getAddress, Interface, ZeroAddress } from 'ethers'
 
 import { describe, expect, it, jest } from '@jest/globals'
 
@@ -7,6 +7,7 @@ import { CowSwapAPI } from './api'
 import {
   COWSWAP_ETH_FLOW_ADDRESS,
   COWSWAP_SETTLEMENT_ADDRESS,
+  COWSWAP_TOKEN_LIST_URL,
   COWSWAP_VAULT_RELAYER_ADDRESS
 } from './constants'
 
@@ -20,6 +21,7 @@ const tokenIn = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
 const tokenOut = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 const baseUsdc = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
 const baseWeth = '0x4200000000000000000000000000000000000006'
+const safeTokenAddress = '0x5afe3855358e112b5647b952709e6165e1c1eeee'
 
 const makeResponse = (body: any, ok = true, status = ok ? 200 : 400) => ({
   ok,
@@ -136,13 +138,172 @@ const makeEthFlowRouteFixture = async () => {
 
 describe('CowSwapAPI', () => {
   it('supports only same-network CoW Swap routes', async () => {
-    const api = new CowSwapAPI({ fetch: jest.fn() as any })
+    const fetch = jest.fn(async () => makeResponse({ tokens: [] }))
+    const api = new CowSwapAPI({ fetch: fetch as any })
 
     expect(api.areChainsSupported({ fromChainId: 1, toChainId: 1 })).toBe(true)
     expect(api.areChainsSupported({ fromChainId: 1, toChainId: 8453 })).toBe(false)
     expect(api.areChainsSupported({ fromChainId: 10, toChainId: 10 })).toBe(false)
     await expect(api.getSupportedChains()).resolves.toContainEqual({ chainId: 42161 })
-    await expect(api.getToTokenList({ fromChainId: 1, toChainId: 1 })).resolves.toEqual([])
+    await expect(api.getToTokenList({ fromChainId: 56, toChainId: 56 })).resolves.toEqual([])
+  })
+
+  it('fetches and normalizes tokens for the requested chain', async () => {
+    const fetch = jest.fn(async () =>
+      makeResponse({
+        tokens: [
+          {
+            address: tokenIn.toLowerCase(),
+            chainId: 1,
+            decimals: 6,
+            logoURI: 'https://files.cow.fi/usdc.png',
+            name: 'USD Coin',
+            symbol: 'USDC'
+          },
+          {
+            address: baseUsdc,
+            chainId: 8453,
+            decimals: 6,
+            name: 'USD Coin',
+            symbol: 'USDC'
+          },
+          {
+            address: 'not-an-address',
+            chainId: 1,
+            decimals: 18,
+            name: 'Unsafe token',
+            symbol: 'BAD'
+          }
+        ]
+      })
+    )
+    const api = new CowSwapAPI({ fetch: fetch as any })
+
+    const tokens = await api.getToTokenList({ fromChainId: 1, toChainId: 1 })
+
+    expect(fetch).toHaveBeenCalledWith(COWSWAP_TOKEN_LIST_URL, {
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' }
+    })
+    expect(tokens).toContainEqual({
+      address: tokenIn,
+      chainId: 1,
+      decimals: 6,
+      icon: 'https://files.cow.fi/usdc.png',
+      name: 'USD Coin',
+      symbol: 'USDC'
+    })
+    expect(tokens.some((token) => token.chainId !== 1 || token.symbol === 'BAD')).toBe(false)
+  })
+
+  it('rejects malformed token-list responses', async () => {
+    const fetch = jest.fn(async () => makeResponse({ tokens: null }))
+    const api = new CowSwapAPI({ fetch: fetch as any })
+
+    await expect(api.getToTokenList({ fromChainId: 1, toChainId: 1 })).rejects.toThrow(
+      'CoW Swap returned an unexpected token list'
+    )
+  })
+
+  it('does not fetch tokens for unsupported chain pairs', async () => {
+    const fetch = jest.fn()
+    const api = new CowSwapAPI({ fetch: fetch as any })
+
+    await expect(api.getToTokenList({ fromChainId: 1, toChainId: 8453 })).rejects.toThrow(
+      'network pair is not supported'
+    )
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('finds a token by address in the CowSwap token list', async () => {
+    const fetch = jest.fn(async () =>
+      makeResponse({
+        tokens: [
+          {
+            address: safeTokenAddress,
+            chainId: 1,
+            decimals: 18,
+            logoURI: 'https://files.cow.fi/safe.png',
+            name: 'Safe',
+            symbol: 'SAFE'
+          }
+        ]
+      })
+    )
+    const api = new CowSwapAPI({ fetch: fetch as any })
+
+    await expect(api.getToken({ address: safeTokenAddress, chainId: 1 })).resolves.toEqual({
+      address: getAddress(safeTokenAddress),
+      chainId: 1,
+      decimals: 18,
+      icon: 'https://files.cow.fi/safe.png',
+      name: 'Safe',
+      symbol: 'SAFE'
+    })
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(fetch).toHaveBeenCalledWith(COWSWAP_TOKEN_LIST_URL, expect.any(Object))
+  })
+
+  it('uses Cena metadata for a CowSwap-supported token missing from the token list', async () => {
+    const customTokenAddress = '0x1111111111111111111111111111111111111111'
+    const fetch = (jest.fn() as any)
+      .mockResolvedValueOnce(makeResponse({ tokens: [] }))
+      .mockResolvedValueOnce(makeResponse({ price: '1' }))
+      .mockResolvedValueOnce(makeResponse({ platformId: 'ethereum' }))
+      .mockResolvedValueOnce(
+        makeResponse({
+          decimals: { ethereum: 18 },
+          image: { small: 'https://cena.ambire.com/custom.png' },
+          name: 'Custom token',
+          platforms: { ethereum: customTokenAddress },
+          symbol: 'custom'
+        })
+      )
+    const api = new CowSwapAPI({ fetch })
+
+    await expect(api.getToken({ address: customTokenAddress, chainId: 1 })).resolves.toEqual({
+      address: getAddress(customTokenAddress),
+      chainId: 1,
+      decimals: 18,
+      icon: 'https://cena.ambire.com/custom.png',
+      name: 'Custom token',
+      symbol: 'custom'
+    })
+    expect(fetch.mock.calls.map(([url]: [string]) => url)).toEqual([
+      COWSWAP_TOKEN_LIST_URL,
+      `https://api.cow.fi/mainnet/api/v1/token/${customTokenAddress}/native_price`,
+      'https://cena.ambire.com/api/v3/platform/1',
+      `https://cena.ambire.com/api/v3/coins/ethereum/contract/${customTokenAddress}`
+    ])
+  })
+
+  it('does not add an unlisted token without CowSwap liquidity', async () => {
+    const customTokenAddress = '0x1111111111111111111111111111111111111111'
+    const fetch = (jest.fn() as any)
+      .mockResolvedValueOnce(makeResponse({ tokens: [] }))
+      .mockResolvedValueOnce(makeResponse({}, false, 404))
+    const api = new CowSwapAPI({ fetch })
+
+    await expect(api.getToken({ address: customTokenAddress, chainId: 1 })).resolves.toBeNull()
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not trust Cena metadata for a different contract', async () => {
+    const customTokenAddress = '0x1111111111111111111111111111111111111111'
+    const fetch = (jest.fn() as any)
+      .mockResolvedValueOnce(makeResponse({ tokens: [] }))
+      .mockResolvedValueOnce(makeResponse({ price: '1' }))
+      .mockResolvedValueOnce(makeResponse({ platformId: 'ethereum' }))
+      .mockResolvedValueOnce(
+        makeResponse({
+          decimals: { ethereum: 18 },
+          name: 'Wrong token',
+          platforms: { ethereum: '0x2222222222222222222222222222222222222222' },
+          symbol: 'wrong'
+        })
+      )
+    const api = new CowSwapAPI({ fetch })
+
+    await expect(api.getToken({ address: customTokenAddress, chainId: 1 })).resolves.toBeNull()
   })
 
   it('requests a PreSign quote, includes the Ambire fee and returns an intent route', async () => {

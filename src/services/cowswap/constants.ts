@@ -1,5 +1,7 @@
 export const COWSWAP_API_BASE_URL = 'https://api.cow.fi'
 
+export const COWSWAP_TOKEN_LIST_URL = 'https://files.cow.fi/tokens/CowSwap.json'
+
 export const COWSWAP_SETTLEMENT_ADDRESS = '0x9008D19f58AAbD9eD0D60971565AA8510560ab41'
 
 export const COWSWAP_VAULT_RELAYER_ADDRESS = '0xC92E8bdf79f0507f65a392b0ab4667716BFE0110'
