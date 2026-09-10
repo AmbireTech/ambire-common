@@ -545,11 +545,17 @@ export class SignAccountOpController
       this.#featureFlags
     )
     this.#onUpdateAfterTraceCallSuccess = onUpdateAfterTraceCallSuccess
-    this.gasPrice = new GasPriceController(network, provider, this.baseAccount, () => ({
-      estimation: this.estimation,
-      readyToSign: this.readyToSign,
-      stopRefetching: this.#stopRefetching
-    }))
+    this.gasPrice = new GasPriceController(
+      network,
+      provider,
+      this.baseAccount,
+      () => ({
+        estimation: this.estimation,
+        readyToSign: this.readyToSign,
+        stopRefetching: this.#stopRefetching
+      }),
+      this.#featureFlags
+    )
     this.#shouldSimulate = shouldSimulate
 
     this.#onBroadcastSuccess = onBroadcastSuccess

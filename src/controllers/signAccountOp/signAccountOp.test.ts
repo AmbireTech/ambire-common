@@ -686,11 +686,17 @@ const init = async (
   estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
     ? estimationOrMock.ambireEstimation.feePaymentOptions
     : estimationOrMock.providerEstimation!.feePaymentOptions
-  const gasPriceController = new GasPriceController(network, provider, baseAccount, () => ({
-    estimation: estimationController,
-    readyToSign: true,
-    stopRefetching: false
-  }))
+  const gasPriceController = new GasPriceController(
+    network,
+    provider,
+    baseAccount,
+    () => ({
+      estimation: estimationController,
+      readyToSign: true,
+      stopRefetching: false
+    }),
+    featureFlagsCtrl
+  )
   gasPriceController.gasPrices = gasPricesOrMock
   const dappsControllerMock = {
     onUpdate: () => () => {},
