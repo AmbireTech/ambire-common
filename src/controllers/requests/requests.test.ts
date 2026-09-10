@@ -296,6 +296,180 @@ describe('RequestsController ', () => {
     expect(controller.userRequests.length).toBe(0)
     expect(controller.visibleUserRequests.length).toBe(0)
   })
+  test('does not auto-select a signed Safe call after completing a non-calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const completedRequest = { ...DAPP_CONNECT_REQUEST, id: 'completed-request' }
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [completedRequest, signedRequest]
+
+    await controller.removeUserRequests([completedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(null)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('auto-selects an unsigned Safe call after completing a non-calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const completedRequest = { ...DAPP_CONNECT_REQUEST, id: 'completed-request' }
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const unsignedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    signedRequest.id = 'signed-request'
+    unsignedRequest.id = 'unsigned-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    expect(unsignedRequest.signAccountOp.accountOp.signed).toBeUndefined()
+    controller.userRequests = [completedRequest, signedRequest, unsignedRequest]
+
+    await controller.removeUserRequests([completedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(unsignedRequest)
+    signedRequest.signAccountOp.destroy()
+    unsignedRequest.signAccountOp.destroy()
+  })
+  test('auto-selects a non-calls request after skipping a signed Safe call', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const completedRequest = { ...DAPP_CONNECT_REQUEST, id: 'completed-request' }
+    const nextNonCallsRequest = { ...DAPP_CONNECT_REQUEST, id: 'next-non-calls-request' }
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [completedRequest, signedRequest, nextNonCallsRequest]
+
+    await controller.removeUserRequests([completedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(nextNonCallsRequest)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('keeps auto-selecting signed calls for non-Safe accounts', async () => {
+    const { controller, getCallsRequest } = await prepareTest()
+    const completedRequest = { ...DAPP_CONNECT_REQUEST, id: 'completed-request' }
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [completedRequest, signedRequest]
+
+    await controller.removeUserRequests([completedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(signedRequest)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('keeps auto-selecting signed Safe calls after completing a calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const completedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    completedRequest.id = 'completed-request'
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [completedRequest, signedRequest]
+
+    await controller.removeUserRequests([completedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(signedRequest)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('does not auto-select a signed Safe call after rejecting a calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const rejectedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    rejectedRequest.id = 'rejected-request'
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [rejectedRequest, signedRequest]
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(null)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('does not auto-select a signed Safe call after rejecting a non-calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const rejectedRequest = { ...DAPP_CONNECT_REQUEST, id: 'rejected-request' }
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [rejectedRequest, signedRequest]
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(null)
+    signedRequest.signAccountOp.destroy()
+  })
+  test('auto-selects an unsigned Safe call after rejecting a calls request', async () => {
+    const { controller, getCallsRequest } = await prepareTest(false, true)
+    const rejectedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    const unsignedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    rejectedRequest.id = 'rejected-request'
+    signedRequest.id = 'signed-request'
+    unsignedRequest.id = 'unsigned-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [rejectedRequest, signedRequest, unsignedRequest]
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(unsignedRequest)
+    signedRequest.signAccountOp.destroy()
+    unsignedRequest.signAccountOp.destroy()
+  })
+  test('keeps auto-selecting signed calls after rejection for non-Safe accounts', async () => {
+    const { controller, getCallsRequest } = await prepareTest()
+    const rejectedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    rejectedRequest.id = 'rejected-request'
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [rejectedRequest, signedRequest]
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.currentUserRequest).toBe(signedRequest)
+    signedRequest.signAccountOp.destroy()
+  })
   test('build dapp request', async () => {
     const { controller } = await prepareTest()
 
@@ -553,11 +727,10 @@ describe('RequestsController ', () => {
   })
 
   test('assigns the first free nonce to each new Safe request', async () => {
-    const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
+    const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
-    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, chainId, 117n))
     const buildRequest = () =>
       controller.build({
         type: 'calls',
@@ -618,14 +791,14 @@ describe('RequestsController ', () => {
       if (request.kind === 'calls') request.signAccountOp.destroy()
     })
   })
-  test('uses the latest activity nonce when the account state is stale', async () => {
+  test('BUG: ignores activity nonces when assigning a new Safe request', async () => {
     const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
-    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, chainId, 118n, 1))
-    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, chainId, 120n, 2))
-    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, 10n, 999n, 3))
+    await activityCtrl.addAccountOp(
+      getActivityAccountOp(accountAddr, chainId, 1n << 192n, Date.now())
+    )
 
     await controller.build({
       type: 'calls',
@@ -641,7 +814,7 @@ describe('RequestsController ', () => {
     const request = controller.userRequests[0]
     expect(request?.kind).toBe('calls')
     if (request?.kind !== 'calls') throw new Error('Expected calls request')
-    expect(request.signAccountOp.accountOp.nonce).toBe(121n)
+    expect(request.signAccountOp.accountOp.nonce).toBe(119n)
     request.signAccountOp.destroy()
   })
   test('keeps the nonce when adding calls to an existing Safe request', async () => {

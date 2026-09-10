@@ -11,7 +11,6 @@ import { ethAddress, zeroAddress } from 'viem'
 
 import {
   AMBIRE_WALLET_TOKEN_ON_ETHEREUM,
-  FEE_PERCENT,
   JPYC_TOKEN,
   SOCKET_EXPLORER_URL
 } from '@/services/socketv3/constants'
@@ -348,7 +347,7 @@ const buildRevokeApprovalIfNeeded = async (
       to: userTx.approvalData.approvalTokenAddress,
       data: approveCallData
     })
-  } catch (e) {
+  } catch {
     fails = true
   }
 
@@ -619,7 +618,7 @@ export const calculateAmountWarnings = (
 
   try {
     inputValueInUsd = Number(fromAmountInFiat)
-  } catch (error) {
+  } catch {
     // silent fail
   }
   if (!inputValueInUsd) return null
@@ -739,14 +738,24 @@ const convertNullAddressToZeroAddressIfNeeded = (addr: string) =>
  * amount in USD to the fee percent
  */
 const getSwapSponsorship = ({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   isErc4337Enabled,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   hasConvinienceFee,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   nativePrice,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   fromAmountInUsd,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   feeTokenPriceInUsd,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   feeTokenDecimals,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   providerId,
-  isIntent
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  isIntent,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  feePercent
 }: {
   isErc4337Enabled: boolean
   hasConvinienceFee: boolean
@@ -756,6 +765,7 @@ const getSwapSponsorship = ({
   feeTokenDecimals: number | undefined
   providerId: string | undefined
   isIntent: boolean
+  feePercent: number
 }):
   | {
       nativePrice: number
@@ -764,22 +774,26 @@ const getSwapSponsorship = ({
       feeTokenDecimals: number
     }
   | undefined => {
-  if (
-    !isErc4337Enabled ||
-    !hasConvinienceFee ||
-    !nativePrice ||
-    !fromAmountInUsd ||
-    !feeTokenPriceInUsd ||
-    !feeTokenDecimals ||
-    (providerId === 'uniswap' && isIntent)
-  )
-    return undefined
-  return {
-    nativePrice,
-    swapFeeInUsd: (fromAmountInUsd * FEE_PERCENT) / 100,
-    feeTokenPriceInUsd,
-    feeTokenDecimals
-  }
+  // disable sponsorship for now as it's too buggy and inconsistent
+  return undefined
+
+  // if (
+  //   !isErc4337Enabled ||
+  //   !hasConvinienceFee ||
+  //   !nativePrice ||
+  //   !fromAmountInUsd ||
+  //   !feeTokenPriceInUsd ||
+  //   !feeTokenDecimals ||
+  //   (providerId === 'uniswap' && isIntent) ||
+  //   feePercent === 0
+  // )
+  //   return undefined
+  // return {
+  //   nativePrice,
+  //   swapFeeInUsd: (fromAmountInUsd * FEE_PERCENT) / 100,
+  //   feeTokenPriceInUsd,
+  //   feeTokenDecimals
+  // }
 }
 
 const enrichRouteWithOutputUsdPrice = (

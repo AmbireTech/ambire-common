@@ -1,5 +1,7 @@
 import { Interface, toQuantity, TransactionResponse } from 'ethers'
 
+import { getGasLimitWithOverhead } from '@/libs/estimate/estimate'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import ERC20 from '../../../contracts/compiled/IERC20.json'
@@ -28,15 +30,6 @@ export const BROADCAST_OPTIONS = {
 async function waitBeforeRetry(chainId: bigint) {
   // wait a bit longer on ethereum as txn confirmations are slower
   await wait(chainId === 1n ? 2000 : 1000)
-}
-
-/**
- * The default gas limit overhead for all chains is 10%.
- * Robinhood uses 20% because transactions there frequently run out of gas.
- */
-function getGasLimitOverhead(gasLimit: bigint, chainId: bigint) {
-  if (chainId === 4663n) return gasLimit / 5n
-  return gasLimit / 10n
 }
 
 export function getByOtherEOATxnData(
@@ -144,7 +137,7 @@ async function estimateGas(
   }
 
   // add gas overhead to prevent OOG
-  return BigInt(gasLimit) + getGasLimitOverhead(BigInt(gasLimit), chainId)
+  return getGasLimitWithOverhead(BigInt(gasLimit))
 }
 
 export async function getTxnData(

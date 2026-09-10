@@ -1518,8 +1518,8 @@ describe('SignAccountOp Controller ', () => {
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
       feeTokenChainId: 1n,
-      amount: 6005000n, // ((300 + 300) × 10000) + 10000, i.e. ((baseFee + priorityFee) * gasUsed) + addedNative
-      simulatedGasLimit: 10000n, // 10000, i.e. gasUsed,
+      amount: 7205000n, // ((300 + 300) × 12000) + 5000, i.e. ((baseFee + priorityFee) * gasUsed) + addedNative
+      simulatedGasLimit: 12000n, // 10000 gas used plus 20% overhead
       maxPriorityFeePerGas: 300n,
       gasPrice: 600n
     })

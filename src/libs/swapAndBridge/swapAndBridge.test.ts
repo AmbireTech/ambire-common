@@ -285,7 +285,8 @@ describe('swapAndBridge lib', () => {
           feeTokenPriceInUsd: 1,
           feeTokenDecimals: 6,
           providerId: 'lifi',
-          isIntent: false
+          isIntent: false,
+          feePercent: 0.5
         })
       ).toBeUndefined()
     })

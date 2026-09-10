@@ -34,7 +34,7 @@ import {
   getSlippage,
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { FEE_PERCENT } from '../socketv3/constants'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import {
   COWSWAP_API_BASE_URL,
   COWSWAP_APP_CODE,
@@ -52,7 +52,6 @@ const ethFlowInterface = new Interface([
   'function createOrder((address buyToken,address receiver,uint256 sellAmount,uint256 buyAmount,bytes32 appData,uint256 feeAmount,uint32 validTo,bool partiallyFillable,int64 quoteId) order) payable returns (bytes32 orderHash)'
 ])
 
-const AMBIRE_FEE_BPS = Math.round(FEE_PERCENT * 100)
 const MAX_VALID_TO = 2 ** 32 - 1
 
 const orderTypes = {
@@ -115,22 +114,16 @@ const getProtocolFeeAmount = (buyAmount: bigint, protocolFeeBps: number) => {
   return (buyAmount * protocolFeeBpsWithPrecision) / denominator
 }
 
-const buildAppData = ({
-  slippageBps,
-  withConvenienceFee
-}: {
-  slippageBps: number
-  withConvenienceFee: boolean
-}) => {
+const buildAppData = ({ slippageBps, feeBps }: { slippageBps: number; feeBps?: number }) => {
   const appData = {
     appCode: COWSWAP_APP_CODE,
     metadata: {
       orderClass: { orderClass: 'market' },
-      ...(withConvenienceFee
+      ...(feeBps
         ? {
             partnerFee: {
               recipient: FEE_COLLECTOR,
-              volumeBps: AMBIRE_FEE_BPS
+              volumeBps: feeBps
             }
           }
         : {}),
@@ -346,7 +339,8 @@ export class CowSwapAPI implements SwapProvider {
     toTokenAddress,
     fromAmount,
     userAddress,
-    isWrapOrUnwrap
+    isWrapOrUnwrap,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     if (!this.areChainsSupported({ fromChainId, toChainId })) {
       throw new SwapAndBridgeProviderApiError(
@@ -370,8 +364,13 @@ export class CowSwapAPI implements SwapProvider {
     const buyToken = normalizeBuyTokenAddress(toTokenAddress)
     const owner = getAddress(userAddress)
     const slippageBps = Math.round(Number(getSlippage(fromAsset, fromAmount, '0.5', 0.5)) * 100)
-    const withConvenienceFee = !isWrapOrUnwrap && !isNoFeeToken(fromChainId, sellToken)
-    const { fullAppData, appDataHash } = buildAppData({ slippageBps, withConvenienceFee })
+    const feeExemptionReason = getFeeExemptionReason({
+      isWrapOrUnwrap,
+      isFeeExemptToken: isNoFeeToken(fromChainId, sellToken)
+    })
+    const shouldIncludeConvenienceFee = feePercent > 0 && !feeExemptionReason
+    const feeBps = shouldIncludeConvenienceFee ? Math.round(feePercent * 100) : undefined
+    const { fullAppData, appDataHash } = buildAppData({ slippageBps, feeBps })
     const quoteRequest = {
       sellToken,
       buyToken,
@@ -467,9 +466,7 @@ export class CowSwapAPI implements SwapProvider {
     const networkFeeInBuyToken = (quotedBuyAmount * networkFee) / quotedSellAmount
     const protocolFee = getProtocolFeeAmount(quotedBuyAmount, protocolFeeBps)
     const buyAmountBeforeFees = quotedBuyAmount + networkFeeInBuyToken + protocolFee
-    const partnerFee = withConvenienceFee
-      ? (buyAmountBeforeFees * BigInt(AMBIRE_FEE_BPS)) / 10000n
-      : 0n
+    const partnerFee = feeBps ? (buyAmountBeforeFees * BigInt(feeBps)) / 10000n : 0n
     const toAmount = quotedBuyAmount - partnerFee
     const minAmountOut = toAmount - (toAmount * BigInt(slippageBps)) / 10000n
 
@@ -551,7 +548,8 @@ export class CowSwapAPI implements SwapProvider {
         symbol: toAsset.symbol
       } as any,
       disabled: false,
-      withConvenienceFee,
+      withConvenienceFee: shouldIncludeConvenienceFee,
+      feeExemptionReason,
       isIntent: true
     }
 

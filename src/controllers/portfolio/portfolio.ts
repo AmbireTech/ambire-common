@@ -4,12 +4,18 @@ import {
   IRecurringTimeout,
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
+import { StaleRpcBlockError } from '../../classes/StaleRpcBlockError'
 import { STK_WALLET } from '../../consts/addresses'
 import {
   BLACKLIST_UPDATE_INTERVAL,
   SCHEDULED_PORTFOLIO_UPDATE_DELAY,
   SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL
 } from '../../consts/intervals'
+import { ETHEREUM_CHAIN_ID, INVICTUS_RPC_URL_IDENTIFIER } from '../../consts/networks'
+import {
+  DEFAULT_STALE_RPC_BLOCK_THRESHOLD,
+  ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
+} from '../../consts/portfolio'
 import {
   Account,
   AccountId,
@@ -74,6 +80,7 @@ import {
   GetOptions,
   NetworkState,
   PortfolioControllerState,
+  PortfolioNetworkResult,
   PortfolioVerification,
   ScheduledUpdates,
   TemporaryTokens,
@@ -91,6 +98,7 @@ import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import batcher from '../../utils/batcher'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
+import { WalletTokenController } from '../walletToken/walletToken'
 
 const EXTERNAL_API_HINTS_TTL = {
   dynamic: 15 * 60 * 1000,
@@ -192,6 +200,8 @@ export class PortfolioController
    */
   protected hints: HintsController
 
+  #walletToken: WalletTokenController
+
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
@@ -262,6 +272,8 @@ export class PortfolioController
     this.#banner = banner
     this.#featureFlags = featureFlags
     this.hints = new HintsController(storage, accounts, keystore)
+    this.#walletToken = new WalletTokenController()
+    this.#walletToken.onError((error) => this.emitError(error))
     // Re-emit hints updates as portfolio updates so the re-exposed getters
     // (customTokens, tokenPreferences) reach the UI when they change.
     this.hints.onUpdate((forceEmit) => this.propagateUpdate(forceEmit))
@@ -1245,6 +1257,69 @@ export class PortfolioController
     this.emitUpdate()
   }
 
+  /**
+   * How many blocks behind the stored result a freshly fetched one is.
+   */
+  static #getBlocksBehind(
+    networkState: NetworkState<PortfolioNetworkResult> | undefined,
+    newBlockNumber: number,
+    rpcUrl: string
+  ) {
+    const storedBlockNumber = networkState?.result?.blockNumber
+
+    if (!storedBlockNumber || networkState?.rpcInfo?.url !== rpcUrl) return 0
+
+    return Math.max(storedBlockNumber - newBlockNumber, 0)
+  }
+
+  /**
+   * Records how far behind the RPC is after an update was rejected for being older than
+   * the one already displayed, and reports our own RPC falling behind once per episode.
+   */
+  #onStaleRpcBlock(accountId: AccountId, network: Network, error: StaleRpcBlockError) {
+    const state = this.#state[accountId]?.[network.chainId.toString()]
+
+    if (!state) return
+
+    const rpcUrl = network.selectedRpcUrl
+    const isFirstRejection = !state.rpcInfo?.since
+
+    state.rpcInfo = {
+      url: rpcUrl,
+      behindBy: error.blocksBehind,
+      since: state.rpcInfo?.since ?? Date.now()
+    }
+
+    this.debugLog(
+      'update',
+      `${network.chainId.toString()} update rejected for ${accountId}`,
+      () => ({
+        rpcUrl,
+        receivedBlockNumber: error.receivedBlockNumber,
+        blocksBehind: error.blocksBehind
+      })
+    )
+
+    const message = '[PORTFOLIO_STALE_RPC_BLOCK] The RPC returned the state of an older block'
+    const reportedError = new Error(message)
+
+    ;(reportedError as any).debugInfo = {
+      accountId,
+      chainId: network.chainId.toString(),
+      rpcUrl,
+      receivedBlockNumber: error.receivedBlockNumber,
+      storedBlockNumber: error.receivedBlockNumber + error.blocksBehind,
+      blocksBehind: error.blocksBehind
+    }
+
+    this.emitError({
+      level: 'silent',
+      sendCrashReport: isFirstRejection && rpcUrl.includes(INVICTUS_RPC_URL_IDENTIFIER),
+      message,
+      error: reportedError
+    })
+  }
+
   static #getCanSkipUpdate(networkState?: NetworkState, maxDataAgeMs?: number) {
     const hasImportantErrors = networkState?.errors.some((e) => e.level === 'critical')
 
@@ -1582,6 +1657,29 @@ export class PortfolioController
 
       this.tokenDataCache[network.chainId.toString()] = portfolioResult.tokenDataCache
 
+      const rpcUrl = network.selectedRpcUrl
+
+      const blocksBehind = PortfolioController.#getBlocksBehind(
+        accountState[network.chainId.toString()],
+        portfolioResult.blockNumber,
+        rpcUrl
+      )
+
+      // A lagging RPC returns the state of an older block, which would take the portfolio
+      // backwards - outdated balances and an outdated nonce for the simulation. Keep what
+      // is already displayed until the RPC catches up.
+      const staleBlockThreshold =
+        network.chainId === ETHEREUM_CHAIN_ID
+          ? ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
+          : DEFAULT_STALE_RPC_BLOCK_THRESHOLD
+
+      if (blocksBehind > staleBlockThreshold) {
+        throw new StaleRpcBlockError({
+          receivedBlockNumber: portfolioResult.blockNumber,
+          blocksBehind
+        })
+      }
+
       const hasError = combinedErrors.some((e) => e.level !== 'silent')
       let lastSuccessfulUpdate = accountState[network.chainId.toString()]?.lastSuccessfulUpdate || 0
 
@@ -1601,6 +1699,7 @@ export class PortfolioController
         errors: combinedErrors,
         lastSuccessfulUpdate,
         verification,
+        rpcInfo: { url: rpcUrl },
         result: {
           ...portfolioResult,
           // Overwrite the discovery time from the portfolio lib
@@ -1614,12 +1713,45 @@ export class PortfolioController
             : (state.result?.lastExternalApiUpdateData ?? null),
           tokens: combinedTokens,
           total: getTotal(combinedTokens, newDefiState),
-          defiPositions: newDefiState
+          defiPositions: newDefiState,
+          ...(state.result?.walletStaking && { walletStaking: state.result.walletStaking })
         }
       }
       const verifiedState = accountState[network.chainId.toString()]
 
       this.emitUpdate()
+
+      if (verifiedState) {
+        void this.#walletToken
+          .getWalletStakingShareValue({
+            chainId: network.chainId,
+            tokens: combinedTokens,
+            provider: portfolioLib.provider
+          })
+          .then((walletStaking) => {
+            if (
+              !walletStaking ||
+              this.#state[account.addr]?.[network.chainId.toString()] !== verifiedState ||
+              !verifiedState.result
+            ) {
+              return
+            }
+
+            verifiedState.result.walletStaking = walletStaking
+            this.emitUpdate()
+          })
+          .catch((error) => {
+            const walletStakingError =
+              error instanceof Error
+                ? error
+                : new Error('Unable to update the WALLET staking conversion rate.')
+            this.emitError({
+              level: 'silent',
+              message: 'Unable to update the WALLET staking conversion rate.',
+              error: walletStakingError
+            })
+          })
+      }
 
       // Fire-and-forget: verify the just-fetched balances against Colibri without
       // blocking the portfolio update (balances are already emitted above). The
@@ -1667,11 +1799,16 @@ export class PortfolioController
 
       return [true, discoveryData]
     } catch (e: any) {
-      this.emitError({
-        level: 'silent',
-        message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId})`,
-        error: e
-      })
+      if (e instanceof StaleRpcBlockError) {
+        this.#onStaleRpcBlock(account.addr, network, e)
+      } else {
+        this.emitError({
+          level: 'silent',
+          message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId})`,
+          error: e
+        })
+      }
+
       state.accountOps = portfolioProps?.simulation?.accountOps
       state.isLoading = false
       if (state.verification?.status === 'loading') {

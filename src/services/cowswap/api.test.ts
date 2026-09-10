@@ -57,6 +57,7 @@ const makeQuoteParams = (overrides: Record<string, unknown> = {}) => ({
   isWrapOrUnwrap: false,
   accountNativeBalance: 1n,
   nativeSymbol: 'ETH',
+  feePercent: 0.5,
   ...overrides
 })
 
@@ -224,7 +225,61 @@ describe('CowSwapAPI', () => {
 
     expect(JSON.parse(request.appData).metadata.partnerFee).toBeUndefined()
     expect(result.routes[0]!.withConvenienceFee).toBe(false)
+    expect(result.routes[0]!.feeExemptionReason).toBe('wrap-or-unwrap')
     expect(result.routes[0]!.toAmount).toBe('500000000000000')
+  })
+
+  it('uses the fee percentage supplied for the account', async () => {
+    const fetch = makeQuoteFetch()
+    const api = new CowSwapAPI({ fetch: fetch as any })
+
+    const result = await api.quote(makeQuoteParams({ feePercent: 0.25 }))
+    const [, init] = fetch.mock.calls[0]!
+    const request = JSON.parse((init as any).body)
+    const quotedBuyAmount = 500000000000000n
+    const buyAmountBeforeFees = quotedBuyAmount + (quotedBuyAmount * 10000n) / 990000n
+    const expectedPartnerFee = (buyAmountBeforeFees * 25n) / 10000n
+
+    expect(JSON.parse(request.appData).metadata.partnerFee.volumeBps).toBe(25)
+    expect(result.routes[0]!.withConvenienceFee).toBe(true)
+    expect(result.routes[0]!.toAmount).toBe((quotedBuyAmount - expectedPartnerFee).toString())
+  })
+
+  it('does not include a fee when the supplied fee percentage is zero', async () => {
+    const fetch = makeQuoteFetch()
+    const api = new CowSwapAPI({ fetch: fetch as any })
+
+    const result = await api.quote(makeQuoteParams({ feePercent: 0 }))
+    const [, init] = fetch.mock.calls[0]!
+    const request = JSON.parse((init as any).body)
+
+    expect(JSON.parse(request.appData).metadata.partnerFee).toBeUndefined()
+    expect(result.routes[0]!.withConvenienceFee).toBe(false)
+    expect(result.routes[0]!.feeExemptionReason).toBeUndefined()
+    expect(result.routes[0]!.toAmount).toBe('500000000000000')
+  })
+
+  it('does not include a fee for fee-exempt tokens', async () => {
+    const stEthAddress = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'
+    const fetch = makeQuoteFetch()
+    const api = new CowSwapAPI({ fetch: fetch as any })
+
+    const result = await api.quote(
+      makeQuoteParams({
+        fromAsset: {
+          ...makeQuoteParams().fromAsset,
+          address: stEthAddress,
+          symbol: 'stETH'
+        },
+        fromTokenAddress: stEthAddress
+      })
+    )
+    const [, init] = fetch.mock.calls[0]!
+    const request = JSON.parse((init as any).body)
+
+    expect(JSON.parse(request.appData).metadata.partnerFee).toBeUndefined()
+    expect(result.routes[0]!.withConvenienceFee).toBe(false)
+    expect(result.routes[0]!.feeExemptionReason).toBe('fee-exempt-token')
   })
 
   it('requests an on-chain EIP-1271 quote for a native ETH sell on Base', async () => {

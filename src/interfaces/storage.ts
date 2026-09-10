@@ -119,6 +119,7 @@ export type StorageProps = {
     addresses: string[]
   }
   swapAndBridgeActiveRoutes: SwapAndBridgeActiveRoute[]
+  disabledSwapProviderIds: string[]
   // Persisted reverse ENS/Namoshi lookup cache, kept indefinitely so accounts
   // don't need to be re-resolved after a service worker restart.
   domainsCache: Domains

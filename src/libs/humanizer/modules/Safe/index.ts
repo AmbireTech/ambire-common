@@ -10,6 +10,7 @@ import {
 
 import { allowedFallbackHandlers, allowedMulticallContracts } from '../../../../consts/safe'
 import { AccountOp, isSafeRejectionCall } from '../../../accountOp/accountOp'
+import { decodeMultiSend } from '../../../safe/helpers'
 import {
   HumanizerCallModule,
   HumanizerVisualization,
@@ -25,7 +26,8 @@ import {
   getToken,
   getWarning,
   HexIrCall,
-  isHexCall
+  isHexCall,
+  padCallData
 } from '../../utils'
 
 const addOwnerWithThresholdAbi = parseAbi([
@@ -51,6 +53,9 @@ const setupAbi = parseAbi([
 const execTransactionAbi = parseAbi([
   'function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) payable returns (bool)'
 ])
+const multiSendAbi = parseAbi(['function multiSend(bytes transactions)'])
+// shared recursion-depth guard for both nested `setup` hooks and nested `multiSend` batches,
+// so a maliciously self-referential payload can't recurse getSafeHumanization indefinitely
 const MAX_SAFE_SETUP_HOOK_DEPTH = 4
 
 export const shouldDisplaySafeDelegateCallWarning = (
@@ -178,7 +183,7 @@ export const getSafeHumanization = (
   if (selector === toFunctionSelector(addOwnerWithThresholdAbi[0])) {
     const { args } = decodeFunctionData({
       abi: addOwnerWithThresholdAbi,
-      data
+      data: padCallData(data, 2)
     })
     const [newOwner, newThreshold] = args
     fullVisualization.push(
@@ -199,7 +204,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(changeThresholdAbi[0])) {
-    const { args } = decodeFunctionData({ abi: changeThresholdAbi, data })
+    const { args } = decodeFunctionData({ abi: changeThresholdAbi, data: padCallData(data, 1) })
     const [newThreshold] = args
     fullVisualization.push(...[getAction('Set threshold to'), getLabel(newThreshold)])
     warnings.push(
@@ -212,7 +217,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(removeOwnerAbi[0])) {
-    const { args } = decodeFunctionData({ abi: removeOwnerAbi, data })
+    const { args } = decodeFunctionData({ abi: removeOwnerAbi, data: padCallData(data, 3) })
     const [, removedOwner, newThreshold] = args
     fullVisualization.push(
       ...[
@@ -232,7 +237,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(swapOwnerAbi[0])) {
-    const { args } = decodeFunctionData({ abi: swapOwnerAbi, data })
+    const { args } = decodeFunctionData({ abi: swapOwnerAbi, data: padCallData(data, 3) })
     const [, removedOwner, newOwner] = args
     fullVisualization.push(
       ...[
@@ -251,7 +256,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(enableModuleAbi[0])) {
-    const { args } = decodeFunctionData({ abi: enableModuleAbi, data })
+    const { args } = decodeFunctionData({ abi: enableModuleAbi, data: padCallData(data, 1) })
     const [module] = args
     fullVisualization.push(...[getAction('Enable module:'), getAddressVisualization(module)])
     warnings.push(
@@ -267,7 +272,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(disableModuleAbi[0])) {
-    const { args } = decodeFunctionData({ abi: disableModuleAbi, data })
+    const { args } = decodeFunctionData({ abi: disableModuleAbi, data: padCallData(data, 2) })
     const [, module] = args
     fullVisualization.push(...[getAction('Disable module:'), getAddressVisualization(module)])
     return {
@@ -276,7 +281,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(setGuardAbi[0])) {
-    const { args } = decodeFunctionData({ abi: setGuardAbi, data })
+    const { args } = decodeFunctionData({ abi: setGuardAbi, data: padCallData(data, 1) })
     const [guard] = args
     fullVisualization.push(...[getAction('Set guard:'), getAddressVisualization(guard)])
     return {
@@ -285,7 +290,10 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(setFallbackHandlerAbi[0])) {
-    const { args } = decodeFunctionData({ abi: setFallbackHandlerAbi, data })
+    const { args } = decodeFunctionData({
+      abi: setFallbackHandlerAbi,
+      data: padCallData(data, 1)
+    })
     const [handler] = args
     fullVisualization.push(
       ...[getAction('Extend your account functionality with'), getAddressVisualization(handler)]
@@ -315,7 +323,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(setDomainVerifierAbi[0])) {
-    const { args } = decodeFunctionData({ abi: setDomainVerifierAbi, data })
+    const { args } = decodeFunctionData({ abi: setDomainVerifierAbi, data: padCallData(data, 2) })
     const [, newVerifier] = args
     fullVisualization.push(
       ...[
@@ -333,6 +341,44 @@ export const getSafeHumanization = (
         getAddress(newVerifier)
       )
     )
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
+
+  if (selector === toFunctionSelector(multiSendAbi[0])) {
+    fullVisualization.push(getAction('Batch of transactions'))
+
+    let decodedTransactions: ReturnType<typeof decodeMultiSend> = []
+    try {
+      const { args } = decodeFunctionData({ abi: multiSendAbi, data: padCallData(data, 1) })
+      const [transactions] = args
+      decodedTransactions = decodeMultiSend(transactions)
+    } catch {
+      decodedTransactions = []
+    }
+
+    decodedTransactions.forEach((innerCall) => {
+      // a delegatecall leg runs attacker-controlled code directly in the Safe's own storage,
+      // so it must be flagged the same way a top-level delegatecall would be, even though it's
+      // hidden a level deeper inside this batch
+      warnings.push(...getDelegateCallWarning(innerCall.operation, innerCall.to))
+
+      const innerHumanization = getSafeHumanization(
+        safeAddr,
+        innerCall.to,
+        innerCall.value,
+        innerCall.data,
+        setupHookDepth + 1
+      )
+
+      if (innerHumanization?.visuals?.length) {
+        fullVisualization.push(getBreak(), ...innerHumanization.visuals)
+      }
+      if (innerHumanization?.warnings) warnings.push(...innerHumanization.warnings)
+    })
+
     return {
       visuals: fullVisualization,
       warnings
