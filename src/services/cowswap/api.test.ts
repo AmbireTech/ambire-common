@@ -633,6 +633,9 @@ describe('CowSwapAPI', () => {
         rawRoute: { order: {} } as any
       })
     ).resolves.toEqual({ status: 'completed', txnId: settlementTxHash })
+    expect(fetch.mock.calls[1]![0]).toBe(
+      'https://api.cow.fi/mainnet/api/v2/trades?orderUid=order-uid&limit=10'
+    )
   })
 
   it('reports expired orders as failed intents', async () => {

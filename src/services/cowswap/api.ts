@@ -302,7 +302,7 @@ export class CowSwapAPI implements SwapProvider {
     return fromChainId === toChainId && !!getApiNetwork(fromChainId)
   }
 
-  #getApiUrl(chainId: number, path: string) {
+  #getApiUrl(chainId: number, path: string, version: 'v1' | 'v2' = 'v1') {
     const apiNetwork = getApiNetwork(chainId)
     if (!apiNetwork) {
       throw new SwapAndBridgeProviderApiError(
@@ -310,7 +310,7 @@ export class CowSwapAPI implements SwapProvider {
       )
     }
 
-    return `${COWSWAP_API_BASE_URL}/${apiNetwork}/api/v1${path}`
+    return `${COWSWAP_API_BASE_URL}/${apiNetwork}/api/${version}${path}`
   }
 
   async #fetchWithTimeout(url: string, init?: RequestInitWithCustomHeaders) {
@@ -921,9 +921,9 @@ export class CowSwapAPI implements SwapProvider {
   }
 
   async #getSettlementTransaction(chainId: number, orderUid: string) {
-    const params = new URLSearchParams({ orderUid })
+    const params = new URLSearchParams({ orderUid, limit: '10' })
     const response = await this.#fetchWithTimeout(
-      this.#getApiUrl(chainId, `/trades?${params.toString()}`),
+      this.#getApiUrl(chainId, `/trades?${params.toString()}`, 'v2'),
       { headers: this.#headers }
     )
     const trades = await this.#parseResponse<CowSwapTrade[]>(
