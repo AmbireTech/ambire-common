@@ -8,6 +8,7 @@ export type SafeSingletonProvider = Pick<RPCProvider, 'getStorage'>
 export type Erc7730RegistryOptions = {
   callRelayer?: BindedRelayerCall
   provider?: SafeSingletonProvider
+  isClearSigningEnabled?: boolean
 }
 
 export type Erc7730Primitive = string | number | boolean | null

@@ -492,7 +492,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite,
       eventEmitterRegistry,
       this.dapps,
-      this.callRelayer
+      this.callRelayer,
+      this.featureFlags
     )
 
     this.activity = new ActivityController(

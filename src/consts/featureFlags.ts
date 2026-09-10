@@ -4,6 +4,7 @@ export interface FeatureFlags {
   withContinuousUpdatesController: boolean
   testnetMode: boolean
   tokenAndDefiAutoDiscovery: boolean
+  clearSigning: boolean
   apiForFunctionSelectors: boolean
   gasTank: boolean
   networkConfig: boolean
@@ -46,6 +47,7 @@ export const defaultFeatureFlags: FeatureFlags = {
   withContinuousUpdatesController: true,
   testnetMode: false,
   tokenAndDefiAutoDiscovery: true,
+  clearSigning: true,
   apiForFunctionSelectors: true,
   gasTank: true,
   networkConfig: true,

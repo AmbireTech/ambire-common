@@ -1060,11 +1060,15 @@ export class SignAccountOpController
   async #applyDescriptorFirstHumanization(humanizationId: number) {
     await this.applyDescriptorFirstHumanization({
       humanizationId,
-      fetchDescriptor: () =>
-        fetchErc7730DescriptorsForAccountOp(this.accountOp, {
+      fetchDescriptor: async () => {
+        await this.#featureFlags.initialLoadPromise
+
+        return fetchErc7730DescriptorsForAccountOp(this.accountOp, {
           callRelayer: this.#callRelayer,
-          provider: this.provider
-        }),
+          provider: this.provider,
+          isClearSigningEnabled: this.#featureFlags.isFeatureEnabled('clearSigning')
+        })
+      },
       applyDescriptorHumanization: (erc7730Descriptors, currentHumanizationId) =>
         this.#setErc7730Humanization(currentHumanizationId, erc7730Descriptors),
       applyFallbackHumanization: (currentHumanizationId) =>
