@@ -710,7 +710,8 @@ const init = async (
       networks: networksCtrl,
       phishing,
       ui: uiCtrl,
-      selectedAccount: selectedAccountCtrl
+      selectedAccount: selectedAccountCtrl,
+      featureFlags: featureFlagsCtrl
     })
     await realDappsController.init()
 
