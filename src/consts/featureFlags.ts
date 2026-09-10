@@ -8,6 +8,7 @@ export interface FeatureFlags {
   gasTank: boolean
   networkConfig: boolean
   ambireSmartAccounts: boolean
+  scamAndPhishingChecker: boolean
   tokenPrices: boolean
   /**
    * Allow the user to opt out of erc4337 which will automatically
@@ -49,6 +50,7 @@ export const defaultFeatureFlags: FeatureFlags = {
   gasTank: true,
   networkConfig: true,
   ambireSmartAccounts: true,
+  scamAndPhishingChecker: true,
   tokenPrices: true,
   erc4337: true,
   eip7702: true,

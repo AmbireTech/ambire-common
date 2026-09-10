@@ -264,7 +264,8 @@ const phishingCtrl = new PhishingController({
   fetch,
   storage: storageCtrl,
   addressBook: addressBookCtrl,
-  ui: uiCtrl
+  ui: uiCtrl,
+  featureFlags: featureFlagsCtrl
 })
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })

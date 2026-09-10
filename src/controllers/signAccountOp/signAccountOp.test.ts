@@ -589,7 +589,8 @@ const init = async (
     fetch,
     storage: storageCtrl,
     addressBook: addressBookCtrl,
-    ui: uiCtrl
+    ui: uiCtrl,
+    featureFlags: featureFlagsCtrl
   })
   if (options?.dapps) {
     await phishing.init()
