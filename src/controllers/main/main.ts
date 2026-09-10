@@ -611,7 +611,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.contractNames = new ContractNamesController({
       eventEmitterRegistry,
-      fetch: this.fetch
+      fetch: this.fetch,
+      featureFlags: this.featureFlags
     })
 
     if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
