@@ -1511,7 +1511,7 @@ describe('SignAccountOp Controller ', () => {
 
     expect(controller.accountOp.gasFeePayment).toEqual({
       paidBy: eoaAccount.addr,
-      broadcastOption: BROADCAST_OPTIONS.bySelf,
+      broadcastOption: broadcastLib.BROADCAST_OPTIONS.bySelf,
       paidByKeyType: 'internal',
       isCustomGasLimit: false,
       isGasTank: false,
@@ -2264,7 +2264,7 @@ describe('Negative cases', () => {
 
     expect(controller.accountOp.gasFeePayment!.paidBy).toEqual(eoaSigner.keyPublicAddress)
     expect(controller.accountOp.gasFeePayment!.broadcastOption).toEqual(
-      BROADCAST_OPTIONS.byOtherEOA
+      broadcastLib.BROADCAST_OPTIONS.byOtherEOA
     )
     expect(controller.accountOp.gasFeePayment!.isGasTank).toEqual(false)
     expect(controller.accountOp.gasFeePayment!.inToken).toEqual(
