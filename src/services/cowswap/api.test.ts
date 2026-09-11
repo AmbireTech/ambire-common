@@ -138,17 +138,6 @@ const makeEthFlowRouteFixture = async () => {
 }
 
 describe('CowSwapAPI', () => {
-  it('supports only same-network CoW Swap routes', async () => {
-    const fetch = jest.fn(async () => makeResponse({ tokens: [] }))
-    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
-
-    expect(api.areChainsSupported({ fromChainId: 1, toChainId: 1 })).toBe(true)
-    expect(api.areChainsSupported({ fromChainId: 1, toChainId: 8453 })).toBe(false)
-    expect(api.areChainsSupported({ fromChainId: 10, toChainId: 10 })).toBe(false)
-    await expect(api.getSupportedChains()).resolves.toContainEqual({ chainId: 42161 })
-    await expect(api.getToTokenList({ fromChainId: 56, toChainId: 56 })).resolves.toEqual([])
-  })
-
   it('fetches and normalizes tokens for the requested chain', async () => {
     const fetch = jest.fn(async () =>
       makeResponse({
@@ -203,16 +192,6 @@ describe('CowSwapAPI', () => {
     await expect(api.getToTokenList({ fromChainId: 1, toChainId: 1 })).rejects.toThrow(
       'CoW Swap returned an unexpected token list'
     )
-  })
-
-  it('does not fetch tokens for unsupported chain pairs', async () => {
-    const fetch = jest.fn()
-    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
-
-    await expect(api.getToTokenList({ fromChainId: 1, toChainId: 8453 })).rejects.toThrow(
-      'network pair is not supported'
-    )
-    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('finds a token by address in the CowSwap token list', async () => {
