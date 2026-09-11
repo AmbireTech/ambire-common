@@ -31,16 +31,31 @@ import {
   isNoFeeToken,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
+import type { FeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import { AcrossAPI } from '../across/api'
 import {
   AMBIRE_FEE_TAKER_ADDRESS,
-  FEE_PERCENT,
   SWAP_COMPATIBLE_ROUTINGS,
   UNISWAP_API_BASE_URL,
   UNISWAP_SUPPORTED_CHAIN_IDS
 } from './constants'
 
 const erc20Interface = new Interface(ERC20.abi)
+
+type UniswapTokenListEntry = {
+  address: string
+  chainId: number
+  decimals: number
+  logoURI: string | null
+  name: string
+  symbol: string
+  extensions?: {
+    safetyInfo?: {
+      safetyLevel?: 'verified' | 'info' | 'blocked'
+    }
+  }
+}
 
 const isAcrossBridgeQuote = (quote: UniswapQuote) =>
   quote.exclusiveRelayer !== undefined &&
@@ -138,7 +153,8 @@ const normalizeUniswapRouteToSwapAndBridgeRoute = ({
   fromChainId,
   toChainId,
   userAddress,
-  withConvenienceFee
+  withConvenienceFee,
+  feeExemptionReason
 }: {
   response: UniswapQuoteResponse
   fromAsset: SwapAndBridgeToToken
@@ -148,6 +164,7 @@ const normalizeUniswapRouteToSwapAndBridgeRoute = ({
   toChainId: number
   userAddress: string
   withConvenienceFee: boolean
+  feeExemptionReason?: FeeExemptionReason
 }): SwapAndBridgeRoute => {
   const quote = response.quote
   const fromAmount = quote.input.amount
@@ -216,7 +233,8 @@ const normalizeUniswapRouteToSwapAndBridgeRoute = ({
       symbol: toAsset.symbol
     } as any,
     disabled: false,
-    withConvenienceFee
+    withConvenienceFee,
+    feeExemptionReason
   }
 }
 
@@ -226,7 +244,7 @@ const parseApprovalSpender = (approval: UniswapTransactionRequest | null, fallba
   try {
     const decoded = erc20Interface.decodeFunctionData('approve', approval.data)
     return getAddress(decoded[0])
-  } catch (e) {
+  } catch {
     return fallback
   }
 }
@@ -378,7 +396,34 @@ export class UniswapAPI implements SwapProvider {
       )
     }
 
-    return sortNativeTokenFirst(addCustomTokensIfNeeded({ chainId: toChainId, tokens: [] }))
+    const params = new URLSearchParams({
+      chainId: toChainId.toString(),
+      limit: '500',
+      sort: 'tvl'
+    })
+    const url = `${UNISWAP_API_BASE_URL}/tokens?${params.toString()}`
+
+    const response = await this.#handleResponse<{ tokens?: UniswapTokenListEntry[] }>({
+      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      errorPrefix:
+        'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
+    })
+
+    const tokens: SwapAndBridgeToToken[] = (response.tokens || [])
+      .filter(
+        (token) =>
+          token.chainId === toChainId && token.extensions?.safetyInfo?.safetyLevel !== 'blocked'
+      )
+      .map((token) => ({
+        address: normalizeAddress(token.address),
+        chainId: token.chainId,
+        decimals: token.decimals,
+        icon: token.logoURI || '',
+        name: token.name,
+        symbol: token.symbol
+      }))
+
+    return sortNativeTokenFirst(addCustomTokensIfNeeded({ chainId: toChainId, tokens }))
   }
 
   async getToken({
@@ -405,7 +450,8 @@ export class UniswapAPI implements SwapProvider {
     toTokenAddress,
     fromAmount,
     userAddress,
-    isWrapOrUnwrap
+    isWrapOrUnwrap,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     this.#ensureApiKey()
 
@@ -422,8 +468,11 @@ export class UniswapAPI implements SwapProvider {
         'Quote requested, but missing required params. Error details: <to token details are missing>'
       )
 
-    const shouldIncludeConvenienceFee =
-      !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
+    const feeExemptionReason = getFeeExemptionReason({
+      isWrapOrUnwrap,
+      isFeeExemptToken: isNoFeeToken(fromChainId, fromTokenAddress)
+    })
+    const shouldIncludeConvenienceFee = feePercent > 0 && !feeExemptionReason
 
     const body: {
       type: 'EXACT_INPUT'
@@ -457,7 +506,7 @@ export class UniswapAPI implements SwapProvider {
     if (shouldIncludeConvenienceFee) {
       body.integratorFees = [
         {
-          bips: FEE_PERCENT * 100,
+          bips: feePercent * 100,
           recipient: AMBIRE_FEE_TAKER_ADDRESS
         }
       ]
@@ -494,7 +543,8 @@ export class UniswapAPI implements SwapProvider {
           toAsset,
           toChainId,
           userAddress,
-          withConvenienceFee: shouldIncludeConvenienceFee
+          withConvenienceFee: shouldIncludeConvenienceFee,
+          feeExemptionReason
         })
       ],
       selectedRoute: undefined,

@@ -129,6 +129,17 @@ function parseV4Actions(
     } else if (action === V4_ACTION_CODES.TAKE_ALL) {
       const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_ALL, param)
       parsed.push([getAction('Take'), getToken(args.currency, args.minAmount)])
+    } else if (action === V4_ACTION_CODES.TAKE_PORTION) {
+      const args = extractParams(V4_ACTION_DESCRIPTORS.TAKE_PORTION, param)
+      if (!['0x0000000000000000000000000000000000000002', accountAddr].includes(args.recipient)) {
+        parsed.push([
+          getAction('Send'),
+          getLabel(`${(Number(args.bips) / 100).toFixed(0)}%`, true),
+          getToken(args.currency, 0n),
+          getLabel('to'),
+          getAddressVisualization(args.recipient)
+        ])
+      }
     } else {
       parsed.push([getAction('Unknown uniswap V4 action')])
     }
@@ -140,128 +151,97 @@ const executeWithDeadlineAbi = parseAbi([
   'function execute(bytes commands, bytes[] inputs, uint256 deadline) payable'
 ])
 
-export const uniUniversalRouter: HumanizerUniMatcher = {
-  [toFunctionSelector(executeWithDeadlineAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
-    if (!call.to) throw Error('Humanizer: should not be inside the uniswap module when !call.to')
-    const { args } = decodeFunctionData({ abi: executeWithDeadlineAbi, data: call.data })
-    const [commands, inputs, deadline] = args
-    const parsedCommands = parseCommands(commands)
-    const parsed: HumanizerVisualization[][] = []
+// Decodes Uniswap Universal Router `commands`/`inputs`/`deadline` into a humanized visualization.
+// Shared by the Universal Router's own `execute` entrypoint and by other contracts (e.g. SwapProxy)
+// that forward calls to the Universal Router using the same command encoding.
+export const humanizeUniversalRouterCommands = (
+  commands: Hex,
+  inputs: readonly Hex[],
+  deadline: bigint,
+  accountOp: AccountOp,
+  call: HexIrCall
+): HumanizerVisualization[] => {
+  if (!call.to) throw Error('Humanizer: should not be inside the uniswap module when !call.to')
+  const parsedCommands = parseCommands(commands)
+  const parsed: HumanizerVisualization[][] = []
 
-    parsedCommands
-      ? parsedCommands.forEach((command: string, index: number) => {
-          if (command === COMMANDS.V3_SWAP_EXACT_IN) {
-            const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_IN
-            const params = extractParams(inputsDetails, inputs[index])
-            const path = parsePath(params.path)
-            if (path.length) {
-              parsed.push([
-                getAction('Swap'),
-                getToken(path[0]!, 0n),
-                getLabel('for'),
-                getToken(path[path.length - 1]!, 0n),
-                getDeadline(deadline)
-              ])
-            }
-          } else if (command === COMMANDS.V3_SWAP_EXACT_OUT) {
-            const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_OUT
-            const params = extractParams(inputsDetails, inputs[index])
-            const path = parsePath(params.path)
+  parsedCommands
+    ? parsedCommands.forEach((command: string, index: number) => {
+        if (command === COMMANDS.V3_SWAP_EXACT_IN) {
+          const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_IN
+          const params = extractParams(inputsDetails, inputs[index])
+          const path = parsePath(params.path)
+          if (path.length) {
+            parsed.push([
+              getAction('Swap'),
+              getToken(path[0]!, 0n),
+              getLabel('for'),
+              getToken(path[path.length - 1]!, 0n),
+              getDeadline(deadline)
+            ])
+          }
+        } else if (command === COMMANDS.V3_SWAP_EXACT_OUT) {
+          const { inputsDetails } = COMMANDS_DESCRIPTIONS.V3_SWAP_EXACT_OUT
+          const params = extractParams(inputsDetails, inputs[index])
+          const path = parsePath(params.path)
 
-            if (path.length) {
-              parsed.push([
-                getAction('Swap'),
-                getToken(path[path.length - 1]!, 0n),
-                getLabel('for'),
-                getToken(path[0]!, 0n),
-                getDeadline(deadline)
-              ])
-            }
-          } else if (command === COMMANDS.SWEEP) {
-            const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
-            const params = extractParams(inputsDetails, inputs[index])
-            if (
-              ['0x0000000000000000000000000000000000000001', accountOp.accountAddr].includes(
-                params.recipient
-              )
+          if (path.length) {
+            parsed.push([
+              getAction('Swap'),
+              getToken(path[path.length - 1]!, 0n),
+              getLabel('for'),
+              getToken(path[0]!, 0n),
+              getDeadline(deadline)
+            ])
+          }
+        } else if (command === COMMANDS.SWEEP) {
+          const { inputsDetails } = COMMANDS_DESCRIPTIONS.SWEEP
+          const params = extractParams(inputsDetails, inputs[index])
+          if (
+            ['0x0000000000000000000000000000000000000001', accountOp.accountAddr].includes(
+              params.recipient
             )
-              parsed.push([getAction('Take'), getToken(params.token, params.amountMin)])
-            else
-              parsed.push([
-                getAction('Send'),
-                getToken(params.token, params.amountMin),
-                getLabel('to'),
-                getAddressVisualization(params.recipient)
-              ])
-          } else if (command === COMMANDS.PAY_PORTION) {
-            // @NOTE: this is used for paying fee although its already calculated in the humanized response
-            // @NOTE: no need to be displayed but we can add warning id the fee is too high?
-            // const { inputsDetails } = COMMANDS_DESCRIPTIONS.PAY_PORTION
-            // const params = extractParams(inputsDetails, inputs[index])
-            // parsed.push({
-            //   ...call,
-            //   fullVisualization: [
-            //     getAction('Pay fee'),
-            //     getLabel('of'),
-            //     // bips are fee. can be 0 or within 10-9999 and converts to %
-            //     // https://docs.uniswap.org/contracts/v2/guides/interface-integration/custom-interface-linking#constraints
-            //     getLabel(`${Number(params.bips) / 100}%`)
-            //   ]
-            // })
-          } else if (command === COMMANDS.TRANSFER) {
-            // when we swap with exact out the ui displays amount X for out token
-            // the actual swap is X + small fee
-            // and this is the small fee that is to be sent to the fee collector of uniswap
-            // at later stage of the humanizer pipeline if swap with the same token is present exactly before this transfer
-            // we will subtract the amount from the swap and remove this call from the visualization
-            const { inputsDetails } = COMMANDS_DESCRIPTIONS.TRANSFER
-            const params = extractParams(inputsDetails, inputs[index])
+          )
+            parsed.push([getAction('Take'), getToken(params.token, params.amountMin)])
+          else
             parsed.push([
               getAction('Send'),
-              getToken(params.token, params.value),
+              getToken(params.token, params.amountMin),
               getLabel('to'),
               getAddressVisualization(params.recipient)
             ])
-          } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {
-            try {
-              const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
-              const params = extractParams(inputsDetails, inputs[index])
-              const path = params.path
-
-              parsed.push([
-                getAction('Swap'),
-                getToken(path[0], 0n),
-                getLabel('for'),
-                getToken(path[path.length - 1], 0n),
-                getDeadline(deadline)
-              ])
-            } catch (e) {
-              // alternative encoding, handled here
-              // https://www.codeslaw.app/contracts/base/0x6Df1c91424F79E40E33B1A48F0687B666bE71075?file=contracts%2Fmodules%2Funiswap%2Fv2%2FV2SwapRouter.sol&start=158&end=160
-              // https://www.codeslaw.app/contracts/base/0x6Df1c91424F79E40E33B1A48F0687B666bE71075?file=contracts%2Fmodules%2Funiswap%2Fv2%2FV2SwapRouter.sol&start=223&end=259
-              const params = extractParams(
-                [
-                  { type: 'address', name: 'user' },
-                  { type: 'uint256', name: 'amountIn' },
-                  { type: 'uint256', name: 'amountOut' },
-                  { type: 'bytes', name: 'path' },
-                  { type: 'bool', name: 'isUserPayer' },
-                  { type: 'bool', name: 'isUni' }
-                ],
-                inputs[index]
-              )
-
-              if ((params.path.length / (2 + 40)) % 1 === 0) {
-                parsed.push([
-                  getAction('Swap'),
-                  getToken(params.path.slice(0, 42), 0n),
-                  getLabel('for'),
-                  getToken('0x' + params.path.slice(-40), 0n)
-                ])
-              }
-            }
-          } else if (command === COMMANDS.V2_SWAP_EXACT_OUT) {
-            const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_OUT
+        } else if (command === COMMANDS.PAY_PORTION) {
+          // @NOTE: this is used for paying fee although its already calculated in the humanized response
+          // @NOTE: no need to be displayed but we can add warning id the fee is too high?
+          // const { inputsDetails } = COMMANDS_DESCRIPTIONS.PAY_PORTION
+          // const params = extractParams(inputsDetails, inputs[index])
+          // parsed.push({
+          //   ...call,
+          //   fullVisualization: [
+          //     getAction('Pay fee'),
+          //     getLabel('of'),
+          //     // bips are fee. can be 0 or within 10-9999 and converts to %
+          //     // https://docs.uniswap.org/contracts/v2/guides/interface-integration/custom-interface-linking#constraints
+          //     getLabel(`${Number(params.bips) / 100}%`)
+          //   ]
+          // })
+        } else if (command === COMMANDS.TRANSFER) {
+          // when we swap with exact out the ui displays amount X for out token
+          // the actual swap is X + small fee
+          // and this is the small fee that is to be sent to the fee collector of uniswap
+          // at later stage of the humanizer pipeline if swap with the same token is present exactly before this transfer
+          // we will subtract the amount from the swap and remove this call from the visualization
+          const { inputsDetails } = COMMANDS_DESCRIPTIONS.TRANSFER
+          const params = extractParams(inputsDetails, inputs[index])
+          parsed.push([
+            getAction('Send'),
+            getToken(params.token, params.value),
+            getLabel('to'),
+            getAddressVisualization(params.recipient)
+          ])
+        } else if (command === COMMANDS.V2_SWAP_EXACT_IN) {
+          try {
+            const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_IN
             const params = extractParams(inputsDetails, inputs[index])
             const path = params.path
 
@@ -272,57 +252,101 @@ export const uniUniversalRouter: HumanizerUniMatcher = {
               getToken(path[path.length - 1], 0n),
               getDeadline(deadline)
             ])
-          } else if (command === COMMANDS.PERMIT2_PERMIT) {
-            const {
-              permit: {
-                details: { token, amount /* expiration, nonce */ },
-                spender
-                // sigDeadline
-              }
-              // signature
-            } = extractParams(COMMANDS_DESCRIPTIONS.PERMIT2_PERMIT.inputsDetails, inputs[index])
-            parsed.push([
-              getAction('Grant approval'),
-              getLabel('for'),
-              getToken(token, amount),
-              getLabel('to'),
-              getAddressVisualization(spender)
-            ])
-          } else if (command === COMMANDS.WRAP_ETH) {
-            const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
-            const params = extractParams(inputsDetails, inputs[index])
-            params.amountMin && parsed.push(getWrapping(zeroAddress, params.amountMin))
-          } else if (command === COMMANDS.UNWRAP_WETH) {
-            const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH
-            const params = extractParams(inputsDetails, inputs[index])
-
-            params.amountMin &&
-              parsed.push([
-                getAction('Unwrap'),
-                getToken(zeroAddress, 0n),
-                ...getUniRecipientText(accountOp.accountAddr, params.recipient)
-              ])
-          } else if (command === COMMANDS.V4_SWAP) {
-            const { inputsDetails } = COMMANDS_DESCRIPTIONS.V4_SWAP
-            const params = extractParams(inputsDetails, inputs[index])
-            const v4NewHumanization = parseV4Actions(
-              params.actions,
-              params.params,
-              accountOp.accountAddr
+          } catch {
+            // alternative encoding, handled here
+            // https://www.codeslaw.app/contracts/base/0x6Df1c91424F79E40E33B1A48F0687B666bE71075?file=contracts%2Fmodules%2Funiswap%2Fv2%2FV2SwapRouter.sol&start=158&end=160
+            // https://www.codeslaw.app/contracts/base/0x6Df1c91424F79E40E33B1A48F0687B666bE71075?file=contracts%2Fmodules%2Funiswap%2Fv2%2FV2SwapRouter.sol&start=223&end=259
+            const params = extractParams(
+              [
+                { type: 'address', name: 'user' },
+                { type: 'uint256', name: 'amountIn' },
+                { type: 'uint256', name: 'amountOut' },
+                { type: 'bytes', name: 'path' },
+                { type: 'bool', name: 'isUserPayer' },
+                { type: 'bool', name: 'isUni' }
+              ],
+              inputs[index]
             )
-            parsed.push(v4NewHumanization)
-          } else {
-            if (!call.to)
-              throw Error('Humanizer: should not be inside the uniswap module when !call.to')
-            parsed.push([
-              getAction('Uniswap action'),
-              getLabel('to'),
-              getAddressVisualization(call.to)
-            ])
-          }
-        })
-      : parsed.push([getAction('Uniswap action'), getLabel('to'), getAddressVisualization(call.to)])
 
-    return uniReduce(parsed)
+            if ((params.path.length / (2 + 40)) % 1 === 0) {
+              parsed.push([
+                getAction('Swap'),
+                getToken(params.path.slice(0, 42), 0n),
+                getLabel('for'),
+                getToken('0x' + params.path.slice(-40), 0n)
+              ])
+            }
+          }
+        } else if (command === COMMANDS.V2_SWAP_EXACT_OUT) {
+          const { inputsDetails } = COMMANDS_DESCRIPTIONS.V2_SWAP_EXACT_OUT
+          const params = extractParams(inputsDetails, inputs[index])
+          const path = params.path
+
+          parsed.push([
+            getAction('Swap'),
+            getToken(path[0], 0n),
+            getLabel('for'),
+            getToken(path[path.length - 1], 0n),
+            getDeadline(deadline)
+          ])
+        } else if (command === COMMANDS.PERMIT2_PERMIT) {
+          const {
+            permit: {
+              details: { token, amount /* expiration, nonce */ },
+              spender
+              // sigDeadline
+            }
+            // signature
+          } = extractParams(COMMANDS_DESCRIPTIONS.PERMIT2_PERMIT.inputsDetails, inputs[index])
+          parsed.push([
+            getAction('Grant approval'),
+            getLabel('for'),
+            getToken(token, amount),
+            getLabel('to'),
+            getAddressVisualization(spender)
+          ])
+        } else if (command === COMMANDS.WRAP_ETH) {
+          const { inputsDetails } = COMMANDS_DESCRIPTIONS.WRAP_ETH
+          const params = extractParams(inputsDetails, inputs[index])
+          params.amountMin && parsed.push(getWrapping(zeroAddress, params.amountMin))
+        } else if (command === COMMANDS.UNWRAP_WETH) {
+          const { inputsDetails } = COMMANDS_DESCRIPTIONS.UNWRAP_WETH
+          const params = extractParams(inputsDetails, inputs[index])
+
+          params.amountMin &&
+            parsed.push([
+              getAction('Unwrap'),
+              getToken(zeroAddress, 0n),
+              ...getUniRecipientText(accountOp.accountAddr, params.recipient)
+            ])
+        } else if (command === COMMANDS.V4_SWAP) {
+          const { inputsDetails } = COMMANDS_DESCRIPTIONS.V4_SWAP
+          const params = extractParams(inputsDetails, inputs[index])
+          const v4NewHumanization = parseV4Actions(
+            params.actions,
+            params.params,
+            accountOp.accountAddr
+          )
+          parsed.push(v4NewHumanization)
+        } else {
+          if (!call.to)
+            throw Error('Humanizer: should not be inside the uniswap module when !call.to')
+          parsed.push([
+            getAction('Uniswap action'),
+            getLabel('to'),
+            getAddressVisualization(call.to)
+          ])
+        }
+      })
+    : parsed.push([getAction('Uniswap action'), getLabel('to'), getAddressVisualization(call.to)])
+
+  return uniReduce(parsed)
+}
+
+export const uniUniversalRouter: HumanizerUniMatcher = {
+  [toFunctionSelector(executeWithDeadlineAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    const { args } = decodeFunctionData({ abi: executeWithDeadlineAbi, data: call.data })
+    const [commands, inputs, deadline] = args
+    return humanizeUniversalRouterCommands(commands, inputs, deadline, accountOp, call)
   }
 }

@@ -116,7 +116,7 @@ describe('Bundler estimation tests', () => {
       ]
       const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
       const accountState = accountStates[smartAcc.addr]![optimism.chainId.toString()]!
-      const baseAcc = getBaseAccount(smartAcc, accountState, optimism, true)
+      const baseAcc = getBaseAccount(smartAcc, accountState, optimism, true, true)
       const gasPrices = await fetchBundlerGasPrice(baseAcc, optimism, switcher)
       expect(gasPrices instanceof Error).toBe(false)
       const result = await bundlerEstimate(
@@ -181,7 +181,7 @@ describe('Bundler estimation tests', () => {
       ]
       const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
       const accountState = accountStates[smartAccDeployed.addr]![optimism.chainId.toString()]!
-      const baseAcc = getBaseAccount(smartAccDeployed, accountState, optimism, true)
+      const baseAcc = getBaseAccount(smartAccDeployed, accountState, optimism, true, true)
       const gasPrices = await fetchBundlerGasPrice(baseAcc, optimism, switcher)
       expect(gasPrices instanceof Error).toBe(false)
       const result = await bundlerEstimate(
@@ -203,7 +203,8 @@ describe('Bundler estimation tests', () => {
       expect(BigInt(bundlerEstimation.paymasterPostOpGasLimit)).toBeGreaterThan(0n)
       expect(BigInt(bundlerEstimation.paymasterVerificationGasLimit)).toBeGreaterThan(0n)
     })
-    test('should try to estimate an userOp with Biconomy by sending more ETH than the account has which is not allowed and should trigger reestimate by Pimlico who will allow it to pass', async () => {
+    // skipping as we have only 1 bunlder available at the moment
+    test.skip('should try to estimate an userOp with Biconomy by sending more ETH than the account has which is not allowed and should trigger reestimate by Pimlico who will allow it to pass', async () => {
       const opOptimism: AccountOp = {
         id: '1',
         accountAddr: smartAccDeployed.addr,
@@ -243,7 +244,7 @@ describe('Bundler estimation tests', () => {
       ]
       const switcher = new BundlerSwitcher(optimism, areUpdatesForbidden)
       const accountState = accountStates[smartAccDeployed.addr]![optimism.chainId.toString()]!
-      const baseAcc = getBaseAccount(smartAccDeployed, accountState, optimism, true)
+      const baseAcc = getBaseAccount(smartAccDeployed, accountState, optimism, true, true)
       const gasPrices = await fetchBundlerGasPrice(baseAcc, optimism, switcher)
       expect(gasPrices instanceof Error).toBe(false)
       const result = await bundlerEstimate(
@@ -324,7 +325,7 @@ describe('Bundler fallback tests', () => {
     ]
     const switcher = new ExtendedBundlerSwitcher(base, areUpdatesForbidden, [PIMLICO])
     const accountState = accountStates[smartAccDeployed.addr]![base.chainId.toString()]!
-    const baseAcc = getBaseAccount(smartAccDeployed, accountState, base, true)
+    const baseAcc = getBaseAccount(smartAccDeployed, accountState, base, true, true)
     const gasPrices = await fetchBundlerGasPrice(baseAcc, base, switcher)
     expect(gasPrices instanceof Error).toBe(false)
     const result = await bundlerEstimate(

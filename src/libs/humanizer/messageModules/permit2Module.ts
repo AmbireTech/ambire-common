@@ -1,7 +1,21 @@
+import { isAddress, zeroAddress } from 'viem'
+
 import { PANCAKE_SWAP_PERMIT_2_ADDRESS, PERMIT_2_ADDRESS } from '../../../consts/addresses'
 import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
-import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
+import {
+  HumanizerTypedMessageModule,
+  HumanizerVisualization,
+  HumanizerWarning
+} from '../interfaces'
+import {
+  getAction,
+  getAddressVisualization,
+  getDeadline,
+  getLabel,
+  getRecipientText,
+  getToken,
+  getWarning
+} from '../utils'
 
 // interfaces
 // export interface PermitSingle {
@@ -37,6 +51,32 @@ interface PermitDetails {
   nonce?: bigint
 }
 
+interface TokenPermissions {
+  token?: string
+  amount?: bigint
+}
+
+function isCompletePermission(
+  permission: TokenPermissions
+): permission is { token: string; amount: bigint } {
+  return permission.token !== undefined && permission.amount !== undefined
+}
+
+// The witness struct is defined by the app that asks for the signature, so the
+// address that receives the tokens can be under any of these common names
+const WITNESS_RECIPIENT_FIELD_NAMES = ['recipient', 'receiver', 'to']
+
+function getWitnessRecipient(witness: Record<string, any> | undefined): string | undefined {
+  if (!witness) return undefined
+
+  const recipientFieldName = WITNESS_RECIPIENT_FIELD_NAMES.find((fieldName) => {
+    const value = witness[fieldName]
+    return typeof value === 'string' && isAddress(value)
+  })
+
+  return recipientFieldName ? witness[recipientFieldName] : undefined
+}
+
 export const permit2Module: HumanizerTypedMessageModule = (message: Message) => {
   if (message.content.kind !== 'typedMessage') return { fullVisualization: [] }
   const tm = message.content
@@ -47,6 +87,61 @@ export const permit2Module: HumanizerTypedMessageModule = (message: Message) => 
     )
   )
     return { fullVisualization: [] }
+
+  const witnessMessageType =
+    tm.types?.PermitWitnessTransferFrom?.[0]?.type ||
+    tm.types?.PermitBatchWitnessTransferFrom?.[0]?.type
+
+  if (
+    witnessMessageType &&
+    ['TokenPermissions', 'TokenPermissions[]'].includes(witnessMessageType)
+  ) {
+    const { permitted, spender, nonce, deadline, witness } = tm.message
+    if ([permitted, spender, nonce, deadline].some((field) => field === undefined))
+      return { fullVisualization: [] }
+
+    const permissions: TokenPermissions[] = Array.isArray(permitted) ? permitted : [permitted]
+    const completePermissions = permissions.filter(isCompletePermission)
+    if (!completePermissions.length || completePermissions.length !== permissions.length)
+      return { fullVisualization: [] }
+
+    const tokenVisualizations = completePermissions
+      .map(({ token, amount }) => [getToken(token, amount), getLabel('and')])
+      .flat()
+      .slice(0, -1)
+
+    const recipient = getWitnessRecipient(witness)
+    // A zero recipient does not mean the tokens are burned. Permit2 only checks
+    // the signature, so whoever executes the transfer picks where the tokens go
+    const isRecipientChosenLater = !!recipient && recipient.toLowerCase() === zeroAddress
+    const warnings: HumanizerWarning[] = isRecipientChosenLater
+      ? [
+          getWarning(
+            'This request does not say who receives the tokens. Whoever submits it decides where the tokens go. Sign it only if you fully trust the app.',
+            'PERMIT2_MISSING_RECIPIENT'
+          )
+        ]
+      : []
+
+    const recipientVisualizations = () => {
+      if (isRecipientChosenLater) return [getLabel('and send them to anyone', true)]
+      if (!recipient) return []
+
+      return getRecipientText(message.accountAddr, recipient)
+    }
+
+    return {
+      fullVisualization: [
+        getAction('Approve'),
+        getAddressVisualization(spender),
+        getLabel('to transfer'),
+        ...tokenVisualizations,
+        ...recipientVisualizations(),
+        getDeadline(deadline)
+      ],
+      warnings
+    }
+  }
 
   const messageType =
     tm?.types?.PermitSingle?.[0]?.type ||

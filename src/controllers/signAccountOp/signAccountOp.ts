@@ -11,6 +11,7 @@ import {
 } from 'ethers'
 import { maxUint256 } from 'viem'
 
+import { getGasLimitWithOverhead } from '@/libs/estimate/estimate'
 import { isNative } from '@/libs/portfolio/helpers'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
@@ -77,9 +78,18 @@ import { BaseAccount } from '../../libs/account/BaseAccount'
 import { canFeeOptionCoverAmount, isTransferredTokenFeeOption } from '../../libs/account/feeOptions'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Safe } from '../../libs/account/Safe'
-import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import { AccountOpStatus } from '../../libs/accountOp/types'
+import {
+  AccountOp,
+  GasFeePayment,
+  getAccountOpNonce,
+  getSignableCalls
+} from '../../libs/accountOp/accountOp'
+import {
+  AccountOpIdentifiedBy,
+  getSubmittedAccountOpNonce,
+  SubmittedAccountOp
+} from '../../libs/accountOp/submittedAccountOp'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getScamDetectedText } from '../../libs/banners/banners'
 import {
   BROADCAST_OPTIONS,
@@ -98,7 +108,11 @@ import {
 import { calculateFeeAmount } from '../../libs/fees/fees'
 import { fetchErc7730DescriptorsForAccountOp, humanizeAccountOp } from '../../libs/humanizer'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
-import { flattenHumanizerVisualizations, hasErc7730Humanization } from '../../libs/humanizer/utils'
+import {
+  flattenHumanizerVisualizations,
+  hasErc7730Humanization,
+  UNLIMITED_APPROVAL_WARNING_CODE
+} from '../../libs/humanizer/utils'
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
@@ -169,7 +183,6 @@ import {
 } from './signAccountOpPreference'
 
 import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
-
 // Re-exporting for backwards compatibility with existing importers
 export { FeeSpeed, noStateUpdateStatuses, SigningStatus }
 export type { SpeedCalc, Status }
@@ -183,6 +196,7 @@ export type SignAccountOpUpdateProps = {
   paidBy?: string
   paidByKeyType?: Key['type']
   speed?: FeeSpeed
+  shouldPersistSpeed?: boolean
   signingKeyAddr?: Key['addr']
   signingKeyType?: InternalKey['type'] | ExternalKey['type']
   signedTransactionsCount?: number | null
@@ -328,7 +342,41 @@ export class SignAccountOpController
 
   estimation: EstimationController
 
-  humanization: IrCall[] = []
+  #humanization: IrCall[] = []
+
+  /**
+   * The humanized calls, with the unlimited approval warnings of apps in the default Ambire
+   * catalog taken out. Humanizer modules cannot read the catalog, so they report every unlimited
+   * approval, and the ones from an app we already trust are dropped here.
+   *
+   * The catalog is fetched, so it often arrives after the calls were humanized. Deciding this on
+   * read, rather than baking it into the humanization, means a catalog that lands late needs no
+   * new humanization: the dapps update this controller already listens to emits, the UI reads
+   * again, and the answer is right whether an app joins the catalog or leaves it.
+   *
+   * Returns the stored array itself when nothing was dropped, so the calls on screen keep their
+   * identity while a new humanization is running.
+   */
+  get humanization(): IrCall[] {
+    let didSuppressWarning = false
+
+    const humanization = this.#humanization.map((call, index) => {
+      const dappUrl = this.accountOp.calls[index]?.dapp?.url
+      // an app with no url is never trusted - a request of unknown origin is not a safer one
+      if (!dappUrl || !this.#dapps.isDappInDefaultCatalog(dappUrl)) return call
+
+      const warnings = call.warnings?.filter(
+        (warning) => warning.code !== UNLIMITED_APPROVAL_WARNING_CODE
+      )
+      if (warnings?.length === call.warnings?.length) return call
+
+      didSuppressWarning = true
+
+      return { ...call, warnings }
+    })
+
+    return didSuppressWarning ? humanization : this.#humanization
+  }
 
   humanizationId: number | null = null
 
@@ -439,6 +487,8 @@ export class SignAccountOpController
     this.#featureFlags = featureFlags
     this.#signAccountOpPreference = signAccountOpPreference
     this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
+    this.selectedFeeSpeed =
+      this.#signAccountOpPreference.feeSpeedPreference[network.chainId.toString()] || FeeSpeed.Fast
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
@@ -446,7 +496,8 @@ export class SignAccountOpController
       account,
       accountState,
       network,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
     this.#network = network
     this.#activity = activity
@@ -562,7 +613,8 @@ export class SignAccountOpController
       this.account,
       accountState,
       this.#network,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
     this.gasPrice?.setBaseAccount(this.baseAccount)
   }
@@ -909,15 +961,15 @@ export class SignAccountOpController
   }
 
   #setHumanization(humanization: IrCall[], existingHumanizationId?: number) {
-    this.humanization = humanization
+    this.#humanization = humanization
     this.isHumanizing = false
     const currentHumanizationId = existingHumanizationId ?? this.createHumanizationId()
     this.humanizationId = currentHumanizationId
 
-    if (this.humanization.length) {
+    if (this.#humanization.length) {
       const updateBlacklistedStatusPromise = this.#phishing
         .updateAddressesBlacklistedStatus(
-          this.humanization
+          this.#humanization
             .flatMap((call) =>
               flattenHumanizerVisualizations(call.fullVisualization)
                 .filter((v) => v.type === 'token' || v.type === 'address')
@@ -927,7 +979,7 @@ export class SignAccountOpController
           (addressesStatus) => {
             if (!this.isCurrentHumanization(currentHumanizationId)) return
 
-            for (const call of this.humanization) {
+            for (const call of this.#humanization) {
               if (!call.fullVisualization) continue
 
               for (const vis of flattenHumanizerVisualizations(call.fullVisualization)) {
@@ -1440,13 +1492,6 @@ export class SignAccountOpController
     const warnings: Warning[] = []
 
     const state = this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr)
-
-    const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
-      state,
-      this.accountOp.chainId,
-      this.traceCallDiscoveryStatus
-    )
-
     const unknownTokenWarnings = getUnknownTokenWarning(state, this.accountOp.chainId)
 
     if (this.selectedOption) {
@@ -1462,7 +1507,6 @@ export class SignAccountOpController
         warnings.push(feeTokenPriceUnavailableWarning)
     }
 
-    if (significantBalanceDecreaseWarning) warnings.push(significantBalanceDecreaseWarning)
     if (unknownTokenWarnings) warnings.push(unknownTokenWarnings)
 
     const accountState =
@@ -1623,6 +1667,7 @@ export class SignAccountOpController
     pendingFeeTokenPreference,
     paidBy,
     speed,
+    shouldPersistSpeed,
     signingKeyAddr,
     signingKeyType,
     signedTransactionsCount,
@@ -1805,6 +1850,14 @@ export class SignAccountOpController
 
       if (speed && this.isInitialized && !isSpeedUpTransaction) {
         this.selectedFeeSpeed = speed
+        // Only an explicitly picked speed becomes the default for the network.
+        // Speeds set while switching the fee token are a fallback, not a choice
+        if (shouldPersistSpeed) {
+          void this.#signAccountOpPreference.setFeeSpeedPreference({
+            ...this.#signAccountOpPreference.feeSpeedPreference,
+            [this.accountOp.chainId.toString()]: speed
+          })
+        }
       }
 
       if (signingKeyAddr && signingKeyType && this.isInitialized && !isSpeedUpTransaction) {
@@ -2212,9 +2265,7 @@ export class SignAccountOpController
       return
     }
 
-    // `traceCall` should not be invoked too frequently. However, if there is a pending timeout,
-    // it should be cleared to prevent the previous interval from changing the status
-    // to `SlowPendingResponse` for the newer `traceCall` invocation.
+    // clear the timeout on each new invoke
     if (this.traceCallTimeoutId) clearTimeout(this.traceCallTimeoutId)
 
     // Here, we also check the status because, in the case of re-estimation,
@@ -2223,7 +2274,6 @@ export class SignAccountOpController
     if (this.traceCallDiscoveryStatus === TraceCallDiscoveryStatus.NotStarted)
       this.setDiscoveryStatus(TraceCallDiscoveryStatus.InProgress)
 
-    // Flag the discovery logic as `SlowPendingResponse` if the call does not resolve within 2 seconds.
     const timeoutId = setTimeout(() => {
       // Prevent race conditions between multiple `traceCall` invocations
       if (
@@ -2231,9 +2281,6 @@ export class SignAccountOpController
         this.traceCallTimeoutId !== timeoutId
       )
         return
-
-      this.setDiscoveryStatus(TraceCallDiscoveryStatus.SlowPendingResponse)
-      this.calculateWarnings()
     }, 2000)
 
     this.traceCallTimeoutId = timeoutId
@@ -2278,7 +2325,6 @@ export class SignAccountOpController
       })
     }
 
-    this.calculateWarnings()
     this.traceCallTimeoutId = null
     clearTimeout(timeoutId)
   }
@@ -2348,6 +2394,16 @@ export class SignAccountOpController
     const speeds = this.feeSpeeds[identifier]
     if (!speeds) return
 
+    const preferredSpeed =
+      this.#signAccountOpPreference.feeSpeedPreference[this.accountOp.chainId.toString()]
+    if (
+      preferredSpeed &&
+      speeds.find(({ type, disabled }) => type === preferredSpeed && !disabled)
+    ) {
+      this.selectedFeeSpeed = preferredSpeed
+      return
+    }
+
     // set fast if available
     if (speeds.find(({ type, disabled }) => type === FeeSpeed.Fast && !disabled)) {
       this.selectedFeeSpeed = FeeSpeed.Fast
@@ -2414,6 +2470,7 @@ export class SignAccountOpController
           if (!estimation.bundlerEstimation) return
 
           usesPaymaster = !!estimation.bundlerEstimation?.paymaster.isUsable()
+          // no gas overhead for bundler broadcast
           simulatedGasLimit =
             BigInt(gasUsed) +
             BigInt(estimation.bundlerEstimation.preVerificationGas) +
@@ -2426,7 +2483,7 @@ export class SignAccountOpController
           broadcastOption === BROADCAST_OPTIONS.bySelf ||
           broadcastOption === BROADCAST_OPTIONS.bySelf7702
         ) {
-          simulatedGasLimit = gasUsed
+          simulatedGasLimit = getGasLimitWithOverhead(gasUsed)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
           amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
@@ -2439,7 +2496,7 @@ export class SignAccountOpController
         } else if (broadcastOption === BROADCAST_OPTIONS.byOtherEOA) {
           // Smart account, but EOA pays the fee
           // 7702, and it pays for the fee by itself
-          simulatedGasLimit = gasUsed
+          simulatedGasLimit = getGasLimitWithOverhead(gasUsed)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
           amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
@@ -3484,7 +3541,6 @@ export class SignAccountOpController
       nonce: number
       identifiedBy: AccountOpIdentifiedBy
     } | null = null
-
     // broadcasting by EOA is quite the same:
     // 1) build a rawTxn 2) sign 3) broadcast
     // we have one handle, just a diff rawTxn for each case
@@ -3573,15 +3629,7 @@ export class SignAccountOpController
 
           // record the EOA txn only if isErc4337Enabled as
           // we need this for the gas tank
-          if (this.isErc4337Enabled) {
-            this.#callRelayer(`/v2/eoaSubmitTxn/${accountOp.chainId}`, 'POST', {
-              rawTxn: signedTxn
-            }).catch((e: any) => {
-              console.log('failed to record EOA txn to relayer', accountOp.chainId)
-
-              console.log(e)
-            })
-          }
+          if (this.isErc4337Enabled) this.#recordEoaTxnForGasTank(accountOp.chainId, signedTxn)
         }
 
         transactionRes = {
@@ -3617,6 +3665,21 @@ export class SignAccountOpController
             },
             txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
           }
+
+          // The part that went out is reported as broadcast, so without saying this
+          // the rest of the batch looks sent when it never was.
+          const sentCount = multipleTxnsBroadcastRes.length
+          const notSentCount = accountOp.calls.length - sentCount
+          const reason = error?.message || 'the transaction could not be signed'
+          this.emitError({
+            level: 'major',
+            message: `Only ${sentCount} of ${accountOp.calls.length} transactions in this batch ${
+              sentCount === 1 ? 'was' : 'were'
+            } sent. The remaining ${notSentCount === 1 ? 'one' : notSentCount} could not be sent: ${
+              reason.endsWith('.') ? reason : `${reason}.`
+            } You can send ${notSentCount === 1 ? 'it' : 'them'} again.`,
+            error
+          })
         } else {
           return this.throwBroadcastAccountOp({ error, accountState })
         }
@@ -3732,7 +3795,11 @@ export class SignAccountOpController
       eoaNonce: this.accountOp.eoaNonce,
       status: AccountOpStatus.BroadcastedButNotConfirmed,
       txnId: transactionRes.txnId,
-      nonce: BigInt(transactionRes.nonce),
+      nonce: getSubmittedAccountOpNonce(
+        getAccountOpNonce(accountOp),
+        transactionRes.nonce,
+        !!account.safeCreation
+      ),
       identifiedBy: transactionRes.identifiedBy,
       timestamp: new Date().getTime(),
       isSingletonDeploy: !!accountOp.calls.find(
@@ -3781,6 +3848,8 @@ export class SignAccountOpController
     this.gasFeeChangedConfirmationRequired = false
     this.previousFee = null
 
+    this.#beginPinSessions()
+
     this.signAndBroadcastPromise = (async () => {
       this.signPromise = this.sign().finally(() => {
         this.signPromise = undefined
@@ -3814,9 +3883,30 @@ export class SignAccountOpController
       }
     })().finally(() => {
       this.signAndBroadcastPromise = undefined
+      this.#endPinSessions()
     })
 
     await this.signAndBroadcastPromise
+  }
+
+  /**
+   * Bookkeeping for the gas tank, which the broadcast does not depend on. It is
+   * deliberately not awaited and never allowed to throw: it runs between the
+   * transactions of a batch, where anything escaping it would stop the rest of the
+   * batch from being sent - and the transactions before it cannot be taken back.
+   */
+  #recordEoaTxnForGasTank(chainId: bigint, rawTxn: string) {
+    const onFailedToRecord = (e: any) => {
+      console.log('failed to record EOA txn to relayer', chainId)
+
+      console.log(e)
+    }
+
+    try {
+      this.#callRelayer(`/v2/eoaSubmitTxn/${chainId}`, 'POST', { rawTxn }).catch(onFailedToRecord)
+    } catch (e: any) {
+      onFailedToRecord(e)
+    }
   }
 
   #hwCleanup() {
@@ -3831,6 +3921,19 @@ export class SignAccountOpController
 
       this.#externalSignerControllers[keyType]?.signingCleanup?.()
     })
+  }
+
+  /**
+   * One account op can take several signatures from the same key, and a device that
+   * unlocks with a PIN asks for it before each. Marking where the signing starts and
+   * ends lets it keep the PIN for that long. Only the boundaries reach it, never the PIN.
+   */
+  #beginPinSessions() {
+    Object.values(this.#externalSignerControllers).forEach((c) => c?.beginPinSession?.())
+  }
+
+  #endPinSessions() {
+    Object.values(this.#externalSignerControllers).forEach((c) => c?.endPinSession?.())
   }
 
   get isSignInProgress() {
@@ -3975,6 +4078,11 @@ export class SignAccountOpController
 
   setDiscoveryStatus(status: TraceCallDiscoveryStatus) {
     this.traceCallDiscoveryStatus = status
+
+    // emit an update on done/failed to sync&show the final banners
+    if (status === TraceCallDiscoveryStatus.Done || status === TraceCallDiscoveryStatus.Failed) {
+      this.emitUpdate()
+    }
   }
 
   /**
@@ -3995,13 +4103,42 @@ export class SignAccountOpController
    * Use this only when you are sure there's no way to continue, or
    * a promise waiting to resolve that might change the state
    */
-  cancelSignReq() {
+  #resetToReadyToSign() {
     this.signPromise = undefined
     this.broadcastPromise = undefined
     this.signAndBroadcastPromise = undefined
     this.status = { type: SigningStatus.ReadyToSign }
     this.#hwCleanup()
+  }
+
+  cancelSignReq() {
+    this.#resetToReadyToSign()
     this.emitUpdate()
+  }
+
+  /**
+   * Winds a broadcast up. The calls that went out are done with, so only the ones left
+   * unsigned stay on the op and the controller goes back to where it was before
+   * signing, ready for them. Its status has to be put back first: while it is signing,
+   * every update to the op is frozen and the calls would not go in.
+   *
+   * Returns the calls still waiting to be signed, so the caller can tell whether the
+   * request is finished with or has to stay.
+   */
+  cleanupAfterBroadcast(sentCallIds: Call['id'][]): Call[] {
+    const notSentCalls = this.accountOp.calls.filter((call) => !sentCallIds.includes(call.id))
+
+    this.#resetToReadyToSign()
+
+    if (!notSentCalls.length) {
+      this.emitUpdate()
+
+      return notSentCalls
+    }
+
+    this.update({ accountOpData: { calls: notSentCalls } })
+
+    return notSentCalls
   }
 
   get type() {
@@ -4038,6 +4175,7 @@ export class SignAccountOpController
       banners.push({
         id: 'blacklisted-addresses-error-banner',
         type: 'error',
+        title: 'Potentially harmful transaction',
         text: getScamDetectedText(blacklistedItems)
       })
     } else {
@@ -4049,6 +4187,7 @@ export class SignAccountOpController
         banners.push({
           id: 'blacklisted-addresses-warning-banner',
           type: 'warning',
+          title: 'Safety check unavailable',
           text: "We couldn't check the addresses or tokens in this transaction for malicious activity. Proceed with caution."
         })
       }
@@ -4057,11 +4196,27 @@ export class SignAccountOpController
     const dappVerificationBanner = this.#getDappVerificationBanner()
     if (dappVerificationBanner) banners.push(dappVerificationBanner)
 
+    const significantBalanceDecreaseWarning = getSignificantBalanceDecreaseWarning(
+      this.#portfolio.getAccountPortfolioState(this.accountOp.accountAddr),
+      this.accountOp.chainId,
+      this.traceCallDiscoveryStatus
+    )
+    if (significantBalanceDecreaseWarning) {
+      banners.push({
+        id: significantBalanceDecreaseWarning.id,
+        type: 'warning',
+        title: significantBalanceDecreaseWarning.title,
+        text: significantBalanceDecreaseWarning.text || significantBalanceDecreaseWarning.title,
+        secondaryText: significantBalanceDecreaseWarning.secondaryText
+      })
+    }
+
     const safeDelegateCallWarning = getSafeDelegateCallWarning(this.accountOp)
     if (safeDelegateCallWarning) {
       banners.push({
         id: safeDelegateCallWarning.id,
         type: 'warning',
+        title: safeDelegateCallWarning.title,
         text: safeDelegateCallWarning.text || safeDelegateCallWarning.title
       })
     }
@@ -4105,8 +4260,7 @@ export class SignAccountOpController
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-    if (this.#customSafeNonce !== null && this.#customSafeNonce !== accountState?.nonce)
-      return false
+    if (this.accountOp.nonce !== null && this.accountOp.nonce !== accountState?.nonce) return false
 
     // if the threshold is 1 and there's only 1 imported key, allow quick broadcast
     if (this.threshold === 1 && this.accountKeyStoreKeys.length === 1) return true
@@ -4134,6 +4288,7 @@ export class SignAccountOpController
       gasSavedUSD: this.gasSavedUSD,
       delegatedContract: this.delegatedContract,
       accountOp: this.accountOp,
+      humanization: this.humanization,
       isSignInProgress: this.isSignInProgress,
       isBroadcastInProgress: this.isBroadcastInProgress,
       isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress,

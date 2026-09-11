@@ -10,6 +10,9 @@ export const SAFE_NETWORKS = [
 
 export const SAFE_API_TIMEOUT_MS = 15000
 
+// Keep Safe Transaction Service requests below its bulk request limits.
+export const SAFE_API_BATCH_SIZE = 4
+
 /**
  * SimulateTxAccessor addresses by Safe version.
  */

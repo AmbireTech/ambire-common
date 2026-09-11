@@ -54,5 +54,9 @@ export abstract class AbstractPaymaster {
 
   abstract isEstimateBelowMin(userOperation: UserOperation): boolean
 
-  abstract upgrade(bundlerEstimateResult: BundlerEstimateResult, gasPrices: GasSpeeds): void
+  abstract upgrade(
+    bundlerEstimateResult: BundlerEstimateResult,
+    gasPrices: GasSpeeds,
+    userOp: UserOperation
+  ): Promise<void>
 }

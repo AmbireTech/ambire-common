@@ -9,18 +9,48 @@ import {
   TrendingToken
 } from '../../interfaces/dapp'
 
+/**
+ * Strips the trailing dot(s) a hostname may carry when written in fully-qualified form
+ * ("app.example.com."). DNS, TLS and the browser resolve such a host to the exact same site as the
+ * dotted-free form, but the WHATWG URL parser keeps the dot, so the resulting string matches none
+ * of the canonical forms the wallet compares against - the phishing blacklist, the suspicious
+ * hosting list and the stored dApp records. Left unnormalized, appending a single dot is enough to
+ * turn a known-malicious dApp into an unknown one.
+ */
+const normalizeHostname = (hostname: string): string => {
+  let end = hostname.length
+  while (end > 0 && hostname[end - 1] === '.') end -= 1
+
+  return hostname.slice(0, end)
+}
+
+/**
+ * The dApp's canonical hostname, or `null` when the url is not parsable.
+ *
+ * Normalization deliberately starts from `new URL().hostname` - the parser already lowercases the
+ * host and converts internationalized ones to punycode, which is the form the phishing blacklist
+ * and the stored dApp records use. `tldts.getHostname()` also drops the trailing dot, but returns
+ * the unicode form of internationalized hostnames, so using it here would silently change the
+ * identity of every non-ASCII dApp.
+ */
+const getNormalizedHostnameFromUrl = (url: string): string | null => {
+  try {
+    return normalizeHostname(new URL(url).hostname)
+  } catch {
+    return null
+  }
+}
+
 const getDappIdFromUrl = (url: string): string => {
   if (!url || url === 'internal') return 'internal'
 
   const predefinedDapp = predefinedDapps.find((d) => d.url === url)
   if (predefinedDapp) return predefinedDapp.id
 
-  try {
-    const { hostname } = new URL(url)
-    return hostname.startsWith('www.') ? hostname.slice(4) : hostname
-  } catch {
-    return url
-  }
+  const hostname = getNormalizedHostnameFromUrl(url)
+  if (hostname === null) return url
+
+  return hostname.startsWith('www.') ? hostname.slice(4) : hostname
 }
 
 // Safe messages co-signed from another device carry only the dapp name and url
@@ -194,6 +224,8 @@ function normalizeTrendingTokens(raw: RawTrendingToken[]): TrendingToken[] {
 }
 
 export {
+  normalizeHostname,
+  getNormalizedHostnameFromUrl,
   getDappIdFromUrl,
   getDappIconFromUrl,
   getDomainFromUrl,

@@ -166,7 +166,19 @@ export enum ImportStatus {
  * Accounts, Smart Accounts and the linked accounts. Excludes the derived
  * EOA (basic) accounts used for smart account keys only.
  */
-export type AccountOnPage = DerivedAccount & { importStatus: ImportStatus }
+export type AccountOnPage = DerivedAccount & AccountImportInfo
+
+/**
+ * Details about how (and whether) an account is already imported, resolved
+ * while calculating its import status.
+ */
+export type AccountImportInfo = {
+  importStatus: ImportStatus
+  /** How many keys can sign for this account and how many of them are already imported. */
+  associatedKeysStats: { total: number; imported: number }
+  /** The key types this account is already imported with, if any. */
+  importedKeyTypes: Key['type'][]
+}
 
 /**
  * The account that the user has actively chosen (selected) via the app UI.

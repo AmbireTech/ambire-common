@@ -624,6 +624,66 @@ describe('CTR to GCM migration', () => {
     )
     expect(biometricsWallet.address).toBe(MOCK_INTERNAL_KEY.addr)
   })
+  it('should require a password unlock until the password secret itself is migrated', async () => {
+    const { keystoreCtrl } = await prepareTest(async (storageCtrl) => {
+      await mockOldAesStorageWithBiometrics(storageCtrl)
+    })
+
+    expect(keystoreCtrl.isPasswordUnlockRequired).toBe(true)
+
+    // A biometrics unlock migrates the biometrics secret only, so the password secret
+    // (the one accounts sync needs on GCM) stays on the legacy cipher
+    await keystoreCtrl.unlockWithSecret('biometrics', MOCK_MIGRATION_PASS)
+
+    expect(keystoreCtrl.isUnlocked).toBe(true)
+    expect(keystoreCtrl.isPasswordUnlockRequired).toBe(true)
+
+    keystoreCtrl.lock()
+    await keystoreCtrl.unlockWithSecret('password', MOCK_MIGRATION_PASS)
+
+    expect(keystoreCtrl.isUnlocked).toBe(true)
+    expect(keystoreCtrl.isPasswordUnlockRequired).toBe(false)
+  })
+  it('should not require a password unlock when there are no biometrics, no password secret, or the password secret is already migrated', async () => {
+    const { keystoreCtrl: freshKeystoreCtrl } = await prepareTest(undefined, true)
+
+    expect(freshKeystoreCtrl.hasPasswordSecret).toBe(false)
+    expect(freshKeystoreCtrl.isPasswordUnlockRequired).toBe(false)
+
+    const { keystoreCtrl: passwordOnlyKeystoreCtrl } = await prepareTest()
+
+    expect(passwordOnlyKeystoreCtrl.hasPasswordSecret).toBe(true)
+    expect(passwordOnlyKeystoreCtrl.hasBiometricsSecret).toBe(false)
+    expect(passwordOnlyKeystoreCtrl.isPasswordUnlockRequired).toBe(false)
+
+    const { keystoreCtrl: biometricsOnlyKeystoreCtrl } = await prepareTest(async (storageCtrl) => {
+      const fixture = await createMockOldAesStorageFixture()
+
+      await storageCtrl.set('keystoreSecrets', [
+        await fixture.createSecretEntry('biometrics', MOCK_MIGRATION_PASS)
+      ])
+      await storageCtrl.set('keystoreSeeds', fixture.mockSeeds)
+      await storageCtrl.set('keystoreKeys', fixture.mockKeys)
+    })
+
+    expect(biometricsOnlyKeystoreCtrl.hasBiometricsSecret).toBe(true)
+    expect(biometricsOnlyKeystoreCtrl.isPasswordUnlockRequired).toBe(false)
+
+    const { keystoreCtrl: migratedKeystoreCtrl } = await prepareTest(async (storageCtrl) => {
+      const fixture = await createMockOldAesStorageFixture()
+
+      await storageCtrl.set('keystoreSecrets', [
+        await createGcmSecretEntry('password', MOCK_MIGRATION_PASS, fixture.mainKey),
+        await fixture.createSecretEntry('biometrics', MOCK_MIGRATION_PASS)
+      ])
+      await storageCtrl.set('keystoreSeeds', fixture.mockSeeds)
+      await storageCtrl.set('keystoreKeys', fixture.mockKeys)
+    })
+
+    expect(migratedKeystoreCtrl.hasPasswordSecret).toBe(true)
+    expect(migratedKeystoreCtrl.hasBiometricsSecret).toBe(true)
+    expect(migratedKeystoreCtrl.isPasswordUnlockRequired).toBe(false)
+  })
   it('should not fail the entire migration if there is an invalid seed/private key entry that cannot be migrated', async () => {
     const { restore } = suppressConsole()
     const { keystoreCtrl, storageCtrl } = await prepareTest(async (storageCtrl) => {

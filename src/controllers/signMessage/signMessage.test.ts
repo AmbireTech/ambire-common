@@ -17,7 +17,7 @@ import { InternalSigner } from '../../../test/keystore'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
-import { Account, IAccountsController } from '../../interfaces/account'
+import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
@@ -51,6 +51,27 @@ const messageToSign: Message = {
   accountAddr: account.addr,
   chainId: 1n,
   signature: null
+}
+
+const accountOnchainState: AccountOnchainState = {
+  accountAddr: account.addr,
+  isDeployed: true,
+  eoaNonce: null,
+  nonce: 0n,
+  erc4337Nonce: 0n,
+  associatedKeys: account.associatedKeys,
+  importedAccountKeys: [],
+  balance: 0n,
+  isEOA: false,
+  isErc4337Enabled: false,
+  isErc4337Nonce: false,
+  isV2: false,
+  currentBlock: 0n,
+  isSmarterEoa: false,
+  delegatedContract: null,
+  delegatedContractName: null,
+  threshold: 1,
+  updatedAt: 0
 }
 
 const createDeferred = <T>() => {
@@ -94,12 +115,6 @@ const createPermitTypedMessage = (): Message => ({
     }
   }
 })
-
-const dapp = {
-  name: 'Test Dapp',
-  icon: 'https://test-dapp.com/icon.png',
-  url: 'https://Test-Dapp.com'
-}
 
 describe('SignMessageController', () => {
   let signMessageController: ISignMessageController
@@ -156,13 +171,65 @@ describe('SignMessageController', () => {
     expect(signMessageController.signer).toBeUndefined()
   })
 
+  test('does not initialize after being reset while accounts are loading', async () => {
+    const initialLoad = createDeferred<void>()
+    const accountsController = {
+      initialLoadPromise: initialLoad.promise,
+      accounts: [account],
+      getOrFetchAccountOnChainState: jest.fn()
+    } as unknown as IAccountsController
+    const controller = new SignMessageController(
+      keystoreCtrl,
+      providersCtrl,
+      networksCtrl,
+      accountsController,
+      {},
+      inviteCtrl
+    )
+
+    const initPromise = controller.init({ messageToSign })
+    controller.reset()
+    initialLoad.resolve(undefined)
+
+    await expect(initPromise).resolves.toBeUndefined()
+    expect(controller.isInitialized).toBeFalsy()
+    expect(controller.messageToSign).toBeNull()
+    expect(accountsController.getOrFetchAccountOnChainState).not.toHaveBeenCalled()
+  })
+
+  test('does not finish initialization after being reset while fetching account state', async () => {
+    const accountState = createDeferred<AccountOnchainState | undefined>()
+    const accountsController = {
+      initialLoadPromise: Promise.resolve(),
+      accounts: [account],
+      getOrFetchAccountOnChainState: jest.fn(() => accountState.promise)
+    } as unknown as IAccountsController
+    const controller = new SignMessageController(
+      keystoreCtrl,
+      providersCtrl,
+      networksCtrl,
+      accountsController,
+      {},
+      inviteCtrl
+    )
+
+    const initPromise = controller.init({ messageToSign })
+    await Promise.resolve()
+    expect(accountsController.getOrFetchAccountOnChainState).toHaveBeenCalled()
+
+    controller.reset()
+    accountState.resolve(accountOnchainState)
+
+    await expect(initPromise).resolves.toBeUndefined()
+    expect(controller.isInitialized).toBeFalsy()
+    expect(controller.messageToSign).toBeNull()
+  })
+
   test('should resolve when adding a message to Safe Global times out', async () => {
     const accountsController = {
       initialLoadPromise: Promise.resolve(),
       accounts: [account],
-      getOrFetchAccountOnChainState: jest.fn().mockResolvedValue({
-        importedAccountKeys: []
-      })
+      getOrFetchAccountOnChainState: jest.fn(() => Promise.resolve(accountOnchainState))
     } as unknown as IAccountsController
     const controller = new SignMessageController(
       keystoreCtrl,
@@ -210,9 +277,7 @@ describe('SignMessageController', () => {
     const safeAccountsCtrl = {
       initialLoadPromise: Promise.resolve(),
       accounts: [safeAccount],
-      getOrFetchAccountOnChainState: jest.fn().mockResolvedValue({
-        importedAccountKeys: []
-      })
+      getOrFetchAccountOnChainState: jest.fn(() => Promise.resolve(accountOnchainState))
     } as unknown as IAccountsController
     const safeSignMessageController = new SignMessageController(
       keystoreCtrl,
@@ -740,6 +805,7 @@ describe('SignMessageController', () => {
         {
           id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
           type: 'warning',
+          title: 'Safety check in progress',
           text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests."
         }
       ])
@@ -752,6 +818,7 @@ describe('SignMessageController', () => {
         {
           id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
           type: 'warning',
+          title: "App couldn't be verified",
           text: "We couldn't verify the app. Make sure you trust it before signing requests."
         }
       ])
@@ -764,6 +831,7 @@ describe('SignMessageController', () => {
         {
           id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
           type: 'error',
+          title: 'Potentially harmful app',
           text: "This app didn't pass our safety check. Proceed at your own risk."
         }
       ])
@@ -790,6 +858,7 @@ describe('SignMessageController', () => {
         {
           id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
           type: 'warning',
+          title: 'Suspicious app hosting',
           text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
         }
       ])
@@ -851,6 +920,7 @@ describe('SignMessageController', () => {
           {
             id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
             type: 'warning',
+            title: 'Safety check in progress',
             text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests."
           }
         ])
