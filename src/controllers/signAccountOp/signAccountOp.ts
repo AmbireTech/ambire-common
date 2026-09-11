@@ -78,8 +78,17 @@ import { BaseAccount } from '../../libs/account/BaseAccount'
 import { canFeeOptionCoverAmount, isTransferredTokenFeeOption } from '../../libs/account/feeOptions'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { Safe } from '../../libs/account/Safe'
-import { AccountOp, GasFeePayment, getSignableCalls } from '../../libs/accountOp/accountOp'
-import { AccountOpIdentifiedBy, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import {
+  AccountOp,
+  GasFeePayment,
+  getAccountOpNonce,
+  getSignableCalls
+} from '../../libs/accountOp/accountOp'
+import {
+  AccountOpIdentifiedBy,
+  getSubmittedAccountOpNonce,
+  SubmittedAccountOp
+} from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getScamDetectedText } from '../../libs/banners/banners'
 import {
@@ -3786,7 +3795,11 @@ export class SignAccountOpController
       eoaNonce: this.accountOp.eoaNonce,
       status: AccountOpStatus.BroadcastedButNotConfirmed,
       txnId: transactionRes.txnId,
-      nonce: BigInt(transactionRes.nonce),
+      nonce: getSubmittedAccountOpNonce(
+        getAccountOpNonce(accountOp),
+        transactionRes.nonce,
+        !!account.safeCreation
+      ),
       identifiedBy: transactionRes.identifiedBy,
       timestamp: new Date().getTime(),
       isSingletonDeploy: !!accountOp.calls.find(

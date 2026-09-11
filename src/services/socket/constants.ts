@@ -5,12 +5,6 @@ export const NULL_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
 
 export const ETH_ON_OPTIMISM_LEGACY_ADDRESS = '0xdeaddeaddeaddeaddeaddeaddeaddeaddead0000'
 
-/**
- * The % of fee to be cut from the source input token amount.
- * Can be up to three decimal places and cannot be more than 5%.
- */
-export const FEE_PERCENT = 0.5
-
 export const AMBIRE_FEE_TAKER_ADDRESSES: { [chainId: number]: string } = {
   143: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',
   324: '0x942f9CE5D9a33a82F88D233AEb3292E680230348',

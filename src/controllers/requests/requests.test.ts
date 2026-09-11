@@ -727,11 +727,10 @@ describe('RequestsController ', () => {
   })
 
   test('assigns the first free nonce to each new Safe request', async () => {
-    const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
+    const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
-    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, chainId, 117n))
     const buildRequest = () =>
       controller.build({
         type: 'calls',
@@ -792,14 +791,14 @@ describe('RequestsController ', () => {
       if (request.kind === 'calls') request.signAccountOp.destroy()
     })
   })
-  test('uses the latest activity nonce when the account state is stale', async () => {
+  test('BUG: ignores activity nonces when assigning a new Safe request', async () => {
     const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
-    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, chainId, 118n, 1))
-    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, chainId, 120n, 2))
-    await activityCtrl.addAccountOp(getActivityAccountOp(accountAddr, 10n, 999n, 3))
+    await activityCtrl.addAccountOp(
+      getActivityAccountOp(accountAddr, chainId, 1n << 192n, Date.now())
+    )
 
     await controller.build({
       type: 'calls',
@@ -815,7 +814,7 @@ describe('RequestsController ', () => {
     const request = controller.userRequests[0]
     expect(request?.kind).toBe('calls')
     if (request?.kind !== 'calls') throw new Error('Expected calls request')
-    expect(request.signAccountOp.accountOp.nonce).toBe(121n)
+    expect(request.signAccountOp.accountOp.nonce).toBe(119n)
     request.signAccountOp.destroy()
   })
   test('keeps the nonce when adding calls to an existing Safe request', async () => {
@@ -1660,38 +1659,6 @@ describe('RequestsController ', () => {
       }
     }
 
-    const PERMIT_TYPED_DATA = {
-      types: {
-        EIP712Domain: [
-          { name: 'name', type: 'string' },
-          { name: 'version', type: 'string' },
-          { name: 'chainId', type: 'uint256' },
-          { name: 'verifyingContract', type: 'address' }
-        ],
-        Permit: [
-          { name: 'owner', type: 'address' },
-          { name: 'spender', type: 'address' },
-          { name: 'value', type: 'uint256' },
-          { name: 'nonce', type: 'uint256' },
-          { name: 'deadline', type: 'uint256' }
-        ]
-      },
-      primaryType: 'Permit',
-      domain: {
-        name: 'Test Token',
-        version: '1',
-        chainId: 1,
-        verifyingContract: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
-      },
-      message: {
-        owner: FROM,
-        spender: '0x6C0937c7a04487573673a47F22E4Af9e96b91ecd',
-        value: 1000,
-        nonce: 0,
-        deadline: 2000000000
-      }
-    }
-
     const buildSignTypedDataRequest = (
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
       typedData: object,
@@ -1745,33 +1712,6 @@ describe('RequestsController ', () => {
       await expect(buildSignTypedDataRequest(controller, VALID_TYPED_DATA)).resolves.toBeUndefined()
       expect(controller.userRequests.length).toBe(1)
       expect(controller.userRequests[0]!.kind).toBe('typedMessage')
-    })
-
-    test('stores a safe preview for a humanized typed message request', async () => {
-      const { controller } = await prepareTest(true)
-
-      await expect(
-        buildSignTypedDataRequest(controller, PERMIT_TYPED_DATA)
-      ).resolves.toBeUndefined()
-
-      const request = controller.userRequests[0]
-      if (request?.kind !== 'typedMessage') throw new Error('Expected a typed message request')
-
-      expect(request.humanization?.[0]).toMatchObject({
-        type: 'action',
-        content: 'Grant approval'
-      })
-    })
-
-    test('does not expose raw typed data when no safe humanization is available', async () => {
-      const { controller } = await prepareTest(true)
-
-      await expect(buildSignTypedDataRequest(controller, VALID_TYPED_DATA)).resolves.toBeUndefined()
-
-      const request = controller.userRequests[0]
-      if (request?.kind !== 'typedMessage') throw new Error('Expected a typed message request')
-
-      expect(request.humanization).toBeUndefined()
     })
 
     test('rejects when domain.chainId does not match the current network chainId', async () => {

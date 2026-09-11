@@ -1,6 +1,7 @@
 import { getAddress } from 'ethers'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
+import { CITREA_CHAIN_ID } from '../../consts/networks'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   BungeeBuildTxnResponse,
@@ -18,16 +19,15 @@ import {
   SwapAndBridgeToToken,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
   isNoFeeToken
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { CITREA_CHAIN_ID } from '../../consts/networks'
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
-  FEE_PERCENT,
   NULL_ADDRESS,
   PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE,
   ZERO_ADDRESS
@@ -275,7 +275,8 @@ export class SocketAPI implements SwapProvider {
     userAddress,
     isWrapOrUnwrap,
     accountNativeBalance,
-    nativeSymbol
+    nativeSymbol,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     if (!fromAsset || !toAsset)
       throw new SwapAndBridgeProviderApiError(
@@ -294,11 +295,15 @@ export class SocketAPI implements SwapProvider {
       enableManual: 'true'
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
-    const shouldIncludeConvenienceFee =
-      !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
-    if (shouldIncludeConvenienceFee) {
+    const feeExemptionReason = getFeeExemptionReason({
+      isWrapOrUnwrap,
+      isFeeExemptToken: isNoFeeToken(fromChainId, fromTokenAddress),
+      isFeeCollectionAvailable: !!feeTakerAddress
+    })
+    const shouldIncludeConvenienceFee = feePercent > 0 && !feeExemptionReason
+    if (shouldIncludeConvenienceFee && feeTakerAddress) {
       params.append('feeTakerAddress', feeTakerAddress)
-      params.append('feeBps', (FEE_PERCENT * 100).toString())
+      params.append('feeBps', (feePercent * 100).toString())
     }
 
     const url = `${this.#bungeQuoteApiUrl}/api/v1/bungee/quote?${params.toString()}`
@@ -407,6 +412,7 @@ export class SocketAPI implements SwapProvider {
           txData: 'txData' in route ? route.txData : undefined,
           rawRoute: '', // not needed for socket,
           withConvenienceFee: shouldIncludeConvenienceFee,
+          feeExemptionReason,
           usedBridgeNames:
             fromChainId !== route.output.token.chainId
               ? [route.isIntent ? 'bungeeAutoRoute' : route.routeDetails.name.toLowerCase()]
