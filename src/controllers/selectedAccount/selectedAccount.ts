@@ -42,6 +42,10 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // Throttle their UI emit so the state isn't serialized on every partial tick.
 const PORTFOLIO_UPDATE_THROTTLE_MS = 100
 
+// The constant is already checksummed, so an address matches it when the two agree
+// without regard to case - which needs no keccak hash of the address to find out.
+const AMBIRE_ACCOUNT_FACTORY_LOWERCASED = AMBIRE_ACCOUNT_FACTORY.toLowerCase()
+
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
   #storage: IStorageController
 
@@ -62,6 +66,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   #ui: IUiController | null = null
 
   account: Account | null = null
+
+  #checksummedAccountAddr: { addr: string; checksummed: string } | null = null
 
   /**
    * Holds the selected account portfolio that is used by the UI to display the portfolio.
@@ -457,7 +463,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     if (
       !this.account.creation ||
-      getAddress(this.account.creation.factoryAddr) === AMBIRE_ACCOUNT_FACTORY
+      this.account.creation.factoryAddr.toLowerCase() === AMBIRE_ACCOUNT_FACTORY_LOWERCASED
     )
       return []
 
@@ -543,6 +549,17 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.emitUpdate()
   }
 
+  /** Only read where `account` is known to be set. */
+  get #accountAddrChecksummed(): string {
+    const { addr } = this.account!
+
+    if (this.#checksummedAccountAddr?.addr !== addr) {
+      this.#checksummedAccountAddr = { addr, checksummed: getAddress(addr) }
+    }
+
+    return this.#checksummedAccountAddr.checksummed
+  }
+
   // ! IMPORTANT !
   // Banners that depend on async data from sub-controllers should be implemented
   // in the sub-controllers themselves. This is because updates in the sub-controllers
@@ -554,7 +571,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     const banners: Banner[] = []
 
     // ENS expiry banner
-    const ownDomainEntry = this.#domains?.domains[getAddress(this.account.addr)]
+    const ownDomainEntry = this.#domains?.domains[this.#accountAddrChecksummed]
     const ensExpiry = ownDomainEntry?.expiry
     const ensName = ownDomainEntry?.names?.ens
     if (ensExpiry && ensName) {

@@ -3,13 +3,15 @@ import { parseUnits } from 'ethers'
 import { describe, expect, test } from '@jest/globals'
 import { Token as LiFiToken } from '@lifi/types'
 
-import { SwapAndBridgeQuote } from '../../interfaces/swapAndBridge'
+import { SwapAndBridgeQuote, SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
+import { TokenResult } from '../portfolio'
 import {
   calculateAmountWarnings,
   enrichRouteWithOutputUsdPrice,
   getFeeTokenForSponsorship,
   getIsBridgeRoute,
-  getSwapSponsorship
+  getSwapSponsorship,
+  sortTokenListResponse
 } from './swapAndBridge'
 
 // Helper function to create a mock route for testing
@@ -92,6 +94,93 @@ const createMockRoute = ({
     withConvenienceFee: false
   }
 }
+
+const createToToken = (address: string, symbol = address): SwapAndBridgeToToken => ({
+  address,
+  symbol,
+  name: symbol,
+  decimals: 18,
+  chainId: 1
+})
+
+const createPortfolioToken = ({
+  address,
+  balanceInUSD = 0,
+  isPending = false
+}: {
+  address: string
+  balanceInUSD?: number
+  isPending?: boolean
+}): TokenResult => ({
+  symbol: address,
+  name: address,
+  decimals: 18,
+  address,
+  chainId: 1n,
+  amount: parseUnits(balanceInUSD.toString(), 18),
+  // A token counts as pending when its post-simulation amount differs from its amount
+  ...(isPending ? { amountPostSimulation: 0n } : {}),
+  priceIn: [{ baseCurrency: 'usd', price: 1 }],
+  marketDataIn: [],
+  flags: {
+    onGasTank: false,
+    rewardsType: null,
+    canTopUpGasTank: true,
+    isFeeToken: true
+  }
+})
+
+describe('sortTokenListResponse', () => {
+  test('puts the tokens held in the portfolio first, highest balance first', () => {
+    const sorted = sortTokenListResponse(
+      [createToToken('0xa'), createToToken('0xb'), createToToken('0xc')],
+      [
+        createPortfolioToken({ address: '0xc', balanceInUSD: 5 }),
+        createPortfolioToken({ address: '0xa', balanceInUSD: 50 })
+      ]
+    )
+
+    expect(sorted.map((t) => t.address)).toEqual(['0xa', '0xc', '0xb'])
+  })
+
+  test('puts a pending token above a held token with a higher balance', () => {
+    const sorted = sortTokenListResponse(
+      [createToToken('0xa'), createToToken('0xb')],
+      [
+        createPortfolioToken({ address: '0xa', balanceInUSD: 50 }),
+        createPortfolioToken({ address: '0xb', balanceInUSD: 1, isPending: true })
+      ]
+    )
+
+    expect(sorted.map((t) => t.address)).toEqual(['0xb', '0xa'])
+  })
+
+  test('matches the portfolio regardless of address casing', () => {
+    const sorted = sortTokenListResponse(
+      [createToToken('0xAAA'), createToToken('0xBBB')],
+      [createPortfolioToken({ address: '0xbbb', balanceInUSD: 10 })]
+    )
+
+    expect(sorted.map((t) => t.address)).toEqual(['0xBBB', '0xAAA'])
+  })
+
+  test("keeps the service provider's order for tokens that are not in the portfolio", () => {
+    const providerOrder = ['0xd', '0xc', '0xb', '0xa']
+    const sorted = sortTokenListResponse(
+      providerOrder.map((a) => createToToken(a)),
+      []
+    )
+
+    expect(sorted.map((t) => t.address)).toEqual(providerOrder)
+  })
+
+  test('does not reorder the array it was given', () => {
+    const tokens = [createToToken('0xa'), createToToken('0xb')]
+    sortTokenListResponse(tokens, [createPortfolioToken({ address: '0xb', balanceInUSD: 10 })])
+
+    expect(tokens.map((t) => t.address)).toEqual(['0xa', '0xb'])
+  })
+})
 
 describe('swapAndBridge lib', () => {
   describe('getIsBridgeRoute', () => {

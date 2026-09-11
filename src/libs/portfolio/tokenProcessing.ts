@@ -31,6 +31,39 @@ const normalizeAddress = (addr: string) => {
   }
 }
 
+type KnownTokenBySymbol = { address?: string; chainIds: number[] }
+
+/**
+ * The known tokens that carry both a symbol and the chains they live on, grouped by
+ * their symbol. Built once, because the catalog runs to ten thousand entries and
+ * normalizing every one of their symbols to compare against a single token took ~3ms -
+ * paid per token of every simulation. The catalog ships with the app and never changes,
+ * so a built index can never go stale.
+ */
+let knownTokensBySymbol: Map<string, KnownTokenBySymbol[]> | null = null
+
+const getKnownTokensBySymbol = () => {
+  if (knownTokensBySymbol) return knownTokensBySymbol
+
+  knownTokensBySymbol = new Map<string, KnownTokenBySymbol[]>()
+
+  Object.values(knownAddresses).forEach((known) => {
+    const knownSymbolRaw = known?.token?.symbol
+    const knownChains = known?.chainIds
+    // Unknowns and entries without chainIds are the ones the scan this replaces skipped
+    if (!knownSymbolRaw || !knownChains) return
+
+    const knownSymbol = removeNonLatinChars(knownSymbolRaw).toUpperCase()
+    const sameSymbol = knownTokensBySymbol!.get(knownSymbol)
+    const entry = { address: known.address, chainIds: knownChains }
+
+    if (sameSymbol) sameSymbol.push(entry)
+    else knownTokensBySymbol!.set(knownSymbol, [entry])
+  })
+
+  return knownTokensBySymbol
+}
+
 export const isSuspectedRegardsKnownAddresses = (
   tokenAddr: string,
   tokenSymbol: string,
@@ -38,26 +71,22 @@ export const isSuspectedRegardsKnownAddresses = (
 ): boolean => {
   if (!knownAddresses || !tokenAddr || !tokenSymbol) return false
 
-  const normalizedAddr = normalizeAddress(tokenAddr)
   const normalizedSymbol = removeNonLatinChars(tokenSymbol).toUpperCase()
+  const knownTokensWithSameSymbol = getKnownTokensBySymbol().get(normalizedSymbol)
+
+  if (!knownTokensWithSameSymbol) return false
+
+  const normalizedAddr = normalizeAddress(tokenAddr)
   const numericChainId = Number(chainId)
 
-  const knownTokens = Object.values(knownAddresses)
-
-  // Only consider known tokens that have chainIds defined (skip those without chainIds)
-  return knownTokens.some((known: any) => {
-    const knownSymbolRaw = known?.token?.symbol
-    const knownChains = known?.chainIds
-    if (!knownSymbolRaw || !knownChains) return false // skip unknowns or entries without chainIds
-
-    const knownSymbol = removeNonLatinChars(knownSymbolRaw).toUpperCase()
-    if (knownSymbol !== normalizedSymbol) return false
-
-    if (!knownChains.includes(numericChainId)) return false
-
-    // same symbol + same chain but different address -> suspected spoof
-    return normalizeAddress(known.address) !== normalizedAddr
-  })
+  // same symbol + same chain but different address -> suspected spoof. An entry
+  // without an address cannot be shown to be this token, so it counts as a different
+  // one - as it did in the scan this replaces.
+  return knownTokensWithSameSymbol.some(
+    (known) =>
+      known.chainIds.includes(numericChainId) &&
+      !(!!known.address && normalizeAddress(known.address) === normalizedAddr)
+  )
 }
 
 export const isSuspectedToken = (

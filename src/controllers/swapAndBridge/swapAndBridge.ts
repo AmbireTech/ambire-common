@@ -382,6 +382,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    */
   #preselectedToToken: { address: string; chainId: number } | null = null
 
+  /**
+   * Signature of the portfolio tokens the "to" token list was last derived from, so a
+   * portfolio refresh that does not affect that list does not rebuild it.
+   */
+  #toTokenPortfolioSignature: string = ''
+
+  /**
+   * Lowercased fields the "to" token search matches against, cached per token so that a
+   * keystroke does not lowercase the service provider's whole list again. Keyed weakly,
+   * so entries are reclaimed with the token list and a token added later simply misses
+   * the cache instead of being matched against stale fields.
+   */
+  #toTokenSearchFields = new WeakMap<SwapAndBridgeToToken, string[]>()
+
   routePriority: 'output' | 'time' = 'output'
 
   disabledSwapProviderIds: string[] = []
@@ -748,8 +762,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           await this.updatePortfolioTokenList(
             structuredClone(this.#selectedAccount.portfolio.tokens)
           )
-          // To token list includes selected account portfolio tokens, it should get an update too
-          await this.updateToTokenList(false)
+          // To token list includes selected account portfolio tokens, it should get an update too.
+          // Deriving it sorts the service provider's whole list and emits twice, so it is only
+          // redone when the portfolio tokens it actually reads have changed - or when its cached
+          // copy of the provider's list is due for a refetch. Without this, every portfolio
+          // refresh rebuilt an identical list and took the JS thread away from the screen.
+          const portfolioSignature = this.#getToTokenPortfolioSignature()
+
+          if (
+            portfolioSignature !== this.#toTokenPortfolioSignature ||
+            this.#isToTokenApiListStale()
+          ) {
+            this.#toTokenPortfolioSignature = portfolioSignature
+            await this.updateToTokenList(false)
+          }
         }
       })
     })
@@ -1638,8 +1664,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // Opted out of sending the receive token addresses to our price API
     if (!this.#featureFlags.isFeatureEnabled('swapAndBridgeTokenInfo')) return
 
+    // Indexed once instead of scanned per token, and reused by the fetch below.
+    const networkByChainId = new Map(this.#networks.networks.map((n) => [Number(n.chainId), n]))
+
     const tokensToFetch = tokens.filter((token) => {
-      const network = this.#networks.networks.find((n) => Number(n.chainId) === token.chainId)
+      const network = networkByChainId.get(token.chainId)
 
       // Without a platform id our price API has nothing to look the token up by. This is
       // the case for custom networks, which are simply left without market data.
@@ -1668,7 +1697,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const results = await Promise.allSettled(
       tokensToFetch.map((token) => {
-        const network = this.#networks.networks.find((n) => Number(n.chainId) === token.chainId)
+        const network = networkByChainId.get(token.chainId)
         const isNative = token.address === ZeroAddress
 
         return this.#batchedTokenMarketData({
@@ -1786,15 +1815,57 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const isSwapping = fromChainId === toChainId
     if (isSwapping) {
-      return (
-        tokens
-          // Swaps between same "from" and "to" tokens are not feasible, filter them out
-          .filter((t) => t.address !== this.fromSelectedToken?.address)
-          .slice(0, TO_TOKEN_LIST_LIMIT)
-      )
+      const fromSelectedTokenAddress = this.fromSelectedToken?.address
+      const shortList: SwapAndBridgeToToken[] = []
+
+      // Stops at the limit instead of filtering the whole list first. This getter is part
+      // of the state sent to the UI, so it runs on every update of this controller, and
+      // the list it reads runs to thousands of tokens.
+      for (let i = 0; i < tokens.length && shortList.length < TO_TOKEN_LIST_LIMIT; i++) {
+        const token = tokens[i]!
+
+        // Swaps between same "from" and "to" tokens are not feasible, filter them out
+        if (token.address === fromSelectedTokenAddress) continue
+
+        shortList.push(token)
+      }
+
+      return shortList
     }
 
     return tokens.slice(0, TO_TOKEN_LIST_LIMIT)
+  }
+
+  /**
+   * Everything `#getToTokens` reads off the portfolio, as a comparable string: which of the
+   * account's tokens sit on the "to" chain, and the values their order depends on.
+   */
+  #getToTokenPortfolioSignature() {
+    if (!this.toChainId) return ''
+
+    const toChainIdBigInt = BigInt(this.toChainId)
+
+    return this.portfolioTokenList
+      .filter((t) => t.chainId === toChainIdBigInt)
+      .map((t) => {
+        const priceUSD = t.priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')?.price
+
+        return `${t.address}:${t.amount}:${t.amountPostSimulation ?? ''}:${priceUSD ?? ''}`
+      })
+      .join()
+  }
+
+  /** Whether the service provider's cached "to" token list is due for a refetch. */
+  #isToTokenApiListStale() {
+    const toTokenListKey = this.#toTokenListKey
+    const toTokenList = toTokenListKey ? this.#toTokenList[toTokenListKey] : undefined
+
+    if (!toTokenList) return true
+
+    return (
+      !toTokenList.apiTokens.length ||
+      Date.now() - toTokenList.lastUpdate >= TO_TOKEN_LIST_CACHE_THRESHOLD
+    )
   }
 
   #getToTokens(fromChainId: number | null, toChainId: number | null) {
@@ -1808,7 +1879,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         chainId: toChainId,
         tokens: []
       })
-    const portfolioTokens = this.portfolioTokenList.filter((t) => t.chainId === BigInt(toChainId))
+    const toChainIdBigInt = BigInt(toChainId)
+    const portfolioTokens = this.portfolioTokenList.filter((t) => t.chainId === toChainIdBigInt)
 
     const apiTokenAddresses = new Set(apiTokens.map((t) => t.address.toLowerCase()))
     const additionalTokensFromPortfolio = portfolioTokens
@@ -2010,42 +2082,58 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const tokens = this.#toTokenList[this.#toTokenListKey]?.tokens || []
 
-    const { exactMatches, partialMatches } = tokens.reduce(
-      (result, token) => {
-        // Filter out the from token if swapping on the same chain
-        if (
-          this.toChainId &&
-          this.fromChainId === this.toChainId &&
-          token.address === this.fromSelectedToken?.address
-        )
-          return result
+    // Read once rather than per token: the list runs to thousands of them and this is
+    // walked again on every keystroke.
+    const isSwappingOnSameChain = !!this.toChainId && this.fromChainId === this.toChainId
+    const fromSelectedTokenAddress = this.fromSelectedToken?.address
 
-        const fieldsToSearch = [
-          token.address.toLowerCase(),
-          token.symbol.toLowerCase(),
-          token.name.toLowerCase()
-        ]
+    const exactMatches: SwapAndBridgeToToken[] = []
+    const partialMatches: SwapAndBridgeToToken[] = []
 
-        // Prioritize exact matches, partial matches come after
-        const isExactMatch = fieldsToSearch.some((field) => field === normalizedSearchTerm)
-        const isPartialMatch = fieldsToSearch.some((field) => field.includes(normalizedSearchTerm))
+    tokens.forEach((token) => {
+      // Filter out the from token if swapping on the same chain
+      if (isSwappingOnSameChain && token.address === fromSelectedTokenAddress) return
 
-        if (isExactMatch) {
-          result.exactMatches.push(token)
-        } else if (isPartialMatch) {
-          result.partialMatches.push(token)
+      const fieldsToSearch = this.#getToTokenSearchFields(token)
+
+      // Prioritize exact matches, partial matches come after
+      let isExactMatch = false
+      let isPartialMatch = false
+
+      for (let i = 0; i < fieldsToSearch.length; i++) {
+        const field = fieldsToSearch[i]!
+
+        if (field === normalizedSearchTerm) {
+          isExactMatch = true
+          break
         }
 
-        return result
-      },
-      { exactMatches: [] as SwapAndBridgeToToken[], partialMatches: [] as SwapAndBridgeToToken[] }
-    )
+        if (field.includes(normalizedSearchTerm)) isPartialMatch = true
+      }
+
+      if (isExactMatch) exactMatches.push(token)
+      else if (isPartialMatch) partialMatches.push(token)
+    })
 
     this.toTokenSearchResults = [...exactMatches, ...partialMatches].slice(0, TO_TOKEN_LIST_LIMIT)
     this.#emitUpdateIfNeeded()
 
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#fetchToTokenMarketData(this.toTokenSearchResults)
+  }
+
+  #getToTokenSearchFields(token: SwapAndBridgeToToken) {
+    const cached = this.#toTokenSearchFields.get(token)
+    if (cached) return cached
+
+    const fields = [
+      token.address.toLowerCase(),
+      token.symbol.toLowerCase(),
+      token.name.toLowerCase()
+    ]
+    this.#toTokenSearchFields.set(token, fields)
+
+    return fields
   }
 
   async switchFromAndToTokens() {
