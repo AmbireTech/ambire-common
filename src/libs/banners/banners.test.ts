@@ -5,7 +5,7 @@ import { Banner } from '../../interfaces/banner'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { DappConnectRequest, PlainTextMessageUserRequest } from '../../interfaces/userRequest'
 import {
-  getBridgeBanners,
+  getIntentBanners,
   getCurrentAccountBanners,
   getDappUserRequestsBanners,
   getSafeMessageRequestBanners
@@ -96,7 +96,7 @@ describe('getSafeMessageRequestBanners', () => {
   })
 })
 
-describe('getBridgeBanners', () => {
+describe('getIntentBanners', () => {
   test('tags the banner with the account the active routes belong to', () => {
     const activeRoutes: SwapAndBridgeActiveRoute[] = [
       {
@@ -109,7 +109,7 @@ describe('getBridgeBanners', () => {
         userTxIndex: 0,
         userTxHash: null,
         identifiedBy: null,
-        // Only the fields getIsBridgeRoute/getBridgeBanners actually read are filled in.
+        // Only the fields getIsIntentRoute/getIntentBanners actually read are filled in.
         route: {
           routeStatus: 'in-progress',
           fromChainId: 1,
@@ -122,9 +122,40 @@ describe('getBridgeBanners', () => {
       }
     ]
 
-    const banners = getBridgeBanners(activeRoutes, [], ACCOUNT_ADDR)
+    const banners = getIntentBanners(activeRoutes, [], ACCOUNT_ADDR)
 
     expect(banners).toHaveLength(1)
     expect(banners[0]!.meta?.accountAddr).toEqual(ACCOUNT_ADDR)
+  })
+
+  test('shows a swap banner for a same-network intent', () => {
+    const activeRoutes = [
+      {
+        serviceProviderId: 'cowswap',
+        fromAssetAddress: '0x0',
+        toAssetAddress: '0x0',
+        steps: [],
+        sender: ACCOUNT_ADDR,
+        activeRouteId: 'route-1',
+        userTxIndex: 0,
+        userTxHash: '0x1',
+        identifiedBy: null,
+        route: {
+          routeStatus: 'in-progress',
+          fromChainId: 1,
+          toChainId: 1,
+          currentUserTxIndex: 0,
+          transactionData: null,
+          userAddress: ACCOUNT_ADDR,
+          isIntent: true
+        } as unknown as SwapAndBridgeActiveRoute['route'],
+        routeStatus: 'in-progress' as const
+      }
+    ]
+
+    const banners = getIntentBanners(activeRoutes, [], ACCOUNT_ADDR)
+
+    expect(banners[0]!.title).toBe('Swap in progress')
+    expect(banners[0]!.text).toBe('You have 1 pending swap')
   })
 })
