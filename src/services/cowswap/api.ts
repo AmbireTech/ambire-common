@@ -89,7 +89,7 @@ export class CowSwapAPI implements SwapProvider {
   }
 
   areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
-    return fromChainId === toChainId && !!getApiNetwork(fromChainId)
+    return !!getApiNetwork(fromChainId) && !!getApiNetwork(toChainId)
   }
 
   #getApiUrl(chainId: number, path: string, version: 'v1' | 'v2' = 'v1') {
@@ -180,18 +180,13 @@ export class CowSwapAPI implements SwapProvider {
   }
 
   async getToTokenList({
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     fromChainId,
     toChainId
   }: {
     fromChainId: number
     toChainId: number
   }): Promise<SwapAndBridgeToToken[]> {
-    if (!this.areChainsSupported({ fromChainId, toChainId })) {
-      throw new SwapAndBridgeProviderApiError(
-        'The requested network pair is not supported by our service provider CoW Swap.'
-      )
-    }
-
     const tokens = (await this.#getTokenList())
       .filter((token) => token.chainId === toChainId)
       .map(normalizeCowSwapToken)
