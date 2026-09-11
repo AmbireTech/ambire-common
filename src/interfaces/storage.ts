@@ -62,6 +62,12 @@ export type StorageProps = {
   keystoreSeeds: StoredKeystoreSeed[]
   // Dapps
   dappsV2: Dapp[]
+  /**
+   * dApp ids the user marked as trusted, silencing the suspicious-hosting warning for them.
+   * Kept apart from `dappsV2` because a custom dApp's record is dropped when it disconnects,
+   * while the trust the user gave it must survive a disconnect and reconnect.
+   */
+  trustedDapps: { id: string; addedAt: number }[]
   dapps: Dapp[]
   recentDapps: RecentDappEntry[]
   trending: {
