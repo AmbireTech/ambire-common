@@ -1896,7 +1896,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         )
     } catch (error: any) {
       const { message } = getHumanReadableSwapAndBridgeError(error)
-      throw new EmittableError({ error, level: 'minor', message })
+      throw new EmittableError({ error, level: 'silent', message })
     }
 
     if (toTokenListKey)
@@ -1909,7 +1909,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // should never happen
     if (!toTokenNetwork) {
       const error = new SwapAndBridgeError(NETWORK_MISMATCH_MESSAGE)
-      throw new EmittableError({ error, level: 'minor', message: error?.message })
+      throw new EmittableError({ error, level: 'silent', message: error?.message })
     }
 
     tokenList.tokens = sortTokenListResponse(
@@ -1989,7 +1989,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   addToTokenByAddress = async (address: string) =>
-    this.withStatus('addToTokenByAddress', () => this.#addToTokenByAddress(address), true)
+    this.withStatus('addToTokenByAddress', () => this.#addToTokenByAddress(address), true, 'silent')
 
   async searchToToken(searchTerm: string) {
     // Reset the search results
@@ -2312,7 +2312,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           return
 
         const { message } = getHumanReadableSwapAndBridgeError(error)
-        this.emitError({ error, level: 'major', message })
+        this.emitError({ error, level: 'silent', message })
 
         return false
       }
@@ -2637,7 +2637,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const finalQuote = quote || this.quote
     if (!finalQuote || !finalQuote.selectedRoute) {
       const message = 'Unexpected swap & bridge error: no quote found. Please contact support'
-      throw new EmittableError({ error: new Error(message), level: 'major', message })
+      throw new EmittableError({ error: new Error(message), level: 'silent', message })
     }
 
     try {
@@ -2682,7 +2682,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.emitUpdate()
     } catch (error: any) {
       const { message } = getHumanReadableSwapAndBridgeError(error)
-      throw new EmittableError({ error, level: 'major', message })
+      throw new EmittableError({ error, level: 'silent', message })
     }
   }
 
@@ -3260,7 +3260,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       // specifically. NOT the one from the getter (this.signAccountOpController)
       // that is ALWAYS up-to-date with the current quote and the current form state.
       // Due to the async nature, it might not exist - an issue caught by our crash reporting.
-      this.emitError(error)
+      this.emitError({ ...error, level: 'silent' })
 
       if (this.#signAccountOpController)
         await this.#portfolio.overrideSimulationResults(this.#signAccountOpController.accountOp)

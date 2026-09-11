@@ -10,6 +10,7 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
+import EmittableError from '../../classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { networks } from '../../consts/networks'
@@ -764,6 +765,38 @@ describe('SwapAndBridge Controller', () => {
     jest.useRealTimers()
     restore()
   })
+  test('should emit quote failures silently', async () => {
+    const { restore } = suppressConsole()
+    const emittedErrorLevels: string[] = []
+    const unsubscribe = swapAndBridgeController.onError((error) => {
+      emittedErrorLevels.push(error.level)
+    })
+    jest.spyOn(socketAPIMock, 'quote').mockRejectedValueOnce(new Error('Quote failed'))
+
+    await swapAndBridgeController.updateQuote({ skipQuoteUpdateOnSameValues: false })
+
+    expect(emittedErrorLevels).toEqual(['silent'])
+
+    unsubscribe()
+    await swapAndBridgeController.updateQuote({ skipQuoteUpdateOnSameValues: false })
+    expect(swapAndBridgeController.quote).not.toBeNull()
+    restore()
+  })
+  test('should emit receive token lookup failures silently', async () => {
+    const { restore } = suppressConsole()
+    const emittedErrorLevels: string[] = []
+    const unsubscribe = swapAndBridgeController.onError((error) => {
+      emittedErrorLevels.push(error.level)
+    })
+    jest.spyOn(socketAPIMock, 'getToken').mockRejectedValueOnce(new Error('Token lookup failed'))
+
+    await swapAndBridgeController.addToTokenByAddress('0x0000000000000000000000000000000000000001')
+
+    expect(emittedErrorLevels).toEqual(['silent'])
+
+    unsubscribe()
+    restore()
+  })
   test('should switch from and to tokens', async () => {
     const prevFromChainId = swapAndBridgeController.fromChainId
     const prevToChainId = swapAndBridgeController.toChainId
@@ -922,6 +955,21 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('ready')
     expect(swapAndBridgeController.quote).toBeDefined()
     expect(swapAndBridgeController.banners).toHaveLength(0)
+  })
+  test('should make active route errors silent', () => {
+    const previousQuote = swapAndBridgeController.quote
+    swapAndBridgeController.quote = null
+
+    try {
+      swapAndBridgeController.addActiveRoute({ userTxIndex: 0 })
+      throw new Error('Expected addActiveRoute to throw')
+    } catch (error) {
+      expect(error).toBeInstanceOf(EmittableError)
+      if (!(error instanceof EmittableError)) throw error
+      expect(error.level).toBe('silent')
+    } finally {
+      swapAndBridgeController.quote = previousQuote
+    }
   })
   test('should update an existing activeRoute when adding the same route again', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId

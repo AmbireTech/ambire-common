@@ -74,3 +74,5 @@ export const COWSWAP_ORDER_VALIDITY_SECONDS = 30 * 60
 export const COWSWAP_APP_DATA_VERSION = '1.4.0'
 
 export const COWSWAP_APP_CODE = 'Ambire'
+
+export const CENA_API_BASE_URL = 'https://cena.ambire.com'
