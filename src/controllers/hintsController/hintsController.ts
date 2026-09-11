@@ -8,7 +8,7 @@ import { Network } from '@/interfaces/network'
 import { IStorageController } from '@/interfaces/storage'
 import { getAllAssetsAsHints } from '@/libs/defiPositions/defiPositions'
 import { AssetMetadataStore } from '@/libs/portfolio/assetMetadataStore'
-import { CustomToken, TokenPreference } from '@/libs/portfolio/customToken'
+import { CustomToken, getAssetPreferenceId, TokenPreference } from '@/libs/portfolio/customToken'
 import {
   erc721CollectionToLearnedAssetKeys,
   getSpecialHints,
@@ -176,10 +176,9 @@ export class HintsController extends EventEmitter {
    */
   async addCustomToken(customToken: CustomToken): Promise<boolean> {
     await this.initialLoadPromise
+    // A collectible is added on its own, so the id is part of its identity
     const isTokenAlreadyAdded = this.customTokens.some(
-      ({ address, chainId }) =>
-        address.toLowerCase() === customToken.address.toLowerCase() &&
-        chainId === customToken.chainId
+      (token) => getAssetPreferenceId(token) === getAssetPreferenceId(customToken)
     )
 
     if (isTokenAlreadyAdded) return false
@@ -192,26 +191,82 @@ export class HintsController extends EventEmitter {
   }
 
   /**
+   * Stops requesting a collectible that was added by hand, so removing it takes
+   * it out of the portfolio instead of leaving it to be rediscovered. Without an
+   * id the whole collection was added, so all of it is forgotten.
+   */
+  async #forgetCollectible(
+    collectible: { address: string; chainId: bigint; tokenId?: bigint },
+    accountAddr?: string
+  ) {
+    let checksummed
+    try {
+      checksummed = getAddress(collectible.address)
+    } catch (e: any) {
+      console.error('forgetCollectible: Error while normalizing nft address', e)
+
+      return
+    }
+
+    const toBeLearned = this.#toBeLearnedAssets.erc721s[collectible.chainId.toString()]
+    const toBeLearnedIds = toBeLearned?.[checksummed]
+
+    if (toBeLearned && toBeLearnedIds) {
+      const remaining =
+        typeof collectible.tokenId === 'bigint'
+          ? toBeLearnedIds.filter((id) => id !== collectible.tokenId)
+          : []
+
+      // An empty array requests the whole collection, so the entry goes instead
+      if (remaining.length) toBeLearned[checksummed] = remaining
+      else delete toBeLearned[checksummed]
+    }
+
+    if (!accountAddr) return
+
+    const learnedNfts = this.#learnedAssets.erc721s[`${collectible.chainId}:${accountAddr}`]
+    if (!learnedNfts) return
+
+    if (typeof collectible.tokenId === 'bigint') {
+      delete learnedNfts[`${checksummed}:${collectible.tokenId}`]
+    } else {
+      Object.keys(learnedNfts)
+        .filter((key) => key.startsWith(`${checksummed}:`))
+        .forEach((key) => delete learnedNfts[key])
+    }
+
+    await this.#storage.set('learnedAssets', this.#learnedAssets)
+  }
+
+  /**
    * Removes a custom token and, if a preference for it exists, its preference too.
    * Returns whether anything changed, so the caller can decide whether a portfolio
    * update is needed.
    */
-  async removeCustomToken(customToken: Omit<CustomToken, 'standard'>): Promise<boolean> {
+  async removeCustomToken(
+    customToken: Omit<CustomToken, 'standard'>,
+    accountAddr?: string
+  ): Promise<boolean> {
     await this.initialLoadPromise
-    this.customTokens = this.customTokens.filter(
-      (token) =>
-        !(
-          token.address.toLowerCase() === customToken.address.toLowerCase() &&
-          token.chainId === customToken.chainId
-        )
-    )
+    const isTokenBeingRemoved = (token: Omit<CustomToken, 'standard'>) =>
+      getAssetPreferenceId(token) === getAssetPreferenceId(customToken)
+    // The standard is needed by the preference, as it distinguishes a hidden
+    // collection from a hidden token
+    const removedTokenStandard = this.customTokens.find(isTokenBeingRemoved)?.standard
+
+    this.customTokens = this.customTokens.filter((token) => !isTokenBeingRemoved(token))
+
+    if (removedTokenStandard === 'ERC721') {
+      await this.#forgetCollectible(customToken, accountAddr)
+    }
+
     const existingPreference = this.tokenPreferences.some(
-      (pref) => pref.address === customToken.address && pref.chainId === customToken.chainId
+      (pref) => getAssetPreferenceId(pref) === getAssetPreferenceId(customToken)
     )
 
     // Delete the custom token preference if it exists
     if (existingPreference) {
-      this.#toggleTokenPreference(customToken)
+      this.#toggleTokenPreference({ ...customToken, standard: removedTokenStandard })
     }
 
     this.emitUpdate()
@@ -238,10 +293,9 @@ export class HintsController extends EventEmitter {
   }
 
   #toggleTokenPreference(tokenPreference: Omit<CustomToken, 'standard'> | TokenPreference) {
+    const preferenceId = getAssetPreferenceId(tokenPreference)
     const existingPreference = this.tokenPreferences.find(
-      ({ address, chainId }) =>
-        address.toLowerCase() === tokenPreference.address.toLowerCase() &&
-        chainId === tokenPreference.chainId
+      (preference) => getAssetPreferenceId(preference) === preferenceId
     )
 
     // Push the token as hidden
@@ -250,8 +304,7 @@ export class HintsController extends EventEmitter {
       // Remove the token preference if the user decides to show it again
     } else if (existingPreference.isHidden) {
       this.tokenPreferences = this.tokenPreferences.filter(
-        ({ address, chainId }) =>
-          !(address === tokenPreference.address && chainId === tokenPreference.chainId)
+        (preference) => getAssetPreferenceId(preference) !== preferenceId
       )
     } else {
       // Should happen only after migration

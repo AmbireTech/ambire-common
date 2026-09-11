@@ -11,6 +11,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import batcher from '../../utils/batcher'
+import { paginate } from '../../utils/paginate'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
 import { isBlacklistedAsset, prepareBlacklistPatterns, STATIC_BLACKLIST } from './blacklist'
 import { portfolioDebugLog } from './debug'
@@ -21,6 +22,8 @@ import {
   convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
   getHardcodedCitreaPrices,
+  getVisibleCollectibles,
+  mergeCollectionHints,
   mergeERC721s,
   planAssetMetadata,
   tokenFilter
@@ -39,7 +42,6 @@ import {
   TokenMetadataFetchPlan,
   TokenResult
 } from './interfaces'
-import { paginate } from '../../utils/paginate'
 import { flattenResults } from './pagination'
 
 export const LIMITS: Limits = {
@@ -246,11 +248,11 @@ export class Portfolio {
       ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
 
-    hints.erc721s = mergeERC721s([
-      additionalErc721Hints || {},
-      hints.erc721s,
-      ...Object.values(specialErc721Hints || {})
-    ])
+    hints.erc721s = mergeCollectionHints({
+      additionalHints: additionalErc721Hints,
+      apiHints: hints.erc721s,
+      specialHints: specialErc721Hints
+    })
 
     // Deduped before checksumming for performance
     const seenErc20Hints = new Set<string>()
@@ -386,6 +388,11 @@ export class Portfolio {
     const isValidToken = (error: TokenError, token: TokenResult): boolean =>
       error === '0x' && !!token.symbol
 
+    // A collection is labeled by its name or its address, so a missing symbol is
+    // no evidence that the address isn't one. Only the getter erroring is, and it
+    // does error for an address that holds no collection.
+    const isValidCollection = (error: TokenError): boolean => error === '0x'
+
     const blacklistPatterns = prepareBlacklistPatterns([
       ...STATIC_BLACKLIST.blacklistBySymbols,
       ...(blacklist?.blacklistBySymbols || [])
@@ -466,9 +473,36 @@ export class Portfolio {
         return result
       })
 
+    // Unlike the deployless ones, preference addresses aren't always checksummed.
+    // An empty array of ids means the collection was added before they were
+    // recorded, otherwise the listed collectibles are the added ones
+    const customCollectibles: { [lowercasedAddress: string]: bigint[] } = {}
+    Object.entries(specialErc721Hints?.custom || {}).forEach(([address, ids]) => {
+      customCollectibles[address.toLowerCase()] = ids
+    })
+    // An empty array of ids hides the whole collection, otherwise the listed
+    // collectibles are the hidden ones
+    const hiddenCollectibles: { [lowercasedAddress: string]: bigint[] } = {}
+    Object.entries(specialErc721Hints?.hidden || {}).forEach(([address, ids]) => {
+      hiddenCollectibles[address.toLowerCase()] = ids
+    })
+
     const collections = collectionsWithErrResult.reduce<CollectionResult[]>(
       (acc, [error, collection]) => {
-        if (!isValidToken(error, collection)) return acc
+        // Unlike a token, a collection without a symbol is still displayable -
+        // it is labeled by its name or its address
+        if (error !== '0x') return acc
+
+        const lowercasedAddress = collection.address.toLowerCase()
+        const customIds = customCollectibles[lowercasedAddress]
+        const isCustom = !!customIds
+        const hiddenIds = hiddenCollectibles[lowercasedAddress]
+        const isHidden = !!hiddenIds && !hiddenIds.length
+        const visibleCollectibles = getVisibleCollectibles({
+          collectibles: collection.collectibles,
+          customIds,
+          hiddenIds
+        })
 
         // Kept before the filtering below, for the same reason as the token metadata
         if (
@@ -486,13 +520,13 @@ export class Portfolio {
         }
 
         // Spam filter: hide collections whose symbol/name matches a blacklisted
-        // pattern or embeds a phishing domain. Custom collections are never hidden
-        // (even tho we don't support them atm).
+        // pattern or embeds a phishing domain. Custom (user-added) collections
+        // are never hidden.
         if (
           isBlacklistedAsset({
             symbol: collection.symbol,
             name: collection.name,
-            isCustom: collection.flags?.isCustom,
+            isCustom,
             patterns: blacklistPatterns,
             checkForEmbeddedDomain: true
           })
@@ -511,12 +545,29 @@ export class Portfolio {
         }
 
         // Important note: Collections with 0 collectibles are allow to pass through the filter.
-        if (!toBeLearned.erc721s[collection.address] && collection.collectibles.length > 0) {
+        // Hidden collections are always requested as hints, so they don't have
+        // to be learned. Custom ones are, so they survive being removed.
+        if (
+          !isHidden &&
+          !toBeLearned.erc721s[collection.address] &&
+          collection.collectibles.length > 0
+        ) {
           toBeLearned.erc721s[collection.address] = collection.collectibles
         }
 
         acc.push({
           ...collection,
+          collectibles: visibleCollectibles,
+          // Collections have no flags until this point
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: false,
+            isFeeToken: false,
+            suspectedType: null,
+            isCustom,
+            isHidden
+          },
           priceIn: getTokenDataFromCache(collection.address)?.priceIn || []
         })
         return acc
@@ -645,7 +696,7 @@ export class Portfolio {
         .filter(([error, result]: [string, TokenResult]) => !isValidToken(error, result))
         .map(([error, result]: [string, TokenResult]) => ({ error, address: result.address })),
       collectionErrors: collectionsWithErrResult
-        .filter(([error, result]: [string, CollectionResult]) => !isValidToken(error, result))
+        .filter(([error]: [string, CollectionResult]) => !isValidCollection(error))
         .map(([error, result]: [string, CollectionResult]) => ({ error, address: result.address })),
       collections
     }
