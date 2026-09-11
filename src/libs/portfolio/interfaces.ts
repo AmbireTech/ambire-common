@@ -418,6 +418,10 @@ export type PortfolioNetworkResult = CommonResultProps &
     | 'discoveryTime'
   > & {
     defiPositions: DefiNetworkState
+    walletStaking?: {
+      shareValue: bigint
+      updatedAt: number
+    }
     lastExternalApiUpdateData?: {
       lastUpdate: number
       hasHints: boolean

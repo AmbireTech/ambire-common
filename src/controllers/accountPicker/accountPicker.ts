@@ -255,7 +255,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           (acc) => isSmartAccount(acc.account) && acc.slot === derivedAccount.slot
         )
 
-        let accountsToReturn: Omit<AccountOnPage, 'importStatus'>[] = []
+        let accountsToReturn: DerivedAccount[] = []
 
         if (!isSmartAccount(derivedAccount.account)) {
           accountsToReturn.push(derivedAccount)
@@ -333,9 +333,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       return prioritizeAccountType(a) - prioritizeAccountType(b) || a.slot - b.slot
     })
 
-    const accountsWithStatus = mergedAccounts.map((acc) => ({
+    const accountsWithStatus: AccountOnPage[] = mergedAccounts.map((acc) => ({
       ...acc,
-      importStatus: getAccountImportStatus({
+      ...getAccountImportStatus({
         account: acc.account,
         alreadyImportedAccounts: this.#alreadyImportedAccounts,
         keys: this.#keystore.keys,
@@ -353,7 +353,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (nextUnusedSmartAcc) {
       accountsWithStatus.push({
         ...nextUnusedSmartAcc,
-        importStatus: getAccountImportStatus({
+        ...getAccountImportStatus({
           account: nextUnusedSmartAcc.account,
           alreadyImportedAccounts: this.#alreadyImportedAccounts,
           keys: this.#keystore.keys,

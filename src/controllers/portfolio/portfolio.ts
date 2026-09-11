@@ -101,6 +101,7 @@ import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import batcher from '../../utils/batcher'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
+import { WalletTokenController } from '../walletToken/walletToken'
 
 const EXTERNAL_API_HINTS_TTL = {
   dynamic: 15 * 60 * 1000,
@@ -202,6 +203,8 @@ export class PortfolioController
    */
   protected hints: HintsController
 
+  #walletToken: WalletTokenController
+
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
@@ -272,6 +275,8 @@ export class PortfolioController
     this.#banner = banner
     this.#featureFlags = featureFlags
     this.hints = new HintsController(storage, accounts, keystore)
+    this.#walletToken = new WalletTokenController()
+    this.#walletToken.onError((error) => this.emitError(error))
     // Re-emit hints updates as portfolio updates so the re-exposed getters
     // (customTokens, tokenPreferences) reach the UI when they change.
     this.hints.onUpdate((forceEmit) => this.propagateUpdate(forceEmit))
@@ -1714,12 +1719,45 @@ export class PortfolioController
             : (state.result?.lastExternalApiUpdateData ?? null),
           tokens: combinedTokens,
           total: getTotal(combinedTokens, newDefiState),
-          defiPositions: newDefiState
+          defiPositions: newDefiState,
+          ...(state.result?.walletStaking && { walletStaking: state.result.walletStaking })
         }
       }
       const verifiedState = accountState[network.chainId.toString()]
 
       this.emitUpdate()
+
+      if (verifiedState) {
+        void this.#walletToken
+          .getWalletStakingShareValue({
+            chainId: network.chainId,
+            tokens: combinedTokens,
+            provider: portfolioLib.provider
+          })
+          .then((walletStaking) => {
+            if (
+              !walletStaking ||
+              this.#state[account.addr]?.[network.chainId.toString()] !== verifiedState ||
+              !verifiedState.result
+            ) {
+              return
+            }
+
+            verifiedState.result.walletStaking = walletStaking
+            this.emitUpdate()
+          })
+          .catch((error) => {
+            const walletStakingError =
+              error instanceof Error
+                ? error
+                : new Error('Unable to update the WALLET staking conversion rate.')
+            this.emitError({
+              level: 'silent',
+              message: 'Unable to update the WALLET staking conversion rate.',
+              error: walletStakingError
+            })
+          })
+      }
 
       // Fire-and-forget: verify the just-fetched balances against Colibri without
       // blocking the portfolio update (balances are already emitted above). The

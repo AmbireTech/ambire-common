@@ -757,7 +757,9 @@ const getSwapSponsorship = ({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   providerId,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  isBridge
+  isBridge,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  feePercent
 }: {
   isErc4337Enabled: boolean
   hasConvinienceFee: boolean
@@ -767,6 +769,7 @@ const getSwapSponsorship = ({
   feeTokenDecimals: number | undefined
   providerId: string | undefined
   isBridge: boolean
+  feePercent: number
 }):
   | {
       nativePrice: number
@@ -785,7 +788,8 @@ const getSwapSponsorship = ({
   //   !fromAmountInUsd ||
   //   !feeTokenPriceInUsd ||
   //   !feeTokenDecimals ||
-  //   (providerId === 'uniswap' && isBridge)
+  //   (providerId === 'uniswap' && isBridge) ||
+  //   feePercent === 0
   // )
   //   return undefined
   // return {
