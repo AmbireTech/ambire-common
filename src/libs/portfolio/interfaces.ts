@@ -421,6 +421,8 @@ export type PortfolioNetworkResult = CommonResultProps &
     walletStaking?: {
       shareValue: bigint
       updatedAt: number
+      /** The xWALLET shares committed to a pending unstake, which can no longer be migrated. */
+      lockedShares?: bigint
     }
     lastExternalApiUpdateData?: {
       lastUpdate: number
