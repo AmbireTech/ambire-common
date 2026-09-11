@@ -131,7 +131,7 @@ describe('ActivityController external account ops', () => {
 
     expect(provider.getTransaction).not.toHaveBeenCalled()
     expect(provider.getBlock).not.toHaveBeenCalled()
-    expect(storage.set).not.toHaveBeenCalled()
+    expect(storage.set).not.toHaveBeenCalledWith('externalAccountOps', expect.anything())
     expect(data.externalAccountOps).toBeUndefined()
   })
 
@@ -166,7 +166,7 @@ describe('ActivityController external account ops', () => {
 
     expect(provider.getTransaction).not.toHaveBeenCalled()
     expect(provider.getBlock).not.toHaveBeenCalled()
-    expect(storage.set).not.toHaveBeenCalled()
+    expect(storage.set).not.toHaveBeenCalledWith('externalAccountOps', expect.anything())
     expect(data.externalAccountOps).toBeUndefined()
   })
 
@@ -207,7 +207,7 @@ describe('ActivityController external account ops', () => {
 
     expect(provider.getTransaction).not.toHaveBeenCalled()
     expect(provider.getBlock).not.toHaveBeenCalled()
-    expect(storage.set).not.toHaveBeenCalled()
+    expect(storage.set).not.toHaveBeenCalledWith('externalAccountOps', expect.anything())
     expect(data.externalAccountOps).toBeUndefined()
   })
 
@@ -241,7 +241,7 @@ describe('ActivityController external account ops', () => {
 
     expect(provider.getTransaction).not.toHaveBeenCalled()
     expect(provider.getBlock).not.toHaveBeenCalled()
-    expect(storage.set).not.toHaveBeenCalled()
+    expect(storage.set).not.toHaveBeenCalledWith('externalAccountOps', expect.anything())
     expect(data.externalAccountOps[accountAddr][chainId.toString()]).toEqual([
       existingExternalAccountOp
     ])

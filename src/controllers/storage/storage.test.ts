@@ -25,7 +25,8 @@ const ALL_MIGRATION_KEYS = [
   'cleanUpEmailVaultStorage',
   'fixSelectedAccountDismissedBannerIdsType',
   'migrateDappsAddConnectionSources',
-  'migrateDomainsCacheToNames'
+  'migrateDomainsCacheToNames',
+  'indexSentToHistoryFromAccountsOps'
 ]
 
 // Wraps a memory store and counts how many times each key is read and how many
