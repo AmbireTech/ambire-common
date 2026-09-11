@@ -10,6 +10,7 @@ import {
 
 import { allowedFallbackHandlers, allowedMulticallContracts } from '../../../../consts/safe'
 import { AccountOp, isSafeRejectionCall } from '../../../accountOp/accountOp'
+import { decodeMultiSend } from '../../../safe/helpers'
 import {
   HumanizerCallModule,
   HumanizerVisualization,
@@ -52,6 +53,9 @@ const setupAbi = parseAbi([
 const execTransactionAbi = parseAbi([
   'function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) payable returns (bool)'
 ])
+const multiSendAbi = parseAbi(['function multiSend(bytes transactions)'])
+// shared recursion-depth guard for both nested `setup` hooks and nested `multiSend` batches,
+// so a maliciously self-referential payload can't recurse getSafeHumanization indefinitely
 const MAX_SAFE_SETUP_HOOK_DEPTH = 4
 
 export const shouldDisplaySafeDelegateCallWarning = (
@@ -337,6 +341,44 @@ export const getSafeHumanization = (
         getAddress(newVerifier)
       )
     )
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
+
+  if (selector === toFunctionSelector(multiSendAbi[0])) {
+    fullVisualization.push(getAction('Batch of transactions'))
+
+    let decodedTransactions: ReturnType<typeof decodeMultiSend> = []
+    try {
+      const { args } = decodeFunctionData({ abi: multiSendAbi, data: padCallData(data, 1) })
+      const [transactions] = args
+      decodedTransactions = decodeMultiSend(transactions)
+    } catch {
+      decodedTransactions = []
+    }
+
+    decodedTransactions.forEach((innerCall) => {
+      // a delegatecall leg runs attacker-controlled code directly in the Safe's own storage,
+      // so it must be flagged the same way a top-level delegatecall would be, even though it's
+      // hidden a level deeper inside this batch
+      warnings.push(...getDelegateCallWarning(innerCall.operation, innerCall.to))
+
+      const innerHumanization = getSafeHumanization(
+        safeAddr,
+        innerCall.to,
+        innerCall.value,
+        innerCall.data,
+        setupHookDepth + 1
+      )
+
+      if (innerHumanization?.visuals?.length) {
+        fullVisualization.push(getBreak(), ...innerHumanization.visuals)
+      }
+      if (innerHumanization?.warnings) warnings.push(...innerHumanization.warnings)
+    })
+
     return {
       visuals: fullVisualization,
       warnings
