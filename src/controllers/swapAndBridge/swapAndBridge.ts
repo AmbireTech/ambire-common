@@ -128,6 +128,7 @@ type SwapAndBridgeErrorType = {
 }
 
 const isSwapAndBridge = (route: string | undefined) => route === 'swap-and-bridge'
+const COW_SWAP_PROVIDER_ID = 'cowswap'
 
 const STATUS_WRAPPED_METHODS = {
   addToTokenByAddress: 'INITIAL'
@@ -1036,9 +1037,31 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const isDisabled = this.disabledSwapProviderIds.includes(providerId)
     if (isEnabled === !isDisabled) return
 
-    this.disabledSwapProviderIds = isEnabled
-      ? this.disabledSwapProviderIds.filter((id) => id !== providerId)
-      : [...this.disabledSwapProviderIds, providerId]
+    await this.#setDisabledSwapProviderIds(
+      isEnabled
+        ? this.disabledSwapProviderIds.filter((id) => id !== providerId)
+        : [...this.disabledSwapProviderIds, providerId]
+    )
+  }
+
+  /** Restricts routes to CoW Swap or restores all available swap providers. */
+  async setMevProtectionEnabled(isEnabled: boolean) {
+    if (!this.swapProviders.some(({ id }) => id === COW_SWAP_PROVIDER_ID)) return
+
+    const disabledSwapProviderIds = isEnabled
+      ? this.swapProviders.filter(({ id }) => id !== COW_SWAP_PROVIDER_ID).map(({ id }) => id)
+      : []
+
+    await this.#setDisabledSwapProviderIds(disabledSwapProviderIds)
+  }
+
+  async #setDisabledSwapProviderIds(disabledSwapProviderIds: string[]) {
+    const hasSameDisabledProviders =
+      disabledSwapProviderIds.length === this.disabledSwapProviderIds.length &&
+      disabledSwapProviderIds.every((id) => this.disabledSwapProviderIds.includes(id))
+    if (hasSameDisabledProviders) return
+
+    this.disabledSwapProviderIds = disabledSwapProviderIds
     const providerSettingsUpdateId = ++this.#swapProviderSettingsUpdateId
     this.#cachedSupportedChains = { lastFetched: 0, data: [] }
     this.#toTokenList = {}

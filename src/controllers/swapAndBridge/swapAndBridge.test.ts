@@ -455,6 +455,50 @@ describe('SwapAndBridge Controller', () => {
     await expect(storageCtrl.get('disabledSwapProviderIds', [])).resolves.toEqual([])
     unsubscribe()
   })
+  test('should enable only CoW Swap when MEV protection is enabled', async () => {
+    jest.spyOn(socketAPIMock, 'getProvidersInfo').mockReturnValue([
+      { id: 'socket', name: 'Socket' },
+      { id: 'uniswap', name: 'Uniswap' },
+      { id: 'cowswap', name: 'CoW Swap' }
+    ])
+    const persistedStorage = new StorageController(produceMemoryStore())
+    const controller = buildSwapAndBridgeController(persistedStorage)
+    const sessionId = 'mev-protection-test'
+
+    await controller.initForm(sessionId)
+    controller.unloadScreen(sessionId, true)
+    await controller.setSwapProviderEnabled('cowswap', false)
+    await controller.setMevProtectionEnabled(true)
+
+    expect(controller.getDisabledSwapProviderIds()).toEqual(['socket', 'uniswap'])
+    await expect(persistedStorage.get('disabledSwapProviderIds', [])).resolves.toEqual([
+      'socket',
+      'uniswap'
+    ])
+
+    await controller.setSwapProviderEnabled('uniswap', true)
+
+    expect(controller.getDisabledSwapProviderIds()).toEqual(['socket'])
+
+    await controller.setMevProtectionEnabled(true)
+    await controller.setMevProtectionEnabled(false)
+
+    expect(controller.getDisabledSwapProviderIds()).toEqual([])
+    await expect(persistedStorage.get('disabledSwapProviderIds', [])).resolves.toEqual([])
+  })
+  test('should ignore MEV protection when CoW Swap is unavailable', async () => {
+    const persistedStorage = new StorageController(produceMemoryStore())
+    const controller = buildSwapAndBridgeController(persistedStorage)
+    const sessionId = 'mev-protection-without-cow-test'
+
+    await controller.initForm(sessionId)
+    controller.unloadScreen(sessionId, true)
+    await controller.setSwapProviderEnabled('socket', false)
+    await controller.setMevProtectionEnabled(true)
+
+    expect(controller.getDisabledSwapProviderIds()).toEqual(['socket'])
+    await expect(persistedStorage.get('disabledSwapProviderIds', [])).resolves.toEqual(['socket'])
+  })
   test('should ignore stale supported chains when provider settings change rapidly', async () => {
     await swapAndBridgeController.initForm('rapid-provider-toggle-test')
     await wait(0)
