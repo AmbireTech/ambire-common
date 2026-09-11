@@ -1,4 +1,4 @@
-export const COWSWAP_API_BASE_URL = 'https://api.cow.fi'
+export const COWSWAP_API_BASE_URL = 'https://partners.cow.fi'
 
 export const COWSWAP_TOKEN_LIST_URL = 'https://files.cow.fi/tokens/CowSwap.json'
 

@@ -22,6 +22,7 @@ const tokenOut = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2'
 const baseUsdc = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
 const baseWeth = '0x4200000000000000000000000000000000000006'
 const safeTokenAddress = '0x5afe3855358e112b5647b952709e6165e1c1eeee'
+const cowSwapApiKey = 'cow-swap-api-key'
 
 const makeResponse = (body: any, ok = true, status = ok ? 200 : 400) => ({
   ok,
@@ -99,7 +100,7 @@ const makeQuoteFetch = () =>
   })
 
 const makeRouteFixture = async () => {
-  const api = new CowSwapAPI({ fetch: makeQuoteFetch() as any })
+  const api = new CowSwapAPI({ fetch: makeQuoteFetch() as any, apiKey: cowSwapApiKey })
   return (await api.quote(makeQuoteParams())).routes[0]!
 }
 
@@ -132,14 +133,14 @@ const makeEthFlowQuoteParams = () =>
   })
 
 const makeEthFlowRouteFixture = async () => {
-  const api = new CowSwapAPI({ fetch: makeQuoteFetch() as any })
+  const api = new CowSwapAPI({ fetch: makeQuoteFetch() as any, apiKey: cowSwapApiKey })
   return (await api.quote(makeEthFlowQuoteParams())).routes[0]!
 }
 
 describe('CowSwapAPI', () => {
   it('supports only same-network CoW Swap routes', async () => {
     const fetch = jest.fn(async () => makeResponse({ tokens: [] }))
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     expect(api.areChainsSupported({ fromChainId: 1, toChainId: 1 })).toBe(true)
     expect(api.areChainsSupported({ fromChainId: 1, toChainId: 8453 })).toBe(false)
@@ -177,7 +178,7 @@ describe('CowSwapAPI', () => {
         ]
       })
     )
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     const tokens = await api.getToTokenList({ fromChainId: 1, toChainId: 1 })
 
@@ -197,7 +198,7 @@ describe('CowSwapAPI', () => {
 
   it('rejects malformed token-list responses', async () => {
     const fetch = jest.fn(async () => makeResponse({ tokens: null }))
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     await expect(api.getToTokenList({ fromChainId: 1, toChainId: 1 })).rejects.toThrow(
       'CoW Swap returned an unexpected token list'
@@ -206,7 +207,7 @@ describe('CowSwapAPI', () => {
 
   it('does not fetch tokens for unsupported chain pairs', async () => {
     const fetch = jest.fn()
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     await expect(api.getToTokenList({ fromChainId: 1, toChainId: 8453 })).rejects.toThrow(
       'network pair is not supported'
@@ -229,7 +230,7 @@ describe('CowSwapAPI', () => {
         ]
       })
     )
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     await expect(api.getToken({ address: safeTokenAddress, chainId: 1 })).resolves.toEqual({
       address: getAddress(safeTokenAddress),
@@ -258,7 +259,7 @@ describe('CowSwapAPI', () => {
           symbol: 'custom'
         })
       )
-    const api = new CowSwapAPI({ fetch })
+    const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
 
     await expect(api.getToken({ address: customTokenAddress, chainId: 1 })).resolves.toEqual({
       address: getAddress(customTokenAddress),
@@ -270,10 +271,19 @@ describe('CowSwapAPI', () => {
     })
     expect(fetch.mock.calls.map(([url]: [string]) => url)).toEqual([
       COWSWAP_TOKEN_LIST_URL,
-      `https://api.cow.fi/mainnet/api/v1/token/${customTokenAddress}/native_price`,
+      `https://partners.cow.fi/mainnet/api/v1/token/${customTokenAddress}/native_price`,
       'https://cena.ambire.com/api/v3/platform/1',
       `https://cena.ambire.com/api/v3/coins/ethereum/contract/${customTokenAddress}`
     ])
+    expect(fetch.mock.calls[1][1].headers).toEqual({
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-API-Key': cowSwapApiKey
+    })
+    expect(fetch.mock.calls[2][1].headers).toEqual({
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    })
   })
 
   it('does not add an unlisted token without CowSwap liquidity', async () => {
@@ -281,7 +291,7 @@ describe('CowSwapAPI', () => {
     const fetch = (jest.fn() as any)
       .mockResolvedValueOnce(makeResponse({ tokens: [] }))
       .mockResolvedValueOnce(makeResponse({}, false, 404))
-    const api = new CowSwapAPI({ fetch })
+    const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
 
     await expect(api.getToken({ address: customTokenAddress, chainId: 1 })).resolves.toBeNull()
     expect(fetch).toHaveBeenCalledTimes(2)
@@ -301,21 +311,27 @@ describe('CowSwapAPI', () => {
           symbol: 'wrong'
         })
       )
-    const api = new CowSwapAPI({ fetch })
+    const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
 
     await expect(api.getToken({ address: customTokenAddress, chainId: 1 })).resolves.toBeNull()
   })
 
   it('requests a PreSign quote, includes the Ambire fee and returns an intent route', async () => {
     const fetch = makeQuoteFetch()
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     const result = await api.quote(makeQuoteParams())
-    const [, init] = fetch.mock.calls[0]!
+    const [url, init] = fetch.mock.calls[0]!
     const request = JSON.parse((init as any).body)
     const appData = JSON.parse(request.appData)
     const route = result.routes[0]!
 
+    expect(url).toBe('https://partners.cow.fi/mainnet/api/v1/quote')
+    expect((init as any).headers).toEqual({
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'X-API-Key': cowSwapApiKey
+    })
     expect(request).toMatchObject({
       signingScheme: 'presign',
       kind: 'sell',
@@ -354,7 +370,7 @@ describe('CowSwapAPI', () => {
 
   it('builds one batchable approval plus on-chain PreSign request without posting early', async () => {
     const fetch = makeQuoteFetch()
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
     const quote = await api.quote(makeQuoteParams())
     const route = quote.routes[0]!
 
@@ -378,7 +394,7 @@ describe('CowSwapAPI', () => {
 
   it('uses the existing no-fee policy for wrap and unwrap operations', async () => {
     const fetch = makeQuoteFetch()
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     const result = await api.quote(makeQuoteParams({ isWrapOrUnwrap: true }))
     const [, init] = fetch.mock.calls[0]!
@@ -392,7 +408,7 @@ describe('CowSwapAPI', () => {
 
   it('uses the fee percentage supplied for the account', async () => {
     const fetch = makeQuoteFetch()
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     const result = await api.quote(makeQuoteParams({ feePercent: 0.25 }))
     const [, init] = fetch.mock.calls[0]!
@@ -408,7 +424,7 @@ describe('CowSwapAPI', () => {
 
   it('does not include a fee when the supplied fee percentage is zero', async () => {
     const fetch = makeQuoteFetch()
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     const result = await api.quote(makeQuoteParams({ feePercent: 0 }))
     const [, init] = fetch.mock.calls[0]!
@@ -423,7 +439,7 @@ describe('CowSwapAPI', () => {
   it('does not include a fee for fee-exempt tokens', async () => {
     const stEthAddress = '0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84'
     const fetch = makeQuoteFetch()
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     const result = await api.quote(
       makeQuoteParams({
@@ -445,7 +461,7 @@ describe('CowSwapAPI', () => {
 
   it('requests an on-chain EIP-1271 quote for a native ETH sell on Base', async () => {
     const fetch = makeQuoteFetch()
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     const result = await api.quote(makeEthFlowQuoteParams())
     const [, init] = fetch.mock.calls[0]!
@@ -479,7 +495,7 @@ describe('CowSwapAPI', () => {
 
   it('uploads AppData and builds a payable ETH Flow createOrder transaction', async () => {
     const fetch = makeQuoteFetch()
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
     const quote = await api.quote(makeEthFlowQuoteParams())
     const route = quote.routes[0]!
 
@@ -514,7 +530,7 @@ describe('CowSwapAPI', () => {
   it('waits for the order service to index a newly mined ETH Flow order', async () => {
     const route = await makeEthFlowRouteFixture()
     const fetch = jest.fn(async () => makeResponse({}, false, 404))
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     await expect(
       api.getRouteStatus({
@@ -530,7 +546,7 @@ describe('CowSwapAPI', () => {
 
   it('rejects a changed ETH Flow quote id before uploading AppData', async () => {
     const fetch = makeQuoteFetch()
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
     const quote = await api.quote(makeEthFlowQuoteParams())
     const route = quote.routes[0]!
     ;(route.rawRoute as any).order.quoteId = 8
@@ -565,7 +581,7 @@ describe('CowSwapAPI', () => {
         verified: true
       })
     })
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     await expect(api.quote(makeQuoteParams())).rejects.toThrow(
       'order details that do not match your request'
@@ -583,7 +599,7 @@ describe('CowSwapAPI', () => {
           400
         )
       )
-    const api = new CowSwapAPI({ fetch })
+    const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
 
     await expect(
       api.getRouteStatus({
@@ -603,7 +619,7 @@ describe('CowSwapAPI', () => {
       .mockResolvedValueOnce(makeResponse({}, false, 404))
       .mockResolvedValueOnce(makeResponse(route.routeId, true, 201))
       .mockResolvedValueOnce(makeResponse({ status: 'open' }))
-    const api = new CowSwapAPI({ fetch })
+    const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
 
     await expect(
       api.getRouteStatus({
@@ -622,7 +638,7 @@ describe('CowSwapAPI', () => {
     const fetch = (jest.fn() as any)
       .mockResolvedValueOnce(makeResponse({ status: 'fulfilled' }))
       .mockResolvedValueOnce(makeResponse([{ txHash: settlementTxHash }]))
-    const api = new CowSwapAPI({ fetch })
+    const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
 
     await expect(
       api.getRouteStatus({
@@ -634,13 +650,13 @@ describe('CowSwapAPI', () => {
       })
     ).resolves.toEqual({ status: 'completed', txnId: settlementTxHash })
     expect(fetch.mock.calls[1]![0]).toBe(
-      'https://api.cow.fi/mainnet/api/v2/trades?orderUid=order-uid&limit=10'
+      'https://partners.cow.fi/mainnet/api/v2/trades?orderUid=order-uid&limit=10'
     )
   })
 
   it('reports expired orders as failed intents', async () => {
     const fetch = jest.fn(async () => makeResponse({ status: 'expired' }))
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
 
     await expect(
       api.getRouteStatus({
@@ -658,7 +674,7 @@ describe('CowSwapAPI', () => {
     const fetch = (jest.fn() as any)
       .mockResolvedValueOnce(makeResponse({}, false, 404))
       .mockResolvedValueOnce(makeResponse('different-order-uid', true, 201))
-    const api = new CowSwapAPI({ fetch })
+    const api = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
 
     await expect(
       api.getRouteStatus({
@@ -673,7 +689,7 @@ describe('CowSwapAPI', () => {
 
   it('rejects a tampered route before creating transaction calldata', async () => {
     const fetch = makeQuoteFetch()
-    const api = new CowSwapAPI({ fetch: fetch as any })
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
     const quote = await api.quote(makeQuoteParams())
     const route = { ...quote.routes[0]!, routeId: `0x${'00'.repeat(56)}` } as SwapAndBridgeRoute
 

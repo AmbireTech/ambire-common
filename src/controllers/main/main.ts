@@ -240,6 +240,7 @@ export class MainController extends EventEmitter implements IMainController {
     relayerUrl,
     velcroUrl,
     liFiApiKey,
+    cowSwapApiKey,
     bungeeApiKey,
     uniswapApiKey,
     featureFlags,
@@ -255,6 +256,7 @@ export class MainController extends EventEmitter implements IMainController {
     relayerUrl: string
     velcroUrl: string
     liFiApiKey: string
+    cowSwapApiKey: string
     bungeeApiKey: string
     uniswapApiKey: string
     featureFlags: Partial<FeatureFlags>
@@ -514,7 +516,7 @@ export class MainController extends EventEmitter implements IMainController {
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
     const SocketProvider = new SocketV3API({ fetch, apiKey: bungeeApiKey })
     const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
-    const CowSwapProvider = new CowSwapAPI({ fetch })
+    const CowSwapProvider = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
       eventEmitterRegistry,
       callRelayer: this.callRelayer,

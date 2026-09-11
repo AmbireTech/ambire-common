@@ -70,14 +70,17 @@ export class CowSwapAPI implements SwapProvider {
     'Content-Type': 'application/json'
   }
 
+  #apiHeaders: RequestInitWithCustomHeaders['headers']
+
   #requestTimeoutMs = 15000
 
   isHealthy: boolean | null = null
 
   supportedChains: SwapProvider['supportedChains'] = null
 
-  constructor({ fetch }: { fetch: Fetch }) {
+  constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
     this.#fetch = fetch
+    this.#apiHeaders = { ...this.#headers, 'X-API-Key': apiKey }
   }
 
   async updateHealth() {
@@ -212,7 +215,7 @@ export class CowSwapAPI implements SwapProvider {
 
     const nativePriceResponse = await this.#fetchWithTimeout(
       this.#getApiUrl(chainId, `/token/${normalizedAddress}/native_price`),
-      { headers: this.#headers }
+      { headers: this.#apiHeaders }
     )
     if (nativePriceResponse.status === 404) return null
     await this.#parseResponse(
@@ -334,7 +337,7 @@ export class CowSwapAPI implements SwapProvider {
     }
     const response = await this.#fetchWithTimeout(this.#getApiUrl(fromChainId, '/quote'), {
       method: 'POST',
-      headers: this.#headers,
+      headers: this.#apiHeaders,
       body: JSON.stringify(quoteRequest)
     })
     const quoteResponse = await this.#parseResponse<CowSwapQuoteResponse>(
@@ -622,7 +625,7 @@ export class CowSwapAPI implements SwapProvider {
 
   async #getOrder(chainId: number, orderUid: string): Promise<CowSwapOrderResponse | null> {
     const response = await this.#fetchWithTimeout(this.#getApiUrl(chainId, `/orders/${orderUid}`), {
-      headers: this.#headers
+      headers: this.#apiHeaders
     })
     if (response.status === 404) return null
 
@@ -637,7 +640,7 @@ export class CowSwapAPI implements SwapProvider {
       this.#getApiUrl(chainId, `/app_data/${appDataHash}`),
       {
         method: 'PUT',
-        headers: this.#headers,
+        headers: this.#apiHeaders,
         body: JSON.stringify({ fullAppData })
       }
     )
@@ -667,7 +670,7 @@ export class CowSwapAPI implements SwapProvider {
 
     const response = await this.#fetchWithTimeout(this.#getApiUrl(chainId, '/orders'), {
       method: 'POST',
-      headers: this.#headers,
+      headers: this.#apiHeaders,
       body: JSON.stringify(rawRoute.order)
     })
 
@@ -709,7 +712,7 @@ export class CowSwapAPI implements SwapProvider {
     const params = new URLSearchParams({ orderUid, limit: '10' })
     const response = await this.#fetchWithTimeout(
       this.#getApiUrl(chainId, `/trades?${params.toString()}`, 'v2'),
-      { headers: this.#headers }
+      { headers: this.#apiHeaders }
     )
     const trades = await this.#parseResponse<CowSwapTrade[]>(
       response,
