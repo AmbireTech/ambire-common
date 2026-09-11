@@ -187,6 +187,18 @@ import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
 export { FeeSpeed, noStateUpdateStatuses, SigningStatus }
 export type { SpeedCalc, Status }
 
+/**
+ * How many reestimates run at the normal interval before the loop slows down,
+ * assuming the user left the request open without acting on it.
+ */
+const REESTIMATES_BEFORE_SLOWING_DOWN = 10
+
+/** Each slowed-down reestimate waits this much longer than the previous one. */
+const SLOWED_DOWN_REESTIMATE_STEP = 10000
+
+/** After this many reestimates the loop gives up and stops refetching. */
+export const MAX_REESTIMATES = 20
+
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
   customGasPrices?: GasSpeeds
@@ -1589,7 +1601,9 @@ export class SignAccountOpController
     // the time as the user might just have closed the popup of the extension
     // in a ready-to-estimate state, resulting in meaningless requests
     const waitTime =
-      this.#reestimateCounter < 10 ? ESTIMATE_UPDATE_INTERVAL : 10000 * this.#reestimateCounter
+      this.#reestimateCounter < REESTIMATES_BEFORE_SLOWING_DOWN
+        ? ESTIMATE_UPDATE_INTERVAL
+        : SLOWED_DOWN_REESTIMATE_STEP * this.#reestimateCounter
 
     // Update the timeout for the next run
     this.#simulateAndEstimateOrSimulateInterval.updateTimeout({ timeout: waitTime })
@@ -1598,10 +1612,15 @@ export class SignAccountOpController
       ? this.#simulateAndEstimate()
       : this.estimation.estimate(this.accountOp))
 
-    if (this.#reestimateCounter >= 20) {
-      this.#simulateAndEstimateOrSimulateInterval.stop()
-      this.#gasPriceInterval.stop()
-      this.#stopRefetching = true
+    // Asking again cannot change the outcome, so there is nothing left to wait
+    // for. Changing the calls or hitting retry starts the loop over.
+    if (this.estimation.hasPermanentFailure()) {
+      this.#stopIntervals()
+      return
+    }
+
+    if (this.#reestimateCounter >= MAX_REESTIMATES) {
+      this.#stopIntervals()
     }
 
     this.#reestimateCounter += 1
@@ -1639,7 +1658,10 @@ export class SignAccountOpController
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async retry(method: 'simulate' | 'estimate') {
     this.bundlerSwitcher.cleanUp()
-    this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+    // Resuming instead of only restarting the interval, because refetching may
+    // have been stopped by the give-up counter. A restart alone would be undone
+    // by the interval's own #stopRefetching check on its first run.
+    this.#resumeIntervals({ haveCallsChanged: true })
   }
 
   async enableErc4337AndReestimate() {
@@ -1951,8 +1973,8 @@ export class SignAccountOpController
 
     if (isInTheMiddleOfSigning || isDone) return
 
-    // if we have an estimation error, set the state so and return
-    if (this.estimation.error) {
+    // Set to EstimationError if not retrying
+    if (this.estimation.error && !this.estimation.isRetryingFailure()) {
       this.status = { type: SigningStatus.EstimationError }
       this.emitUpdate()
       return
