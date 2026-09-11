@@ -17,13 +17,7 @@ import { isPortfolioGasTankResult } from '../../libs/portfolio/helpers'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { getIsViewOnly } from '../../utils/accounts'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { EstimationFailureKind, EstimationStatus } from './types'
-
-type EstimationFailure = {
-  /** Shown to the user as the reason the transaction could not be prepared. */
-  message: string
-  kind: EstimationFailureKind
-}
+import { EstimationFailure, EstimationFailureKind, EstimationStatus } from './types'
 
 /** User-facing reasons an estimation attempt could not produce a result. */
 export const ESTIMATION_FAILURES: Record<
@@ -416,7 +410,7 @@ export class EstimationController extends EventEmitter {
 
     if (!this.isInitialized()) return []
 
-    if (this.isRetryingFailure() && !this.estimation) return errors
+    if (this.isRetryingFailure() && !this.estimation) return []
 
     if (this.error) {
       let code = ''

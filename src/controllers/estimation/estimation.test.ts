@@ -3,6 +3,7 @@ import { ZeroAddress } from 'ethers'
 import { beforeEach, describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
+import { networks as predefinedNetworks } from '../../consts/networks'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
@@ -13,6 +14,7 @@ import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { getEstimation } from '../../libs/estimate/estimate'
 import { FeePaymentOption, FullEstimation } from '../../libs/estimate/interfaces'
+import { TokenResult } from '../../libs/portfolio'
 import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { ESTIMATION_FAILURES, EstimationController } from './estimation'
 import { EstimationFailureKind, EstimationStatus } from './types'
@@ -27,31 +29,49 @@ const getEstimationMock = getEstimation as jest.MockedFunction<typeof getEstimat
 const ACCOUNT_ADDR = '0x1111111111111111111111111111111111111111'
 const CHAIN_ID = 1n
 
-const account = {
+const ACCOUNT_BALANCE = 10n ** 18n
+
+const account: Account = {
   addr: ACCOUNT_ADDR,
   associatedKeys: [ACCOUNT_ADDR],
   initialPrivileges: [],
   creation: null,
   preferences: { label: 'Account', pfp: ACCOUNT_ADDR }
-} as Account
+}
 
-const network = {
-  chainId: CHAIN_ID,
-  name: 'Ethereum',
+/**
+ * Ethereum with the relayer, the bundler and 7702 turned off, so the account
+ * stays a plain EOA and `estimate` has only the provider path to take.
+ */
+const network: Network = {
+  ...predefinedNetworks.find((net) => net.chainId === CHAIN_ID)!,
   has7702: false,
   hasRelayer: false,
-  erc4337: { hasBundlerSupport: false }
-} as Network
+  erc4337: { enabled: false, hasPaymaster: false, hasBundlerSupport: false }
+}
 
-const accountState = {
-  isEOA: true,
-  isSmarterEoa: false,
+const accountState: AccountOnchainState = {
+  accountAddr: ACCOUNT_ADDR,
   isDeployed: true,
+  eoaNonce: 0n,
   nonce: 0n,
-  importedAccountKeys: []
-} as unknown as AccountOnchainState
+  erc4337Nonce: 0n,
+  associatedKeys: [ACCOUNT_ADDR],
+  importedAccountKeys: [],
+  balance: ACCOUNT_BALANCE,
+  isEOA: true,
+  isErc4337Enabled: false,
+  isErc4337Nonce: false,
+  isV2: false,
+  currentBlock: 21000000n,
+  isSmarterEoa: false,
+  delegatedContract: null,
+  delegatedContractName: null,
+  threshold: 1,
+  updatedAt: Date.now()
+}
 
-const accountOp = {
+const accountOp: AccountOp = {
   id: 'account-op-1',
   accountAddr: ACCOUNT_ADDR,
   chainId: CHAIN_ID,
@@ -62,22 +82,34 @@ const accountOp = {
   gasLimit: null,
   signature: null,
   gasFeePayment: null
-} as unknown as AccountOp
+}
 
-const nativeFeeOption = {
-  availableAmount: 10n ** 18n,
+const nativeToken: TokenResult = {
+  symbol: 'ETH',
+  name: 'Ether',
+  decimals: 18,
+  address: ZeroAddress,
+  chainId: CHAIN_ID,
+  amount: ACCOUNT_BALANCE,
+  priceIn: [],
+  marketDataIn: [],
+  flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: true, isFeeToken: true }
+}
+
+const nativeFeeOption: FeePaymentOption = {
+  availableAmount: ACCOUNT_BALANCE,
   paidBy: ACCOUNT_ADDR,
   gasUsed: 21000n,
   addedNative: 0n,
-  token: { address: ZeroAddress, symbol: 'ETH', flags: { onGasTank: false, isFeeToken: true } }
-} as unknown as FeePaymentOption
+  token: nativeToken
+}
 
-const successfulEstimation = {
+const successfulEstimation: FullEstimation = {
   provider: { gasUsed: 21000n, feePaymentOptions: [nativeFeeOption] },
   ambire: new Error('not a smart account'),
   bundler: null,
   flags: {}
-} as FullEstimation
+}
 
 /**
  * Builds a controller whose dependencies all behave, so each test can break
@@ -386,14 +418,14 @@ describe('EstimationController', () => {
     })
 
     test('a permanent failure takes it away', async () => {
-      const networks = [network]
-      const controller = getController({ networks: { networks } })
+      const enabledNetworks = [network]
+      const controller = getController({ networks: { networks: enabledNetworks } })
 
       await controller.estimate(accountOp)
       expect(controller.status).toBe(EstimationStatus.Success)
 
       // The network is turned off while the request is still open
-      networks.length = 0
+      enabledNetworks.length = 0
       await controller.estimate(accountOp)
 
       expect(controller.estimation).toBeNull()

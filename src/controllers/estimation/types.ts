@@ -15,3 +15,10 @@ export enum EstimationFailureKind {
   /** Asking again cannot change the outcome, so the loop stops. */
   Permanent = 'permanent'
 }
+
+/** Why an estimation attempt could not produce a result. */
+export type EstimationFailure = {
+  /** Shown to the user as the reason the transaction could not be prepared. */
+  message: string
+  kind: EstimationFailureKind
+}

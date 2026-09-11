@@ -4001,7 +4001,7 @@ describe('reestimation loop', () => {
         providerEstimation: { gasUsed: 25000n, feePaymentOptions },
         flags: {},
         updatedAt: Date.now()
-      } as any,
+      },
       loopGasPrices,
       false
     )
