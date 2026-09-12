@@ -309,20 +309,23 @@ export class MainController extends EventEmitter implements IMainController {
       },
       onReady: async () => {
         await this.providers.init({ networks: this.networks.allNetworks })
-      }
+      },
+      featureFlags: this.featureFlags
     })
 
     this.providers = new ProvidersController({
       eventEmitterRegistry,
       storage: this.storage,
       getNetworks: () => this.networks.allNetworks,
+      featureFlags: this.featureFlags,
       sendUiMessage: this.ui.message.sendUiMessage
     })
     this.verification = new VerificationController({
       eventEmitterRegistry,
       networks: this.networks,
       fetch: this.fetch,
-      velcroUrl
+      velcroUrl,
+      featureFlags: this.featureFlags
     })
     this.accounts = new AccountsController(
       this.storage,
@@ -339,7 +342,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.#updateIsOffline.bind(this),
       relayerUrl,
       this.fetch,
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      this.featureFlags
     )
     this.autoLogin = new AutoLoginController(
       this.storage,
@@ -440,6 +444,7 @@ export class MainController extends EventEmitter implements IMainController {
       externalSignerControllers: this.#externalSignerControllers,
       relayerUrl,
       fetch: this.fetch,
+      featureFlags: this.featureFlags,
       sendUiMessage: this.ui.message.sendUiMessage,
       /**
        * callback that gets triggered as a finalization step of adding new
@@ -463,7 +468,8 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       storage: this.storage,
       addressBook: this.addressBook,
-      ui: this.ui
+      ui: this.ui,
+      featureFlags: this.featureFlags
     })
     this.dapps = new DappsController({
       eventEmitterRegistry,
@@ -473,7 +479,8 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       phishing: this.phishing,
       ui: this.ui,
-      selectedAccount: this.selectedAccount
+      selectedAccount: this.selectedAccount,
+      featureFlags: this.featureFlags
     })
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.signMessage = new SignMessageController(
@@ -485,7 +492,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite,
       eventEmitterRegistry,
       this.dapps,
-      this.callRelayer
+      this.callRelayer,
+      this.featureFlags
     )
 
     this.activity = new ActivityController(
@@ -501,7 +509,8 @@ export class MainController extends EventEmitter implements IMainController {
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       },
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      this.featureFlags
     )
     this.transferScanner = new TransfersScannerController({
       activity: this.activity,
@@ -602,7 +611,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.contractNames = new ContractNamesController({
       eventEmitterRegistry,
-      fetch: this.fetch
+      fetch: this.fetch,
+      featureFlags: this.featureFlags
     })
 
     if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
@@ -726,6 +736,7 @@ export class MainController extends EventEmitter implements IMainController {
               externalSignerControllers: this.#externalSignerControllers,
               relayerUrl,
               fetch: this.fetch,
+              featureFlags: this.featureFlags,
               sendUiMessage: this.ui.message.sendUiMessage,
               onAddAccountsSuccessCallback: async () => {}
             }),

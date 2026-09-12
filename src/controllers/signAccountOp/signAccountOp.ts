@@ -558,11 +558,17 @@ export class SignAccountOpController
       this.#featureFlags
     )
     this.#onUpdateAfterTraceCallSuccess = onUpdateAfterTraceCallSuccess
-    this.gasPrice = new GasPriceController(network, provider, this.baseAccount, () => ({
-      estimation: this.estimation,
-      readyToSign: this.readyToSign,
-      stopRefetching: this.#stopRefetching
-    }))
+    this.gasPrice = new GasPriceController(
+      network,
+      provider,
+      this.baseAccount,
+      () => ({
+        estimation: this.estimation,
+        readyToSign: this.readyToSign,
+        stopRefetching: this.#stopRefetching
+      }),
+      this.#featureFlags
+    )
     this.#shouldSimulate = shouldSimulate
 
     this.#onBroadcastSuccess = onBroadcastSuccess
@@ -1073,11 +1079,15 @@ export class SignAccountOpController
   async #applyDescriptorFirstHumanization(humanizationId: number) {
     await this.applyDescriptorFirstHumanization({
       humanizationId,
-      fetchDescriptor: () =>
-        fetchErc7730DescriptorsForAccountOp(this.accountOp, {
+      fetchDescriptor: async () => {
+        await this.#featureFlags.initialLoadPromise
+
+        return fetchErc7730DescriptorsForAccountOp(this.accountOp, {
           callRelayer: this.#callRelayer,
-          provider: this.provider
-        }),
+          provider: this.provider,
+          isClearSigningEnabled: this.#featureFlags.isFeatureEnabled('clearSigning')
+        })
+      },
       applyDescriptorHumanization: (erc7730Descriptors, currentHumanizationId) =>
         this.#setErc7730Humanization(currentHumanizationId, erc7730Descriptors),
       applyFallbackHumanization: (currentHumanizationId) =>
@@ -1512,7 +1522,8 @@ export class SignAccountOpController
       const feeTokenHasPrice = this.feeSpeeds[identifier]?.every((speed) => !!speed.amountUsd)
       const feeTokenPriceUnavailableWarning = getFeeTokenPriceUnavailableWarning(
         !!this.hasSpeeds(identifier),
-        !!feeTokenHasPrice
+        !!feeTokenHasPrice,
+        this.#featureFlags.isFeatureEnabled('tokenPrices')
       )
 
       // push the warning only if the txn is not sponsored

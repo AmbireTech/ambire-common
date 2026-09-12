@@ -1,7 +1,7 @@
 import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { getSafeDelegateCallWarning } from './helper'
+import { getFeeTokenPriceUnavailableWarning, getSafeDelegateCallWarning } from './helper'
 
 const buildSafeTxFixture = (
   overrides: Partial<SafeMultisigTransactionResponse>
@@ -81,5 +81,22 @@ describe('getSafeDelegateCallWarning', () => {
 
   test('does not warn when accountOp.safeTx is not set', () => {
     expect(getSafeDelegateCallWarning(accountOp)).toBeNull()
+  })
+})
+
+describe('getFeeTokenPriceUnavailableWarning', () => {
+  test('warns when fee speeds exist but their USD prices are unavailable', () => {
+    expect(getFeeTokenPriceUnavailableWarning(true, false, true)?.id).toBe(
+      'feeTokenPriceUnavailable'
+    )
+  })
+
+  test('does not warn when token prices are disabled', () => {
+    expect(getFeeTokenPriceUnavailableWarning(true, false, false)).toBeNull()
+  })
+
+  test('does not warn when fee speeds are unavailable or already have USD prices', () => {
+    expect(getFeeTokenPriceUnavailableWarning(false, false, true)).toBeNull()
+    expect(getFeeTokenPriceUnavailableWarning(true, true, true)).toBeNull()
   })
 })

@@ -2,6 +2,7 @@ import { BALANCE_GETTER, NFT_GETTER } from '../../consts/deploy'
 import { Account } from '../../interfaces/account'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { INetworksController, Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { VerificationStatuses } from '../../interfaces/verification'
@@ -59,6 +60,8 @@ export class VerificationController extends EventEmitter {
 
   #velcroUrl: string
 
+  #featureFlags?: IFeatureFlagsController
+
   initialLoadPromise?: Promise<void>
 
   statusesByChainId: VerificationStatuses = {}
@@ -83,17 +86,20 @@ export class VerificationController extends EventEmitter {
     eventEmitterRegistry,
     networks,
     fetch,
-    velcroUrl
+    velcroUrl,
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     networks: INetworksController
     fetch: Fetch
     velcroUrl: string
+    featureFlags?: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
     this.#networks = networks
     this.#fetch = fetch
     this.#velcroUrl = velcroUrl
+    this.#featureFlags = featureFlags
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -145,7 +151,9 @@ export class VerificationController extends EventEmitter {
           // contract-creation calls. The actual verifier calls are routed to
           // deployed getter contracts through GetOptions.deployless below.
           { ...network, rpcNoStateOverride: true },
-          this.#velcroUrl
+          this.#velcroUrl,
+          undefined,
+          () => this.#featureFlags?.isFeatureEnabled('tokenPrices') !== false
         )
       )
     }

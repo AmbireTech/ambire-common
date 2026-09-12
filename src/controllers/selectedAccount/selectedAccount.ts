@@ -298,16 +298,15 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         })
         .reduce((a, b) => (a === undefined || b === undefined ? undefined : a + b), 0)
 
-      const currentBalance = Object.entries(this.portfolio.balancePerNetwork)
-        .filter(([k]) =>
-          portfolioAccountState.projectedRewards?.result?.supportedChainIds
-            .map((n) => n.toString())
-            .includes(k)
-        )
-        .map(([, v]): number => v)
-        .reduce((a, b) => a + b, 0)
+      // there might not be supported chain ids, especially if providers are disabled
+      const supportedChainIds =
+        portfolioAccountState.projectedRewards?.result?.supportedChainIds?.map((n) => n.toString())
 
-      if (portfolioAccountState.projectedRewards) {
+      if (portfolioAccountState.projectedRewards && supportedChainIds) {
+        const currentBalance = Object.entries(this.portfolio.balancePerNetwork)
+          .filter(([chainId]) => supportedChainIds.includes(chainId))
+          .map(([, balance]): number => balance)
+          .reduce((total, balance) => total + balance, 0)
         const projectedRewardsData = getProjectedRewardsStatsAndToken(
           portfolioAccountState.projectedRewards,
           walletOrStkWalletTokenPrice,

@@ -122,6 +122,31 @@ describe('SelectedAccount Controller', () => {
     expect(selectedAccountCtrl.portfolio.totalBalance).toBeGreaterThan(0)
     expect(selectedAccountCtrl.portfolio.tokens.length).toBeGreaterThan(0)
   })
+  it('should update when projected rewards data is unavailable because privacy opt outs are disabled', async () => {
+    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
+
+    jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockReturnValue({
+      '1': {
+        isReady: true,
+        isLoading: false,
+        errors: [],
+        result: {
+          tokens: [],
+          total: { usd: 0 },
+          defiPositions: { positionsByProvider: [] }
+        }
+      },
+      projectedRewards: {
+        isReady: true,
+        isLoading: false,
+        errors: [],
+        result: {}
+      }
+    } as any)
+
+    expect(() => selectedAccountCtrl.updateSelectedAccountPortfolio()).not.toThrow()
+    expect(selectedAccountCtrl.portfolio.projectedRewardsStats).toBeNull()
+  })
   it('the portfolio controller state is not mutated when updating the selected account portfolio', async () => {
     // NOTE! THE TEST ACCOUNT MUST HAVE AAVE DEFI BORROW FOR THIS TEST
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()

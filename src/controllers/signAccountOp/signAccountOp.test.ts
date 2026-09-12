@@ -588,7 +588,8 @@ const init = async (
     fetch,
     storage: storageCtrl,
     addressBook: addressBookCtrl,
-    ui: uiCtrl
+    ui: uiCtrl,
+    featureFlags: featureFlagsCtrl
   })
   if (options?.dapps) {
     await phishing.init()
@@ -684,11 +685,17 @@ const init = async (
   estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
     ? estimationOrMock.ambireEstimation.feePaymentOptions
     : estimationOrMock.providerEstimation!.feePaymentOptions
-  const gasPriceController = new GasPriceController(network, provider, baseAccount, () => ({
-    estimation: estimationController,
-    readyToSign: true,
-    stopRefetching: false
-  }))
+  const gasPriceController = new GasPriceController(
+    network,
+    provider,
+    baseAccount,
+    () => ({
+      estimation: estimationController,
+      readyToSign: true,
+      stopRefetching: false
+    }),
+    featureFlagsCtrl
+  )
   gasPriceController.gasPrices = gasPricesOrMock
   const dappsControllerMock = {
     onUpdate: () => () => {},
@@ -708,7 +715,8 @@ const init = async (
       networks: networksCtrl,
       phishing,
       ui: uiCtrl,
-      selectedAccount: selectedAccountCtrl
+      selectedAccount: selectedAccountCtrl,
+      featureFlags: featureFlagsCtrl
     })
     await realDappsController.init()
 
