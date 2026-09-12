@@ -6,9 +6,6 @@
  * Example use-case: When fetching the portfolio for several different accounts,
  * all the requests for fetching hints and prices should be batched into single requests.
  * With this module, it's very easy to intercept and later validate the requests.
- *
- * Gotcha #1: You may wonder why we didn't use `fetch` for spying.
- * It's because we can't intercept JSON-RPC requests with `fetch`.
  * Gotcha #2: This kind of custom mocking, as implemented here, works only when we import the `http` and `https` libraries with `require`.
  */
 const http = require('http')
@@ -17,6 +14,9 @@ const https = require('https')
 // Store the original request methods
 const originalHttpRequest = http.request
 const originalHttpsRequest = https.request
+// Read when monitoring starts rather than at import time, so a test that mocks
+// `fetch` itself gets its mock back when monitoring stops
+let originalFetch: typeof globalThis.fetch | null = null
 
 // Function to start monitoring requests.
 // It returns a mutable `interceptedRequests` variable that holds all the intercepted requests.
@@ -26,7 +26,7 @@ function monitor(): any[] {
 
   // Intercept HTTP requests
   // @ts-expect-error
-  // eslint-disable-next-line no-import-assign
+
   http.request = function (...args) {
     // @ts-expect-error
     const request = originalHttpRequest.apply(this, args)
@@ -36,12 +36,20 @@ function monitor(): any[] {
 
   // Intercept HTTPS requests
   // @ts-expect-error
-  // eslint-disable-next-line no-import-assign
+
   https.request = function (...args) {
     // @ts-expect-error
     const request = originalHttpsRequest.apply(this, args)
     interceptedRequests.push({ method: 'HTTPS', url: args[0] })
     return request
+  }
+
+  // Intercept fetch requests
+  originalFetch = globalThis.fetch
+  globalThis.fetch = function (...args: Parameters<typeof globalThis.fetch>) {
+    interceptedRequests.push({ method: 'FETCH', url: args[0] })
+
+    return originalFetch!.apply(this, args)
   }
 
   return interceptedRequests
@@ -51,11 +59,16 @@ function monitor(): any[] {
 // Always invoke `stopMonitoring` after your test finishes.
 function stopMonitoring() {
   // @ts-expect-error
-  // eslint-disable-next-line no-import-assign
+
   http.request = originalHttpRequest
   // @ts-expect-error
-  // eslint-disable-next-line no-import-assign
+
   https.request = originalHttpsRequest
+
+  if (originalFetch) {
+    globalThis.fetch = originalFetch
+    originalFetch = null
+  }
 }
 
 export { monitor, stopMonitoring }
