@@ -21,9 +21,9 @@ import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
-import type { FeeSpeed } from './signAccountOp'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
+import type { FeeSpeed } from './signAccountOp'
 export type IStorageController = ControllerInterface<
   InstanceType<typeof import('../controllers/storage/storage').StorageController>
 >
@@ -64,6 +64,7 @@ export type StorageProps = {
   dappsV2: Dapp[]
   dapps: Dapp[]
   recentDapps: RecentDappEntry[]
+  disguisedAsMetaMaskDapps: string[]
   trending: {
     updatedAt: number
     tokens: TrendingToken[]
