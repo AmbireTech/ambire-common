@@ -49,7 +49,10 @@ import {
 } from '../../interfaces/ui'
 import {
   CallsUserRequest,
+  DappCallsRequestParams,
+  DappRequestQueueItem,
   OpenRequestWindowParams,
+  PendingDappPromise,
   PlainTextMessageUserRequest,
   RequestExecutionType,
   RequestPosition,
@@ -68,6 +71,7 @@ import {
   getDappUserRequestsBanners,
   getSafeMessageRequestBanners
 } from '../../libs/banners/banners'
+import { getDappIdsFromUserRequest } from '../../libs/dapps/dappRequestSpam'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getShouldSimulateInTheBackground } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
@@ -206,6 +210,25 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   #currentUserRequest: UserRequest | null = null
+
+  /**
+   * App requests that would collide with one another, waiting their turn behind the one being
+   * built, keyed by what they collide on.
+   */
+  #dappRequestQueues = new Map<string, DappRequestQueueItem[]>()
+
+  /**
+   * Requests that have been built and are about to be added. Prevents opening and closing
+   * the request window in a quick succession.
+   */
+  #userRequestsBeingAdded = 0
+
+  /**
+   * Set while the wallet is closing the request view itself. Closing it fires `windowRemoved`,
+   * which is the same event the user closing the window produces, so without this the two are
+   * indistinguishable and the apps that were waiting look like they were refused.
+   */
+  #isWalletInitiatedClose = false
 
   private shouldSimulateAccountOps = true
 
@@ -466,10 +489,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         //  Main issue: https://github.com/AmbireTech/ambire-app/issues/4771
         if (accountOpRequest?.signAccountOp.signAndBroadcastPromise) {
           // Make sure to show the error once
-          if (!hasTxInProgressErrorShown) {
-            const errorMessage =
-              'Please wait until the previous transaction is fully processed before adding a new one.'
+          const errorMessage =
+            'Please wait until the previous transaction is fully processed before adding a new one.'
 
+          // Every request turned away here is answered, however many there are - the app is
+          // waiting on a promise nobody else will ever settle. Only what the user sees is
+          // shown once, so a batch of ten does not produce ten identical toasts.
+          dappPromises.forEach((p) => {
+            p.reject(ethErrors.rpc.transactionRejected({ message: errorMessage }))
+          })
+
+          if (!hasTxInProgressErrorShown) {
             this.emitError({
               level: 'major',
               message: errorMessage,
@@ -478,16 +508,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
               )
             })
 
-            dappPromises.forEach((p) => {
-              p.reject(ethErrors.rpc.transactionRejected({ message: errorMessage }))
-            })
-
             await this.#ui.notification.create({ title: 'Rejected!', message: errorMessage })
 
             hasTxInProgressErrorShown = true
           }
 
-          return
+          continue
         }
 
         const accountStateBefore =
@@ -520,7 +546,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           })
           await this.#ui.notification.create({ title: "Couldn't Process Request", message })
 
-          return
+          continue
         }
 
         userRequestsToAdd.push(req)
@@ -536,9 +562,21 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // remove the request only if it's not a Safe req
         if (existingMessageRequest && !this.#selectedAccount.account?.safeCreation) {
           existingMessageRequest.meta.accountAddr
-          await this.rejectUserRequests('User rejected the message request', [
-            existingMessageRequest.id
-          ])
+          // Taking the old one out empties the view for as long as it takes to add the
+          // replacement below, which is not a reason to close it
+          this.#userRequestsBeingAdded += 1
+
+          try {
+            // The wallet supersedes the older request on its own, so this is not the user
+            // refusing the app and must not count towards the spam detection.
+            await this.rejectUserRequests(
+              'User rejected the message request',
+              [existingMessageRequest.id],
+              { isUserInitiated: false }
+            )
+          } finally {
+            this.#userRequestsBeingAdded -= 1
+          }
         }
 
         userRequestsToAdd.push(req)
@@ -580,6 +618,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.userRequests.push(newReq)
       }
     })
+
+    // Every request in the batch was turned away above (an unsupported payload, a transaction
+    // already being signed, an account state that could not be fetched), so there is nothing
+    // to open a view for - the ones that were turned away have already been answered.
+    if (!userRequestsToAdd.length) {
+      this.emitUpdate()
+      return
+    }
 
     const nextRequest = userRequestsToAdd[0]!
 
@@ -653,6 +699,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
+    // Don't close the request window if there are still visible requests or if a request is being added
+    if (this.visibleUserRequests.length || this.#userRequestsBeingAdded) return
+
     await this.closeRequestWindow()
   }
 
@@ -678,13 +727,23 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       try {
+        // Keep this right after the check above with no await in between, so a second request
+        // arriving now finds the open already in progress instead of starting its own.
         this.requestWindow.openWindowPromise = this.#ui.requestView
           .open({ customSize, baseWindowId })
+          .then((windowProps) => {
+            // Stays null when the request is rendered in the panel instead of a window
+            // Set here, not after the await below, so it is already recorded by the time
+            // anyone waiting on this promise wakes up and looks for it.
+            this.requestWindow.windowProps = windowProps
+
+            return windowProps
+          })
           .finally(() => {
             this.requestWindow.openWindowPromise = undefined
           })
-        // Stays null when the request is rendered in the panel instead of a window
-        this.requestWindow.windowProps = await this.requestWindow.openWindowPromise
+
+        await this.requestWindow.openWindowPromise
 
         this.emitUpdate()
       } catch (err) {
@@ -732,13 +791,21 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
-  async closeRequestWindow() {
+  /**
+   * Closes the request view and refuses whatever was still waiting in it. Pass
+   * `isUserInitiated: false` when the wallet is the one closing it (switching accounts, for
+   * example) so the apps that lose their requests are not treated as having been refused.
+   */
+  async closeRequestWindow({ isUserInitiated = true }: { isUserInitiated?: boolean } = {}) {
     await this.#awaitPendingPromises()
+
+    this.#isWalletInitiatedClose = !isUserInitiated
 
     if (!this.requestWindow.windowProps) {
       // Rendered inline (in the panel), so closing means dismissing the active request.
       // Guarded, because clearing the current request calls this method too.
-      if (this.currentUserRequest) await this.#handleRequestWindowClose()
+      if (this.currentUserRequest)
+        await this.#handleRequestWindowClose(undefined, { isUserInitiated })
 
       return
     }
@@ -759,10 +826,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (!this.requestWindow.windowProps) return
 
-    await this.#handleRequestWindowClose(
-      this.requestWindow.windowProps.id,
-      requestIdsSnapshotAtClose
-    )
+    await this.#handleRequestWindowClose(this.requestWindow.windowProps.id, {
+      requestIdsSnapshot: requestIdsSnapshotAtClose,
+      isUserInitiated
+    })
   }
 
   /**
@@ -770,8 +837,21 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * `requestIdsSnapshot` is passed by `closeRequestWindow` so the requests to reject are the
    * ones that existed when the close started, not when the close animation finished. It is
    * omitted on the `windowRemoved` event path, where the close was not initiated here.
+   * `isUserInitiated` is false when the wallet closed the view on its own behalf.
    */
-  async #handleRequestWindowClose(winId?: number, requestIdsSnapshot?: Set<UserRequest['id']>) {
+  async #handleRequestWindowClose(
+    winId?: number,
+    // `isUserInitiated` is deliberately left without a default - undefined means "the caller
+    // did not say", which is what lets the remembered flag below answer for the event path
+    {
+      requestIdsSnapshot,
+      isUserInitiated
+    }: { requestIdsSnapshot?: Set<UserRequest['id']>; isUserInitiated?: boolean } = {}
+  ) {
+    // The `windowRemoved` path has no caller to say who asked for the close, so it falls back
+    // to what the wallet recorded when it started one.
+    const isUserInitiatedClose = isUserInitiated ?? !this.#isWalletInitiatedClose
+
     const isInlineRequestClosed = winId === undefined && !this.requestWindow.windowProps
 
     if (
@@ -781,6 +861,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.currentUserRequest &&
         this.requestWindow.windowProps)
     ) {
+      // Cleared only once the close is actually going ahead, so a `windowRemoved` that turns
+      // out to be for a different window (the focus fallback swapping one) doesn't eat it.
+      this.#isWalletInitiatedClose = false
+
       // Snapshot IDs synchronously before any awaits so requests that arrive
       // during async operations below are not incorrectly bulk-rejected.
       const requestIdsSnapshotAtClose =
@@ -827,7 +911,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // For example: if the user has both a sign message and sign account op request,
         // closing the window will reject the sign message request but immediately
         // reopen the window for the sign account op request.
-        { shouldOpenNextRequest: false }
+        { shouldOpenNextRequest: false, isUserInitiated: isUserInitiatedClose }
       )
 
       this.userRequestsWaitingAccountSwitch = []
@@ -852,11 +936,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   async rejectCalls({
     callIds = [],
     activeRouteIds: paramActiveRouteIds = [],
-    errorMessage = 'User rejected the transaction request!'
+    errorMessage = 'User rejected the transaction request!',
+    isUserInitiated = true
   }: {
     callIds?: Call['id'][]
     activeRouteIds?: string[]
     errorMessage?: string
+    /**
+     * Whether the user is removing the calls. False when the wallet tears them down itself,
+     * such as when a swap and bridge route is cleaned up.
+     */
+    isUserInitiated?: boolean
   }) {
     if (!callIds.length && !paramActiveRouteIds.length) return
 
@@ -889,7 +979,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       if (!request.signAccountOp.accountOp.calls.length) {
         await this.rejectUserRequests('User rejected the transaction request.', [request.id], {
-          shouldOpenNextRequest: true
+          shouldOpenNextRequest: true,
+          isUserInitiated
         })
       } else {
         this.emitUpdate()
@@ -1053,6 +1144,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     const { kind, meta, dappPromises } = userRequest
 
+    getDappIdsFromUserRequest(userRequest).forEach((dappId) =>
+      this.#dapps.clearDappRejections(dappId)
+    )
+
     dappPromises.forEach((p) => {
       // WE SHOULD NEVER RESOLVE THE PROMISE. It should only be rejected if the user rejects the request
       // as that destroys the next request
@@ -1076,14 +1171,115 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
+  /**
+   * Counts one refusal against every app that had something in the requests the user just
+   * rejected. Deduplicated on purpose: one press of Reject is one refusal, however many
+   * requests it clears and however many promises each of them holds.
+   */
+  #recordDappRejections(userRequests: UserRequest[]) {
+    const dappIds = new Set(userRequests.flatMap((r) => getDappIdsFromUserRequest(r)))
+
+    dappIds.forEach((dappId) => this.#dapps.recordDappRejection(dappId))
+  }
+
+  /** The app whose request is on screen, or null when the wallet raised the request itself. */
+  get #currentRequestDappId(): string | null {
+    if (!this.currentUserRequest) return null
+
+    return getDappIdsFromUserRequest(this.currentUserRequest)[0] ?? null
+  }
+
+  #getVisibleRequestsFromDapp(dappId: string): UserRequest[] {
+    return this.visibleUserRequests.filter((r) => getDappIdsFromUserRequest(r).includes(dappId))
+  }
+
+  /**
+   * What the user can do about the app behind the open request, beyond refusing it: how many
+   * of its requests are queued, and whether it has been refused enough to be worth silencing.
+   * Null when the request didn't come from an app.
+   */
+  get currentRequestRejectOptions(): {
+    dappRequestsCount: number
+    canSilenceDapp: boolean
+  } | null {
+    const dappId = this.#currentRequestDappId
+    if (!dappId) return null
+
+    return {
+      dappRequestsCount: this.#getVisibleRequestsFromDapp(dappId).length,
+      canSilenceDapp: this.#dapps.shouldOfferToSilenceDapp(dappId)
+    }
+  }
+
+  /**
+   * Clears everything the app behind the open request is waiting on, and optionally ignores
+   * whatever it sends for the next minute. A transaction batch that also holds calls from
+   * another app keeps those - only this app's are dropped.
+   */
+  async rejectAllRequestsFromCurrentDapp(
+    err: string,
+    { shouldSilenceDapp = false }: { shouldSilenceDapp?: boolean } = {}
+  ) {
+    const dappId = this.#currentRequestDappId
+    if (!dappId) return
+
+    if (shouldSilenceDapp) this.#dapps.silenceDapp(dappId)
+
+    const requestsFromDapp = this.#getVisibleRequestsFromDapp(dappId)
+    const requestIdsToReject: UserRequest['id'][] = []
+    const callIdsToReject: Call['id'][] = []
+
+    requestsFromDapp.forEach((r) => {
+      if (r.kind !== 'calls') {
+        requestIdsToReject.push(r.id)
+        return
+      }
+
+      // Matched through the promise each call was raised for, the same link `rejectCalls`
+      // follows, rather than the dapp record on the call - that one is missing for an app
+      // the catalog doesn't know.
+      const promiseIdsFromDapp = new Set(
+        r.dappPromises.filter((p) => p.session?.id === dappId).map((p) => p.id)
+      )
+      const { calls } = r.signAccountOp.accountOp
+      const callIdsFromDapp = calls
+        .filter((c) => !!c.dappPromiseId && promiseIdsFromDapp.has(c.dappPromiseId))
+        .map((c) => c.id)
+
+      if (callIdsFromDapp.length === calls.length) requestIdsToReject.push(r.id)
+      else callIdsToReject.push(...callIdsFromDapp)
+    })
+
+    // Everything below is one refusal by the user, so it is counted once, here, rather than
+    // once per request the rejections underneath happen to clear.
+    this.#recordDappRejections(requestsFromDapp)
+
+    if (callIdsToReject.length)
+      await this.rejectCalls({
+        callIds: callIdsToReject,
+        errorMessage: err,
+        isUserInitiated: false
+      })
+
+    if (requestIdsToReject.length)
+      await this.rejectUserRequests(err, requestIdsToReject, { isUserInitiated: false })
+  }
+
   async rejectUserRequests(
     err: string,
     requestIds: UserRequest['id'][],
     options?: {
       shouldRemoveSwapAndBridgeRoute?: boolean
       shouldOpenNextRequest?: boolean
+      /**
+       * Whether the user is the one refusing, which is what counts against the app as spam.
+       * On by default because nearly every caller is a Reject button. Pass false wherever the
+       * wallet rejects on its own behalf - those must never make a legitimate app look hostile.
+       */
+      isUserInitiated?: boolean
     }
   ) {
+    const { isUserInitiated = true, ...removeOptions } = options || {}
     const userRequestsToReject = this.userRequests.filter((r) => requestIds.includes(r.id))
     const rejectedSwitchAccountRequestIds = userRequestsToReject
       .filter((r) => r.kind === 'switchAccount')
@@ -1091,6 +1287,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const waitingUserRequestsToReject = this.userRequestsWaitingAccountSwitch.filter((r) =>
       rejectedSwitchAccountRequestIds.includes(r.meta.switchAccountRequestId)
     )
+
+    if (isUserInitiated) this.#recordDappRejections(userRequestsToReject)
 
     userRequestsToReject.forEach((r) => {
       r.dappPromises.forEach((p) => p.reject(ethErrors.provider.userRejectedRequest<any>(err)))
@@ -1116,7 +1314,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     )
 
     await this.removeUserRequests(requestIds, {
-      ...options,
+      ...removeOptions,
       shouldSkipSafeQueueRequests: true
     })
   }
@@ -1126,7 +1324,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (type === 'dappRequest') {
       try {
-        await this.#buildUserRequestFromDAppRequest(params.request, params.dappPromise)
+        await this.#processDappRequest(params.request, params.dappPromise)
       } catch (e: any) {
         this.emitError({
           error: e,
@@ -1230,40 +1428,165 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
-  async #buildUserRequestFromDAppRequest(
-    request: DappProviderRequest,
-    dappPromise: {
-      id: string
-      session: DappProviderRequest['session']
-      resolve: (data: any) => void
-      reject: (data: any) => void
-    }
-  ) {
+  /**
+   * The one place every app request passes through, whatever brought it in - the injected
+   * provider, the mobile WebView or WalletConnect. Requests that would collide with one another
+   * are queued behind the one being built and built together; everything else builds straight
+   * through. Resolves once the request has been added (or answered on the spot), and rejects
+   * with what the app should be told, which is what `rpcFlow` turns into the RPC error.
+   */
+  async #processDappRequest(request: DappProviderRequest, dappPromise: PendingDappPromise) {
     await this.initialLoadPromise
+
+    if (this.#dapps.isDappSilenced(request.session.id)) {
+      dappPromise.reject(ethErrors.provider.userRejectedRequest<any>('User rejected the request.'))
+      return
+    }
+
     await this.#guardHWSigning(true)
 
-    let userRequest: UserRequest | null = null
-    let position: RequestPosition = 'last'
-    const kind = dappRequestMethodToRequestKind(request.method)
     const dapp = (await this.#getDapp(request.session.id)) || null
+    const key = this.#getDappRequestKey(request, dapp)
 
+    if (!key) {
+      await this.#buildDappRequest({ request, dappPromise, dapp })
+      return
+    }
+
+    await this.#enqueueDappRequest(key, { request, dappPromise, dapp })
+  }
+
+  /**
+   * What two app requests arriving at once would collide over, or null for the ones that can
+   * always be built side by side (connecting, adding a chain, watching an asset). Transactions
+   * collapse into one batch per account and chain; messages supersede one another per account.
+   * Derived from the raw payload rather than a built request, so it never throws on a malformed
+   * one - the payload is validated later, per request.
+   */
+  #getDappRequestKey(request: DappProviderRequest, dapp: Dapp | null): string | null {
+    const kind = dappRequestMethodToRequestKind(request.method)
+
+    // Always keyed, malformed payloads included, so every transaction goes through the batch
+    // and its params are validated in the one place that knows how to answer only its own app
     if (kind === 'calls') {
+      const params = request.params?.[0]
+      const chainId = params?.calls && params.chainId ? Number(params.chainId) : dapp?.chainId
+
+      return `calls:${String(params?.from).toLowerCase()}:${chainId}`
+    }
+
+    if (kind === 'message' || kind === 'typedMessage') {
+      const accountAddr = kind === 'message' ? request.params?.[1] : request.params?.[0]
+      if (!accountAddr) return null
+
+      return `${kind}:${String(accountAddr).toLowerCase()}`
+    }
+
+    return null
+  }
+
+  /**
+   * Puts the request in line behind the ones it would collide with and returns when its turn
+   * has been served. The first request in also starts the drain, so a queue is never left
+   * standing with nobody working it off.
+   */
+  #enqueueDappRequest(
+    key: string,
+    item: Pick<DappRequestQueueItem, 'request' | 'dappPromise' | 'dapp'>
+  ): Promise<void> {
+    const queue = this.#dappRequestQueues.get(key)
+
+    return new Promise<void>((resolve, reject) => {
+      const queueItem: DappRequestQueueItem = { ...item, settle: resolve, fail: reject }
+
+      if (queue) {
+        queue.push(queueItem)
+        return
+      }
+
+      this.#dappRequestQueues.set(key, [queueItem])
+      void this.#drainDappRequestQueue(key)
+    })
+  }
+
+  /**
+   * Works one queue off in batches, taking everything that has piled up while the previous
+   * batch was building. Nothing awaits between finding the queue empty and dropping it, so a
+   * request arriving at any point either joins the batch being built or starts a fresh queue.
+   */
+  async #drainDappRequestQueue(key: string) {
+    const queue = this.#dappRequestQueues.get(key)
+    if (!queue) return
+
+    try {
+      while (queue.length) {
+        const batch = queue.splice(0)
+
+        // Every item is answered inside, so this never throws - and it must not, because
+        // nothing awaits the drain.
+        await this.#buildDappRequestBatch(batch)
+      }
+    } finally {
+      // Just in case, should never happen - a queue left in the map is never drained again,
+      // so everything the app sends on this key afterwards waits forever. On the normal path
+      // the queue is already empty here and there is nothing left to answer.
+      this.#dappRequestQueues.delete(key)
+      queue.splice(0).forEach(({ fail }) => fail(ethErrors.rpc.internal()))
+    }
+  }
+
+  async #buildDappRequestBatch(batch: DappRequestQueueItem[]) {
+    // Everything in a batch is the same kind of request, so the first one decides where the
+    // whole batch goes. The guard is only here to satisfy the type - a batch is never empty.
+    const [first] = batch
+    if (!first) return
+
+    if (dappRequestMethodToRequestKind(first.request.method) === 'calls') {
+      await this.#buildDappCallsBatch(batch)
+      return
+    }
+
+    // Only the newest message is ever shown, so the older ones are turned down here. Not via
+    // `rejectUserRequests` - that needs built requests, and these were never built.
+    const superseded = batch.slice(0, -1)
+    superseded.forEach(({ dappPromise, settle }) => {
+      dappPromise.reject(
+        ethErrors.provider.userRejectedRequest<any>('User rejected the message request')
+      )
+      settle()
+    })
+
+    const last = batch[batch.length - 1]!
+
+    try {
+      await this.#buildDappRequest(last)
+      last.settle()
+    } catch (error) {
+      last.fail(error)
+    }
+  }
+
+  /**
+   * Builds every transaction in the batch into a single request, so ten fired at once cost one
+   * estimation and one simulation instead of ten. A payload that doesn't validate costs only
+   * its own app the request - the rest of the batch is built without it.
+   */
+  async #buildDappCallsBatch(batch: DappRequestQueueItem[]) {
+    const [{ request: firstRequest, dapp }] = batch as [DappRequestQueueItem]
+
+    try {
       if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
 
-      const isWalletSendCalls = !!request.params[0].calls
-      // For wallet_sendCalls (ERC-5792), use the chainId from the request params
-      // For other calls (e.g., eth_sendTransaction), fall back to the dapp's chainId
-      const requestChainId =
-        isWalletSendCalls && request.params[0].chainId
-          ? Number(request.params[0].chainId)
-          : dapp?.chainId
-
+      // Every item in the batch is for the same chain by construction - that is what they were
+      // keyed on - so the network and the account state are resolved once for all of them.
+      const requestChainId = this.#getDappCallsChainId(firstRequest, dapp)
       const network = this.#networks.networks.find(
         (n) => Number(n.chainId) === Number(requestChainId)
       )
       if (!network) {
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
+
       const accountState = await this.#accounts.getOrFetchAccountOnChainState(
         this.#selectedAccount.account.addr,
         network.chainId
@@ -1282,248 +1605,334 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         this.#featureFlags.isFeatureEnabled('erc4337'),
         this.#featureFlags.isFeatureEnabled('eip7702')
       )
-      const accountAddr = getAddress(request.params[0].from)
 
-      if (isWalletSendCalls && !request.params[0].calls.length)
-        throw ethErrors.provider.unsupportedMethod({
-          message: 'Request rejected - empty calls array not allowed!'
-        })
+      const built: { item: DappRequestQueueItem; params: DappCallsRequestParams }[] = []
 
-      let calls: AccountOp['calls'] = isWalletSendCalls
-        ? request.params[0].calls
-        : [request.params[0]]
+      batch.forEach((item) => {
+        try {
+          built.push({ item, params: this.#normalizeDappCallsRequest(item, network, baseAcc) })
+        } catch (error) {
+          item.fail(error)
+        }
+      })
 
-      if (calls.some(({ data }) => data && data.length % 2 === 1))
-        throw ethErrors.rpc.invalidParams('A call has uneven number of character in the hex data.')
-      if (calls.some(({ data }) => data && !isHex(data)))
-        throw ethErrors.rpc.invalidParams('A call has invalid data.')
+      if (!built.length) return
 
-      // we are checking if to exists, because if it does not the call is a
-      // valid contract  deployment
-      if (calls.some(({ to }) => to && !isAddress(to)))
-        throw ethErrors.rpc.invalidParams('A call has invalid "to" field ')
+      const last = built[built.length - 1]!
 
-      calls = calls.map((c) => ({
+      const userRequest = await this.#createOrUpdateCallsUserRequest({
+        calls: built.flatMap(({ params }) => params.calls),
+        // The batch shares an account and a chain; of what is left, the newest request wins,
+        // which is what merging them one by one used to end up with.
+        meta: last.params.meta,
+        dappPromises: built.map(({ params }) => params.dappPromise),
+        dappSessionId: last.item.request.session.sessionId
+      })
+
+      if (userRequest) await this.#addBuiltDappRequest(userRequest)
+
+      built.forEach(({ item }) => item.settle())
+    } catch (error) {
+      // Nothing was built, so every app in the batch is told the same thing
+      batch.forEach((item) => item.fail(error))
+    }
+  }
+
+  /**
+   * The chain a transaction request is for. `wallet_sendCalls` (ERC-5792) carries its own,
+   * everything else goes on the chain the app is connected to. Reads the payload the same
+   * defensive way the key does, so a malformed one falls back to the app's chain instead of
+   * throwing and taking the rest of the batch down with it.
+   */
+  #getDappCallsChainId(request: DappProviderRequest, dapp: Dapp | null) {
+    const params = request.params?.[0]
+
+    return params?.calls && params.chainId ? Number(params.chainId) : dapp?.chainId
+  }
+
+  /**
+   * Validates one transaction request and turns it into the calls and meta a user request is
+   * built from. Throws the RPC error the app should be told when the payload doesn't hold up.
+   */
+  #normalizeDappCallsRequest(
+    { request, dappPromise, dapp }: DappRequestQueueItem,
+    network: Network,
+    baseAcc: ReturnType<typeof getBaseAccount>
+  ): DappCallsRequestParams {
+    if (!request.params?.[0])
+      throw ethErrors.rpc.invalidParams('The transaction request has no parameters.')
+
+    const isWalletSendCalls = !!request.params[0].calls
+    const accountAddr = getAddress(request.params[0].from)
+
+    if (isWalletSendCalls && !request.params[0].calls.length)
+      throw ethErrors.provider.unsupportedMethod({
+        message: 'Request rejected - empty calls array not allowed!'
+      })
+
+    const calls: AccountOp['calls'] = isWalletSendCalls
+      ? request.params[0].calls
+      : [request.params[0]]
+
+    if (calls.some(({ data }) => data && data.length % 2 === 1))
+      throw ethErrors.rpc.invalidParams('A call has uneven number of character in the hex data.')
+    if (calls.some(({ data }) => data && !isHex(data)))
+      throw ethErrors.rpc.invalidParams('A call has invalid data.')
+
+    // we are checking if to exists, because if it does not the call is a
+    // valid contract  deployment
+    if (calls.some(({ to }) => to && !isAddress(to)))
+      throw ethErrors.rpc.invalidParams('A call has invalid "to" field ')
+
+    const paymasterService =
+      isWalletSendCalls && !!request.params[0].capabilities?.paymasterService
+        ? getPaymasterService(network.chainId, request.params[0].capabilities)
+        : getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+
+    return {
+      calls: calls.map((c) => ({
         ...c,
         data: c.data?.toLowerCase() || '0x',
         value: c.value ? getBigInt(c.value) : 0n,
         dapp: dapp ?? undefined,
         dappPromiseId: dappPromise.id
-      }))
-      const paymasterService =
-        isWalletSendCalls && !!request.params[0].capabilities?.paymasterService
-          ? getPaymasterService(network.chainId, request.params[0].capabilities)
-          : getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+      })),
+      meta: {
+        accountAddr,
+        chainId: network.chainId,
+        walletSendCallsVersion: isWalletSendCalls
+          ? (request.params[0].version ?? '1.0.0')
+          : undefined,
+        paymasterService
+      },
+      dappPromise: { ...dappPromise, meta: { isWalletSendCalls } }
+    }
+  }
 
-      const walletSendCallsVersion = isWalletSendCalls
-        ? (request.params[0].version ?? '1.0.0')
-        : undefined
+  /**
+   * Builds one app request that isn't a transaction and hands it on. Resolves without adding
+   * anything when the wallet answered the app itself, which is what auto-login does.
+   */
+  async #buildDappRequest({
+    request,
+    dappPromise,
+    dapp
+  }: Pick<DappRequestQueueItem, 'request' | 'dappPromise' | 'dapp'>) {
+    const kind = dappRequestMethodToRequestKind(request.method)
+    let userRequest: UserRequest | null = null
 
-      userRequest =
-        (await this.#createOrUpdateCallsUserRequest({
-          calls,
-          meta: {
-            accountAddr,
-            chainId: network.chainId,
-            walletSendCallsVersion,
-            paymasterService
-          },
-          dappPromises: [{ ...dappPromise, meta: { isWalletSendCalls } }],
-          dappSessionId: request.session.sessionId
-        })) ?? null
-    } else if (kind === 'message') {
-      if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
-
-      const msg = request.params
-      if (!msg) {
-        throw ethErrors.rpc.invalidRequest('No msg request to sign')
-      }
-      const msgAddress = getAddress(msg?.[1])
-
-      const network = this.#networks.networks.find(
-        (n) => Number(n.chainId) === Number(dapp?.chainId)
-      )
-
-      if (!network) {
-        throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
-      }
-
-      userRequest = {
-        id: generateUuid(),
-        kind: 'message',
-        meta: { params: { message: msg[0] }, accountAddr: msgAddress, chainId: network.chainId },
-        dappPromises: [
-          {
-            ...dappPromise,
-            session: request.session,
-            meta: {}
-          }
-        ]
-      } as PlainTextMessageUserRequest
-
-      // SIWE
-      const rawMessage = typeof msg[0] === 'string' ? msg[0] : ''
-      const parsedSiweAndStatus = AutoLoginController.getParsedSiweMessage(
-        rawMessage,
-        request.session.origin
-      )
-
-      // Handle valid and invalid SIWE messages
-      // If it's valid we want to try to auto-login the user
-      // If it's not we want to flag it to the UI to inform the user
-      if (rawMessage && parsedSiweAndStatus) {
-        const { parsedSiwe, status } = parsedSiweAndStatus
-        let autoLoginStatus: AutoLoginStatus = 'no-policy'
-
-        if (parsedSiwe.address?.toLowerCase() !== msgAddress.toLowerCase()) {
-          throw ethErrors.rpc.invalidRequest(
-            'SIWE message address does not match the requested signing address'
-          )
-        }
-
-        // Try to auto-login
-        if (status === 'valid' && parsedSiwe) {
-          try {
-            autoLoginStatus = this.#autoLogin.getAutoLoginStatus(parsedSiwe)
-
-            if (autoLoginStatus === 'active') {
-              // Sign and respond
-              const signedMessage = await this.#autoLogin.autoLogin({
-                message: rawMessage as `0x${string}`,
-                chainId: network.chainId,
-                accountAddr: msgAddress
-              })
-
-              if (!signedMessage) {
-                throw new EmittableError({
-                  message: 'Auto-login failed. Please sign the message manually.',
-                  level: 'major',
-                  error: new Error('SIWE autologin - signedMessage is null')
-                })
-              }
-
-              console.log(
-                `SIWE auto-login with dapp ${request.session.origin} and account ${msgAddress} succeeded.`
-              )
-
-              dappPromise.resolve({ hash: signedMessage.signature })
-              return
-            }
-          } catch (e: any) {
-            this.emitError({
-              error: e,
-              message: 'Auto-login failed. Please sign the message manually.',
-              level: 'major'
-            })
-          }
-        }
-
-        userRequest = {
-          ...userRequest,
-          kind: 'siwe',
-          meta: {
-            ...userRequest.meta,
-            params: {
-              ...userRequest.meta.params,
-              parsedMessage: parsedSiwe,
-              autoLoginStatus,
-              siweValidityStatus: status,
-              isAutoLoginEnabledByUser: this.#autoLogin.settings.enabled,
-              autoLoginDuration: this.#autoLogin.settings.duration
-            }
-          }
-        } as SiweMessageUserRequest
-      }
+    if (kind === 'message') {
+      userRequest = await this.#buildDappMessageRequest(request, dappPromise, dapp)
     } else if (kind === 'typedMessage') {
-      if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
-
-      const msg = request.params
-      if (!msg) {
-        throw ethErrors.rpc.invalidRequest('No msg request to sign')
-      }
-      const msgAddress = getAddress(msg?.[0])
-
-      const network = this.#networks.networks.find(
-        (n) => Number(n.chainId) === Number(dapp?.chainId)
-      )
-
-      if (!network) {
-        throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
-      }
-
-      let typedData = msg?.[1]
-
-      try {
-        typedData = parse(typedData)
-      } catch (error) {
-        console.error('Failed to parse typed data', error)
-        throw ethErrors.rpc.invalidRequest('Invalid typedData provided')
-      }
-
-      if (
-        !typedData?.types ||
-        !typedData?.domain ||
-        !typedData?.message ||
-        !typedData?.primaryType
-      ) {
-        throw ethErrors.rpc.methodNotSupported(
-          'Invalid typedData format - only typedData v4 is supported'
-        )
-      }
-
-      const domainChainId = BigInt(typedData.domain.chainId || 0)
-      if (domainChainId !== 0n && domainChainId !== network.chainId)
-        throw ethErrors.rpc.invalidRequest(
-          `The domain chainId (${typedData.domain.chainId}) does not match the current network chainId (${network.chainId})`
-        )
-      typedData.domain.chainId = network.chainId
-
-      if (!typedData.types[typedData.primaryType])
-        throw ethErrors.rpc.invalidParams(
-          'The primary data type is missing from the provided types'
-        )
-      try {
-        // we ignore the result because we only care if the func will fail
-        hashTypedData({
-          types: typedData.types,
-          primaryType: typedData.primaryType,
-          message: typedData.message,
-          domain: typedData.domain
-        })
-      } catch (e) {
-        console.error(e)
-        throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
-      }
-
-      if (isAmbireOperationTypedData(typedData)) {
-        throw ethErrors.rpc.methodNotSupported(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
-      }
-
-      userRequest = {
-        id: generateUuid(),
-        kind: 'typedMessage',
-        meta: {
-          params: {
-            types: typedData.types,
-            domain: typedData.domain,
-            message: typedData.message,
-            primaryType: typedData.primaryType
-          },
-          accountAddr: msgAddress,
-          chainId: typedData.domain.chainId
-        },
-        dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
-      } as TypedMessageUserRequest
+      userRequest = this.#buildDappTypedMessageRequest(request, dappPromise, dapp)
     } else {
+      // Transactions never reach this point - they are always keyed and always batched
       userRequest = {
         id: generateUuid(),
         kind,
         meta: { params: request.params },
         dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
-      }
+      } as UserRequest
     }
 
     if (!userRequest) return
+
+    await this.#addBuiltDappRequest(userRequest)
+  }
+
+  /**
+   * A `personal_sign` request as either a plain message or a SIWE one. Returns null when the
+   * message was signed by auto-login and the app already has its answer.
+   */
+  async #buildDappMessageRequest(
+    request: DappProviderRequest,
+    dappPromise: PendingDappPromise,
+    dapp: Dapp | null
+  ): Promise<UserRequest | null> {
+    if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
+
+    const msg = request.params
+    if (!msg) {
+      throw ethErrors.rpc.invalidRequest('No msg request to sign')
+    }
+    const msgAddress = getAddress(msg?.[1])
+
+    const network = this.#networks.networks.find((n) => Number(n.chainId) === Number(dapp?.chainId))
+
+    if (!network) {
+      throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
+    }
+
+    const userRequest = {
+      id: generateUuid(),
+      kind: 'message',
+      meta: { params: { message: msg[0] }, accountAddr: msgAddress, chainId: network.chainId },
+      dappPromises: [
+        {
+          ...dappPromise,
+          session: request.session,
+          meta: {}
+        }
+      ]
+    } as PlainTextMessageUserRequest
+
+    // SIWE
+    const rawMessage = typeof msg[0] === 'string' ? msg[0] : ''
+    const parsedSiweAndStatus = AutoLoginController.getParsedSiweMessage(
+      rawMessage,
+      request.session.origin
+    )
+
+    // Handle valid and invalid SIWE messages
+    // If it's valid we want to try to auto-login the user
+    // If it's not we want to flag it to the UI to inform the user
+    if (!rawMessage || !parsedSiweAndStatus) return userRequest
+
+    const { parsedSiwe, status } = parsedSiweAndStatus
+    let autoLoginStatus: AutoLoginStatus = 'no-policy'
+
+    if (parsedSiwe.address?.toLowerCase() !== msgAddress.toLowerCase()) {
+      throw ethErrors.rpc.invalidRequest(
+        'SIWE message address does not match the requested signing address'
+      )
+    }
+
+    // Try to auto-login
+    if (status === 'valid' && parsedSiwe) {
+      try {
+        autoLoginStatus = this.#autoLogin.getAutoLoginStatus(parsedSiwe)
+
+        if (autoLoginStatus === 'active') {
+          // Sign and respond
+          const signedMessage = await this.#autoLogin.autoLogin({
+            message: rawMessage as `0x${string}`,
+            chainId: network.chainId,
+            accountAddr: msgAddress
+          })
+
+          if (!signedMessage) {
+            throw new EmittableError({
+              message: 'Auto-login failed. Please sign the message manually.',
+              level: 'major',
+              error: new Error('SIWE autologin - signedMessage is null')
+            })
+          }
+
+          console.log(
+            `SIWE auto-login with dapp ${request.session.origin} and account ${msgAddress} succeeded.`
+          )
+
+          dappPromise.resolve({ hash: signedMessage.signature })
+          return null
+        }
+      } catch (e: any) {
+        this.emitError({
+          error: e,
+          message: 'Auto-login failed. Please sign the message manually.',
+          level: 'major'
+        })
+      }
+    }
+
+    return {
+      ...userRequest,
+      kind: 'siwe',
+      meta: {
+        ...userRequest.meta,
+        params: {
+          ...userRequest.meta.params,
+          parsedMessage: parsedSiwe,
+          autoLoginStatus,
+          siweValidityStatus: status,
+          isAutoLoginEnabledByUser: this.#autoLogin.settings.enabled,
+          autoLoginDuration: this.#autoLogin.settings.duration
+        }
+      }
+    } as SiweMessageUserRequest
+  }
+
+  #buildDappTypedMessageRequest(
+    request: DappProviderRequest,
+    dappPromise: PendingDappPromise,
+    dapp: Dapp | null
+  ): UserRequest {
+    if (!this.#selectedAccount.account) throw ethErrors.rpc.internal()
+
+    const msg = request.params
+    if (!msg) {
+      throw ethErrors.rpc.invalidRequest('No msg request to sign')
+    }
+    const msgAddress = getAddress(msg?.[0])
+
+    const network = this.#networks.networks.find((n) => Number(n.chainId) === Number(dapp?.chainId))
+
+    if (!network) {
+      throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
+    }
+
+    let typedData = msg?.[1]
+
+    try {
+      typedData = parse(typedData)
+    } catch (error) {
+      console.error('Failed to parse typed data', error)
+      throw ethErrors.rpc.invalidRequest('Invalid typedData provided')
+    }
+
+    if (!typedData?.types || !typedData?.domain || !typedData?.message || !typedData?.primaryType) {
+      throw ethErrors.rpc.methodNotSupported(
+        'Invalid typedData format - only typedData v4 is supported'
+      )
+    }
+
+    const domainChainId = BigInt(typedData.domain.chainId || 0)
+    if (domainChainId !== 0n && domainChainId !== network.chainId)
+      throw ethErrors.rpc.invalidRequest(
+        `The domain chainId (${typedData.domain.chainId}) does not match the current network chainId (${network.chainId})`
+      )
+    typedData.domain.chainId = network.chainId
+
+    if (!typedData.types[typedData.primaryType])
+      throw ethErrors.rpc.invalidParams('The primary data type is missing from the provided types')
+    try {
+      // we ignore the result because we only care if the func will fail
+      hashTypedData({
+        types: typedData.types,
+        primaryType: typedData.primaryType,
+        message: typedData.message,
+        domain: typedData.domain
+      })
+    } catch (e) {
+      console.error(e)
+      throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
+    }
+
+    if (isAmbireOperationTypedData(typedData)) {
+      throw ethErrors.rpc.methodNotSupported(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
+    }
+
+    return {
+      id: generateUuid(),
+      kind: 'typedMessage',
+      meta: {
+        params: {
+          types: typedData.types,
+          domain: typedData.domain,
+          message: typedData.message,
+          primaryType: typedData.primaryType
+        },
+        accountAddr: msgAddress,
+        chainId: typedData.domain.chainId
+      },
+      dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
+    } as TypedMessageUserRequest
+  }
+
+  /** Puts a built app request in front of the user, or behind an account switch if it needs one. */
+  async #addBuiltDappRequest(userRequest: UserRequest) {
+    const [firstDappPromise] = userRequest.dappPromises
+
+    let position: RequestPosition = 'last'
 
     if (userRequest.kind !== 'calls') {
       const otherUserRequestFromSameDapp = this.userRequests.find((r) =>
@@ -1534,7 +1943,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         )
       )
 
-      if (!otherUserRequestFromSameDapp && !!dappPromise.session.origin) {
+      if (!otherUserRequestFromSameDapp && !!firstDappPromise?.session.origin) {
         position = 'first'
       }
     }
@@ -2432,7 +2841,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       ...super.toJSON(),
       banners: this.banners,
       visibleUserRequests: this.visibleUserRequests,
-      currentUserRequest: this.currentUserRequest
+      currentUserRequest: this.currentUserRequest,
+      currentRequestRejectOptions: this.currentRequestRejectOptions
     }
   }
 }

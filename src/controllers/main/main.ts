@@ -871,7 +871,9 @@ export class MainController extends EventEmitter implements IMainController {
     // call closeRequestWindow while still on the currently selected account to allow proper
     // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
     if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
-      await this.requests.closeRequestWindow()
+      // Switching accounts is the user acting on the wallet, not refusing the apps that
+      // happened to be waiting, so it must not count towards the spam detection.
+      await this.requests.closeRequestWindow({ isUserInitiated: false })
     }
     const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
       ({ kind }) => kind === 'swapAndBridge'
@@ -1985,7 +1987,10 @@ export class MainController extends EventEmitter implements IMainController {
     ) as CallsUserRequest | undefined
 
     if (userRequest) {
-      await this.requests.rejectCalls({ activeRouteIds: [activeRouteId] })
+      await this.requests.rejectCalls({
+        activeRouteIds: [activeRouteId],
+        isUserInitiated: false
+      })
     } else {
       this.swapAndBridge.removeActiveRoute(activeRouteId)
     }
