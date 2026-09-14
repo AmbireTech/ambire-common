@@ -159,17 +159,30 @@ export type InternalKey = {
     createdAt: number | null
     fromSeedId?: string
     /**
-     * Whether this address provably has nothing on chain from before `createdAt` - its birthday.
+     * Whether this address has nothing on chain from before `createdAt` - its birthday. Anything
+     * that scans the chain for the address can then start there instead of at the chain's origin.
      *
-     * True only for an address derived from a recovery phrase this wallet generated itself: the
-     * phrase did not exist before that moment, so neither did the address, and anything that scans
-     * the chain for it can start at `createdAt` instead of at the beginning of the chain.
+     * True when the address came from a recovery phrase this wallet generated itself, which makes
+     * the claim provable - the phrase did not exist before that moment, so neither did the
+     * address. Also true, but only assumed, for keys that predate the wallet dating them at all;
+     * `isBirthdayAssumed` tells the two apart.
      *
-     * Absent means unknown, which is not the same as false - an imported phrase can be any age, and
-     * so can the addresses derived from it. A scan must then cover everything, because a start
-     * block chosen too late would silently miss the user's own funds.
+     * False means the age is unknown and a scan has to cover everything: an imported phrase can be
+     * any age, and so can the addresses under it.
+     *
+     * Absent means the key has not been through `backfillKeyBirthdays` yet, which happens once on
+     * load and leaves nothing absent afterwards.
      */
     hasNoPriorHistory?: boolean
+    /**
+     * Whether `hasNoPriorHistory` was assumed rather than established.
+     *
+     * The assumption holds for every address created before the wallet started dating them, since
+     * nothing that scans by birthday existed then either. It can be wrong in one narrow way: a
+     * recovery phrase already used in another wallet that derives the same addresses, whose
+     * earlier activity a scan starting at the assumed birthday would not see.
+     */
+    isBirthdayAssumed?: boolean
     [key: string]: any
   }
 }

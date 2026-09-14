@@ -31,6 +31,7 @@ import {
   migrateStoredPayloadsToGCM,
   SCRYPT_PARAMS
 } from '@/libs/keystore/keystore'
+import { backfillKeyBirthdays } from '@/libs/keystore/keyBirthday'
 
 import EmittableError from '../../classes/EmittableError'
 import {
@@ -171,6 +172,29 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     })
   }
 
+  /**
+   * Writes back the birthdays assumed on load.
+   *
+   * Persisted rather than recomputed each time so the assumed date is fixed at the first run
+   * instead of moving forward with every startup - a birthday that drifted would put a note made
+   * today out of reach of tomorrow's scan.
+   *
+   * A failed write is not a failed load: the keys are already usable, and the only cost is that
+   * the next startup assumes the birthdays again. Reported silently so it still reaches Sentry
+   * without telling the user their keystore is broken.
+   */
+  async #persistAssumedKeyBirthdays(keys: StoredKey[]) {
+    try {
+      await this.#storage.set('keystoreKeys', keys)
+    } catch (e: any) {
+      this.emitError({
+        message: 'Could not save when this account was created.',
+        level: 'silent',
+        error: e instanceof Error ? e : new Error('keystore: failed to persist key birthdays')
+      })
+    }
+  }
+
   async #load() {
     try {
       const [keystoreSeeds, keyStoreUid, keystoreKeys] = await Promise.all([
@@ -186,7 +210,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         // of the extension supported only one saved seed which lacked id and label props.
         return { ...s, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' }
       })
-      this.#keystoreKeys = keystoreKeys
+      // Dates the keys stored before the wallet recorded birthdays.
+      const { keys: datedKeys, hasBackfilled } = backfillKeyBirthdays(keystoreKeys)
+      this.#keystoreKeys = datedKeys
+      if (hasBackfilled) await this.#persistAssumedKeyBirthdays(datedKeys)
     } catch (e: any) {
       this.emitError({
         message:
