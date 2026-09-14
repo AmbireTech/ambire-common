@@ -1,9 +1,14 @@
+import { Account } from './account'
 import { ControllerInterface } from './controller'
 import { Hex } from './hex'
 
 export type ISafeController = ControllerInterface<
   InstanceType<typeof import('../controllers/safe/safe').SafeController>
 >
+
+export interface SafeAccountByOwner extends Account {
+  deployedOn: bigint[]
+}
 
 export interface SafeTx {
   to: Hex

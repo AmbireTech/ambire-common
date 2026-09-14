@@ -25,6 +25,7 @@ import {
   zealyMessageModule
 } from './messageModules'
 import { fallbackShortPlaintext } from './messageModules/fallbackShortPlaintext'
+import { dedupeWarnings } from './utils'
 
 // from least generic to most generic
 // the final visualization and warnings are from the first triggered module
@@ -79,16 +80,21 @@ const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOpt
         const originalCall = accountOp.calls[index]
         if (!originalCall) return call
 
-        return (
-          humanizeCallWithErc7730(
-            originalCall,
-            accountOp.chainId,
-            accountOp.accountAddr,
-            resolvedDescriptor,
-            0,
-            options.nativeAssetSymbol
-          ) || call
+        const erc7730Call = humanizeCallWithErc7730(
+          originalCall,
+          accountOp.chainId,
+          accountOp.accountAddr,
+          resolvedDescriptor,
+          options.nativeAssetSymbol
         )
+        if (!erc7730Call) return call
+
+        // The descriptor builds its result from the raw call, so it starts with no warnings. The
+        // warnings the modules found are still about the same call, so keep them both.
+        return {
+          ...erc7730Call,
+          warnings: dedupeWarnings([...(call.warnings || []), ...(erc7730Call.warnings || [])])
+        }
       } catch (error) {
         console.error(error)
         return call
@@ -103,11 +109,6 @@ const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): I
   const message = parse(stringify(_message))
 
   try {
-    if (options?.erc7730Descriptor) {
-      const erc7730Message = humanizeMessageWithErc7730(message, options.erc7730Descriptor)
-      if (erc7730Message) return erc7730Message
-    }
-
     // runs all modules and takes the first non empty array
     const { fullVisualization, warnings, canHideDropdownArrow } =
       humanizerTMModules
@@ -120,6 +121,18 @@ const humanizeMessage = (_message: Message, options?: HumanizeMessageOptions): I
           }
         })
         .filter((p) => p.fullVisualization?.length)[0] || {}
+
+    if (options?.erc7730Descriptor) {
+      const erc7730Message = humanizeMessageWithErc7730(message, options.erc7730Descriptor)
+      if (erc7730Message) {
+        // The descriptor builds its result from the raw message, so it starts with no warnings.
+        // The warnings humanizerTMModules found are still about the same message, so keep both.
+        return {
+          ...erc7730Message,
+          warnings: dedupeWarnings([...(warnings || []), ...(erc7730Message.warnings || [])])
+        }
+      }
+    }
 
     return { ...message, fullVisualization, warnings, canHideDropdownArrow }
   } catch (error) {

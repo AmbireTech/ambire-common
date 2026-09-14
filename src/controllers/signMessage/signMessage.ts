@@ -84,9 +84,9 @@ export class SignMessageController
 
   #callRelayer?: BindedRelayerCall
 
-  // Bumped on every init()/reset(); a signing op captures it before its first
-  // await and re-checks after each, so a request replacing the message mid-sign
-  // can't be signed under the previous approval.
+  // Bumped when init() starts and whenever reset() is called; async operations
+  // capture it and re-check after each await, so obsolete requests can't update
+  // controller state or be signed under a previous approval.
   #signingGeneration = 0
 
   signer?: KeystoreSignerInterface
@@ -188,14 +188,16 @@ export class SignMessageController
     // displaying the prev sign message request.
     if (this.isInitialized) this.reset()
 
+    const initializationGeneration = ++this.#signingGeneration
+
     await this.#accounts.initialLoadPromise
+    if (this.#signingGeneration !== initializationGeneration) return
 
     if (
       ['message', 'typedMessage', 'authorization-7702', 'siwe'].includes(messageToSign.content.kind)
     ) {
       if (dapp) this.dapp = dapp
       this.messageToSign = messageToSign
-      this.#signingGeneration += 1
       this.signed = signed || []
       this.signatures = signatures || []
       this.isInitialized = true
@@ -219,6 +221,8 @@ export class SignMessageController
         this.#account.addr,
         this.network.chainId
       )
+      if (this.#signingGeneration !== initializationGeneration) return
+
       if (!accountState) {
         if (this.network.disabled) {
           throw new Error(
@@ -262,10 +266,10 @@ export class SignMessageController
   }
 
   reset() {
+    this.#signingGeneration += 1
     if (!this.isInitialized) return
 
     this.#onAbortOperation()
-    this.#signingGeneration += 1
     this.isInitialized = false
     this.dapp = null
     this.messageToSign = null

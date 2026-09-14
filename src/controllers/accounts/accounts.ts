@@ -199,6 +199,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
     this.emitUpdate()
 
+    let readyNetworks = 0
+
     await Promise.all(
       networksToUpdate.map(async (network) => {
         try {
@@ -260,9 +262,14 @@ export class AccountsController extends EventEmitter implements IAccountsControl
           })
           this.#updateProviderIsWorking(network.chainId, false)
         } finally {
+          readyNetworks++
           this.accountStatesLoadingState[network.chainId.toString()] = undefined
         }
-        this.emitUpdate()
+
+        const areAllReady = readyNetworks === networksToUpdate.length
+        // Prevent spamming updates as users may have dozens of networks and updating
+        // every tick causes a lot of rerenders in the UI
+        this.emitUpdate({ throttleMs: areAllReady ? 0 : 200 })
       })
     )
 
@@ -302,7 +309,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.accounts = getUniqueAccountsArray(nextAccounts)
     await this.#storage.set('accounts', this.accounts)
 
-    this.#onAddAccounts(accounts)
+    // we add newAccountsNotAddedYet first so the extension selects
+    // a newly imported account first
+    this.#onAddAccounts([...newAccountsNotAddedYet, ...newAccountsAlreadyAdded])
 
     // update the state of new accounts. Otherwise, the user needs to restart his extension
     // eslint-disable-next-line @typescript-eslint/no-floating-promises

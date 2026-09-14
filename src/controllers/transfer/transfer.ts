@@ -23,7 +23,7 @@ import {
   ITransferController,
   TransferUpdate
 } from '../../interfaces/transfer'
-import { IUiController, View } from '../../interfaces/ui'
+import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
@@ -283,6 +283,14 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.propagateUpdate(forceEmit)
     })
 
+    // isRecipientAddressBlacklisted reads the phishing list, which loads from storage and refreshes
+    // in the background, so the UI has to be told when the answer may have changed
+    this.#phishing.onUpdate((forceEmit) => {
+      if (!this.#currentTransferSessionId || !isAddress(this.recipientAddress)) return
+
+      this.propagateUpdate(forceEmit)
+    }, 'transfer-recipient-phishing-check')
+
     this.emitUpdate()
   }
 
@@ -296,7 +304,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     const isSameMode = this.isTopUp === nextIsTopUp
     const hasNoSearchParams = Object.keys(searchParams || {}).length === 0
 
-    const shouldKeepExistingForm = isFormInitialized && isSameMode && hasNoSearchParams
+    const shouldKeepExistingForm =
+      isFormInitialized && isSameMode && hasNoSearchParams && !isSidePanelView(view)
 
     if (shouldKeepExistingForm) {
       if (!this.areDefaultsSet) {
@@ -571,7 +580,8 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.isRecipientAddressFirstTimeSend,
         this.lastSentToRecipientAt,
         this.addressPoisoningMatch,
-        this.recipientDomainAddressChange
+        this.recipientDomainAddressChange,
+        this.isRecipientAddressBlacklisted
       )
     }
 
@@ -609,6 +619,16 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   get recipientAddress() {
     return getAddressFromAddressState(this.addressState)
+  }
+
+  /**
+   * Whether the recipient is in the locally stored phishing list. The list is kept up to date by
+   * the PhishingController, so the lookup needs no network request.
+   */
+  get isRecipientAddressBlacklisted() {
+    if (!isAddress(this.recipientAddress)) return false
+
+    return this.#phishing.getAddressBlacklistedStatus(this.recipientAddress) === 'BLACKLISTED'
   }
 
   async update({
@@ -1125,7 +1145,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#selectedAccount.account,
       accountState,
       network,
-      this.#featureFlags.isFeatureEnabled('erc4337')
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
     const accountOp = {
       id: generateUuid(),
@@ -1246,6 +1267,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     // Always reset the session id
     this.#currentTransferSessionId = null
 
+    // Popup keeps in-progress forms when closed; side panel should start fresh on reopen.
     if (this.hasPersistedState && !isNavigateOut && viewType === 'popup') return
 
     this.reset({ destroyAccountOp: true })
@@ -1287,6 +1309,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal,
       hasPersistedState: this.hasPersistedState,
       isRecipientAddressViewOnly: this.isRecipientAddressViewOnly,
+      isRecipientAddressBlacklisted: this.isRecipientAddressBlacklisted,
       amountAdjustmentWarning: this.amountAdjustmentWarning
     }
   }

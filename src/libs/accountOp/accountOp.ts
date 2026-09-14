@@ -1,4 +1,4 @@
-import { AbiCoder, getBytes, Interface, keccak256, toBeHex } from 'ethers'
+import { AbiCoder, getBytes, Interface, keccak256, toBeHex, ZeroAddress } from 'ethers'
 
 import { IrCall } from '@/libs/humanizer/interfaces'
 
@@ -115,6 +115,47 @@ export interface AccountOp {
   }
   /** Session ID of the dApp that initiated this accountOp, used for phishing context checks. */
   dappSessionId?: string
+}
+
+export const getAccountOpNonce = (accountOp: AccountOp): bigint | null => {
+  const nonce = accountOp.safeTx?.nonce ?? accountOp.nonce
+
+  return nonce === null || typeof nonce === 'undefined' ? null : BigInt(nonce)
+}
+
+/**
+ * A Safe "on-chain rejection" is a transaction that only exists to occupy a pending Safe
+ * nonce, replacing whatever real transaction was queued at it. Safe (the protocol) has no
+ * dedicated rejection type - it's just a no-op call: a single call with no value and no data,
+ * sent either to the zero address or to the Safe itself, executed as a regular call (not a
+ * delegate call).
+ *
+ * This is the source of truth for that check, sharable by anything that has the raw call data
+ * (a fetched Safe transaction, a built `AccountOp`, etc.) without needing a full `AccountOp`.
+ *
+ * @param calls the calls of the transaction, e.g. `accountOp.calls`
+ * @param accountAddr the Safe account the transaction belongs to
+ * @param operation the Safe `operation` value of the transaction (0 = Call, 1 = DelegateCall);
+ * pass the `operation` from the fetched Safe transaction, or omit it for a transaction built
+ * locally, which is always a plain Call
+ */
+export function isSafeRejectionCall(
+  calls: Call[],
+  accountAddr: string,
+  operation: number = 0
+): boolean {
+  if (calls.length !== 1) return false
+  if (!calls[0]) return false
+  const [call] = calls
+
+  return (
+    operation === 0 &&
+    !!call.to &&
+    (call.to.toLowerCase() === ZeroAddress ||
+      call.to.toLowerCase() === accountAddr.toLowerCase()) &&
+    call.value === 0n &&
+    call.data === '0x'
+  )
 }
 
 /**

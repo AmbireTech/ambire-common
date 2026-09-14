@@ -2,13 +2,13 @@ import { Interface, ZeroAddress } from 'ethers'
 
 import { describe, it } from '@jest/globals'
 
-import { embeddedAmbireOperationHumanizer } from '.'
+import { EMBEDDED_OPERATION_WARNING_CODE, embeddedAmbireOperationHumanizer } from '.'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { Call } from '../../../accountOp/types'
 import { AmbireAccount } from '../../const/abis/AmbireAccount'
 import { HumanizerMeta, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations, compareVisualizations } from '../../testHelpers'
-import { getAction, getAddressVisualization, getLabel } from '../../utils'
+import { getAction, getAddressVisualization, getLabel, getWarning } from '../../utils'
 
 const accountAddr = '0x46C0C59591EbbD9b7994d10efF172bFB9325E240'
 const accountAddr2 = '0xB2125Ae51ee5Ff91D5da625b9F1Fbf5F2941DD27'
@@ -148,8 +148,12 @@ describe('Hidden ambire operations', () => {
     const irCalls = [secondLayerTryCatch].map((c) =>
       embeddedAmbireOperationHumanizer(accountOp, c, {} as HumanizerMeta)
     )
-    compareHumanizerVisualizations(irCalls, [
-      [getAction('Allow multiple actions from this account!', { warning: true })]
+    compareHumanizerVisualizations(irCalls, [[getAction('Allow multiple actions from this account')]])
+    expect(irCalls[0]!.warnings).toEqual([
+      getWarning(
+        'This lets the app perform several actions using your account, one after another, without asking you to confirm each one separately. Only proceed if you trust it',
+        EMBEDDED_OPERATION_WARNING_CODE
+      )
     ])
   })
 })

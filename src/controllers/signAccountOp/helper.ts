@@ -29,11 +29,16 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
 function getSignificantBalanceDecreaseWarning(
   portfolioState: AccountState,
   chainId: bigint,
-  traceCallDiscoveryStatus: TraceCallDiscoveryStatus
+  discoveryStatus: TraceCallDiscoveryStatus
 ): Warning | null {
   const portfolioNetworkState = portfolioState?.[chainId.toString()]
 
-  if (portfolioNetworkState && portfolioNetworkState.result && !portfolioNetworkState.isLoading) {
+  // calculate this only after traceCall has ended
+  const isDiscoveryOver =
+    discoveryStatus === TraceCallDiscoveryStatus.Failed ||
+    discoveryStatus === TraceCallDiscoveryStatus.Done
+
+  if (portfolioNetworkState && portfolioNetworkState.result && isDiscoveryOver) {
     const totalInUSD = getAccountPortfolioTotal(
       portfolioState,
       ['rewards', 'gasTank', 'projectedRewards'],
@@ -73,22 +78,7 @@ function getSignificantBalanceDecreaseWarning(
 
     if (!hasSignificantBalanceDecrease) return null
 
-    // We wait for the discovery process (main.traceCall) to complete before showing WARNINGS.significantBalanceDecrease.
-    // This is important because, in the case of a SWAP to a new token, the new token is not yet part of the portfolio,
-    // which could incorrectly trigger a significant balance drop warning.
-    // To prevent this, we ensure the discovery process is completed first.
-    if (traceCallDiscoveryStatus === TraceCallDiscoveryStatus.Done) {
-      return WARNINGS.significantBalanceDecrease
-    }
-
-    // If the discovery process takes too long (more than 2 seconds) or fails,
-    // we still show a warning, but we indicate that our balance decrease assumption may be incorrect.
-    if (
-      traceCallDiscoveryStatus === TraceCallDiscoveryStatus.Failed ||
-      traceCallDiscoveryStatus === TraceCallDiscoveryStatus.SlowPendingResponse
-    ) {
-      return WARNINGS.possibleBalanceDecrease
-    }
+    return WARNINGS.significantBalanceDecrease
   }
 
   return null

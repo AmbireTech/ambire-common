@@ -4,7 +4,7 @@ import { geckoIdMapper } from '../../consts/coingecko'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { fetchWithTimeout } from '../../utils/fetch'
-import { paginate } from '../portfolio/pagination'
+import { paginate } from '../../utils/paginate'
 
 const CENA_API_URL = 'https://cena.ambire.com'
 const BATCH_LIMIT = 40

@@ -82,5 +82,4 @@ describe('getSafeDelegateCallWarning', () => {
   test('does not warn when accountOp.safeTx is not set', () => {
     expect(getSafeDelegateCallWarning(accountOp)).toBeNull()
   })
-
 })

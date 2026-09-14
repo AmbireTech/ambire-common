@@ -75,6 +75,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   #externalSignerControllers: ExternalSignerControllers
 
+  #sendUiMessage: (params: {}) => void
+
   initParams: {
     keyIterator: KeyIterator | null
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
@@ -129,6 +131,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   accountsLoading: boolean = false
 
+  smartAccountsLoading: boolean = false
+
   linkedAccountsLoading: boolean = false
 
   linkedAccountsError: string = ''
@@ -161,10 +165,13 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    */
   #findAndSetLinkedAccountsAbortController?: AbortController
 
+  #setPageRequestId = 0
+
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
   #addAccountsOnKeystoreReady: {
     accounts?: SelectedAccountForImport[]
+    requestId?: string
   } | null = null
 
   constructor({
@@ -176,6 +183,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     externalSignerControllers,
     relayerUrl,
     fetch,
+    sendUiMessage,
     onAddAccountsSuccessCallback
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
@@ -186,6 +194,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     externalSignerControllers: ExternalSignerControllers
     relayerUrl: string
     fetch: Fetch
+    sendUiMessage: (params: {}) => void
     onAddAccountsSuccessCallback: () => Promise<void>
   }) {
     super(eventEmitterRegistry)
@@ -195,6 +204,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#providers = providers
     this.#externalSignerControllers = externalSignerControllers
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
+    this.#sendUiMessage = sendUiMessage
     this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
 
     this.#controllerSubscriptions.push(
@@ -215,7 +225,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#controllerSubscriptions.push(
       this.#keystore.onUpdate(() => {
         if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
-          this.addAccounts(this.#addAccountsOnKeystoreReady.accounts)
+          this.addAccounts(
+            this.#addAccountsOnKeystoreReady.accounts,
+            this.#addAccountsOnKeystoreReady.requestId
+          )
           this.#addAccountsOnKeystoreReady = null
         }
       })
@@ -242,7 +255,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           (acc) => isSmartAccount(acc.account) && acc.slot === derivedAccount.slot
         )
 
-        let accountsToReturn: Omit<AccountOnPage, 'importStatus'>[] = []
+        let accountsToReturn: DerivedAccount[] = []
 
         if (!isSmartAccount(derivedAccount.account)) {
           accountsToReturn.push(derivedAccount)
@@ -320,9 +333,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       return prioritizeAccountType(a) - prioritizeAccountType(b) || a.slot - b.slot
     })
 
-    const accountsWithStatus = mergedAccounts.map((acc) => ({
+    const accountsWithStatus: AccountOnPage[] = mergedAccounts.map((acc) => ({
       ...acc,
-      importStatus: getAccountImportStatus({
+      ...getAccountImportStatus({
         account: acc.account,
         alreadyImportedAccounts: this.#alreadyImportedAccounts,
         keys: this.#keystore.keys,
@@ -340,7 +353,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (nextUnusedSmartAcc) {
       accountsWithStatus.push({
         ...nextUnusedSmartAcc,
-        importStatus: getAccountImportStatus({
+        ...getAccountImportStatus({
           account: nextUnusedSmartAcc.account,
           alreadyImportedAccounts: this.#alreadyImportedAccounts,
           keys: this.#keystore.keys,
@@ -470,7 +483,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     return this.keyIterator?.subType || this.initParams?.keyIterator?.subType
   }
 
+  get derivableHdPathTemplates() {
+    return this.keyIterator?.derivableHdPathTemplates
+  }
+
   async reset(resetInitParams: boolean = true) {
+    this.#setPageRequestId++
     await this.addAccountsPromise
     // Abort any ongoing findAndSetLinkedAccounts operation
     if (this.#findAndSetLinkedAccountsAbortController) {
@@ -487,6 +505,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
     this.pageError = null
 
+    this.accountsLoading = false
+    this.smartAccountsLoading = false
     this.linkedAccountsLoading = false
     this.linkedAccountsError = ''
     this.addAccountsStatus = 'INITIAL'
@@ -707,11 +727,13 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       this.page = page
     } else if (page === this.page && this.#derivedAccounts.length) return
 
+    const requestId = ++this.#setPageRequestId
     this.page = page
     this.pageError = null
     this.#derivedAccounts = []
     this.#linkedAccounts = []
     this.accountsLoading = true
+    this.smartAccountsLoading = false
     this.networksWithAccountStateError = []
     this.linkedAccountsLoading = false
     this.emitUpdate()
@@ -719,39 +741,99 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (page <= 0) {
       this.pageError = `Unexpected page was requested (page ${page}). Please try again or contact support for help.`
       this.page = DEFAULT_PAGE // fallback to the default (initial) page
+      this.accountsLoading = false
       this.emitUpdate()
       return
     }
 
     try {
-      const derivedAccounts = await this.#deriveAccounts()
+      const derivedAccounts = await this.#deriveAccounts({
+        shouldRetrieveSmartAccountIndices: false
+      })
 
-      if (this.page !== page) return
+      if (this.#isSetPageRequestCancelled(requestId, page)) return
 
       this.#derivedAccounts = derivedAccounts
 
-      // The used on information is not critical. Allow the user to proceed after
-      // 1 second. It will get popuplated in the background.
-      const minWaitTimeout = setTimeout(() => {
-        if (this.page !== page) return
+      // Since v4.31.0, do not retrieve smart accounts for the private key
+      // type. That's because we can't use the common derivation offset
+      // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
+      // accounts out of the private key (with another approach - salt and
+      // extra entropy) was creating confusion.
+      //
+      // + no smart accounts for QR wallets. Reasons:
+      // - some hws sign only if the signer is imported
+      // - we are generally moving in another direction
+      const shouldRetrieveSmartAccountIndices =
+        this.keyIterator.subType !== 'private-key' && this.type !== 'qr'
+
+      if (shouldRetrieveSmartAccountIndices) {
+        // Basic accounts are ready to use while smart accounts are retrieved
+        // from their dedicated derivation indices in a second request.
+        this.accountsLoading = false
+        this.smartAccountsLoading = true
+        this.emitUpdate()
+
+        const basicAccountsUsedOnNetworksPromise = this.#getAndSetAccountsUsedOnNetworks({
+          accounts: derivedAccounts,
+          requestId,
+          page
+        })
+        const smartAccountsPromise = this.#deriveAccounts({
+          shouldRetrieveSmartAccountIndices: true
+        })
+          .then(async (smartAccounts) => {
+            if (this.#isSetPageRequestCancelled(requestId, page)) return
+
+            this.#derivedAccounts = [...this.#derivedAccounts, ...smartAccounts]
+            this.smartAccountsLoading = false
+            this.emitUpdate()
+
+            await this.#getAndSetAccountsUsedOnNetworks({
+              accounts: smartAccounts,
+              requestId,
+              page
+            })
+          })
+          .catch((error: unknown) => {
+            if (this.#isSetPageRequestCancelled(requestId, page)) return
+
+            const message =
+              'We could not finish loading smart accounts. You can still import the accounts already shown.'
+            this.smartAccountsLoading = false
+            this.emitError({
+              error: error instanceof Error ? error : new Error(message),
+              message,
+              level: 'minor',
+              sendCrashReport: !(error instanceof ExternalSignerError)
+            })
+            this.emitUpdate()
+          })
+
+        await Promise.all([basicAccountsUsedOnNetworksPromise, smartAccountsPromise])
+      } else {
+        // The used on information is not critical. Allow the user to proceed after
+        // 1 second. It will get populated in the background.
+        const minWaitTimeout = setTimeout(() => {
+          if (this.#isSetPageRequestCancelled(requestId, page)) return
+
+          this.accountsLoading = false
+          this.emitUpdate()
+        }, 1000)
+
+        await this.#getAndSetAccountsUsedOnNetworks({
+          accounts: derivedAccounts,
+          requestId,
+          page
+        })
+
+        clearTimeout(minWaitTimeout)
+
+        if (this.#isSetPageRequestCancelled(requestId, page)) return
 
         this.accountsLoading = false
         this.emitUpdate()
-      }, 1000)
-
-      const derivedAccountsWithUsedOn = await this.#getAccountsUsedOnNetworks({
-        accounts: this.#derivedAccounts,
-        page
-      })
-
-      if (this.page !== page) return
-
-      this.#derivedAccounts = derivedAccountsWithUsedOn
-
-      if (minWaitTimeout) clearTimeout(minWaitTimeout)
-
-      this.accountsLoading = false
-      this.emitUpdate()
+      }
 
       if (this.keyIterator?.type === 'internal' && this.keyIterator?.subType === 'private-key') {
         const accountsOnPageWithoutTheLinked = this.accountsOnPage.filter((acc) => !acc.isLinked)
@@ -767,14 +849,17 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         }
       }
     } catch (e: any) {
-      if (this.page !== page) return
+      if (this.#isSetPageRequestCancelled(requestId, page)) return
       const fallbackMessage = `Failed to retrieve accounts on page ${this.page}. Please try again or contact support for assistance. Error details: ${e?.message}.`
+      this.#setPageRequestId++
       this.accountsLoading = false
+      this.smartAccountsLoading = false
       this.pageError = e instanceof ExternalSignerError ? e.message : fallbackMessage
       this.emitUpdate()
+      return
     }
 
-    if (this.page !== page) return
+    if (this.#isSetPageRequestCancelled(requestId, page)) return
 
     await this.findAndSetLinkedAccounts()
   }
@@ -820,19 +905,45 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    * triggered, which uses the `readyToAdd...` properties to further set
    * the newly added accounts data (like preferences, keys and others)
    */
-  async addAccounts(accounts?: SelectedAccountForImport[]) {
-    this.addAccountsPromise = this.#addAccounts(accounts).finally(() => {
+  async addAccounts(accounts?: SelectedAccountForImport[], requestId?: string) {
+    this.addAccountsPromise = this.#addAccounts(accounts, requestId).finally(() => {
       this.addAccountsPromise = undefined
     })
-    await this.addAccountsPromise
+
+    try {
+      await this.addAccountsPromise
+    } catch (error: any) {
+      this.#replyToImportRequest(requestId, error?.message || 'Adding the accounts failed')
+
+      throw error
+    }
   }
 
-  async #addAccounts(accounts?: SelectedAccountForImport[]) {
-    if (!this.isInitialized) return this.#throwNotInitialized()
-    if (!this.keyIterator) return this.#throwMissingKeyIterator()
+  /**
+   * Replies to the UI request that triggered the import (if there is one), so the UI can
+   * await the import completing instead of watching the transient `addAccountsStatus`.
+   */
+  #replyToImportRequest(requestId?: string, error?: string) {
+    if (!requestId) return
+
+    this.#sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true })
+  }
+
+  async #addAccounts(accounts?: SelectedAccountForImport[], requestId?: string) {
+    if (!this.isInitialized) {
+      this.#replyToImportRequest(requestId, 'The account picker is not initialized')
+
+      return this.#throwNotInitialized()
+    }
+    if (!this.keyIterator) {
+      this.#replyToImportRequest(requestId, 'The account picker is missing a key iterator')
+
+      return this.#throwMissingKeyIterator()
+    }
 
     if (!this.#keystore.isReadyToStoreKeys) {
-      this.#addAccountsOnKeystoreReady = { accounts }
+      // The import resumes (and replies to the request) once the keystore is ready.
+      this.#addAccountsOnKeystoreReady = { accounts, requestId }
       return
     }
 
@@ -871,17 +982,21 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         ledger: this.#externalSignerControllers.ledger?.deviceId || '',
         trezor: this.#externalSignerControllers.trezor?.deviceId || '',
         lattice: this.#externalSignerControllers?.lattice?.deviceId || '',
-        qr: this.#externalSignerControllers.qr?.deviceId || ''
+        qr: this.#externalSignerControllers.qr?.deviceId || '',
+        nfc: this.#externalSignerControllers.nfc?.deviceId || ''
       }
 
       const deviceModels: { [key in ExternalKey['type']]: string } = {
         ledger: this.#externalSignerControllers.ledger?.deviceModel || '',
         trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
         lattice: this.#externalSignerControllers.lattice?.deviceModel || '',
-        qr: this.#externalSignerControllers.qr?.deviceModel || ''
+        qr: this.#externalSignerControllers.qr?.deviceModel || '',
+        nfc: this.#externalSignerControllers.nfc?.deviceModel || ''
       }
 
       const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || ''
+
+      const nfcWalletType = this.#externalSignerControllers.nfc?.nfcWalletType
 
       const hdPathTemplate = this.hdPathTemplate as HD_PATH_TEMPLATE_TYPE
 
@@ -906,6 +1021,11 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
               ...(keyType === 'qr'
                 ? {
                     masterFingerprint
+                  }
+                : {}),
+              ...(keyType === 'nfc'
+                ? {
+                    nfcWalletType
                   }
                 : {}),
               index,
@@ -942,6 +1062,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     await this.forceEmitUpdate()
 
     this.#updateStateWithTheLatestFromAccounts()
+
+    this.#replyToImportRequest(requestId)
 
     // reset the addAccountsStatus in the next tick to ensure the FE receives the 'SUCCESS' state
     this.addAccountsStatus = 'INITIAL'
@@ -1054,7 +1176,15 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.emitUpdate()
   }
 
-  async #deriveAccounts(): Promise<DerivedAccount[]> {
+  #isSetPageRequestCancelled(requestId: number, page: number) {
+    return requestId !== this.#setPageRequestId || page !== this.page || !this.isInitialized
+  }
+
+  async #deriveAccounts({
+    shouldRetrieveSmartAccountIndices
+  }: {
+    shouldRetrieveSmartAccountIndices: boolean
+  }): Promise<DerivedAccount[]> {
     // Should never happen, because before the #deriveAccounts method gets
     // called - there is a check if the keyIterator exists.
     if (!this.keyIterator) {
@@ -1064,52 +1194,32 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       return []
     }
 
-    const accounts: DerivedAccountWithoutNetworkMeta[] = []
-
     const startIdx = (this.page - 1) * this.pageSize
     const endIdx = (this.page - 1) * this.pageSize + (this.pageSize - 1)
-
-    const indicesToRetrieve = [
-      { from: startIdx, to: endIdx } // Indices for the basic (EOA) accounts
-    ]
-    // Since v4.31.0, do not retrieve smart accounts for the private key
-    // type. That's because we can't use the common derivation offset
-    // (SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET), and deriving smart
-    // accounts out of the private key (with another approach - salt and
-    // extra entropy) was creating confusion.
-    //
-    // + no smart accounts for QR wallets. Reasons:
-    // - some hws sign only if the signer is imported
-    // - we are generally moving in another direction
-    const shouldRetrieveSmartAccountIndices =
-      this.keyIterator.subType !== 'private-key' && this.type !== 'qr'
-    if (shouldRetrieveSmartAccountIndices) {
-      // Indices for the smart accounts.
-      indicesToRetrieve.push({
-        from: startIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
-        to: endIdx + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
-      })
-    }
-    // Combine the requests for all accounts in one call to the keyIterator.
-    // That's optimization primarily focused on hardware wallets, to reduce the
-    // number of calls to the hardware device. This is important, especially
-    // for Trezor, because it fires a confirmation popup for each call.
-    const combinedBasicAndSmartAccKeys = await this.keyIterator.retrieve(
-      indicesToRetrieve,
+    const indexOffset = shouldRetrieveSmartAccountIndices
+      ? SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
+      : 0
+    const retrievedKeys = await this.keyIterator.retrieve(
+      [{ from: startIdx + indexOffset, to: endIdx + indexOffset }],
       this.hdPathTemplate
     )
 
-    const basicAccKeys = combinedBasicAndSmartAccKeys.slice(0, this.pageSize)
-    const smartAccKeys = combinedBasicAndSmartAccKeys.slice(
-      this.pageSize,
-      combinedBasicAndSmartAccKeys.length
-    )
+    if (!shouldRetrieveSmartAccountIndices) {
+      return retrievedKeys.map((basicAccKey, index) => {
+        const slot = startIdx + index + 1
+        const account = getBasicAccount(basicAccKey, this.#alreadyImportedAccounts)
+
+        return { account, isLinked: false, slot, index: slot - 1 }
+      })
+    }
+
+    const accounts: DerivedAccountWithoutNetworkMeta[] = []
 
     const smartAccountsPromises: Promise<DerivedAccountWithoutNetworkMeta | null>[] = []
     // Replace the parallel getKeys with foreach to prevent issues with Ledger,
     // which can only handle one request at a time.
 
-    for (const [index, smartAccKey] of smartAccKeys.entries()) {
+    for (const [index, smartAccKey] of retrievedKeys.entries()) {
       const slot = startIdx + (index + 1)
       const indexWithOffset = slot - 1 + SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
 
@@ -1149,14 +1259,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     ) as DerivedAccountWithoutNetworkMeta[]
 
     accounts.push(...smartAccounts)
-
-    for (const [index, basicAccKey] of basicAccKeys.entries()) {
-      const slot = startIdx + (index + 1)
-      // The EOA (basic) account on this slot
-      const account = getBasicAccount(basicAccKey, this.#alreadyImportedAccounts)
-      const result = { account, isLinked: false, slot, index: slot - 1 }
-      accounts.push(result)
-    }
 
     return accounts
   }
@@ -1248,6 +1350,28 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     })
 
     return sortedAccountsWithNetworksArray
+  }
+
+  async #getAndSetAccountsUsedOnNetworks({
+    accounts,
+    requestId,
+    page
+  }: {
+    accounts: DerivedAccountWithoutNetworkMeta[]
+    requestId: number
+    page: number
+  }) {
+    const accountsWithUsedOn = await this.#getAccountsUsedOnNetworks({ accounts, page })
+
+    if (this.#isSetPageRequestCancelled(requestId, page)) return
+
+    const accountsWithUsedOnByAddress = new Map(
+      accountsWithUsedOn.map((account) => [account.account.addr, account])
+    )
+    this.#derivedAccounts = this.#derivedAccounts.map(
+      (account) => accountsWithUsedOnByAddress.get(account.account.addr) ?? account
+    )
+    this.emitUpdate()
   }
 
   /**
@@ -1492,7 +1616,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       selectedAccounts: this.selectedAccounts,
       addedAccountsFromCurrentSession: this.addedAccountsFromCurrentSession,
       type: this.type,
-      subType: this.subType
+      subType: this.subType,
+      derivableHdPathTemplates: this.derivableHdPathTemplates
     }
   }
 }

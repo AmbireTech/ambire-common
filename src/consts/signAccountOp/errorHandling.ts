@@ -7,7 +7,6 @@ const ERRORS = {
 const WARNINGS: Record<
   | 'significantBalanceDecrease'
   | 'unknownToken'
-  | 'possibleBalanceDecrease'
   | 'feeTokenPriceUnavailable'
   | 'v1Acc'
   | 'safeDelegateCall',
@@ -15,20 +14,14 @@ const WARNINGS: Record<
 > = {
   significantBalanceDecrease: {
     id: 'significantBalanceDecrease',
-    title: 'Significant Account Balance Decrease',
-    text: 'The transaction you are about to sign will significantly decrease your account balance. Please review the transaction details carefully.',
-    promptBefore: ['sign']
+    title: 'Significant balance decrease detected',
+    text: 'Our checks indicate this transaction may significantly reduce your account balance.',
+    secondaryText: 'May be inaccurate when moving funds to another network or providing liquidity.'
   },
   unknownToken: {
     id: 'unknownToken',
     title: 'Unknown token detected',
     text: 'The transaction you are about to sign contains an unknown token. Please review carefully, as this token may be misleading.',
-    promptBefore: ['sign']
-  },
-  possibleBalanceDecrease: {
-    id: 'possibleBalanceDecrease',
-    title: 'Significant Account Balance Decrease (Possibly Inaccurate)',
-    text: 'The transaction you are about to sign may significantly decrease your account balance. However, due to temporary issues in discovering new portfolio tokens, this information might not be fully accurate. Please review the transaction details carefully.',
     promptBefore: ['sign']
   },
   feeTokenPriceUnavailable: {
