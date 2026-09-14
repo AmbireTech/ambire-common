@@ -415,6 +415,23 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
   }
 
   /**
+   * Whether the account already stores an op carrying this txnId.
+   *
+   * A point lookup on by-txn-id, reading KEYS only: the primary key is
+   * [accountAddr, chainId, id], so the account is checked without deserializing any record.
+   * Compared case-insensitively, because IDB keys are exact but addresses are not canonical.
+   */
+  async hasOpWithTxnId(accountAddr: string, txnId: string): Promise<boolean> {
+    const tx = await this.#openTx('readonly')
+    const keys = await tx
+      .objectStore(this.#storeName)
+      .index('by-txn-id')
+      .getAllKeys(IDBKeyRange.only(txnId))
+
+    return keys.some((key) => String(key[0]).toLowerCase() === accountAddr.toLowerCase())
+  }
+
+  /**
    * Every row for an account — count() is served from the index without deserializing rows.
    */
   async countOpsForAccount(accountAddr: string, chainId?: bigint | string): Promise<number> {
@@ -503,12 +520,19 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
       throw new Error(`[ActivityIdbStorage] Cannot store op ${op.id} without a valid status`)
     }
 
+    // Its own txnId plus one per call, so the MultipleTxns shape is matchable too.
+    const txnIds = [op.txnId, ...(op.calls ?? []).map((call) => call.txnId)].filter(
+      (id): id is string => !!id
+    )
+
     return {
       accountAddr,
       chainId: chainIdStr,
       id: op.id,
       timestamp: op.timestamp,
       status: op.status,
+      // Only set when non-empty — an undefined keyPath keeps the row out of by-txn-id.
+      ...(txnIds.length ? { txnIds } : {}),
       op
     }
   }
@@ -589,6 +613,18 @@ export class ActivityKeyValueStorage implements IActivityOpsBackend {
    * On this backend the in-memory blob IS the complete history, so summing the group
    * lengths is already the true total.
    */
+  async hasOpWithTxnId(accountAddr: string, txnId: string): Promise<boolean> {
+    const ops = this.#getOps()
+    const key = Object.keys(ops).find((k) => k.toLowerCase() === accountAddr.toLowerCase())
+    if (!key) return false
+
+    return Object.values(ops[key] ?? {}).some((group) =>
+      (group ?? []).some((op) =>
+        [op.txnId, ...(op.calls ?? []).map((call) => call.txnId)].some((id) => id === txnId)
+      )
+    )
+  }
+
   async countOpsForAccount(accountAddr: string, chainId?: bigint | string): Promise<number> {
     const chainMap = this.#getOps()[accountAddr]
     if (!chainMap) return 0

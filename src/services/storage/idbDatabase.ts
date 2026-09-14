@@ -46,7 +46,7 @@ export function reconcileSchema(
     for (const idx of storeDef.indexes ?? []) {
       if (store.indexNames.contains(idx.name)) continue
 
-      store.createIndex(idx.name, idx.keyPath)
+      store.createIndex(idx.name, idx.keyPath, { multiEntry: idx.multiEntry ?? false })
       console.log(`[AmbireIdb] created index "${idx.name}" on "${storeDef.storeName}"`)
     }
   }

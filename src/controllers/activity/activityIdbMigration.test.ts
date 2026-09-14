@@ -873,10 +873,10 @@ describe('ActivityController — paginated reads', () => {
     expect(result.maxPages).toBe(1)
   })
 
-  test('an added external op costs one group read, not one per duplicate check', async () => {
-    // The guard runs twice — once before the RPC work and once after, to catch an op that
-    // arrived meanwhile. Only the in-memory side can change in that window, so the stored
-    // read is shared; counting it is what stops a second read creeping back in.
+  test('the duplicate check reads no ops at all, at any history size', async () => {
+    // by-txn-id makes it a point lookup: no group is walked and no record is deserialized,
+    // so the cost does not grow with history. The guard runs twice per op (once before the
+    // RPC work, once after) and neither call touches a record.
     await new ActivityIdbStorage(db).putMultiple([
       { accountAddr: ACC, chainId: CHAIN_1, ops: [makeOp('unrelated', 1000)] as any }
     ])
@@ -884,7 +884,7 @@ describe('ActivityController — paginated reads', () => {
     const controller = makeController(storage, db, providersStub)
     await awaitLoadOnly(controller)
 
-    const spy = jest.spyOn(ActivityIdbStorage.prototype, 'getOpsForAccountAndChain')
+    const groupRead = jest.spyOn(ActivityIdbStorage.prototype, 'getOpsForAccountAndChain')
     await controller.addExternalAccountOp({
       accountAddr: ACC,
       chainId: CHAIN_1,
@@ -892,8 +892,50 @@ describe('ActivityController — paginated reads', () => {
       receipt: { status: 1, blockNumber: 1, blockHash: '0x', gasUsed: 1n, logs: [] } as any
     })
 
-    expect(spy).toHaveBeenCalledTimes(1)
+    expect(groupRead).not.toHaveBeenCalled()
+    groupRead.mockRestore()
+  })
+
+  test('a failed lookup skips the op rather than risking a stored duplicate', async () => {
+    // Absence cannot be proven when the read fails, and the two outcomes are not symmetric:
+    // a stored duplicate is permanent, while a skipped op is re-offered on the next scan.
+    const spy = jest
+      .spyOn(ActivityIdbStorage.prototype, 'hasOpWithTxnId')
+      .mockRejectedValue(new Error('idb unavailable') as never)
+
+    const controller = makeController(storage, db, providersStub)
+    await awaitLoadOnly(controller)
+    await controller.addExternalAccountOp({
+      accountAddr: ACC,
+      chainId: CHAIN_1,
+      txnId: `0x${'8'.repeat(64)}`,
+      receipt: { status: 1, blockNumber: 1, blockHash: '0x', gasUsed: 1n, logs: [] } as any
+    })
+
+    expect(await storage.get('externalAccountOps', {})).toEqual({})
+    expect(controller.emittedErrors.length).toBeGreaterThan(0)
     spy.mockRestore()
+  })
+
+  test('the lookup matches the account case-insensitively', async () => {
+    // Rows are keyed on the address exactly as written, but callers do not always pass the
+    // same casing. The primary key carries the account, so the comparison is ours to make.
+    const txnId = `0x${'7'.repeat(64)}`
+    await new ActivityIdbStorage(db).putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: [{ ...makeOp('stored', 1000), txnId }] as any }
+    ])
+
+    const controller = makeController(storage, db, providersStub)
+    await awaitLoadOnly(controller)
+    await controller.addExternalAccountOp({
+      accountAddr: ACC.toLowerCase(),
+      chainId: CHAIN_1,
+      txnId,
+      receipt: { status: 1, blockNumber: 1, blockHash: '0x', gasUsed: 1n, logs: [] } as any
+    })
+
+    // Recognised as the op already stored under the checksummed address
+    expect(await storage.get('externalAccountOps', {})).toEqual({})
   })
 
   test('an external op duplicating a per-call txnId of a stored internal op is rejected', async () => {

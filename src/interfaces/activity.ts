@@ -60,6 +60,9 @@ export interface IActivityOpsBackend {
    */
   countOpsForAccount(accountAddr: string, chainId?: bigint | string): Promise<number>
 
+  /** Whether the account already stores an op carrying this txnId, including per-call ones. */
+  hasOpWithTxnId(accountAddr: string, txnId: string): Promise<boolean>
+
   /**
    * The newest `limit` ops of one chain, newest first — one page without the whole history.
    */

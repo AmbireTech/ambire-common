@@ -42,6 +42,9 @@ export interface IdbAccountOpRow {
   id: string
   timestamp: number
   status: AccountOpStatus
+  // Every txnId the op carries — its own plus one per call (the MultipleTxns shape). Absent
+  // when it has none, which keeps such rows out of by-txn-id entirely.
+  txnIds?: string[]
   // Stored via the Structured Clone Algorithm, which preserves BigInt natively — no JSON
   // serialization needed.
   op: SubmittedAccountOp | SubmittedAccountOpLike
@@ -77,6 +80,7 @@ export interface AmbireIdbSchema extends DBSchema {
     indexes: {
       'by-account-chain-timestamp': [string, string, number]
       'by-account-chain-status': [string, string, AccountOpStatus]
+      'by-txn-id': string
     }
   }
   phishing: {
@@ -88,6 +92,8 @@ export interface AmbireIdbSchema extends DBSchema {
 interface IdbIndexDef {
   name: string
   keyPath: string | string[]
+  /** Indexes each element of an array-valued keyPath separately. Cannot be compound. */
+  multiEntry?: boolean
 }
 
 export interface IdbStoreDef {
@@ -128,6 +134,14 @@ export const AMBIRE_IDB_SCHEMA: IdbSchema = {
         {
           name: 'by-account-chain-status',
           keyPath: ['accountAddr', 'chainId', 'status']
+        },
+        {
+          // Turns the duplicate check into a point lookup instead of a walk of the whole
+          // group. multiEntry cannot be compound, so it is keyed on txnId alone — the
+          // account is read back from the primary key, which already contains it.
+          name: 'by-txn-id',
+          keyPath: 'txnIds',
+          multiEntry: true
         }
       ]
     },

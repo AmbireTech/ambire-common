@@ -103,18 +103,18 @@ export class AccountOpsPersistence {
   }
 
   /**
-   * Every stored op of one chain. Null (not []) on a failed read, so absence stays meaningful.
+   * Whether the account already stores an op carrying this txnId.
+   *
+   * @returns true when the lookup fails, so a caller guarding against duplicates treats
+   *          "unknown" as "present" — a stored duplicate is permanent, a skipped op is not.
    */
-  async getStoredOpsForChain(
-    accountAddr: string,
-    chainId: bigint | string
-  ): Promise<SubmittedAccountOp[] | null> {
+  async hasOpWithTxnId(accountAddr: string, txnId: string): Promise<boolean> {
     try {
-      return (await this.#adapter.getOpsForAccountAndChain(accountAddr, chainId)) ?? []
+      return await this.#adapter.hasOpWithTxnId(accountAddr, txnId)
     } catch (error) {
-      this.#report('Your transaction history could not be checked.', error, 'read a chain group')
+      this.#report('Your transaction history could not be checked.', error, 'look up a txn id')
 
-      return null
+      return true
     }
   }
 

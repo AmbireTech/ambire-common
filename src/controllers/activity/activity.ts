@@ -135,14 +135,6 @@ const getInternalAccountOpTxnIds = (accountOp: SubmittedAccountOp) => {
   )
 }
 
-const internalAccountOpHasTxnId = (accountOp: SubmittedAccountOp, txnId: string) => {
-  const normalizedTxnId = normalizeTxnId(txnId)
-
-  return getInternalAccountOpTxnIds(accountOp).some(
-    (internalTxnId) => normalizeTxnId(internalTxnId) === normalizedTxnId
-  )
-}
-
 const externalAccountOpHasTxnId = (accountOp: SubmittedAccountOpLike, txnId: string) =>
   normalizeTxnId(accountOp.txnId) === normalizeTxnId(txnId)
 
@@ -832,37 +824,19 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // a duplication guard
     const chainIdString = chainId.toString()
-    // Against the whole stored group, not the window: a missed duplicate is stored permanently.
-    // Read once and reused across both calls below. The second guards against an op arriving
-    // during the RPC work between them, and any such op is in memory — every writer mutates
-    // the cache before persisting, so the store is never ahead of it.
-    let storedInternalOps: SubmittedAccountOp[] | null | undefined
-
+    // An indexed point lookup over every stored op, so this costs the same whatever the
+    // history size. External ops are not in that store, so they are still matched in memory.
     const hasExistingAccountOpWithTxnId = async () => {
-      if (storedInternalOps === undefined) {
-        storedInternalOps = await this.#persistence.getStoredOpsForChain(accountAddr, chainIdString)
-      }
+      if (await this.#persistence.hasOpWithTxnId(accountAddr, txnId)) return true
 
-      // Read failed, so absence proves nothing. Treated as a duplicate: a stored duplicate is
-      // permanent, while a skipped op is re-offered on the scanner's next pass.
-      if (!storedInternalOps) return true
-
-      // Also checked because IDB keys are exact while this lookup is case-insensitive.
-      const inMemoryInternalOps = getAccountOpsForAccountAndChain(
-        this.#accountsOps,
-        accountAddr,
-        chainIdString
-      )
       const existingExternalAccountOps = getAccountOpsForAccountAndChain(
         this.#externalAccountOps,
         accountAddr,
         chainIdString
       )
 
-      return (
-        storedInternalOps.some((accountOp) => internalAccountOpHasTxnId(accountOp, txnId)) ||
-        inMemoryInternalOps.some((accountOp) => internalAccountOpHasTxnId(accountOp, txnId)) ||
-        existingExternalAccountOps.some((accountOp) => externalAccountOpHasTxnId(accountOp, txnId))
+      return existingExternalAccountOps.some((accountOp) =>
+        externalAccountOpHasTxnId(accountOp, txnId)
       )
     }
 
