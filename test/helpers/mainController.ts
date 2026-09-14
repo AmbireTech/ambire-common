@@ -168,7 +168,8 @@ export const makeMainController = async (
     keystoreSigners: overrides.keystoreSigners ?? { internal: KeystoreSigner },
     externalSignerControllers: overrides.externalSignerControllers ?? {},
     uiManager,
-    eventEmitterRegistry
+    eventEmitterRegistry,
+    privacyPoolsCircuitsBaseUrl: ''
   })
 
   // Disable simulation in requests' signAccountOps

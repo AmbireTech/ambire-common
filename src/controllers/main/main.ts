@@ -32,6 +32,7 @@ import { KeystoreController } from '@/controllers/keystore/keystore'
 import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
+import { PrivacyPoolsController } from '@/controllers/privacyPools/privacyPools'
 import { ProvidersController } from '@/controllers/providers/providers'
 import { RequestsController } from '@/controllers/requests/requests'
 import { SafeController } from '@/controllers/safe/safe'
@@ -76,6 +77,7 @@ import { AddNetworkRequestParams, INetworksController, Network } from '@/interfa
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
 import { IPortfolioController } from '@/interfaces/portfolio'
+import { IPrivacyPoolsController } from '@/interfaces/privacyPools'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
 import { ISafeController } from '@/interfaces/safe'
@@ -204,6 +206,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   selectedAccount: ISelectedAccountController
 
+  privacyPools: IPrivacyPoolsController
+
   requests: IRequestsController
 
   banner: IBannerController
@@ -244,7 +248,8 @@ export class MainController extends EventEmitter implements IMainController {
     featureFlags,
     keystoreSigners,
     externalSignerControllers,
-    uiManager
+    uiManager,
+    privacyPoolsCircuitsBaseUrl
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -260,6 +265,11 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
+    /**
+     * Where the Privacy Pools circuit artifacts are served from. A build asset whose URL only the
+     * platform layer knows, so it is injected rather than derived here.
+     */
+    privacyPoolsCircuitsBaseUrl: string
   }) {
     super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
@@ -405,6 +415,21 @@ export class MainController extends EventEmitter implements IMainController {
       accounts: this.accounts,
       autoLogin: this.autoLogin,
       banner: this.banner
+    })
+
+    this.privacyPools = new PrivacyPoolsController({
+      eventEmitterRegistry,
+      keystore: this.keystore,
+      networks: this.networks,
+      providers: this.providers,
+      selectedAccount: this.selectedAccount,
+      storage: this.storage,
+      fetch: this.fetch,
+      circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
+      // A closure rather than a controller reference: `requests` is constructed further down, and
+      // handing calls to the signing flow is the only thing Privacy Pools needs from it.
+      buildCallsRequest: ({ calls, meta }) =>
+        this.requests.build({ type: 'calls', params: { userRequestParams: { calls, meta } } })
     })
 
     this.portfolio = new PortfolioController(
@@ -924,8 +949,18 @@ export class MainController extends EventEmitter implements IMainController {
         hdPathTemplate: this.accountPicker.hdPathTemplate
       })
 
+      // Stamped here rather than in the key iterator, which derives addresses without knowing
+      // where the phrase came from. An address under a phrase this wallet generated has no past,
+      // so its `createdAt` is a real boundary - see `InternalKey['meta'].hasNoPriorHistory`.
       this.accountPicker.readyToAddKeys.internal = this.accountPicker.readyToAddKeys.internal.map(
-        (key) => ({ ...key, meta: { ...key.meta, fromSeedId: storedSeed.id } })
+        (key) => ({
+          ...key,
+          meta: {
+            ...key.meta,
+            fromSeedId: storedSeed.id,
+            hasNoPriorHistory: !!storedSeed.isNewlyGenerated
+          }
+        })
       )
     }
 

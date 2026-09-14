@@ -158,6 +158,18 @@ export type InternalKey = {
   meta: {
     createdAt: number | null
     fromSeedId?: string
+    /**
+     * Whether this address provably has nothing on chain from before `createdAt` - its birthday.
+     *
+     * True only for an address derived from a recovery phrase this wallet generated itself: the
+     * phrase did not exist before that moment, so neither did the address, and anything that scans
+     * the chain for it can start at `createdAt` instead of at the beginning of the chain.
+     *
+     * Absent means unknown, which is not the same as false - an imported phrase can be any age, and
+     * so can the addresses derived from it. A scan must then cover everything, because a start
+     * block chosen too late would silently miss the user's own funds.
+     */
+    hasNoPriorHistory?: boolean
     [key: string]: any
   }
 }
@@ -198,6 +210,15 @@ export type KeystoreSeed = {
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   notBackedUp?: boolean
+  /**
+   * Whether this wallet generated the phrase rather than being given it.
+   *
+   * It is what makes an address derived from it datable: a generated phrase has no past, so every
+   * address under it is new as of the moment it was stored. Absent for phrases imported by the
+   * user and for phrases synced from another device, where we only know when we first saw them.
+   * See `InternalKey['meta'].hasNoPriorHistory`.
+   */
+  isNewlyGenerated?: boolean
 }
 
 export type StoredKeystoreSeed = Omit<KeystoreSeed, 'seed' | 'seedPassphrase'> & {
@@ -213,6 +234,8 @@ export type KeystoreTempSeed = {
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   notBackedUp?: boolean
+  /** See `KeystoreSeed['isNewlyGenerated']`. Set only by `generateTempSeed`. */
+  isNewlyGenerated?: boolean
 }
 
 export type KeystoreSignerType = {
