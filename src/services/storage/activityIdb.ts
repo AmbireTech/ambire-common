@@ -237,7 +237,7 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
     chainId: bigint | string,
     op: SubmittedAccountOp,
     trimmedId?: string
-  ): Promise<void> {
+  ): Promise<number> {
     const chainIdStr = typeof chainId === 'bigint' ? chainId.toString() : chainId
     const tx = await this.#openTx('readwrite')
     const store = tx.objectStore(this.#storeName)
@@ -247,9 +247,13 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
     // rejects on failure and is awaited below.
     store.put(this.#opToRow(accountAddr, chainIdStr, op)).catch(() => {})
 
+    // Net rows added: the put always adds one (the caller creates the op), minus any eviction.
+    let delta = 1
+
     if (trimmedId) {
       // In-memory trim already identified the op to evict.
       store.delete([accountAddr, chainIdStr, trimmedId]).catch(() => {})
+      delta = 0
     } else {
       // The in-memory group is within its cap, but IDB may have accumulated more
       // rows than the in-memory limit (e.g. after a startup that only loaded the
@@ -270,11 +274,14 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
         )
         if (cursor) {
           store.delete(cursor.primaryKey).catch(() => {})
+          delta = 0
         }
       }
     }
 
     await tx.done
+
+    return delta
   }
 
   /**
@@ -389,9 +396,7 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
     const tx = await this.#openTx('readonly')
     const store = tx.objectStore(this.#storeName)
 
-    // Walked backwards over the ascending timestamp index, because IDB indexes only sort
-    // ascending and newest-first is what a page needs. Each step is its own round trip, so
-    // the cost is proportional to `limit` — bounded by the page size the caller asks for.
+    // Walked backwards because IDB indexes only sort ascending; one round trip per row.
     const chainIdStr = chainId.toString()
     const range = IDBKeyRange.bound(
       [accountAddr, chainIdStr, 0],
@@ -410,10 +415,7 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
   }
 
   /**
-   * Count every row for an account across all chains.
-   *
-   * count() on a key range is served from the index structure without reading or
-   * deserializing any record, so this stays cheap even for a heavy account.
+   * Every row for an account — count() is served from the index without deserializing rows.
    */
   async countOpsForAccount(accountAddr: string, chainId?: bigint | string): Promise<number> {
     const range =
@@ -547,8 +549,11 @@ export class ActivityKeyValueStorage implements IActivityOpsBackend {
     _chainId: bigint | string,
     _op: SubmittedAccountOp,
     _trimmedId?: string
-  ): Promise<void> {
+  ): Promise<number> {
     await this.#storage.set('accountsOps', this.#getOps())
+
+    // Ignored: the cache is the whole history here, so no stored count is kept.
+    return 0
   }
 
   async updateOps(_ops: SubmittedAccountOp[]): Promise<void> {

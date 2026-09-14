@@ -75,14 +75,25 @@ const alreadyLoaded = { initialLoadPromise: Promise.resolve() } as any
 // views needs real-looking chain ids here.
 const networksStub = { networks: [{ chainId: CHAIN_1 }, { chainId: 137n }] } as any
 
-function makeController(storage: IStorageController, idb?: AmbireIdbDatabase) {
+/** Minimal providers stub, for the few tests that run past #addExternalAccountOp's RPC work. */
+const providersStub = {
+  providers: {
+    '1': { getTransaction: async () => null, getBlock: async () => null }
+  }
+} as any
+
+function makeController(
+  storage: IStorageController,
+  idb?: AmbireIdbDatabase,
+  providers: any = {}
+) {
   return new ActivityController(
     storage,
     (() => {}) as any,
     (() => {}) as any,
     { ...alreadyLoaded, accounts: [{ addr: ACC }] } as any, // accounts
     alreadyLoaded, // selectedAccount
-    {} as any, // providers
+    providers,
     networksStub, // networks
     {} as any, // portfolio
     {} as any, // safe
@@ -299,24 +310,21 @@ describe('ActivityController — key-value path (no IDB)', () => {
     expect(controller.emittedErrors).toHaveLength(0)
   })
 
-  test('stays usable and silent when IDB is missing after a migration already completed', async () => {
-    // Previous session migrated into IDB. This session failed to open IDB, so the
-    // history exists but is unreachable. There is deliberately no user-facing surfacing
-    // for this — what must hold is that the controller still loads and reads the
-    // retained legacy blob instead of throwing or starting a divergent one.
-    await (storage.set as (key: string, value: boolean) => Promise<void>)(
-      'activityIdbMigrated',
-      true
-    )
+  test('reports stranded history when IDB is missing after it was written to', async () => {
+    // A previous session wrote to IDB; this one cannot open it, so everything written since
+    // the migration is unreachable and the retained legacy blob is frozen at migration time.
+    await storage.set('activityStorageBackend', 'idb')
     await storage.set('accountsOps', legacyBlob([makeOp('kv-1', 1000)]) as any)
 
     const controller = makeController(storage, undefined)
     await awaitLoad(controller)
 
+    // Still usable: the legacy blob is read rather than starting a divergent history
     expect(controller.getAccountOpsForAccount({ accountAddr: ACC }).map((op) => op.id)).toEqual([
       'kv-1'
     ])
-    expect(controller.emittedErrors).toHaveLength(0)
+    // ...but the user is told, because what they see is missing everything written since
+    expect(controller.emittedErrors.length).toBeGreaterThan(0)
   })
 
   test('stays quiet when IDB is missing and no migration ever ran', async () => {
@@ -362,16 +370,23 @@ describe('ActivityController — recipients indexed by the storage migration', (
     expect(result.found).toBe(true)
   })
 
-  test('expands every scanned account when accountId is empty', async () => {
-    // An empty accountId means "scan all accounts". The expansion used to be keyed
-    // off that same empty argument, so it bailed immediately and the scan ran over
-    // the truncated startup window for every account.
+  test('answers nothing without an accountId, rather than from another account', async () => {
+    // TransferController passes `selectedAccount.account?.addr || ''`, so an empty id reaches
+    // here whenever no account is selected. Falling back to every account would report a
+    // different account's recipients as this user's own history, and match poisoning against
+    // addresses they have never sent to.
     await seedBeyondStartupWindow(25)
 
     const controller = makeController(storage, db)
     const result = await controller.hasAccountOpsSentTo(OLD_RECIPIENT, '')
 
-    expect(result.found).toBe(true)
+    expect(result).toEqual({
+      found: false,
+      lastTransactionDate: null,
+      addressPoisoningMatch: null
+    })
+    // ...and the same address IS found for the account that actually sent to it
+    expect((await controller.hasAccountOpsSentTo(OLD_RECIPIENT, ACC)).found).toBe(true)
   })
 
   test('reads no history at all, however many times it is called', async () => {
@@ -520,20 +535,18 @@ describe('ActivityController — method interactions', () => {
   })
 
   test('init survives the post-load history checks throwing', async () => {
-    // recording the migration flag was awaited unguarded at the end of #load, so a storage
-    // failure there rejected #initialLoadPromise for the whole session — exactly the
-    // failure mode guarded against 20 lines earlier in the same method.
+    // Recording the active backend was awaited unguarded at the end of #load, so a storage
+    // failure there rejected #initialLoadPromise for the whole session.
     //
-    // IDB must have ops for this to bite: the flag writer returns early on an
-    // empty store, so without seeding, the flag is never read and the test would pass
-    // whether or not the guard exists.
+    // IDB must have ops for this to bite: #recordActiveBackend returns early on an empty
+    // store, so without seeding, the key is never read and the guard is never exercised.
     await new ActivityIdbStorage(db).putMultiple([
       { accountAddr: ACC, chainId: CHAIN_1, ops: [makeOp('some-op', 1000) as any] }
     ])
 
     const failing: IStorageController = Object.create(storage)
     failing.get = (async (key: string, defaultValue?: any) => {
-      if (key === 'activityIdbMigrated') throw new Error('flag read failed')
+      if (key === 'activityStorageBackend') throw new Error('backend read failed')
       return (storage.get as any)(key, defaultValue)
     }) as IStorageController['get']
 
@@ -832,6 +845,57 @@ describe('ActivityController — paginated reads', () => {
     expect(result.maxPages).toBe(4)
   })
 
+  test('the total counts externals after dedup, so it cannot offer an empty page', async () => {
+    // The duplicate is dropped from filteredItems at the merge. Counting externals before that
+    // filter makes itemsTotal exceed what can render, so the pager offers a page with nothing
+    // on it and hasMoreTxnToLoad never goes false.
+    const txnId = `0x${'c'.repeat(64)}`
+    await new ActivityIdbStorage(db).putMultiple([
+      {
+        accountAddr: ACC,
+        chainId: CHAIN_1,
+        ops: [{ ...makeOp('internal', 1000), txnId }] as any
+      }
+    ])
+    // Seeded directly: today's write guard rejects this, so it can only be pre-existing data
+    await storage.set('externalAccountOps', {
+      [ACC]: { '1': [{ ...makeOp('external-dup', 1000), txnId }] }
+    } as any)
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+    await controller.filterAccountsOps('s', { account: ACC })
+
+    const result = controller.accountsOps.s!.result
+    // One transaction, recorded twice — the page shows it once, so the total must say one
+    expect(result.items).toHaveLength(1)
+    expect(result.itemsTotal).toBe(1)
+    expect(result.maxPages).toBe(1)
+  })
+
+  test('an added external op costs one group read, not one per duplicate check', async () => {
+    // The guard runs twice — once before the RPC work and once after, to catch an op that
+    // arrived meanwhile. Only the in-memory side can change in that window, so the stored
+    // read is shared; counting it is what stops a second read creeping back in.
+    await new ActivityIdbStorage(db).putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: [makeOp('unrelated', 1000)] as any }
+    ])
+
+    const controller = makeController(storage, db, providersStub)
+    await awaitLoadOnly(controller)
+
+    const spy = jest.spyOn(ActivityIdbStorage.prototype, 'getOpsForAccountAndChain')
+    await controller.addExternalAccountOp({
+      accountAddr: ACC,
+      chainId: CHAIN_1,
+      txnId: `0x${'9'.repeat(64)}`,
+      receipt: { status: 1, blockNumber: 1, blockHash: '0x', gasUsed: 1n, logs: [] } as any
+    })
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    spy.mockRestore()
+  })
+
   test('an external op duplicating a per-call txnId of a stored internal op is rejected', async () => {
     // The MultipleTxns case: the internal op carries no top-level txnId, only one per call.
     // A txnId index on the row could never match this — it indexes op.txnId alone. Reading the
@@ -894,6 +958,44 @@ describe('ActivityController — paginated reads', () => {
 })
 
 describe('ActivityController — total transaction count', () => {
+  test('adding an op adjusts the cached count without re-reading it', async () => {
+    const ops = Array.from({ length: 30 }, (_, i) => makeOp(`op-${i}`, 1000 + i))
+    await new ActivityIdbStorage(db).putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: ops as any }
+    ])
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+    expect(controller.getTotalOpsCountForAccount(ACC)).toBe(30)
+
+    const countSpy = jest.spyOn(ActivityIdbStorage.prototype, 'countOpsForAccount')
+    await controller.addAccountOp(makeOp('brand-new', 9_000_000) as any)
+
+    // The write reports what it changed, so no count query is needed
+    expect(countSpy).not.toHaveBeenCalled()
+    expect(controller.getTotalOpsCountForAccount(ACC)).toBe(31)
+    countSpy.mockRestore()
+  })
+
+  test('an op that evicts another leaves the count unchanged', async () => {
+    // At the cap, so the write deletes a row as it adds one — a net-zero change that a
+    // blind increment would get wrong.
+    const ops = Array.from({ length: MAX_OPS_PER_GROUP }, (_, i) => makeOp(`op-${i}`, 1000 + i))
+    await new ActivityIdbStorage(db).putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: ops as any }
+    ])
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+    expect(controller.getTotalOpsCountForAccount(ACC)).toBe(MAX_OPS_PER_GROUP)
+
+    await controller.addAccountOp(makeOp('brand-new', 9_000_000) as any)
+
+    expect(controller.getTotalOpsCountForAccount(ACC)).toBe(MAX_OPS_PER_GROUP)
+    // ...and the store really is still at the cap, not just the cached number
+    expect(await new ActivityIdbStorage(db).countOpsForAccount(ACC)).toBe(MAX_OPS_PER_GROUP)
+  })
+
   // BannerController gates marketing banners on minTxnsTotal/maxTxnsTotal through a
   // SYNCHRONOUS callback (see the AccountData callback in main.ts), so the count has to
   // be cached. Using the in-memory group lengths instead reports the startup window and

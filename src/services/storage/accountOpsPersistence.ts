@@ -63,14 +63,7 @@ export class AccountOpsPersistence {
     return new ActivityKeyValueStorage(this.#storage, this.#getCache)
   }
 
-  /**
-   * Migrate if needed, then return the dataset to start the session with.
-   *
-   * The migration must complete before the read, or the read would observe an empty store
-   * while the migration is still in flight.
-   *
-   * Deliberately does NOT do the post-load bookkeeping — see finalizeInit().
-   */
+  /** Migrate if needed, then return the startup dataset. Bookkeeping is in finalizeInit(). */
   async init(finalizedFor?: string): Promise<InternalAccountsOps> {
     const migrated = await this.#migrate()
 
@@ -81,27 +74,14 @@ export class AccountOpsPersistence {
     return this.#loadStartupOps(finalizedFor)
   }
 
-  /**
-   * Bookkeeping that nothing renders: record the migration flag and warm the op counts.
-   *
-   * Split out of init() so the caller can emit its first update BEFORE this runs. Counting
-   * costs one backend query per account, and no UI waits on the result — folding it into
-   * init() would delay the first paint of the history for no benefit.
-   */
+  /** Bookkeeping nothing renders, so the caller can paint before paying for it. */
   async finalizeInit(ops: InternalAccountsOps): Promise<void> {
     await this.#recordActiveBackend(ops)
     await this.#refreshAllCounts(ops)
   }
 
   /**
-   * Merge the newest `limit` ops of each given chain into the cache, so a caller can render
-   * one page without loading the whole history.
-   *
-   * Per chain rather than account-wide because the caller renders a chain subset: an
-   * account-wide fetch would spend part of `limit` on chains the caller drops, leaving a
-   * short page.
-   *
-   * Never rejects; a chain that fails keeps whatever the cache had for it.
+   * Merge each chain's newest `limit` ops into the cache, so one page costs one read per chain.
    */
   async ensureRecentLoaded(
     accountAddr: string,
@@ -123,11 +103,7 @@ export class AccountOpsPersistence {
   }
 
   /**
-   * Every stored op of one chain, for a caller that has to compare against the whole group
-   * rather than the loaded window.
-   *
-   * @returns null when the read failed, so the caller can tell "nothing stored" apart from
-   *          "unknown" — the two warrant opposite decisions when guarding against duplicates.
+   * Every stored op of one chain. Null (not []) on a failed read, so absence stays meaningful.
    */
   async getStoredOpsForChain(
     accountAddr: string,
@@ -149,14 +125,19 @@ export class AccountOpsPersistence {
     op: SubmittedAccountOp,
     trimmedId?: string
   ): Promise<void> {
+    let delta = 0
+
     try {
-      await this.#adapter.putSingleOp(accountAddr, chainId, op, trimmedId)
+      delta = await this.#adapter.putSingleOp(accountAddr, chainId, op, trimmedId)
     } catch (error) {
+      // Left at 0: a rejected write means the transaction aborted, so no row was committed.
       this.#report('Your latest transaction could not be saved to your history.', error, 'add op')
     }
 
-    // Recounted, not incremented: putSingleOp may have evicted a row, making this net-zero.
-    await this.#refreshCount(accountAddr)
+    // Adjusted by the delta the write reports, so adding an op costs no extra read. Only when
+    // a count is already cached — otherwise getTotalOpsCount falls back to the cache sum.
+    const cached = this.#totalOpsCount.get(accountAddr)
+    if (delta && cached !== undefined) this.#totalOpsCount.set(accountAddr, cached + delta)
   }
 
   async updateOps(ops: SubmittedAccountOp[]): Promise<void> {
@@ -182,10 +163,7 @@ export class AccountOpsPersistence {
     }
   }
 
-  /**
-   * Total transactions an account has ever made. Synchronous because the consumer
-   * (BannerController's txn thresholds) evaluates inside a sync callback.
-   */
+  /** Total ops ever. Synchronous because BannerController evaluates inside a sync callback. */
   getTotalOpsCount(accountAddr: string): number {
     // The cache IS the whole history here, so a stored count could only ever be staler.
     if (!this.#adapter.loadsPartially) return this.#countInCache(accountAddr)
@@ -197,10 +175,7 @@ export class AccountOpsPersistence {
   // Internals
   // ──────────────────────────────────────────────────────────────────────────────
 
-  /**
-   * @returns false only if the migration failed, meaning the target is empty and must not
-   *          be read from. True on success and where it is a no-op.
-   */
+  /** @returns false only on failure, meaning the target is empty and must not be read. */
   async #migrate(): Promise<boolean> {
     try {
       await this.#adapter.ensureMigrated(
@@ -240,13 +215,7 @@ export class AccountOpsPersistence {
     }
   }
 
-  /**
-   * Record that this wallet's history lives in IDB.
-   *
-   * Nothing reads the flag yet — it is written because it can only be recorded while IDB
-   * works. A second writer is needed because ensureMigrated only sets it after moving a legacy
-   * blob, which never happens for users who installed after IDB became the default.
-   */
+  /** Record which backend holds the history — only recordable while that backend works. */
   async #recordActiveBackend(ops: InternalAccountsOps): Promise<void> {
     // Only once there is history to lose. Recording a backend for an empty wallet would make
     // the stranded check below fire at a user who never had a transaction.
@@ -276,14 +245,7 @@ export class AccountOpsPersistence {
     }
   }
 
-  /**
-   * Merge fetched rows into the cache, keeping the CACHED object on an id collision.
-   *
-   * A merge and not a replace, because the cache can hold ops the backend does not have yet
-   * (a just-broadcast op lands in memory before the write) and objects that in-flight work
-   * still mutates (status updates mutate across provider awaits). Replacing would drop the
-   * first and detach the second.
-   */
+  /** Merge, not replace: the cache holds unwritten ops and objects in-flight work still mutates. */
   #mergeIntoCache(accountAddr: string, chainId: string, fetched: SubmittedAccountOp[]): void {
     const cache = this.#getCache()
     if (!cache[accountAddr]) cache[accountAddr] = {}
@@ -311,10 +273,7 @@ export class AccountOpsPersistence {
     )
   }
 
-  /**
-   * Only accounts present in the startup dataset are counted: loadStartupOps() enumerates
-   * every non-empty group, so an absent account has no ops and the cache sum of 0 is right.
-   */
+  /** Startup accounts only — loadStartupOps() lists every non-empty group, so absent means zero. */
   async #refreshAllCounts(ops: InternalAccountsOps): Promise<void> {
     if (!this.#adapter.loadsPartially) return
 
@@ -322,10 +281,7 @@ export class AccountOpsPersistence {
   }
 
   /**
-   * Exact stored count over the given chains, for a pager whose navigation depends on the
-   * total. Scoped to chains rather than the whole account so the count matches the subset the
-   * caller renders — an account-wide count includes chains the caller drops, and would offer
-   * pages that render empty.
+   * Exact stored count, scoped to the chains the caller renders so the pager cannot overshoot.
    */
   async countOps(accountAddr: string, chainIds: (bigint | string)[]): Promise<number> {
     try {

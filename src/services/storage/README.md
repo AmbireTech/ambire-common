@@ -6,7 +6,7 @@ get different things out of it:
 | | `ActivityController` | `PhishingController` |
 |---|---|---|
 | Layout | one row per op | one document under `snapshot` |
-| Read | bounded window, expanded on demand | **whole document**, every load |
+| Read | bounded window, one page at a time | **whole document**, every load |
 | Write | one row per broadcast | **whole document**, per list update |
 | What it buys | row-level reads and writes on data that grows without bound | structured clone instead of a richJson string, and relief from the `chrome.storage.local` quota |
 
@@ -54,12 +54,21 @@ readonly loadsPartially: boolean
 ```
 
 `true` for IndexedDB, whose startup read is a window. `false` for key-value, which reads the
-whole blob. Expansion markers, cache merging and the cached op total all exist only when it is
+whole blob. Paginated reads, cache merging and the cached op total all exist only when it is
 `true` — and callers test this flag, never the concrete class.
 
 Adding **expo-sqlite** on mobile therefore means: write an `IActivityOpsBackend` adapter with
 `loadsPartially = true`, and select it in `#pickAdapter`. Nothing in `ActivityController`
 changes, and nothing else in this layer does either.
+
+## Adding IDB persistence to a controller
+
+1. Add the store to `AMBIRE_IDB_SCHEMA`. `reconcileSchema()` creates it and its indexes — never create them by hand in a handler. Bump `dbVersion` by 1 **only if the current version has shipped**; a store added before release joins the existing version, which is how `phishing` reached v1 without a bump. See the one-way warning below.
+2. Add an entry to `migrationHandlers` in `idbDatabase.ts` for the new version. A no-op is fine; handlers exist only to transform existing rows. The entry is mandatory so a version bump is always deliberate — a test enforces it.
+3. Declare a backend interface with the data methods the controller actually calls, plus `ensureMigrated(getStoredData, removeStoredData)` typed against the shape currently held in key-value storage. See `IActivityOpsBackend` (`interfaces/activity.ts`) or the smaller `IPhishingOpsBackend` for the pattern. Keep the interface to what is used _polymorphically_: `isEmpty()` and `migrateFromStorage()` are how the IDB implementation decides whether to migrate, so declare them on that class only. Putting them on the shared interface forces the key-value class to carry dead stub methods it never uses.
+4. Implement it twice — once on IDB, once on key-value. `ensureMigrated` on the IDB implementation must, in order: return early if the store is not empty; return early if the legacy payload has no meaningful data (a blank payload would make the store non-empty and permanently skip a later real migration); write the payload; only THEN call `removeStoredData`, so a failed removal still leaves the migrated data in place and doesn't lose it. The key-value implementation makes `ensureMigrated` an outright no-op, since its data already lives in its final location.
+5. Add a coordinator in `services/storage/` that picks the adapter, runs `ensureMigrated()` as its **first await** (or a later read can observe a store the migration has not filled yet), and reports failures through an injected `onError` instead of throwing. The controller calls its methods and holds no IDB knowledge — see the rule above.
+6. **If the IDB backend loads only a subset at startup, audit every in-memory consumer.** This is the easiest way to introduce a silent bug. `ActivityController`'s startup read returns only the 20 most recent finalized ops per chain (plus all pending ones), which quietly weakened address-poisoning detection. Anything that reasons over the _full_ history must not scan the cache — give it a **separate durable index** instead, kept up to date on write and backfilled once from existing data. `sentToHistory.recipients` is the reference: expanding the cache on demand worked but reloaded the whole history into memory on a user-facing path, so it was replaced. Note that such an index outlives the rows it was derived from, which is usually desirable (a recipient evicted from history still raises a lookalike warning) but means "no rows" no longer implies "no index entries".
 
 ## Startup order
 
@@ -151,8 +160,8 @@ a migration — for the ones inside one, see the handler rules above.
    fields; those rows are dropped with a warning. A partial commit would make `isEmpty()`
    false and permanently disable the migration retry.
 3. **The startup read is a window, not the history.** Anything reasoning over the *whole*
-   history must expand first. This is the easiest way to introduce a silent bug here — see
-   the cost table below.
+   history needs a durable index (see `sentToHistory`) or an explicit backend read — never a
+   scan of the cache. This is the easiest way to introduce a silent bug here.
 4. **Account addresses are case-sensitive keys.** Rows are keyed on the address exactly as
    written, and an `IDBKeyRange` cannot match case-insensitively — unlike the in-memory
    `getAccountOpsAccountKey()` helper, which exists precisely because addresses are not
@@ -166,14 +175,13 @@ a migration — for the ones inside one, see the handler rules above.
 `loadStartupOps()` returns, per (account, chain): **all pending ops** plus the **20 most
 recent finalized** ones. So in-memory group lengths are *not* totals.
 
-Two mechanisms exist because of that:
+Two consequences:
 
-- expansion markers — a per-`(account, chain)` flag marking groups expanded to full history
-  this session. It must be an explicit flag: pending ops are exempt from the cap, so
-  a group can exceed 20 without having been expanded, and a length check would be wrong.
-- the cache merge — expansion **merges** by id and keeps the *cached* object on a
-  collision. The cache can hold ops IDB does not have yet (a just-broadcast op is in memory
-  before `putSingleOp` writes it), and objects that in-flight work still mutates in place.
+- totals come from the backend, never from group lengths — `countOpsForAccount()`, cached per
+  account and adjusted by the delta `putSingleOp()` reports.
+- a page load **merges** into the cache by id and keeps the *cached* object on a collision.
+  The cache can hold ops IDB does not have yet (a just-broadcast op is in memory before
+  `putSingleOp` writes it), and objects that in-flight work still mutates in place.
   Replacing the array would drop the former and detach the latter.
 
 ## Cost model
@@ -239,7 +247,7 @@ timing that handler rule 2 is about — that was verified manually in Chrome and
 |---|---|
 | `activityIdb.test.ts` | Storage primitives, atomicity, malformed rows, reconnect |
 | `idbIntegration.test.ts` | The infrastructure itself: `reconcileSchema`, the handler chain, manifest drift guards |
-| `activityIdbMigration.test.ts` | `ActivityController` wiring: migration, startup read, expansion, op counts, the recipient backfill |
+| `activityIdbMigration.test.ts` | `ActivityController` wiring: migration, startup read, paginated reads, op counts, the recipient backfill |
 | `idbDatabase.test.ts` | Singleton, schema reconciliation, handler-chain consistency |
 | `phishingIdb.test.ts` | Both phishing backends, against the real database |
 | `phishingIdbMigration.test.ts` | `PhishingController` wiring: manifest entry, migration, restart, key-value path |

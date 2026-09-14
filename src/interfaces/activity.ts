@@ -36,12 +36,13 @@ export interface IActivityOpsBackend {
   loadStartupOps(finalizedFor?: string): Promise<InternalAccountsOps>
 
   /** Write one new op, and delete the op the in-memory trim evicted (if any). */
+  /** @returns the net change in stored rows, so callers can keep a count without re-reading. */
   putSingleOp(
     accountAddr: string,
     chainId: bigint | string,
     op: SubmittedAccountOp,
     trimmedId?: string
-  ): Promise<void>
+  ): Promise<number>
 
   updateOps(ops: SubmittedAccountOp[]): Promise<void>
 
@@ -60,11 +61,7 @@ export interface IActivityOpsBackend {
   countOpsForAccount(accountAddr: string, chainId?: bigint | string): Promise<number>
 
   /**
-   * The newest `limit` ops of one of an account's chains, newest first. Lets a caller serve
-   * one page without reading the whole history.
-   *
-   * Per chain and not account-wide because callers render a chain subset: an account-wide
-   * read would spend part of `limit` on chains the caller drops, leaving a short page.
+   * The newest `limit` ops of one chain, newest first — one page without the whole history.
    */
   getRecentOps(
     accountAddr: string,
