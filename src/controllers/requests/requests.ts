@@ -105,11 +105,6 @@ const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
 
-const ONE_CLICK_WINDOW_SIZE = {
-  width: 600,
-  height: 600
-}
-
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
  * Prior to v2.66.0, all request logic resided in the MainController. To improve scalability, readability,
@@ -668,18 +663,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         await this.focusRequestWindow()
       }
     } else {
-      let customSize
-
-      if (
-        this.currentUserRequest?.kind === 'swapAndBridge' ||
-        this.currentUserRequest?.kind === 'transfer'
-      ) {
-        customSize = ONE_CLICK_WINDOW_SIZE
-      }
-
       try {
         this.requestWindow.openWindowPromise = this.#ui.requestView
-          .open({ customSize, baseWindowId })
+          .open({ baseWindowId })
           .finally(() => {
             this.requestWindow.openWindowPromise = undefined
           })
