@@ -542,6 +542,12 @@ export type AccountState = {
    * Examples: Polymarket and Hyperliquid positions.
    */
   defiApps?: NetworkState<PortfolioDefiAppsResult>
+  /**
+   * The account's invite key for the Ambire Mobile app, returned by the relayer's
+   * `portfolio-additional` endpoint. Present only for accounts the relayer has generated
+   * one for; used to let the user activate the same account in the mobile app.
+   */
+  mobileInviteKey?: string
 } & {
   [chainId: string]: NetworkState<PortfolioNetworkResult> | undefined
 }

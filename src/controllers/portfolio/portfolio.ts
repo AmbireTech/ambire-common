@@ -1254,6 +1254,10 @@ export class PortfolioController
       }
     }
 
+    if (res.data.mobileInviteKey) {
+      accountState.mobileInviteKey = res.data.mobileInviteKey
+    }
+
     this.emitUpdate()
   }
 

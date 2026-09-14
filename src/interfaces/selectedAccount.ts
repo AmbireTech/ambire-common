@@ -85,6 +85,8 @@ export interface SelectedAccountPortfolio {
   walletStaking?: PortfolioNetworkResult['walletStaking']
   verification: SelectedAccountPortfolioVerification | null
   projectedRewardsStats: ProjectedRewardsStats | null
+  /** The account's invite key for the Ambire Mobile app, if the relayer has one for it. */
+  mobileInviteKey?: string
 }
 
 export type SelectedAccountBalanceByAccount = {
