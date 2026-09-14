@@ -4,8 +4,12 @@ export interface PaymasterService {
   url: string
   context?: {
     policyId: string
+    swapSponsorship?: {
+      price: number
+      decimals: number
+    }
   }
-  id: number
+  id: string
   failed?: boolean
 }
 

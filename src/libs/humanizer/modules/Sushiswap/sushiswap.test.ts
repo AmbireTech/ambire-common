@@ -52,7 +52,7 @@ describe('sushiSwap', () => {
     ]
     accountOp.calls = [...transactions.sushiSwapCalls]
     let irCalls: IrCall[] = accountOp.calls
-    irCalls = sushiSwapModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    irCalls = irCalls.map((c) => sushiSwapModule(accountOp, c, humanizerInfo as HumanizerMeta))
     expect(irCalls.length).toBe(1)
     compareHumanizerVisualizations(irCalls, [expectedhumanization])
   })

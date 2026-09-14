@@ -120,6 +120,21 @@ export interface SubmittedAccountOpLike
   activitySource?: 'internal' | 'external'
 }
 
+/**
+ * Returns the account-level nonce to store in Activity. Safe transactions broadcast through a
+ * bundler have an unrelated, random UserOperation nonce, which remains available on
+ * `accountOp.asUserOperation.nonce` and must not replace the Safe transaction nonce.
+ */
+export function getSubmittedAccountOpNonce(
+  accountOpNonce: AccountOp['nonce'],
+  broadcastNonce: number | bigint,
+  isSafeAccount: boolean
+): bigint {
+  if (isSafeAccount && accountOpNonce !== null) return accountOpNonce
+
+  return BigInt(broadcastNonce)
+}
+
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
   return identifiedBy && identifiedBy.type === 'Transaction'
 }

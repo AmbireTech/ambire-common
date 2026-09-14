@@ -2,7 +2,7 @@ import { isAddress, isHexString } from 'ethers'
 
 import { Message } from '../../../interfaces/userRequest'
 import { Call } from '../../accountOp/types'
-import { decodeMultiSend } from '../../safe/safe'
+import { decodeMultiSend } from '../../safe/helpers'
 import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
 import { SAFE_TX_PRIMARY_TYPE } from './consts'
 

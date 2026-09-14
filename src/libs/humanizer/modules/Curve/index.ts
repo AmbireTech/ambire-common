@@ -8,7 +8,7 @@ const exchangeAbi = parseAbi([
   'function exchange(address[11] _route, uint256[5][5] _swap_params, uint256 _amount, uint256 _expected, address[5] _pools)'
 ])
 
-const curveModule: HumanizerCallModule = (_: AccountOp, calls: IrCall[]) => {
+const curveModule: HumanizerCallModule = (_: AccountOp, call: IrCall) => {
   const parseCurveNative = (address: string) =>
     address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ? zeroAddress : address
 
@@ -31,13 +31,9 @@ const curveModule: HumanizerCallModule = (_: AccountOp, calls: IrCall[]) => {
     }
   }
 
-  const newCalls = calls.map((call) => {
-    const match = matcher[call.data.slice(0, 10)]
-    if (call.fullVisualization || !isHexCall(call) || !match) return call
-    return { ...call, fullVisualization: match(call) }
-  })
-
-  return newCalls
+  const match = matcher[call.data.slice(0, 10)]
+  if (call.fullVisualization || !isHexCall(call) || !match) return call
+  return { ...call, fullVisualization: match(call) }
 }
 
 export default curveModule

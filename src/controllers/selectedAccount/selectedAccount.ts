@@ -36,6 +36,10 @@ import {
 import { getProjectedRewardsStatsAndToken } from '../../utils/rewards'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
+// Portfolio recalculations fire back-to-back as per-network results stream in.
+// Throttle their UI emit so the state isn't serialized on every partial tick.
+const PORTFOLIO_UPDATE_THROTTLE_MS = 100
+
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
   #storage: IStorageController
 
@@ -327,8 +331,11 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       })
     }
 
+    let justLoaded = false
+
     // Reset the loading timestamp if the portfolio is ready
     if (this.#portfolioLoadingTimeout && newSelectedAccountPortfolio.isAllReady) {
+      justLoaded = true
       clearTimeout(this.#portfolioLoadingTimeout)
       this.#portfolioLoadingTimeout = null
     }
@@ -365,7 +372,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#updatePortfolioErrors(true)
 
     if (!skipUpdate) {
-      this.emitUpdate()
+      this.emitUpdate({ throttleMs: justLoaded ? 0 : PORTFOLIO_UPDATE_THROTTLE_MS })
     }
   }
 
@@ -508,7 +515,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   async dismissEnsExpiryBannerForTheSelectedAccount() {
     if (!this.account) return
 
-    const expiry = this.#domains?.domains[getAddress(this.account.addr)]?.ensExpiry
+    const expiry = this.#domains?.domains[getAddress(this.account.addr)]?.expiry
     if (!expiry) return
 
     // Key the dismissal by expiry timestamp so a renewed name (new expiry) shows the banner again.
@@ -534,8 +541,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     // ENS expiry banner
     const ownDomainEntry = this.#domains?.domains[getAddress(this.account.addr)]
-    const ensExpiry = ownDomainEntry?.ensExpiry
-    if (ensExpiry && ownDomainEntry?.ens) {
+    const ensExpiry = ownDomainEntry?.expiry
+    const ensName = ownDomainEntry?.names?.ens
+    if (ensExpiry && ensName) {
       const dismissKey = `${this.account.addr}-${ensExpiry.expiresAt}`
       const isDismissed = !!this.dismissedBannerIds[ensExpiryBannerId]?.includes(dismissKey)
 
@@ -543,7 +551,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         ? null
         : getEnsExpiryBanner({
             accountAddr: this.account.addr,
-            ens: ownDomainEntry.ens,
+            ens: ensName,
             expiresAt: ensExpiry.expiresAt,
             gracePeriodEndsAt: ensExpiry.gracePeriodEndsAt
           })

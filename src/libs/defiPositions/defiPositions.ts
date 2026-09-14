@@ -521,7 +521,7 @@ const getHasNonceChangedSinceLastUpdate = (
  */
 export enum DefiUpdateMode {
   /** Serve cached data regardless of its age */
-  StaleOk = 'staleOk',
+  Cache = 'cache',
   /** Serve cached data if it is fresh enough, otherwise refetch */
   Default = 'default',
   /** Bypass the server-side cache and refetch fresh data (was: `update=true`) */
@@ -529,7 +529,7 @@ export enum DefiUpdateMode {
 }
 
 const DEFI_UPDATE_MODE_RANK: Record<DefiUpdateMode, number> = {
-  [DefiUpdateMode.StaleOk]: 0,
+  [DefiUpdateMode.Cache]: 0,
   [DefiUpdateMode.Default]: 1,
   [DefiUpdateMode.Force]: 2
 }
@@ -582,10 +582,10 @@ const getDefiUpdateMode = (params: {
 
   // In this case we don't care about defi positions so the age of the data doesn't matter, we can serve stale data from cache
   // Example: background update
-  if (maxDataAgeMs < 0) return DefiUpdateMode.StaleOk
+  if (maxDataAgeMs < 0) return DefiUpdateMode.Cache
 
   // If a specific maxDataAgeMs is set, then we rely on it instead of the default server-side cache age.
-  if (Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs) return DefiUpdateMode.StaleOk
+  if (Date.now() - previousState.lastSuccessfulUpdate < maxDataAgeMs) return DefiUpdateMode.Cache
 
   return DefiUpdateMode.Default
 }

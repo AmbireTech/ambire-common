@@ -8,11 +8,11 @@ import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.jso
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
-import { ProviderError } from '../../classes/ProviderError'
 import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
+import { RPCProvider } from '../../interfaces/provider'
 import { getRpcProvider } from '../../services/provider'
 import { getAccountDeployParams, getSpoof, isBasicAccount } from '../account/account'
 import { BaseAccount } from '../account/BaseAccount'
@@ -168,12 +168,14 @@ export function getFunctionParams(
   }
 }
 
-export async function debugTraceCall(
+export async function getDiscoveredAssets(
+  provider: RPCProvider,
   baseAcc: BaseAccount,
   op: AccountOp,
   network: Network,
   accountState: AccountOnchainState,
-  overrideData?: any
+  foundTokens: string[],
+  foundNftTransfers: [string, bigint[]][]
 ): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
   const account = baseAcc.getAccount()
   const opts = {
@@ -196,16 +198,94 @@ export async function debugTraceCall(
     ]
   ]
 
+  // we set the 3rd param to "true" as we don't need state override
+  const deploylessTokens = fromDescriptor(provider, BalanceGetter, true)
+  const deploylessNfts = fromDescriptor(provider, NFTGetter, true)
+
+  const getNftsPromise = deploylessNfts.call(
+    'simulateAndGetAllNFTs',
+    [
+      op.accountAddr,
+      account.associatedKeys,
+      foundNftTransfers.map(([address]) => address),
+      foundNftTransfers.map(([, x]) => x),
+      NFT_COLLECTION_LIMIT,
+      // Only the errors are read here, so no metadata is worth fetching
+      '0x',
+      factory,
+      factoryCalldata,
+      simulationOps
+    ],
+    deploylessOpts
+  )
+
+  const result = await Promise.all([
+    deploylessTokens.call('getBalances', [op.accountAddr, foundTokens, '0x'], deploylessOpts),
+    getNftsPromise
+  ])
+
+  const [[tokensWithErr], [before, after, , , , , deltaAddressesMapping]] = result
+
+  const beforeNftCollections = before.collections
+  const afterNftCollections = after.collections
+  // NFTCollectionBalance is (nfts, error)
+  const collectionError = (collection: any): string | undefined => collection?.[1]
+
+  return {
+    tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
+    nfts: foundNftTransfers.filter((nft, i) => {
+      const beforeError = collectionError(beforeNftCollections[i])
+
+      if (!beforeError || beforeError === '0x') return true
+
+      // The delta array and its addresses mapping are parallel, so the collection
+      // after the simulation sits at the same index as its address
+      const afterIndex = deltaAddressesMapping.findIndex(
+        (addr: string) => addr.toLowerCase() === foundNftTransfers[i]![0].toLowerCase()
+      )
+
+      if (afterIndex === -1) return false
+
+      const afterError = collectionError(afterNftCollections[afterIndex])
+
+      return !afterError || afterError === '0x'
+    })
+  }
+}
+
+export async function debugTraceCall(
+  baseAcc: BaseAccount,
+  op: AccountOp,
+  network: Network,
+  accountState: AccountOnchainState,
+  overrideData?: any
+): Promise<{ tokens: string[]; nfts: [string, bigint[]][] }> {
+  const account = baseAcc.getAccount()
+  const opts = {
+    blockTag: 'latest' as const,
+    from: DEPLOYLESS_SIMULATION_FROM,
+    mode: DeploylessMode.ProxyContract,
+    isEOA: isBasicAccount(account, accountState),
+    simulation: {
+      accountOps: [op],
+      baseAccount: baseAcc,
+      state: accountState
+    }
+  }
+
+  const params = getFunctionParams(account, op, accountState)
+
+  // we throw on purpose here so the controller receives feedback that
+  // debugTraceCall has actually failed
+  if (!params) throw new Error('cannot run debug_traceCall as getFunctionParams is empty')
+
   // initialize a new provider for debug trace call to avoid batching it
   // as sometimes debug_traceCall gets handled really slowly from the RPCs
   // and that affects wallet performance
   const provider = getRpcProvider(network.rpcUrls, network.chainId, network.selectedRpcUrl)
 
-  const params = getFunctionParams(account, op, accountState)
-  if (!params) return { tokens: [], nfts: [] }
-
-  const trace: CallTracerFrame = await provider
-    .send('debug_traceCall', [
+  try {
+    const trace: CallTracerFrame = await provider.send('debug_traceCall', [
       {
         to: params.to,
         value: toQuantity(params.value.toString()),
@@ -234,59 +314,27 @@ export async function debugTraceCall(
           : {}
       }
     ])
-    .catch((e) => {
-      throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
-    })
 
-  const { tokens: foundTokens, nfts: foundNftTransfers } = parseCallTracerResult(trace)
+    const { tokens: foundTokens, nfts: foundNftTransfers } = parseCallTracerResult(trace)
 
-  // we set the 3rd param to "true" as we don't need state override
-  const deploylessTokens = fromDescriptor(provider, BalanceGetter, true)
-  const deploylessNfts = fromDescriptor(provider, NFTGetter, true)
-
-  const getNftsPromise = deploylessNfts.call(
-    'simulateAndGetAllNFTs',
-    [
-      op.accountAddr,
-      account.associatedKeys,
-      foundNftTransfers.map(([address]) => address),
-      foundNftTransfers.map(([, x]) => x),
-      NFT_COLLECTION_LIMIT,
-      factory,
-      factoryCalldata,
-      simulationOps
-    ],
-    deploylessOpts
-  )
-
-  const result = await Promise.all([
-    deploylessTokens.call('getBalances', [op.accountAddr, foundTokens], deploylessOpts),
-    getNftsPromise
-  ])
-
-  const [[tokensWithErr], [before, after, , , , deltaAddressesMapping]] = result
-
-  const beforeNftCollections = before.collections
-  const afterNftCollections = after.collections
-
-  // clean up the provider after usage
-  try {
-    provider.destroy()
-  } catch (e) {
-    console.error(e)
-  }
-
-  return {
-    tokens: foundTokens.filter((addr, i) => tokensWithErr[i].error === '0x'),
-    nfts: foundNftTransfers.filter((nft, i) => {
-      if (!beforeNftCollections[i][3] || beforeNftCollections[i][3] === '0x') return true
-      const foundAfterToken = afterNftCollections.find(
-        (t: any, j: number) =>
-          deltaAddressesMapping[j].toLowerCase() === foundNftTransfers[i]![0].toLowerCase()
-      )
-      if (!foundAfterToken || !foundAfterToken[0]) return false
-
-      return !foundAfterToken[i][3] || foundAfterToken[0][3] === '0x'
-    })
+    return await getDiscoveredAssets(
+      provider,
+      baseAcc,
+      op,
+      network,
+      accountState,
+      foundTokens,
+      foundNftTransfers
+    )
+  } catch (e: any) {
+    // we do this so we could run finally
+    throw e
+  } finally {
+    // clean up the provider after usage
+    try {
+      provider.destroy()
+    } catch (e) {
+      console.error(e)
+    }
   }
 }

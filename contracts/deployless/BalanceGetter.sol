@@ -3,6 +3,7 @@ pragma solidity ^0.8.11;
 
 import './IERC20.sol';
 import './IAmbireAccount.sol';
+import './MetaFlags.sol';
 import './Simulation.sol';
 
 contract BalanceGetter is Simulation {
@@ -22,86 +23,93 @@ contract BalanceGetter is Simulation {
     uint256 amount;
     bytes error;
   }
-  struct BalancesAtNonce {
-    TokenInfo[] balances;
+  struct TokenMeta {
+    string symbol;
+    string name;
+    uint8 decimals;
+  }
+  struct BalanceAmountsAtNonce {
+    BalanceInfo[] balances;
     uint nonce;
   }
 
   function getERC20TokenInfo(
     IAmbireAccount account,
-    IERC20 token
+    IERC20 token,
+    bool withMeta
   ) external view returns (TokenInfo memory info) {
     info.amount = token.balanceOf(address(account));
+
+    if (!withMeta) return info;
+
     info.symbol = token.symbol();
     info.name = token.name();
     info.decimals = token.decimals();
   }
 
-  function getERC20TokenBalance(
+  // Balances for every token, metadata for the ones metaFlags points at. A single call
+  // per token reads both, so asking for metadata costs no extra call and no extra gas
+  // allowance, and a token the caller already knows costs one balance read.
+  function getBalancesAndMetas(
     IAmbireAccount account,
-    IERC20 token
-  ) external view returns (BalanceInfo memory info) {
-    info.amount = token.balanceOf(address(account));
+    address[] calldata tokenAddrs,
+    // Passing a second array of addresses makes the call more expensive, so we use a single array of flags instead.
+    bytes memory metaFlags
+  ) public view returns (BalanceInfo[] memory, TokenMeta[] memory) {
+    uint len = tokenAddrs.length;
+    BalanceInfo[] memory balances = new BalanceInfo[](len);
+    TokenMeta[] memory metas = new TokenMeta[](MetaFlags.count(metaFlags, len));
+    uint metaIndex = 0;
+
+    for (uint256 i = 0; i < len; i++) {
+      bool withMeta = MetaFlags.has(metaFlags, i);
+
+      if (tokenAddrs[i] == address(0)) {
+        balances[i] = BalanceInfo(address(account).balance, bytes(''));
+        if (withMeta) {
+          metas[metaIndex] = TokenMeta('ETH', 'Ether', 18);
+          metaIndex++;
+        }
+        continue;
+      }
+
+      try
+        this.getERC20TokenInfo{ gas: TOKEN_GAS_LIMIT }(account, IERC20(tokenAddrs[i]), withMeta)
+      returns (TokenInfo memory info) {
+        balances[i] = BalanceInfo(info.amount, bytes(''));
+        if (withMeta) {
+          metas[metaIndex] = TokenMeta(info.symbol, info.name, info.decimals);
+          metaIndex++;
+        }
+      } catch (bytes memory e) {
+        balances[i].error = e.length > 0 ? e : bytes('unkn');
+        // The entry is left empty, the caller reads the error off the balance
+        if (withMeta) metaIndex++;
+      }
+    }
+
+    return (balances, metas);
   }
 
   function getBalances(
     IAmbireAccount account,
-    address[] calldata tokenAddrs
-  ) public view returns (TokenInfo[] memory, uint256) {
-    uint len = tokenAddrs.length;
-    TokenInfo[] memory results = new TokenInfo[](len);
-    for (uint256 i = 0; i < len; i++) {
-      if (tokenAddrs[i] == address(0)) {
-        results[i] = TokenInfo('ETH', 'Ether', address(account).balance, 18, bytes(''));
-      } else {
-        try this.getERC20TokenInfo{ gas: TOKEN_GAS_LIMIT }(account, IERC20(tokenAddrs[i])) returns (
-          TokenInfo memory info
-        ) {
-          results[i] = info;
-        } catch (bytes memory e) {
-          results[i].error = e.length > 0 ? e : bytes('unkn');
-        }
-      }
-    }
-    return (results, block.number);
-  }
+    address[] calldata tokenAddrs,
+    bytes calldata metaFlags
+  ) public view returns (BalanceInfo[] memory, TokenMeta[] memory, uint256) {
+    (BalanceInfo[] memory balances, TokenMeta[] memory metas) = getBalancesAndMetas(
+      account,
+      tokenAddrs,
+      metaFlags
+    );
 
-  function getBalancesWithInfo(
-    IAmbireAccount account,
-    address[] calldata tokenAddrs
-  ) public view returns (TokenInfo[] memory, uint, uint) {
-    (TokenInfo[] memory results, uint blockNumber) = getBalances(account, tokenAddrs);
-    return (results, gasleft(), blockNumber);
-  }
-
-  function getBalancesOf(
-    IAmbireAccount account,
-    address[] calldata tokenAddrs
-  ) public view returns (BalanceInfo[] memory) {
-    uint len = tokenAddrs.length;
-    BalanceInfo[] memory results = new BalanceInfo[](len);
-
-    for (uint256 i = 0; i < len; i++) {
-      if (tokenAddrs[i] == address(0)) {
-        results[i] = BalanceInfo(address(account).balance, bytes(''));
-      } else {
-        try
-          this.getERC20TokenBalance{ gas: TOKEN_GAS_LIMIT }(account, IERC20(tokenAddrs[i]))
-        returns (BalanceInfo memory balanceInfo) {
-          results[i] = balanceInfo;
-        } catch (bytes memory e) {
-          results[i].error = e.length > 0 ? e : bytes('unkn');
-        }
-      }
-    }
-    return results;
+    return (balances, metas, block.number);
   }
 
   function getDelta(
-    TokenInfo[] memory balancesA,
+    BalanceInfo[] memory balancesA,
     BalanceInfo[] memory balancesB,
     address[] calldata tokenAddrs
-  ) internal pure returns (TokenInfo[] memory, address[] memory) {
+  ) internal pure returns (BalanceInfo[] memory, address[] memory) {
     uint deltaSize = 0;
 
     for (uint256 i = 0; i < balancesA.length; i++) {
@@ -110,7 +118,7 @@ contract BalanceGetter is Simulation {
       }
     }
 
-    TokenInfo[] memory delta = new TokenInfo[](deltaSize);
+    BalanceInfo[] memory delta = new BalanceInfo[](deltaSize);
 
     // During simulation, we return the delta between the balances before and after the simulation.
     // This array maintains a mapping between the indices of the passed-in token addresses and the tokens listed in the delta array.
@@ -135,6 +143,7 @@ contract BalanceGetter is Simulation {
     IAmbireAccount account,
     address[] memory associatedKeys,
     address[] calldata tokenAddrs,
+    bytes calldata metaFlags,
     // instead of passing {factory, code, salt}, we'll just have factory and factoryCalldata
     address factory,
     bytes memory factoryCalldata,
@@ -142,8 +151,9 @@ contract BalanceGetter is Simulation {
   )
     external
     returns (
-      BalancesAtNonce memory before,
-      BalancesAtNonce memory afterSimulation,
+      BalanceAmountsAtNonce memory before,
+      BalanceAmountsAtNonce memory afterSimulation,
+      TokenMeta[] memory metas,
       bytes memory /*simulationError*/,
       uint /*gasLeft*/,
       uint /*blockNum*/,
@@ -151,8 +161,7 @@ contract BalanceGetter is Simulation {
     )
   {
     address[] memory deltaAddressesMapping = new address[](0);
-    (TokenInfo[] memory results, ) = getBalances(account, tokenAddrs);
-    before.balances = results;
+    (before.balances, metas) = getBalancesAndMetas(account, tokenAddrs, metaFlags);
     (uint startNonce, bool success, bytes memory err) = Simulation.simulate(
       account,
       associatedKeys,
@@ -163,20 +172,28 @@ contract BalanceGetter is Simulation {
     before.nonce = startNonce;
 
     if (!success) {
-      return (before, afterSimulation, err, gasleft(), block.number, deltaAddressesMapping);
+      return (before, afterSimulation, metas, err, gasleft(), block.number, deltaAddressesMapping);
     }
 
     afterSimulation.nonce = account.nonce();
     if (afterSimulation.nonce != before.nonce) {
       // take only the changed balances, no need to fetch the metadata again
-      BalanceInfo[] memory resultsAfterSimulation = getBalancesOf(account, tokenAddrs);
+      (BalanceInfo[] memory balancesAfter, ) = getBalancesAndMetas(account, tokenAddrs, bytes(''));
       (afterSimulation.balances, deltaAddressesMapping) = getDelta(
         before.balances,
-        resultsAfterSimulation,
+        balancesAfter,
         tokenAddrs
       );
     }
 
-    return (before, afterSimulation, bytes(''), gasleft(), block.number, deltaAddressesMapping);
+    return (
+      before,
+      afterSimulation,
+      metas,
+      bytes(''),
+      gasleft(),
+      block.number,
+      deltaAddressesMapping
+    );
   }
 }

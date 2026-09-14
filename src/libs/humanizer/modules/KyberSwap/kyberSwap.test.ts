@@ -55,7 +55,9 @@ describe('KyberSwap', () => {
         getToken('0x912ce59144191c1204e64559fe8253a0e49e6548', 629898941662428755n)
       ]
     ]
-    const irCalls = KyberModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    const irCalls = transactions.map((c) =>
+      KyberModule(accountOp, c, humanizerInfo as HumanizerMeta)
+    )
     compareHumanizerVisualizations(irCalls, expectedVisualization)
   })
 })

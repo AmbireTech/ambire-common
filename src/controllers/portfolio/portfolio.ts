@@ -4,8 +4,18 @@ import {
   IRecurringTimeout,
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
+import { StaleRpcBlockError } from '../../classes/StaleRpcBlockError'
 import { STK_WALLET } from '../../consts/addresses'
-import { BLACKLIST_UPDATE_INTERVAL } from '../../consts/intervals'
+import {
+  BLACKLIST_UPDATE_INTERVAL,
+  SCHEDULED_PORTFOLIO_UPDATE_DELAY,
+  SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL
+} from '../../consts/intervals'
+import { ETHEREUM_CHAIN_ID, INVICTUS_RPC_URL_IDENTIFIER } from '../../consts/networks'
+import {
+  DEFAULT_STALE_RPC_BLOCK_THRESHOLD,
+  ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
+} from '../../consts/portfolio'
 import {
   Account,
   AccountId,
@@ -47,14 +57,12 @@ import {
 } from '../../libs/defiPositions/types'
 import { getAccountKeysCount } from '../../libs/keys/keys'
 import { Portfolio } from '../../libs/portfolio'
-import batcher from '../../libs/portfolio/batcher'
 import { CustomToken, TokenPreference } from '../../libs/portfolio/customToken'
 import { PortfolioDebugFlow } from '../../libs/portfolio/debug'
 import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAssets'
 import {
   convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
-  getFlags,
   getHintsError,
   getTotal,
   validateERC20Token
@@ -72,6 +80,7 @@ import {
   GetOptions,
   NetworkState,
   PortfolioControllerState,
+  PortfolioNetworkResult,
   PortfolioVerification,
   ScheduledUpdates,
   TemporaryTokens,
@@ -83,10 +92,13 @@ import {
   TokenValidationResult
 } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
+import { getFlags } from '../../libs/portfolio/tokenProcessing'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
+import batcher from '../../utils/batcher'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
+import { WalletTokenController } from '../walletToken/walletToken'
 
 const EXTERNAL_API_HINTS_TTL = {
   dynamic: 15 * 60 * 1000,
@@ -188,6 +200,8 @@ export class PortfolioController
    */
   protected hints: HintsController
 
+  #walletToken: WalletTokenController
+
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
@@ -222,7 +236,8 @@ export class PortfolioController
   #scheduledUpdates: ScheduledUpdates = {}
 
   /**
-   * Runs every 20 seconds and checks if there are any scheduled updates to run. If there are, it runs them and removes them from the schedule.
+   * Runs every SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL and checks if there are any scheduled updates to run.
+   * If there are, it runs them and removes them from the schedule.
    */
   #scheduledUpdatesRunnerInterval: IRecurringTimeout
 
@@ -257,6 +272,8 @@ export class PortfolioController
     this.#banner = banner
     this.#featureFlags = featureFlags
     this.hints = new HintsController(storage, accounts, keystore)
+    this.#walletToken = new WalletTokenController()
+    this.#walletToken.onError((error) => this.emitError(error))
     // Re-emit hints updates as portfolio updates so the re-exposed getters
     // (customTokens, tokenPreferences) reach the UI when they change.
     this.hints.onUpdate((forceEmit) => this.propagateUpdate(forceEmit))
@@ -267,7 +284,7 @@ export class PortfolioController
     )
     this.#scheduledUpdatesRunnerInterval = new RecurringTimeout(
       this.#runScheduledUpdates.bind(this),
-      20 * 1000,
+      SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL,
       this.emitError.bind(this)
     )
 
@@ -326,7 +343,9 @@ export class PortfolioController
             queueSegment.length === 1 && queueSegment[0]?.data.chainId === 'customAppChain'
 
           // Tells velcro-v3 how fresh the defi positions must be
-          const defiParam = `&defi=${isUpdatingOnlyDefiApps ? 'cache' : defiUpdateMode}`
+          const defiParam = `&defi=${
+            isUpdatingOnlyDefiApps ? DefiUpdateMode.Cache : defiUpdateMode
+          }`
 
           const url = `${this.#velcroUrl}/portfolio?networks=${queueSegment
             .map((x) => x.data.chainId)
@@ -643,6 +662,9 @@ export class PortfolioController
    *
    * If you instead need to remove a specific accountOp from the simulation results, use `discardSimulation`
    * (e.g., after an account op is broadcasted and confirmed)
+   *
+   * If possible, this method shouldn't be awaited as we run the
+   * risks of slowing the extension down unintentionally
    */
   async overrideSimulationResults(accountOp: AccountOp) {
     const { accountAddr, chainId } = accountOp
@@ -720,40 +742,70 @@ export class PortfolioController
     await this.#queue[accountAddr][chainId.toString()]
   }
 
+  /**
+   * Drops the given entries from the schedule, matching them by reference so that a newer entry,
+   * scheduled for the same chain while these were running, is kept.
+   */
+  #forgetScheduledUpdates(accountId: AccountId, updatesToForget: ScheduledUpdates[string]) {
+    const remaining = (this.#scheduledUpdates[accountId] || []).filter(
+      (update) => !updatesToForget.includes(update)
+    )
+
+    if (remaining.length) {
+      this.#scheduledUpdates[accountId] = remaining
+    } else {
+      delete this.#scheduledUpdates[accountId]
+    }
+  }
+
   async #runScheduledUpdates() {
     if (Object.keys(this.#scheduledUpdates).length === 0) return
 
-    const updatesToRun = structuredClone(this.#scheduledUpdates)
+    // The entries are references to the scheduled ones, so flagging them as running below
+    // mutates the schedule itself
+    const dueUpdatesByAccount: ScheduledUpdates = {}
+
+    Object.entries(this.#scheduledUpdates).forEach(([accountId, updates]) => {
+      const dueUpdates = updates.filter(
+        (update) =>
+          !update.isRunning && Date.now() - update.scheduledAt >= SCHEDULED_PORTFOLIO_UPDATE_DELAY
+      )
+
+      if (dueUpdates.length) dueUpdatesByAccount[accountId] = dueUpdates
+    })
+
+    const accountIdsToUpdate = Object.keys(dueUpdatesByAccount)
+
+    if (!accountIdsToUpdate.length) return
+
+    // Flag them as running so a subsequent run doesn't pick them up while the requests are in
+    // flight. They are kept in the schedule (instead of removed upfront) so the UI can tell the
+    // user the update is still happening.
+    accountIdsToUpdate.forEach((accountId) => {
+      dueUpdatesByAccount[accountId]!.forEach((update) => {
+        update.isRunning = true
+      })
+    })
+    this.emitUpdate()
 
     await Promise.all(
-      Object.entries(updatesToRun).map(async ([accountId, updates]) => {
-        const updatesOlderThanThreshold = updates.filter(
-          (update) => Date.now() - update.scheduledAt >= 60 * 1000
-        )
+      accountIdsToUpdate.map(async (accountId) => {
+        const dueUpdates = dueUpdatesByAccount[accountId]!
+        const chainIdsToUpdate = dueUpdates.map((update) => update.chainId)
 
-        if (updatesOlderThanThreshold.length === 0) return
-
-        const networksToUpdate = updatesOlderThanThreshold.map((update) => update.chainId)
-
-        // Remove the updates from the schedule so a second run doesn't pick them up while they are being processed
-        this.#scheduledUpdates[accountId] = updates.filter(
-          (update) => !networksToUpdate.includes(update.chainId)
-        )
-
-        if (this.#scheduledUpdates[accountId].length === 0) {
-          delete this.#scheduledUpdates[accountId]
+        try {
+          await this.updateSelectedAccount(
+            accountId,
+            this.#networks.networks.filter((n) => chainIdsToUpdate.includes(n.chainId)),
+            undefined,
+            {
+              bypassServerSideCache: dueUpdates.some((update) => update.bypassServerSideCache)
+            }
+          )
+        } finally {
+          this.#forgetScheduledUpdates(accountId, dueUpdates)
+          this.emitUpdate()
         }
-
-        await this.updateSelectedAccount(
-          accountId,
-          this.#networks.networks.filter((n) => networksToUpdate.includes(n.chainId)),
-          undefined,
-          {
-            bypassServerSideCache: updatesOlderThanThreshold.some(
-              (update) => update.bypassServerSideCache
-            )
-          }
-        )
       })
     )
   }
@@ -773,22 +825,27 @@ export class PortfolioController
     bypassServerSideCache: true
   }) {
     const existing = this.#scheduledUpdates[accountId] || []
-    const networkAlreadyScheduledForAccount = existing.find((update) => update.chainId === chainId)
+    // A running update is already fetching stale data, so it can't be debounced. The new
+    // transaction gets its own entry, which also keeps the UI indicator up until it runs.
+    const pendingUpdateForNetwork = existing.find(
+      (update) => update.chainId === chainId && !update.isRunning
+    )
 
-    if (networkAlreadyScheduledForAccount) {
-      networkAlreadyScheduledForAccount.bypassServerSideCache =
-        networkAlreadyScheduledForAccount.bypassServerSideCache || bypassServerSideCache
-      // Debounce: start the 60s window from the most recent transaction, not the first
-      networkAlreadyScheduledForAccount.scheduledAt = Date.now()
+    if (pendingUpdateForNetwork) {
+      pendingUpdateForNetwork.bypassServerSideCache =
+        pendingUpdateForNetwork.bypassServerSideCache || bypassServerSideCache
+      // Debounce: start the delay window from the most recent transaction, not the first
+      pendingUpdateForNetwork.scheduledAt = Date.now()
 
       this.debugLog(
         'simulation',
         `${chainId.toString()} Debounced scheduled update for ${accountId}`,
         () => ({
-          bypassServerSideCache: networkAlreadyScheduledForAccount.bypassServerSideCache,
-          scheduledAt: networkAlreadyScheduledForAccount.scheduledAt
+          bypassServerSideCache: pendingUpdateForNetwork.bypassServerSideCache,
+          scheduledAt: pendingUpdateForNetwork.scheduledAt
         })
       )
+      this.emitUpdate()
       return
     }
 
@@ -798,9 +855,23 @@ export class PortfolioController
     }))
 
     this.#scheduledUpdates[accountId] = [
-      ...(this.#scheduledUpdates[accountId] || []),
-      { chainId, bypassServerSideCache, scheduledAt: Date.now() }
+      ...existing,
+      { chainId, bypassServerSideCache, scheduledAt: Date.now(), isRunning: false }
     ]
+    this.emitUpdate()
+  }
+
+  /**
+   * The chains with a portfolio update queued or in flight after a recent transaction, by account.
+   * Read by the UI to tell the user their defi positions are about to refresh.
+   */
+  get scheduledUpdateChainIds(): { [accountId: string]: bigint[] } {
+    return Object.fromEntries(
+      Object.entries(this.#scheduledUpdates).map(([accountId, updates]) => [
+        accountId,
+        updates.map(({ chainId }) => chainId)
+      ])
+    )
   }
 
   /**
@@ -812,28 +883,19 @@ export class PortfolioController
    * Example usage: after an account op is broadcasted and confirmed
    */
   async discardSimulation(accountOps: AccountOp[]) {
-    let networksToUpdate: Network[] = []
-    let accountAddrToUpdate: string | null = null
-    let accountOpsAfterUpdate: { [key: string]: AccountOp[] } = {}
+    const updatesByAccount: {
+      [accountAddr: string]: {
+        networksByChainId: { [chainId: string]: Network }
+        accountOpIdsByChainId: { [chainId: string]: string[] }
+      }
+    } = {}
 
     accountOps.forEach((accountOp) => {
       const { accountAddr, chainId } = accountOp
+      const chainIdString = chainId.toString()
 
-      if (!this.#state[accountAddr] || !this.#state[accountAddr][chainId.toString()]) return
+      if (!this.#state[accountAddr]?.[chainIdString]) return
 
-      const networkState = this.#state[accountAddr][chainId.toString()]!
-
-      if (!networkState.result || !networkState.accountOps) return
-
-      accountOpsAfterUpdate[chainId.toString()] = structuredClone(networkState.accountOps || [])
-
-      const accountOpIndex = accountOpsAfterUpdate[chainId.toString()]!.findIndex(
-        (op) => op.id === accountOp.id
-      )
-
-      if (accountOpIndex === -1) return
-
-      accountOpsAfterUpdate[chainId.toString()]!.splice(accountOpIndex, 1)
       const networkData = this.#networks.networks.find((n) => n.chainId === chainId)
 
       if (!networkData) {
@@ -845,18 +907,35 @@ export class PortfolioController
         return
       }
 
-      networksToUpdate.push(networkData)
-      accountAddrToUpdate = accountAddr
+      if (!updatesByAccount[accountAddr]) {
+        updatesByAccount[accountAddr] = {
+          networksByChainId: {},
+          accountOpIdsByChainId: {}
+        }
+      }
+
+      updatesByAccount[accountAddr].networksByChainId[chainIdString] = networkData
+      updatesByAccount[accountAddr].accountOpIdsByChainId[chainIdString] = [
+        ...(updatesByAccount[accountAddr].accountOpIdsByChainId[chainIdString] || []),
+        accountOp.id
+      ]
     })
 
-    if (!accountAddrToUpdate || networksToUpdate.length === 0) return
-    this.debugLog('simulation', `Discarding simulation for ${accountAddrToUpdate}`, () => ({
-      discardedOpIds: accountOps.map((op) => op.id),
-      chainIds: networksToUpdate.map((n) => n.chainId.toString())
-    }))
-    await this.updateSelectedAccount(accountAddrToUpdate, networksToUpdate, {
-      accountOps: accountOpsAfterUpdate
-    })
+    await Promise.all(
+      Object.entries(updatesByAccount).map(
+        async ([accountAddr, { networksByChainId, accountOpIdsByChainId }]) => {
+          const networksToUpdate = Object.values(networksByChainId)
+
+          this.debugLog('simulation', `Discarding simulation for ${accountAddr}`, () => ({
+            discardedOpIds: Object.values(accountOpIdsByChainId).flat(),
+            chainIds: Object.keys(networksByChainId)
+          }))
+          await this.updateSelectedAccount(accountAddr, networksToUpdate, undefined, {
+            accountOpIdsToDiscard: accountOpIdsByChainId
+          })
+        }
+      )
+    )
   }
 
   async updateTokenValidationByStandard(
@@ -1178,6 +1257,69 @@ export class PortfolioController
     this.emitUpdate()
   }
 
+  /**
+   * How many blocks behind the stored result a freshly fetched one is.
+   */
+  static #getBlocksBehind(
+    networkState: NetworkState<PortfolioNetworkResult> | undefined,
+    newBlockNumber: number,
+    rpcUrl: string
+  ) {
+    const storedBlockNumber = networkState?.result?.blockNumber
+
+    if (!storedBlockNumber || networkState?.rpcInfo?.url !== rpcUrl) return 0
+
+    return Math.max(storedBlockNumber - newBlockNumber, 0)
+  }
+
+  /**
+   * Records how far behind the RPC is after an update was rejected for being older than
+   * the one already displayed, and reports our own RPC falling behind once per episode.
+   */
+  #onStaleRpcBlock(accountId: AccountId, network: Network, error: StaleRpcBlockError) {
+    const state = this.#state[accountId]?.[network.chainId.toString()]
+
+    if (!state) return
+
+    const rpcUrl = network.selectedRpcUrl
+    const isFirstRejection = !state.rpcInfo?.since
+
+    state.rpcInfo = {
+      url: rpcUrl,
+      behindBy: error.blocksBehind,
+      since: state.rpcInfo?.since ?? Date.now()
+    }
+
+    this.debugLog(
+      'update',
+      `${network.chainId.toString()} update rejected for ${accountId}`,
+      () => ({
+        rpcUrl,
+        receivedBlockNumber: error.receivedBlockNumber,
+        blocksBehind: error.blocksBehind
+      })
+    )
+
+    const message = '[PORTFOLIO_STALE_RPC_BLOCK] The RPC returned the state of an older block'
+    const reportedError = new Error(message)
+
+    ;(reportedError as any).debugInfo = {
+      accountId,
+      chainId: network.chainId.toString(),
+      rpcUrl,
+      receivedBlockNumber: error.receivedBlockNumber,
+      storedBlockNumber: error.receivedBlockNumber + error.blocksBehind,
+      blocksBehind: error.blocksBehind
+    }
+
+    this.emitError({
+      level: 'silent',
+      sendCrashReport: isFirstRejection && rpcUrl.includes(INVICTUS_RPC_URL_IDENTIFIER),
+      message,
+      error: reportedError
+    })
+  }
+
   static #getCanSkipUpdate(networkState?: NetworkState, maxDataAgeMs?: number) {
     const hasImportantErrors = networkState?.errors.some((e) => e.level === 'critical')
 
@@ -1256,7 +1398,7 @@ export class PortfolioController
       maxDataAgeMs: defiMaxDataAgeMs
     })
 
-    const canSkipDefiUpdate = defiUpdateMode === DefiUpdateMode.StaleOk
+    const canSkipDefiUpdate = defiUpdateMode === DefiUpdateMode.Cache
 
     // Request can be skipped altogether
     if (canSkipExternalApiHintsUpdate && canSkipDefiUpdate) {
@@ -1468,6 +1610,8 @@ export class PortfolioController
         portfolioLib.get(account.addr, {
           tokenDataRecency: 60000 * 5,
           tokenDataCache: networkTokenDataCache,
+          knownTokenMetadata: this.hints.getKnownTokenMetadata(network.chainId),
+          knownCollectionMetadata: this.hints.getKnownCollectionMetadata(network.chainId),
           fetchPinned: !hasNonZeroTokens,
           ...allHints,
           ...portfolioProps,
@@ -1513,6 +1657,29 @@ export class PortfolioController
 
       this.tokenDataCache[network.chainId.toString()] = portfolioResult.tokenDataCache
 
+      const rpcUrl = network.selectedRpcUrl
+
+      const blocksBehind = PortfolioController.#getBlocksBehind(
+        accountState[network.chainId.toString()],
+        portfolioResult.blockNumber,
+        rpcUrl
+      )
+
+      // A lagging RPC returns the state of an older block, which would take the portfolio
+      // backwards - outdated balances and an outdated nonce for the simulation. Keep what
+      // is already displayed until the RPC catches up.
+      const staleBlockThreshold =
+        network.chainId === ETHEREUM_CHAIN_ID
+          ? ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
+          : DEFAULT_STALE_RPC_BLOCK_THRESHOLD
+
+      if (blocksBehind > staleBlockThreshold) {
+        throw new StaleRpcBlockError({
+          receivedBlockNumber: portfolioResult.blockNumber,
+          blocksBehind
+        })
+      }
+
       const hasError = combinedErrors.some((e) => e.level !== 'silent')
       let lastSuccessfulUpdate = accountState[network.chainId.toString()]?.lastSuccessfulUpdate || 0
 
@@ -1532,6 +1699,7 @@ export class PortfolioController
         errors: combinedErrors,
         lastSuccessfulUpdate,
         verification,
+        rpcInfo: { url: rpcUrl },
         result: {
           ...portfolioResult,
           // Overwrite the discovery time from the portfolio lib
@@ -1545,12 +1713,45 @@ export class PortfolioController
             : (state.result?.lastExternalApiUpdateData ?? null),
           tokens: combinedTokens,
           total: getTotal(combinedTokens, newDefiState),
-          defiPositions: newDefiState
+          defiPositions: newDefiState,
+          ...(state.result?.walletStaking && { walletStaking: state.result.walletStaking })
         }
       }
       const verifiedState = accountState[network.chainId.toString()]
 
       this.emitUpdate()
+
+      if (verifiedState) {
+        void this.#walletToken
+          .getWalletStakingShareValue({
+            chainId: network.chainId,
+            tokens: combinedTokens,
+            provider: portfolioLib.provider
+          })
+          .then((walletStaking) => {
+            if (
+              !walletStaking ||
+              this.#state[account.addr]?.[network.chainId.toString()] !== verifiedState ||
+              !verifiedState.result
+            ) {
+              return
+            }
+
+            verifiedState.result.walletStaking = walletStaking
+            this.emitUpdate()
+          })
+          .catch((error) => {
+            const walletStakingError =
+              error instanceof Error
+                ? error
+                : new Error('Unable to update the WALLET staking conversion rate.')
+            this.emitError({
+              level: 'silent',
+              message: 'Unable to update the WALLET staking conversion rate.',
+              error: walletStakingError
+            })
+          })
+      }
 
       // Fire-and-forget: verify the just-fetched balances against Colibri without
       // blocking the portfolio update (balances are already emitted above). The
@@ -1598,11 +1799,16 @@ export class PortfolioController
 
       return [true, discoveryData]
     } catch (e: any) {
-      this.emitError({
-        level: 'silent',
-        message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId})`,
-        error: e
-      })
+      if (e instanceof StaleRpcBlockError) {
+        this.#onStaleRpcBlock(account.addr, network, e)
+      } else {
+        this.emitError({
+          level: 'silent',
+          message: `Error while executing the 'get' function in the portfolio library on ${network.name} (${network.chainId})`,
+          error: e
+        })
+      }
+
       state.accountOps = portfolioProps?.simulation?.accountOps
       state.isLoading = false
       if (state.verification?.status === 'loading') {
@@ -1742,7 +1948,13 @@ export class PortfolioController
     const network = this.#networks.allNetworks.find((net) => net.chainId === chainId)
     if (!network) return undefined
 
-    const baseAcc = getBaseAccount(acc, networkState, network)
+    const baseAcc = getBaseAccount(
+      acc,
+      networkState,
+      network,
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
+    )
     return baseAcc.getNonceId()
   }
 
@@ -1808,6 +2020,7 @@ export class PortfolioController
       maxDataAgeMsUnused?: number
       isManualUpdate?: boolean
       bypassServerSideCache?: boolean
+      accountOpIdsToDiscard?: { [chainId: string]: string[] }
     }
   ) {
     const {
@@ -1817,7 +2030,8 @@ export class PortfolioController
       // portfolio updates, most of which shouldn't update the defi positions.
       defiMaxDataAgeMs = -1,
       isManualUpdate,
-      bypassServerSideCache
+      bypassServerSideCache,
+      accountOpIdsToDiscard
     } = opts || {}
     await this.initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
@@ -1861,20 +2075,46 @@ export class PortfolioController
           const networkAccountState =
             this.#accounts.accountStates?.[accountId]?.[network.chainId.toString()]
           const simulatedAccountOps = accountState[network.chainId.toString()]?.accountOps
-          const accountOpsToSimulate = currentAccountOps || simulatedAccountOps
+          const accountOpIdsToDiscardOnNetwork = accountOpIdsToDiscard?.[network.chainId.toString()]
+          const accountOpIdsToDiscardSet = new Set(accountOpIdsToDiscardOnNetwork)
+
+          // Read and filter the latest simulation inside the queue so an older confirmed
+          // AccountOp cannot discard a newer simulation that was already queued before it.
+          if (
+            accountOpIdsToDiscardOnNetwork &&
+            !simulatedAccountOps?.some((op) => accountOpIdsToDiscardSet.has(op.id))
+          )
+            return
+
+          // currentAccountOps || simulatedAccountOps means that pendingToBeConfirmed
+          // accountOps will be discarded if a new transaction on the same network comes.
+          // We evaluated the complexity to fix this and decided it's not worth it.
+          // When a new txn comes, pendingToBeConfirmed simulations will be dropped
+          // and that's fine as you care about the simulation of your current txn
+          const accountOpsToSimulate = accountOpIdsToDiscardOnNetwork
+            ? simulatedAccountOps!.filter((op) => !accountOpIdsToDiscardSet.has(op.id))
+            : currentAccountOps || simulatedAccountOps
 
           // Even if maxDataAgeMs is set to a non-zero value, we want to force an update when the AccountOps change.
           // We pass undefined, because setting the value to 0 would imply a manual update by the user.
           const maxDataAgeMs = this.#getMaxDataAgeMs(
             accountId,
             network.chainId,
-            !!currentAccountOps,
+            !!currentAccountOps || !!accountOpIdsToDiscardOnNetwork,
             paramsMaxDataAgeMs,
             paramsMaxDataAgeMsUnused
           )
           const state = simulation?.states?.[network.chainId.toString()] || networkAccountState
 
-          const baseAcc = state ? getBaseAccount(selectedAccount, state, network) : null
+          const baseAcc = state
+            ? getBaseAccount(
+                selectedAccount,
+                state,
+                network,
+                this.#featureFlags.isFeatureEnabled('erc4337'),
+                this.#featureFlags.isFeatureEnabled('eip7702')
+              )
+            : null
 
           const [isSuccessful, discoveryResponse] = await this.updatePortfolioState(
             selectedAccount,
@@ -1929,6 +2169,11 @@ export class PortfolioController
                 network.chainId,
                 accountId,
                 networkResult
+              )
+              this.hints.learnTokenMetadata(network.chainId, networkResult.fetchedTokenMetadata)
+              this.hints.learnCollectionMetadata(
+                network.chainId,
+                networkResult.fetchedCollectionMetadata
               )
             }
 
@@ -2090,6 +2335,9 @@ export class PortfolioController
     return this.#networksWithAssetsByAccounts[accountAddr] || {}
   }
 
+  /**
+   * Always pass account ops that belong to the same account & network
+   */
   async simulateAccountOp(op: AccountOp): Promise<void> {
     const account = this.#accounts.accounts.find((acc) => acc.addr === op.accountAddr)
     const network = this.#networks.networks.find((net) => net.chainId === op.chainId)
@@ -2172,7 +2420,8 @@ export class PortfolioController
       ...this,
       ...super.toJSON(),
       customTokens: this.customTokens,
-      tokenPreferences: this.tokenPreferences
+      tokenPreferences: this.tokenPreferences,
+      scheduledUpdateChainIds: this.scheduledUpdateChainIds
     }
   }
 }

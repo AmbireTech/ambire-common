@@ -1,6 +1,7 @@
 import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IDappsController } from '../../interfaces/dapp'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
@@ -23,6 +24,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     networks: INetworksController
     keystore: IKeystoreController
     portfolio: IPortfolioController
+    featureFlags: IFeatureFlagsController
     signAccountOpPreference: SignAccountOpPreferenceController
     externalSignerControllers: ExternalSignerControllers
     account: Account

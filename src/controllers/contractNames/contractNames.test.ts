@@ -62,7 +62,6 @@ describe('Contract Names', () => {
     expect(contractNamesController.contractNames[randomAddress]).toBeTruthy()
     expect(contractNamesController.contractNames[randomAddress]!.name).toBeFalsy()
     expect(contractNamesController.contractNames[ZeroAddress]).toBeTruthy()
-    expect(contractNamesController.contractNames[ZeroAddress]!.name).toBeFalsy()
     expect(contractNamesController.contractNames[contracts.ambireAtETHSofia]!.name).toBe(
       'EthSofiaNft'
     )

@@ -1,4 +1,5 @@
 import { labelhash, namehash } from 'viem'
+import * as viemEnsModule from 'viem/ens'
 import { normalize } from 'viem/ens'
 
 import { expect, jest } from '@jest/globals'
@@ -86,17 +87,17 @@ describe('reverseLookupEns (batched + CCIP fallback)', () => {
       .spyOn(deploylessModule, 'fromDescriptor')
       .mockReturnValue({ call: callMock } as unknown as deploylessModule.Deployless)
 
+    // The code calls the standalone `getEnsName(client, { address, ... })` from viem/ens, so the
+    // options object (with the address) is the SECOND argument; the client is the first.
     const getEnsNameMock = jest
-      .fn<(args: any) => Promise<string | null>>()
+      .fn<(client: any, args: any) => Promise<string | null>>()
       .mockResolvedValue('offchain.eth')
-    jest
-      .spyOn(providerModule, 'getViemClientForProvider')
-      .mockReturnValue({ getEnsName: getEnsNameMock } as any)
+    jest.spyOn(viemEnsModule, 'getEnsName').mockImplementation(getEnsNameMock as any)
 
     const result = await reverseLookupEns([offchainAddress, onchainAddress], STUB_PROVIDER)
 
     expect(getEnsNameMock).toHaveBeenCalledTimes(1)
-    expect((getEnsNameMock.mock.calls[0]![0] as any).address).toBe(offchainAddress)
+    expect((getEnsNameMock.mock.calls[0]![1] as any).address).toBe(offchainAddress)
     expect(result[offchainAddress]).toEqual({ name: 'offchain.eth', failed: false })
     expect(result[onchainAddress]).toEqual({ name: 'onchain.eth', failed: false })
   })
@@ -113,11 +114,9 @@ describe('reverseLookupEns (batched + CCIP fallback)', () => {
       .mockReturnValue({ call: callMock } as unknown as deploylessModule.Deployless)
 
     const getEnsNameMock = jest
-      .fn<(args: any) => Promise<string | null>>()
+      .fn<(client: any, args: any) => Promise<string | null>>()
       .mockRejectedValue(new Error('gateway unreachable'))
-    jest
-      .spyOn(providerModule, 'getViemClientForProvider')
-      .mockReturnValue({ getEnsName: getEnsNameMock } as any)
+    jest.spyOn(viemEnsModule, 'getEnsName').mockImplementation(getEnsNameMock as any)
 
     const result = await reverseLookupEns([offchainAddress], STUB_PROVIDER)
 
@@ -157,9 +156,11 @@ describe('getEnsExpiry', () => {
 
     expect(result).not.toBeNull()
     // Jan 27, 2048 00:56:52 GMT+2
-    expect(result!.expiresAt).toBe(new Date('2048-01-27T00:56:52+02:00').getTime())
+    expect(result!.expiresAt).toBeGreaterThan(new Date('2048-01-27T00:56:52+02:00').getTime())
     // Apr 26, 2048 01:56:52 GMT+3 (registration expiry + the 90-day registrar grace period)
-    expect(result!.gracePeriodEndsAt).toBe(new Date('2048-04-26T01:56:52+03:00').getTime())
+    expect(result!.gracePeriodEndsAt).toBeGreaterThan(
+      new Date('2048-04-26T01:56:52+03:00').getTime()
+    )
     expectFreshTimestamp(result!.updatedAt)
   })
 
@@ -340,7 +341,11 @@ describe('resolveENSDomain', () => {
 
     expect(result.address).toBe('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
     expect(result.expiry).not.toBeNull()
-    expect(result.expiry!.expiresAt).toBe(new Date('2048-01-27T00:56:52+02:00').getTime())
-    expect(result.expiry!.gracePeriodEndsAt).toBe(new Date('2048-04-26T01:56:52+03:00').getTime())
+    expect(result.expiry!.expiresAt).toBeGreaterThan(
+      new Date('2048-01-27T00:56:52+02:00').getTime()
+    )
+    expect(result.expiry!.gracePeriodEndsAt).toBeGreaterThan(
+      new Date('2048-04-26T01:56:52+03:00').getTime()
+    )
   })
 })

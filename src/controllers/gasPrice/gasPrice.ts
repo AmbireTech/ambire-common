@@ -59,6 +59,10 @@ export class GasPriceController extends EventEmitter {
     this.#getSignAccountOpState = getSignAccountOpState
   }
 
+  setBaseAccount(baseAccount: BaseAccount) {
+    this.#baseAccount = baseAccount
+  }
+
   async fetch(emitLevelOnFailure: ErrorRef['level'] = 'silent') {
     if (this.areGasPricesUsedFromBundlerEstimation) return
 
@@ -109,7 +113,7 @@ export class GasPriceController extends EventEmitter {
 
       // if the gas price data has been fetched once successfully OR an estimation error
       // is currently being displayed, do not emit another error
-      if (this.gasPrices || !estimation || estimation.estimationRetryError) return
+      if (this.gasPrices || !estimation || estimation.isRetryingFailure()) return
 
       const { type } = decodeError(e)
 

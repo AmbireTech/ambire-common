@@ -1,4 +1,4 @@
-import { parseEther } from 'ethers'
+import { MaxUint256, parseEther } from 'ethers'
 
 import { beforeEach, describe, expect } from '@jest/globals'
 
@@ -12,8 +12,10 @@ import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } f
 
 const address1 = '0x6942069420694206942069420694206942069420'
 const address2 = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+const address3 = '0xcccccccccccccccccccccccccccccccccccccccc'
 const WETH_ADDRESS = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2'
 const NFT_ADDRESS = '0x026224A2940bFE258D0dbE947919B62fE321F042'
+const DAI_ADDRESS = '0x6b175474e89094c44da98b954eedeac495271d0f'
 const typedMessages = {
   erc20: [
     {
@@ -25,6 +27,32 @@ const typedMessages = {
     }
   ],
 
+  daiPermit: [
+    // grant with expiry
+    {
+      holder: address1,
+      spender: address2,
+      nonce: 1n,
+      expiry: 968187600n,
+      allowed: true
+    },
+    // grant without expiry (0 means the permit never expires)
+    {
+      holder: address1,
+      spender: address2,
+      nonce: 1n,
+      expiry: 0n,
+      allowed: true
+    },
+    // revoke
+    {
+      holder: address1,
+      spender: address2,
+      nonce: 1n,
+      expiry: 968187600n,
+      allowed: false
+    }
+  ],
   erc721: [
     {
       spender: address2,
@@ -74,6 +102,55 @@ const typedMessages = {
       spender: '0x1fa57f879417e029ef57d7ce915b0aa56a507c31',
       nonce: 144965843626974229045100328034567758130n,
       deadline: 1770952162
+    }
+  ],
+  PermitWitnessTransferFrom: [
+    // witness with an explicit recipient
+    {
+      permitted: {
+        token: WETH_ADDRESS,
+        amount: parseEther('1')
+      },
+      spender: address2,
+      nonce: 1n,
+      deadline: 968187600n,
+      witness: {
+        recipient: address3,
+        orderId: 1n
+      }
+    },
+    // witness with a zero recipient - anyone who submits the transfer picks the receiver
+    {
+      permitted: {
+        token: WETH_ADDRESS,
+        amount: parseEther('1')
+      },
+      spender: address2,
+      nonce: 1n,
+      deadline: 968187600n,
+      witness: {
+        recipient: '0x0000000000000000000000000000000000000000',
+        orderId: 1n
+      }
+    },
+    // batch witness without a recipient field
+    {
+      permitted: [
+        {
+          token: WETH_ADDRESS,
+          amount: parseEther('1')
+        },
+        {
+          token: DAI_ADDRESS,
+          amount: parseEther('0.5')
+        }
+      ],
+      spender: address2,
+      nonce: 1n,
+      deadline: 968187600n,
+      witness: {
+        orderId: 1n
+      }
     }
   ],
   fallback: [
@@ -126,6 +203,57 @@ describe('typed message tests', () => {
     ]
 
     messageTemplate.content.message = typedMessages.erc20[0]!
+    const { fullVisualization } = erc20Module(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+  test('erc20 module with DAI-style permit (grant)', () => {
+    const expectedVisualization = [
+      getAction('Grant approval'),
+      getLabel('for'),
+      getToken(DAI_ADDRESS, MaxUint256),
+      getLabel('to'),
+      getAddressVisualization(address2),
+      getDeadline(968187600n)
+    ]
+
+    messageTemplate.content.message = typedMessages.daiPermit[0]!
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = DAI_ADDRESS
+    const { fullVisualization } = erc20Module(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+  test('erc20 module with DAI-style permit (grant, no expiry)', () => {
+    const expectedVisualization = [
+      getAction('Grant approval'),
+      getLabel('for'),
+      getToken(DAI_ADDRESS, MaxUint256),
+      getLabel('to'),
+      getAddressVisualization(address2)
+    ]
+
+    messageTemplate.content.message = typedMessages.daiPermit[1]!
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = DAI_ADDRESS
+    const { fullVisualization } = erc20Module(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+  })
+  test('erc20 module with DAI-style permit (revoke)', () => {
+    const expectedVisualization = [
+      getAction('Revoke approval'),
+      getToken(DAI_ADDRESS, 0n),
+      getLabel('for'),
+      getAddressVisualization(address2)
+    ]
+
+    messageTemplate.content.message = typedMessages.daiPermit[2]!
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = DAI_ADDRESS
     const { fullVisualization } = erc20Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedVisualization)
@@ -213,6 +341,99 @@ describe('typed message tests', () => {
     const { fullVisualization } = permit2Module(messageTemplate)
     expect(fullVisualization).toBeTruthy()
     compareVisualizations(fullVisualization!, expectedBatchVisualization)
+  })
+
+  const setPermit2WitnessMessage = (
+    types: Record<string, { name: string; type: string }[]>,
+    message: Record<string, any>
+  ) => {
+    ;(messageTemplate.content as TypedMessageUserRequest['meta']['params']).types = {
+      EIP712Domain: [],
+      ...types
+    }
+    ;(
+      messageTemplate.content as TypedMessageUserRequest['meta']['params']
+    ).domain.verifyingContract = '0x000000000022d473030f116ddee9f6b43ac78ba3'
+    messageTemplate.content.message = message
+  }
+
+  test('permit2 witness transfer with a recipient', () => {
+    const expectedVisualization = [
+      getAction('Approve'),
+      getAddressVisualization(address2),
+      getLabel('to transfer'),
+      getToken(WETH_ADDRESS, 1000000000000000000n),
+      getLabel('and send it to'),
+      getAddressVisualization(address3),
+      getDeadline(968187600n)
+    ]
+    setPermit2WitnessMessage(
+      { PermitWitnessTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }] },
+      typedMessages.PermitWitnessTransferFrom[0]!
+    )
+    const { fullVisualization, warnings } = permit2Module(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+    expect(warnings).toHaveLength(0)
+  })
+
+  test('permit2 witness transfer with a zero recipient warns instead of showing the zero address', () => {
+    const expectedVisualization = [
+      getAction('Approve'),
+      getAddressVisualization(address2),
+      getLabel('to transfer'),
+      getToken(WETH_ADDRESS, 1000000000000000000n),
+      getLabel('and send them to anyone', true),
+      getDeadline(968187600n)
+    ]
+    setPermit2WitnessMessage(
+      { PermitWitnessTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }] },
+      typedMessages.PermitWitnessTransferFrom[1]!
+    )
+    const { fullVisualization, warnings } = permit2Module(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+    expect(
+      fullVisualization!.some(
+        (v) => v.type === 'address' && v.address === '0x0000000000000000000000000000000000000000'
+      )
+    ).toBe(false)
+    expect(warnings).toHaveLength(1)
+    expect(warnings![0]!.code).toBe('PERMIT2_MISSING_RECIPIENT')
+  })
+
+  test('permit2 batch witness transfer without a recipient in the witness', () => {
+    const expectedVisualization = [
+      getAction('Approve'),
+      getAddressVisualization(address2),
+      getLabel('to transfer'),
+      getToken(WETH_ADDRESS, 1000000000000000000n),
+      getLabel('and'),
+      getToken(DAI_ADDRESS, 500000000000000000n),
+      getDeadline(968187600n)
+    ]
+    setPermit2WitnessMessage(
+      { PermitBatchWitnessTransferFrom: [{ name: 'permitted', type: 'TokenPermissions[]' }] },
+      typedMessages.PermitWitnessTransferFrom[2]!
+    )
+    const { fullVisualization, warnings } = permit2Module(messageTemplate)
+    expect(fullVisualization).toBeTruthy()
+    compareVisualizations(fullVisualization!, expectedVisualization)
+    expect(warnings).toHaveLength(0)
+  })
+
+  test('permit2 witness transfer with an incomplete permitted struct is not humanized', () => {
+    setPermit2WitnessMessage(
+      { PermitWitnessTransferFrom: [{ name: 'permitted', type: 'TokenPermissions' }] },
+      {
+        permitted: { token: WETH_ADDRESS },
+        spender: address2,
+        nonce: 1n,
+        deadline: 968187600n,
+        witness: { recipient: address3 }
+      }
+    )
+    expect(permit2Module(messageTemplate).fullVisualization).toHaveLength(0)
   })
 
   test('cowswap module sell order', () => {

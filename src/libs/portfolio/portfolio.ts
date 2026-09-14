@@ -1,6 +1,8 @@
 import { ZeroAddress } from 'ethers'
 import { getAddress } from 'viem'
 
+import { getFeeToken } from '@/libs/portfolio/tokenProcessing'
+
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
@@ -8,10 +10,11 @@ import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import batcher from '../../utils/batcher'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
-import batcher from './batcher'
 import { isBlacklistedAsset, prepareBlacklistPatterns, STATIC_BLACKLIST } from './blacklist'
 import { portfolioDebugLog } from './debug'
+import { PORTFOLIO_LIB_ERROR_NAMES } from './errorNames'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
 import {
@@ -19,6 +22,7 @@ import {
   formatExternalHintsAPIResponse,
   getHardcodedCitreaPrices,
   mergeERC721s,
+  planAssetMetadata,
   tokenFilter
 } from './helpers'
 import {
@@ -32,9 +36,11 @@ import {
   TokenDataCache,
   TokenDataCacheValue,
   TokenError,
+  TokenMetadataFetchPlan,
   TokenResult
 } from './interfaces'
-import { flattenResults, paginate } from './pagination'
+import { paginate } from '../../utils/paginate'
+import { flattenResults } from './pagination'
 
 export const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
@@ -56,19 +62,8 @@ export const LIMITS: Limits = {
   }
 }
 
-// @TODO: Move this somewhere else
-export const PORTFOLIO_LIB_ERROR_NAMES = {
-  /** External hints API (Velcro) request failed but fallback is sufficient */
-  NonCriticalApiHintsError: 'NonCriticalApiHintsError',
-  /** External API (Velcro) hints are older than X minutes */
-  StaleApiHintsError: 'StaleApiHintsError',
-  /** No external API (Velcro) hints are available- the request failed without fallback */
-  NoApiHintsError: 'NoApiHintsError',
-  /** One or more cena request has failed */
-  PriceFetchError: 'PriceFetchError',
-  /** Defi discovery failed */
-  DefiDiscoveryError: 'DefiDiscoveryError'
-}
+// Re-exported for backwards compatibility.
+export { PORTFOLIO_LIB_ERROR_NAMES }
 
 export const getEmptyHints = (): Hints => ({
   erc20s: [],
@@ -219,7 +214,9 @@ export class Portfolio {
       tokenDataRecency,
       blacklist,
       preventTokenBlacklisting,
-      deployless
+      deployless,
+      knownTokenMetadata,
+      knownCollectionMetadata
     } = { ...defaultOptions, ...opts }
     const toBeLearned: PortfolioLibGetResult['toBeLearned'] = {
       erc20s: [],
@@ -255,17 +252,26 @@ export class Portfolio {
       ...Object.values(specialErc721Hints || {})
     ])
 
-    const checksummedErc20Hints = hints.erc20s
-      .map((address) => {
-        try {
-          // getAddress may throw an error. This will break the portfolio
-          // if the error isn't caught
-          return getAddress(address)
-        } catch {
-          return null
-        }
-      })
-      .filter(Boolean) as string[]
+    // Deduped before checksumming for performance
+    const seenErc20Hints = new Set<string>()
+    const checksummedErc20Hints: string[] = []
+
+    hints.erc20s.forEach((address) => {
+      try {
+        const lowercasedAddress = address.toLowerCase()
+
+        if (seenErc20Hints.has(lowercasedAddress)) return
+
+        // getAddress may throw an error. This will break the portfolio
+        // if the error isn't caught
+        const checksummedAddress = getAddress(address)
+
+        seenErc20Hints.add(lowercasedAddress)
+        checksummedErc20Hints.push(checksummedAddress)
+      } catch {
+        // Not an address, so it can't be a token
+      }
+    })
 
     // Merge static and dynamic blacklisted addresses for this chain
     const chainIdStr = this.network.chainId.toString()
@@ -289,13 +295,24 @@ export class Portfolio {
 
       tokenDataCache.set(addr, [start, tokenDataHint])
     }
+    const collectionsHints = Object.entries(hints.erc721s)
+
+    // Decided once for the whole update so that every page agrees on which assets
+    // must be read in full, and so the freshly read ones can be reported back. With
+    // nothing held, everything is read from the chain and nothing is reported back.
+    const metadataPlan = planAssetMetadata(hints.erc20s, knownTokenMetadata, start)
+    const collectionMetadataPlan = planAssetMetadata(
+      Object.keys(hints.erc721s),
+      knownCollectionMetadata,
+      start
+    )
+
     const discoveryDone = Date.now()
 
     // .isLimitedAt24kbData should be the same for both instances; @TODO more elegant check?
     const limits: LimitsOptions = this.deploylessTokens.isLimitedAt24kbData
       ? LIMITS.deploylessProxyMode
       : LIMITS.deploylessStateOverrideMode
-    const collectionsHints = Object.entries(hints.erc721s)
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
         paginate(hints.erc20s, opts.simulation ? limits.erc20Simulation : limits.erc20).map(
@@ -303,7 +320,7 @@ export class Portfolio {
             getTokens(
               this.network,
               this.deploylessTokens,
-              { simulation, blockTag, specialErc20Hints, deployless },
+              { simulation, blockTag, specialErc20Hints, deployless, metadataPlan },
               accountAddr,
               page,
               index
@@ -315,7 +332,7 @@ export class Portfolio {
           getNFTs(
             this.network,
             this.deploylessNfts,
-            { simulation, blockTag, deployless },
+            { simulation, blockTag, deployless, metadataPlan: collectionMetadataPlan },
             accountAddr,
             page,
             limits
@@ -331,6 +348,8 @@ export class Portfolio {
       afterNonce: bigint
     }
     const [collectionsWithErrResult] = collectionsWithErr
+    const fetchedTokenMetadata: PortfolioLibGetResult['fetchedTokenMetadata'] = []
+    const fetchedCollectionMetadata: PortfolioLibGetResult['fetchedCollectionMetadata'] = []
 
     // Re-map/filter into our format
     const getTokenDataFromCache = (
@@ -376,10 +395,25 @@ export class Portfolio {
       .filter((_tokensWithErrResult: [TokenError, TokenResult]) => {
         if (!isValidToken(_tokensWithErrResult[0], _tokensWithErrResult[1])) return false
 
+        const token = _tokensWithErrResult[1]
+
+        // Kept before any of the filtering below, so metadata read for a token the
+        // user never sees is not read again on the next update.
+        if (knownTokenMetadata && metadataPlan.needsMetadata.has(token.address)) {
+          fetchedTokenMetadata.push([
+            token.address,
+            {
+              symbol: token.symbol,
+              name: token.name,
+              decimals: token.decimals,
+              fetchedAt: start
+            }
+          ])
+        }
+
         // Spam filter: hide tokens whose symbol/name matches a blacklisted
         // pattern. Custom (user-added) tokens are never hidden. We don't run the
         // embedded-domain check here because token names/symbols legitimately contain domains.
-        const token = _tokensWithErrResult[1]
         if (
           isBlacklistedAsset({
             symbol: token.symbol,
@@ -435,6 +469,21 @@ export class Portfolio {
     const collections = collectionsWithErrResult.reduce<CollectionResult[]>(
       (acc, [error, collection]) => {
         if (!isValidToken(error, collection)) return acc
+
+        // Kept before the filtering below, for the same reason as the token metadata
+        if (
+          knownCollectionMetadata &&
+          collectionMetadataPlan.needsMetadata.has(collection.address)
+        ) {
+          fetchedCollectionMetadata.push([
+            collection.address,
+            {
+              symbol: collection.symbol,
+              name: collection.name,
+              fetchedAt: start
+            }
+          ])
+        }
 
         // Spam filter: hide collections whose symbol/name matches a blacklisted
         // pattern or embeds a phishing domain. Custom collections are never hidden
@@ -574,6 +623,8 @@ export class Portfolio {
 
     return {
       toBeLearned,
+      fetchedTokenMetadata,
+      fetchedCollectionMetadata,
       errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,
@@ -585,11 +636,7 @@ export class Portfolio {
         // return the native token
         if (t.address === ZeroAddress && t.chainId === this.network.chainId) return true
 
-        return gasTankFeeTokens.find(
-          (gasTankT) =>
-            gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
-            gasTankT.chainId === t.chainId
-        )
+        return getFeeToken(t.address, t.chainId)
       }),
       beforeNonce,
       afterNonce,
@@ -617,9 +664,22 @@ export class Portfolio {
       ? LIMITS.deploylessProxyMode
       : LIMITS.deploylessStateOverrideMode
 
+    // Nothing is remembered across these one-off reads, so every token is read in full
+    const metadataPlan: TokenMetadataFetchPlan = {
+      known: new Map(),
+      needsMetadata: new Set(uniqueTokenAddrs)
+    }
+
     const [tokensWithErrResult] = await flattenResults(
       paginate(uniqueTokenAddrs, limits.erc20).map((page, index) =>
-        getTokens(this.network, this.deploylessTokens, opts, accountAddr, page, index)
+        getTokens(
+          this.network,
+          this.deploylessTokens,
+          { ...opts, metadataPlan },
+          accountAddr,
+          page,
+          index
+        )
       )
     )
 

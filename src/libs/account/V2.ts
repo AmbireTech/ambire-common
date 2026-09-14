@@ -45,7 +45,7 @@ export class V2 extends BaseAccount {
   }
 
   supportsBundlerEstimation() {
-    return !this.#isTransitioningTo4337()
+    return this.isErc4337Enabled && !this.#isTransitioningTo4337()
   }
 
   getAvailableFeeOptions(
@@ -53,6 +53,13 @@ export class V2 extends BaseAccount {
     feePaymentOptions: FeePaymentOption[],
     op: AccountOp
   ): FeePaymentOption[] {
+    if (!this.isErc4337Enabled) {
+      return feePaymentOptions.filter(
+        (opt) =>
+          isNative(opt.token) || (opt.paidBy !== this.account.addr && opt.availableAmount > 0n)
+      )
+    }
+
     const hasPaymaster =
       estimation.bundlerEstimation && estimation.bundlerEstimation.paymaster.isUsable()
 
@@ -170,6 +177,10 @@ export class V2 extends BaseAccount {
     return this.network.chainId === 100n
   }
 
+  canUseErc4337(): boolean {
+    return true
+  }
+
   getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {
     return 'supported'
   }
@@ -207,5 +218,9 @@ export class V2 extends BaseAccount {
 
   canSetCustomGas(feeOption: FeePaymentOption): boolean {
     return this.canSetCustomGasPrices(feeOption)
+  }
+
+  canBroadcastByItself() {
+    return this.isErc4337Enabled
   }
 }

@@ -11,7 +11,8 @@ import {
   getWarning,
   getWrapping,
   HexIrCall,
-  isHexCall
+  isHexCall,
+  padCallData
 } from '../../utils'
 
 export const erc20TransferFromAbi = parseAbi([
@@ -93,7 +94,10 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     _accAddr: string,
     call: HexIrCall
   ): IrCall | undefined => {
-    const { args } = decodeFunctionData({ abi: erc20TransferFromAbi, data: call.data })
+    const { args } = decodeFunctionData({
+      abi: erc20TransferFromAbi,
+      data: padCallData(call.data, 3)
+    })
     const [token, receiver, amount] = args
     const fullVisualization = [
       getBreak(),
@@ -108,7 +112,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     _accAddr: string,
     call: HexIrCall
   ): IrCall | undefined => {
-    const { args } = decodeFunctionData({ abi: erc20TransferAbi, data: call.data })
+    const { args } = decodeFunctionData({ abi: erc20TransferAbi, data: padCallData(call.data, 3) })
     const [token, receiver, amount] = args
     const fullVisualization = [
       getBreak(),
@@ -123,7 +127,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     _accAddr: string,
     call: HexIrCall
   ): IrCall | undefined => {
-    const { args } = decodeFunctionData({ abi: nativeTransferAbi, data: call.data })
+    const { args } = decodeFunctionData({ abi: nativeTransferAbi, data: padCallData(call.data, 2) })
     const [receiver, amount] = args
     const fullVisualization = [
       getBreak(),
@@ -138,7 +142,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     _accAddr: string,
     call: HexIrCall
   ): IrCall | undefined => {
-    const { args } = decodeFunctionData({ abi: wrapNativeAbi, data: call.data })
+    const { args } = decodeFunctionData({ abi: wrapNativeAbi, data: padCallData(call.data, 1) })
     const [amount] = args
     const fullVisualization = [getBreak(), ...getWrapping(zeroAddress, amount)]
     return { ...call, fullVisualization }
@@ -147,7 +151,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     _accAddr: string,
     call: HexIrCall
   ): IrCall | undefined => {
-    const { args } = decodeFunctionData({ abi: unwrapNativeAbi, data: call.data })
+    const { args } = decodeFunctionData({ abi: unwrapNativeAbi, data: padCallData(call.data, 1) })
     const [amount] = args
     const fullVisualization = [getBreak(), ...getUnwrapping(zeroAddress, amount)]
     return { ...call, fullVisualization }
@@ -156,7 +160,10 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     _accAddr: string,
     call: HexIrCall
   ): IrCall | undefined => {
-    const { args } = decodeFunctionData({ abi: permit2TransferFromAbi, data: call.data })
+    const { args } = decodeFunctionData({
+      abi: permit2TransferFromAbi,
+      data: padCallData(call.data, 3)
+    })
     const [token, receiver, amount] = args
     const fullVisualization = [
       getBreak(),
@@ -184,7 +191,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     accAddr: string,
     call: HexIrCall
   ): IrCall | undefined => {
-    const { args } = decodeFunctionData({ abi: morphoBorrowAbi, data: call.data })
+    const { args } = decodeFunctionData({ abi: morphoBorrowAbi, data: padCallData(call.data, 9) })
     const [marketParams, assets, , , receiver] = args
     const fullVisualization = [
       getBreak(),
@@ -210,7 +217,10 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     accAddr: string,
     call: HexIrCall
   ): IrCall | undefined => {
-    const { args } = decodeFunctionData({ abi: morphoWithdrawCollateralAbi, data: call.data })
+    const { args } = decodeFunctionData({
+      abi: morphoWithdrawCollateralAbi,
+      data: padCallData(call.data, 7)
+    })
     const [marketParams, assets, receiver] = args
     const fullVisualization = [
       getBreak(),
@@ -236,7 +246,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     accAddr: string,
     call: HexIrCall
   ): IrCall | undefined => {
-    const { args } = decodeFunctionData({ abi: erc4626MintAbi, data: call.data })
+    const { args } = decodeFunctionData({ abi: erc4626MintAbi, data: padCallData(call.data, 4) })
     const [vault, , , receiver] = args
     const fullVisualization = [
       getBreak(),
@@ -249,7 +259,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     accAddr: string,
     call: HexIrCall
   ): IrCall | undefined => {
-    const { args } = decodeFunctionData({ abi: erc4626DepositAbi, data: call.data })
+    const { args } = decodeFunctionData({ abi: erc4626DepositAbi, data: padCallData(call.data, 4) })
     const [vault, , , receiver] = args
     const fullVisualization = [
       getBreak(),
@@ -262,7 +272,10 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     accAddr: string,
     call: HexIrCall
   ): IrCall | undefined => {
-    const { args } = decodeFunctionData({ abi: erc4626WithdrawAbi, data: call.data })
+    const { args } = decodeFunctionData({
+      abi: erc4626WithdrawAbi,
+      data: padCallData(call.data, 5)
+    })
     const [vault, , , receiver] = args
     const fullVisualization = [
       getBreak(),
@@ -275,7 +288,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     accAddr: string,
     call: HexIrCall
   ): IrCall | undefined => {
-    const { args } = decodeFunctionData({ abi: erc4626RedeemAbi, data: call.data })
+    const { args } = decodeFunctionData({ abi: erc4626RedeemAbi, data: padCallData(call.data, 5) })
     const [vault, , , receiver] = args
     const fullVisualization = [
       getBreak(),

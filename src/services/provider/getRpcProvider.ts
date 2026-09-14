@@ -1,9 +1,11 @@
 import { JsonRpcApiProviderOptions, JsonRpcProvider, Network } from 'ethers'
-import { createPublicClient, custom, PublicClient } from 'viem'
+import { createPublicClient, custom } from 'viem'
 
 import { Network as NetworkInterface } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import getRootDomain from '../../utils/getRootDomain'
+
+import type { PublicClient } from 'viem'
 
 const RPC_BATCH_CONFIG: Record<string, number> = {
   'drpc.org': 3, // batch of more than 3 requests are not allowed on free tier (response 500 with internal code 31)

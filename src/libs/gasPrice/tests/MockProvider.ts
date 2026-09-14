@@ -14,6 +14,12 @@ import { abiCoder, addressOne, localhost } from '../../../../test/config'
 
 const gasLimit = 30000000n
 
+const defaultMaxPriorityFeePerGas = 100000n
+
+function toRpcQuantity(value: bigint | number | string): string {
+  return toQuantity(BigInt(value))
+}
+
 export default class MockProvider extends JsonRpcProvider {
   blockParams: any
 
@@ -27,7 +33,7 @@ export default class MockProvider extends JsonRpcProvider {
     this.blockParams = blockParams
   }
 
-  static init(params: {}): MockProvider {
+  static init(params: Record<string, unknown>): MockProvider {
     return new MockProvider(localhost, 1, {}, params)
   }
 
@@ -57,7 +63,39 @@ export default class MockProvider extends JsonRpcProvider {
   }
 
   async send(method: string, params: any[]): Promise<any> {
-    if (method === 'eth_gasPrice') return this.blockParams.ethGasPrice ?? '0x'
+    if (method === 'eth_gasPrice') return toRpcQuantity(this.blockParams.ethGasPrice ?? 1000000000n)
+
+    if (method === 'eth_maxPriorityFeePerGas') {
+      if (this.blockParams.ethMaxPriorityFeePerGasError)
+        throw this.blockParams.ethMaxPriorityFeePerGasError
+
+      return toRpcQuantity(this.blockParams.ethMaxPriorityFeePerGas ?? defaultMaxPriorityFeePerGas)
+    }
+
+    if (method === 'eth_feeHistory') {
+      if (this.blockParams.feeHistoryError) throw this.blockParams.feeHistoryError
+
+      const [blockCountHex, , rewardPercentiles] = params
+      const blockCount = Number(BigInt(blockCountHex))
+      const feeHistory = this.blockParams.feeHistory ?? {}
+      const baseFeePerGas =
+        feeHistory.baseFeePerGas ??
+        Array.from({ length: blockCount + 1 }, () => this.getBlockParams().baseFeePerGas)
+      const reward =
+        feeHistory.reward ??
+        Array.from({ length: blockCount }, () =>
+          rewardPercentiles.map(
+            () => this.blockParams.ethMaxPriorityFeePerGas ?? defaultMaxPriorityFeePerGas
+          )
+        )
+
+      return {
+        oldestBlock: toQuantity(1),
+        baseFeePerGas: baseFeePerGas.map(toRpcQuantity),
+        gasUsedRatio: feeHistory.gasUsedRatio ?? Array.from({ length: blockCount }, () => 0.5),
+        reward: reward.map((rewards: bigint[]) => rewards.map(toRpcQuantity))
+      }
+    }
 
     if (method === 'eth_getBlockByNumber') {
       const block = this.getBlockParams()

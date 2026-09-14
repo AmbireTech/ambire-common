@@ -1,5 +1,8 @@
 import fetch from 'node-fetch'
 
+import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
+import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
+import { getTokenMarketDataKey } from '@/libs/swapAndBridge/tokenMarketData'
 import { expect, jest } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
@@ -9,9 +12,11 @@ import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
+import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import { Storage } from '../../interfaces/storage'
+import { SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
@@ -36,7 +41,6 @@ import { SurveyController } from '../survey/survey'
 import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 import { SocketAPIMock } from './socketApiMock'
-import { SwapAndBridgeController, SwapAndBridgeFormStatus } from './swapAndBridge'
 
 const accounts = [
   {
@@ -309,33 +313,48 @@ const dappsControllerMock = {
   onUpdate: () => () => {}
 } as any
 
-const swapAndBridgeController = new SwapAndBridgeController({
-  callRelayer: async () => ({}),
-  selectedAccount: selectedAccountCtrl,
-  networks: networksCtrl,
-  accounts: accountsCtrl,
-  activity: activityCtrl,
-  storage: storageCtrl,
-  signAccountOpPreference,
-  swapProvider: socketAPIMock as any,
-  keystore,
-  portfolio: portfolioCtrl,
-  providers: providersCtrl,
-  phishing: phishingCtrl,
-  dapps: dappsControllerMock,
-  externalSignerControllers: {},
-  relayerUrl,
-  getUserRequests: () => [],
-  getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
-  onBroadcastSuccess: () => Promise.resolve(),
-  onBroadcastFailed: () => {},
-  ui: uiCtrl
-})
+const buildSwapAndBridgeController = (controllerStorage: StorageController = storageCtrl) =>
+  new SwapAndBridgeController({
+    callRelayer: async () => ({}),
+    fetch: fetch as any,
+    selectedAccount: selectedAccountCtrl,
+    networks: networksCtrl,
+    accounts: accountsCtrl,
+    activity: activityCtrl,
+    storage: controllerStorage,
+    signAccountOpPreference,
+    featureFlags: featureFlagsCtrl,
+    swapProvider: socketAPIMock as any,
+    keystore,
+    portfolio: portfolioCtrl,
+    providers: providersCtrl,
+    phishing: phishingCtrl,
+    dapps: dappsControllerMock,
+    externalSignerControllers: {},
+    relayerUrl,
+    getUserRequests: () => [],
+    getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
+    onBroadcastSuccess: () => Promise.resolve(),
+    onBroadcastFailed: () => {},
+    ui: uiCtrl
+  })
+
+const swapAndBridgeController = buildSwapAndBridgeController()
+
+const createDeferred = <T>() => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+
+  return { promise, resolve }
+}
 
 const transferCtrl = new TransferController(
   async () => ({}),
   storageCtrl,
   signAccountOpPreference,
+  featureFlagsCtrl,
   humanizerInfo as HumanizerMeta,
   selectedAccountCtrl,
   networksCtrl,
@@ -365,6 +384,7 @@ requestsCtrl = new RequestsController({
   networks: networksCtrl,
   providers: providersCtrl,
   storage: storageCtrl,
+  featureFlags: featureFlagsCtrl,
   signAccountOpPreference,
   selectedAccount: selectedAccountCtrl,
   keystore,
@@ -407,6 +427,77 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController).toBeDefined()
     // TODO: move these in beforeEach with an exception for the continuous updates tests where mocks are not needed
   })
+  test('should persist and emit disabled swap providers without an active form session', async () => {
+    expect(swapAndBridgeController.swapProviders).toEqual([{ id: 'socket', name: 'Socket' }])
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+    expect(swapAndBridgeController.sessionIds).toEqual([])
+
+    const emittedDisabledProviderIds: string[][] = []
+    const unsubscribe = swapAndBridgeController.onUpdate(() => {
+      emittedDisabledProviderIds.push(swapAndBridgeController.getDisabledSwapProviderIds())
+    })
+
+    await swapAndBridgeController.setSwapProviderEnabled('unknown-provider', false)
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+    expect(emittedDisabledProviderIds).toEqual([])
+
+    await swapAndBridgeController.setSwapProviderEnabled('socket', false)
+    const disabledProviderIds = swapAndBridgeController.getDisabledSwapProviderIds()
+    disabledProviderIds.push('mutated-copy')
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual(['socket'])
+    expect(emittedDisabledProviderIds).toContainEqual(['socket'])
+    await expect(storageCtrl.get('disabledSwapProviderIds', [])).resolves.toEqual(['socket'])
+
+    await swapAndBridgeController.setSwapProviderEnabled('socket', true)
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+    expect(emittedDisabledProviderIds).toContainEqual([])
+    await expect(storageCtrl.get('disabledSwapProviderIds', [])).resolves.toEqual([])
+    unsubscribe()
+  })
+  test('should ignore stale supported chains when provider settings change rapidly', async () => {
+    await swapAndBridgeController.initForm('rapid-provider-toggle-test')
+    await wait(0)
+    swapAndBridgeController.unloadScreen('rapid-provider-toggle-test')
+
+    const staleSupportedChains =
+      createDeferred<Awaited<ReturnType<SocketAPIMock['getSupportedChains']>>>()
+    const latestSupportedChains =
+      createDeferred<Awaited<ReturnType<SocketAPIMock['getSupportedChains']>>>()
+    const getSupportedChainsSpy = jest
+      .spyOn(socketAPIMock, 'getSupportedChains')
+      .mockReturnValueOnce(staleSupportedChains.promise)
+      .mockReturnValueOnce(latestSupportedChains.promise)
+
+    const disablePromise = swapAndBridgeController.setSwapProviderEnabled('socket', false)
+    await wait(0)
+    expect(getSupportedChainsSpy).toHaveBeenCalledTimes(1)
+
+    const enablePromise = swapAndBridgeController.setSwapProviderEnabled('socket', true)
+    await wait(0)
+    expect(getSupportedChainsSpy).toHaveBeenCalledTimes(2)
+
+    const expectedSupportedChains = networks.map(({ chainId }) => ({ chainId }))
+    latestSupportedChains.resolve(expectedSupportedChains)
+    await enablePromise
+
+    staleSupportedChains.resolve([{ chainId: 999999n }])
+    await disablePromise
+
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+    expect(swapAndBridgeController.supportedChainIds).toEqual(
+      expectedSupportedChains.map(({ chainId }) => chainId)
+    )
+  })
+  test('should restore valid disabled swap providers from storage', async () => {
+    const persistedStorage = new StorageController(produceMemoryStore())
+    await persistedStorage.set('disabledSwapProviderIds', ['socket', 'unknown-provider', 'socket'])
+    const restoredController = buildSwapAndBridgeController(persistedStorage)
+
+    await restoredController.initForm('restore-disabled-providers-test')
+
+    expect(restoredController.getDisabledSwapProviderIds()).toEqual(['socket'])
+    restoredController.unloadScreen('restore-disabled-providers-test', true)
+  })
   test('should initForm', async () => {
     await swapAndBridgeController.initForm('1')
     expect(swapAndBridgeController.sessionIds).toContain('1')
@@ -429,6 +520,89 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromChainId).toEqual(10)
     expect(swapAndBridgeController.toChainId).toEqual(10)
   })
+  test('should expose the wrap exemption before a quote is available', () => {
+    const network = networksCtrl.networks.find(({ chainId }) => chainId === 10n)
+    if (!network?.wrappedAddr)
+      throw new Error('Expected OP Mainnet to have a wrapped token address')
+
+    const previousFromSelectedToken = swapAndBridgeController.fromSelectedToken
+    const previousToSelectedToken = swapAndBridgeController.toSelectedToken
+    const previousFromChainId = swapAndBridgeController.fromChainId
+    const previousToChainId = swapAndBridgeController.toChainId
+    const previousQuote = swapAndBridgeController.quote
+
+    swapAndBridgeController.fromSelectedToken = PORTFOLIO_TOKENS[2]!
+    swapAndBridgeController.toSelectedToken = {
+      address: network.wrappedAddr,
+      chainId: 10,
+      decimals: 18,
+      name: 'Wrapped Ether',
+      symbol: 'WETH'
+    }
+    swapAndBridgeController.fromChainId = 10
+    swapAndBridgeController.toChainId = 10
+    swapAndBridgeController.quote = null
+
+    expect(swapAndBridgeController.feeExemptionReason).toBe('wrap-or-unwrap')
+    expect(swapAndBridgeController.toJSON().feeExemptionReason).toBe('wrap-or-unwrap')
+
+    swapAndBridgeController.fromSelectedToken = previousFromSelectedToken
+    swapAndBridgeController.toSelectedToken = previousToSelectedToken
+    swapAndBridgeController.fromChainId = previousFromChainId
+    swapAndBridgeController.toChainId = previousToChainId
+    swapAndBridgeController.quote = previousQuote
+  })
+  test('should emit token list updates while providers are still loading', async () => {
+    const partialToken: SwapAndBridgeToToken = {
+      address: '0x0000000000000000000000000000000000000001',
+      chainId: 137,
+      decimals: 18,
+      name: 'Partial token',
+      symbol: 'PARTIAL'
+    }
+    const finalToken: SwapAndBridgeToToken = {
+      address: '0x0000000000000000000000000000000000000002',
+      chainId: 137,
+      decimals: 18,
+      name: 'Final token',
+      symbol: 'FINAL'
+    }
+    let resolveTokenList!: (tokens: SwapAndBridgeToToken[]) => void
+    const getToTokenListSpy = jest.spyOn(socketAPIMock, 'getToTokenList').mockImplementation(
+      (params: any) =>
+        new Promise((resolve) => {
+          resolveTokenList = resolve
+          params.onUpdate([partialToken])
+        })
+    )
+    let unsubscribe = () => {}
+    const partialUpdatePromise = new Promise<void>((resolve) => {
+      unsubscribe = swapAndBridgeController.onUpdate(() => {
+        if (!swapAndBridgeController.toTokenShortList.includes(partialToken)) return
+
+        unsubscribe()
+        resolve()
+      })
+    })
+
+    const updatePromise = swapAndBridgeController.updateForm(
+      { toChainId: 137 },
+      { updateQuote: false }
+    )
+
+    await partialUpdatePromise
+    expect(swapAndBridgeController.updateToTokenListStatus).toEqual('LOADING')
+    expect(swapAndBridgeController.toTokenShortList).toContain(partialToken)
+
+    resolveTokenList([partialToken, finalToken])
+    await updatePromise
+    expect(swapAndBridgeController.updateToTokenListStatus).toEqual('INITIAL')
+    expect(swapAndBridgeController.toTokenShortList).toContain(finalToken)
+
+    getToTokenListSpy.mockRestore()
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
   test('should sync toChainId to the preselected from token chain when no to token is provided', async () => {
     const preselectedToken = PORTFOLIO_TOKENS[1]!
 
@@ -443,6 +617,85 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(preselectedToken.address)
     expect(swapAndBridgeController.fromChainId).toEqual(Number(preselectedToken.chainId))
     expect(swapAndBridgeController.toChainId).toEqual(Number(preselectedToken.chainId))
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should select a preselected to token that the service provider returns in another case', async () => {
+    // Trending tokens carry lowercased CoinGecko addresses, while the service providers return
+    // checksummed ones.
+    const toTokenAddr = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToToken: { address: toTokenAddr.toLowerCase(), chainId: 8453n }
+    })
+
+    expect(swapAndBridgeController.toChainId).toEqual(8453)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should select a preselected to token that is missing from the service provider list', async () => {
+    const toTokenAddr = '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToToken: { address: toTokenAddr, chainId: 8453n }
+    })
+
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+    expect(swapAndBridgeController.toTokenShortList).toContainEqual(
+      expect.objectContaining({ address: toTokenAddr })
+    )
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should keep a preselected to token when the from token network changes', async () => {
+    const toTokenAddr = '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58' // USDT
+    const fromToken = PORTFOLIO_TOKENS[2]! // ETH on Optimism
+    const fromTokenOnAnotherChain = PORTFOLIO_TOKENS[1]! // cbBTC on Base
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToken: { address: fromToken.address, chainId: fromToken.chainId },
+      preselectedToToken: { address: toTokenAddr, chainId: 8453n }
+    })
+    expect(swapAndBridgeController.fromChainId).toEqual(10)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+
+    await swapAndBridgeController.updateForm({ fromSelectedToken: fromTokenOnAnotherChain })
+
+    expect(swapAndBridgeController.fromChainId).toEqual(8453)
+    expect(swapAndBridgeController.toChainId).toEqual(8453)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should stop keeping a preselected to token after the user selects another one', async () => {
+    const toTokenAddr = '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58' // USDT
+    const userSelectedToTokenAddr = '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22' // cbETH
+    const fromToken = PORTFOLIO_TOKENS[2]! // ETH on Optimism
+    const fromTokenOnAnotherChain = PORTFOLIO_TOKENS[1]! // cbBTC on Base
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToken: { address: fromToken.address, chainId: fromToken.chainId },
+      preselectedToToken: { address: toTokenAddr, chainId: 8453n }
+    })
+    await swapAndBridgeController.updateForm(
+      { toSelectedTokenAddr: userSelectedToTokenAddr },
+      { isToSelectionByUser: true }
+    )
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(userSelectedToTokenAddr)
+
+    await swapAndBridgeController.updateForm({ fromSelectedToken: fromTokenOnAnotherChain })
+
+    // The default behavior applies again - the to token gets reset on a from network change
+    expect(swapAndBridgeController.toSelectedToken).toBeNull()
 
     swapAndBridgeController.reset()
     await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
@@ -474,18 +727,20 @@ describe('SwapAndBridge Controller', () => {
     })
   })
   test('should update fromAmount', (done) => {
-    let emitCounter = 0
+    // Asserting on the status transitions instead of on a fixed number of emits, as
+    // the controller also emits for updates unrelated to the form (fetching the market
+    // data of the receive tokens, for instance).
+    let didPassThroughFetchingRoutes = false
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
-      emitCounter++
-      if (emitCounter === 4) {
-        expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
+      if (swapAndBridgeController.formStatus === 'fetching-routes')
+        didPassThroughFetchingRoutes = true
+
+      if (swapAndBridgeController.formStatus === 'ready-to-estimate') {
+        expect(didPassThroughFetchingRoutes).toBe(true)
         expect(swapAndBridgeController.quote).not.toBeNull()
         expect(swapAndBridgeController.fromAmount).toBe('0.8')
         unsubscribe()
         done()
-      }
-      if (emitCounter === 2) {
-        expect(swapAndBridgeController.formStatus).toEqual('fetching-routes')
       }
     })
     swapAndBridgeController.updateForm({ fromAmount: '0.8' })
@@ -727,6 +982,9 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
     expect(swapAndBridgeController.banners[0]!.actions).toHaveLength(1)
+    expect(swapAndBridgeController.banners[0]!.meta?.accountAddr).toEqual(
+      '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    )
   })
   describe('continuous active-route updates', () => {
     beforeEach(() => {
@@ -872,5 +1130,180 @@ describe('SwapAndBridge Controller', () => {
   })
   test('should toJSON()', () => {
     expect(swapAndBridgeController.toJSON()).toBeDefined()
+  })
+})
+
+describe('SwapAndBridge Controller: to token market data', () => {
+  // Longer than the batcher debounce, so that the fire-and-forget fetch has settled
+  const waitForMarketData = () => wait(400)
+
+  const MARKET_DATA_RESPONSE = {
+    usd: 1.0001,
+    usd_24h_change: -2.5,
+    usd_market_cap: 1200000000,
+    usd_24h_vol: 500000,
+    exchanges: ['binance', 'uniswap']
+  }
+
+  let marketDataFetch: jest.Mock<any>
+  let ctrl: SwapAndBridgeController
+
+  const buildController = (fetchMock: any) =>
+    new SwapAndBridgeController({
+      callRelayer: async () => ({}),
+      fetch: fetchMock,
+      selectedAccount: selectedAccountCtrl,
+      networks: networksCtrl,
+      accounts: accountsCtrl,
+      activity: activityCtrl,
+      storage: storageCtrl,
+      signAccountOpPreference,
+      featureFlags: featureFlagsCtrl,
+      swapProvider: socketAPIMock as any,
+      keystore,
+      portfolio: portfolioCtrl,
+      providers: providersCtrl,
+      phishing: phishingCtrl,
+      dapps: dappsControllerMock,
+      externalSignerControllers: {},
+      relayerUrl,
+      getUserRequests: () => [],
+      getVisibleUserRequests: () => [],
+      onBroadcastSuccess: () => Promise.resolve(),
+      onBroadcastFailed: () => {},
+      ui: uiCtrl
+    })
+
+  const initFormAndTokenList = async () => {
+    await ctrl.initForm('market-data-session')
+    await ctrl.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+    await waitForMarketData()
+  }
+
+  beforeEach(async () => {
+    marketDataFetch = jest.fn(async () => ({
+      status: 200,
+      json: async () => ({
+        // Our price API keys the response by lowercased contract address
+        '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58': MARKET_DATA_RESPONSE
+      })
+    })) as any
+
+    ctrl = buildController(marketDataFetch)
+    await selectedAccountCtrl.initialLoadPromise
+    await selectedAccountCtrl.setAccount(accounts[0]!)
+  })
+
+  afterEach(() => {
+    ctrl.unloadScreen('market-data-session')
+    jest.restoreAllMocks()
+  })
+
+  test('exposes the market data of a token our price API knows about', async () => {
+    await initFormAndTokenList()
+
+    const usdt = ctrl.toTokenShortList.find((t) => t.symbol === 'USDT')
+    expect(usdt).toBeDefined()
+
+    const marketData = ctrl.toTokenMarketData[getTokenMarketDataKey(usdt!.chainId, usdt!.address)]
+
+    expect(marketData).toEqual({
+      status: 'DONE',
+      exchanges: ['binance', 'uniswap']
+    })
+  })
+
+  test('marks the tokens missing from the response as not found', async () => {
+    await initFormAndTokenList()
+
+    const notInResponse = ctrl.toTokenShortList.find((t) => t.symbol !== 'USDT')
+    expect(notInResponse).toBeDefined()
+
+    expect(
+      ctrl.toTokenMarketData[getTokenMarketDataKey(notInResponse!.chainId, notInResponse!.address)]
+    ).toEqual({ status: 'NOT_FOUND' })
+  })
+
+  test('does not request the market data of a token that already has fresh data', async () => {
+    await initFormAndTokenList()
+    const callsAfterFirstFetch = marketDataFetch.mock.calls.length
+    expect(callsAfterFirstFetch).toBeGreaterThan(0)
+
+    await ctrl.searchToToken('USDT')
+    await waitForMarketData()
+
+    expect(marketDataFetch.mock.calls.length).toEqual(callsAfterFirstFetch)
+  })
+
+  test('hides the market data that went stale and requests it again', async () => {
+    await initFormAndTokenList()
+    const callsAfterFirstFetch = marketDataFetch.mock.calls.length
+
+    const usdt = ctrl.toTokenShortList.find((t) => t.symbol === 'USDT')!
+    const usdtKey = getTokenMarketDataKey(usdt.chainId, usdt.address)
+
+    // 11 minutes later, past the 10 minute threshold of a successfully fetched record
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 1000 * 60 * 11)
+
+    expect(ctrl.toTokenMarketData[usdtKey]).toEqual({ status: 'LOADING' })
+
+    await ctrl.searchToToken('USDT')
+    nowSpy.mockRestore()
+    await waitForMarketData()
+
+    expect(marketDataFetch.mock.calls.length).toBeGreaterThan(callsAfterFirstFetch)
+    expect(ctrl.toTokenMarketData[usdtKey]?.status).toEqual('DONE')
+  })
+
+  test('marks the tokens as failed when the request fails, without throwing', async () => {
+    const { restore } = suppressConsole()
+    ctrl = buildController(jest.fn(async () => ({ status: 500, json: async () => ({}) })) as any)
+
+    await initFormAndTokenList()
+
+    const usdt = ctrl.toTokenShortList.find((t) => t.symbol === 'USDT')!
+
+    expect(ctrl.toTokenMarketData[getTokenMarketDataKey(usdt.chainId, usdt.address)]).toEqual({
+      status: 'FAIL'
+    })
+    restore()
+  })
+
+  test('reports the tokens it has not fetched yet as loading', async () => {
+    await ctrl.initForm('market-data-session')
+    await ctrl.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+
+    const statuses = Object.values(ctrl.toTokenMarketData).map(({ status }) => status)
+
+    expect(statuses.length).toBeGreaterThan(0)
+    expect(statuses.every((status) => status === 'LOADING')).toBe(true)
+
+    await waitForMarketData()
+  })
+
+  describe('when the user has opted out', () => {
+    beforeEach(async () => {
+      await featureFlagsCtrl.setFeatureFlag('swapAndBridgeTokenInfo', false)
+    })
+
+    afterEach(async () => {
+      await featureFlagsCtrl.setFeatureFlag('swapAndBridgeTokenInfo', true)
+    })
+
+    test('sends no token addresses to the price API', async () => {
+      await initFormAndTokenList()
+
+      expect(marketDataFetch).not.toHaveBeenCalled()
+    })
+
+    test('keeps the data fetched before the opt out out of the UI state', async () => {
+      await featureFlagsCtrl.setFeatureFlag('swapAndBridgeTokenInfo', true)
+      await initFormAndTokenList()
+      expect(Object.keys(ctrl.toTokenMarketData).length).toBeGreaterThan(0)
+
+      await featureFlagsCtrl.setFeatureFlag('swapAndBridgeTokenInfo', false)
+
+      expect(ctrl.toTokenMarketData).toEqual({})
+    })
   })
 })

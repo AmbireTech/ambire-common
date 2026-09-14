@@ -1,5 +1,4 @@
 import { getDomain } from 'tldts'
-
 import { zeroAddress } from 'viem'
 
 import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
@@ -14,8 +13,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
-import { getDappIdFromUrl } from '../../libs/dapps/helpers'
-
+import { getDappIdFromUrl, getNormalizedHostnameFromUrl } from '../../libs/dapps/helpers'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -38,11 +36,15 @@ const PHISHING_ACTIVE_VIEW_TYPES = new Set(['request-window', 'popup', 'tab'])
  *
  * 1. Intrinsic status — the dApp's own domain, resolved by getDomainBlacklistedStatus().
  *    Priority: BLACKLISTED (phishing DB) > SUSPICIOUS_HOSTING (this list) > VERIFIED.
+ *    Both lookups are string comparisons, so they run on the canonical hostname produced by
+ *    getNormalizedHostnameFromUrl()/getDappIdFromUrl() — never on a raw URL hostname, which keeps
+ *    the trailing dot of a fully-qualified host and would miss every entry in both lists.
  *
- * 2. Session context — if a dApp is loaded as an iframe inside a tab that also holds a
- *    session for a SUSPICIOUS_HOSTING or BLACKLISTED domain, #getTabContextStatus() returns
- *    SUSPICIOUS_HOSTING. This is only used for the banner — never written to #dapps or
- *    storage, so the dApp's global status is not contaminated for unrelated sessions.
+ * 2. Frame context — if a dApp is loaded as an iframe inside a tab whose top-level document is
+ *    on a SUSPICIOUS_HOSTING or BLACKLISTED domain, #getFrameContextStatus() returns
+ *    SUSPICIOUS_HOSTING. The top-frame origin is reported by the browser with every request, so
+ *    it cannot be spoofed by the page. This is only used for the banner — never written to
+ *    #dapps or storage, so the dApp's global status is not contaminated for unrelated sessions.
  *
  * Final priority in getDappVerificationBanner():
  *   dApp intrinsic BLACKLISTED  >  context SUSPICIOUS_HOSTING  >  dApp intrinsic SUSPICIOUS_HOSTING  >  VERIFIED
@@ -53,7 +55,7 @@ const PHISHING_ACTIVE_VIEW_TYPES = new Set(['request-window', 'popup', 'tab'])
  *   my-dapp.vercel.app (in this list, not in phishing DB)                       intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
  *   ipfs.io dApp opened directly                                                intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
  *   app.uniswap.org iframe inside a sites.google.com tab                        intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
- *   app.uniswap.org opened directly (no suspicious co-session)                  intrinsic=VERIFIED, context=undefined → VERIFIED
+ *   app.uniswap.org opened directly (it is the tab's top frame)                 intrinsic=VERIFIED, context=undefined → VERIFIED
  *   app.uniswap.org iframe in sites.google.com, but uniswap is BLACKLISTED      intrinsic=BLACKLISTED wins → BLACKLISTED
  */
 /**
@@ -150,17 +152,16 @@ export const SUSPICIOUS_HOSTING_DOMAINS = [
   'mypinata.cloud',
   '4everland.app',
   'w3s.link',
-  'eth.limo',
   'eth.link'
 ]
 
 function isSuspiciousHostingDomain(url: string): boolean {
-  try {
-    const { hostname } = new URL(url)
-    return SUSPICIOUS_HOSTING_DOMAINS.some((d) => hostname === d || hostname.endsWith(`.${d}`))
-  } catch {
-    return false
-  }
+  // The canonical hostname, so a fully-qualified host ("my-dapp.vercel.app.") is matched against
+  // the list just like the form the user believes they are on.
+  const hostname = getNormalizedHostnameFromUrl(url)
+  if (hostname === null) return false
+
+  return SUSPICIOUS_HOSTING_DOMAINS.some((d) => hostname === d || hostname.endsWith(`.${d}`))
 }
 
 export class PhishingController extends EventEmitter implements IPhishingController {
@@ -205,6 +206,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
+
+  isReady = false
 
   constructor({
     eventEmitterRegistry,
@@ -254,10 +257,19 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       if (shouldSwitchToInactiveUpdateInterval)
         this.#updatePhishingInterval.restart({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
     })
+  }
 
+  /**
+   * Not called immediately on construction because the data in storage is huge and overwhelming
+   * for the mobile app.
+   */
+  async init() {
+    if (this.initialLoadPromise) return this.initialLoadPromise
+    if (this.isReady) return
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
+    return this.initialLoadPromise
   }
 
   async #load() {
@@ -272,9 +284,9 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#updatedAt = phishing.updatedAt
     this.#domains = new Set(phishing.domains)
     this.#addresses = new Set(phishing.addresses)
-
     this.updatePhishingInterval.start({ runImmediately: true })
 
+    this.isReady = true
     this.emitUpdate()
   }
 
@@ -354,15 +366,22 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       )
       ;(phishing.addresses || []).forEach(
         ({ op, address }: { op: 'add' | 'remove'; address: string }) => {
-          if (op === 'add') this.#addresses.add(address)
-          if (op === 'remove') this.#addresses.delete(address)
+          // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup,
+          // regardless of the casing the relayer used.
+          const normalizedAddress = address.toLowerCase()
+          if (op === 'add') this.#addresses.add(normalizedAddress)
+          if (op === 'remove') this.#addresses.delete(normalizedAddress)
         }
       )
     } else {
       // Initial/full update: replace local sets with the server snapshot.
       this.#version = phishing.version || 0
       this.#domains = new Set(phishing.domains || [])
-      this.#addresses = new Set(phishing.addresses || [])
+      // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup, regardless
+      // of the casing the relayer used.
+      this.#addresses = new Set(
+        (phishing.addresses || []).map((address: string) => address.toLowerCase())
+      )
     }
 
     this.#shouldSyncDapps = true
@@ -523,11 +542,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     })
 
     addresses.forEach((addr) => {
-      const status = this.#addresses.size
-        ? this.#addresses.has(addr)
-          ? 'BLACKLISTED'
-          : 'VERIFIED'
-        : undefined
+      const status = this.getAddressBlacklistedStatus(addr)
       if (status) this.#addressesBlacklistedStatus.set(addr, status)
     })
 
@@ -669,6 +684,17 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     // DB not yet loaded - SUSPICIOUS_HOSTING_DOMAINS still detectable without it.
     if (isSuspiciousHostingDomain(url)) return 'SUSPICIOUS_HOSTING'
     return undefined
+  }
+
+  /**
+   * Resolves the blacklisted status of an address from the locally stored phishing list, without a
+   * network request. Returns undefined while the list is not loaded yet, so that callers can tell
+   * "not blacklisted" apart from "not checked yet".
+   */
+  getAddressBlacklistedStatus(address: string): BlacklistedStatus | undefined {
+    if (!this.#addresses.size) return undefined
+
+    return this.#addresses.has(address.toLowerCase()) ? 'BLACKLISTED' : 'VERIFIED'
   }
 
   toJSON() {

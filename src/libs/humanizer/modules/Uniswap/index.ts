@@ -3,6 +3,7 @@ import { getAddress, isAddress } from 'viem'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, isHexCall } from '../../utils'
+import { uniSwapProxy } from './uniSwapProxy'
 import { uniUniversalRouter } from './uniUniversalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV3Mapping } from './uniV3'
@@ -12,7 +13,8 @@ const uniV3MappingObj = uniV3Mapping()
 const fullUniswapHumanizerMapping = {
   ...uniV2Mapping,
   ...uniV3MappingObj,
-  ...uniUniversalRouter
+  ...uniUniversalRouter,
+  ...uniSwapProxy
 }
 
 // fetched from https://api.github.com/repos/Uniswap/universal-router/contents/deploy-addresses
@@ -40,6 +42,7 @@ const uniAddresses = [
   // arbitrum
   '0x5E325eDA8064b456f4781070C0738d849c824258',
   // base
+  '0x03a520b32C04BF3bEEf7BEb72E919cf822Ed34f1',
   '0x6fF5693b99212Da76ad316178A184AB56D299b43',
   '0xFdf682F51FE81Aa4898F0AE2163d8A55c127fbC7',
   '0x6Df1c91424F79E40E33B1A48F0687B666bE71075',
@@ -110,31 +113,32 @@ const uniAddresses = [
   '0x2986d9721A49838ab4297b695858aF7F17f38014',
   '0x3315ef7ca28db74abadc6c44570efdf06b04b020',
   '0x3a9d48ab9751398bbfa63ad67599bb04e4bdf98b',
-  '0xB0C89059d7190EDb17eFF19829cc009cEe923916'
+  '0xB0C89059d7190EDb17eFF19829cc009cEe923916',
+  // SwapProxy: not an official Uniswap deployment, but it forwards swaps to the Universal Router
+  // using the same commands/inputs encoding (https://etherscan.io/address/0x02E5be68D46DAc0B524905bfF209cf47EE6dB2a9#code)
+  '0x02E5be68D46DAc0B524905bfF209cf47EE6dB2a9'
 ]
 
-export const uniswapHumanizer: HumanizerCallModule = (
-  accountOp: AccountOp,
-  currentIrCalls: IrCall[]
-) => {
-  const newCalls: IrCall[] = []
-  currentIrCalls.forEach((call: IrCall) => {
-    if (!call.to || !isAddress(call.to) || !uniAddresses.includes(getAddress(call.to))) {
-      newCalls.push(call)
-      return
+export const uniswapHumanizer: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
+  if (!call.to || !isAddress(call.to) || !uniAddresses.includes(getAddress(call.to))) return call
+
+  // A call to a known Uniswap address that isn't a recognized Uniswap-specific action (e.g. an
+  // ERC-721 approval on the Position Manager NFT contract) may already carry a more specific
+  // visualization from an earlier, more generic module (e.g. genericErc721Humanizer) — keep it
+  // instead of overwriting it with the vague 'Uniswap action' fallback.
+  if (!isHexCall(call))
+    return call.fullVisualization
+      ? call
+      : { ...call, fullVisualization: [getAction('Uniswap action')] }
+
+  const sigHash = call.data.substring(0, 10)
+  if (fullUniswapHumanizerMapping[sigHash])
+    return {
+      ...call,
+      fullVisualization: fullUniswapHumanizerMapping[sigHash](accountOp, call)
     }
 
-    if (!isHexCall(call)) {
-      newCalls.push({ ...call, fullVisualization: [getAction('Uniswap action')] })
-      return
-    }
-    const sigHash = call.data.substring(0, 10)
-    if (fullUniswapHumanizerMapping[sigHash])
-      newCalls.push({
-        ...call,
-        fullVisualization: fullUniswapHumanizerMapping[sigHash](accountOp, call)
-      })
-    else newCalls.push({ ...call, fullVisualization: [getAction('Uniswap action')] })
-  })
-  return newCalls
+  return call.fullVisualization
+    ? call
+    : { ...call, fullVisualization: [getAction('Uniswap action')] }
 }

@@ -16,7 +16,8 @@ import { makeMainController } from '../../../test/helpers/mainController'
 import { InternalSigner } from '../../../test/keystore'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { Account, IAccountsController } from '../../interfaces/account'
+import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
+import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
@@ -25,6 +26,7 @@ import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
+import * as safeLib from '../../libs/safe/safe'
 import { SignMessageController } from './signMessage'
 
 const account: Account = {
@@ -49,6 +51,27 @@ const messageToSign: Message = {
   accountAddr: account.addr,
   chainId: 1n,
   signature: null
+}
+
+const accountOnchainState: AccountOnchainState = {
+  accountAddr: account.addr,
+  isDeployed: true,
+  eoaNonce: null,
+  nonce: 0n,
+  erc4337Nonce: 0n,
+  associatedKeys: account.associatedKeys,
+  importedAccountKeys: [],
+  balance: 0n,
+  isEOA: false,
+  isErc4337Enabled: false,
+  isErc4337Nonce: false,
+  isV2: false,
+  currentBlock: 0n,
+  isSmarterEoa: false,
+  delegatedContract: null,
+  delegatedContractName: null,
+  threshold: 1,
+  updatedAt: 0
 }
 
 const createDeferred = <T>() => {
@@ -92,12 +115,6 @@ const createPermitTypedMessage = (): Message => ({
     }
   }
 })
-
-const dapp = {
-  name: 'Test Dapp',
-  icon: 'https://test-dapp.com/icon.png',
-  url: 'https://Test-Dapp.com'
-}
 
 describe('SignMessageController', () => {
   let signMessageController: ISignMessageController
@@ -154,6 +171,98 @@ describe('SignMessageController', () => {
     expect(signMessageController.signer).toBeUndefined()
   })
 
+  test('does not initialize after being reset while accounts are loading', async () => {
+    const initialLoad = createDeferred<void>()
+    const accountsController = {
+      initialLoadPromise: initialLoad.promise,
+      accounts: [account],
+      getOrFetchAccountOnChainState: jest.fn()
+    } as unknown as IAccountsController
+    const controller = new SignMessageController(
+      keystoreCtrl,
+      providersCtrl,
+      networksCtrl,
+      accountsController,
+      {},
+      inviteCtrl
+    )
+
+    const initPromise = controller.init({ messageToSign })
+    controller.reset()
+    initialLoad.resolve(undefined)
+
+    await expect(initPromise).resolves.toBeUndefined()
+    expect(controller.isInitialized).toBeFalsy()
+    expect(controller.messageToSign).toBeNull()
+    expect(accountsController.getOrFetchAccountOnChainState).not.toHaveBeenCalled()
+  })
+
+  test('does not finish initialization after being reset while fetching account state', async () => {
+    const accountState = createDeferred<AccountOnchainState | undefined>()
+    const accountsController = {
+      initialLoadPromise: Promise.resolve(),
+      accounts: [account],
+      getOrFetchAccountOnChainState: jest.fn(() => accountState.promise)
+    } as unknown as IAccountsController
+    const controller = new SignMessageController(
+      keystoreCtrl,
+      providersCtrl,
+      networksCtrl,
+      accountsController,
+      {},
+      inviteCtrl
+    )
+
+    const initPromise = controller.init({ messageToSign })
+    await Promise.resolve()
+    expect(accountsController.getOrFetchAccountOnChainState).toHaveBeenCalled()
+
+    controller.reset()
+    accountState.resolve(accountOnchainState)
+
+    await expect(initPromise).resolves.toBeUndefined()
+    expect(controller.isInitialized).toBeFalsy()
+    expect(controller.messageToSign).toBeNull()
+  })
+
+  test('should resolve when adding a message to Safe Global times out', async () => {
+    const accountsController = {
+      initialLoadPromise: Promise.resolve(),
+      accounts: [account],
+      getOrFetchAccountOnChainState: jest.fn(() => Promise.resolve(accountOnchainState))
+    } as unknown as IAccountsController
+    const controller = new SignMessageController(
+      keystoreCtrl,
+      providersCtrl,
+      networksCtrl,
+      accountsController,
+      {},
+      inviteCtrl
+    )
+    await controller.init({ messageToSign })
+    jest.useFakeTimers()
+    const addMessageSpy = jest
+      .spyOn(safeLib, 'addMessage')
+      .mockImplementation(() => new Promise(() => undefined))
+    const consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    try {
+      const addMessagePromise = controller.addMsgToSafeGlobal('0xsignature', 'message')
+
+      await jest.advanceTimersByTimeAsync(SAFE_API_TIMEOUT_MS)
+
+      await expect(addMessagePromise).resolves.toBeUndefined()
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        'failed to send message to Safe Global: ',
+        new Error(`Safe API: add message timed out after ${SAFE_API_TIMEOUT_MS}ms`)
+      )
+    } finally {
+      addMessageSpy.mockRestore()
+      consoleLogSpy.mockRestore()
+      jest.useRealTimers()
+    }
+  })
+
   test('should expose Safe EIP-712 data when initializing a Safe message', async () => {
     const safeAccount: Account = {
       ...account,
@@ -168,9 +277,7 @@ describe('SignMessageController', () => {
     const safeAccountsCtrl = {
       initialLoadPromise: Promise.resolve(),
       accounts: [safeAccount],
-      getOrFetchAccountOnChainState: jest.fn().mockResolvedValue({
-        importedAccountKeys: []
-      })
+      getOrFetchAccountOnChainState: jest.fn(() => Promise.resolve(accountOnchainState))
     } as unknown as IAccountsController
     const safeSignMessageController = new SignMessageController(
       keystoreCtrl,
@@ -558,6 +665,60 @@ describe('SignMessageController', () => {
     getSignerSpy.mockRestore() // cleans up the spy
   })
 
+  // Regression: a same-kind request replacing the installed message via init()
+  // while signing awaits getSigner() must NOT be signed under the previous approval.
+  test('does not sign a replacement request installed mid-signing', async () => {
+    const signingKeyAddr = account.addr
+    const dummySignature =
+      '0x5b2dce98c7179051d21407be04bcd088243cd388ed51c4c64ccae115ca8787d85cff933dcde45220c3adfcc40f7958305e195dbd4c54580dfbf61e43438cbe9a1c'
+
+    const r1 = messageToSign
+    const r2: Message = {
+      ...messageToSign,
+      fromRequestId: 99,
+      content: { kind: 'message', message: '0x6576696c' } // "evil"
+    }
+
+    const mockSigner = {
+      // @ts-expect-error for mocking purposes only
+      signMessage: jest.fn().mockResolvedValue(dummySignature),
+      key: { addr: signingKeyAddr, type: 'internal', dedicatedToOneSA: true, meta: {} }
+    }
+
+    // Pause getSigner() so the replacement can be installed during its await - this is
+    // the exact async boundary the exploit relies on.
+    let releaseGetSigner!: () => void
+    const getSignerGate = new Promise<void>((resolve) => {
+      releaseGetSigner = resolve
+    })
+    const getSignerSpy = jest
+      .spyOn(keystoreCtrl, 'getSigner')
+      // @ts-expect-error mocked signer shape
+      .mockImplementation(async () => {
+        await getSignerGate
+        return mockSigner
+      })
+
+    await accountsCtrl.updateAccountState(r1.accountAddr, 'latest')
+    await signMessageController.init({ messageToSign: r1 })
+    signMessageController.setSigners([{ addr: signingKeyAddr, type: 'internal' }])
+
+    // Approval for R1 starts and blocks inside getSigner().
+    const signPromise = signMessageController.sign()
+
+    // Attacker races R2 onto the same controller before getSigner() resolves.
+    await signMessageController.init({ messageToSign: r2 })
+
+    releaseGetSigner()
+    await signPromise
+
+    // The stale R1 operation must abort: nothing signed, no message resolved.
+    expect(mockSigner.signMessage).not.toHaveBeenCalled()
+    expect(signMessageController.signedMessage).toBeNull()
+
+    getSignerSpy.mockRestore()
+  })
+
   test('should expose hardware wallet EIP-712 data while signing a typed message', async () => {
     const signingKeyAddr = account.addr
     const dummySignature =
@@ -644,6 +805,7 @@ describe('SignMessageController', () => {
         {
           id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
           type: 'warning',
+          title: 'Safety check in progress',
           text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests."
         }
       ])
@@ -656,6 +818,7 @@ describe('SignMessageController', () => {
         {
           id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
           type: 'warning',
+          title: "App couldn't be verified",
           text: "We couldn't verify the app. Make sure you trust it before signing requests."
         }
       ])
@@ -668,6 +831,7 @@ describe('SignMessageController', () => {
         {
           id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
           type: 'error',
+          title: 'Potentially harmful app',
           text: "This app didn't pass our safety check. Proceed at your own risk."
         }
       ])
@@ -694,6 +858,7 @@ describe('SignMessageController', () => {
         {
           id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
           type: 'warning',
+          title: 'Suspicious app hosting',
           text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
         }
       ])
@@ -701,15 +866,17 @@ describe('SignMessageController', () => {
 
     // Scenario: VERIFIED dApp loaded as iframe inside a sites.google.com tab
     // intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING warning banner
-    test('should return SUSPICIOUS_HOSTING banner from session context when dApp is an iframe in a suspicious hosting tab', () => {
-      const verifiedDappSession = new Session({ tabId: 200, windowId: 1, url: verifiedDapp.url })
-      const googleSession = new Session({
+    // The context comes from the session's own top frame, which the browser reports on every
+    // request, so the hosting page does not need a session of its own.
+    test('should return SUSPICIOUS_HOSTING banner from frame context when dApp is an iframe in a suspicious hosting tab', () => {
+      const verifiedDappSession = new Session({
         tabId: 200,
         windowId: 1,
-        url: 'https://sites.google.com'
+        url: verifiedDapp.url,
+        frameId: 2,
+        topFrameUrl: 'https://sites.google.com/view/fake-dapp'
       })
       dappsCtrl.dappSessions[verifiedDappSession.sessionId] = verifiedDappSession
-      dappsCtrl.dappSessions[googleSession.sessionId] = googleSession
 
       signMessageController.dapp = {
         ...getDappRequestData(verifiedDapp),
@@ -723,7 +890,6 @@ describe('SignMessageController', () => {
         expect(signMessageController.banners[0]?.type).toBe('warning')
       } finally {
         delete dappsCtrl.dappSessions[verifiedDappSession.sessionId]
-        delete dappsCtrl.dappSessions[googleSession.sessionId]
       }
     })
 
@@ -754,6 +920,7 @@ describe('SignMessageController', () => {
           {
             id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
             type: 'warning',
+            title: 'Safety check in progress',
             text: "We're still verifying the app. Please wait, or make sure you trust it before signing requests."
           }
         ])

@@ -4,8 +4,6 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 // import { AddEthereumChainParameter, WatchAssetParams } from 'viem'
 import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 
-import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
-
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
@@ -15,6 +13,8 @@ import { Hex } from './hex'
 import { ISignAccountOpController } from './signAccountOp'
 import { EIP7702Signature } from './signatures'
 import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from './swapAndBridge'
+
+import type { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
@@ -80,6 +80,10 @@ export interface PlainTextMessageUserRequest extends UserRequestBase<[] | [DappP
     hash?: Hex
     created?: number
     signatures?: Hex[]
+    // set for Safe messages co-signed from another device, where there is no live
+    // dapp session; recovered from the Safe message's `origin` field
+    dappName?: string
+    dappUrl?: string
   }
 }
 
@@ -119,6 +123,10 @@ export interface TypedMessageUserRequest extends UserRequestBase<[] | [DappPromi
     hash?: Hex
     created?: number
     signatures?: Hex[]
+    // set for Safe messages co-signed from another device, where there is no live
+    // dapp session; recovered from the Safe message's `origin` field
+    dappName?: string
+    dappUrl?: string
   }
 }
 

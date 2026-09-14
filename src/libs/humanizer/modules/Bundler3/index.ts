@@ -13,7 +13,8 @@ import {
   getBreak,
   getLabel,
   getToken,
-  isHexCall
+  isHexCall,
+  padCallData
 } from '../../utils'
 import {
   erc4626DepositAbi,
@@ -84,7 +85,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
     [toFunctionSelector(morphoBorrowAbi[0])]: (call) => {
       const { args } = decodeFunctionData({
         abi: morphoBorrowAbi,
-        data: call.data
+        data: padCallData(call.data, 9)
       })
       const [marketParams, assets, , , receiver] = args
       const loanToken = marketParams.loanToken
@@ -109,7 +110,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
     [toFunctionSelector(morphoWithdrawCollateralAbi[0])]: (call) => {
       const { args } = decodeFunctionData({
         abi: morphoWithdrawCollateralAbi,
-        data: call.data
+        data: padCallData(call.data, 7)
       })
       const [marketParams, assets, receiver] = args
       const collateralToken = marketParams.collateralToken
@@ -136,7 +137,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
     [toFunctionSelector(erc4626MintAbi[0])]: (call) => {
       const { args } = decodeFunctionData({
         abi: erc4626MintAbi,
-        data: call.data
+        data: padCallData(call.data, 4)
       })
       const [vault, , , receiver] = args
       const fullVisualization = [
@@ -149,7 +150,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
     [toFunctionSelector(erc4626DepositAbi[0])]: (call) => {
       const { args } = decodeFunctionData({
         abi: erc4626DepositAbi,
-        data: call.data
+        data: padCallData(call.data, 4)
       })
       const [vault, , , receiver] = args
       const fullVisualization = [
@@ -162,7 +163,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
     [toFunctionSelector(erc4626WithdrawAbi[0])]: (call) => {
       const { args } = decodeFunctionData({
         abi: erc4626WithdrawAbi,
-        data: call.data
+        data: padCallData(call.data, 5)
       })
       const [vault, , , receiver] = args
       const fullVisualization = [
@@ -175,7 +176,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
     [toFunctionSelector(erc4626RedeemAbi[0])]: (call) => {
       const { args } = decodeFunctionData({
         abi: erc4626RedeemAbi,
-        data: call.data
+        data: padCallData(call.data, 5)
       })
       const [vault, , , receiver] = args
       const fullVisualization = [
@@ -196,7 +197,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
   })
 }
 
-const Bundler3Module: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrCall[] => {
+const Bundler3Module: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall => {
   const matcher: { [sighash: string]: (call: IrCall) => IrCall | undefined } = {
     [toFunctionSelector(multicallAbi[0])]: (call) => {
       if (!call.to) return
@@ -214,15 +215,11 @@ const Bundler3Module: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]):
     }
   }
 
-  const newCalls = calls.map((call) => {
-    const match = matcher[call.data.slice(0, 10)]
-    if (call.fullVisualization || !match) return call
-    const newCall = match(call)
-    if (!newCall) return call
-    return newCall
-  })
-
-  return newCalls
+  const match = matcher[call.data.slice(0, 10)]
+  if (call.fullVisualization || !match) return call
+  const newCall = match(call)
+  if (!newCall) return call
+  return newCall
 }
 
 export default Bundler3Module

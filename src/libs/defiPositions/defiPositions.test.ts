@@ -1,6 +1,6 @@
-import { ZeroAddress } from 'ethers'
+import { Contract, ZeroAddress } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
 import { STK_WALLET } from '../../consts/addresses'
@@ -23,6 +23,7 @@ import {
   getUniV3Positions
 } from './providers'
 import { AssetType, PositionsByProvider } from './types'
+import { AAVE_STATIC_CALL_TIMEOUT_MS } from './providers/aaveV3'
 
 describe('DeFi positions providers', () => {
   // If this test ever fails because the accounts remove their positions, you can:
@@ -134,6 +135,22 @@ describe('DeFi positions providers', () => {
       expect(pos.additionalData.positionInUSD).toBeGreaterThan(0)
       expect(pos.additionalData.healthRate).toBeGreaterThan(0)
       expect(pos.additionalData.collateralInUSD).toBeGreaterThan(0)
+    })
+    test('AAVE getReservesCount times out instead of hanging forever', async () => {
+      jest.useFakeTimers()
+      const getFunctionSpy = jest.spyOn(Contract.prototype, 'getFunction').mockReturnValue({
+        staticCall: () => new Promise(() => {})
+      } as ReturnType<Contract['getFunction']>)
+
+      try {
+        const promise = getAAVEPositions(userAddrAave, providerEthereum, ethereum)
+        const expectation = expect(promise).rejects.toThrow(/took too long/i)
+        await jest.advanceTimersByTimeAsync(AAVE_STATIC_CALL_TIMEOUT_MS + 50)
+        await expectation
+      } finally {
+        getFunctionSpy.mockRestore()
+        jest.useRealTimers()
+      }
     })
   })
 })
@@ -322,12 +339,12 @@ describe('Defi positions helper and portfolio functions', () => {
       expect(mode).not.toBe(DefiUpdateMode.Force)
     })
 
-    it('Should return StaleOk when the data is fresh enough', () => {
+    it('Should return Cache when the data is fresh enough', () => {
       const mode = getDefiUpdateMode(
         buildParams({ previousState: buildDefiState({ lastSuccessfulUpdate: Date.now() - 10000 }) })
       )
 
-      expect(mode).toBe(DefiUpdateMode.StaleOk)
+      expect(mode).toBe(DefiUpdateMode.Cache)
     })
     it('Should return Default when the data is older than maxDataAgeMs', () => {
       const mode = getDefiUpdateMode(
@@ -341,7 +358,7 @@ describe('Defi positions helper and portfolio functions', () => {
 
       expect(mode).toBe(DefiUpdateMode.Default)
     })
-    it('Should return StaleOk when freshness is disabled (maxDataAgeMs < 0)', () => {
+    it('Should return Cache when freshness is disabled (maxDataAgeMs < 0)', () => {
       const mode = getDefiUpdateMode(
         buildParams({
           maxDataAgeMs: -1,
@@ -349,7 +366,7 @@ describe('Defi positions helper and portfolio functions', () => {
         })
       )
 
-      expect(mode).toBe(DefiUpdateMode.StaleOk)
+      expect(mode).toBe(DefiUpdateMode.Cache)
     })
   })
   describe('getAllAssetsAsHints', () => {

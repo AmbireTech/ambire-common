@@ -5,6 +5,8 @@ import { describe, expect, test } from '@jest/globals'
 import { TokenError, TokenResult } from '../portfolio/interfaces'
 import { getAccountOpBalanceChanges, getBalanceChangeTokenAddresses } from './balanceChanges'
 
+const NATIVE_TOKEN_TRANSFER_LOG_ADDRESS = '0xffffFFFfFFffffffffffffffFfFFFfffFFFfFFfE'
+
 const buildToken = (overrides: Partial<TokenResult>): TokenResult => ({
   symbol: 'TOKEN',
   name: 'Token',
@@ -66,6 +68,19 @@ describe('balanceChanges', () => {
     ])
   })
 
+  test('filters the native transfer log address on every chain', () => {
+    const usdc = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+
+    expect(getBalanceChangeTokenAddresses([NATIVE_TOKEN_TRANSFER_LOG_ADDRESS, usdc], 1n)).toEqual([
+      ZeroAddress,
+      usdc
+    ])
+    expect(getBalanceChangeTokenAddresses([NATIVE_TOKEN_TRANSFER_LOG_ADDRESS, usdc])).toEqual([
+      ZeroAddress,
+      usdc
+    ])
+  })
+
   test('keeps native ETH snapshots while skipping Abstract native token alias', async () => {
     const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
     const abstractNativeToken = '0x000000000000000000000000000000000000800A'
@@ -111,6 +126,49 @@ describe('balanceChanges', () => {
       expect.objectContaining({
         address: ZeroAddress,
         symbol: 'ETH',
+        amountBefore: 10n,
+        amountAfter: 9n,
+        balanceChange: -1n
+      })
+    ])
+  })
+
+  test('keeps native snapshots while skipping the native transfer log address', async () => {
+    const accountAddr = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
+    const getTokenBalancesOnBlock = jest
+      .fn()
+      .mockImplementation(async (_accountId, _chainId, _tokenAddrs, blockTag) => [
+        ok(
+          buildToken({
+            symbol: 'USDC',
+            name: 'USD Coin',
+            address: ZeroAddress,
+            chainId: 5042002n,
+            amount: blockTag === 101 ? 9n : 10n
+          })
+        )
+      ])
+
+    const balanceChanges = await getAccountOpBalanceChanges({
+      accountAddr,
+      chainId: 5042002n,
+      tokenAddrs: [ZeroAddress, NATIVE_TOKEN_TRANSFER_LOG_ADDRESS],
+      receiptBlockNumber: 101,
+      getTokenBalancesOnBlock
+    })
+
+    expect(getTokenBalancesOnBlock).toHaveBeenCalledTimes(2)
+    expect(getTokenBalancesOnBlock).toHaveBeenCalledWith(
+      accountAddr,
+      5042002n,
+      [ZeroAddress],
+      expect.any(Number),
+      accountAddr
+    )
+    expect(balanceChanges).toEqual([
+      expect.objectContaining({
+        address: ZeroAddress,
+        symbol: 'USDC',
         amountBefore: 10n,
         amountAfter: 9n,
         balanceChange: -1n
@@ -532,6 +590,12 @@ describe('balanceChanges', () => {
         from: sender,
         to: accountAddr,
         value: 2500000n
+      }),
+      buildTransferLog({
+        address: NATIVE_TOKEN_TRANSFER_LOG_ADDRESS,
+        from: accountAddr,
+        to: recipient,
+        value: 1000n
       })
     ]
     const getTokenBalancesOnBlock = jest
@@ -594,7 +658,7 @@ describe('balanceChanges', () => {
     expect(getTokenBalancesOnBlock).toHaveBeenCalledWith(
       accountAddr,
       999n,
-      [ZeroAddress, usdcAddr],
+      [ZeroAddress, usdcAddr, NATIVE_TOKEN_TRANSFER_LOG_ADDRESS],
       'latest',
       accountAddr
     )

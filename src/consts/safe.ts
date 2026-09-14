@@ -8,18 +8,10 @@ export const SAFE_NETWORKS = [
   747474, 4326, 8217, 4663, 534352
 ]
 
-/**
- * Information about Safe contract addresses by their versions
- */
-const vOneThree = {
-  singleton: '0xd9Db270c1B5E3Bd161E8c8503c55cEABeE709552'
-}
-const vOneFourOne = {
-  singleton: '0x41675C099F32341bf84BFc5382aF534df5C7461a'
-}
-const vOneFive = {
-  singleton: '0xFf51A5898e281Db6DfC7855790607438dF2ca44b'
-}
+export const SAFE_API_TIMEOUT_MS = 15000
+
+// Keep Safe Transaction Service requests below its bulk request limits.
+export const SAFE_API_BATCH_SIZE = 4
 
 /**
  * SimulateTxAccessor addresses by Safe version.
@@ -35,14 +27,10 @@ export const execTransactionAbi = [
 ]
 /**
  * In order to do batching, Safe needs an extra contract helper called multisend
- * This is the latest contract and it's Safe to use across versions
+ * This is the latest contract and it's safe to use across versions
  */
 export const multiSendAddr = '0x9641d764fc13c8B624c04430C7356C1C7C8102e2'
 
-/**
- * In order to do batching, Safe needs an extra contract helper called multisend
- * This is the latest contract and it's Safe to use across versions
- */
 export const safeNullOwner = '0x0000000000000000000000000000000000000002'
 
 export const allowedMulticallContracts = [
@@ -51,4 +39,15 @@ export const allowedMulticallContracts = [
   '0x40A2aCCbd92BCA938b02010E17A5b8929b49130D',
   '0xA1dabEF33b3B82c7814B6D82A79e50F4AC44102B',
   '0x8D29bE29923b68abfDD21e541b9374737B49cdAD'
+]
+
+/**
+ * Known default Safe fallback handler addresses (CompatibilityFallbackHandler).
+ * Any other fallback handler (e.g. an ExtensibleFallbackHandler used to register
+ * per-domain EIP-1271 signature verifiers) can change how the Safe validates
+ * signatures and should be flagged for user review.
+ */
+export const allowedFallbackHandlers = [
+  '0xf48f2B2d2a534e402487b3ee7C18c33Aec0Fe5e4', // CompatibilityFallbackHandler v1.3.0
+  '0xfd0732Dc9E303f09fCEf3a7388Ad10A83459Ec99' // CompatibilityFallbackHandler v1.4.1
 ]

@@ -116,18 +116,19 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **ContractNamesController** – Resolves human-readable names for smart-contract addresses via the relayer.
 - **DappsController** – Manages dApp connections, sessions, verification status, and the dApp catalog.
 - **DebugController** – Toggles per-controller debug logging at runtime (developer tool); persists toggles and hydrates the `debugLogger` module.
-- **DomainsController** – Resolves and caches ENS and Namoshi names (and avatars) for addresses.
+- **DomainsController** – Resolves and caches names (and avatars/expiry) for addresses across name services (ENS, Namoshi and more)
 - **EmailVaultController** – Handles email-based recovery, magic-link flows, and vault secret management.
 - **FeatureFlagsController** – Toggles application features at runtime for roll-outs and A/B testing.
 - **EstimationController** – Estimates gas, fees, and payment options for smart-account transactions.
 - **GasPriceController** – Fetches and formats gas-price recommendations and bundler gas speeds.
 - **HintsController** – Owns the portfolio's token/NFT hints (learned assets, to-be-learned assets, custom tokens, token preferences) and their storage; a sub-controller of the PortfolioController.
-- **InviteController** – Manages invite codes and OG status (legacy; now used for status tracking only).
+- **InviteController** – Verifies invite codes against the Relayer and stores the OG status; the gate itself (`verify`/`grantAccess`) is enforced only by the mobile router, the extension no longer enforces it.
 - **KeystoreController** – Encrypts seeds and private keys under a multi-secret–wrapped main key, manages unlock state, and routes signing to internal or hardware-backed keys.
 - **NetworksController** – Manages blockchain networks and their configuration
 - **ProvidersController** – Initializes and manages JSON-RPC providers for each configured network.
 - **PhishingController** – Maintains and updates a list of phishing domains and addresses to protect users.
 - **PortfolioController** – Fetches and caches token balances, DeFi positions, and price data per account.
+- **WalletTokenController** – Loads and validates WALLET-token data for the portfolio, including the cached xWALLET conversion rate.
 - **RequestsController** – Handles all requests (e.g., signing, connecting to an app, etc.), which come from the app UI and dApps.
 - **SafeController** – Integrates with Safe (Gnosis Safe) multisig wallets for transaction and message fetching.
 - **SelectedAccountController** – Tracks the currently selected account and derives its data (e.g., portfolio and auto login policies)

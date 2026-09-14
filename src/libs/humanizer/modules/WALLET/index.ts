@@ -22,7 +22,7 @@ const stkWrapAbi = parseAbi(['function wrap(uint256 shareAmount)'])
 const stkUnwrapAbi = parseAbi(['function unwrap(uint256 shareAmount)'])
 const stkEnterAbi = parseAbi(['function enter(uint256 amount)'])
 
-export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[]) => {
+export const WALLETModule: HumanizerCallModule = (_: AccountOp, call: IrCall) => {
   const matcher = {
     supplyController: WALLET_SUPPLY_CONTROLLER_MAPPING,
     stakingPool: STAKING_POOLS,
@@ -70,34 +70,31 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, irCalls: IrCall[
       }
     }
   }
-  const newCalls = irCalls.map((call: IrCall) => {
-    if (!isHexCall(call)) return call
-    const selector = call.data.slice(0, 10)
-    if (call.to && stakingAddresses.includes(call.to.toLowerCase()) && !call.fullVisualization) {
-      if (matcher.stakingPool[selector]) {
-        return {
-          ...call,
-          fullVisualization: matcher.stakingPool[selector](call)
-        }
-      }
-    }
-    if (matcher.supplyController[selector]) {
+  if (!isHexCall(call)) return call
+  const selector = call.data.slice(0, 10)
+  if (call.to && stakingAddresses.includes(call.to.toLowerCase()) && !call.fullVisualization) {
+    if (matcher.stakingPool[selector]) {
       return {
         ...call,
-        fullVisualization: matcher.supplyController[selector](call)
+        fullVisualization: matcher.stakingPool[selector](call)
       }
     }
-    if (
-      call.to &&
-      call.to.toLowerCase() === STK_WALLET.toLowerCase() &&
-      matcher.stkWallet[selector]
-    ) {
-      return {
-        ...call,
-        fullVisualization: matcher.stkWallet[selector](call)
-      }
+  }
+  if (matcher.supplyController[selector]) {
+    return {
+      ...call,
+      fullVisualization: matcher.supplyController[selector](call)
     }
-    return call
-  })
-  return newCalls
+  }
+  if (
+    call.to &&
+    call.to.toLowerCase() === STK_WALLET.toLowerCase() &&
+    matcher.stkWallet[selector]
+  ) {
+    return {
+      ...call,
+      fullVisualization: matcher.stkWallet[selector](call)
+    }
+  }
+  return call
 }

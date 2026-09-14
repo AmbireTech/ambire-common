@@ -8,8 +8,9 @@ import {
   zeroAddress
 } from 'viem'
 
-import { allowedMulticallContracts } from '../../../../consts/safe'
-import { AccountOp } from '../../../accountOp/accountOp'
+import { allowedFallbackHandlers, allowedMulticallContracts } from '../../../../consts/safe'
+import { AccountOp, isSafeRejectionCall } from '../../../accountOp/accountOp'
+import { decodeMultiSend } from '../../../safe/helpers'
 import {
   HumanizerCallModule,
   HumanizerVisualization,
@@ -25,7 +26,8 @@ import {
   getToken,
   getWarning,
   HexIrCall,
-  isHexCall
+  isHexCall,
+  padCallData
 } from '../../utils'
 
 const addOwnerWithThresholdAbi = parseAbi([
@@ -41,13 +43,27 @@ const swapOwnerAbi = parseAbi([
 const enableModuleAbi = parseAbi(['function enableModule(address module)'])
 const disableModuleAbi = parseAbi(['function disableModule(address prevModule, address module)'])
 const setGuardAbi = parseAbi(['function setGuard(address guard)'])
+const setFallbackHandlerAbi = parseAbi(['function setFallbackHandler(address handler)'])
+const setDomainVerifierAbi = parseAbi([
+  'function setDomainVerifier(bytes32 domainSeparator, address newVerifier)'
+])
 const setupAbi = parseAbi([
   'function setup(address[] _owners,uint256 _threshold,address to,bytes data,address fallbackHandler,address paymentToken,uint256 payment,address paymentReceiver)'
 ])
 const execTransactionAbi = parseAbi([
   'function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) payable returns (bool)'
 ])
+const multiSendAbi = parseAbi(['function multiSend(bytes transactions)'])
+// shared recursion-depth guard for both nested `setup` hooks and nested `multiSend` batches,
+// so a maliciously self-referential payload can't recurse getSafeHumanization indefinitely
 const MAX_SAFE_SETUP_HOOK_DEPTH = 4
+
+export const shouldDisplaySafeDelegateCallWarning = (
+  operation: bigint | number,
+  to?: string
+): boolean =>
+  BigInt(operation) === 1n &&
+  (!to || !isAddress(to) || !allowedMulticallContracts.includes(getAddress(to)))
 
 export const getDelegateCallWarning = (
   operation: bigint | number,
@@ -55,10 +71,7 @@ export const getDelegateCallWarning = (
 ): HumanizerWarning[] => {
   const warnings: HumanizerWarning[] = []
 
-  if (
-    BigInt(operation) === 1n &&
-    (!to || !isAddress(to) || !allowedMulticallContracts.includes(getAddress(to)))
-  )
+  if (shouldDisplaySafeDelegateCallWarning(operation, to))
     warnings.push(
       getWarning(
         'You are about to delegate permissions to a contract not whitelisted by Safe. Proceed with caution',
@@ -76,27 +89,33 @@ export const getSafeHumanization = (
   to?: string,
   value?: string | number | bigint,
   data?: string,
-  setupHookDepth = 0
+  setupHookDepth = 0,
+  nonce?: string | number | bigint | null
 ): { visuals?: HumanizerVisualization[]; warnings?: HumanizerWarning[] } | undefined => {
   if (!data || !isHex(data)) return
 
   const fullVisualization: HumanizerVisualization[] = []
   const warnings: HumanizerWarning[] = []
 
+  const selector = data.substring(0, 10)
+
   if (
-    to &&
-    safeAddr &&
-    to.toLowerCase() === safeAddr.toLowerCase() &&
-    value?.toString() === '0' &&
-    data === '0x'
+    to !== undefined &&
+    value !== undefined &&
+    isSafeRejectionCall([{ to, value: BigInt(value), data }], safeAddr ?? '')
   ) {
-    fullVisualization.push(...[getAction('Reject currently queued transaction')])
+    // a Safe{WALLET} "cancel" is just an empty, 0-value call to the zero address or to the
+    // Safe itself, proposed with the same nonce as the transaction it is meant to replace, so
+    // surface that nonce when it's known instead of showing a blank/empty call
+    fullVisualization.push(
+      ...(nonce !== undefined && nonce !== null
+        ? [getAction('Cancel'), getLabel('transaction with'), getLabel(`nonce ${nonce}`, true)]
+        : [getAction('Cancel'), getLabel('currently queued transaction')])
+    )
     return {
       visuals: fullVisualization
     }
   }
-
-  const selector = data.substring(0, 10)
 
   if (selector === toFunctionSelector(setupAbi[0])) {
     const { args } = decodeFunctionData({ abi: setupAbi, data })
@@ -164,7 +183,7 @@ export const getSafeHumanization = (
   if (selector === toFunctionSelector(addOwnerWithThresholdAbi[0])) {
     const { args } = decodeFunctionData({
       abi: addOwnerWithThresholdAbi,
-      data
+      data: padCallData(data, 2)
     })
     const [newOwner, newThreshold] = args
     fullVisualization.push(
@@ -185,7 +204,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(changeThresholdAbi[0])) {
-    const { args } = decodeFunctionData({ abi: changeThresholdAbi, data })
+    const { args } = decodeFunctionData({ abi: changeThresholdAbi, data: padCallData(data, 1) })
     const [newThreshold] = args
     fullVisualization.push(...[getAction('Set threshold to'), getLabel(newThreshold)])
     warnings.push(
@@ -198,7 +217,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(removeOwnerAbi[0])) {
-    const { args } = decodeFunctionData({ abi: removeOwnerAbi, data })
+    const { args } = decodeFunctionData({ abi: removeOwnerAbi, data: padCallData(data, 3) })
     const [, removedOwner, newThreshold] = args
     fullVisualization.push(
       ...[
@@ -218,7 +237,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(swapOwnerAbi[0])) {
-    const { args } = decodeFunctionData({ abi: swapOwnerAbi, data })
+    const { args } = decodeFunctionData({ abi: swapOwnerAbi, data: padCallData(data, 3) })
     const [, removedOwner, newOwner] = args
     fullVisualization.push(
       ...[
@@ -237,7 +256,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(enableModuleAbi[0])) {
-    const { args } = decodeFunctionData({ abi: enableModuleAbi, data })
+    const { args } = decodeFunctionData({ abi: enableModuleAbi, data: padCallData(data, 1) })
     const [module] = args
     fullVisualization.push(...[getAction('Enable module:'), getAddressVisualization(module)])
     warnings.push(
@@ -253,7 +272,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(disableModuleAbi[0])) {
-    const { args } = decodeFunctionData({ abi: disableModuleAbi, data })
+    const { args } = decodeFunctionData({ abi: disableModuleAbi, data: padCallData(data, 2) })
     const [, module] = args
     fullVisualization.push(...[getAction('Disable module:'), getAddressVisualization(module)])
     return {
@@ -262,7 +281,7 @@ export const getSafeHumanization = (
   }
 
   if (selector === toFunctionSelector(setGuardAbi[0])) {
-    const { args } = decodeFunctionData({ abi: setGuardAbi, data })
+    const { args } = decodeFunctionData({ abi: setGuardAbi, data: padCallData(data, 1) })
     const [guard] = args
     fullVisualization.push(...[getAction('Set guard:'), getAddressVisualization(guard)])
     return {
@@ -270,18 +289,114 @@ export const getSafeHumanization = (
     }
   }
 
+  if (selector === toFunctionSelector(setFallbackHandlerAbi[0])) {
+    const { args } = decodeFunctionData({
+      abi: setFallbackHandlerAbi,
+      data: padCallData(data, 1)
+    })
+    const [handler] = args
+    fullVisualization.push(
+      ...[getAction('Extend your account functionality with'), getAddressVisualization(handler)]
+    )
+
+    // The fallback handler controls how the Safe responds to calls it doesn't natively
+    // implement, most importantly EIP-1271 `isValidSignature` checks, so swapping in
+    // anything other than a known Safe default deserves explicit user attention
+    if (
+      handler.toLowerCase() !== zeroAddress &&
+      !allowedFallbackHandlers.includes(getAddress(handler))
+    ) {
+      warnings.push(
+        getWarning(
+          'This adds new functionality to your account from a contract that is not a Safe default. Only proceed if you trust its source',
+          'SAFE{WALLET}_FALLBACK_HANDLER',
+          undefined,
+          getAddress(handler)
+        )
+      )
+    }
+
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
+
+  if (selector === toFunctionSelector(setDomainVerifierAbi[0])) {
+    const { args } = decodeFunctionData({ abi: setDomainVerifierAbi, data: padCallData(data, 2) })
+    const [, newVerifier] = args
+    fullVisualization.push(
+      ...[
+        getAction('Authorize custom access rights to your account for'),
+        getAddressVisualization(newVerifier)
+      ]
+    )
+    // Grants the verifier contract standing authority to approve EIP-712 signed messages/orders
+    // under this domain on behalf of the Safe, without further owner confirmation per action
+    warnings.push(
+      getWarning(
+        'This lets the contract above approve certain actions on behalf of your account automatically, without asking you each time. Only proceed if you trust it',
+        'SAFE{WALLET}_DOMAIN_VERIFIER',
+        undefined,
+        getAddress(newVerifier)
+      )
+    )
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
+
+  if (selector === toFunctionSelector(multiSendAbi[0])) {
+    fullVisualization.push(getAction('Batch of transactions'))
+
+    let decodedTransactions: ReturnType<typeof decodeMultiSend> = []
+    try {
+      const { args } = decodeFunctionData({ abi: multiSendAbi, data: padCallData(data, 1) })
+      const [transactions] = args
+      decodedTransactions = decodeMultiSend(transactions)
+    } catch {
+      decodedTransactions = []
+    }
+
+    decodedTransactions.forEach((innerCall) => {
+      // a delegatecall leg runs attacker-controlled code directly in the Safe's own storage,
+      // so it must be flagged the same way a top-level delegatecall would be, even though it's
+      // hidden a level deeper inside this batch
+      warnings.push(...getDelegateCallWarning(innerCall.operation, innerCall.to))
+
+      const innerHumanization = getSafeHumanization(
+        safeAddr,
+        innerCall.to,
+        innerCall.value,
+        innerCall.data,
+        setupHookDepth + 1
+      )
+
+      if (innerHumanization?.visuals?.length) {
+        fullVisualization.push(getBreak(), ...innerHumanization.visuals)
+      }
+      if (innerHumanization?.warnings) warnings.push(...innerHumanization.warnings)
+    })
+
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
+
   return undefined
 }
 
-const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrCall[] => {
+const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall => {
   const matcher = {
-    [toFunctionSelector(execTransactionAbi[0])]: (call: HexIrCall): IrCall | undefined => {
-      if (!call.to) return
-      if (call.value) return
+    [toFunctionSelector(execTransactionAbi[0])]: (matchedCall: HexIrCall): IrCall | undefined => {
+      if (!matchedCall.to) return
+      if (matchedCall.value) return
       let args: unknown[]
 
       try {
-        args = [...decodeFunctionData({ abi: execTransactionAbi, data: call.data }).args]
+        args = [...decodeFunctionData({ abi: execTransactionAbi, data: matchedCall.data }).args]
       } catch {
         return
       }
@@ -300,11 +415,21 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
       const bigintValue = BigInt(value)
       const bigintOperation = BigInt(operation)
 
-      const safeSpecificHumanization = getSafeHumanization(accOp.accountAddr, to, bigintValue, data)
+      // this decoded call is a nested `execTransaction` invocation (e.g. a relayer executing on
+      // behalf of the Safe), so `accOp.nonce` does not necessarily reflect this inner Safe
+      // transaction's nonce and is intentionally not passed here
+      const safeSpecificHumanization = getSafeHumanization(
+        accOp.accountAddr,
+        to,
+        bigintValue,
+        data,
+        0,
+        accOp.nonce
+      )
       const fullVisualization = [
         getAction('Execute a Safe{WALLET} transaction'),
         getLabel('from'),
-        getAddressVisualization(call.to),
+        getAddressVisualization(matchedCall.to),
         getLabel('to'),
         getAddressVisualization(to)
       ]
@@ -325,43 +450,33 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]): IrC
       const delegateCallWarnings = getDelegateCallWarning(bigintOperation, to)
       if (delegateCallWarnings.length) warnings.push(...delegateCallWarnings)
 
-      return { ...call, fullVisualization, warnings }
+      return { ...matchedCall, fullVisualization, warnings }
     }
   }
-  const newCalls = calls.map((call) => {
-    const safeSpecificHumanization = getSafeHumanization(
-      accOp.accountAddr,
-      call.to,
-      call.value,
-      call.data
-    )
-    if (safeSpecificHumanization) {
-      return {
-        ...call,
-        fullVisualization: safeSpecificHumanization.visuals,
-        warnings: safeSpecificHumanization.warnings
-      }
+  let newCall = call
+  const safeSpecificHumanization = getSafeHumanization(
+    accOp.accountAddr,
+    call.to,
+    call.value,
+    call.data,
+    0,
+    accOp.nonce
+  )
+  if (safeSpecificHumanization) {
+    newCall = {
+      ...call,
+      fullVisualization: safeSpecificHumanization.visuals,
+      warnings: safeSpecificHumanization.warnings
     }
-
-    if (!isHexCall(call)) return call
+  } else if (isHexCall(call)) {
     const match = matcher[call.data.slice(0, 10)]
-    if (call.fullVisualization || !match) return call
-    const newCall = match(call)
-    if (!newCall) return call
-    return newCall
-  })
-
-  if (accOp.safeTx) {
-    const warningInSafeTx = getDelegateCallWarning(BigInt(accOp.safeTx.operation), accOp.safeTx.to)
-    if (warningInSafeTx.length && newCalls.length) {
-      const firstCall = newCalls[0]!
-      const firstCallWarnings: HumanizerWarning[] = firstCall.warnings || []
-      warningInSafeTx.push(...firstCallWarnings)
-      firstCall.warnings = warningInSafeTx
+    if (!call.fullVisualization && match) {
+      const matchedCall = match(call)
+      if (matchedCall) newCall = matchedCall
     }
   }
 
-  return newCalls
+  return newCall
 }
 
 export default SafeModule

@@ -200,79 +200,77 @@ const humanizerOrder = ({ items, payment, end }: Order) => {
   ]
 }
 
-export const openSeaModule: HumanizerCallModule = (accountOp: AccountOp, irCalls: IrCall[]) => {
-  return irCalls.map((call: IrCall) => {
-    if (!call.to || !isHexCall(call)) return call
-    if (
-      [
-        toFunctionSelector(fulfillBasicOrderEfficientAbi[0]),
-        toFunctionSelector(fulfillBasicOrderAbi[0])
-      ].some((sel) => call.data.startsWith(sel))
-    ) {
-      let argsParam: any
-      if (call.data.startsWith(toFunctionSelector(fulfillBasicOrderAbi[0]))) {
-        const { args } = decodeFunctionData({ abi: fulfillBasicOrderAbi, data: call.data })
-        argsParam = args[0]
-      } else {
-        const { args } = decodeFunctionData({
-          abi: fulfillBasicOrderEfficientAbi,
-          data: call.data
-        })
-        argsParam = args[0]
-      }
+export const openSeaModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
+  if (!call.to || !isHexCall(call)) return call
+  if (
+    [
+      toFunctionSelector(fulfillBasicOrderEfficientAbi[0]),
+      toFunctionSelector(fulfillBasicOrderAbi[0])
+    ].some((sel) => call.data.startsWith(sel))
+  ) {
+    let argsParam: any
+    if (call.data.startsWith(toFunctionSelector(fulfillBasicOrderAbi[0]))) {
+      const { args } = decodeFunctionData({ abi: fulfillBasicOrderAbi, data: call.data })
+      argsParam = args[0]
+    } else {
+      const { args } = decodeFunctionData({
+        abi: fulfillBasicOrderEfficientAbi,
+        data: call.data
+      })
+      argsParam = args[0]
+    }
 
-      const { considerationToken, considerationAmount, offerToken, offerIdentifier, endTime } =
-        argsParam
+    const { considerationToken, considerationAmount, offerToken, offerIdentifier, endTime } =
+      argsParam
 
+    return {
+      ...call,
+      fullVisualization: [
+        getAction('Buy'),
+        getToken(offerToken, offerIdentifier),
+        getLabel('for'),
+        getToken(considerationToken, considerationAmount),
+        getDeadline(endTime)
+      ]
+    }
+  }
+
+  if (call.data.startsWith(toFunctionSelector(fulfillAvailableAdvancedOrdersAbi[0]))) {
+    const { args } = decodeFunctionData({
+      abi: fulfillAvailableAdvancedOrdersAbi,
+      data: call.data
+    })
+    const [orders] = args
+
+    let totalOrders: Order[] = orders.map((o: any) => parseOrder(o))
+    // opensea allows batch buy of 30 items at most
+    // if we detect more than 30 orders, that means the dapp attempts to
+    // execute n-30 EIP1155 orders that are being deduplicated accordingly on a contract level
+    // dedupe1155Orders removes 30 repeating orders and merges the remaining n orders
+    if (totalOrders.length > 30) totalOrders = dedupe1155Orders(totalOrders)
+    // still not deduped
+    if (totalOrders.length > 30)
       return {
         ...call,
         fullVisualization: [
-          getAction('Buy'),
-          getToken(offerToken, offerIdentifier),
-          getLabel('for'),
-          getToken(considerationToken, considerationAmount),
-          getDeadline(endTime)
+          getAction('Buy NFTs'),
+          getLabel('from'),
+          getAddressVisualization(call.to)
         ]
       }
-    }
+    const fullVisualization = totalOrders.map(humanizerOrder).flat()
+    return { ...call, fullVisualization }
+  }
+  if (call.data.startsWith(toFunctionSelector(fulfillAdvancedOrderAbi[0]))) {
+    const { args } = decodeFunctionData({
+      abi: fulfillAdvancedOrderAbi,
+      data: call.data
+    })
+    const [order] = args
+    const parsedOrder: Order = parseOrder(order)
+    const fullVisualization = humanizerOrder(parsedOrder)
+    return { ...call, fullVisualization }
+  }
 
-    if (call.data.startsWith(toFunctionSelector(fulfillAvailableAdvancedOrdersAbi[0]))) {
-      const { args } = decodeFunctionData({
-        abi: fulfillAvailableAdvancedOrdersAbi,
-        data: call.data
-      })
-      const [orders] = args
-
-      let totalOrders: Order[] = orders.map((o: any) => parseOrder(o))
-      // opensea allows batch buy of 30 items at most
-      // if we detect more than 30 orders, that means the dapp attempts to
-      // execute n-30 EIP1155 orders that are being deduplicated accordingly on a contract level
-      // dedupe1155Orders removes 30 repeating orders and merges the remaining n orders
-      if (totalOrders.length > 30) totalOrders = dedupe1155Orders(totalOrders)
-      // still not deduped
-      if (totalOrders.length > 30)
-        return {
-          ...call,
-          fullVisualization: [
-            getAction('Buy NFTs'),
-            getLabel('from'),
-            getAddressVisualization(call.to)
-          ]
-        }
-      const fullVisualization = totalOrders.map(humanizerOrder).flat()
-      return { ...call, fullVisualization }
-    }
-    if (call.data.startsWith(toFunctionSelector(fulfillAdvancedOrderAbi[0]))) {
-      const { args } = decodeFunctionData({
-        abi: fulfillAdvancedOrderAbi,
-        data: call.data
-      })
-      const [order] = args
-      const parsedOrder: Order = parseOrder(order)
-      const fullVisualization = humanizerOrder(parsedOrder)
-      return { ...call, fullVisualization }
-    }
-
-    return call
-  })
+  return call
 }

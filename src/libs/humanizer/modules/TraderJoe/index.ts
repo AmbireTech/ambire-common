@@ -37,7 +37,7 @@ const swapTokensForExactTokensAbi = parseAbi([
   'function swapTokensForExactTokens(uint256 amountOut,uint256 amountInMax,(uint256[],uint8[],address[]) path,address to,uint256 deadline) returns (uint256[])'
 ])
 
-const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
+const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const matcher = {
     [toFunctionSelector(swapExactNATIVEForTokensAbi[0])]: (call: HexIrCall) => {
       const { args } = decodeFunctionData({
@@ -153,14 +153,10 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[])
     }
   }
 
-  const newCalls = calls.map((call) => {
-    if (!isHexCall(call)) return call
-    const selector = call.data.slice(0, 10)
-    if (call.fullVisualization || !matcher[selector]) return call
-    return { ...call, fullVisualization: matcher[selector](call) }
-  })
-
-  return newCalls
+  if (!isHexCall(call)) return call
+  const selector = call.data.slice(0, 10)
+  if (call.fullVisualization || !matcher[selector]) return call
+  return { ...call, fullVisualization: matcher[selector](call) }
 }
 
 export default traderJoeModule
