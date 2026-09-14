@@ -95,7 +95,7 @@ export class WalletTokenController extends EventEmitter {
    * The locked shares are a nice-to-have next to the conversion rate, so a failure here is
    * reported and swallowed rather than dropping the share value the rest of the app relies on.
    */
-  async #getLockedShares(provider: RPCProvider, accountAddr?: string) {
+  async #getLockedShares(provider: RPCProvider, accountAddr?: string): Promise<bigint | undefined> {
     if (!accountAddr) return undefined
 
     try {
