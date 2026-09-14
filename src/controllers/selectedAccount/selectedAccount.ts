@@ -67,8 +67,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   account: Account | null = null
 
-  #checksummedAccountAddr: { addr: string; checksummed: string } | null = null
-
   /**
    * Holds the selected account portfolio that is used by the UI to display the portfolio.
    * It includes the portfolio and defi positions for the selected account.
@@ -549,17 +547,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.emitUpdate()
   }
 
-  /** Only read where `account` is known to be set. */
-  get #accountAddrChecksummed(): string {
-    const { addr } = this.account!
-
-    if (this.#checksummedAccountAddr?.addr !== addr) {
-      this.#checksummedAccountAddr = { addr, checksummed: getAddress(addr) }
-    }
-
-    return this.#checksummedAccountAddr.checksummed
-  }
-
   // ! IMPORTANT !
   // Banners that depend on async data from sub-controllers should be implemented
   // in the sub-controllers themselves. This is because updates in the sub-controllers
@@ -571,7 +558,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     const banners: Banner[] = []
 
     // ENS expiry banner
-    const ownDomainEntry = this.#domains?.domains[this.#accountAddrChecksummed]
+    const ownDomainEntry = this.#domains?.domains[this.account.addr]
     const ensExpiry = ownDomainEntry?.expiry
     const ensName = ownDomainEntry?.names?.ens
     if (ensExpiry && ensName) {
