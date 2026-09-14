@@ -773,7 +773,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             portfolioSignature !== this.#toTokenPortfolioSignature ||
             this.#isToTokenApiListStale()
           ) {
-            this.#toTokenPortfolioSignature = portfolioSignature
             await this.updateToTokenList(false)
           }
         }
@@ -1391,6 +1390,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (toTokenListKey && this.#toTokenList[toTokenListKey]) {
       this.#toTokenList[toTokenListKey].tokens = []
     }
+    // The derived list is gone, so the signature no longer describes one - forget it,
+    // or the next portfolio update with the same tokens would skip rebuilding it.
+    this.#toTokenPortfolioSignature = ''
 
     this.fromChainId = 1
     this.fromSelectedToken = null
@@ -1575,6 +1577,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           onUpdate: (apiTokens) => {
             toTokenList.apiTokens = apiTokens
             toTokenList.tokens = this.#getToTokens(fromChainId, toChainId)
+            this.#toTokenPortfolioSignature = this.#getToTokenPortfolioSignature(toChainId)
             toTokenList.lastUpdate = Date.now()
 
             if (toTokenListKeyAtStart === this.#toTokenListKey) this.#emitUpdateIfNeeded()
@@ -1603,6 +1606,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     toTokenList.tokens = this.#getToTokens(fromChainId, toChainId)
+    // Committed here rather than where the rebuild is decided, so it describes the portfolio
+    // the list was actually derived from - the paths above return without deriving anything.
+    this.#toTokenPortfolioSignature = this.#getToTokenPortfolioSignature(toChainId)
 
     const toTokenNetwork = this.#networks.networks.find((n) => Number(n.chainId) === toChainId)
     // should never happen
@@ -1840,10 +1846,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    * Everything `#getToTokens` reads off the portfolio, as a comparable string: which of the
    * account's tokens sit on the "to" chain, and the values their order depends on.
    */
-  #getToTokenPortfolioSignature() {
-    if (!this.toChainId) return ''
+  #getToTokenPortfolioSignature(chainId: number | null = this.toChainId) {
+    if (!chainId) return ''
 
-    const toChainIdBigInt = BigInt(this.toChainId)
+    const toChainIdBigInt = BigInt(chainId)
 
     return this.portfolioTokenList
       .filter((t) => t.chainId === toChainIdBigInt)
