@@ -447,6 +447,26 @@ describe('Portfolio helpers', () => {
       expect(merged[CUSTOM_ADDR]).toEqual([])
     })
 
+    // A hidden collection still has to be read, or the hidden list has nothing
+    // to show for it beyond an address
+    it('asks for a hidden collection no other source knows', () => {
+      const merged = mergeCollectionHints({
+        apiHints: {},
+        specialHints: { custom: {}, hidden: { [COLLECTION_ADDR]: [] }, learn: {} }
+      })
+
+      expect(merged[COLLECTION_ADDR]).toEqual([])
+    })
+
+    it('asks for a hidden collectible the API does not know', () => {
+      const merged = mergeCollectionHints({
+        apiHints: { [COLLECTION_ADDR]: [1n] },
+        specialHints: { custom: {}, hidden: { [COLLECTION_ADDR]: [9n] }, learn: {} }
+      })
+
+      expect(merged[COLLECTION_ADDR]).toEqual([1n, 9n])
+    })
+
     it('merges the learned and the additional hints with the API ones', () => {
       const merged = mergeCollectionHints({
         additionalHints: { [COLLECTION_ADDR]: [3n] },
@@ -504,7 +524,7 @@ describe('Portfolio helpers', () => {
     }
 
     const validate = (provider: any) =>
-      validateERC721Token({ address: COLLECTION, chainId: 1n }, ACCOUNT, provider)
+      validateERC721Token({ address: COLLECTION, chainId: 1n }, provider)
     const validateOwnership = (provider: any) =>
       validateCollectibleOwnership({ address: COLLECTION, tokenId: 1n }, ACCOUNT, provider)
 
@@ -630,6 +650,29 @@ describe('Portfolio helpers', () => {
   describe('getVisibleCollectibles', () => {
     it('shows the whole collection when it was not added by the user', () => {
       expect(getVisibleCollectibles({ collectibles: [1n, 2n, 3n] })).toEqual([1n, 2n, 3n])
+    })
+
+    // Own #1 and #2 of a collection the API already found, then add #5 by hand:
+    // narrowing to #5 would hide the two that were already listed
+    it('keeps every collectible of a collection another source found', () => {
+      expect(
+        getVisibleCollectibles({
+          collectibles: [1n, 2n, 5n],
+          customIds: [5n],
+          isDiscovered: true
+        })
+      ).toEqual([1n, 2n, 5n])
+    })
+
+    it('still hides a collectible of a discovered collection', () => {
+      expect(
+        getVisibleCollectibles({
+          collectibles: [1n, 2n, 5n],
+          customIds: [5n],
+          hiddenIds: [2n],
+          isDiscovered: true
+        })
+      ).toEqual([1n, 5n])
     })
 
     // The user adding one collectible must not bring the rest of the collection along

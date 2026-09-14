@@ -296,15 +296,14 @@ const ERC721_METADATA_ABI = [
 /**
  * Merges every source of ERC-721 hints for a network.
  *
- * An entry without ids marks a collection as enumerable and overrides the exact
- * ids of the other sources, so such an entry is only used for collections no
- * other source knows:
- * - the hidden hints are left out entirely, as hidden collections are already
- * discovered by the other sources
- * - the ids of a custom collection are always requested, as the account may hold
- * a collectible no other source knows about
- * - a custom collection with no ids falls back to being enumerated, but only when
- * the API and the learned assets have no ids for it
+ * The custom and the hidden collections are requested like any other, as the
+ * account may hold a collectible no other source knows about, and a hidden
+ * collection still has to be read to be listed as hidden. Their ids are added to
+ * what the other sources found.
+ *
+ * An entry without ids asks for the whole collection, which would override the
+ * exact ids of the other sources, so it is only used for a collection no other
+ * source named ids for.
  */
 export const mergeCollectionHints = ({
   additionalHints,
@@ -316,34 +315,38 @@ export const mergeCollectionHints = ({
   specialHints?: GetOptions['specialErc721Hints']
 }): ERC721s => {
   const merged = mergeERC721s([additionalHints || {}, apiHints, specialHints?.learn || {}])
-  const custom = specialHints?.custom || {}
 
-  Object.keys(custom).forEach((address) => {
-    let checksummed = address
+  const addCollections = (collections: ERC721s) => {
+    Object.keys(collections).forEach((address) => {
+      let checksummed = address
 
-    try {
-      checksummed = getAddress(address)
-    } catch {
-      // Not an address, so it can't be a collection
-      return
-    }
+      try {
+        checksummed = getAddress(address)
+      } catch {
+        // Not an address, so it can't be a collection
+        return
+      }
 
-    const customIds = custom[address] || []
+      const ids = collections[address] || []
 
-    if (!customIds.length) {
-      // Requests the whole collection, unless another source already named ids
-      if (!merged[checksummed]?.length) merged[checksummed] = []
+      if (!ids.length) {
+        // Asks for the whole collection, unless another source already named ids
+        if (!merged[checksummed]?.length) merged[checksummed] = []
 
-      return
-    }
+        return
+      }
 
-    const knownIds = merged[checksummed]
+      const knownIds = merged[checksummed]
 
-    // The enumerable marker already requests every collectible
-    if (knownIds && !knownIds.length) return
+      // The whole collection is already requested
+      if (knownIds && !knownIds.length) return
 
-    merged[checksummed] = [...new Set([...(knownIds || []), ...customIds])]
-  })
+      merged[checksummed] = [...new Set([...(knownIds || []), ...ids])]
+    })
+  }
+
+  addCollections(specialHints?.custom || {})
+  addCollections(specialHints?.hidden || {})
 
   return merged
 }
@@ -354,22 +357,29 @@ export const mergeCollectionHints = ({
  * A collection added by the user shows only the collectibles they added, so the
  * rest of it doesn't come along with them. Collections added before the ids
  * were recorded have none, which means the whole collection.
+ *
+ * `isDiscovered` marks a collection another source already found. Narrowing one
+ * of those down to the added ids would hide collectibles the account was already
+ * seeing, so only a collection that exists because it was added is narrowed.
  */
 export const getVisibleCollectibles = ({
   collectibles,
   customIds,
-  hiddenIds
+  hiddenIds,
+  isDiscovered
 }: {
   collectibles: bigint[]
   customIds?: bigint[]
   hiddenIds?: bigint[]
+  isDiscovered?: boolean
 }) => {
   // No hidden ids stands for the whole collection, the same way it does in the hints
   if (hiddenIds && !hiddenIds.length) return []
 
-  const added = customIds?.length
-    ? collectibles.filter((id) => customIds.includes(id))
-    : collectibles
+  const added =
+    customIds?.length && !isDiscovered
+      ? collectibles.filter((id) => customIds.includes(id))
+      : collectibles
 
   if (!hiddenIds) return added
 
@@ -468,7 +478,6 @@ export const validateCollectibleOwnership = async (
 /** An ERC-20 token is rejected too, as it also exposes name() and balanceOf() */
 export const validateERC721Token = async (
   collection: { address: string; chainId: bigint },
-  accountId: string,
   provider: RPCProvider
 ): Promise<TokenValidationResult> => {
   const metadata = new Contract(collection.address, ERC721_METADATA_ABI, provider)

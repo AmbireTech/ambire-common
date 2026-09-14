@@ -80,13 +80,18 @@ export type TokenResult = {
   }
 }
 
+/** A token or a collection, for the code that lists both */
+export type PortfolioAsset = TokenResult | CollectionResult
+
 export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
 }
 
-export interface CollectionResult extends TokenResult {
+export interface CollectionResult extends Omit<TokenResult, 'flags'> {
   name: string
   collectibles: bigint[]
+  /** A collection is never a fee token, on the gas tank or a rewards one */
+  flags: Pick<TokenResult['flags'], 'isHidden' | 'isCustom'>
   postSimulation?: {
     sending?: bigint[]
     receiving?: bigint[]

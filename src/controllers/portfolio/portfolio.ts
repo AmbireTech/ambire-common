@@ -161,7 +161,8 @@ export class PortfolioController
 
   validTokens: AssetValidations = { erc20: {}, erc721: {} }
 
-  // Not part of the state, as the UI has no use for it
+  // Not part of the state, as the UI has no use for it. Keyed by standard too,
+  // as the same address can be checked as a token and as a collection at once.
   #assetValidationsInProgress: Set<string> = new Set()
 
   temporaryTokens: TemporaryTokens = {}
@@ -951,7 +952,9 @@ export class PortfolioController
     const key = getAssetCacheKey(token.address, token.chainId)
     if (this.validTokens.erc20[key]?.isValid === true) return
     // Repeated dispatches for the same token are one check, not several
-    if (this.#assetValidationsInProgress.has(key)) return
+    const inProgressKey = `erc20-${key}`
+
+    if (this.#assetValidationsInProgress.has(inProgressKey)) return
 
     const provider = this.#providers.providers[token.chainId.toString()]
     if (!provider) {
@@ -961,7 +964,7 @@ export class PortfolioController
       return
     }
 
-    this.#assetValidationsInProgress.add(key)
+    this.#assetValidationsInProgress.add(inProgressKey)
 
     try {
       const result: TokenValidationResult = await validateERC20Token(
@@ -976,12 +979,11 @@ export class PortfolioController
             }
           : undefined
       )
-      const { isValid, standard, error } = result
-      const validatedStandard = standard === 'erc721' ? 'erc721' : 'erc20'
+      const { isValid, error } = result
 
-      this.#storeAssetValidation(validatedStandard, key, { isValid, error })
+      this.#storeAssetValidation('erc20', key, { isValid, error })
     } finally {
-      this.#assetValidationsInProgress.delete(key)
+      this.#assetValidationsInProgress.delete(inProgressKey)
     }
 
     this.emitUpdate()
@@ -996,7 +998,6 @@ export class PortfolioController
    */
   async updateCollectionValidation(
     collection: { address: TokenResult['address']; chainId: TokenResult['chainId'] },
-    accountId: AccountId,
     shouldRefetch?: boolean
   ) {
     await this.initialLoadPromise
@@ -1004,7 +1005,8 @@ export class PortfolioController
     const key = getAssetCacheKey(collection.address, collection.chainId)
     // A verdict about the contract itself doesn't change for an address
     if (this.validTokens.erc721[key] && !shouldRefetch) return
-    if (this.#assetValidationsInProgress.has(key)) return
+    const inProgressKey = `erc721-${key}`
+    if (this.#assetValidationsInProgress.has(inProgressKey)) return
 
     const provider = this.#providers.providers[collection.chainId.toString()]
     if (!provider) {
@@ -1014,18 +1016,18 @@ export class PortfolioController
       return
     }
 
-    this.#assetValidationsInProgress.add(key)
+    this.#assetValidationsInProgress.add(inProgressKey)
 
     try {
       const {
         isValid,
         error,
         collection: collectionMeta
-      } = await validateERC721Token(collection, accountId, provider)
+      } = await validateERC721Token(collection, provider)
 
       this.#storeAssetValidation('erc721', key, { isValid, error, collection: collectionMeta })
     } finally {
-      this.#assetValidationsInProgress.delete(key)
+      this.#assetValidationsInProgress.delete(inProgressKey)
     }
 
     this.emitUpdate()
@@ -1057,7 +1059,8 @@ export class PortfolioController
     // The owner can change, but only a new check would notice, so the verdict is
     // kept until the user asks again
     if (this.validTokens.erc721[key] && !shouldRefetch) return
-    if (this.#assetValidationsInProgress.has(key)) return
+    const inProgressKey = `erc721-${key}`
+    if (this.#assetValidationsInProgress.has(inProgressKey)) return
 
     const provider = this.#providers.providers[collectible.chainId.toString()]
     if (!provider) {
@@ -1067,7 +1070,7 @@ export class PortfolioController
       return
     }
 
-    this.#assetValidationsInProgress.add(key)
+    this.#assetValidationsInProgress.add(inProgressKey)
 
     try {
       const { isValid, error } = await validateCollectibleOwnership(
@@ -1078,7 +1081,7 @@ export class PortfolioController
 
       this.#storeAssetValidation('erc721', key, { isValid, error })
     } finally {
-      this.#assetValidationsInProgress.delete(key)
+      this.#assetValidationsInProgress.delete(inProgressKey)
     }
 
     this.emitUpdate()

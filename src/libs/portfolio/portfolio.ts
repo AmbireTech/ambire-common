@@ -248,6 +248,15 @@ export class Portfolio {
       ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
 
+    // Taken before the merge, which folds the custom ids in. The learned assets
+    // are left out on purpose: adding a collectible also asks for it to be
+    // learned, so they would report every custom collection as discovered.
+    const discoveredCollections = new Set(
+      [...Object.keys(hints.erc721s), ...Object.keys(additionalErc721Hints || {})].map((address) =>
+        address.toLowerCase()
+      )
+    )
+
     hints.erc721s = mergeCollectionHints({
       additionalHints: additionalErc721Hints,
       apiHints: hints.erc721s,
@@ -489,9 +498,9 @@ export class Portfolio {
 
     const collections = collectionsWithErrResult.reduce<CollectionResult[]>(
       (acc, [error, collection]) => {
-        // Unlike a token, a collection without a symbol is still displayable -
-        // it is labeled by its name or its address
-        if (error !== '0x') return acc
+        // The same check the collection errors are built from, so a collection is
+        // either displayed or reported, never both
+        if (!isValidCollection(error)) return acc
 
         const lowercasedAddress = collection.address.toLowerCase()
         const customIds = customCollectibles[lowercasedAddress]
@@ -501,7 +510,8 @@ export class Portfolio {
         const visibleCollectibles = getVisibleCollectibles({
           collectibles: collection.collectibles,
           customIds,
-          hiddenIds
+          hiddenIds,
+          isDiscovered: discoveredCollections.has(lowercasedAddress)
         })
 
         // Kept before the filtering below, for the same reason as the token metadata
@@ -544,9 +554,10 @@ export class Portfolio {
           return acc
         }
 
-        // Important note: Collections with 0 collectibles are allow to pass through the filter.
-        // Hidden collections are always requested as hints, so they don't have
-        // to be learned. Custom ones are, so they survive being removed.
+        // Important note: Collections with 0 collectibles are allowed to pass through the filter.
+        // A hidden collection is requested by its own hint, so it doesn't have to
+        // be learned. A custom one is learned like any other, and removing it
+        // forgets that too, see `#forgetCollectible` in the hints controller.
         if (
           !isHidden &&
           !toBeLearned.erc721s[collection.address] &&
@@ -559,15 +570,7 @@ export class Portfolio {
           ...collection,
           collectibles: visibleCollectibles,
           // Collections have no flags until this point
-          flags: {
-            onGasTank: false,
-            rewardsType: null,
-            canTopUpGasTank: false,
-            isFeeToken: false,
-            suspectedType: null,
-            isCustom,
-            isHidden
-          },
+          flags: { isCustom, isHidden },
           priceIn: getTokenDataFromCache(collection.address)?.priceIn || []
         })
         return acc
