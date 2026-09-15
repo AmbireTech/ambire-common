@@ -97,9 +97,10 @@ const getUnknownTokenWarning = (pending: AccountState, chainId: bigint): Warning
 
 const getFeeTokenPriceUnavailableWarning = (
   hasSpeed: boolean,
-  feeTokenHasPrice: boolean
+  feeTokenHasPrice: boolean,
+  areTokenPricesEnabled: boolean
 ): Warning | null => {
-  if (!hasSpeed || feeTokenHasPrice) return null
+  if (!areTokenPricesEnabled || !hasSpeed || feeTokenHasPrice) return null
 
   return WARNINGS.feeTokenPriceUnavailable
 }

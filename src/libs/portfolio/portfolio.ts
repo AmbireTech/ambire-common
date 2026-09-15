@@ -88,6 +88,8 @@ export class Portfolio {
 
   private batchedGecko: Function
 
+  private isTokenPricesEnabled: () => boolean
+
   private deploylessTokens: Deployless
 
   private deploylessNfts: Deployless
@@ -97,7 +99,8 @@ export class Portfolio {
     provider: RPCProvider,
     network: Network,
     velcroUrl?: string,
-    customBatcher?: Function
+    customBatcher?: Function,
+    isTokenPricesEnabled: () => boolean = () => true
   ) {
     if (customBatcher) {
       this.batchedVelcroDiscovery = customBatcher
@@ -133,6 +136,7 @@ export class Portfolio {
     })
     this.provider = provider
     this.network = network
+    this.isTokenPricesEnabled = isTokenPricesEnabled
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
   }
@@ -543,7 +547,7 @@ export class Portfolio {
             }
           }
 
-          if (!this.network.platformId) {
+          if (!this.network.platformId || !this.isTokenPricesEnabled()) {
             return {
               ...token,
               priceIn: [],
@@ -713,7 +717,7 @@ export class Portfolio {
       return cachedTokenData[1].priceIn.find((price) => price.baseCurrency === baseCurrency)?.price
     }
 
-    if (!this.network.platformId) return undefined
+    if (!this.network.platformId || !this.isTokenPricesEnabled()) return undefined
 
     const tokenData = await this.batchedGecko({
       address,

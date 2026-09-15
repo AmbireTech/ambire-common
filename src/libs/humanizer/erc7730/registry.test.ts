@@ -9,6 +9,45 @@ describe('ERC-7730 registry cache', () => {
     jest.resetModules()
   })
 
+  test('does not resolve descriptors or call the relayer when clear signing is disabled', async () => {
+    const {
+      fetchErc7730DescriptorForCall,
+      fetchErc7730DescriptorsForAccountOp,
+      fetchErc7730DescriptorForMessage
+    } = jest.requireActual<typeof import('./registry')>('./registry')
+    const callRelayer = jest.fn(async () => ({}))
+    const contractAddress = '0x1111111111111111111111111111111111111111'
+    const call = {
+      to: contractAddress,
+      value: 0n,
+      data: new ethers.Interface([
+        'function approve(address spender, uint256 value)'
+      ]).encodeFunctionData('approve', [contractAddress, 1n])
+    }
+    const options = { callRelayer, isClearSigningEnabled: false }
+
+    const callDescriptor = await fetchErc7730DescriptorForCall(call, 1n, options)
+    const accountOpDescriptors = await fetchErc7730DescriptorsForAccountOp(
+      { calls: [call], chainId: 1n } as AccountOp,
+      options
+    )
+    const messageDescriptor = await fetchErc7730DescriptorForMessage(
+      {
+        content: {
+          kind: 'typedMessage'
+        }
+      } as any,
+      callRelayer,
+      undefined,
+      false
+    )
+
+    expect(callDescriptor).toBeNull()
+    expect(accountOpDescriptors).toEqual({})
+    expect(messageDescriptor).toBeNull()
+    expect(callRelayer).not.toHaveBeenCalled()
+  })
+
   test('does not call the relayer again when a calldata descriptor is cached', async () => {
     const { fetchErc7730DescriptorForCall } =
       jest.requireActual<typeof import('./registry')>('./registry')

@@ -1020,6 +1020,7 @@ export const fetchErc7730DescriptorForCall = async (
   chainId: AccountOp['chainId'],
   options?: Erc7730RegistryOptions
 ): Promise<Erc7730ResolvedDescriptor | null> => {
+  if (options?.isClearSigningEnabled === false) return null
   if (!call.to || !isAddress(call.to)) return null
   if (isErc20TransferToFeeCollector(call)) return null
 
@@ -1065,6 +1066,8 @@ export const fetchErc7730DescriptorsForAccountOp = async (
   accountOp: AccountOp,
   options?: Erc7730RegistryOptions
 ): Promise<Record<number, Erc7730ResolvedDescriptor>> => {
+  if (options?.isClearSigningEnabled === false) return {}
+
   const resolvedDescriptors = await Promise.all(
     accountOp.calls.map(async (call, index) => {
       const descriptor = await fetchErc7730DescriptorForCall(call, accountOp.chainId, options)
@@ -1077,8 +1080,10 @@ export const fetchErc7730DescriptorsForAccountOp = async (
 export const fetchErc7730DescriptorForMessage = async (
   message: Message,
   callRelayer: BindedRelayerCall,
-  provider?: SafeSingletonProvider
+  provider?: SafeSingletonProvider,
+  isClearSigningEnabled = true
 ): Promise<Erc7730ResolvedDescriptor | null> => {
+  if (!isClearSigningEnabled) return null
   if (message.content.kind !== 'typedMessage') return null
 
   const verifyingContract = message.content.domain.verifyingContract

@@ -33,6 +33,7 @@ import {
 } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
@@ -86,6 +87,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   #phishing: IPhishingController
 
   #ui: IUiController
+
+  #featureFlags: IFeatureFlagsController
 
   dappSessions: { [sessionId: string]: Session } = {}
 
@@ -148,7 +151,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     networks,
     phishing,
     ui,
-    selectedAccount
+    selectedAccount,
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -158,6 +162,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     phishing: IPhishingController
     ui: IUiController
     selectedAccount: ISelectedAccountController
+    featureFlags: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
 
@@ -168,6 +173,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#phishing = phishing
     this.#ui = ui
     this.#selectedAccount = selectedAccount
+    this.#featureFlags = featureFlags
 
     this.#phishing.onUpdate(() => {
       if (!this.#phishing.shouldSyncDapps) return
@@ -564,10 +570,14 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   /**
    * Fetches, normalizes and persists the trending tokens. Throws on a failed fetch or a
-   * malformed response so the caller can react (e.g. back off its retry cadence). The update
-   * interval and its lifecycle are owned by the ContinuousUpdatesController.
+   * malformed response so the caller can react (e.g. back off its retry cadence). Returns without
+   * fetching when swap and bridge token info is disabled. The update interval and its lifecycle are
+   * owned by the ContinuousUpdatesController.
    */
   async updateTrendingTokens() {
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#featureFlags.isFeatureEnabled('swapAndBridgeTokenInfo')) return
+
     await this.initialLoadPromise
 
     const res = await fetchWithTimeout(this.#fetch, TRENDING_TOKENS_URL, {}, 30000)

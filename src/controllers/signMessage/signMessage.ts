@@ -12,6 +12,7 @@ import {
   IDappsController
 } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
 import {
@@ -84,6 +85,8 @@ export class SignMessageController
 
   #callRelayer?: BindedRelayerCall
 
+  #featureFlags?: IFeatureFlagsController
+
   // Bumped when init() starts and whenever reset() is called; async operations
   // capture it and re-check after each await, so obsolete requests can't update
   // controller state or be signed under a previous approval.
@@ -144,7 +147,8 @@ export class SignMessageController
     invite: IInviteController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
     dapps?: IDappsController,
-    callRelayer?: BindedRelayerCall
+    callRelayer?: BindedRelayerCall,
+    featureFlags?: IFeatureFlagsController
   ) {
     super(eventEmitterRegistry)
 
@@ -156,6 +160,7 @@ export class SignMessageController
     this.#invite = invite
     this.#dapps = dapps
     this.#callRelayer = callRelayer
+    this.#featureFlags = featureFlags
     this.status = SignMessageStatus.Initial
 
     // `banners` is derived from DappsController state (the dapp verification status), so its
@@ -385,11 +390,18 @@ export class SignMessageController
     await this.applyDescriptorFirstHumanization({
       humanizationId,
       fetchDescriptor: async () => {
+        await this.#featureFlags?.initialLoadPromise
+
         const provider = this.network
           ? this.#providers.providers[this.network.chainId.toString()]
           : undefined
 
-        return fetchErc7730DescriptorForMessage(messageToSign, callRelayer, provider)
+        return fetchErc7730DescriptorForMessage(
+          messageToSign,
+          callRelayer,
+          provider,
+          this.#featureFlags?.isFeatureEnabled('clearSigning')
+        )
       },
       applyDescriptorHumanization: (erc7730Descriptor, currentHumanizationId) => {
         if (!erc7730Descriptor) return false

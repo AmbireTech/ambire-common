@@ -2238,6 +2238,17 @@ describe('DappsController', () => {
       expect(stored.updatedAt).toBeGreaterThan(0)
     })
 
+    test('does not fetch trending tokens when swap and bridge token info is disabled', async () => {
+      const { controller, mainCtrl } = await prepareTest(seedStorage)
+      await mainCtrl.featureFlags.setFeatureFlag('swapAndBridgeTokenInfo', false)
+      const fetchMock = mainCtrl.fetch as jest.Mock
+      fetchMock.mockClear()
+
+      await controller.updateTrendingTokens()
+
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
     test('restores trending tokens from storage on init', async () => {
       const seeded = {
         id: 'solana',
