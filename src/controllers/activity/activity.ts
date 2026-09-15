@@ -146,10 +146,14 @@ const isAccountOpFinalized = (accountOp: SubmittedAccountOp) =>
  * Fix address checksum problems as sometimes addresses are left out
  * only because they are not saved properly checksummed
  */
-const getAccountOpsAccountKey = <T>(
-  accountOps: { [account: string]: { [network: string]: T[] } },
+/**
+ * The key an account is actually stored under. Addresses are not written canonically, so a
+ * plain index can miss an entry that differs only in casing.
+ */
+const getAccountOpsAccountKey = (
+  accountKeyed: { [account: string]: unknown },
   accountAddr: string
-) => Object.keys(accountOps).find((key) => key.toLowerCase() === accountAddr.toLowerCase())
+) => Object.keys(accountKeyed).find((key) => key.toLowerCase() === accountAddr.toLowerCase())
 
 const getAccountOpsForAccountAndChain = <T>(
   accountOps: { [account: string]: { [network: string]: T[] } },
@@ -398,7 +402,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // Deliberately not a scan of #accountsOps: recipients outlive MAX_OPS_PER_GROUP eviction,
     // so the map is the more complete source. See README.md, "The recipient index".
-    const recipients = this.#sentToHistory.recipients[accountId]
+    const recipientsKey = getAccountOpsAccountKey(this.#sentToHistory.recipients, accountId)
+    const recipients = recipientsKey ? this.#sentToHistory.recipients[recipientsKey] : undefined
 
     const sentAt = checksummedToAddress ? recipients?.[checksummedToAddress] : undefined
     const lastTimestamp = sentAt || null
@@ -450,8 +455,16 @@ export class ActivityController extends EventEmitter implements IActivityControl
     )
 
     const enabledNetworkChainIds = this.#networks.networks.map(({ chainId }) => String(chainId))
-    let internalAccountOpsByChain = this.#accountsOps[filters.account] || {}
-    const externalAccountOpsByChain = this.#externalAccountOps[filters.account] || {}
+
+    // Both maps are keyed by the address exactly as it was written, which is not always the
+    // casing the caller filters by. Resolving once keeps the internal key usable for the
+    // backend too, since IDB rows carry that same casing.
+    const internalKey = getAccountOpsAccountKey(this.#accountsOps, filters.account)
+    const accountKey = internalKey ?? filters.account
+    const externalKey = getAccountOpsAccountKey(this.#externalAccountOps, filters.account)
+
+    let internalAccountOpsByChain = this.#accountsOps[accountKey] || {}
+    const externalAccountOpsByChain = (externalKey && this.#externalAccountOps[externalKey]) || {}
 
     // The chains this call renders; a filter naming a disabled network is ignored, as below.
     const chainIdsToRender =
@@ -462,8 +475,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // Enough for this page, per chain: an account-wide read would spend the budget on disabled
     // networks and render a short page. Pending and external ops are already in memory.
     const pageEnd = (pagination.fromPage + 1) * pagination.itemsPerPage
-    await this.#persistence.ensureRecentLoaded(filters.account, pageEnd, chainIdsToRender)
-    internalAccountOpsByChain = this.#accountsOps[filters.account] || internalAccountOpsByChain
+    await this.#persistence.ensureRecentLoaded(accountKey, pageEnd, chainIdsToRender)
+    internalAccountOpsByChain = this.#accountsOps[accountKey] || internalAccountOpsByChain
 
     const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(
       internalAccountOpsByChain
@@ -519,7 +532,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // Scoped to the rendered chains; an identifiedBy filter has no stored count, so items are it.
     const storedTotal = filters.identifiedBy
       ? 0
-      : await this.#persistence.countOps(filters.account, chainIdsToRender)
+      : await this.#persistence.countOps(accountKey, chainIdsToRender)
     const externalTotal = filters.identifiedBy
       ? 0
       : chainIdsToRender.reduce(
@@ -689,7 +702,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
   ) {
     await this.#initialLoadPromise
 
-    const filteredItems = this.#signedMessages[filters.account] || []
+    const messagesKey = getAccountOpsAccountKey(this.#signedMessages, filters.account)
+    const filteredItems = (messagesKey && this.#signedMessages[messagesKey]) || []
 
     const result = paginate(filteredItems, pagination.fromPage, pagination.itemsPerPage)
 
@@ -1519,8 +1533,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
   async removeAccountData(address: Account['addr']) {
     await this.#initialLoadPromise
 
-    delete this.#accountsOps[address]
-    delete this.#signedMessages[address]
+    // Resolved before the deletes: a key differing only in casing would otherwise survive
+    // both here and in the backend, leaving the removed account's history in place.
+    const opsKey = getAccountOpsAccountKey(this.#accountsOps, address) ?? address
+    const messagesKey = getAccountOpsAccountKey(this.#signedMessages, address)
+
+    delete this.#accountsOps[opsKey]
+    if (messagesKey) delete this.#signedMessages[messagesKey]
     // sentToHistory kept on purpose: a re-imported account still recognises past recipients,
     // which is what drives the poisoning warning.
 
@@ -1532,7 +1551,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // Also clears this account's cached op count, so a re-add
     // re-reads from the backend instead of trusting a cache that no longer exists.
-    await this.#persistence.removeAccount(address)
+    await this.#persistence.removeAccount(opsKey)
 
     this.emitUpdate()
   }

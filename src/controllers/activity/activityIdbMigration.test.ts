@@ -1165,6 +1165,221 @@ describe('ActivityController — total transaction count', () => {
   })
 })
 
+describe('ActivityController — the cap is per chain, not per account', () => {
+  test('two chains of one account each hold MAX_OPS_PER_GROUP', async () => {
+    const fill = (prefix: string, chainId: bigint) =>
+      Array.from({ length: MAX_OPS_PER_GROUP }, (_, i) => ({
+        ...makeOp(`${prefix}-${i}`, 1000 + i),
+        chainId
+      }))
+    const store = new ActivityIdbStorage(db)
+    await store.putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: fill('c1', CHAIN_1) as any },
+      { accountAddr: ACC, chainId: 137n, ops: fill('c137', 137n) as any }
+    ])
+
+    expect(await store.countOpsForAccount(ACC, CHAIN_1)).toBe(MAX_OPS_PER_GROUP)
+    expect(await store.countOpsForAccount(ACC, 137n)).toBe(MAX_OPS_PER_GROUP)
+    // The cap bounds a group, so the account holds both groups in full
+    expect(await store.countOpsForAccount(ACC)).toBe(MAX_OPS_PER_GROUP * 2)
+  })
+})
+
+describe('ActivityController — counts with a partly loaded history', () => {
+  test('an account with ops on two chains reports the sum', async () => {
+    await new ActivityIdbStorage(db).putMultiple([
+      {
+        accountAddr: ACC,
+        chainId: CHAIN_1,
+        ops: Array.from({ length: 7 }, (_, i) => makeOp(`c1-${i}`, 1000 + i)) as any
+      },
+      {
+        accountAddr: ACC,
+        chainId: 137n,
+        ops: Array.from({ length: 5 }, (_, i) => ({
+          ...makeOp(`c137-${i}`, 2000 + i),
+          chainId: 137n
+        })) as any
+      }
+    ])
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    expect(controller.getTotalOpsCountForAccount(ACC)).toBe(12)
+  })
+
+  test('the count is right when the startup read loaded less than is stored', async () => {
+    // 30 per chain, but the startup window is 20 — the count must come from the backend,
+    // not from what happens to be in memory.
+    await new ActivityIdbStorage(db).putMultiple([
+      {
+        accountAddr: ACC,
+        chainId: CHAIN_1,
+        ops: Array.from({ length: 30 }, (_, i) => makeOp(`c1-${i}`, 1000 + i)) as any
+      },
+      {
+        accountAddr: ACC,
+        chainId: 137n,
+        ops: Array.from({ length: 30 }, (_, i) => ({
+          ...makeOp(`c137-${i}`, 2000 + i),
+          chainId: 137n
+        })) as any
+      }
+    ])
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    expect(controller.getTotalOpsCountForAccount(ACC)).toBe(60)
+    // ...and it is genuinely more than the cache holds
+    expect(
+      controller.getAccountOpsForAccount({ accountAddr: ACC }).length
+    ).toBeLessThan(60)
+  })
+})
+
+describe('ActivityController — internal and external totals', () => {
+  const EXT = (id: string, timestamp: number, chainId = CHAIN_1) => ({
+    ...makeOp(id, timestamp),
+    chainId,
+    txnId: `0x${id.padEnd(64, '0')}`
+  })
+
+  test('external only — itemsTotal equals the external count', async () => {
+    await storage.set('externalAccountOps', {
+      [ACC]: { '1': [EXT('ext-a', 1000), EXT('ext-b', 2000)] }
+    } as any)
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+    await controller.filterAccountsOps('s', { account: ACC })
+
+    const result = controller.accountsOps.s!.result
+    expect(result.items).toHaveLength(2)
+    expect(result.itemsTotal).toBe(2)
+  })
+
+  test('mixed — itemsTotal equals internal plus external', async () => {
+    await new ActivityIdbStorage(db).putMultiple([
+      {
+        accountAddr: ACC,
+        chainId: CHAIN_1,
+        ops: Array.from({ length: 3 }, (_, i) => makeOp(`int-${i}`, 1000 + i)) as any
+      }
+    ])
+    await storage.set('externalAccountOps', {
+      [ACC]: { '1': [EXT('ext-a', 5000), EXT('ext-b', 5001)] }
+    } as any)
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+    await controller.filterAccountsOps('s', { account: ACC })
+
+    expect(controller.accountsOps.s!.result.itemsTotal).toBe(5)
+  })
+
+  test('external ops on a disabled chain are in neither items nor itemsTotal', async () => {
+    // 999 is absent from networksStub
+    await storage.set('externalAccountOps', {
+      [ACC]: { '1': [EXT('ext-enabled', 1000)], '999': [EXT('ext-disabled', 2000, 999n)] }
+    } as any)
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+    await controller.filterAccountsOps('s', { account: ACC })
+
+    const result = controller.accountsOps.s!.result
+    expect(result.items.map((op) => op.id)).toEqual(['ext-enabled'])
+    expect(result.itemsTotal).toBe(1)
+  })
+
+  test('with an identifiedBy filter itemsTotal is just the matched items', async () => {
+    await new ActivityIdbStorage(db).putMultiple([
+      {
+        accountAddr: ACC,
+        chainId: CHAIN_1,
+        ops: Array.from({ length: 12 }, (_, i) => makeOp(`int-${i}`, 1000 + i)) as any
+      }
+    ])
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+    await controller.filterAccountsOps('s', {
+      account: ACC,
+      identifiedBy: { type: 'Transaction', identifier: '0xint-3' } as any
+    })
+
+    const result = controller.accountsOps.s!.result
+    expect(result.items).toHaveLength(1)
+    expect(result.itemsTotal).toBe(1)
+    expect(result.maxPages).toBe(1)
+  })
+
+  test('external ops keyed lowercase are found for a checksummed filters.account', async () => {
+    await storage.set('externalAccountOps', {
+      [ACC.toLowerCase()]: { '1': [EXT('ext-lower', 1000)] }
+    } as any)
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+    await controller.filterAccountsOps('s', { account: ACC })
+
+    const result = controller.accountsOps.s!.result
+    expect(result.items.map((op) => op.id)).toEqual(['ext-lower'])
+    expect(result.itemsTotal).toBe(1)
+  })
+})
+
+describe('ActivityController — account keys differing only in casing', () => {
+  test('signed messages keyed lowercase are found for a checksummed filters.account', async () => {
+    await storage.set('signedMessages', {
+      [ACC.toLowerCase()]: [{ content: { kind: 'message' }, timestamp: 1000 } as any]
+    } as any)
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+    await controller.filterSignedMessages('s', { account: ACC })
+
+    expect(controller.signedMessages.s!.result.items).toHaveLength(1)
+  })
+
+  test('removing an account clears data stored under a different casing', async () => {
+    await new ActivityIdbStorage(db).putMultiple([
+      {
+        accountAddr: ACC.toLowerCase(),
+        chainId: CHAIN_1,
+        ops: [{ ...makeOp('stored-lower', 1000), accountAddr: ACC.toLowerCase() }] as any
+      }
+    ])
+    await storage.set('signedMessages', {
+      [ACC.toLowerCase()]: [{ content: { kind: 'message' }, timestamp: 1000 } as any]
+    } as any)
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+    // Removal is driven by the checksummed address the accounts list holds
+    await controller.removeAccountData(ACC)
+
+    // Nothing left in memory, in key-value, or in IDB
+    expect(controller.getAccountOpsForAccount({ accountAddr: ACC })).toHaveLength(0)
+    expect(await storage.get('signedMessages', {})).toEqual({})
+    expect(await new ActivityIdbStorage(db).countOpsForAccount(ACC.toLowerCase())).toBe(0)
+  })
+
+  test('recipients recorded under one casing answer a query in another', async () => {
+    await storage.set('sentToHistory', {
+      domains: {},
+      recipients: { [ACC.toLowerCase()]: { [PROBE_ADDRESS]: 1000 } }
+    } as any)
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    expect((await controller.hasAccountOpsSentTo(PROBE_ADDRESS, ACC)).found).toBe(true)
+  })
+})
+
 describe('ActivityController — empty and edge groups', () => {
   test('removing an account clears its cached count so a re-add re-reads IDB', async () => {
     // A stale cached count would survive the removal and report the old account's total for
