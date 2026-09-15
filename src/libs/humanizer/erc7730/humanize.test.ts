@@ -4,7 +4,12 @@ import { encodeFunctionData, maxUint256, parseAbi } from 'viem'
 
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
-import { getUnlimitedApprovalWarning, UNLIMITED_APPROVAL_WARNING_CODE } from '../utils'
+import {
+  getErc7730RowLabel,
+  getErc7730RowValues,
+  getUnlimitedApprovalWarning,
+  UNLIMITED_APPROVAL_WARNING_CODE
+} from '../utils'
 import { humanizeCallWithErc7730 } from './humanize'
 import { MULTICALL_DESCRIPTOR } from './multicall'
 import { Erc7730Descriptor } from './types'
@@ -73,8 +78,8 @@ describe('ERC-7730 descriptor path values', () => {
     )
     const rows = humanizedCall?.fullVisualization?.[0].fields
 
-    expect(rows?.[1].label).toBe('Share ticker')
-    expect(rows?.[1].value[0]).toMatchObject({ type: 'text', content: 'steakUSDC' })
+    expect(getErc7730RowLabel(rows![1]!)).toBe('Share ticker')
+    expect(getErc7730RowValues(rows![1]!)[0]).toMatchObject({ type: 'text', content: 'steakUSDC' })
   })
 
   test('keeps a literal field value as it is', () => {
@@ -98,7 +103,7 @@ describe('ERC-7730 descriptor path values', () => {
     )
     const rows = humanizedCall?.fullVisualization?.[0].fields
 
-    expect(rows?.[0].value[0]).toMatchObject({ type: 'text', content: 'steakUSDC' })
+    expect(getErc7730RowValues(rows![0]!)[0]).toMatchObject({ type: 'text', content: 'steakUSDC' })
   })
 })
 
@@ -168,10 +173,14 @@ describe('warnings from nested calls', () => {
     const multicallVisualization = humanizedCall?.fullVisualization?.[0]
     if (multicallVisualization?.type !== 'erc7730') throw new Error('expected an ERC-7730 result')
 
-    expect(multicallVisualization.fields[0]?.value[0]).toMatchObject({
-      type: 'erc7730',
-      intent: [expect.objectContaining({ type: 'action', content: 'Grant approval' })]
-    })
+    // The nested approval has no descriptor of its own, so the legacy module humanizes it and its
+    // parts stay flat on a `call` row instead of becoming a nested visualization with its own rows.
+    expect(multicallVisualization.fields[0]).toMatchObject({ type: 'call' })
+    expect(getErc7730RowValues(multicallVisualization.fields[0]!)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'action', content: 'Grant approval' })
+      ])
+    )
   })
 
   test('a multicall with no approval carries no approval warning', () => {
