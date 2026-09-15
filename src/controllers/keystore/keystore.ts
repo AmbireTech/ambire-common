@@ -19,6 +19,7 @@ import {
   encryptWithKey,
   extractEntropyFromSeed,
   getBytesForSecret,
+  isWrongSecretError,
   migrateStoredPayloadsToGCM,
   SCRYPT_PARAMS
 } from '@/libs/keystore/keystore'
@@ -424,7 +425,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       return await decrypt(secretKey, aesEncrypted)
     } catch (error: any) {
       // Either wrong password or corrupted/tampered ciphertext
-      if (error?.name === 'OperationError') {
+      if (isWrongSecretError(error)) {
         this.errorMessage = 'Incorrect password. Please try again.'
         this.emitUpdate()
 
