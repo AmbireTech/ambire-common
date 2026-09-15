@@ -13,8 +13,10 @@ import {
 } from '../../consts/intervals'
 import { ETHEREUM_CHAIN_ID, INVICTUS_RPC_URL_IDENTIFIER } from '../../consts/networks'
 import {
+  AMBIRE_API_TIMEOUT,
   DEFAULT_STALE_RPC_BLOCK_THRESHOLD,
-  ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
+  ETHEREUM_STALE_RPC_BLOCK_THRESHOLD,
+  shouldRetryAmbireApiRequest
 } from '../../consts/portfolio'
 import {
   Account,
@@ -28,6 +30,7 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
@@ -181,6 +184,8 @@ export class PortfolioController
 
   #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
+  #platform: Platform
+
   protected tokenDataCache: { [chainId: string]: TokenDataCache } = {}
 
   #providers: IProvidersController
@@ -253,7 +258,8 @@ export class PortfolioController
     banner: IBannerController,
     featureFlags: IFeatureFlagsController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
-    verification?: IVerificationController
+    verification?: IVerificationController,
+    platform: Platform = 'default'
   ) {
     super(eventEmitterRegistry)
 
@@ -271,6 +277,7 @@ export class PortfolioController
     this.#keystore = keystore
     this.#banner = banner
     this.#featureFlags = featureFlags
+    this.#platform = platform
     this.hints = new HintsController(storage, accounts, keystore)
     this.#walletToken = new WalletTokenController()
     this.#walletToken.onError((error) => this.emitError(error))
@@ -358,10 +365,11 @@ export class PortfolioController
       },
       {
         timeoutSettings: {
-          timeoutAfter: 3000,
+          timeoutAfter: AMBIRE_API_TIMEOUT,
           timeoutErrorMessage: 'Velcro discovery timed out'
         },
-        dedupeByKeys: ['chainId', 'accountAddr']
+        dedupeByKeys: ['chainId', 'accountAddr'],
+        retryTimedOutRequests: shouldRetryAmbireApiRequest(platform)
       }
     )
     this.initialLoadPromise = this.#load().finally(() => {
@@ -1001,7 +1009,10 @@ export class PortfolioController
       try {
         const provider = providers[network.chainId.toString()]
         if (!provider) return null
-        this.#portfolioLibs.set(key, new Portfolio(this.#fetch, provider, network, this.#velcroUrl))
+        this.#portfolioLibs.set(
+          key,
+          new Portfolio(this.#fetch, provider, network, this.#velcroUrl, undefined, this.#platform)
+        )
       } catch (e: any) {
         this.emitError({
           level: 'silent',
@@ -1893,18 +1904,21 @@ export class PortfolioController
 
       const defi = response.defi
       // Throw the error after assigning the response so we can still use the returned hints
-      if ((response && 'errorState' in defi) || !('positions' in defi) || !defi.positions)
+      if (!defi || 'errorState' in defi)
         throw new Error(
           `Defi discovery failed. Error: ${
-            'errorState' in defi
+            defi && 'errorState' in defi
               ? defi.errorState[0]?.message || 'Unknown error (2)'
               : 'Unknown error'
           }`
         )
 
+      // An account with no positions in any DeFi app gets an empty object back, not an error
+      const positions = 'positions' in defi ? defi.positions || [] : []
+
       // Used only to sort assets and positions
       const positionsByProvider = getUniqueMergedPositions(
-        getFormattedApiPositions(defi.positions),
+        getFormattedApiPositions(positions),
         [],
         null
       )

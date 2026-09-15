@@ -29,9 +29,20 @@ export default function batcher(
     }
     batchDebounce?: number
     dedupeByKeys?: string[]
+    /**
+     * Send a timed out request one more time before giving up on the whole batch. Meant for
+     * mobile, where a cold start has nothing cached to fall back on, so giving up leaves every
+     * caller in the batch without its data until the next update, minutes later.
+     */
+    retryTimedOutRequests?: boolean
   }
 ): Function {
-  const { timeoutSettings, batchDebounce = 0, dedupeByKeys = [] } = options
+  const {
+    timeoutSettings,
+    batchDebounce = 0,
+    dedupeByKeys = [],
+    retryTimedOutRequests = false
+  } = options
   let queue: QueueElement[] = []
   let timeoutId: NodeJS.Timeout | null = null
 
@@ -86,36 +97,54 @@ export default function batcher(
       // separately for each network
       // useful also if the API is limited to a certain # and we want to paginate
       requestGenerator(queueCopy).map(async ({ url, queueSegment }) => {
-        try {
-          const fetchPromise = fetchWithTimeout(
+        const sendRequest = async () => {
+          const resp = await fetchWithTimeout(
             fetch,
             url,
             {},
             timeoutSettings?.timeoutAfter || 20000
-          ).then(async (resp) => {
-            const body = await resp.json()
-            if (resp.status !== 200) throw body
-            if (Object.prototype.hasOwnProperty.call(body, 'message')) throw body
-            if (Object.prototype.hasOwnProperty.call(body, 'error')) throw body
-            if (Array.isArray(body)) {
-              if (body.length !== queueSegment.length)
-                throw new Error('internal error: queue length and response length mismatch')
-              queueSegment.forEach(({ resolve, linkedDuplicates }, i) => {
-                resolve(body[i])
-                // Resolve linked duplicates with the same result
-                linkedDuplicates?.forEach((duplicate) => duplicate.resolve(body[i]))
-              })
-            } else if (queueSegment.every((x) => typeof x.data.responseIdentifier === 'string')) {
-              queueSegment.forEach(({ resolve, data, linkedDuplicates }) => {
-                const result = body[data.responseIdentifier as string]
-                resolve(result)
-                // Resolve linked duplicates with the same result
-                linkedDuplicates?.forEach((duplicate) => duplicate.resolve(result))
-              })
-            } else throw body
-          })
+          )
+          const body = await resp.json()
+          if (resp.status !== 200) throw body
+          if (Object.prototype.hasOwnProperty.call(body, 'message')) throw body
+          if (Object.prototype.hasOwnProperty.call(body, 'error')) throw body
 
-          await fetchPromise
+          return body
+        }
+
+        try {
+          let body: any
+
+          try {
+            body = await sendRequest()
+          } catch (e: any) {
+            // Only a timeout is retried. Every other failure (a bad request, a server error)
+            // would fail the same way a second time, so it is passed on straight away.
+            if (!retryTimedOutRequests || e?.message !== 'request-timeout') throw e
+
+            console.error(
+              'Batcher timed out, retrying once: ',
+              timeoutSettings?.timeoutErrorMessage
+            )
+            body = await sendRequest()
+          }
+
+          if (Array.isArray(body)) {
+            if (body.length !== queueSegment.length)
+              throw new Error('internal error: queue length and response length mismatch')
+            queueSegment.forEach(({ resolve, linkedDuplicates }, i) => {
+              resolve(body[i])
+              // Resolve linked duplicates with the same result
+              linkedDuplicates?.forEach((duplicate) => duplicate.resolve(body[i]))
+            })
+          } else if (queueSegment.every((x) => typeof x.data.responseIdentifier === 'string')) {
+            queueSegment.forEach(({ resolve, data, linkedDuplicates }) => {
+              const result = body[data.responseIdentifier as string]
+              resolve(result)
+              // Resolve linked duplicates with the same result
+              linkedDuplicates?.forEach((duplicate) => duplicate.resolve(result))
+            })
+          } else throw body
         } catch (e: any) {
           if (e.message === 'request-timeout' && timeoutSettings) {
             console.error('Batcher error: ', timeoutSettings.timeoutErrorMessage)
