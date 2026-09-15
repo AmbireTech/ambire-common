@@ -42,6 +42,10 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // Throttle their UI emit so the state isn't serialized on every partial tick.
 const PORTFOLIO_UPDATE_THROTTLE_MS = 100
 
+// The constant is already checksummed, so an address matches it when the two agree
+// without regard to case - which needs no keccak hash of the address to find out.
+const AMBIRE_ACCOUNT_FACTORY_LOWERCASED = AMBIRE_ACCOUNT_FACTORY.toLowerCase()
+
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
   #storage: IStorageController
 
@@ -457,7 +461,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     if (
       !this.account.creation ||
-      getAddress(this.account.creation.factoryAddr) === AMBIRE_ACCOUNT_FACTORY
+      this.account.creation.factoryAddr.toLowerCase() === AMBIRE_ACCOUNT_FACTORY_LOWERCASED
     )
       return []
 
@@ -554,7 +558,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     const banners: Banner[] = []
 
     // ENS expiry banner
-    const ownDomainEntry = this.#domains?.domains[getAddress(this.account.addr)]
+    const ownDomainEntry = this.#domains?.domains[this.account.addr]
     const ensExpiry = ownDomainEntry?.expiry
     const ensName = ownDomainEntry?.names?.ens
     if (ensExpiry && ensName) {
