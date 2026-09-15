@@ -146,6 +146,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #isMaxAmountSelected: boolean = false
 
+  #wasAmountAdjustedForFee: boolean = false
+
   #maxFeeReservation: { key: string; amount: bigint } | null = null
 
   #accounts: IAccountsController
@@ -458,6 +460,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (!token || Number(getTokenAmount(token)) === 0) {
       this.#selectedToken = null
       this.#isMaxAmountSelected = false
+      this.#wasAmountAdjustedForFee = false
       this.#resetMaxFeeReservation()
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
@@ -474,6 +477,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       prevSelectedToken?.chainId !== token?.chainId
     ) {
       this.#isMaxAmountSelected = false
+      this.#wasAmountAdjustedForFee = false
       this.#resetMaxFeeReservation()
       if (!token.priceIn.length) this.amountFieldMode = 'token'
       this.#setAmountAndNotifyUI('')
@@ -516,6 +520,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   resetForm(shouldDestroyAccountOp = true) {
     this.#isMaxAmountSelected = false
+    this.#wasAmountAdjustedForFee = false
     this.amount = ''
     this.amountInFiat = ''
     this.amountFieldMode = 'token'
@@ -663,6 +668,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
       this.#isMaxAmountSelected = false
+      this.#wasAmountAdjustedForFee = false
       this.#resetMaxFeeReservation()
       this.#setAmount(amount)
     }
@@ -672,6 +678,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       if (!Number(maxAmountAfterFeeReservation)) return
 
       this.#isMaxAmountSelected = true
+      this.#wasAmountAdjustedForFee = maxAmountAfterFeeReservation !== this.maxAmount
       this.#resetMaxFeeReservation()
       this.amountFieldMode = 'token'
       this.#setTokenAmount(maxAmountAfterFeeReservation, true)
@@ -943,7 +950,10 @@ export class TransferController extends EventEmitter implements ITransferControl
     const reservedFee =
       shouldReserveFee && this.#isMaxAmountSelected ? this.#getMaxReservedFeeAmount(fee) : fee
 
-    if (!shouldReserveFee) this.#resetMaxFeeReservation()
+    if (!shouldReserveFee) {
+      this.#wasAmountAdjustedForFee = false
+      this.#resetMaxFeeReservation()
+    }
 
     const currentAmount = this.amount
       ? parseUnits(
@@ -962,6 +972,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     if (desiredAmount === 0n || currentAmount === desiredAmount) return false
 
+    this.#wasAmountAdjustedForFee = shouldReserveFee
     this.#setTokenAmount(formatUnits(desiredAmount, this.selectedToken.decimals), true)
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.syncSignAccountOp()
@@ -975,7 +986,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (
       !this.amount ||
       !this.selectedToken ||
-      !this.#isMaxAmountSelected ||
+      !this.#wasAmountAdjustedForFee ||
       !this.#shouldReserveFeeFromTransferredToken()
     ) {
       return null
@@ -985,8 +996,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals),
       this.selectedToken.decimals
     )
-    const totalTokenAmount = getTokenAmount(this.selectedToken)
-    const feeAmount = totalTokenAmount - currentAmount
+    const feeAmount = getTokenAmount(this.selectedToken) - currentAmount
 
     if (feeAmount <= 0n) return null
 
