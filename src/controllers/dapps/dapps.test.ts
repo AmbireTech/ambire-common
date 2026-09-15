@@ -967,34 +967,37 @@ describe('DappsController', () => {
         DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING
       )
       expect(controller.dapps.find((d) => d.id === vercelDapp.id)!.isTrustedByUser).toBe(false)
-      expect(await mainCtrl.storage.get('trustedDapps', [])).toEqual([])
+      const storedDapps = await mainCtrl.storage.get('dappsV2', [])
+      expect(storedDapps.find((d) => d.id === vercelDapp.id)!.isTrustedByUser).toBe(false)
     })
 
-    test('the trust is persisted apart from the dApp record, so a disconnect cannot drop it', async () => {
+    test('the trust is stored on the dApp record, so a disconnect that drops it drops the trust', async () => {
       const { controller, mainCtrl } = await prepareTrustTest([
         { ...vercelDapp, isConnected: true, connectedSources: ['injected'] }
       ])
       await controller.fetchAndUpdatePromise
 
       await controller.trustDapp(vercelDapp.url)
-      expect(await mainCtrl.storage.get('trustedDapps', [])).toEqual([
-        { id: vercelDapp.id, addedAt: expect.any(Number) }
-      ])
+      const storedDapps = await mainCtrl.storage.get('dappsV2', [])
+      expect(storedDapps.find((d) => d.id === vercelDapp.id)!.isTrustedByUser).toBe(true)
 
-      // Disconnecting a custom dApp removes its record entirely.
+      // Disconnecting a custom dApp removes its record entirely - and the trust with it. The user
+      // has to vouch for the app again on the next connect, which we accept: keeping the trust
+      // alive would mean a record outliving the connection it was made for.
       controller.updateDapp(vercelDapp.id, { connectedSources: [] })
       expect(controller.getDapp(vercelDapp.id)).toBeUndefined()
 
-      expect(await mainCtrl.storage.get('trustedDapps', [])).toEqual([
-        { id: vercelDapp.id, addedAt: expect.any(Number) }
-      ])
+      const storedDappsAfterDisconnect = await mainCtrl.storage.get('dappsV2', [])
+      expect(storedDappsAfterDisconnect.find((d) => d.id === vercelDapp.id)).toBeUndefined()
     })
 
     test('a trailing-dot id stored by an older version still resolves to the trusted dApp', async () => {
       const { controller } = await prepareTest(async (storageCtrl) => {
-        await storageCtrl.set('dappsV2', [...predefinedDapps, vercelDapp])
+        await storageCtrl.set('dappsV2', [
+          ...predefinedDapps,
+          { ...vercelDapp, id: 'my-dapp.vercel.app.', isTrustedByUser: true }
+        ])
         await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
-        await storageCtrl.set('trustedDapps', [{ id: 'my-dapp.vercel.app.', addedAt: Date.now() }])
       })
       await controller.fetchAndUpdatePromise
 
@@ -1014,7 +1017,8 @@ describe('DappsController', () => {
         restore()
       }
 
-      expect(await mainCtrl.storage.get('trustedDapps', [])).toEqual([])
+      const storedDapps = await mainCtrl.storage.get('dappsV2', [])
+      expect(storedDapps.find((d) => d.id === googleSitesDapp.id)!.isTrustedByUser).toBeFalsy()
       expect(controller.getDappVerificationBanner([googleSitesDapp.url])?.id).toBe(
         DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING
       )
@@ -1072,6 +1076,45 @@ describe('DappsController', () => {
       })
       expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
       expect(banner?.trustableDappUrls).toEqual([])
+    })
+
+    test('trusting from the connect prompt sticks to the pending dApp and is persisted on connect', async () => {
+      // A dApp connecting for the first time has no record yet, so there is nothing to write the
+      // trust onto - it rides on dappToConnect until the UI hands that back to addDapp.
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.fetchAndUpdatePromise
+      expect(controller.getDapp(vercelDapp.id)).toBeUndefined()
+
+      await controller.setDappToConnectIfNeeded({
+        id: 1,
+        kind: 'dappConnect',
+        meta: { params: {} },
+        dappPromises: [
+          {
+            id: '',
+            resolve: () => {},
+            reject: () => {},
+            meta: {},
+            session: new Session({ tabId: 92, windowId: 1, url: vercelDapp.url, frameId: 0 })
+          }
+        ]
+      })
+      await wait(1)
+
+      await controller.trustDapp(vercelDapp.url)
+
+      const dappToConnect = controller.toJSON().dappToConnect!
+      expect(dappToConnect.isTrustedByUser).toBe(true)
+
+      await controller.addDapp({ ...dappToConnect, isConnected: true })
+
+      expect(controller.getDapp(vercelDapp.id)?.isTrustedByUser).toBe(true)
+      expect(controller.getDappVerificationBanner([vercelDapp.url])?.id).toBe(
+        DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG
+      )
     })
 
     /**

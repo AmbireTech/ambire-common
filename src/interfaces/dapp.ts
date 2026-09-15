@@ -54,8 +54,8 @@ export interface ExtraDappInfo {
   blacklisted: BlacklistedStatus
   /**
    * Whether the user marked this dApp as trusted, silencing the suspicious-hosting warning for it.
-   * Derived from the trusted list the DappsController persists, not stored on the dApp record -
-   * the record of a custom dApp is dropped when it disconnects, and the trust must outlive that.
+   * Stored on the record, so it is dropped along with it - a custom dApp that disconnects has to
+   * be trusted again. Only ever true on the serialized output for a dApp the hosting check flagged.
    */
   isTrustedByUser: boolean
   /**

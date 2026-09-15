@@ -27,7 +27,8 @@
  * 3. User trust — the user can mark a dApp hosted on one of these platforms as trusted, which
  *    silences the SUSPICIOUS_HOSTING warning for that dApp only (DappsController.trustDapp).
  *    Offered only where canBeTrustedByUser() holds, and it never silences BLACKLISTED or a
- *    dangerous frame context - both stay in force for a trusted dApp.
+ *    dangerous frame context - both stay in force for a trusted dApp. Stored on the dApp's own
+ *    record, so a custom dApp that disconnects has to be trusted again.
  *
  * Final priority in getDappVerificationBanner():
  *   dApp intrinsic BLACKLISTED  >  context SUSPICIOUS_HOSTING  >  dApp intrinsic SUSPICIOUS_HOSTING  >  VERIFIED

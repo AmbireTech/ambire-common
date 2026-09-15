@@ -94,10 +94,6 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #recentDapps: RecentDappEntry[] = []
 
-  // dApp id -> the moment the user marked it as trusted. Kept apart from #dapps because the record
-  // of a custom dApp is dropped when it disconnects, while the trust must survive that.
-  #trustedDapps = new Map<string, number>()
-
   dappToConnect: Dapp | null = null
 
   // Set while dappToConnect's status was derived from a dangerous frame context instead of the
@@ -291,11 +287,10 @@ export class DappsController extends EventEmitter implements IDappsController {
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    const [storedDapps, storedRecentDapps, storedTrending, storedTrustedDapps] = await Promise.all([
+    const [storedDapps, storedRecentDapps, storedTrending] = await Promise.all([
       this.#storage.get('dappsV2', predefinedDapps),
       this.#storage.get('recentDapps', [] as RecentDappEntry[]),
-      this.#storage.get('trending', { updatedAt: 0, tokens: [] as TrendingToken[] }),
-      this.#storage.get('trustedDapps', [])
+      this.#storage.get('trending', { updatedAt: 0, tokens: [] as TrendingToken[] })
     ])
     // Normalize on read so a drifted record (e.g. isConnected: true but connectedSources: [])
     // can't show a dapp as connected in the UI while permission checks force a reconnect.
@@ -311,11 +306,6 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
     })
-    // Ids are canonicalized on read for the same reason the dapp records are: a trailing-dot id
-    // is unreachable by any lookup, so the trust it carries would silently stop applying.
-    this.#trustedDapps = new Map(
-      storedTrustedDapps.map(({ id, addedAt }) => [normalizeHostname(id), addedAt])
-    )
     this.#recentDapps = storedRecentDapps
     this.#trendingTokens = storedTrending.tokens
     this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
@@ -462,6 +452,7 @@ export class DappsController extends EventEmitter implements IDappsController {
         isCustom: !!prevStoredDapp?.isCustom,
         chainId: prevStoredDapp?.chainId || 1,
         favorite: !!prevStoredDapp?.favorite,
+        isTrustedByUser: !!prevStoredDapp?.isTrustedByUser,
         blacklisted: 'LOADING',
         twitter: dapp.twitter,
         geckoId: dapp.gecko_id,
@@ -502,6 +493,7 @@ export class DappsController extends EventEmitter implements IDappsController {
           isCustom: false,
           chainId: prevStoredDapp?.chainId ?? 1,
           favorite: prevStoredDapp?.favorite ?? false,
+          isTrustedByUser: prevStoredDapp?.isTrustedByUser ?? false,
           blacklisted: 'LOADING',
           twitter: pd.twitter || null,
           geckoId: null,
@@ -1222,8 +1214,9 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   /**
    * Stamps a dApp handed to the UI with its trust flags, so no consumer has to resolve the hosting
-   * rules or the trusted list on its own. Both flags are only ever meaningful for a dApp the
-   * hosting check flagged, so the platform lookup is skipped for the rest of the catalog.
+   * rules on its own. Both flags are only ever meaningful for a dApp the hosting check flagged, so
+   * the platform lookup is skipped for the rest of the catalog - and a trust the user gave before
+   * the dApp's status changed stays on the record without silencing anything.
    *
    * `isStatusFromFrameContext` reports a SUSPICIOUS_HOSTING that came from the dApp's frame context
    * rather than its own hosting - the user's trust does not cover that, so neither flag is set.
@@ -1234,7 +1227,7 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     return {
       ...dapp,
-      isTrustedByUser: this.#trustedDapps.has(dapp.id),
+      isTrustedByUser: !!dapp.isTrustedByUser,
       canBeTrustedByUser: canBeTrustedByUser(dapp.url)
     }
   }
@@ -1259,13 +1252,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       return
     }
 
-    const id = getDappIdFromUrl(url)
-    if (this.#trustedDapps.has(id)) return
-
-    this.#trustedDapps.set(id, Date.now())
-    this.emitUpdate()
-
-    await this.#persistTrustedDapps()
+    await this.#setDappTrustedByUser(getDappIdFromUrl(url), true)
   }
 
   /** Revokes the trust the user gave a dApp, bringing its suspicious-hosting warning back. */
@@ -1274,18 +1261,27 @@ export class DappsController extends EventEmitter implements IDappsController {
     await this.initialLoadPromise
 
     // Canonicalized like every other id lookup, so a trailing-dot id cannot make this a no-op.
-    if (!this.#trustedDapps.delete(normalizeHostname(id))) return
+    await this.#setDappTrustedByUser(normalizeHostname(id), false)
+  }
+
+  /**
+   * The trust lives on the dApp's own record, so it is persisted and dropped along with it - a
+   * custom dApp that loses its last connection takes the trust the user gave it with it.
+   *
+   * The connect prompt offers the action before the dApp has a record, so `dappToConnect` is
+   * updated too: it is the object the UI hands back to `addDapp` once the user connects, which is
+   * where the trust given on that screen gets persisted.
+   */
+  async #setDappTrustedByUser(id: string, isTrustedByUser: boolean) {
+    if (this.dappToConnect?.id === id) this.dappToConnect.isTrustedByUser = isTrustedByUser
+
+    const dapp = this.#dapps.get(id)
+    const shouldPersistDapps = !!dapp && !!dapp.isTrustedByUser !== isTrustedByUser
+    if (dapp && shouldPersistDapps) this.#dapps.set(id, { ...dapp, isTrustedByUser })
 
     this.emitUpdate()
 
-    await this.#persistTrustedDapps()
-  }
-
-  async #persistTrustedDapps() {
-    await this.#storage.set(
-      'trustedDapps',
-      Array.from(this.#trustedDapps.entries()).map(([id, addedAt]) => ({ id, addedAt }))
-    )
+    if (shouldPersistDapps) await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
   }
 
   async setDappToConnectIfNeeded(currentRequest: UserRequest | null) {
@@ -1485,7 +1481,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       // as VERIFIED so a trusted dApp stands exactly where any other app outside the catalog does,
       // and still gets the "not in Ambire's catalog" banner below - trust does not vouch for it.
       const isTrustedByUser =
-        intrinsic === 'SUSPICIOUS_HOSTING' && !contextStatus && this.#trustedDapps.has(id)
+        intrinsic === 'SUSPICIOUS_HOSTING' && !contextStatus && !!dapp?.isTrustedByUser
       return {
         id,
         url,
