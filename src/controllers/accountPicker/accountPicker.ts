@@ -983,7 +983,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         trezor: this.#externalSignerControllers.trezor?.deviceId || '',
         lattice: this.#externalSignerControllers?.lattice?.deviceId || '',
         qr: this.#externalSignerControllers.qr?.deviceId || '',
-        nfc: this.#externalSignerControllers.nfc?.deviceId || ''
+        nfc: this.#externalSignerControllers.nfc?.deviceId || '',
+        pq1: this.#externalSignerControllers.pq1?.deviceId || ''
       }
 
       const deviceModels: { [key in ExternalKey['type']]: string } = {
@@ -991,7 +992,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
         lattice: this.#externalSignerControllers.lattice?.deviceModel || '',
         qr: this.#externalSignerControllers.qr?.deviceModel || '',
-        nfc: this.#externalSignerControllers.nfc?.deviceModel || ''
+        nfc: this.#externalSignerControllers.nfc?.deviceModel || '',
+        pq1: this.#externalSignerControllers.pq1?.deviceModel || ''
       }
 
       const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || ''
