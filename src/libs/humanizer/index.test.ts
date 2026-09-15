@@ -2919,9 +2919,7 @@ describe('ERC-7730 descriptors', () => {
     expect(descriptors[0]?.safeTxTransactionsOnly).toBe(true)
     expect(irCalls[0]!.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      display: {
-        intent: [expect.objectContaining({ content: 'Execute a Safe{Wallet} Transaction' })]
-      },
+      intent: [expect.objectContaining({ content: 'Execute a Safe{Wallet} Transaction' })],
       fields: [
         {
           label: 'Safe',
@@ -3063,7 +3061,7 @@ describe('ERC-7730 descriptors', () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: 'erc7730',
-          rows: expect.arrayContaining([
+          fields: expect.arrayContaining([
             {
               label: 'Gas refund to',
               value: [
@@ -3140,7 +3138,7 @@ describe('ERC-7730 descriptors', () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: 'erc7730',
-          rows: expect.arrayContaining([
+          fields: expect.arrayContaining([
             {
               label: 'Gas refund to',
               value: [

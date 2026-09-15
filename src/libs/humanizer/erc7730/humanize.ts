@@ -1684,7 +1684,7 @@ const appendGasRefundRow = (
 
   return fullVisualization.map((visualization) =>
     visualization.type === 'erc7730'
-      ? { ...visualization, rows: [...visualization.rows, refundRow] }
+      ? updateErc7730Rows(visualization, (rows) => [...rows, refundRow])
       : visualization
   )
 }
