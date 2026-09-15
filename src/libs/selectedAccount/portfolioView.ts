@@ -37,6 +37,8 @@ export default class PortfolioViewBuilder {
 
   private verification: SelectedAccountPortfolioVerification | null = null
 
+  private walletStaking?: PortfolioNetworkResult['walletStaking']
+
   /**
    * If there is an emit update from the portfolio where only the additional
    * portfolio has loaded (gasTank, rewards etc.) we shouldn't flip isAllReady to true
@@ -189,6 +191,10 @@ export default class PortfolioViewBuilder {
       this.collections.push(...(networkResult?.collections || []))
     }
 
+    if (networkResult && 'walletStaking' in networkResult && networkResult.walletStaking) {
+      this.walletStaking = networkResult.walletStaking
+    }
+
     const accountOp = networkData.accountOps?.[0]
     if (accountOp) {
       this.networkSimulatedAccountOp[chainId] = accountOp
@@ -229,6 +235,7 @@ export default class PortfolioViewBuilder {
       isReadyToVisualize,
       shouldShowPartialResult: this.isAllReady ? false : shouldShowPartialResult,
       projectedRewardsStats: null,
+      walletStaking: this.walletStaking,
       verification: this.verification,
       portfolioState: strippedPortfolioState,
       defiPositions: this.defiPositions.sort((a, b) => {

@@ -553,7 +553,8 @@ export class SignMessageController
             accountState,
             this.signer,
             this.#invite.isOG,
-            (request, sign) => this.#withHardwareWalletSigningRequest(request, sign)
+            (request, sign) => this.#withHardwareWalletSigningRequest(request, sign),
+            provider
           )
           this.signatures.push(signed.signature)
           this.signed.push(signerKey.addr)
@@ -599,7 +600,9 @@ export class SignMessageController
             this.signer,
             this.network,
             this.#invite.isOG,
-            (request, sign) => this.#withHardwareWalletSigningRequest(request, sign)
+            (request, sign) => this.#withHardwareWalletSigningRequest(request, sign),
+            false,
+            provider
           )
           this.signatures.push(signed.signature)
           this.signed.push(signerKey.addr)
