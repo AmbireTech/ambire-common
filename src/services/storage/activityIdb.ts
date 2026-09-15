@@ -15,7 +15,7 @@ const STARTUP_RECENT_OPS_LIMIT = 20
 /**
  * Hard cap on ops per (account, chainId) group. Enforced twice and the two MUST agree — the
  * controller trims memory, putSingleOp guards the rows — or memory drops ops that storage
- * keeps and every expansion re-adds them.
+ * keeps and every page load re-adds them.
  */
 export const MAX_OPS_PER_GROUP = 1000
 

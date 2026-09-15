@@ -229,7 +229,7 @@ const getAccountOpReceipts = async (
  * filters in "Settings -> Transactions History" and "Dashboard -> Activity Tab" are isolated per session.
  *
  * After adding or removing an AccountOp or SignedMessage, call `syncFilteredAccountsOps()` or
- * `syncFilteredSignedMessages()` to synchronize filtered data with the source data.
+ * `syncSignedMessages()` to synchronize filtered data with the source data.
  *
  * The frontend is responsible for clearing filtered items for a session when a component unmounts
  * by calling `resetAccountsOpsFilters()` or `resetSignedMessagesFilters()`. If not cleared, all
@@ -1530,7 +1530,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.#storage.set('signedMessages', this.#signedMessages)
     await this.#storage.set('sentToHistory', this.#sentToHistory)
 
-    // Also clears this account's expansion markers and cached op count, so a re-add
+    // Also clears this account's cached op count, so a re-add
     // re-reads from the backend instead of trusting a cache that no longer exists.
     await this.#persistence.removeAccount(address)
 

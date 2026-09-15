@@ -82,11 +82,7 @@ const providersStub = {
   }
 } as any
 
-function makeController(
-  storage: IStorageController,
-  idb?: AmbireIdbDatabase,
-  providers: any = {}
-) {
+function makeController(storage: IStorageController, idb?: AmbireIdbDatabase, providers: any = {}) {
   return new ActivityController(
     storage,
     (() => {}) as any,
@@ -165,7 +161,7 @@ describe('ActivityController — IDB migration on load', () => {
   })
 
   test('keeps the legacy key as a safety-net copy and records the active backend', async () => {
-    // The legacy key is intentionally NOT removed for now — see #migrateOpsToIdb.
+    // The legacy key is intentionally NOT removed for now — it is the fallback copy.
     await storage.set('accountsOps', legacyBlob([makeOp('legacy-1', 1000)]) as any)
 
     await awaitLoad(makeController(storage, db))
@@ -359,9 +355,8 @@ describe('ActivityController — recipients indexed by the storage migration', (
 
   test('finds a recipient from an op older than the startup window', async () => {
     // 25 ops, so the oldest falls outside the 20 finalized loaded at startup.
-    // Without expansion this reports found=false, and because the poisoning match
-    // is computed from the same scan, a lookalike of OLD_RECIPIENT would raise no
-    // warning on the send screen.
+    // Answered from sentToHistory.recipients, not the loaded window — without the index this
+    // reports found=false, and a lookalike of OLD_RECIPIENT would raise no warning.
     await seedBeyondStartupWindow(25)
 
     const controller = makeController(storage, db)
@@ -484,8 +479,8 @@ describe('ActivityController — method interactions', () => {
 
   test('pending ops pushing a group past the window do not block the lazy-load', async () => {
     // Pending ops are exempt from the startup cap, so a group can arrive longer than the
-    // window without having been expanded. Expansion must be gated on the explicit marker,
-    // never on the in-memory length, or pagination silently stops at the window.
+    // window without holding the whole history. Paging must never be gated on the in-memory
+    // length, or it silently stops at the window.
     const pending = Array.from({ length: 5 }, (_, i) =>
       makeOp(`pending-${i}`, 5000 + i, AccountOpStatus.BroadcastedButNotConfirmed)
     )
@@ -556,10 +551,10 @@ describe('ActivityController — method interactions', () => {
     expect(controller.emittedErrors.length).toBeGreaterThan(0)
   })
 
-  test('a failed startup read does not permanently mark history as expanded', async () => {
-    // Regression: #ensureAccountHistoryLoaded marked an account fully-loaded whenever
-    // it had no chains in memory. After a failed startup read that is every account,
-    // so the poisoning scan silently had nothing to search for the rest of the session
+  test('a failed startup read does not permanently stop later page loads', async () => {
+    // Regression: an account with no chains in memory was treated as fully loaded. After a
+    // failed startup read that is every account, so the poisoning scan silently had nothing
+    // to search for the rest of the session
     // even though IDB held the full history.
     await new ActivityIdbStorage(db).putMultiple([
       { accountAddr: ACC, chainId: CHAIN_1, ops: [makeOpTo('old-recipient', 1, RECIPIENT) as any] }
@@ -573,8 +568,8 @@ describe('ActivityController — method interactions', () => {
     await awaitLoad(controller)
     spy.mockRestore()
 
-    // The startup read failed, so nothing is cached — but a later expansion must still
-    // be attempted rather than short-circuited by a stale "already loaded" marker.
+    // The startup read failed, so nothing is cached — but a later page load must still be
+    // attempted rather than short-circuited.
     await controller.filterAccountsOps('session-1', { account: ACC, chainId: CHAIN_1 })
     const ids = controller.getAccountOpsForAccount({ accountAddr: ACC }).map((op) => op.id)
     expect(ids).toContain('old-recipient')
@@ -1171,10 +1166,9 @@ describe('ActivityController — total transaction count', () => {
 })
 
 describe('ActivityController — empty and edge groups', () => {
-  test('removing an account clears its expansion markers so a re-add re-reads IDB', async () => {
-    // AccountOpsPersistence keys its expansion markers `${account}:${chainId}`, so removal has to clear by
-    // prefix. A stale marker would make a re-added account look already-expanded and
-    // permanently skip the lazy-load, showing only the startup window.
+  test('removing an account clears its cached count so a re-add re-reads IDB', async () => {
+    // A stale cached count would survive the removal and report the old account's total for
+    // the re-added one.
     await new ActivityIdbStorage(db).putMultiple([
       { accountAddr: ACC, chainId: CHAIN_1, ops: [makeOp('first-life', 1000) as any] }
     ])
