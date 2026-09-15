@@ -331,7 +331,14 @@ export function isBasicAccount(account: Account, state: AccountOnchainState): bo
   return !account.creation && !account.safeCreation && !state.isSmarterEoa
 }
 
-const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = ['internal', 'lattice']
+const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = ['internal', 'lattice', 'ledger']
+
+/**
+ * Key types that support EIP-7702 but for which EIP-7702 flows are NOT forced.
+ */
+const KEY_TYPES_NOT_MADE_SMARTER_AUTOMATICALLY: Key['type'][] = [
+  'ledger' // can authorize the upgrade only through the extra steps via a custom "Ambire Signer" app
+]
 
 // can the account as a whole become smarter (disregarding chain and state)
 export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
@@ -351,6 +358,21 @@ export function canBecomeSmarterOnChain(
     has7702(network) &&
     isBasicAccount(acc, state) &&
     !!state.importedAccountKeys.find((key) => KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type))
+  )
+}
+
+/**
+ * Whether an account should be upgraded to a smart account on its own, the
+ * moment something would benefit from it (batching calls, for example).
+ * Accounts that can only be upgraded by a key type from
+ * `KEY_TYPES_NOT_MADE_SMARTER_AUTOMATICALLY` stay plain EOAs until the user asks
+ * for the upgrade from the account's smart settings.
+ */
+export function shouldBecomeSmarterAutomatically(accKeys: Key[]): boolean {
+  return !!accKeys.find(
+    (key) =>
+      KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type) &&
+      !KEY_TYPES_NOT_MADE_SMARTER_AUTOMATICALLY.includes(key.type)
   )
 }
 
