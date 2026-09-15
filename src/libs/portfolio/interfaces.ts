@@ -418,6 +418,12 @@ export type PortfolioNetworkResult = CommonResultProps &
     | 'discoveryTime'
   > & {
     defiPositions: DefiNetworkState
+    walletStaking?: {
+      shareValue: bigint
+      updatedAt: number
+      /** The xWALLET shares committed to a pending unstake, which can no longer be migrated. */
+      lockedShares?: bigint
+    }
     lastExternalApiUpdateData?: {
       lastUpdate: number
       hasHints: boolean

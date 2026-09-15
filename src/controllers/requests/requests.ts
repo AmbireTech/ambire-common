@@ -63,7 +63,6 @@ import {
 import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getAccountOpNonce, isSafeRejectionCall } from '../../libs/accountOp/accountOp'
-import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import {
   getAccountOpBanners,
   getDappUserRequestsBanners,
@@ -98,6 +97,7 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
+import type { Call } from '../../libs/accountOp/types'
 import type { EIP712TypedData } from '@safe-global/types-kit'
 import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/signAccountOp'
 
@@ -219,13 +219,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   #getFirstFreeNonce(accountAddr: string, chainId: bigint, startNonce: bigint): bigint {
-    const latestActivityAccountOp = this.#activity.getAccountOpsForAccount({ accountAddr }).find(
-      (accountOp) =>
-        accountOp.chainId === chainId &&
-        // failures do not move the nonce
-        accountOp.status !== AccountOpStatus.Failure &&
-        accountOp.status !== AccountOpStatus.Rejected
-    )
     const queuedNonces = this.userRequests.reduce<bigint[]>((nonces, request) => {
       if (
         request.kind !== 'calls' ||
@@ -240,10 +233,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return nonces
     }, [])
 
-    const activityNextNonce = latestActivityAccountOp
-      ? latestActivityAccountOp.nonce + 1n
-      : startNonce
-    let firstFreeNonce = activityNextNonce > startNonce ? activityNextNonce : startNonce
+    let firstFreeNonce = startNonce
     while (queuedNonces.includes(firstFreeNonce)) firstFreeNonce += 1n
     return firstFreeNonce
   }
