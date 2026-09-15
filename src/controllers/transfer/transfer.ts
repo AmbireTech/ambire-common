@@ -20,6 +20,7 @@ import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
 import {
   AddressPoisoningMatch,
+  AmountAdjustmentInfo,
   ITransferController,
   TransferUpdate
 } from '../../interfaces/transfer'
@@ -969,43 +970,40 @@ export class TransferController extends EventEmitter implements ITransferControl
     return true
   }
 
-  /**
-   * When doing a MAX transfer or a close to MAX transfer out,
-   * if the selected fee token is the same as the transfer token,
-   * we automatically adjust the transfer amount so the user
-   * can successfully broadcast. For that, we put an additional
-   * warning telling him why this is happening
-   */
-  get amountAdjustmentWarning(): Validation | null {
-    if (!this.amount || !this.selectedToken || !this.#shouldReserveFeeFromTransferredToken()) {
+  /** Information needed by the UI when the transfer amount was reduced to leave funds for the fee. */
+  get amountAdjustmentInfo(): AmountAdjustmentInfo | null {
+    if (
+      !this.amount ||
+      !this.selectedToken ||
+      !this.#isMaxAmountSelected ||
+      !this.#shouldReserveFeeFromTransferredToken()
+    ) {
       return null
     }
-
-    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
-    if (!gasFeePayment) return null
 
     const currentAmount = parseUnits(
       getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals),
       this.selectedToken.decimals
     )
     const totalTokenAmount = getTokenAmount(this.selectedToken)
-    const maxAmountAfterFeeReservation = getAmountAfterFeeReserve(
-      totalTokenAmount,
-      gasFeePayment.amount
-    )
+    const feeAmount = totalTokenAmount - currentAmount
 
-    if (
-      maxAmountAfterFeeReservation > 0n &&
-      currentAmount > 0n &&
-      currentAmount + gasFeePayment.amount >= totalTokenAmount
-    ) {
-      return {
-        severity: 'warning',
-        message: 'Amount adjusted to cover blockchain fees'
-      }
+    if (feeAmount <= 0n) return null
+
+    return {
+      feeAmount: formatUnits(feeAmount, this.selectedToken.decimals),
+      tokenSymbol: this.selectedToken.symbol
     }
+  }
 
-    return null
+  /** Kept for clients that still render the previous validation-style adjustment message. */
+  get amountAdjustmentWarning(): Validation | null {
+    if (!this.amountAdjustmentInfo) return null
+
+    return {
+      severity: 'warning',
+      message: 'Amount adjusted to cover network fees'
+    }
   }
 
   async #updateRecipientHistoryAndPoisoning() {
@@ -1310,6 +1308,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       hasPersistedState: this.hasPersistedState,
       isRecipientAddressViewOnly: this.isRecipientAddressViewOnly,
       isRecipientAddressBlacklisted: this.isRecipientAddressBlacklisted,
+      amountAdjustmentInfo: this.amountAdjustmentInfo,
       amountAdjustmentWarning: this.amountAdjustmentWarning
     }
   }
