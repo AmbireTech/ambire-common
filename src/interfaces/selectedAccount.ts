@@ -82,6 +82,7 @@ export interface SelectedAccountPortfolio {
   defiPositions: PositionsByProvider[]
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   portfolioState: SelectedAccountPortfolioState
+  walletStaking?: PortfolioNetworkResult['walletStaking']
   verification: SelectedAccountPortfolioVerification | null
   projectedRewardsStats: ProjectedRewardsStats | null
 }
