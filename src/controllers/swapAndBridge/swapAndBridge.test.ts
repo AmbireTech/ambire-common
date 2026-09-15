@@ -455,6 +455,37 @@ describe('SwapAndBridge Controller', () => {
     await expect(storageCtrl.get('disabledSwapProviderIds', [])).resolves.toEqual([])
     unsubscribe()
   })
+  test('should clear the token list error and skip fetching when all providers are disabled', async () => {
+    await swapAndBridgeController.initForm('all-providers-disabled-test')
+    const toSelectedToken = swapAndBridgeController.toTokenShortList[0]!
+    swapAndBridgeController.addOrUpdateError({
+      id: 'to-token-list-fetch-failed',
+      title: 'Token list fetch failed',
+      level: 'error'
+    })
+    const getToTokenListSpy = jest.spyOn(socketAPIMock, 'getToTokenList')
+    getToTokenListSpy.mockClear()
+
+    await swapAndBridgeController.setSwapProviderEnabled('socket', false)
+
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual(['socket'])
+    expect(getToTokenListSpy).not.toHaveBeenCalled()
+    expect(swapAndBridgeController.errors).not.toContainEqual(
+      expect.objectContaining({ id: 'to-token-list-fetch-failed' })
+    )
+
+    swapAndBridgeController.toSelectedToken = toSelectedToken
+    await swapAndBridgeController.updateToTokenList(true)
+
+    expect(getToTokenListSpy).not.toHaveBeenCalled()
+    expect(swapAndBridgeController.toSelectedToken).toBeNull()
+    expect(swapAndBridgeController.errors).not.toContainEqual(
+      expect.objectContaining({ id: 'to-token-list-fetch-failed' })
+    )
+
+    await swapAndBridgeController.setSwapProviderEnabled('socket', true)
+    swapAndBridgeController.unloadScreen('all-providers-disabled-test', true)
+  })
   test('should ignore stale supported chains when provider settings change rapidly', async () => {
     await swapAndBridgeController.initForm('rapid-provider-toggle-test')
     await wait(0)
@@ -493,10 +524,15 @@ describe('SwapAndBridge Controller', () => {
     const persistedStorage = new StorageController(produceMemoryStore())
     await persistedStorage.set('disabledSwapProviderIds', ['socket', 'unknown-provider', 'socket'])
     const restoredController = buildSwapAndBridgeController(persistedStorage)
+    const getToTokenListSpy = jest.spyOn(socketAPIMock, 'getToTokenList')
 
     await restoredController.initForm('restore-disabled-providers-test')
 
     expect(restoredController.getDisabledSwapProviderIds()).toEqual(['socket'])
+    expect(getToTokenListSpy).not.toHaveBeenCalled()
+    expect(restoredController.errors).not.toContainEqual(
+      expect.objectContaining({ id: 'to-token-list-fetch-failed' })
+    )
     restoredController.unloadScreen('restore-disabled-providers-test', true)
   })
   test('should initForm', async () => {
