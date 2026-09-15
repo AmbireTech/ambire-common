@@ -1070,7 +1070,7 @@ describe('Portfolio', () => {
   })
 
   describe('Price request timeout', () => {
-    // A fetch that never settles, so the race is decided purely by the timeout
+    // A fetch that never settles, so only the timeout can end the request
     const hangingFetch = () => new Promise(() => {}) as any
 
     const getPriceOf = (portfolioInstance: Portfolio) =>
@@ -1079,12 +1079,12 @@ describe('Portfolio', () => {
         tokenDataRecency: 0
       })
 
-    test('the desktop budget rejects the price request after 3s', async () => {
+    test('the price request is given 3s', async () => {
       const { restore } = suppressConsole()
       jest.useFakeTimers()
       try {
-        const desktop = new Portfolio(hangingFetch, provider, ethereum, velcroUrl)
-        const pricePromise = getPriceOf(desktop)
+        const portfolioInstance = new Portfolio(hangingFetch, provider, ethereum, velcroUrl)
+        const pricePromise = getPriceOf(portfolioInstance)
         const onSettled = jest.fn()
         pricePromise.then(onSettled, onSettled)
 
@@ -1101,7 +1101,9 @@ describe('Portfolio', () => {
       }
     })
 
-    test('mobile keeps the same request in flight well past the desktop budget', async () => {
+    // Mobile gets the same budget, but a second attempt rather than a longer wait - a cold start
+    // has nothing cached, so giving up leaves the tokens unpriced until the next update
+    test('mobile spends the same budget again instead of waiting longer', async () => {
       const { restore } = suppressConsole()
       jest.useFakeTimers()
       try {
@@ -1118,18 +1120,12 @@ describe('Portfolio', () => {
         pricePromise.then(onSettled, onSettled)
 
         await jest.advanceTimersByTimeAsync(0)
-        // Where the desktop budget would already have given up and left the token unpriced
+        // Where the first attempt runs out - on desktop this would already be the end of it
         await jest.advanceTimersByTimeAsync(3000)
         expect(onSettled).not.toHaveBeenCalled()
 
-        await jest.advanceTimersByTimeAsync(9999 - 3000)
-        expect(onSettled).not.toHaveBeenCalled()
-
-        // Mobile also retries once, so the first budget running out is not the end of it
-        await jest.advanceTimersByTimeAsync(1)
-        expect(onSettled).not.toHaveBeenCalled()
-
-        await jest.advanceTimersByTimeAsync(10000)
+        // The retry is a single one, so the second budget running out ends it
+        await jest.advanceTimersByTimeAsync(3000)
         await expect(pricePromise).rejects.toThrow('request-timeout')
       } finally {
         jest.useRealTimers()

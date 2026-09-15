@@ -7,7 +7,7 @@ import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { getAmbireApiTimeout, shouldRetryAmbireApiRequest } from '../../consts/portfolio'
+import { AMBIRE_API_TIMEOUT, shouldRetryAmbireApiRequest } from '../../consts/portfolio'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { Platform } from '../../interfaces/platform'
@@ -130,7 +130,7 @@ export class Portfolio {
     }
     this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
       timeoutSettings: {
-        timeoutAfter: getAmbireApiTimeout(platform),
+        timeoutAfter: AMBIRE_API_TIMEOUT,
         timeoutErrorMessage: `Cena request timed out on ${network.name}`
       },
       retryTimedOutRequests: shouldRetryAmbireApiRequest(platform)
