@@ -36,6 +36,11 @@ const accountState = {
   ]
 } as AccountOnchainState
 
+const ledgerAccountState = {
+  ...accountState,
+  importedAccountKeys: [{ ...accountState.importedAccountKeys[0]!, type: 'ledger' }]
+} as AccountOnchainState
+
 describe('getBaseAccount', () => {
   test('returns an EOA7702 when the account is eligible and ERC-7702 is enabled', () => {
     expect(getBaseAccount(account, accountState, network, true, true)).toBeInstanceOf(EOA7702)
@@ -53,6 +58,32 @@ describe('getBaseAccount', () => {
     const delegatedAccountState = { ...accountState, isSmarterEoa: true }
 
     expect(getBaseAccount(account, delegatedAccountState, network, true, false)).toBeInstanceOf(EOA)
+  })
+
+  test('does not upgrade a Ledger-only account on its own', () => {
+    expect(getBaseAccount(account, ledgerAccountState, network, true, true)).toBeInstanceOf(EOA)
+  })
+
+  test('keeps an already upgraded Ledger-only account smart', () => {
+    const delegatedLedgerAccountState = { ...ledgerAccountState, isSmarterEoa: true }
+
+    expect(
+      getBaseAccount(account, delegatedLedgerAccountState, network, true, true)
+    ).toBeInstanceOf(EOA7702)
+  })
+
+  test('upgrades a Ledger account on its own when another key type can sign it', () => {
+    const mixedKeysAccountState = {
+      ...accountState,
+      importedAccountKeys: [
+        ...accountState.importedAccountKeys,
+        ...ledgerAccountState.importedAccountKeys
+      ]
+    } as AccountOnchainState
+
+    expect(getBaseAccount(account, mixedKeysAccountState, network, true, true)).toBeInstanceOf(
+      EOA7702
+    )
   })
 
   test('returns an EOA when the network does not support ERC-7702', () => {
