@@ -859,7 +859,9 @@ describe('SignMessageController', () => {
           id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
           type: 'warning',
           title: 'Suspicious app hosting',
-          text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
+          text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.',
+          // The dApp is on its own vercel.app subdomain, so the user may mark it as trusted.
+          trustableDappUrls: [suspiciousHostingDapp.url]
         }
       ])
     })

@@ -52,6 +52,17 @@ export interface ExtraDappInfo {
   isCustom: boolean
   favorite: boolean
   blacklisted: BlacklistedStatus
+  /**
+   * Whether the user marked this dApp as trusted, silencing the suspicious-hosting warning for it.
+   * Stored on the record, so it is dropped along with it - a custom dApp that disconnects has to
+   * be trusted again. Only ever true on the serialized output for a dApp the hosting check flagged.
+   */
+  isTrustedByUser: boolean
+  /**
+   * Whether the "trust this app" action may be offered for this dApp - see canBeTrustedByUser in
+   * the PhishingController. Derived, so the UI never has to know the hosting rules.
+   */
+  canBeTrustedByUser: boolean
   grantedPermissionId?: string
   accountPreferences?: DappAccountPreferences
   grantedPermissionAt?: number
@@ -184,6 +195,12 @@ export type DappVerificationBanner = {
   title?: string
   text: string
   secondaryText?: string
+  /**
+   * The urls of the dApps behind a SUSPICIOUS_HOSTING banner that the user may mark as trusted.
+   * Set only on that banner, so the UI can offer the action without resolving the hosting rules
+   * (or which of the banner's dApps triggered it) on its own. Empty when none qualify.
+   */
+  trustableDappUrls?: string[]
 }
 
 export const DAPP_VERIFICATION_BANNER_IDS = {
