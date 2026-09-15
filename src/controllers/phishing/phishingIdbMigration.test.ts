@@ -44,9 +44,10 @@ function makeController(storage: IStorageController, idb?: AmbireIdbDatabase) {
   })
 }
 
-/** Awaits initialLoadPromise, then stops the interval so Jest has no open handle. */
+/** Runs init(), then stops the interval so Jest has no open handle. */
 async function loadAndSettle(controller: PhishingController) {
-  await controller.initialLoadPromise
+  // init() is the load trigger — the constructor no longer starts it.
+  await controller.init()
   controller.updatePhishingInterval.stop()
 }
 
@@ -142,7 +143,8 @@ describe('PhishingController — IDB migration on load', () => {
       .mockRejectedValue(new Error('NotFoundError') as never)
 
     const controller = makeController(storage, db)
-    await expect(controller.initialLoadPromise).resolves.toBeUndefined()
+    // Asserted on init() itself: the guard is what stops a failed read rejecting the load.
+    await expect(controller.init()).resolves.toBeUndefined()
     controller.updatePhishingInterval.stop()
 
     // Protection intact, from the copy we deliberately kept
@@ -169,7 +171,7 @@ describe('PhishingController — IDB migration on load', () => {
       ui: { uiEvent: { on: () => {} }, views: [] } as any,
       idb: db
     })
-    await controller.initialLoadPromise
+    await controller.init()
     controller.updatePhishingInterval.stop()
 
     expect(urls.some((u) => u.includes(`version=${SNAPSHOT.version}`))).toBe(true)
