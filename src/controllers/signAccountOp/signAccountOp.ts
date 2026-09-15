@@ -3898,14 +3898,7 @@ export class SignAccountOpController
         message: 'No transaction response received after being broadcasted.'
       })
 
-    const clearSigningHumanization = hasErc7730Humanization(this.humanization)
-      ? this.humanization
-      : null
     const submittedAccountOpMeta = { ...accountOp.meta }
-    delete submittedAccountOpMeta.clearSigningHumanization
-    if (clearSigningHumanization) {
-      submittedAccountOpMeta.clearSigningHumanization = clearSigningHumanization
-    }
 
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,
