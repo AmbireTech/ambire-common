@@ -44,9 +44,10 @@ export function geckoRequestBatcher(queue: QueueElement[]): Request[] {
 
     const mainApiUrl = 'https://cena.ambire.com'
 
-    // The ids are joined by a literal comma, never the pre-encoded %2C. A percent-encoding pass
-    // over the whole url - which iOS does when the url carries characters it considers invalid -
-    // turns %2C into %252C, and cena then reads the list as one malformed id and answers `{}`.
+    // The ids are joined by a literal comma, never the pre-encoded %2C. Mobile puts the url
+    // through a percent-encoding pass when it carries characters that are invalid in a url, and
+    // that turns %2C into %252C - cena then reads the list as one malformed id and answers `{}`
+    // with a 200, so the request looks successful and every id in it comes back unpriced.
     let url
     if (key.endsWith('natives'))
       url = `${mainApiUrl}/api/v3/simple/price?ids=${dedup(

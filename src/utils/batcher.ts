@@ -31,8 +31,8 @@ export default function batcher(
     dedupeByKeys?: string[]
     /**
      * Send a timed out request one more time before giving up on the whole batch. Meant for
-     * mobile, where the limit is often hit by a busy JS thread rather than by a slow server,
-     * and where giving up leaves the caller without the data until its next interval.
+     * mobile, where a cold start has nothing cached to fall back on, so giving up leaves every
+     * caller in the batch without its data until the next update, minutes later.
      */
     retryTimedOutRequests?: boolean
   }
