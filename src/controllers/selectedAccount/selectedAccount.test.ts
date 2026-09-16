@@ -320,7 +320,7 @@ describe('SelectedAccount Controller', () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
       providersCtrl.updateProviderIsWorking(1n, false)
       jest.spyOn(portfolioCtrl, 'getNetworksWithAssets').mockImplementation(() => ({ '1': true }))
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
@@ -332,7 +332,7 @@ describe('SelectedAccount Controller', () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
       providersCtrl.updateProviderIsWorking(1n, false)
       jest.spyOn(portfolioCtrl, 'getNetworksWithAssets').mockImplementation(() => ({}))
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
@@ -350,7 +350,7 @@ describe('SelectedAccount Controller', () => {
       selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
       selectedAccountCtrl.portfolio.portfolioState['1']!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
@@ -371,7 +371,7 @@ describe('SelectedAccount Controller', () => {
       selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
       selectedAccountCtrl.portfolio.portfolioState['1']!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       // A portfolio error banner isn't displayed when there is an RPC error banner
       expect(
@@ -382,7 +382,7 @@ describe('SelectedAccount Controller', () => {
       ).not.toBeDefined()
 
       providersCtrl.updateProviderIsWorking(1n, true)
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       // The portfolio error banner is displayed when there isn't an RPC error banner
       expect(
