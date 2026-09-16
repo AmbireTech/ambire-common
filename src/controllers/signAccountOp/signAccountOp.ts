@@ -68,6 +68,7 @@ import {
   TraceCallDiscoveryStatus,
   Warning
 } from '../../interfaces/signAccountOp'
+import { SigningAuthRequirement, UnauthenticatedDapp } from '../../interfaces/signingAuth'
 import { UserRequest } from '../../interfaces/userRequest'
 import { getContractImplementation } from '../../libs/7702/7702'
 import {
@@ -85,6 +86,7 @@ import {
   getAccountOpNonce,
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
+import { getSendRecipients } from '../../libs/accountOp/sendRecipients'
 import {
   AccountOpIdentifiedBy,
   getSubmittedAccountOpNonce,
@@ -305,6 +307,15 @@ export class SignAccountOpController
   selectedOption: FeePaymentOption | undefined = undefined
 
   status: Status | null = null
+
+  /**
+   * The recipients of this account op the account has never sent to before. Resolved
+   * asynchronously from the activity, so it is cached here instead of read on every access.
+   */
+  #firstTimeRecipients: string[] = []
+
+  /** The account op the cached `#firstTimeRecipients` were resolved for. */
+  #firstTimeRecipientsForAccountOpId: string | null = null
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR' = 'INITIAL'
 
@@ -614,6 +625,80 @@ export class SignAccountOpController
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
     }
     this.#updateSafeEip712Data()
+
+    if (hasUpdatedCalls) void this.#updateFirstTimeRecipients()
+  }
+
+  /**
+   * Resolves which of the recipients of this account op have never been sent to. Whether the
+   * address is a saved contact, or even an account added to the wallet, deliberately does not
+   * matter - neither says the user meant to send to it, and an attacker who can get an address
+   * saved would otherwise get the confirmation skipped. Only the fee collector is left out,
+   * because it is where the app itself sends the network fee rather than a chosen recipient.
+   */
+  async #updateFirstTimeRecipients() {
+    const accountOpId = this.#accountOp.id
+    const recipients = getSendRecipients(this.#accountOp.calls).filter(
+      (recipient) => recipient.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+    )
+
+    try {
+      const sentToResults = await Promise.all(
+        recipients.map((recipient) =>
+          this.#activity.hasAccountOpsSentTo(recipient, this.account.addr)
+        )
+      )
+
+      // The calls may have changed while the activity was being read, in which case this result
+      // describes an account op that is no longer on screen
+      if (accountOpId !== this.#accountOp.id) return
+
+      this.#firstTimeRecipients = recipients.filter((_, index) => !sentToResults[index]!.found)
+      this.#firstTimeRecipientsForAccountOpId = accountOpId
+      this.emitUpdate()
+    } catch (error) {
+      // Leaving the cache untouched means the recipients are not reported as first time ones,
+      // so the user is not blocked - but this should never happen, hence the report
+      this.emitError({
+        level: 'silent',
+        message: 'Could not check whether this account has sent to these addresses before.',
+        error:
+          error instanceof Error
+            ? error
+            : new Error('signAccountOp: reading the sent to history failed')
+      })
+    }
+  }
+
+  /**
+   * Why this account op needs the password/biometrics confirmation before it is signed, or
+   * `null` when it does not. Read live for the dapps, because their stored authentication flag
+   * can be written (or the dapp catalog can finish loading) while the request is on screen.
+   */
+  get signingAuthRequirement(): SigningAuthRequirement | null {
+    const unauthenticatedDapps: UnauthenticatedDapp[] = []
+
+    this.#accountOp.calls.forEach((call) => {
+      if (!call.dapp?.id || unauthenticatedDapps.some(({ id }) => id === call.dapp!.id)) return
+
+      const storedDapp = this.#dapps.getDapp(call.dapp.id)
+      // Without a stored dapp there is nowhere to remember the confirmation, so asking for it
+      // would repeat on every single request
+      if (!storedDapp || storedDapp.signingAuthenticated) return
+
+      unauthenticatedDapps.push({ id: storedDapp.id, name: storedDapp.name })
+    })
+
+    // The cache belongs to a previous version of the calls until the activity read finishes,
+    // so it must not be reported against the calls currently on screen
+    const firstTimeRecipients =
+      this.#firstTimeRecipientsForAccountOpId === this.#accountOp.id
+        ? this.#firstTimeRecipients
+        : []
+
+    if (!firstTimeRecipients.length && !unauthenticatedDapps.length) return null
+
+    return { firstTimeRecipients, unauthenticatedDapps }
   }
 
   #rebuildBaseAccount() {
@@ -926,6 +1011,7 @@ export class SignAccountOpController
     this.#setDefaults()
     this.humanize()
     this.learnTokens()
+    void this.#updateFirstTimeRecipients()
 
     let lastEstimationStatus: EstimationStatus | null = null
 
@@ -4421,7 +4507,8 @@ export class SignAccountOpController
       hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
       safeEip712Data: this.safeEip712Data,
       gasFeeChangedConfirmationRequired: this.gasFeeChangedConfirmationRequired,
-      previousFee: this.previousFee
+      previousFee: this.previousFee,
+      signingAuthRequirement: this.signingAuthRequirement
     }
   }
 }

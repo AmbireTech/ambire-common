@@ -323,3 +323,13 @@ export type QrRequest = {
   urType?: string
   urCborHex?: any
 }
+
+/**
+ * The outcome of re-checking a keystore secret without changing the lock state, used by the
+ * signing authentication prompt.
+ */
+export type SigningAuthResult = {
+  status: 'success' | 'failed'
+  /** The user facing reason the check failed, `null` on success. */
+  error: string | null
+}

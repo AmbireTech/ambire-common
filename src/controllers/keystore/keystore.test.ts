@@ -492,6 +492,60 @@ describe('KeystoreController recovery phrase backup state', () => {
   })
 })
 
+describe('KeystoreController signing authentication', () => {
+  let keystoreCtrl: IKeystoreController
+
+  beforeEach(async () => {
+    const storageCtrl = new StorageController(produceMemoryStore())
+    const uiCtrl = new UiController({ uiManager })
+    keystoreCtrl = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
+    await keystoreCtrl.addSecret('password', pass, '', false)
+    await keystoreCtrl.unlockWithSecret('password', pass)
+  })
+
+  test('the correct secret is confirmed and the keystore stays unlocked', async () => {
+    await keystoreCtrl.verifySecret('password', pass)
+
+    expect(keystoreCtrl.signingAuthResult).toEqual({ status: 'success', error: null })
+    expect(keystoreCtrl.isUnlocked).toBe(true)
+  })
+
+  describe('a wrong secret', () => {
+    suppressConsoleBeforeEach()
+
+    test('is rejected without locking the keystore', async () => {
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+
+      expect(keystoreCtrl.signingAuthResult?.status).toBe('failed')
+      expect(keystoreCtrl.signingAuthResult?.error).toBe('Incorrect password. Please try again.')
+      // A failed confirmation must never lock the user out of the session they are already in
+      expect(keystoreCtrl.isUnlocked).toBe(true)
+    })
+
+    test('can be followed by the correct one', async () => {
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+      await keystoreCtrl.verifySecret('password', pass)
+
+      expect(keystoreCtrl.signingAuthResult).toEqual({ status: 'success', error: null })
+    })
+
+    test('is rejected when the secret does not exist at all', async () => {
+      await keystoreCtrl.verifySecret('biometrics', pass)
+
+      expect(keystoreCtrl.signingAuthResult?.status).toBe('failed')
+      expect(keystoreCtrl.isUnlocked).toBe(true)
+    })
+  })
+
+  test('resetSigningAuthResult clears the outcome and the error message', async () => {
+    await keystoreCtrl.verifySecret('password', pass)
+    keystoreCtrl.resetSigningAuthResult()
+
+    expect(keystoreCtrl.signingAuthResult).toBe(null)
+    expect(keystoreCtrl.errorMessage).toBe('')
+  })
+})
+
 describe('import/export with pub key test', () => {
   const wallet = ethers.Wallet.createRandom()
   let keystore2: IKeystoreController

@@ -48,6 +48,7 @@ import {
   MainKeyEncryptedWithSecret,
   MainKeyOld,
   ReadyToAddKeys,
+  SigningAuthResult,
   StoredKey,
   StoredKeystoreSeed
 } from '../../interfaces/keystore'
@@ -68,6 +69,7 @@ const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
 
 export const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
+  verifySecret: 'INITIAL',
   addSecret: 'INITIAL',
   addSeed: 'INITIAL',
   updateSeed: 'INITIAL',
@@ -131,6 +133,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   #isReadyToStoreKeys: boolean = false
 
   errorMessage: string = ''
+
+  /**
+   * The outcome of the last `verifySecret` call. Unlike a status, it survives until the UI
+   * resets it, so a re-authentication prompt can read the result no matter when it re-renders.
+   */
+  signingAuthResult: SigningAuthResult | null = null
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -547,6 +555,42 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   async unlockWithSecret(secretId: string, secret: string) {
     await this.withStatus('unlockWithSecret', () => this.#unlockWithSecret(secretId, secret), true)
+  }
+
+  /**
+   * Re-checks a secret on an already unlocked keystore, so the user can prove their identity
+   * again before signing. It goes through the very same path as unlocking, which keeps the
+   * handling of both cipher types and of a wrong secret identical to the unlock screen -
+   * unlocking an unlocked keystore is a no-op for the lock state.
+   */
+  async verifySecret(secretId: string, secret: string) {
+    await this.withStatus(
+      'verifySecret',
+      async () => {
+        this.signingAuthResult = null
+
+        try {
+          await this.#unlockWithSecret(secretId, secret)
+          this.signingAuthResult = { status: 'success', error: null }
+        } catch (e: any) {
+          this.signingAuthResult = {
+            status: 'failed',
+            error: e?.message || 'Could not confirm your identity. Please try again.'
+          }
+          // Re-thrown so a wrong secret keeps being reported the way unlocking reports it
+          throw e
+        }
+      },
+      true
+    )
+  }
+
+  resetSigningAuthResult() {
+    if (!this.signingAuthResult && !this.errorMessage) return
+
+    this.signingAuthResult = null
+    this.errorMessage = ''
+    this.emitUpdate()
   }
 
   async #addSecret(

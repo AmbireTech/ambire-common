@@ -27,6 +27,7 @@ import {
   SignMessageStatus,
   SignMessageUpdateParams
 } from '../../interfaces/signMessage'
+import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
 import { fetchErc7730DescriptorForMessage, humanizeMessage } from '../../libs/humanizer'
 import { buildSafeMessageOrigin } from '../../libs/safe/helpers'
@@ -802,11 +803,30 @@ export class SignMessageController
     return [banner]
   }
 
+  /**
+   * Why this message needs the password/biometrics confirmation before it is signed, or `null`
+   * when it does not. Messages have no recipients, so only the dapp can require it - and only
+   * one the dapp catalog knows, because otherwise there is nowhere to remember the confirmation
+   * and it would repeat on every single request.
+   */
+  get signingAuthRequirement(): SigningAuthRequirement | null {
+    if (!this.#dapps || !this.dapp?.url) return null
+
+    const storedDapp = this.#dapps.getDappByDomain(this.dapp.url)
+    if (!storedDapp || storedDapp.signingAuthenticated) return null
+
+    return {
+      firstTimeRecipients: [],
+      unauthenticatedDapps: [{ id: storedDapp.id, name: storedDapp.name }]
+    }
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
-      banners: this.banners
+      banners: this.banners,
+      signingAuthRequirement: this.signingAuthRequirement
     }
   }
 }
