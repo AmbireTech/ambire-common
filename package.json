@@ -34,7 +34,7 @@
     "scrypt-js": "^3.0.1",
     "tldts": "7.0.17",
     "uuid": "9.0.0",
-    "viem": "2.45.2"
+    "viem": "2.56.5"
   },
   "peerDependencies": {
     "@noble/hashes": "^1.8.0",
