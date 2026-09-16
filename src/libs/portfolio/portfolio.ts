@@ -397,9 +397,10 @@ export class Portfolio {
     const isValidToken = (error: TokenError, token: TokenResult): boolean =>
       error === '0x' && !!token.symbol
 
-    // A collection is labeled by its name or its address, so a missing symbol is
-    // no evidence that the address isn't one. Only the getter erroring is, and it
-    // does error for an address that holds no collection.
+    // name() and symbol() belong to the optional ERC721Metadata extension, so a
+    // collection without them is still a collection - the ENS registrar is one.
+    // Only the getter erroring says an address holds no collection, and it does
+    // error for one that doesn't.
     const isValidCollection = (error: TokenError): boolean => error === '0x'
 
     const blacklistPatterns = prepareBlacklistPatterns([
