@@ -42,6 +42,8 @@ import {
 export const ERC7730_MAX_RESOLUTION_DEPTH = 5
 
 const safeExecTransactionInterface = new Interface(execTransactionAbi)
+const safeExecTransactionSelector =
+  safeExecTransactionInterface.getFunction('execTransaction')?.selector
 const erc20ApproveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
 const erc20TransferInterface = new Interface(['function transfer(address _to, uint256 _value)'])
 const permit2ApproveInterface = new Interface([
@@ -572,7 +574,7 @@ const getSafeTxCallsFromExecTransactionHead = (call: Call): Call[] | null => {
   if (!call.data || !isHexString(call.data)) return null
 
   const selector = call.data.slice(0, CALLDATA_SELECTOR_HEX_LENGTH).toLowerCase()
-  if (selector !== safeExecTransactionInterface.getFunction('execTransaction')?.selector) {
+  if (selector !== safeExecTransactionSelector) {
     return null
   }
 

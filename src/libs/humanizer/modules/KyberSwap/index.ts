@@ -11,9 +11,12 @@ const swapSimpleModeAbi = parseAbi([
   'function swapSimpleMode(address caller,(address srcToken,address dstToken,address[] srcReceivers,uint256[] srcAmounts,address[] feeReceivers,uint256[] feeAmounts,address dstReceiver,uint256 amount,uint256 minReturnAmount,uint256 flags,bytes permit) desc,bytes executorData,bytes clientData) returns (uint256,uint256)'
 ])
 
+const swapSelector = toFunctionSelector(swapAbi[0])
+const swapSimpleModeSelector = toFunctionSelector(swapSimpleModeAbi[0])
+
 const KyberModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const matcher: Record<string, (call: HexIrCall) => any> = {
-    [toFunctionSelector(swapAbi[0])]: (call) => {
+    [swapSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: swapAbi, data: call.data })
       const [execution] = args
       const { srcToken, dstToken, amount, minReturnAmount } = execution.desc
@@ -24,7 +27,7 @@ const KyberModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
         getToken(eToNative(dstToken), minReturnAmount)
       ]
     },
-    [toFunctionSelector(swapSimpleModeAbi[0])]: (call) => {
+    [swapSimpleModeSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: swapSimpleModeAbi, data: call.data })
       const [, desc] = args
       const { srcToken, dstToken, amount, minReturnAmount } = desc
