@@ -44,6 +44,7 @@ Note: This package does not include compiled JS and TS output in the repository.
 - ALWAYS write test cases that cover positive, negative, edge cases and security implications of the code you change or add.
 - Before adding a new testing pattern, inspect nearby *.test.ts files or tests for a similar controller/library and follow the local style.
 - NEVER cover up bugs and security issues by writing tests that expect buggy behaviour. If you find a bug, write a test that fails because of it, prefix it with `BUG:`, and report it to the human in your answer.
+- ALWAYS run tests with `--forceExit` (`npm run jest` already passes it). Building a `MainController` arms recurring timers that nothing stops - `SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL` reschedules itself every 20s - so the Node process never exits on its own and a bare `npx jest` hangs after the run reports its results.
 
 ## Controllers
 See `src/controllers/AGENTS.md` for a list of controllers and their responsibilities. Controllers are the core of the wallet's business logic and state management.

@@ -246,7 +246,7 @@ const MetaMorphoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): 
   if (call.fullVisualization) return call
   if (!call.to) return call
   if (!isHexCall(call)) return call
-  if (call.data.slice(0, 10) !== toFunctionSelector(multicallAbi[0])) return call
+  if (call.data.slice(0, 10) !== multicallSelector) return call
 
   let innerCalls: readonly HexIrCall['data'][]
   try {

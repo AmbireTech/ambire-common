@@ -10,6 +10,9 @@ export const X_WALLET_SHARE_VALUE_CACHE_TTL = 60 * 60 * 1000
 export const X_WALLET_SHARE_VALUE_RPC_TIMEOUT_MS = 6000
 
 const X_WALLET_SHARE_VALUE_ABI = 'function shareValue() view returns (uint256)'
+const X_WALLET_LOCKED_SHARES_ABI = 'function lockedShares(address) view returns (uint256)'
+
+export const X_WALLET_LOCKED_SHARES_RPC_TIMEOUT_MS = 6000
 
 export type XWalletShareValueResult = {
   shareValue: bigint
@@ -27,6 +30,26 @@ export const getWalletAmountFromXWallet = (xWalletAmount: bigint, shareValue: bi
 /** Calculates the xWALLET/stkWALLET shares a WALLET amount would convert into (the inverse of {@link getWalletAmountFromXWallet}). */
 export const getXWalletAmountFromWallet = (walletAmount: bigint, shareValue: bigint) =>
   shareValue > 0n ? (walletAmount * WeiPerEther) / shareValue : 0n
+
+/**
+ * Reads the xWALLET shares the account has already committed to a pending unstake. Those shares
+ * stay locked in the staking contract, so only the remainder of the balance can still be migrated.
+ * Unlike the share value, this is per account and therefore not cached globally.
+ */
+export const getXWalletLockedShares = async (provider: RPCProvider, accountAddr: string) => {
+  const contract = new Contract(WALLET_STAKING_ADDR, [X_WALLET_LOCKED_SHARES_ABI], provider)
+  const getLockedShares = contract.lockedShares
+  if (typeof getLockedShares !== 'function') {
+    throw new Error('The locked xWALLET shares are unavailable.')
+  }
+
+  return BigInt(
+    await withTimeout(() => getLockedShares(accountAddr), {
+      timeoutMs: X_WALLET_LOCKED_SHARES_RPC_TIMEOUT_MS,
+      message: 'The locked xWALLET shares took too long to load.'
+    })
+  )
+}
 
 /** Formats the shared xWALLET-to-WALLET explanation used across the wallet. */
 export const getXWalletConversionText = (xWalletAmount: bigint, walletAmount: bigint) => {

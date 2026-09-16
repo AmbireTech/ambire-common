@@ -4,8 +4,8 @@ module.exports = {
   testEnvironment: 'node',
   testTimeout: 25000,
   moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/src/$1',
-    '^@test/(.*)$': '<rootDir>/test/$1'
+    '^@/(.*)$': `${__dirname}/src/$1`,
+    '^@test/(.*)$': `${__dirname}/test/$1`
   },
   // For services/validate.ts https://stackoverflow.com/a/61785012/13840636
   transform: {

@@ -176,6 +176,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
     const signAccountOp = new SignAccountOpController({
       type: 'default',
       callRelayer: mainCtrl.callRelayer,
+      erc7730: mainCtrl.erc7730,
       accounts: mainCtrl.accounts,
       networks: mainCtrl.networks,
       keystore: mainCtrl.keystore,
