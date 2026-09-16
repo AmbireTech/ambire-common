@@ -27,9 +27,14 @@ const withdrawAbi = parseAbi([
 ])
 const rageLeaveAbi = parseAbi(['function rageLeave(uint256 shares, bool skipMint)'])
 
+const enterSelector = toFunctionSelector(enterAbi[0])
+const leaveSelector = toFunctionSelector(leaveAbi[0])
+const withdrawSelector = toFunctionSelector(withdrawAbi[0])
+const rageLeaveSelector = toFunctionSelector(rageLeaveAbi[0])
+
 export const StakingPools = (): { [key: string]: (c: HexIrCall) => HumanizerVisualization[] } => {
   return {
-    [toFunctionSelector(enterAbi[0])]: (call: HexIrCall) => {
+    [enterSelector]: (call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')
       const baseToken = STAKING_POOLS[call.to.toLowerCase()]?.baseToken
       if (!baseToken) throw Error('Humanizer: unknown staking pool')
@@ -42,21 +47,21 @@ export const StakingPools = (): { [key: string]: (c: HexIrCall) => HumanizerVisu
         getAddressVisualization(call.to)
       ]
     },
-    [toFunctionSelector(leaveAbi[0])]: (call: HexIrCall) => {
+    [leaveSelector]: (call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')
       const { args } = decodeFunctionData({ abi: leaveAbi, data: call.data })
       const [shares] = args
 
       return [getAction('Leave'), getLabel('with'), getToken(call.to, shares)]
     },
-    [toFunctionSelector(withdrawAbi[0])]: (call: HexIrCall) => {
+    [withdrawSelector]: (call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')
       const { args } = decodeFunctionData({ abi: withdrawAbi, data: call.data })
       const [shares] = args
       return [getAction('Withdraw'), getToken(call.to, shares)]
     },
 
-    [toFunctionSelector(rageLeaveAbi[0])]: (call: HexIrCall) => {
+    [rageLeaveSelector]: (call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')
       const { args } = decodeFunctionData({ abi: rageLeaveAbi, data: call.data })
       const [shares] = args
