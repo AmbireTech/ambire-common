@@ -1,4 +1,7 @@
-import { EXTREME_SWAP_LOSS_THRESHOLD_USD } from '../../consts/safeguards/extremeSwapLoss'
+import {
+  EXTREME_SWAP_CONFIRMATION_PHRASES,
+  EXTREME_SWAP_LOSS_THRESHOLD_USD
+} from '../../consts/safeguards/extremeSwapLoss'
 
 export function getSwapQuoteLossUsd(inputValueInUsd: number, outputValueInUsd: number): number {
   return Math.max(0, inputValueInUsd - outputValueInUsd)
@@ -24,5 +27,13 @@ export function isExtremeSwapLoss(estimatedLossUsd: number): boolean {
 }
 
 export function normalizeConfirmationPhraseInput(phrase: string): string {
-  return phrase.trim()
+  return phrase.trim().toUpperCase()
+}
+
+/** Picks one of the confirmation phrases the user has to type to confirm an extreme-loss swap. */
+export function getRandomExtremeSwapConfirmationPhrase(): string {
+  const [firstPhrase] = EXTREME_SWAP_CONFIRMATION_PHRASES
+  const index = Math.floor(Math.random() * EXTREME_SWAP_CONFIRMATION_PHRASES.length)
+
+  return EXTREME_SWAP_CONFIRMATION_PHRASES[index] ?? firstPhrase
 }
