@@ -1,5 +1,5 @@
 import { isAddress, labelhash, namehash } from 'viem'
-import { getEnsAddress, getEnsAvatar as viemGetEnsAvatar, getEnsName, normalize } from 'viem/ens'
+import { getEnsAddress, getEnsName, normalize, getEnsAvatar as viemGetEnsAvatar } from 'viem/ens'
 
 import { RPCProvider } from '@/interfaces/provider'
 import { fromDescriptor } from '@/libs/deployless/deployless'
@@ -7,6 +7,7 @@ import { getViemClientForProvider } from '@/services/provider'
 
 import EnsGetter from '../../../contracts/compiled/EnsGetter.json'
 
+import type { Address } from 'viem'
 const ADDRESS_ZERO = '0x0000000000000000000000000000000000000000'
 export const ENS_UNIVERSAL_RESOLVER = '0xeEeEEEeE14D718C2B47D9923Deab1335E144EeEe'
 export const ENS_EXPIRY_WARN_WINDOW_IN_MS = 60 * 24 * 60 * 60 * 1000
@@ -66,12 +67,12 @@ async function resolveENSDomain({
   domain: string
   options?: {
     /** Universal resolver to query. Defaults to the ENS one. */
-    universalResolverAddress?: string
+    universalResolverAddress?: Address
     /**
      * Registrar/NameWrapper config for reading the registration expiry. Omit to use the ENS
      * defaults; pass `null` for services without an ENS registrar (they have no expiry to read).
      */
-    expiry?: { baseRegistrar?: string; nameWrapper?: string } | null
+    expiry?: { baseRegistrar?: Address; nameWrapper?: Address } | null
   }
 }): Promise<{
   address: string
@@ -117,7 +118,7 @@ async function reverseLookupEns(
   addresses: string[],
   provider: RPCProvider,
   options?: {
-    universalResolverAddress?: string
+    universalResolverAddress?: Address
   }
 ): Promise<ReverseLookupResult> {
   if (!addresses.length) return {}
@@ -200,7 +201,7 @@ async function getEnsAvatar(
   name: string,
   provider: RPCProvider,
   options?: {
-    universalResolverAddress?: string
+    universalResolverAddress?: Address
   }
 ) {
   const normalizedName = normalize(name)
@@ -233,7 +234,7 @@ export type GetEnsExpiryParams = {
    */
   contract?: 'registrar' | 'nameWrapper'
   /** Override contract addresses (defaults are Ethereum mainnet). */
-  addresses?: { baseRegistrar?: string; nameWrapper?: string }
+  addresses?: { baseRegistrar?: Address; nameWrapper?: Address }
 }
 
 /**
@@ -277,4 +278,5 @@ async function getEnsExpiry(
   }
 }
 
-export { resolveENSDomain, getEnsAvatar, reverseLookupEns, getEnsExpiry }
+export { getEnsAvatar, getEnsExpiry, resolveENSDomain, reverseLookupEns }
+

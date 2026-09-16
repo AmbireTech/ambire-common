@@ -1,3 +1,4 @@
+import type { Address } from 'viem'
 import { normalize as ensNormalize } from 'viem/ens'
 
 import { FeatureFlags } from '@/consts/featureFlags'
@@ -24,12 +25,12 @@ export const ETHEREUM_CHAIN_ID = { mainnet: '1', testnet: '11155111' }
 export type EnsCompatibleConfig = {
   id: NameServiceId
   label: string
-  universalResolver: string
+  universalResolver: Address
   chainId: { mainnet: string; testnet: string }
   featureFlag?: keyof FeatureFlags
   isFallback?: boolean
   /** Present when the service has an ENS registrar/NameWrapper, which is what makes it expirable. */
-  expiry?: { baseRegistrar: string; nameWrapper: { mainnet: string; testnet: string } }
+  expiry?: { baseRegistrar: Address; nameWrapper: { mainnet: Address; testnet: Address } }
 }
 
 /**
@@ -47,7 +48,7 @@ export abstract class EnsCompatibleResolver implements NameResolver {
 
   readonly capabilities: { reverse: boolean; avatar: boolean; expiry: boolean }
 
-  protected readonly universalResolver: string
+  protected readonly universalResolver: Address
 
   protected readonly chainId: { mainnet: string; testnet: string }
 
