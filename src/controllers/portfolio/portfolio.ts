@@ -1744,7 +1744,8 @@ export class PortfolioController
           .getWalletStakingShareValue({
             chainId: network.chainId,
             tokens: combinedTokens,
-            provider: portfolioLib.provider
+            provider: portfolioLib.provider,
+            accountAddr: account.addr
           })
           .then((walletStaking) => {
             if (

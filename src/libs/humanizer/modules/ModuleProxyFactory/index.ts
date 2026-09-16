@@ -8,9 +8,11 @@ const deployModuleAbi = parseAbi([
   'function deployModule(address masterCopy, bytes memory initializer, uint256 saltNonce)'
 ])
 
+const deployModuleSelector = toFunctionSelector(deployModuleAbi[0])
+
 const ModuleProxyFactoryModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall => {
   const matcher: Record<string, (call: HexIrCall) => IrCall | undefined> = {
-    [toFunctionSelector(deployModuleAbi[0])]: (call) => {
+    [deployModuleSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: deployModuleAbi, data: call.data })
       const [masterCopy] = args
       const fullVisualization = [getAction('Deploy module'), getAddressVisualization(masterCopy)]
