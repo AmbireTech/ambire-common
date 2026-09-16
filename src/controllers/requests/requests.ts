@@ -1386,7 +1386,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           try {
             autoLoginStatus = this.#autoLogin.getAutoLoginStatus(parsedSiwe)
 
-            if (autoLoginStatus === 'active') {
+            // Signing on the user's behalf, without them seeing it, is only allowed once they
+            // have confirmed their password or biometrics for this app. Until then the request
+            // falls through to the sign message screen, which is where that is asked for - the
+            // policy itself is left alone, so auto-login resumes right after.
+            if (autoLoginStatus === 'active' && dapp?.signingAuthenticated) {
               // Sign and respond
               const signedMessage = await this.#autoLogin.autoLogin({
                 message: rawMessage as `0x${string}`,

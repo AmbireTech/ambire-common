@@ -797,6 +797,60 @@ describe('SignMessageController', () => {
     expect(signMessageController.isInitialized).toBeFalsy()
   })
 
+  describe('signing authentication', () => {
+    test('a dapp that has not been confirmed for yet requires it', async () => {
+      await signMessageController.init({
+        messageToSign,
+        dapp: getDappRequestData(verifiedDapp)
+      })
+
+      expect(signMessageController.signingAuthRequirement).toEqual({
+        firstTimeRecipients: [],
+        unauthenticatedDapps: [{ id: verifiedDapp.id, name: verifiedDapp.name }]
+      })
+    })
+
+    test('a SIWE sign in requires it the same way a plain message does', async () => {
+      await signMessageController.init({
+        messageToSign: { ...messageToSign, content: { kind: 'siwe', message: '0x74657374' } },
+        dapp: getDappRequestData(verifiedDapp)
+      })
+
+      expect(signMessageController.signingAuthRequirement).toEqual({
+        firstTimeRecipients: [],
+        unauthenticatedDapps: [{ id: verifiedDapp.id, name: verifiedDapp.name }]
+      })
+    })
+
+    test('a dapp that has already been confirmed for does not require it', async () => {
+      dappsCtrl.updateDapp(verifiedDapp.id, { signingAuthenticated: true })
+
+      await signMessageController.init({
+        messageToSign,
+        dapp: getDappRequestData(verifiedDapp)
+      })
+
+      expect(signMessageController.signingAuthRequirement).toBe(null)
+
+      dappsCtrl.updateDapp(verifiedDapp.id, { signingAuthenticated: false })
+    })
+
+    test('a dapp the catalog does not know does not require it, as it cannot be remembered', async () => {
+      await signMessageController.init({
+        messageToSign,
+        dapp: { name: 'Unknown', icon: '', url: 'https://not-in-the-catalog.example' }
+      })
+
+      expect(signMessageController.signingAuthRequirement).toBe(null)
+    })
+
+    test('a message with no dapp behind it does not require it', async () => {
+      await signMessageController.init({ messageToSign })
+
+      expect(signMessageController.signingAuthRequirement).toBe(null)
+    })
+  })
+
   describe('dapp verification banners', () => {
     test('should return loading banners', () => {
       signMessageController.dapp = getDappRequestData(loadingDapp)
