@@ -249,6 +249,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.#isManualUpdate
     )
 
+    newSelectedAccountPortfolio.mobileInviteKey =
+      this.#portfolio.mobileInviteKeys[this.account.addr]
+
     // Try catch this just in case the relayer sends unexpected data or we have other errs in the calculations
     try {
       // Find stkWALLET or WALLET token in the latest portfolio state
