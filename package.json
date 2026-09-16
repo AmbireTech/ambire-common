@@ -34,7 +34,7 @@
     "scrypt-js": "^3.0.1",
     "tldts": "7.0.17",
     "uuid": "9.0.0",
-    "viem": "2.56.5"
+    "viem": "2.56.2"
   },
   "peerDependencies": {
     "@noble/hashes": "^1.8.0",
@@ -96,7 +96,7 @@
     "elliptic": "^6.6.1",
     "cipher-base": "^1.0.6",
     "handlebars": "^4.7.9",
-    "@safe-global/safe-deployments": "1.37.56",
-    "@safe-global/safe-modules-deployments": "3.0.4"
+    "@safe-global/safe-deployments": "1.37.62",
+    "@safe-global/safe-modules-deployments": "3.0.9"
   }
 }
