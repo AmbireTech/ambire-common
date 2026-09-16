@@ -161,6 +161,13 @@ export class PortfolioController
 
   hasFundedHotAccount: boolean = false
 
+  /**
+   * The account's invite key for the Ambire Mobile app, returned by the relayer's
+   * `portfolio-additional` endpoint. Present only for accounts the relayer has generated
+   * one for; used to let the user activate the same account in the mobile app.
+   */
+  mobileInviteKeys: { [accountAddr: string]: string } = {}
+
   #portfolioLibs: Map<string, Portfolio>
 
   #banner: IBannerController
@@ -1262,7 +1269,7 @@ export class PortfolioController
     }
 
     if (res.data.mobileInviteKey) {
-      accountState.mobileInviteKey = res.data.mobileInviteKey
+      this.mobileInviteKeys[accountId] = res.data.mobileInviteKey
     }
 
     this.emitUpdate()

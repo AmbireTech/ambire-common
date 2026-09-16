@@ -248,10 +248,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.portfolio.shouldShowPartialResult,
       this.#isManualUpdate
     )
-    // TODO: remove it
-    // newSelectedAccountPortfolio.mobileInviteKey =
-    //   portfolioAccountState.mobileInviteKey || '213456789012'
-    newSelectedAccountPortfolio.mobileInviteKey = portfolioAccountState.mobileInviteKey
+
+    newSelectedAccountPortfolio.mobileInviteKey =
+      this.#portfolio.mobileInviteKeys[this.account.addr]
 
     // Try catch this just in case the relayer sends unexpected data or we have other errs in the calculations
     try {

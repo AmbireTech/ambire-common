@@ -10,9 +10,7 @@ export const isInternalChain = (chainId: InternalPortfolioChain | string) => {
     chainId === 'gasTank' ||
     chainId === 'rewards' ||
     chainId === 'projectedRewards' ||
-    chainId === 'defiApps' ||
-    // Not a chain at all - a plain string field on AccountState (see mobileInviteKey there).
-    chainId === 'mobileInviteKey'
+    chainId === 'defiApps'
   )
 }
 
@@ -20,9 +18,6 @@ export const stripPortfolioState = (portfolioState: AccountState) => {
   const strippedState: SelectedAccountPortfolioState = {}
 
   Object.keys(portfolioState).forEach((chainId) => {
-    // Not a NetworkState - skip it here, same reason as in PortfolioViewBuilder.addNetworkData.
-    if (chainId === 'mobileInviteKey') return
-
     const networkState = portfolioState[chainId]
     if (!networkState) return
 
@@ -105,17 +100,7 @@ export function calculateSelectedAccountPortfolio(
 
   const portfolioViewBuilder = new PortfolioViewBuilder()
 
-  // Iterating via Object.keys (like stripPortfolioState above) rather than Object.entries -
-  // the latter widens every value to the union of ALL of AccountState's value types
-  // (since it can't correlate a specific key to its specific value type), which would
-  // include `mobileInviteKey`'s plain `string` even after the guard below. Indexing by a
-  // generic `string` key instead resolves to just the chainId index signature's type.
-  Object.keys(portfolioState).forEach((chainId) => {
-    // Not a NetworkState - a plain string field on AccountState, read separately by
-    // SelectedAccountController and merged onto SelectedAccountPortfolio directly.
-    if (chainId === 'mobileInviteKey') return
-
-    const networkData = portfolioState[chainId]
+  Object.entries(portfolioState).forEach(([chainId, networkData]) => {
     portfolioViewBuilder.addNetworkData(chainId, networkData, isManualUpdate)
   })
 
