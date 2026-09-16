@@ -21,6 +21,7 @@ import { IActivityController } from '../../interfaces/activity'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
 import { Dapp, DappProviderRequest, IDappsController } from '../../interfaces/dapp'
+import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
@@ -143,6 +144,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #dapps: IDappsController
 
+  #erc7730: IErc7730Controller
+
   #accounts: IAccountsController
 
   #networks: INetworksController
@@ -253,6 +256,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     activity,
     phishing,
     dapps,
+    erc7730,
     accounts,
     networks,
     providers,
@@ -288,6 +292,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     activity: IActivityController
     phishing: IPhishingController
     dapps: IDappsController
+    erc7730: IErc7730Controller
     accounts: IAccountsController
     networks: INetworksController
     providers: IProvidersController
@@ -320,6 +325,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#activity = activity
     this.#phishing = phishing
     this.#dapps = dapps
+    this.#erc7730 = erc7730
     this.#accounts = accounts
     this.#networks = networks
     this.#providers = providers
@@ -2154,6 +2160,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           provider: this.#providers.providers[network.chainId.toString()]!,
           phishing: this.#phishing,
           dapps: this.#dapps,
+          erc7730: this.#erc7730,
           fromRequestId: requestId,
           accountOp: providedAccountOp
             ? { ...providedAccountOp, nonce: initialNonce }
