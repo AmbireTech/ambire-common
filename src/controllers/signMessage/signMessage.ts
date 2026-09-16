@@ -29,6 +29,7 @@ import {
 } from '../../interfaces/signMessage'
 import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
+import { getDappIdFromUrl } from '../../libs/dapps/helpers'
 import { fetchErc7730DescriptorForMessage, humanizeMessage } from '../../libs/humanizer'
 import { buildSafeMessageOrigin } from '../../libs/safe/helpers'
 import {
@@ -812,7 +813,10 @@ export class SignMessageController
   get signingAuthRequirement(): SigningAuthRequirement | null {
     if (!this.#dapps || !this.dapp?.url) return null
 
-    const storedDapp = this.#dapps.getDappByDomain(this.dapp.url)
+    // Looked up by the dapp id rather than by the registrable domain, because that is what
+    // dapps are stored under - the two only coincide for a dapp sitting on a bare domain, and
+    // looking up by domain silently found nothing for every dapp on a subdomain
+    const storedDapp = this.#dapps.getDapp(getDappIdFromUrl(this.dapp.url))
     if (!storedDapp || storedDapp.signingAuthenticated) return null
 
     return {

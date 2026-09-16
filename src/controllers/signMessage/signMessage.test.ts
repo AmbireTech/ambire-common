@@ -9,6 +9,7 @@ import {
   getDappRequestData,
   getDappVerificationTestDapps,
   loadingDapp,
+  makeDapp,
   suspiciousHostingDapp,
   verifiedDapp
 } from '../../../test/helpers/dapps'
@@ -833,6 +834,27 @@ describe('SignMessageController', () => {
       expect(signMessageController.signingAuthRequirement).toBe(null)
 
       dappsCtrl.updateDapp(verifiedDapp.id, { signingAuthenticated: false })
+    })
+
+    // The dapp id is the hostname while the domain is the registrable one, so the two differ for
+    // anything not sitting on a bare domain - which is most real dapps
+    test('a dapp on a subdomain requires it, the same as one on a bare domain', async () => {
+      const subdomainDapp = makeDapp({
+        id: 'app.sub-dapp-test.com',
+        name: 'Subdomain Dapp',
+        url: 'https://app.sub-dapp-test.com'
+      })
+      await dappsCtrl.addDapp(subdomainDapp)
+
+      await signMessageController.init({
+        messageToSign,
+        dapp: getDappRequestData(subdomainDapp)
+      })
+
+      expect(signMessageController.signingAuthRequirement).toEqual({
+        firstTimeRecipients: [],
+        unauthenticatedDapps: [{ id: subdomainDapp.id, name: subdomainDapp.name }]
+      })
     })
 
     test('a dapp the catalog does not know does not require it, as it cannot be remembered', async () => {
