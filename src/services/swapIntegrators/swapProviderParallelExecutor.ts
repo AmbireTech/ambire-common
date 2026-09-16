@@ -334,7 +334,8 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
     sort,
     accountNativeBalance,
     nativeSymbol,
-    isWrapOrUnwrap
+    isWrapOrUnwrap,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     const quotes = await this.#fetchFromAll<SwapAndBridgeQuote[]>(
       (provider: SwapProvider) =>
@@ -351,7 +352,8 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
             sort,
             accountNativeBalance,
             nativeSymbol,
-            isWrapOrUnwrap
+            isWrapOrUnwrap,
+            feePercent
           })
           .catch((e) => e),
       { chainIds: [fromChainId, toChainId] }
