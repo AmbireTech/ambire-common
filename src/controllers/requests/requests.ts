@@ -16,6 +16,7 @@ import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
+import { MAX_DAPP_CALLS_PER_REQUEST } from '../../consts/safeguards/dappRequestSpam'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
@@ -227,9 +228,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #userRequestsBeingAdded = 0
 
   /**
-   * Set while the wallet is closing the request view itself. Closing it fires `windowRemoved`,
-   * which is the same event the user closing the window produces, so without this the two are
-   * indistinguishable and the apps that were waiting look like they were refused.
+   * Set only while the wallet is closing a request window itself. Closing it fires
+   * `windowRemoved`, which is the same event the user closing the window produces, so without
+   * this the two are indistinguishable and the apps that were waiting look like they were
+   * refused. Scoped to the close in flight - see `closeRequestWindow`.
    */
   #isWalletInitiatedClose = false
 
@@ -805,8 +807,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   async closeRequestWindow({ isUserInitiated = true }: { isUserInitiated?: boolean } = {}) {
     await this.#awaitPendingPromises()
 
-    this.#isWalletInitiatedClose = !isUserInitiated
-
     if (!this.requestWindow.windowProps) {
       // Rendered inline (in the panel), so closing means dismissing the active request.
       // Guarded, because clearing the current request calls this method too.
@@ -822,20 +822,26 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // must not be swept into this close.
     const requestIdsSnapshotAtClose = new Set(this.userRequests.map((r) => r.id))
 
-    this.requestWindow.closeWindowPromise = this.#ui.requestView
-      .close(this.requestWindow.windowProps.id)
-      .finally(() => {
-        this.requestWindow.closeWindowPromise = undefined
+    this.#isWalletInitiatedClose = !isUserInitiated
+
+    try {
+      this.requestWindow.closeWindowPromise = this.#ui.requestView
+        .close(this.requestWindow.windowProps.id)
+        .finally(() => {
+          this.requestWindow.closeWindowPromise = undefined
+        })
+
+      await this.requestWindow.closeWindowPromise
+
+      if (!this.requestWindow.windowProps) return
+
+      await this.#handleRequestWindowClose(this.requestWindow.windowProps.id, {
+        requestIdsSnapshot: requestIdsSnapshotAtClose,
+        isUserInitiated
       })
-
-    await this.requestWindow.closeWindowPromise
-
-    if (!this.requestWindow.windowProps) return
-
-    await this.#handleRequestWindowClose(this.requestWindow.windowProps.id, {
-      requestIdsSnapshot: requestIdsSnapshotAtClose,
-      isUserInitiated
-    })
+    } finally {
+      this.#isWalletInitiatedClose = false
+    }
   }
 
   /**
@@ -1528,9 +1534,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       while (queue.length) {
         const batch = queue.splice(0)
 
-        // Every item is answered inside, so this never throws - and it must not, because
-        // nothing awaits the drain.
-        await this.#buildDappRequestBatch(batch)
+        try {
+          // Must never throw
+          await this.#buildDappRequestBatch(batch)
+        } catch (error) {
+          // Just in case
+          batch.forEach(({ fail }) => fail(error))
+        }
       }
     } finally {
       // Just in case, should never happen - a queue left in the map is never drained again,
@@ -2426,6 +2436,27 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             r.signAccountOp.accountOp.txnId &&
             meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId))
     ) as CallsUserRequest | undefined
+
+    // Cap just in case an app decides to send a lot of requests at once
+    const callsAlreadyWaiting = existingUserRequest?.signAccountOp.accountOp.calls.length ?? 0
+
+    if (dappPromises.length && callsAlreadyWaiting + calls.length > MAX_DAPP_CALLS_PER_REQUEST) {
+      const errorMessage = `This app tried to send too many transactions at once. Up to ${MAX_DAPP_CALLS_PER_REQUEST} can wait for your approval at a time.`
+
+      this.emitError({
+        level: 'major',
+        message: errorMessage,
+        error: new Error(
+          `requestsController: an app asked for ${
+            callsAlreadyWaiting + calls.length
+          } calls on one request, over the ${MAX_DAPP_CALLS_PER_REQUEST} cap`
+        )
+      })
+
+      dappPromises.forEach((p) => p.reject(ethErrors.rpc.limitExceeded({ message: errorMessage })))
+
+      return
+    }
 
     if (existingUserRequest) {
       // Prevent updating the signAccountOp if a signing or broadcasting process is already in progress for the same account and chain.
