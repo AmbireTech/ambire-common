@@ -13,9 +13,9 @@ import {
 } from '../../consts/intervals'
 import { ETHEREUM_CHAIN_ID, INVICTUS_RPC_URL_IDENTIFIER } from '../../consts/networks'
 import {
-  AMBIRE_API_TIMEOUT,
   DEFAULT_STALE_RPC_BLOCK_THRESHOLD,
   ETHEREUM_STALE_RPC_BLOCK_THRESHOLD,
+  getDiscoveryTimeout,
   shouldRetryAmbireApiRequest
 } from '../../consts/portfolio'
 import {
@@ -365,7 +365,7 @@ export class PortfolioController
       },
       {
         timeoutSettings: {
-          timeoutAfter: AMBIRE_API_TIMEOUT,
+          timeoutAfter: getDiscoveryTimeout(platform),
           timeoutErrorMessage: 'Velcro discovery timed out'
         },
         dedupeByKeys: ['chainId', 'accountAddr'],
