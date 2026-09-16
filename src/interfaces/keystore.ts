@@ -19,6 +19,19 @@ export type IKeystoreController = ControllerInterface<
   InstanceType<typeof import('../controllers/keystore/keystore').KeystoreController>
 >
 
+/** The secrets a user can unlock the keystore with on their own device. */
+export type UnlockSecretId = 'password' | 'biometrics'
+
+export type ChangeKeystorePasswordParams = {
+  newPassword: string
+  /**
+   * Proves the change is authorized. Omitted only on the recovery paths, where the keystore
+   * is already unlocked with a recovery secret and the old password is unknown.
+   */
+  currentSecret?: { id: UnlockSecretId; value: string }
+  extraEntropy?: string
+}
+
 /**
  * The ExternalSignerController interface defines the structure for controllers
  * that interact with hardware wallets. Each hardware wallet type (Ledger,
