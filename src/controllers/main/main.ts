@@ -113,6 +113,7 @@ import { getAccountKeysCount } from '@/libs/keys/keys'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
+import { CowSwapAPI } from '@/services/cowswap/api'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketV3API } from '@/services/socketv3/api'
@@ -243,6 +244,7 @@ export class MainController extends EventEmitter implements IMainController {
     relayerUrl,
     velcroUrl,
     liFiApiKey,
+    cowSwapApiKey,
     bungeeApiKey,
     uniswapApiKey,
     featureFlags,
@@ -258,6 +260,7 @@ export class MainController extends EventEmitter implements IMainController {
     relayerUrl: string
     velcroUrl: string
     liFiApiKey: string
+    cowSwapApiKey: string
     bungeeApiKey: string
     uniswapApiKey: string
     featureFlags: Partial<FeatureFlags>
@@ -524,6 +527,7 @@ export class MainController extends EventEmitter implements IMainController {
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
     const SocketProvider = new SocketV3API({ fetch, apiKey: bungeeApiKey })
     const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
+    const CowSwapProvider = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
       eventEmitterRegistry,
       callRelayer: this.callRelayer,
@@ -543,7 +547,7 @@ export class MainController extends EventEmitter implements IMainController {
       dapps: this.dapps,
       erc7730: this.erc7730,
       swapProvider: new SwapProviderParallelExecutor(
-        [LiFiProvider, SocketProvider, UniswapProvider],
+        [LiFiProvider, SocketProvider, UniswapProvider, CowSwapProvider],
         () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) })),
         () => this.swapAndBridge?.getDisabledSwapProviderIds() ?? []
       ),
