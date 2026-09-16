@@ -172,7 +172,10 @@ export const getSafeHumanization = (
       if (setupCallHumanization?.warnings) warnings.push(...setupCallHumanization.warnings)
     }
 
-    warnings.push(getWarning(`Safe setup configuration detected`, 'SAFE{WALLET}_CONFIG_CHANGE'))
+    // `setup` can only ever succeed once per Safe proxy (the Safe contract itself guards
+    // `setupOwners` against being called on an already-initialized account), so a decodable
+    // `setup` call is always this account's creation, never a change to an existing one - nothing
+    // to warn about here.
 
     return {
       visuals: fullVisualization,

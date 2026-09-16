@@ -3,52 +3,44 @@ import { getAddress, Interface, isAddress, isHexString, ZeroAddress } from 'ethe
 import {
   ERC20_APPROVE_SELECTOR,
   ERC20_TRANSFER_SELECTOR,
-  ERC7730_CACHE_TTL_MS,
-  ERC7730_CALLDATA_INDEX_RELAYER_PATH,
-  ERC7730_DESCRIPTOR_PATH,
-  ERC7730_DESCRIPTOR_WAIT_MS,
-  ERC7730_EIP712_INDEX_RELAYER_PATH,
   PERMIT2_ADDRESS,
   PERMIT2_APPROVE_SELECTOR,
-  SAFE_PROXY_SINGLETON_SLOT,
-  SAFE_SINGLETON_CACHE_TTL_MS,
   SAFE_TX_PRIMARY_TYPE
 } from '@/libs/humanizer/erc7730/consts'
-import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
-
 import { FEE_COLLECTOR } from '../../../consts/addresses'
 import { execTransactionAbi } from '../../../consts/safe'
 import { Message } from '../../../interfaces/userRequest'
-import { withTimeout } from '../../../utils/with-timeout'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
 import { decodeMultiSend } from '../../safe/helpers'
 import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
 import { getEip712EncodeTypeHash } from './eip712'
-import { fetchRelayerResource } from './fetch'
+import { humanizeCallWithErc7730 } from './humanize'
 import { MULTICALL_DESCRIPTOR, MULTICALL_SELECTOR } from './multicall'
 import {
-  CacheEntry,
   Erc7730CalldataIndex,
   Erc7730Descriptor,
   Erc7730Eip712Index,
   Erc7730Eip712IndexEntry,
+  Erc7730CallDescriptors,
   Erc7730Field,
-  Erc7730RegistryOptions,
+  Erc7730Known,
   Erc7730ResolvedDescriptor,
+  Erc7730Resolution,
   Erc7730TypedDataTypes,
-  SafeSingletonProvider
+  Erc7730Want
 } from './types'
-import { getSafeTxCallsFromMessage, isHexOfLength, isPlainObject } from './utils'
+import {
+  getRegistryKey,
+  getSafeSingletonKey,
+  getSafeTxCallsFromMessage,
+  isHexOfLength,
+  isPlainObject
+} from './utils'
 
-let relayerCalldataIndexCache: CacheEntry<Erc7730CalldataIndex> | null = null
-let relayerCalldataIndexPromise: Promise<Erc7730CalldataIndex> | null = null
-let relayerEip712IndexCache: CacheEntry<Erc7730Eip712Index> | null = null
-let relayerEip712IndexPromise: Promise<Erc7730Eip712Index> | null = null
-const descriptorCache = new Map<string, CacheEntry<Erc7730Descriptor>>()
-const descriptorPromises = new Map<string, Promise<Erc7730Descriptor>>()
-const safeSingletonCache = new Map<string, CacheEntry<string>>()
-const safeSingletonPromises = new Map<string, Promise<string | null>>()
+/** How deep `includes` chains and nested calls are followed before giving up. */
+export const ERC7730_MAX_RESOLUTION_DEPTH = 5
+
 const safeExecTransactionInterface = new Interface(execTransactionAbi)
 const erc20ApproveInterface = new Interface(['function approve(address _spender, uint256 _value)'])
 const erc20TransferInterface = new Interface(['function transfer(address _to, uint256 _value)'])
@@ -60,22 +52,6 @@ const CALLDATA_SELECTOR_HEX_LENGTH = 10
 const EXEC_TRANSACTION_STATIC_WORDS = 10
 const ERC2612_PERMIT_ENCODE_TYPE_HASH =
   '0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9'
-
-/**
- * A helper function to use in the tests only
- */
-export const clearErc7730RegistryCache = () => {
-  relayerCalldataIndexCache = null
-  relayerCalldataIndexPromise = null
-  relayerEip712IndexCache = null
-  relayerEip712IndexPromise = null
-  descriptorCache.clear()
-  descriptorPromises.clear()
-  safeSingletonCache.clear()
-  safeSingletonPromises.clear()
-}
-
-const createCacheEntry = <T>(value: T): CacheEntry<T> => ({ value, fetchedAt: Date.now() })
 
 const isDecimalString = (value: string) =>
   !!value && [...value].every((char) => char >= '0' && char <= '9')
@@ -97,7 +73,10 @@ function throwInvalidRelayerResource(path: string): never {
   throw new Error(`Invalid ERC-7730 relayer resource response: ${path}`)
 }
 
-const validateCalldataIndex = (payload: unknown, path: string): payload is Erc7730CalldataIndex => {
+export const validateCalldataIndex = (
+  payload: unknown,
+  path: string
+): payload is Erc7730CalldataIndex => {
   if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
 
   const index = payload
@@ -130,7 +109,10 @@ const validateEip712IndexEntry = (
   return true
 }
 
-const validateEip712Index = (payload: unknown, path: string): payload is Erc7730Eip712Index => {
+export const validateEip712Index = (
+  payload: unknown,
+  path: string
+): payload is Erc7730Eip712Index => {
   if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
 
   const index = payload
@@ -179,7 +161,10 @@ const validateDescriptorField = (field: unknown, path: string): field is Erc7730
   return true
 }
 
-const validateDescriptor = (payload: unknown, path: string): payload is Erc7730Descriptor => {
+export const validateDescriptor = (
+  payload: unknown,
+  path: string
+): payload is Erc7730Descriptor => {
   if (!isPlainObject(payload)) throwInvalidRelayerResource(path)
 
   const descriptor = payload
@@ -386,47 +371,7 @@ const ERC2612_PERMIT_DESCRIPTOR: Erc7730ResolvedDescriptor = {
   }
 }
 
-const fetchCachedIndex = async <T>({
-  path,
-  callRelayer,
-  cache,
-  promise,
-  validate,
-  setCache,
-  setPromise
-}: {
-  path: string
-  callRelayer: BindedRelayerCall
-  cache: CacheEntry<T> | null
-  promise: Promise<T> | null
-  validate: (payload: unknown, path: string) => payload is T
-  setCache: (entry: CacheEntry<T> | null) => void
-  setPromise: (promise: Promise<T> | null) => void
-}): Promise<T> => {
-  if (cache && Date.now() - cache.fetchedAt < ERC7730_CACHE_TTL_MS) return cache.value
-
-  if (promise) return promise
-
-  const nextPromise = fetchRelayerResource<T>(path, 'GET', callRelayer, validate)
-    .then((index) => {
-      setCache(createCacheEntry(index))
-      return index
-    })
-    .catch((e) => {
-      // serve stale cache if any
-      if (cache) return cache.value
-      throw e
-    })
-    .finally(() => {
-      setPromise(null)
-    })
-
-  setPromise(nextPromise)
-
-  return nextPromise
-}
-
-const normalizeRelayerPath = (pathOrUrl: string): string => {
+export const normalizeRelayerPath = (pathOrUrl: string): string => {
   try {
     const url = new URL(pathOrUrl)
     return `${url.pathname}${url.search}`
@@ -500,116 +445,6 @@ const applyBuiltInFormatOverrides = (
 
   return descriptor
 }
-
-const fetchDescriptorResource = async (
-  relayerPath: string,
-  callRelayer: BindedRelayerCall
-): Promise<Erc7730Descriptor> => {
-  const cachedDescriptor = descriptorCache.get(relayerPath)
-  if (cachedDescriptor && Date.now() - cachedDescriptor.fetchedAt < ERC7730_CACHE_TTL_MS)
-    return cachedDescriptor.value
-
-  const pendingDescriptor = descriptorPromises.get(relayerPath)
-  if (pendingDescriptor) return pendingDescriptor
-
-  const descriptorFetchPromise = fetchRelayerResource<Erc7730Descriptor>(
-    ERC7730_DESCRIPTOR_PATH,
-    'POST',
-    callRelayer,
-    validateDescriptor,
-    {
-      descriptorPath: relayerPath
-    }
-  )
-    .then((descriptor) => {
-      descriptorCache.set(relayerPath, createCacheEntry(descriptor))
-      return descriptor
-    })
-    .catch((e) => {
-      // serve stale cache if any
-      if (cachedDescriptor) return cachedDescriptor.value
-      throw e
-    })
-    .finally(() => {
-      descriptorPromises.delete(relayerPath)
-    })
-
-  descriptorPromises.set(relayerPath, descriptorFetchPromise)
-
-  return descriptorFetchPromise
-}
-
-const fetchDescriptor = async (
-  pathOrUrl: string,
-  callRelayer: BindedRelayerCall,
-  depth = 0
-): Promise<Erc7730ResolvedDescriptor> => {
-  const relayerPath = normalizeRelayerPath(pathOrUrl)
-
-  const descriptorPromise = (async () => {
-    const descriptor = await fetchDescriptorResource(relayerPath, callRelayer)
-    const includes = descriptor.includes
-      ? Array.isArray(descriptor.includes)
-        ? descriptor.includes
-        : [descriptor.includes]
-      : []
-
-    if (!includes.length || depth >= 5) return { descriptor, path: pathOrUrl }
-
-    const includedDescriptors = await Promise.all(
-      includes.map((includePath) =>
-        fetchDescriptor(getIncludePath(includePath, relayerPath), callRelayer, depth + 1)
-      )
-    )
-
-    const mergedIncludes = includedDescriptors.reduce<Erc7730Descriptor>(
-      (merged, included) => mergeDescriptors(merged, included.descriptor),
-      {}
-    )
-
-    return {
-      descriptor: mergeDescriptors(mergedIncludes, descriptor),
-      path: pathOrUrl
-    }
-  })()
-
-  return descriptorPromise
-}
-
-const getCalldataIndex = async (callRelayer: BindedRelayerCall): Promise<Erc7730CalldataIndex> => {
-  return fetchCachedIndex<Erc7730CalldataIndex>({
-    path: ERC7730_CALLDATA_INDEX_RELAYER_PATH,
-    callRelayer,
-    cache: relayerCalldataIndexCache,
-    promise: relayerCalldataIndexPromise,
-    validate: validateCalldataIndex,
-    setCache: (entry) => {
-      relayerCalldataIndexCache = entry
-    },
-    setPromise: (promise) => {
-      relayerCalldataIndexPromise = promise
-    }
-  })
-}
-
-const getEip712Index = async (callRelayer: BindedRelayerCall): Promise<Erc7730Eip712Index> => {
-  return fetchCachedIndex<Erc7730Eip712Index>({
-    path: ERC7730_EIP712_INDEX_RELAYER_PATH,
-    callRelayer,
-    cache: relayerEip712IndexCache,
-    promise: relayerEip712IndexPromise,
-    validate: validateEip712Index,
-    setCache: (entry) => {
-      relayerEip712IndexCache = entry
-    },
-    setPromise: (promise) => {
-      relayerEip712IndexPromise = promise
-    }
-  })
-}
-
-const getRegistryKey = (chainId: bigint | number | string, address: string): string =>
-  `eip155:${BigInt(chainId).toString()}:${address.toLowerCase()}`
 
 const isErc20TransferToFeeCollector = (call: Call): boolean => {
   if (!call.data || call.data.slice(0, 10).toLowerCase() !== ERC20_TRANSFER_SELECTOR) return false
@@ -813,74 +648,23 @@ const getSafeTxCallsFromExecTransactionCall = (call: Call): Call[] | null => {
   }
 }
 
-const getAddressFromStorageSlot = (slotValue: string): string | null => {
+export const getAddressFromStorageSlot = (slotValue: string): string | null => {
   if (!isHexString(slotValue) || slotValue.length !== 66) return null
 
   const address = getAddress(`0x${slotValue.slice(-40)}`)
   return address.toLowerCase() === ZeroAddress ? null : address
 }
 
-const getSafeSingletonCacheKey = (chainId: bigint, safeAddress: string): string =>
-  `${chainId.toString()}:${safeAddress.toLowerCase()}`
-
-const getSafeSingletonFromProxy = async (
-  provider: SafeSingletonProvider | undefined,
-  chainId: bigint,
-  safeAddress: string
-): Promise<string | null> => {
-  if (!provider) return null
-
-  const cacheKey = getSafeSingletonCacheKey(chainId, safeAddress)
-  const cachedSingleton = safeSingletonCache.get(cacheKey)
-  if (cachedSingleton && Date.now() - cachedSingleton.fetchedAt < SAFE_SINGLETON_CACHE_TTL_MS)
-    return cachedSingleton.value
-
-  const pendingSingleton = safeSingletonPromises.get(cacheKey)
-  if (pendingSingleton) return pendingSingleton
-
-  const singletonPromise = withTimeout(
-    () => provider.getStorage(safeAddress, SAFE_PROXY_SINGLETON_SLOT),
-    {
-      timeoutMs: ERC7730_DESCRIPTOR_WAIT_MS,
-      message: `Timed out fetching Safe singleton: ${safeAddress}`
-    }
-  )
-    .then((slotValue) => {
-      const singletonAddress = getAddressFromStorageSlot(slotValue)
-      if (singletonAddress) safeSingletonCache.set(cacheKey, createCacheEntry(singletonAddress))
-
-      return singletonAddress
-    })
-    .catch((e) => {
-      // serve stale if any
-      if (cachedSingleton) return cachedSingleton.value
-      throw e
-    })
-    .catch((error) => {
-      console.error(error)
-      return null
-    })
-    .finally(() => {
-      safeSingletonPromises.delete(cacheKey)
-    })
-
-  safeSingletonPromises.set(cacheKey, singletonPromise)
-
-  return singletonPromise
-}
-
-const selectEip712IndexEntry = (
+/**
+ * Picks the index entry matching a typed message. Entries without `encodeTypeHashes` match
+ * anything; otherwise the message's own hash has to be among them. A message whose hash could not
+ * be computed falls back to the sole entry, when there is exactly one.
+ */
+export const selectEip712IndexEntry = (
   entries: Erc7730Eip712IndexEntry[],
-  types: Erc7730TypedDataTypes,
-  primaryType: string
+  encodeTypeHash: string | null
 ): Erc7730Eip712IndexEntry | null => {
-  let encodeTypeHash: string | null = null
-
-  try {
-    encodeTypeHash = getEip712EncodeTypeHash(types, primaryType)
-  } catch {
-    return entries.length === 1 ? entries[0]! : null
-  }
+  if (!encodeTypeHash) return entries.length === 1 ? entries[0]! : null
 
   return (
     entries.find(
@@ -891,242 +675,435 @@ const selectEip712IndexEntry = (
   )
 }
 
-const fetchEip712DescriptorFromIndex = async (
-  index: Erc7730Eip712Index,
-  chainId: bigint,
-  verifyingContract: string,
-  types: Erc7730TypedDataTypes,
-  primaryType: string,
-  callRelayer: BindedRelayerCall
-): Promise<Erc7730ResolvedDescriptor | null> => {
-  const entries = index[getRegistryKey(chainId, verifyingContract)]?.[primaryType]
-  if (!entries?.length) return null
+const getEip712Key = (chainId: bigint, verifyingContract: string, primaryType: string): string =>
+  `${getRegistryKey(chainId, verifyingContract)}:${primaryType}`
 
-  const entry = selectEip712IndexEntry(entries, types, primaryType)
-  if (!entry) return null
+/**
+ * Merges a descriptor with everything its `includes` point at, collecting a want for any include
+ * not yet fetched. Returns null while anything is still missing, so the caller reports its wants
+ * and is asked again next round.
+ */
+const mergeIncludes = (
+  path: string,
+  known: Erc7730Known,
+  wants: Erc7730Want[],
+  depth = 0
+): Erc7730Descriptor | null => {
+  const descriptor = known.descriptorsByPath[path]
+  // undefined means not asked for yet; null means asked for and unavailable, so stop asking
+  if (descriptor === undefined) {
+    wants.push({ kind: 'includedDescriptor', path })
 
-  return fetchDescriptor(entry.path, callRelayer)
-}
-
-const getNestedSafeCallOptions = (
-  safeAddress: string,
-  call: Call,
-  options: Erc7730RegistryOptions
-): Erc7730RegistryOptions => {
-  if (call.to && call.to.toLowerCase() === safeAddress.toLowerCase()) return options
-
-  return {
-    ...options,
-    provider: undefined
+    return null
   }
-}
+  if (!descriptor) return null
 
-const addSafeTxCallDescriptor = async (
-  message: Message,
-  chainId: bigint,
-  descriptor: Erc7730ResolvedDescriptor | null,
-  options: Erc7730RegistryOptions
-): Promise<Erc7730ResolvedDescriptor | null> => {
-  if (!descriptor || message.content.kind !== 'typedMessage') return descriptor
-  if (message.content.primaryType !== SAFE_TX_PRIMARY_TYPE) return descriptor
+  const includes = descriptor.includes
+    ? Array.isArray(descriptor.includes)
+      ? descriptor.includes
+      : [descriptor.includes]
+    : []
 
-  const safeTxCalls = getSafeTxCallsFromMessage(message)
-  if (!safeTxCalls?.length) return descriptor
+  if (!includes.length || depth >= ERC7730_MAX_RESOLUTION_DEPTH) return descriptor
 
-  const verifyingContract = message.content.domain.verifyingContract
-  const safeTxCallDescriptors = await Promise.all(
-    safeTxCalls.map(async (safeTxCall, index) => {
-      const safeTxCallDescriptor = await fetchErc7730DescriptorForCall(
-        safeTxCall,
-        chainId,
-        typeof verifyingContract === 'string'
-          ? getNestedSafeCallOptions(verifyingContract, safeTxCall, options)
-          : options
-      )
+  const included = includes.map((includePath) =>
+    mergeIncludes(getIncludePath(includePath, path), known, wants, depth + 1)
+  )
+  if (included.some((one) => !one)) return null
 
-      return safeTxCallDescriptor ? [index, safeTxCallDescriptor] : null
-    })
+  const mergedIncludes = included.reduce<Erc7730Descriptor>(
+    (merged, one) => mergeDescriptors(merged, one!),
+    {}
   )
 
-  const descriptorsByIndex = Object.fromEntries(safeTxCallDescriptors.filter((x) => !!x))
-
-  if (!Object.keys(descriptorsByIndex).length) return descriptor
-
-  return {
-    ...descriptor,
-    safeTxCallDescriptor:
-      safeTxCalls.length === 1 ? descriptorsByIndex[0] : descriptor.safeTxCallDescriptor,
-    safeTxCallDescriptors: descriptorsByIndex
-  }
+  return mergeDescriptors(mergedIncludes, descriptor)
 }
 
-const fetchSafeExecTransactionDescriptor = async (
-  call: Call,
-  chainId: AccountOp['chainId'],
-  options: Erc7730RegistryOptions
-): Promise<Erc7730ResolvedDescriptor | null> => {
-  const { callRelayer, provider } = options
-  if (!callRelayer || !provider || !call.to || !isAddress(call.to)) return null
+/**
+ * The descriptor registered for a contract, following a Safe-style proxy to its singleton when the
+ * address itself has none. Collects wants for whatever is still missing.
+ */
+const resolveRegisteredDescriptor = (
+  chainId: bigint,
+  address: string,
+  known: Erc7730Known,
+  wants: Erc7730Want[],
+  followProxy: boolean
+): Erc7730ResolvedDescriptor | null => {
+  const registryKey = getRegistryKey(chainId, address)
+  const registered = known.contractDescriptors[registryKey]
 
-  const safeTxCalls = getSafeTxCallsFromExecTransactionCall(call)
-  if (!safeTxCalls?.length) return null
+  if (registered === undefined) {
+    wants.push({ kind: 'contractDescriptor', chainId, address })
 
-  const safeSingleton = await getSafeSingletonFromProxy(provider, chainId, call.to)
-  if (!safeSingleton || safeSingleton.toLowerCase() === call.to.toLowerCase()) return null
+    return null
+  }
 
-  const index = await getCalldataIndex(callRelayer)
-  const descriptorPath = index[getRegistryKey(chainId, safeSingleton)]
-  if (!descriptorPath) return null
+  if (registered) {
+    const descriptor = mergeIncludes(registered.path, known, wants)
 
-  const safeDescriptor = await fetchDescriptor(descriptorPath, callRelayer)
-  const safeTxCallDescriptors = await Promise.all(
-    safeTxCalls.map(async (safeTxCall, index) => {
-      const descriptor = await fetchErc7730DescriptorForCall(
-        safeTxCall,
-        chainId,
-        getNestedSafeCallOptions(call.to!, safeTxCall, options)
-      )
-      return descriptor ? [index, descriptor] : null
-    })
+    return descriptor ? { descriptor, path: registered.path } : null
+  }
+
+  // Nothing registered for the address itself - it may be a proxy whose singleton has a descriptor
+  if (!followProxy) return null
+
+  const singletonKey = getSafeSingletonKey(chainId, address)
+  const singleton = known.safeSingletons[singletonKey]
+
+  if (singleton === undefined) {
+    wants.push({ kind: 'safeSingleton', chainId, address })
+
+    return null
+  }
+  if (!singleton || singleton.toLowerCase() === address.toLowerCase()) return null
+
+  return resolveRegisteredDescriptor(chainId, singleton, known, wants, false)
+}
+
+type Erc7730ResolveOptions = {
+  /** Needed to format the call, which is how the calls embedded in it are found */
+  accountAddr?: string
+}
+
+const hasCalldataFieldCache = new WeakMap<Erc7730Descriptor, boolean>()
+
+const fieldsContainCalldataFormat = (fields: Erc7730Field[] | undefined): boolean =>
+  !!fields?.some(
+    (field) => field.format === 'calldata' || fieldsContainCalldataFormat(field.fields)
   )
-  return {
-    ...safeDescriptor,
-    safeTxCalls,
-    safeTxTransactionsOnly: true,
-    safeTxCallDescriptors: Object.fromEntries(safeTxCallDescriptors.filter((x) => !!x))
-  }
+
+/**
+ * Whether the descriptor describes a call that carries other calls inside it. Formatting a call is
+ * the only way to find those, and it is far too expensive to do for every call, so this decides up
+ * front whether it is worth doing at all.
+ */
+const hasCalldataField = (descriptor: Erc7730Descriptor): boolean => {
+  const cached = hasCalldataFieldCache.get(descriptor)
+  if (cached !== undefined) return cached
+
+  const formats = Object.values(descriptor.display?.formats || {})
+  const definitions = Object.values(descriptor.display?.definitions || {})
+  const result =
+    formats.some((format) => fieldsContainCalldataFormat(format.fields)) ||
+    fieldsContainCalldataFormat(definitions)
+
+  hasCalldataFieldCache.set(descriptor, result)
+
+  return result
 }
 
-const fetchProxySingletonDescriptorForCall = async (
+/**
+ * The descriptor of every call embedded in `call` through a `format: 'calldata'` field, keyed by
+ * `eip155:{chainId}:{address}`.
+ *
+ * The embedded calls are found by formatting the call in collect mode - the same code that will
+ * later render them - so this can never ask for a descriptor the humanizer does not use, or miss
+ * one it does. Each round feeds the descriptors found so far back in, because an embedded call read
+ * through its own descriptor can reveal calls embedded deeper still.
+ */
+const resolveNestedCalldataDescriptors = (
   call: Call,
   chainId: AccountOp['chainId'],
-  options: Erc7730RegistryOptions,
-  index: Erc7730CalldataIndex
-): Promise<Erc7730ResolvedDescriptor | null> => {
-  const { callRelayer, provider } = options
-  if (!callRelayer || !provider || !call.to || !isAddress(call.to)) return null
+  resolvedDescriptor: Erc7730ResolvedDescriptor,
+  known: Erc7730Known,
+  wants: Erc7730Want[],
+  accountAddr: string
+): Record<string, Erc7730ResolvedDescriptor> | undefined => {
+  if (!hasCalldataField(resolvedDescriptor.descriptor)) return undefined
 
-  const safeSingleton = await getSafeSingletonFromProxy(provider, chainId, call.to)
-  if (!safeSingleton || safeSingleton.toLowerCase() === call.to.toLowerCase()) return null
+  const nestedCallDescriptors: Record<string, Erc7730ResolvedDescriptor> = {}
 
-  const descriptorPath = index[getRegistryKey(chainId, safeSingleton)]
-  if (!descriptorPath) return null
-
-  return fetchDescriptor(descriptorPath, callRelayer)
-}
-
-export const fetchErc7730DescriptorForCall = async (
-  call: Call,
-  chainId: AccountOp['chainId'],
-  options?: Erc7730RegistryOptions
-): Promise<Erc7730ResolvedDescriptor | null> => {
-  if (!call.to || !isAddress(call.to)) return null
-  if (isErc20TransferToFeeCollector(call)) return null
-
-  const builtInDescriptor = getBuiltInDescriptorForCall(call)
-  if (!options?.callRelayer) return builtInDescriptor
-
-  try {
-    const safeExecTransactionDescriptor = await fetchSafeExecTransactionDescriptor(
+  for (let round = 0; round < ERC7730_MAX_RESOLUTION_DEPTH; round++) {
+    const collectedNestedCalls: Call[] = []
+    humanizeCallWithErc7730(
       call,
       chainId,
-      options
-    )
-    if (safeExecTransactionDescriptor) return safeExecTransactionDescriptor
-
-    const { callRelayer } = options
-    const index = await getCalldataIndex(callRelayer)
-    const descriptorPath = index[getRegistryKey(chainId, call.to)]
-    const registryDescriptor = descriptorPath
-      ? await fetchDescriptor(descriptorPath, callRelayer)
-      : !builtInDescriptor
-        ? await fetchProxySingletonDescriptorForCall(call, chainId, options, index)
-        : null
-
-    if (!registryDescriptor) return builtInDescriptor
-    if (!builtInDescriptor) return registryDescriptor
-
-    const mergedDescriptor = mergeDescriptors(
-      builtInDescriptor.descriptor,
-      registryDescriptor.descriptor
+      accountAddr,
+      { ...resolvedDescriptor, nestedCallDescriptors },
+      undefined,
+      collectedNestedCalls
     )
 
-    return {
-      descriptor: applyBuiltInFormatOverrides(mergedDescriptor, builtInDescriptor),
-      path: registryDescriptor.path
+    let didResolveNewDescriptor = false
+
+    collectedNestedCalls.forEach((nestedCall) => {
+      if (!nestedCall.to || !isAddress(nestedCall.to)) return
+
+      const registryKey = getRegistryKey(chainId, nestedCall.to)
+      if (nestedCallDescriptors[registryKey]) return
+
+      // A proxy lookup costs an RPC read per embedded call, and an embedded call goes to an
+      // arbitrary contract, so it is not worth one
+      const resolution = resolveErc7730CallWithoutNested(nestedCall, chainId, known, false, {
+        accountAddr
+      })
+      wants.push(...resolution.wants)
+
+      if (resolution.descriptor) {
+        nestedCallDescriptors[registryKey] = resolution.descriptor
+        didResolveNewDescriptor = true
+      }
+    })
+
+    if (!didResolveNewDescriptor) break
+  }
+
+  return Object.keys(nestedCallDescriptors).length ? nestedCallDescriptors : undefined
+}
+
+/**
+ * Everything one call needs, decided from `known` and recording what is still missing.
+ *
+ * This is the single traversal that both `planErc7730Wants` and `resolveErc7730Descriptors` read,
+ * so the plan can never ask for something the resolve step does not use, or miss something it does.
+ */
+const resolveErc7730CallWithoutNested = (
+  call: Call,
+  chainId: AccountOp['chainId'],
+  known: Erc7730Known,
+  followProxy: boolean,
+  options: Erc7730ResolveOptions
+): Erc7730Resolution => {
+  const wants: Erc7730Want[] = []
+  if (!call.to || !isAddress(call.to)) return { descriptor: null, wants }
+  if (isErc20TransferToFeeCollector(call)) return { descriptor: null, wants }
+
+  const builtInDescriptor = getBuiltInDescriptorForCall(call)
+
+  // A Safe `execTransaction` describes the transactions inside it, not the call itself
+  const safeTxCalls = getSafeTxCallsFromExecTransactionCall(call)
+  if (safeTxCalls?.length) {
+    const singletonKey = getSafeSingletonKey(chainId, call.to)
+    const singleton = known.safeSingletons[singletonKey]
+
+    if (singleton === undefined) {
+      wants.push({ kind: 'safeSingleton', chainId, address: call.to })
+
+      return { descriptor: builtInDescriptor, wants }
     }
-  } catch (error) {
-    console.error(error)
-    return builtInDescriptor
+
+    if (singleton && singleton.toLowerCase() !== call.to.toLowerCase()) {
+      const safeDescriptor = resolveRegisteredDescriptor(chainId, singleton, known, wants, false)
+      const nested = resolveInnerCalls(safeTxCalls, chainId, known, wants, options, call.to)
+
+      if (safeDescriptor && !wants.length) {
+        return {
+          descriptor: { ...safeDescriptor, innerCalls: safeTxCalls, innerCallDescriptors: nested },
+          wants
+        }
+      }
+
+      return { descriptor: builtInDescriptor, wants }
+    }
+  }
+
+  const registryDescriptor = resolveRegisteredDescriptor(
+    chainId,
+    call.to,
+    known,
+    wants,
+    // Following a proxy costs an RPC read, so only bother when nothing else describes the call
+    followProxy && !builtInDescriptor
+  )
+  if (wants.length) return { descriptor: builtInDescriptor, wants }
+
+  if (!registryDescriptor) return { descriptor: builtInDescriptor, wants }
+  if (!builtInDescriptor) return { descriptor: registryDescriptor, wants }
+
+  return {
+    descriptor: {
+      descriptor: applyBuiltInFormatOverrides(
+        mergeDescriptors(builtInDescriptor.descriptor, registryDescriptor.descriptor),
+        builtInDescriptor
+      ),
+      path: registryDescriptor.path
+    },
+    wants
   }
 }
 
-export const fetchErc7730DescriptorsForAccountOp = async (
-  accountOp: AccountOp,
-  options?: Erc7730RegistryOptions
-): Promise<Record<number, Erc7730ResolvedDescriptor>> => {
-  const resolvedDescriptors = await Promise.all(
-    accountOp.calls.map(async (call, index) => {
-      const descriptor = await fetchErc7730DescriptorForCall(call, accountOp.chainId, options)
-      return descriptor ? [index, descriptor] : null
-    })
+/**
+ * The descriptor for one call, plus the descriptors of every call embedded in it.
+ *
+ * This is the single traversal that both `planErc7730Wants` and `resolveErc7730Descriptors` read,
+ * so the plan can never ask for something the resolve step does not use, or miss something it does.
+ */
+export const resolveErc7730Call = (
+  call: Call,
+  chainId: AccountOp['chainId'],
+  known: Erc7730Known,
+  /**
+   * Whether an address with no descriptor of its own is worth a proxy-singleton lookup. Off for the
+   * inner calls of a Safe transaction: they go to arbitrary contracts, and reading a singleton slot
+   * off each one is an RPC round trip that almost never finds anything.
+   */
+  followProxy = true,
+  options: Erc7730ResolveOptions = {}
+): Erc7730Resolution => {
+  const resolution = resolveErc7730CallWithoutNested(call, chainId, known, followProxy, options)
+  const { accountAddr } = options
+
+  if (!accountAddr || !resolution.descriptor) return resolution
+
+  const nestedCallDescriptors = resolveNestedCalldataDescriptors(
+    call,
+    chainId,
+    resolution.descriptor,
+    known,
+    resolution.wants,
+    accountAddr
   )
-  return Object.fromEntries(resolvedDescriptors.filter((x) => !!x))
+  if (!nestedCallDescriptors) return resolution
+
+  return {
+    descriptor: { ...resolution.descriptor, nestedCallDescriptors },
+    wants: resolution.wants
+  }
 }
 
-export const fetchErc7730DescriptorForMessage = async (
-  message: Message,
-  callRelayer: BindedRelayerCall,
-  provider?: SafeSingletonProvider
-): Promise<Erc7730ResolvedDescriptor | null> => {
-  if (message.content.kind !== 'typedMessage') return null
+/**
+ * Resolves a list of inner calls, keyed by their index within the parent.
+ *
+ * Only a call back to `safeAddress` itself is worth a proxy-singleton lookup - that is the Safe,
+ * whose descriptor lives on its singleton. The rest go to arbitrary contracts.
+ */
+const resolveInnerCalls = (
+  calls: Call[],
+  chainId: AccountOp['chainId'],
+  known: Erc7730Known,
+  wants: Erc7730Want[],
+  options: Erc7730ResolveOptions,
+  safeAddress?: string
+): Record<number, Erc7730ResolvedDescriptor> => {
+  const resolved: Record<number, Erc7730ResolvedDescriptor> = {}
+
+  calls.forEach((call, index) => {
+    const isSafeItself =
+      !!safeAddress && !!call.to && call.to.toLowerCase() === safeAddress.toLowerCase()
+    const resolution = resolveErc7730Call(call, chainId, known, isSafeItself, options)
+    wants.push(...resolution.wants)
+    if (resolution.descriptor) resolved[index] = resolution.descriptor
+  })
+
+  return resolved
+}
+
+/** What the controller still has to fetch before an accountOp can be fully described. */
+export const planErc7730Wants = (accountOp: AccountOp, known: Erc7730Known): Erc7730Want[] =>
+  accountOp.calls.flatMap(
+    (call) =>
+      resolveErc7730Call(call, accountOp.chainId, known, true, {
+        accountAddr: accountOp.accountAddr
+      }).wants
+  )
+
+/** The descriptor for each call that has one, given everything fetched so far. */
+export const resolveErc7730Descriptors = (
+  accountOp: AccountOp,
+  known: Erc7730Known
+): Erc7730CallDescriptors => {
+  const descriptors: Erc7730CallDescriptors = {}
+
+  accountOp.calls.forEach((call, index) => {
+    const { descriptor } = resolveErc7730Call(call, accountOp.chainId, known, true, {
+      accountAddr: accountOp.accountAddr
+    })
+    if (descriptor) descriptors[index] = descriptor
+  })
+
+  return descriptors
+}
+
+/** Everything one typed message needs, in the same plan/resolve shape as a call. */
+export const resolveErc7730Message = (message: Message, known: Erc7730Known): Erc7730Resolution => {
+  const wants: Erc7730Want[] = []
+  if (message.content.kind !== 'typedMessage') return { descriptor: null, wants }
 
   const verifyingContract = message.content.domain.verifyingContract
   const chainId = getTypedMessageChainId(message)
-  if (!verifyingContract || !chainId || !isAddress(verifyingContract)) return null
+  if (!verifyingContract || !chainId || !isAddress(verifyingContract)) {
+    return { descriptor: null, wants }
+  }
+
   const primaryType = String(message.content.primaryType)
-  const types = message.content.types
   const builtInDescriptor = getBuiltInDescriptorForMessage(message)
-
+  let encodeTypeHash: string | null = null
   try {
-    const index = await getEip712Index(callRelayer)
-    const registryDescriptor = await fetchEip712DescriptorFromIndex(
-      index,
-      chainId,
-      verifyingContract,
-      types,
-      primaryType,
-      callRelayer
+    encodeTypeHash = getEip712EncodeTypeHash(
+      message.content.types as Erc7730TypedDataTypes,
+      primaryType
     )
-    if (registryDescriptor) {
-      return addSafeTxCallDescriptor(message, chainId, registryDescriptor, {
-        callRelayer,
-        provider
+  } catch {
+    encodeTypeHash = null
+  }
+
+  const resolveFor = (contract: string): Erc7730ResolvedDescriptor | null => {
+    const key = getEip712Key(chainId, contract, primaryType)
+    const registered = known.eip712Descriptors[key]
+
+    if (registered === undefined) {
+      wants.push({
+        kind: 'eip712Descriptor',
+        chainId,
+        verifyingContract: contract,
+        primaryType,
+        encodeTypeHash
       })
-    }
 
-    if (primaryType !== SAFE_TX_PRIMARY_TYPE) return builtInDescriptor
-
-    const safeSingleton = await getSafeSingletonFromProxy(provider, chainId, verifyingContract)
-    if (!safeSingleton || safeSingleton.toLowerCase() === verifyingContract.toLowerCase()) {
       return null
     }
+    if (!registered) return null
 
-    const safeSingletonDescriptor = await fetchEip712DescriptorFromIndex(
-      index,
-      chainId,
-      safeSingleton,
-      types,
-      primaryType,
-      callRelayer
-    )
+    const descriptor = mergeIncludes(registered.path, known, wants)
 
-    return addSafeTxCallDescriptor(message, chainId, safeSingletonDescriptor, {
-      callRelayer,
-      provider
-    })
-  } catch (error) {
-    console.error(error)
-    return builtInDescriptor
+    return descriptor ? { descriptor, path: registered.path } : null
   }
+
+  let descriptor = resolveFor(verifyingContract)
+
+  // A Safe message is signed against the proxy, but described by its singleton
+  if (!descriptor && !wants.length && primaryType === SAFE_TX_PRIMARY_TYPE) {
+    const singletonKey = getSafeSingletonKey(chainId, verifyingContract)
+    const singleton = known.safeSingletons[singletonKey]
+
+    if (singleton === undefined) {
+      wants.push({ kind: 'safeSingleton', chainId, address: verifyingContract })
+
+      return { descriptor: null, wants }
+    }
+    if (!singleton || singleton.toLowerCase() === verifyingContract.toLowerCase()) {
+      return { descriptor: null, wants }
+    }
+
+    descriptor = resolveFor(singleton)
+  }
+
+  if (wants.length) return { descriptor: builtInDescriptor, wants }
+  if (!descriptor) return { descriptor: builtInDescriptor, wants }
+
+  // The transactions a SafeTx authorises are described by their own descriptors
+  const safeTxCalls = getSafeTxCallsFromMessage(message)
+  if (!safeTxCalls?.length) return { descriptor, wants }
+
+  const nested = resolveInnerCalls(
+    safeTxCalls,
+    chainId,
+    known,
+    wants,
+    { accountAddr: message.accountAddr },
+    verifyingContract
+  )
+  if (wants.length) return { descriptor, wants }
+  if (!Object.keys(nested).length) return { descriptor, wants }
+
+  return { descriptor: { ...descriptor, innerCallDescriptors: nested }, wants }
 }
+
+export const planErc7730MessageWants = (message: Message, known: Erc7730Known): Erc7730Want[] =>
+  resolveErc7730Message(message, known).wants
+
+export const resolveErc7730MessageDescriptor = (
+  message: Message,
+  known: Erc7730Known
+): Erc7730ResolvedDescriptor | null => resolveErc7730Message(message, known).descriptor
