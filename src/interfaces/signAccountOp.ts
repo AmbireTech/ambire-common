@@ -75,6 +75,8 @@ type SignAccountOpBanner = {
   title?: string
   text: string
   secondaryText?: string
+  /** Mirrors DappVerificationBanner.trustableDappUrls - set only on the SUSPICIOUS_HOSTING banner. */
+  trustableDappUrls?: string[]
 }
 
 type HardwareWalletSigningRequest = {

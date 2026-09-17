@@ -15,6 +15,18 @@ describe('portfolio blacklist', () => {
     ])
   })
 
+  it('filters the Arc USDC ERC-20 interface only on Arc mainnet', () => {
+    const nativeUsdc = '0x0000000000000000000000000000000000000000'
+    const erc20Usdc = '0x3600000000000000000000000000000000000000'
+    const eurc = '0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1'
+
+    expect(filterStaticBlacklistedAddrs([nativeUsdc, erc20Usdc, eurc], 5042n)).toEqual([
+      nativeUsdc,
+      eurc
+    ])
+    expect(filterStaticBlacklistedAddrs([erc20Usdc], 1n)).toEqual([erc20Usdc])
+  })
+
   describe('containsDomainLike', () => {
     it('detects a domain embedded anywhere in the text', () => {
       expect(containsDomainLike('Visit uniswap.org')).toBe(true)

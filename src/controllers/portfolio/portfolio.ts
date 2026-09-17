@@ -164,6 +164,13 @@ export class PortfolioController
 
   hasFundedHotAccount: boolean = false
 
+  /**
+   * The account's invite key for the Ambire Mobile app, returned by the relayer's
+   * `portfolio-additional` endpoint. Present only for accounts the relayer has generated
+   * one for; used to let the user activate the same account in the mobile app.
+   */
+  mobileInviteKeys: { [accountAddr: string]: string } = {}
+
   #portfolioLibs: Map<string, Portfolio>
 
   #banner: IBannerController
@@ -1132,10 +1139,17 @@ export class PortfolioController
     this.#setNetworkLoading(accountId, 'rewards', true)
     this.emitUpdate()
 
+    const accountKeysCount = getAccountKeysCount({
+      accountAddr: accountId,
+      keys: this.#keystore.keys,
+      accounts: this.#accounts.accounts
+    })
+    const sigsParam = accountKeysCount > 0 ? `?sigs=${accountKeysCount}` : ''
+
     let res: any
     try {
       res = await this.#callRelayer(
-        `/v2/identity/${accountId}/portfolio-additional`,
+        `/v2/identity/${accountId}/portfolio-additional${sigsParam}`,
         'GET',
         undefined,
         undefined,
@@ -1255,6 +1269,10 @@ export class PortfolioController
         gasTankTokens,
         total: getTotal(gasTankTokens, null)
       }
+    }
+
+    if (res.data.mobileInviteKey) {
+      this.mobileInviteKeys[accountId] = res.data.mobileInviteKey
     }
 
     this.emitUpdate()
@@ -1732,7 +1750,8 @@ export class PortfolioController
           .getWalletStakingShareValue({
             chainId: network.chainId,
             tokens: combinedTokens,
-            provider: portfolioLib.provider
+            provider: portfolioLib.provider,
+            accountAddr: account.addr
           })
           .then((walletStaking) => {
             if (

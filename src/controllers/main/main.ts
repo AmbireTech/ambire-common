@@ -23,6 +23,7 @@ import { ContractNamesController } from '@/controllers/contractNames/contractNam
 import { DappsController } from '@/controllers/dapps/dapps'
 import { DebugController } from '@/controllers/debug/debug'
 import { DomainsController } from '@/controllers/domains/domains'
+import { Erc7730Controller } from '@/controllers/erc7730/erc7730'
 import { EmailVaultController } from '@/controllers/emailVault/emailVault'
 import { EstimationStatus } from '@/controllers/estimation/types'
 import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
@@ -59,6 +60,7 @@ import { IContractNamesController } from '@/interfaces/contractNames'
 import { IDappsController } from '@/interfaces/dapp'
 import { IDebugController } from '@/interfaces/debug'
 import { IDomainsController } from '@/interfaces/domains'
+import { IErc7730Controller } from '@/interfaces/erc7730'
 import { IEmailVaultController } from '@/interfaces/emailVault'
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '@/interfaces/eventEmitter'
 import { IFeatureFlagsController } from '@/interfaces/featureFlags'
@@ -111,6 +113,7 @@ import { getAccountKeysCount } from '@/libs/keys/keys'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
+import { CowSwapAPI } from '@/services/cowswap/api'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketV3API } from '@/services/socketv3/api'
@@ -194,6 +197,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   domains: IDomainsController
 
+  erc7730: IErc7730Controller
+
   contractNames: IContractNamesController
 
   contractInfo: IContractInfoController
@@ -239,6 +244,7 @@ export class MainController extends EventEmitter implements IMainController {
     relayerUrl,
     velcroUrl,
     liFiApiKey,
+    cowSwapApiKey,
     bungeeApiKey,
     uniswapApiKey,
     featureFlags,
@@ -254,6 +260,7 @@ export class MainController extends EventEmitter implements IMainController {
     relayerUrl: string
     velcroUrl: string
     liFiApiKey: string
+    cowSwapApiKey: string
     bungeeApiKey: string
     uniswapApiKey: string
     featureFlags: Partial<FeatureFlags>
@@ -477,6 +484,13 @@ export class MainController extends EventEmitter implements IMainController {
       selectedAccount: this.selectedAccount
     })
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
+    this.erc7730 = new Erc7730Controller({
+      storage: this.storage,
+      callRelayer: this.callRelayer,
+      providers: this.providers,
+      ui: this.ui,
+      eventEmitterRegistry
+    })
     this.signMessage = new SignMessageController(
       this.keystore,
       this.providers,
@@ -486,7 +500,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite,
       eventEmitterRegistry,
       this.dapps,
-      this.callRelayer
+      this.erc7730
     )
 
     this.activity = new ActivityController(
@@ -514,6 +528,7 @@ export class MainController extends EventEmitter implements IMainController {
     const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
     const SocketProvider = new SocketV3API({ fetch, apiKey: bungeeApiKey })
     const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
+    const CowSwapProvider = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
       eventEmitterRegistry,
       callRelayer: this.callRelayer,
@@ -531,8 +546,9 @@ export class MainController extends EventEmitter implements IMainController {
       featureFlags: this.featureFlags,
       phishing: this.phishing,
       dapps: this.dapps,
+      erc7730: this.erc7730,
       swapProvider: new SwapProviderParallelExecutor(
-        [LiFiProvider, SocketProvider, UniswapProvider],
+        [LiFiProvider, SocketProvider, UniswapProvider, CowSwapProvider],
         () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) })),
         () => this.swapAndBridge?.getDisabledSwapProviderIds() ?? []
       ),
@@ -589,6 +605,7 @@ export class MainController extends EventEmitter implements IMainController {
       relayerUrl,
       this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
+      this.erc7730,
       eventEmitterRegistry
     )
     this.domains = new DomainsController({
@@ -635,6 +652,7 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       phishing: this.phishing,
       dapps: this.dapps,
+      erc7730: this.erc7730,
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers,
@@ -872,7 +890,9 @@ export class MainController extends EventEmitter implements IMainController {
     // call closeRequestWindow while still on the currently selected account to allow proper
     // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
     if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
-      await this.requests.closeRequestWindow()
+      // Switching accounts is the user acting on the wallet, not refusing the apps that
+      // happened to be waiting, so it must not count towards the spam detection.
+      await this.requests.closeRequestWindow({ isUserInitiated: false })
     }
     const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
       ({ kind }) => kind === 'swapAndBridge'
@@ -1986,7 +2006,10 @@ export class MainController extends EventEmitter implements IMainController {
     ) as CallsUserRequest | undefined
 
     if (userRequest) {
-      await this.requests.rejectCalls({ activeRouteIds: [activeRouteId] })
+      await this.requests.rejectCalls({
+        activeRouteIds: [activeRouteId],
+        isUserInitiated: false
+      })
     } else {
       this.swapAndBridge.removeActiveRoute(activeRouteId)
     }
