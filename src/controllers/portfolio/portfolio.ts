@@ -14,7 +14,8 @@ import {
 import { ETHEREUM_CHAIN_ID, INVICTUS_RPC_URL_IDENTIFIER } from '../../consts/networks'
 import {
   DEFAULT_STALE_RPC_BLOCK_THRESHOLD,
-  ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
+  ETHEREUM_STALE_RPC_BLOCK_THRESHOLD,
+  getDiscoveryTimeout
 } from '../../consts/portfolio'
 import {
   Account,
@@ -28,6 +29,7 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
@@ -253,7 +255,8 @@ export class PortfolioController
     banner: IBannerController,
     featureFlags: IFeatureFlagsController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
-    verification?: IVerificationController
+    verification?: IVerificationController,
+    platform: Platform = 'default'
   ) {
     super(eventEmitterRegistry)
 
@@ -358,7 +361,7 @@ export class PortfolioController
       },
       {
         timeoutSettings: {
-          timeoutAfter: 3000,
+          timeoutAfter: getDiscoveryTimeout(platform),
           timeoutErrorMessage: 'Velcro discovery timed out'
         },
         dedupeByKeys: ['chainId', 'accountAddr']
@@ -1893,18 +1896,21 @@ export class PortfolioController
 
       const defi = response.defi
       // Throw the error after assigning the response so we can still use the returned hints
-      if ((response && 'errorState' in defi) || !('positions' in defi) || !defi.positions)
+      if (!defi || 'errorState' in defi)
         throw new Error(
           `Defi discovery failed. Error: ${
-            'errorState' in defi
+            defi && 'errorState' in defi
               ? defi.errorState[0]?.message || 'Unknown error (2)'
               : 'Unknown error'
           }`
         )
 
+      // An account with no positions in any DeFi app gets an empty object back, not an error
+      const positions = 'positions' in defi ? defi.positions || [] : []
+
       // Used only to sort assets and positions
       const positionsByProvider = getUniqueMergedPositions(
-        getFormattedApiPositions(defi.positions),
+        getFormattedApiPositions(positions),
         [],
         null
       )
