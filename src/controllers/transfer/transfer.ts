@@ -8,6 +8,7 @@ import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { IDappsController } from '../../interfaces/dapp'
 import { AddressState } from '../../interfaces/domains'
+import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
@@ -164,6 +165,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #dapps: IDappsController
 
+  #erc7730: IErc7730Controller
+
   #relayerUrl: string
 
   isRecipientAddressFirstTimeSend: boolean = false
@@ -225,6 +228,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     relayerUrl: string,
     onBroadcastSuccess: OnBroadcastSuccess,
     ui: IUiController,
+    erc7730: IErc7730Controller,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
@@ -246,6 +250,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#providers = providers
     this.#phishing = phishing
     this.#dapps = dapps
+    this.#erc7730 = erc7730
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#ui = ui
@@ -1192,6 +1197,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       provider,
       phishing: this.#phishing,
       dapps: this.#dapps,
+      erc7730: this.#erc7730,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,
