@@ -151,6 +151,45 @@ describe('Transfer Controller', () => {
     expect(transferController.amount).toBe(
       formatUnits(nativeToken.amount - feeAmount - feeAmount / 5n, nativeToken.decimals)
     )
+    expect(transferController.amountAdjustmentInfo).toEqual({
+      feeAmount: formatUnits(feeAmount + feeAmount / 5n, nativeToken.decimals),
+      tokenSymbol: nativeToken.symbol
+    })
+
+    await transferController.update({ amount: '0.001' })
+    expect(transferController.amountAdjustmentInfo).toBeNull()
+  })
+  test('should not show fee adjustment info when another token pays the fee', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const nativeToken = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    const feeToken = tokens.find((t) => t.address !== ZeroAddress && t.chainId === 1n)!
+
+    await transferController.update({ selectedToken: nativeToken })
+    ;(transferController as any).signAccountOpController = {
+      accountOp: {
+        gasFeePayment: {
+          amount: 1_000_000_000_000_000n,
+          inToken: feeToken.address,
+          feeTokenChainId: feeToken.chainId
+        }
+      },
+      selectedOption: {
+        paidBy: account.addr,
+        token: {
+          ...feeToken,
+          flags: {
+            ...feeToken.flags,
+            onGasTank: false
+          }
+        }
+      }
+    }
+
+    await transferController.update({ shouldSetMaxAmount: true })
+
+    expect(transferController.amount).toBe(transferController.maxAmount)
+    expect(transferController.amountAdjustmentInfo).toBeNull()
   })
   test('should preserve the amount when the fee leaves no transferable max amount', async () => {
     const { transferController, tokens } = await prepareTest()
