@@ -424,6 +424,8 @@ export class PortfolioController
   }
 
   private async fetchBlacklist(): Promise<void> {
+    if (!this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) return
+
     try {
       if (this.#blacklist.isLoading) return
       this.#blacklist.isLoading = true

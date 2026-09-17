@@ -51,7 +51,7 @@ describe('PhishingController', () => {
     expect(controller.updatePhishingInterval.running).toBe(true)
   })
 
-  test('should not update phishing data or check domains when the checker is disabled', async () => {
+  test('should not update phishing data or check domains or addresses when the checker is disabled', async () => {
     const fetchMock = jest.fn()
     const { mainCtrl } = await makeMainController(undefined, {
       skipDappsAndPhishingInit: true,
@@ -71,9 +71,23 @@ describe('PhishingController', () => {
 
     await controller.continuouslyUpdatePhishing()
     await controller.updateDomainsBlacklistedStatus(['https://example.com'], callback)
+    await controller.updateAddressesBlacklistedStatus(
+      ['0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'],
+      callback
+    )
 
     expect(fetchMock).not.toHaveBeenCalled()
     expect(callback).not.toHaveBeenCalled()
+  })
+
+  test('should check addresses when the checker is enabled', async () => {
+    const address = '0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e'
+    const { controller } = await prepareTest([], [address])
+    const callback = jest.fn()
+
+    await controller.updateAddressesBlacklistedStatus([address], callback)
+
+    expect(callback).toHaveBeenCalledWith({ [address]: 'BLACKLISTED' })
   })
 
   test('should stop updates when disabled and restart immediately when re-enabled', async () => {
