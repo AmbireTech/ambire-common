@@ -54,7 +54,8 @@ describe('ScamFilter', () => {
 
     expect(fetch).toHaveBeenCalledWith(
       'https://cena.ambire.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd',
-      {}
+      // The abort signal `fetchWithTimeout` adds, so it can cancel a request it gives up on
+      { signal: expect.any(AbortSignal) }
     )
   })
 

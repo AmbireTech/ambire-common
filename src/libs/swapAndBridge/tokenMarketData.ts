@@ -53,7 +53,7 @@ export function marketDataRequestBatcher(queue: QueueElement[]): Request[] {
     .map(({ platformId, queueSegment }) => {
       const addresses = [...new Set<string>(queueSegment.map((x) => x.data.address))]
       const url = `${CENA_API_URL}/api/v3/simple/token_price/${platformId}?contract_addresses=${addresses.join(
-        '%2C'
+        ','
       )}&vs_currencies=usd`
 
       return { url, queueSegment }
@@ -61,7 +61,7 @@ export function marketDataRequestBatcher(queue: QueueElement[]): Request[] {
 
   const nativeRequests = paginate(nativeQueue, BATCH_LIMIT).map((queueSegment) => {
     const ids = [...new Set<string>(queueSegment.map((x) => x.data.nativeAssetId))]
-    const url = `${CENA_API_URL}/api/v3/simple/price?ids=${ids.join('%2C')}&vs_currencies=usd`
+    const url = `${CENA_API_URL}/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd`
 
     return { url, queueSegment }
   })
