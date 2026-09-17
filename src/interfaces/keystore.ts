@@ -332,4 +332,10 @@ export type SigningAuthResult = {
   status: 'success' | 'failed'
   /** The user facing reason the check failed, `null` on success. */
   error: string | null
+  /**
+   * Counts up per check. Two checks in a row can otherwise produce a deeply identical result,
+   * which the UI's reconciled state hands back as the very same reference - so the screen
+   * waiting on it never sees that a second one happened.
+   */
+  id: number
 }

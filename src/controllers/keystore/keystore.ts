@@ -140,6 +140,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    */
   signingAuthResult: SigningAuthResult | null = null
 
+  #signingAuthResultId = 0
+
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   // Holds the initial load promise, so that one can wait until it completes
@@ -568,14 +570,17 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       'verifySecret',
       async () => {
         this.signingAuthResult = null
+        this.#signingAuthResultId += 1
+        const id = this.#signingAuthResultId
 
         try {
           await this.#unlockWithSecret(secretId, secret)
-          this.signingAuthResult = { status: 'success', error: null }
+          this.signingAuthResult = { status: 'success', error: null, id }
         } catch (e: any) {
           this.signingAuthResult = {
             status: 'failed',
-            error: e?.message || 'Could not confirm your identity. Please try again.'
+            error: e?.message || 'Could not confirm your identity. Please try again.',
+            id
           }
           // Re-thrown so a wrong secret keeps being reported the way unlocking reports it
           throw e

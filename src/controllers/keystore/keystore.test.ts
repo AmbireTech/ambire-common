@@ -506,8 +506,22 @@ describe('KeystoreController signing authentication', () => {
   test('the correct secret is confirmed and the keystore stays unlocked', async () => {
     await keystoreCtrl.verifySecret('password', pass)
 
-    expect(keystoreCtrl.signingAuthResult).toEqual({ status: 'success', error: null })
+    expect(keystoreCtrl.signingAuthResult).toMatchObject({ status: 'success', error: null })
     expect(keystoreCtrl.isUnlocked).toBe(true)
+  })
+
+  // Two in a row are otherwise deeply identical, and the UI's reconciled state hands an
+  // unchanged result back as the very same reference - so the screen waiting on the second
+  // confirmation never learns that it happened
+  test('a second confirmation is distinguishable from the one before it', async () => {
+    await keystoreCtrl.verifySecret('password', pass)
+    const first = keystoreCtrl.signingAuthResult
+
+    await keystoreCtrl.verifySecret('password', pass)
+    const second = keystoreCtrl.signingAuthResult
+
+    expect(second?.status).toBe('success')
+    expect(second?.id).not.toBe(first?.id)
   })
 
   describe('a wrong secret', () => {
@@ -526,7 +540,18 @@ describe('KeystoreController signing authentication', () => {
       await keystoreCtrl.verifySecret('password', `${pass}1`)
       await keystoreCtrl.verifySecret('password', pass)
 
-      expect(keystoreCtrl.signingAuthResult).toEqual({ status: 'success', error: null })
+      expect(keystoreCtrl.signingAuthResult).toMatchObject({ status: 'success', error: null })
+    })
+
+    test('two failures in a row are distinguishable from each other', async () => {
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+      const first = keystoreCtrl.signingAuthResult
+
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+      const second = keystoreCtrl.signingAuthResult
+
+      expect(second?.status).toBe('failed')
+      expect(second?.id).not.toBe(first?.id)
     })
 
     test('is rejected when the secret does not exist at all', async () => {
