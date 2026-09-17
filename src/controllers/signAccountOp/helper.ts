@@ -3,6 +3,7 @@ import { Price } from '../../interfaces/assets'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
+import { buildSafeTxGasRefund, getGasRefundWarning } from '../../libs/humanizer/erc7730/humanize'
 import { shouldDisplaySafeDelegateCallWarning } from '../../libs/humanizer/modules/Safe'
 import { TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
@@ -115,6 +116,28 @@ function getSafeDelegateCallWarning(accountOp: AccountOp): Warning | null {
   return shouldWarn ? WARNINGS.safeDelegateCall : null
 }
 
+// Reuses the same "sus" gas refund detection the humanizer already applies when a Safe signer
+// signs the raw SafeTx message (see getSafeTxMessageWarnings in libs/humanizer/erc7730/humanize.ts),
+// so the account-op level sign screen (i.e. signing with the Safe account itself) warns about it too.
+function getSafeGasRefundWarning(accountOp: AccountOp): Warning | null {
+  if (!accountOp.safeTx) return null
+
+  const gasRefund = buildSafeTxGasRefund(
+    accountOp.safeTx.baseGas,
+    accountOp.safeTx.gasPrice,
+    accountOp.safeTx.gasToken,
+    accountOp.safeTx.refundReceiver
+  )
+  const [gasRefundWarning] = getGasRefundWarning(gasRefund)
+  if (!gasRefundWarning) return null
+
+  return {
+    id: 'safeGasRefund',
+    title: 'Suspicious gas refund detected',
+    text: gasRefundWarning.content
+  }
+}
+
 const isUnderpriced = (msg: string): boolean => {
   return (
     msg.includes('underpriced') ||
@@ -128,6 +151,7 @@ export {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
+  getSafeGasRefundWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
