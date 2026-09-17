@@ -9,8 +9,7 @@ export const ETHEREUM_STALE_RPC_BLOCK_THRESHOLD = 2
 /**
  * How long a request to our own APIs is given. Enough for the token prices, which come back in
  * a few hundred milliseconds - see `getDiscoveryTimeout` for the one request this is too tight
- * for. A timed out request is retried rather than given a longer budget on every platform, see
- * `shouldRetryAmbireApiRequest`.
+ * for.
  */
 export const AMBIRE_API_TIMEOUT = 3000
 
@@ -27,11 +26,3 @@ export const MOBILE_DISCOVERY_TIMEOUT = 6000
 /** How long the portfolio discovery request is given on the current platform. */
 export const getDiscoveryTimeout = (platform: Platform): number =>
   platform.startsWith('mobile') ? MOBILE_DISCOVERY_TIMEOUT : AMBIRE_API_TIMEOUT
-
-/**
- * Whether a timed out request to our APIs is worth sending once more. Only on mobile, where the
- * portfolio has nothing cached to fall back on after a cold start, so a request that is given up
- * on leaves the balance incomplete until the next update, minutes later.
- */
-export const shouldRetryAmbireApiRequest = (platform: Platform): boolean =>
-  platform.startsWith('mobile')

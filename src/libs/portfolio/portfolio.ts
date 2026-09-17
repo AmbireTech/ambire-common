@@ -7,10 +7,9 @@ import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
-import { AMBIRE_API_TIMEOUT, shouldRetryAmbireApiRequest } from '../../consts/portfolio'
+import { AMBIRE_API_TIMEOUT } from '../../consts/portfolio'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
-import { Platform } from '../../interfaces/platform'
 import { RPCProvider } from '../../interfaces/provider'
 import batcher from '../../utils/batcher'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
@@ -99,8 +98,7 @@ export class Portfolio {
     provider: RPCProvider,
     network: Network,
     velcroUrl?: string,
-    customBatcher?: Function,
-    platform: Platform = 'default'
+    customBatcher?: Function
   ) {
     if (customBatcher) {
       this.batchedVelcroDiscovery = customBatcher
@@ -132,8 +130,7 @@ export class Portfolio {
       timeoutSettings: {
         timeoutAfter: AMBIRE_API_TIMEOUT,
         timeoutErrorMessage: `Cena request timed out on ${network.name}`
-      },
-      retryTimedOutRequests: shouldRetryAmbireApiRequest(platform)
+      }
     })
     this.provider = provider
     this.network = network
