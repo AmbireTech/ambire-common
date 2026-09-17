@@ -1,11 +1,6 @@
 import { describe, expect, test } from '@jest/globals'
 
-import {
-  AMBIRE_API_TIMEOUT,
-  getDiscoveryTimeout,
-  MOBILE_DISCOVERY_TIMEOUT,
-  shouldRetryAmbireApiRequest
-} from './portfolio'
+import { AMBIRE_API_TIMEOUT, getDiscoveryTimeout, MOBILE_DISCOVERY_TIMEOUT } from './portfolio'
 
 describe('portfolio request budgets', () => {
   describe('getDiscoveryTimeout', () => {
@@ -28,16 +23,6 @@ describe('portfolio request budgets', () => {
     // fetched once discovery answers
     test('the longer budget stays within a few seconds', () => {
       expect(MOBILE_DISCOVERY_TIMEOUT).toBeLessThanOrEqual(6000)
-    })
-  })
-
-  describe('shouldRetryAmbireApiRequest', () => {
-    test('only mobile retries', () => {
-      expect(shouldRetryAmbireApiRequest('mobile-ios')).toBe(true)
-      expect(shouldRetryAmbireApiRequest('mobile-android')).toBe(true)
-      expect(shouldRetryAmbireApiRequest('default')).toBe(false)
-      expect(shouldRetryAmbireApiRequest('browser-webkit')).toBe(false)
-      expect(shouldRetryAmbireApiRequest('browser-gecko')).toBe(false)
     })
   })
 })

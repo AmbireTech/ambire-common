@@ -1100,37 +1100,5 @@ describe('Portfolio', () => {
         restore()
       }
     })
-
-    // Mobile gets the same budget, but a second attempt rather than a longer wait - a cold start
-    // has nothing cached, so giving up leaves the tokens unpriced until the next update
-    test('mobile spends the same budget again instead of waiting longer', async () => {
-      const { restore } = suppressConsole()
-      jest.useFakeTimers()
-      try {
-        const mobile = new Portfolio(
-          hangingFetch,
-          provider,
-          ethereum,
-          velcroUrl,
-          undefined,
-          'mobile-ios'
-        )
-        const pricePromise = getPriceOf(mobile)
-        const onSettled = jest.fn()
-        pricePromise.then(onSettled, onSettled)
-
-        await jest.advanceTimersByTimeAsync(0)
-        // Where the first attempt runs out - on desktop this would already be the end of it
-        await jest.advanceTimersByTimeAsync(3000)
-        expect(onSettled).not.toHaveBeenCalled()
-
-        // The retry is a single one, so the second budget running out ends it
-        await jest.advanceTimersByTimeAsync(3000)
-        await expect(pricePromise).rejects.toThrow('request-timeout')
-      } finally {
-        jest.useRealTimers()
-        restore()
-      }
-    })
   })
 })

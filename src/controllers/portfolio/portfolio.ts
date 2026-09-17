@@ -15,8 +15,7 @@ import { ETHEREUM_CHAIN_ID, INVICTUS_RPC_URL_IDENTIFIER } from '../../consts/net
 import {
   DEFAULT_STALE_RPC_BLOCK_THRESHOLD,
   ETHEREUM_STALE_RPC_BLOCK_THRESHOLD,
-  getDiscoveryTimeout,
-  shouldRetryAmbireApiRequest
+  getDiscoveryTimeout
 } from '../../consts/portfolio'
 import {
   Account,
@@ -184,8 +183,6 @@ export class PortfolioController
 
   #networksWithPositionsByAccounts: NetworksWithPositionsByAccounts = {}
 
-  #platform: Platform
-
   protected tokenDataCache: { [chainId: string]: TokenDataCache } = {}
 
   #providers: IProvidersController
@@ -277,7 +274,6 @@ export class PortfolioController
     this.#keystore = keystore
     this.#banner = banner
     this.#featureFlags = featureFlags
-    this.#platform = platform
     this.hints = new HintsController(storage, accounts, keystore)
     this.#walletToken = new WalletTokenController()
     this.#walletToken.onError((error) => this.emitError(error))
@@ -368,8 +364,7 @@ export class PortfolioController
           timeoutAfter: getDiscoveryTimeout(platform),
           timeoutErrorMessage: 'Velcro discovery timed out'
         },
-        dedupeByKeys: ['chainId', 'accountAddr'],
-        retryTimedOutRequests: shouldRetryAmbireApiRequest(platform)
+        dedupeByKeys: ['chainId', 'accountAddr']
       }
     )
     this.initialLoadPromise = this.#load().finally(() => {
@@ -1009,10 +1004,7 @@ export class PortfolioController
       try {
         const provider = providers[network.chainId.toString()]
         if (!provider) return null
-        this.#portfolioLibs.set(
-          key,
-          new Portfolio(this.#fetch, provider, network, this.#velcroUrl, undefined, this.#platform)
-        )
+        this.#portfolioLibs.set(key, new Portfolio(this.#fetch, provider, network, this.#velcroUrl))
       } catch (e: any) {
         this.emitError({
           level: 'silent',
