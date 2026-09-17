@@ -143,13 +143,39 @@ export function getText(text: string, mlMi?: boolean): HumanizerVisualization {
   return { type: 'text', content: text, id: randomId(), mlMi }
 }
 
+/** The visualizations a row renders - a `call` row keeps its parts flat, every other row has one. */
+export function getErc7730RowValues(row: HumanizerErc7730Row): HumanizerVisualization[] {
+  return row.type === 'call' ? row.value : [row.value]
+}
+
+/** A `call` row renders an embedded call inline and has no label of its own. */
+export function getErc7730RowLabel(row: HumanizerErc7730Row): string {
+  return row.type === 'call' ? '' : row.label
+}
+
 export function getErc7730Visualization(
-  title: string | undefined,
+  intent: string | undefined,
   rows: HumanizerErc7730Row[],
   dapp?: IrCall['dapp'],
-  titleParts?: HumanizerVisualization[]
+  // Present only when the format used an `interpolatedIntent` that fully
+  // resolved: `parts` is the structured breakdown to render, `usedFieldPaths`
+  // is which fields (by `HumanizerErc7730Row.path`) it already rendered inline
+  // - see `excludedFieldPaths` on `HumanizerErc7730Visualization`.
+  interpolated?: { parts: HumanizerVisualization[]; usedFieldPaths: string[] }
 ): HumanizerVisualization {
-  return { type: 'erc7730', title, titleParts, dapp, rows, id: randomId() }
+  return {
+    type: 'erc7730',
+    // When interpolation succeeded, show the rich breakdown and exclude
+    // whatever fields it already rendered inline (that can legitimately be
+    // every field, e.g. when the whole template referenced them all).
+    // Otherwise there was nothing rendered inline to exclude anything for, so
+    // this falls back to the plain action with nothing excluded.
+    intent: interpolated?.parts ?? (intent ? [getAction(intent)] : []),
+    excludedFieldPaths: interpolated?.usedFieldPaths ?? [],
+    fields: rows,
+    dapp,
+    id: randomId()
+  }
 }
 
 export function flattenHumanizerVisualizations(
@@ -160,7 +186,10 @@ export function flattenHumanizerVisualizations(
 
     return [
       visualization,
-      ...flattenHumanizerVisualizations(visualization.rows.flatMap((row) => row.value))
+      // `fields` (every field, not just the ones displayed as rows) so nested
+      // values that only show up inline in `intent` (e.g. a token amount) are
+      // still discovered here.
+      ...flattenHumanizerVisualizations(visualization.fields.flatMap(getErc7730RowValues))
     ]
   })
 }

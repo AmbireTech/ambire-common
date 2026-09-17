@@ -34,9 +34,18 @@ const swapWithPermitAbi = parseAbi([
   'function swap(address executor, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 flags) desc, bytes permit, bytes data) payable returns (uint256 returnAmount, uint256 spentAmount)'
 ])
 
+const cancelOrderSelector = toFunctionSelector(cancelOrderAbi[0])
+const unoswap2Selector = toFunctionSelector(unoswap2Abi[0])
+const swapSelector = toFunctionSelector(swapAbi[0])
+const ethUnoswapSelector = toFunctionSelector(ethUnoswapAbi[0])
+const unoswapSelector = toFunctionSelector(unoswapAbi[0])
+const unoswapToSelector = toFunctionSelector(unoswapToAbi[0])
+const unoswap3Selector = toFunctionSelector(unoswap3Abi[0])
+const swapWithPermitSelector = toFunctionSelector(swapWithPermitAbi[0])
+
 const OneInchModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const matcher: Record<string, (call: HexIrCall) => any> = {
-    [toFunctionSelector(cancelOrderAbi[0])]: (call) => {
+    [cancelOrderSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: cancelOrderAbi, data: call.data })
       const [, orderHash] = args
       return [
@@ -44,13 +53,13 @@ const OneInchModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
         getLabel(`with order hash ${orderHash.slice(0, 5)}...${orderHash.slice(63, 66)}`)
       ]
     },
-    [toFunctionSelector(unoswap2Abi[0])]: (call) => {
+    [unoswap2Selector]: (call) => {
       const { args } = decodeFunctionData({ abi: unoswap2Abi, data: call.data })
       const [tokenArg, amount] = args
       const token = uintToAddress(tokenArg)
       return [getAction('Swap'), getToken(eToNative(token), amount)]
     },
-    [toFunctionSelector(swapAbi[0])]: (call) => {
+    [swapSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: swapAbi, data: call.data })
       const [, desc] = args
       const { srcToken, dstToken, dstReceiver, amount, minReturnAmount } = desc
@@ -62,28 +71,28 @@ const OneInchModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
         ...getRecipientText(accOp.accountAddr, dstReceiver)
       ]
     },
-    [toFunctionSelector(ethUnoswapAbi[0])]: (call) => {
+    [ethUnoswapSelector]: (call) => {
       return [getAction('Swap'), getToken(zeroAddress, call.value)]
     },
-    [toFunctionSelector(unoswapAbi[0])]: (call) => {
+    [unoswapSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: unoswapAbi, data: call.data })
       const [tokenArg, amount] = args
       const token = uintToAddress(tokenArg)
       return [getAction('Swap'), getToken(eToNative(token), amount)]
     },
-    [toFunctionSelector(unoswapToAbi[0])]: (call) => {
+    [unoswapToSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: unoswapToAbi, data: call.data })
       const [, tokenArg, amount] = args
       const token = uintToAddress(tokenArg)
       return [getAction('Swap'), getToken(eToNative(token), amount)]
     },
-    [toFunctionSelector(unoswap3Abi[0])]: (call) => {
+    [unoswap3Selector]: (call) => {
       const { args } = decodeFunctionData({ abi: unoswap3Abi, data: call.data })
       const [tokenArg, amount] = args
       const token = uintToAddress(tokenArg)
       return [getAction('Swap'), getToken(eToNative(token), amount)]
     },
-    [toFunctionSelector(swapWithPermitAbi[0])]: (call) => {
+    [swapWithPermitSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: swapWithPermitAbi, data: call.data })
       const [, desc] = args
       const { srcToken, dstToken, dstReceiver, amount, minReturnAmount } = desc

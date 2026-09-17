@@ -31,12 +31,22 @@ const getDurationText = (duration: bigint): string => {
   return durationLabel
 }
 
+const registerSelector = toFunctionSelector(registerAbi[0])
+const renewSelector = toFunctionSelector(renewAbi[0])
+const commitSelector = toFunctionSelector(commitAbi[0])
+const setTextSelector = toFunctionSelector(setTextAbi[0])
+const setAddrSelector = toFunctionSelector(setAddrAbi[0])
+const setContenthashSelector = toFunctionSelector(setContenthashAbi[0])
+const setABISelector = toFunctionSelector(setABIAbi[0])
+const multicallSelector = toFunctionSelector(multicallAbi[0])
+const renewAllSelector = toFunctionSelector(renewAllAbi[0])
+
 export const ensModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   // @TODO: set text and others
   if (!isHexCall(call)) return call
 
   if (call.to && call.to.toLowerCase() === ENS_CONTROLLER.toLowerCase()) {
-    if (call.data.slice(0, 10) === toFunctionSelector(registerAbi[0])) {
+    if (call.data.slice(0, 10) === registerSelector) {
       const { args } = decodeFunctionData({ abi: registerAbi, data: call.data })
       const [name, owner, duration] = args
       const fullVisualization = [getAction('Register'), getLabel(`${name}.ens`, true)]
@@ -50,7 +60,7 @@ export const ensModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCal
       return { ...call, fullVisualization }
     }
 
-    if (call.data.slice(0, 10) === toFunctionSelector(renewAbi[0])) {
+    if (call.data.slice(0, 10) === renewSelector) {
       const { args } = decodeFunctionData({ abi: renewAbi, data: call.data })
       const [id, duration] = args
       const durationLabel = getDurationText(duration)
@@ -64,7 +74,7 @@ export const ensModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCal
       return { ...call, fullVisualization }
     }
 
-    if (call.data.slice(0, 10) === toFunctionSelector(commitAbi[0])) {
+    if (call.data.slice(0, 10) === commitSelector) {
       return {
         ...call,
         fullVisualization: [getAction('Request'), getLabel('to register an ENS record')]
@@ -72,12 +82,12 @@ export const ensModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCal
     }
   }
   const resolverMatcher: Record<string, (data: Hex) => HumanizerVisualization[]> = {
-    [toFunctionSelector(setTextAbi[0])]: (data) => {
+    [setTextSelector]: (data) => {
       const { args } = decodeFunctionData({ abi: setTextAbi, data })
       const [, key, value] = args
       return [getAction('Set'), getLabel(`${key} to`), getLabel(value, true)]
     },
-    [toFunctionSelector(setAddrAbi[0])]: (data) => {
+    [setAddrSelector]: (data) => {
       const { args } = decodeFunctionData({ abi: setAddrAbi, data })
       const [, coinType, a] = args
       const ct = registeredCoinTypes[Number(coinType)]
@@ -96,10 +106,10 @@ export const ensModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCal
             getLabel(networkName, true)
           ]
     },
-    [toFunctionSelector(setContenthashAbi[0])]: () => {
+    [setContenthashSelector]: () => {
       return [getAction('Update'), getLabel('data')]
     },
-    [toFunctionSelector(setABIAbi[0])]: () => {
+    [setABISelector]: () => {
       return [getAction('Set'), getLabel('ABI')]
     }
   }
@@ -108,7 +118,7 @@ export const ensModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCal
     const resolverHandler = resolverMatcher[call.data.slice(0, 10)]
     if (resolverHandler) return { ...call, fullVisualization: resolverHandler(call.data) }
 
-    if (call.data.slice(0, 10) === toFunctionSelector(multicallAbi[0])) {
+    if (call.data.slice(0, 10) === multicallSelector) {
       const { args } = decodeFunctionData({ abi: multicallAbi, data: call.data })
       const [data] = args
       const separator = getLabel('and')
@@ -128,7 +138,7 @@ export const ensModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCal
   if (
     call.to &&
     call.to.toLowerCase() === BULK_RENEWAL.toLowerCase() &&
-    call.data.startsWith(toFunctionSelector(renewAllAbi[0]))
+    call.data.startsWith(renewAllSelector)
   ) {
     const { args } = decodeFunctionData({ abi: renewAllAbi, data: call.data })
     const [names, duration] = args
