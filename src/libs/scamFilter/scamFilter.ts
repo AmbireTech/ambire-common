@@ -66,7 +66,7 @@ export class ScamFilter {
       pages.map(async (page) => {
         const url = `${CENA_API_URL}/api/v3/simple/token_price/${
           this.#network.platformId
-        }?contract_addresses=${page.join('%2C')}&vs_currencies=${BASE_CURRENCY}`
+        }?contract_addresses=${page.join(',')}&vs_currencies=${BASE_CURRENCY}`
 
         try {
           const body = await this.#fetchCenaPriceResponse(url)
@@ -92,7 +92,7 @@ export class ScamFilter {
     await Promise.all(
       pages.map(async (page) => {
         const url = `${CENA_API_URL}/api/v3/simple/price?ids=${page.join(
-          '%2C'
+          ','
         )}&vs_currencies=${BASE_CURRENCY}`
 
         try {
