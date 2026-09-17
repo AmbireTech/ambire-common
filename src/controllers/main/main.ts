@@ -534,7 +534,11 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       eventEmitterRegistry
     })
-    const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
+    const LiFiProvider = new LiFiAPI({
+      fetch,
+      apiKey: liFiApiKey,
+      featureFlags: this.featureFlags
+    })
     const SocketProvider = new SocketV3API({ fetch, apiKey: bungeeApiKey })
     const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
     const CowSwapProvider = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })

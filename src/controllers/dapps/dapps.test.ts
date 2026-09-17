@@ -313,6 +313,36 @@ describe('DappsController', () => {
     })
   })
 
+  test('should resolve the dapp connection security check when the scam checker is disabled', async () => {
+    const session = new Session({ tabId: 1, url: 'https://metamask.github.io/test-dapp/' })
+    session.setProp({ name: 'E2E Test Dapp' })
+    const request: DappConnectRequest = {
+      id: 1,
+      kind: 'dappConnect',
+      meta: { params: {} },
+      dappPromises: [
+        {
+          id: '',
+          resolve: () => {},
+          reject: () => {},
+          meta: {},
+          session
+        }
+      ]
+    }
+
+    const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
+      await storageCtrl.set('dappsV2', predefinedDapps)
+      await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+    })
+    await controller.initialLoadPromise
+    await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+
+    await controller.setDappToConnectIfNeeded(request)
+
+    expect(controller.dappToConnect?.blacklisted).toBe('FAILED_TO_GET')
+  })
+
   test('should sync dapps blacklisted status only when phishing.shouldSyncDapps is true', async () => {
     const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
       await storageCtrl.set('dappsV2', [
