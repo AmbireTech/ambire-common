@@ -8,6 +8,7 @@ import {
   getDappRequestData,
   getDappVerificationTestDapps,
   loadingDapp,
+  makeDapp,
   suspiciousHostingDapp,
   verifiedDapp
 } from '../../../test/helpers/dapps'
@@ -821,6 +822,81 @@ describe('SignMessageController', () => {
 
     signMessageController.removeAccountData(account.addr)
     expect(signMessageController.isInitialized).toBeFalsy()
+  })
+
+  describe('signing authentication', () => {
+    test('a dapp that has not been confirmed for yet requires it', async () => {
+      await signMessageController.init({
+        messageToSign,
+        dapp: getDappRequestData(verifiedDapp)
+      })
+
+      expect(signMessageController.signingAuthRequirement).toEqual({
+        firstTimeRecipients: [],
+        unauthenticatedDapps: [{ id: verifiedDapp.id, name: verifiedDapp.name }]
+      })
+    })
+
+    test('a SIWE sign in requires it the same way a plain message does', async () => {
+      await signMessageController.init({
+        messageToSign: { ...messageToSign, content: { kind: 'siwe', message: '0x74657374' } },
+        dapp: getDappRequestData(verifiedDapp)
+      })
+
+      expect(signMessageController.signingAuthRequirement).toEqual({
+        firstTimeRecipients: [],
+        unauthenticatedDapps: [{ id: verifiedDapp.id, name: verifiedDapp.name }]
+      })
+    })
+
+    test('a dapp that has already been confirmed for does not require it', async () => {
+      dappsCtrl.updateDapp(verifiedDapp.id, { signingAuthenticated: true })
+
+      await signMessageController.init({
+        messageToSign,
+        dapp: getDappRequestData(verifiedDapp)
+      })
+
+      expect(signMessageController.signingAuthRequirement).toBe(null)
+
+      dappsCtrl.updateDapp(verifiedDapp.id, { signingAuthenticated: false })
+    })
+
+    // The dapp id is the hostname while the domain is the registrable one, so the two differ for
+    // anything not sitting on a bare domain - which is most real dapps
+    test('a dapp on a subdomain requires it, the same as one on a bare domain', async () => {
+      const subdomainDapp = makeDapp({
+        id: 'app.sub-dapp-test.com',
+        name: 'Subdomain Dapp',
+        url: 'https://app.sub-dapp-test.com'
+      })
+      await dappsCtrl.addDapp(subdomainDapp)
+
+      await signMessageController.init({
+        messageToSign,
+        dapp: getDappRequestData(subdomainDapp)
+      })
+
+      expect(signMessageController.signingAuthRequirement).toEqual({
+        firstTimeRecipients: [],
+        unauthenticatedDapps: [{ id: subdomainDapp.id, name: subdomainDapp.name }]
+      })
+    })
+
+    test('a dapp the catalog does not know does not require it, as it cannot be remembered', async () => {
+      await signMessageController.init({
+        messageToSign,
+        dapp: { name: 'Unknown', icon: '', url: 'https://not-in-the-catalog.example' }
+      })
+
+      expect(signMessageController.signingAuthRequirement).toBe(null)
+    })
+
+    test('a message with no dapp behind it does not require it', async () => {
+      await signMessageController.init({ messageToSign })
+
+      expect(signMessageController.signingAuthRequirement).toBe(null)
+    })
   })
 
   describe('dapp verification banners', () => {

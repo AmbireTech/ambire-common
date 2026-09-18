@@ -1818,7 +1818,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       try {
         autoLoginStatus = this.#autoLogin.getAutoLoginStatus(parsedSiwe)
 
-        if (autoLoginStatus === 'active') {
+        if (autoLoginStatus === 'active' && dapp?.signingAuthenticated) {
           // Sign and respond
           const signedMessage = await this.#autoLogin.autoLogin({
             message: rawMessage as `0x${string}`,

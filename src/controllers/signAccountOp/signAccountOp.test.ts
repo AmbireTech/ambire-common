@@ -26,6 +26,7 @@ import {
   getDappRequestData,
   getDappVerificationTestDapps,
   loadingDapp,
+  makeDapp,
   suspiciousHostingDapp,
   verifiedDapp
 } from '../../../test/helpers/dapps'
@@ -4128,5 +4129,195 @@ describe('reestimation loop', () => {
     // Without clearing the stopped flag the interval shuts itself down again on its
     // first run, which is what made the retry button do nothing
     expect(estimate).toHaveBeenCalled()
+  })
+})
+
+describe('SignAccountOp signing authentication', () => {
+  const ALICE = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+  const BOB = '0x8f4B2F3e18a4E1Fc5c9d95e1eE5A9B37a55f6A67'
+  const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+
+  const dappA = makeDapp({ id: 'dapp-a.com', name: 'Dapp A', url: 'https://dapp-a.com' })
+  const dappB = makeDapp({ id: 'dapp-b.com', name: 'Dapp B', url: 'https://dapp-b.com' })
+
+  const initSigningAuth = async (
+    calls: AccountOp['calls'],
+    options?: { dapps?: Dapp[]; sentTo?: string[] }
+  ) => {
+    const accountOp = createEOAAccountOp(eoaAccount)
+    ;(accountOp.op.calls as any) = calls
+
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: parseEther('1'),
+          symbol: 'ETH',
+          name: 'Ether',
+          chainId: 1n,
+          decimals: 18,
+          priceIn: [],
+          marketDataIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+
+    const { controller } = await init(
+      eoaAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      },
+      false,
+      {
+        dapps: options?.dapps,
+        initialSetStorage: async (storageCtrl) => {
+          if (!options?.sentTo?.length) return
+
+          await storageCtrl.set('sentToHistory', {
+            domains: {},
+            recipients: {
+              [eoaAccount.addr]: Object.fromEntries(
+                options.sentTo.map((addr) => [getAddress(addr), Date.now()])
+              )
+            }
+          })
+        }
+      }
+    )
+
+    // The recipients are resolved from the activity, which is read asynchronously
+    await wait(1)
+
+    return controller
+  }
+
+  const erc20 = new Interface(['function transfer(address to, uint256 amount)'])
+
+  test('a recipient the account has never sent to has to be confirmed', async () => {
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x' }])
+
+    expect(controller.signingAuthRequirement).toEqual({
+      firstTimeRecipients: [ALICE],
+      unauthenticatedDapps: []
+    })
+  })
+
+  test('a recipient the account has already sent to does not have to be confirmed', async () => {
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x' }], {
+      sentTo: [ALICE]
+    })
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('reads the recipient of a token transfer, not the token', async () => {
+    const data = erc20.encodeFunctionData('transfer', [BOB, 1n]) as Hex
+    const controller = await initSigningAuth([{ to: USDC, value: 0n, data }])
+
+    expect(controller.signingAuthRequirement?.firstTimeRecipients).toEqual([BOB])
+  })
+
+  // Being added to the wallet does not mean the user meant to send there, and an attacker who
+  // gets an address saved must not be able to have the confirmation skipped because of it
+  test('an account added to the wallet is still a first time recipient', async () => {
+    const controller = await initSigningAuth([{ to: eoaAccount.addr, value: 1n, data: '0x' }])
+
+    expect(controller.signingAuthRequirement?.firstTimeRecipients).toEqual([eoaAccount.addr])
+  })
+
+  test('paying the fee collector is not a first contact', async () => {
+    const controller = await initSigningAuth([{ to: FEE_COLLECTOR, value: 1n, data: '0x' }])
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a contract interaction on its own needs no recipient confirmation', async () => {
+    const controller = await initSigningAuth([{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex }])
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a dapp that has not been authenticated for signing has to be confirmed', async () => {
+    const controller = await initSigningAuth(
+      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      { dapps: [dappA] }
+    )
+
+    expect(controller.signingAuthRequirement).toEqual({
+      firstTimeRecipients: [],
+      unauthenticatedDapps: [{ id: dappA.id, name: dappA.name }]
+    })
+  })
+
+  test('an already authenticated dapp does not have to be confirmed again', async () => {
+    const controller = await initSigningAuth(
+      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      { dapps: [{ ...dappA, signingAuthenticated: true }] }
+    )
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a batch lists every unauthenticated dapp once', async () => {
+    const controller = await initSigningAuth(
+      [
+        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA },
+        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappB },
+        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }
+      ],
+      { dapps: [dappA, dappB] }
+    )
+
+    expect(controller.signingAuthRequirement?.unauthenticatedDapps).toEqual([
+      { id: dappA.id, name: dappA.name },
+      { id: dappB.id, name: dappB.name }
+    ])
+  })
+
+  test('a dapp the catalog does not know is skipped, as the confirmation cannot be remembered', async () => {
+    const controller = await initSigningAuth(
+      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      { dapps: [dappB] }
+    )
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a first time recipient and an unauthenticated dapp are reported together', async () => {
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x', dapp: dappA }], {
+      dapps: [dappA]
+    })
+
+    expect(controller.signingAuthRequirement).toEqual({
+      firstTimeRecipients: [ALICE],
+      unauthenticatedDapps: [{ id: dappA.id, name: dappA.name }]
+    })
   })
 })

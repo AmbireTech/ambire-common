@@ -21,12 +21,14 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
+import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import {
   ISignMessageController,
   SignMessageStatus,
   SignMessageUpdateParams
 } from '../../interfaces/signMessage'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
+import { getDappIdFromUrl, getUnauthenticatedDapps } from '../../libs/dapps/helpers'
 import { humanizeMessage } from '../../libs/humanizer'
 import { buildSafeMessageOrigin } from '../../libs/safe/helpers'
 import {
@@ -798,11 +800,30 @@ export class SignMessageController
     return [banner]
   }
 
+  /**
+   * Why this message needs the password/biometrics confirmation, or `null` when it does not. Only
+   * a dapp the catalog knows can require it - elsewhere the confirmation cannot be remembered.
+   */
+  get signingAuthRequirement(): SigningAuthRequirement | null {
+    const dapps = this.#dapps
+    if (!dapps || !this.dapp?.url) return null
+
+    // Looked up by dapp id, which is what dapps are stored under - looking up by the registrable
+    // domain silently found nothing for every dapp on a subdomain
+    const unauthenticatedDapps = getUnauthenticatedDapps([getDappIdFromUrl(this.dapp.url)], (id) =>
+      dapps.getDapp(id)
+    )
+    if (!unauthenticatedDapps.length) return null
+
+    return { firstTimeRecipients: [], unauthenticatedDapps }
+  }
+
   toJSON() {
     return {
       ...this,
       ...super.toJSON(),
-      banners: this.banners
+      banners: this.banners,
+      signingAuthRequirement: this.signingAuthRequirement
     }
   }
 }
