@@ -56,9 +56,8 @@ export interface ExtraDappInfo {
   accountPreferences?: DappAccountPreferences
   grantedPermissionAt?: number
   /**
-   * Whether the user has already confirmed their password/biometrics to sign for this dapp.
-   * Absent on dapps stored before the signing authentication was introduced, which is why it
-   * is a positive flag - those dapps should ask for the confirmation once, like new ones.
+   * Whether the user already confirmed their password/biometrics to sign for this dapp. Absent on
+   * older dapps, which is why it is a positive flag - they should ask once, like new ones.
    */
   signingAuthenticated?: boolean
 }

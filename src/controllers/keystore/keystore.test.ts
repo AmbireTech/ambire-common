@@ -510,9 +510,8 @@ describe('KeystoreController signing authentication', () => {
     expect(keystoreCtrl.isUnlocked).toBe(true)
   })
 
-  // Two in a row are otherwise deeply identical, and the UI's reconciled state hands an
-  // unchanged result back as the very same reference - so the screen waiting on the second
-  // confirmation never learns that it happened
+  // Two in a row are otherwise deeply identical, and the UI's reconciled state hands an unchanged
+  // result back as the same reference - so the screen never learns the second one happened
   test('a second confirmation is distinguishable from the one before it', async () => {
     await keystoreCtrl.verifySecret('password', pass)
     const first = keystoreCtrl.signingAuthResult
@@ -562,9 +561,8 @@ describe('KeystoreController signing authentication', () => {
     })
   })
 
-  // The web throws a DOMException named OperationError. Native WebCrypto throws whatever its own
-  // cipher raised, with no name and nothing in the message to go by - the user is told the same
-  // either way, because there is nothing else a failed decryption there can mean.
+  // The web throws a DOMException named OperationError; native WebCrypto throws whatever its
+  // cipher raised, with no name to go by. The user is told the same either way.
   test.each([
     [
       'a named DOMException',

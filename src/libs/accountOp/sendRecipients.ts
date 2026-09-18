@@ -55,9 +55,8 @@ const getRecipientFromCall = (call: Call): string | null => {
 }
 
 /**
- * The addresses an account op sends funds to - native transfers plus ERC20/ERC721 transfers.
- * Contract interactions (swaps, approvals, mints) are deliberately left out: they are covered
- * by the dapp side of the signing authentication, not by the recipient side.
+ * The addresses an account op sends funds to - native plus ERC20/ERC721 transfers. Contract
+ * interactions are left out: the dapp side of the signing authentication covers those.
  */
 export const getSendRecipients = (calls: Call[]): string[] => {
   const recipients = new Set<string>()

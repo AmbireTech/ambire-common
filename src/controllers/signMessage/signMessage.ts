@@ -805,17 +805,14 @@ export class SignMessageController
   }
 
   /**
-   * Why this message needs the password/biometrics confirmation before it is signed, or `null`
-   * when it does not. Messages have no recipients, so only the dapp can require it - and only
-   * one the dapp catalog knows, because otherwise there is nowhere to remember the confirmation
-   * and it would repeat on every single request.
+   * Why this message needs the password/biometrics confirmation, or `null` when it does not. Only
+   * a dapp the catalog knows can require it - elsewhere the confirmation cannot be remembered.
    */
   get signingAuthRequirement(): SigningAuthRequirement | null {
     if (!this.#dapps || !this.dapp?.url) return null
 
-    // Looked up by the dapp id rather than by the registrable domain, because that is what
-    // dapps are stored under - the two only coincide for a dapp sitting on a bare domain, and
-    // looking up by domain silently found nothing for every dapp on a subdomain
+    // Looked up by dapp id, which is what dapps are stored under - looking up by the registrable
+    // domain silently found nothing for every dapp on a subdomain
     const storedDapp = this.#dapps.getDapp(getDappIdFromUrl(this.dapp.url))
     if (!storedDapp || storedDapp.signingAuthenticated) return null
 

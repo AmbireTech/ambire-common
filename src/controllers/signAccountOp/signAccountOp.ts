@@ -630,11 +630,8 @@ export class SignAccountOpController
   }
 
   /**
-   * Resolves which of the recipients of this account op have never been sent to. Whether the
-   * address is a saved contact, or even an account added to the wallet, deliberately does not
-   * matter - neither says the user meant to send to it, and an attacker who can get an address
-   * saved would otherwise get the confirmation skipped. Only the fee collector is left out,
-   * because it is where the app itself sends the network fee rather than a chosen recipient.
+   * Which recipients of this account op have never been sent to. A saved contact or an added
+   * account still counts; only the fee collector is left out, as the app picks it, not the user.
    */
   async #updateFirstTimeRecipients() {
     const accountOpId = this.#accountOp.id
@@ -671,9 +668,8 @@ export class SignAccountOpController
   }
 
   /**
-   * Why this account op needs the password/biometrics confirmation before it is signed, or
-   * `null` when it does not. Read live for the dapps, because their stored authentication flag
-   * can be written (or the dapp catalog can finish loading) while the request is on screen.
+   * Why this account op needs the password/biometrics confirmation, or `null` when it does not.
+   * Read live for the dapps, whose stored flag can change while the request is on screen.
    */
   get signingAuthRequirement(): SigningAuthRequirement | null {
     const unauthenticatedDapps: UnauthenticatedDapp[] = []

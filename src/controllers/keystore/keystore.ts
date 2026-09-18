@@ -433,16 +433,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     try {
       return await decrypt(secretKey, aesEncrypted)
     } catch (error: any) {
-      // Everything this does is deterministic apart from the decryption itself, and the only
-      // thing that makes that fail is the key not matching the ciphertext - a wrong password, or
-      // a payload that has been tampered with. The user can do nothing about the second, and the
-      // advice for both is the same, so they are told the same thing.
+      // Only the decryption can fail here, and only because the key does not match the ciphertext: a
+      // wrong password or a tampered payload. The advice is the same for both, so the message is too.
       this.errorMessage = 'Incorrect password. Please try again.'
       this.emitUpdate()
 
-      // The web reports it as a named DOMException. Native WebCrypto throws whatever its own
-      // cipher raised, with no name to go by, so anything else is reported to Sentry as well -
-      // it is the only way an actual platform failure hiding in here would ever be noticed.
+      // The web names it a DOMException; native WebCrypto does not, so anything unrecognised also goes
+      // to Sentry - the only way an actual platform failure hiding in here would ever be noticed.
       const isRecognisedWrongSecret =
         error?.name === 'OperationError' ||
         (typeof error?.message === 'string' && error.message.includes('OperationError'))
@@ -562,10 +559,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Re-checks a secret on an already unlocked keystore, so the user can prove their identity
-   * again before signing. It goes through the very same path as unlocking, which keeps the
-   * handling of both cipher types and of a wrong secret identical to the unlock screen -
-   * unlocking an unlocked keystore is a no-op for the lock state.
+   * Re-checks a secret on an already unlocked keystore, so the user can prove their identity before
+   * signing. Goes through the unlock path, which is a no-op for the lock state when unlocked.
    */
   async verifySecret(secretId: string, secret: string) {
     await this.withStatus(
