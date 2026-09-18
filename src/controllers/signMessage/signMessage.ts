@@ -48,7 +48,7 @@ import {
   getPlainTextSignature,
   getSafeMessageTypedData,
   getVerifyMessageSignature,
-  isAmbireOperationTypedData
+  isCallToSelfOrAmbireOp
 } from '../../libs/signMessage/signMessage'
 import { verifyMessage } from '../../libs/signMessage/verifyMessage'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
@@ -586,7 +586,7 @@ export class SignMessageController
         }
 
         if (this.messageToSign.content.kind === 'typedMessage') {
-          if (isAmbireOperationTypedData(this.messageToSign.content)) {
+          if (isCallToSelfOrAmbireOp(this.messageToSign.content, this.#account)) {
             throw new Error(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
           }
 

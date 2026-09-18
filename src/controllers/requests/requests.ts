@@ -82,7 +82,7 @@ import {
 import { parse } from '../../libs/richJson/richJson'
 import {
   AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
-  isAmbireOperationTypedData
+  isCallToSelfOrAmbireOp
 } from '../../libs/signMessage/signMessage'
 import { getSwapAndBridgeRequestParams } from '../../libs/swapAndBridge/swapAndBridge'
 import {
@@ -97,8 +97,8 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
-import type { Call } from '../../libs/accountOp/types'
 import type { EIP712TypedData } from '@safe-global/types-kit'
+import type { Call } from '../../libs/accountOp/types'
 import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/signAccountOp'
 
 const STATUS_WRAPPED_METHODS = {
@@ -439,7 +439,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       if (
         kind === 'typedMessage' &&
-        isAmbireOperationTypedData((meta as TypedMessageUserRequest['meta']).params)
+        isCallToSelfOrAmbireOp(
+          (meta as TypedMessageUserRequest['meta']).params,
+          this.#selectedAccount.account
+        )
       ) {
         this.#rejectAmbireOperationTypedDataRequest(req as TypedMessageUserRequest)
         continue
@@ -1000,7 +1003,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
           if (
             r.kind === 'typedMessage' &&
-            isAmbireOperationTypedData((r as TypedMessageUserRequest).meta.params)
+            isCallToSelfOrAmbireOp(
+              (r as TypedMessageUserRequest).meta.params,
+              this.#selectedAccount.account
+            )
           ) {
             this.#rejectAmbireOperationTypedDataRequest(r as TypedMessageUserRequest)
             return
@@ -1495,7 +1501,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         throw ethErrors.rpc.invalidParams('The message contents did not match the provided types.')
       }
 
-      if (isAmbireOperationTypedData(typedData)) {
+      if (isCallToSelfOrAmbireOp(typedData, this.#selectedAccount.account)) {
         throw ethErrors.rpc.methodNotSupported(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
       }
 
@@ -1933,11 +1939,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   async #addSwitchAccountUserRequest(req: SignUserRequest) {
-    if (req.kind === 'typedMessage' && isAmbireOperationTypedData(req.meta.params)) {
-      this.#rejectAmbireOperationTypedDataRequest(req)
-      return
-    }
-
     const switchAccountUserRequest = buildSwitchAccountUserRequest({
       nextUserRequest: req,
       selectedAccountAddr: req.meta.accountAddr,
