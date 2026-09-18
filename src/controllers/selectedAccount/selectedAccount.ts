@@ -27,6 +27,7 @@ import {
 } from '../../libs/banners/banners'
 import { AssetType } from '../../libs/defiPositions/types'
 import {
+  getDefiAppsErrors,
   getNetworksWithDeFiPositionsErrorErrors,
   getNetworksWithErrors,
   SelectedAccountBalanceError
@@ -446,7 +447,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         portfolioState: this.portfolio.portfolioState,
         providers: this.#providers.providers,
         networksWithPositions: this.#portfolio.getNetworksWithDefiPositions(this.account.addr)
-      })
+      }),
+      ...getDefiAppsErrors(this.portfolio.portfolioState)
     ].sort((a, b) => {
       const order = { error: 0, warning: 1 } as const
       return order[a.type] - order[b.type]
