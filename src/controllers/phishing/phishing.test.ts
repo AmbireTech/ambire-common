@@ -1,3 +1,5 @@
+import fetch from 'node-fetch'
+
 import { expect, jest } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'
@@ -5,7 +7,7 @@ import {
   PHISHING_ACTIVE_UPDATE_INTERVAL,
   PHISHING_INACTIVE_UPDATE_INTERVAL
 } from '../../consts/intervals'
-import { SUSPICIOUS_HOSTING_DOMAINS } from './phishing'
+import { PhishingController, SUSPICIOUS_HOSTING_DOMAINS } from './phishing'
 
 // Seeds the phishing DB (domains + addresses) so #domains and #addresses are populated.
 const prepareTest = async (
@@ -148,6 +150,161 @@ describe('PhishingController', () => {
     expect(restartSpy).toHaveBeenCalledWith({
       timeout: PHISHING_ACTIVE_UPDATE_INTERVAL,
       runImmediately: true
+    })
+  })
+
+  describe('update on boot', () => {
+    const STORED_SCAM_ADDRESS = '0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e'
+    const CHECKSUMMED_DELTA_SCAM_ADDRESS = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const SNAPSHOT_SCAM_ADDRESS = '0x1a633538b169b41052bfc40b0c973ac1bff31a4e'
+    const STORED_SCAM_DOMAIN = 'foourmemez.com'
+    const DELTA_SCAM_DOMAIN = 'wallet-premium.org'
+    const SNAPSHOT_SCAM_DOMAIN = 'listandvoting.digital'
+    const SCAMCHECKER_BASE_URL = 'https://cena.ambire.com/api/v3/scamchecker'
+    const STORED_VERSION = 1
+    const SERVER_VERSION = 2
+    // Any timestamp far enough in the past that the "skip a recent update" guard lets the update run.
+    const STALE_UPDATED_AT = 1
+
+    // The full snapshot the relayer serves at /data. Domains and addresses are plain strings here,
+    // unlike the {op, domain} / {op, address} entries of a delta - which is exactly what made the
+    // boot race throw: a snapshot parsed by the delta branch destructures `address` to undefined.
+    const dataResponse = {
+      version: SERVER_VERSION,
+      domains: [SNAPSHOT_SCAM_DOMAIN],
+      addresses: [SNAPSHOT_SCAM_ADDRESS]
+    }
+    const getUpdateResponse = {
+      fromVersion: STORED_VERSION,
+      toVersion: SERVER_VERSION,
+      domains: [{ op: 'add', domain: DELTA_SCAM_DOMAIN }],
+      addresses: [{ op: 'add', address: CHECKSUMMED_DELTA_SCAM_ADDRESS }]
+    }
+
+    /**
+     * Builds a controller whose phishing storage read is held back until the returned
+     * `releaseStorageRead` is called, so a test can act on it while init() is still loading.
+     */
+    const prepareBootRaceTest = async ({ seedStorage }: { seedStorage: boolean }) => {
+      // Only the scamchecker calls are served locally. Everything else the main controller fetches
+      // on boot goes to the real fetch, so this test changes nothing for the other controllers.
+      const fetchedUrls: string[] = []
+      const mockFetch = jest.fn((url: string, options?: any) => {
+        if (!url.startsWith(SCAMCHECKER_BASE_URL)) return (fetch as any)(url, options)
+
+        fetchedUrls.push(url)
+
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          url,
+          json: async () => (url.includes('/get_update') ? getUpdateResponse : dataResponse)
+        })
+      })
+
+      const { mainCtrl } = await makeMainController(
+        async (storageCtrl) => {
+          if (!seedStorage) return
+
+          await storageCtrl.set('phishing', {
+            version: STORED_VERSION,
+            updatedAt: STALE_UPDATED_AT,
+            domains: [STORED_SCAM_DOMAIN],
+            addresses: [STORED_SCAM_ADDRESS]
+          })
+        },
+        { skipDappsAndPhishingInit: true, overrides: { fetch: mockFetch } }
+      )
+
+      const controller = mainCtrl.phishing
+      // makeMainController stubs the update out for every other test, but this one is about it.
+      const updateSpy = PhishingController.prototype
+        .continuouslyUpdatePhishing as unknown as jest.SpiedFunction<
+        PhishingController['continuouslyUpdatePhishing']
+      >
+      updateSpy.mockRestore()
+
+      let releaseStorageRead: () => void = () => {}
+      const storageReadGate = new Promise<void>((resolve) => {
+        releaseStorageRead = resolve
+      })
+      const originalGet = mainCtrl.storage.get.bind(mainCtrl.storage)
+      const storageGetSpy = jest
+        .spyOn(mainCtrl.storage, 'get')
+        .mockImplementation(async (key: string, defaults?: any) => {
+          if (key === 'phishing') await storageReadGate
+
+          return originalGet(key, defaults)
+        })
+
+      const cleanup = () => {
+        controller.updatePhishingInterval.stop()
+        storageGetSpy.mockRestore()
+      }
+
+      return { controller, ui: mainCtrl.ui, fetchedUrls, releaseStorageRead, cleanup }
+    }
+
+    test('a view added before init() only arms the active interval and fetches nothing', async () => {
+      const { controller, ui, fetchedUrls, releaseStorageRead, cleanup } =
+        await prepareBootRaceTest({ seedStorage: true })
+
+      removeAllViews(ui)
+      ui.addView({
+        id: 'phishing-boot-race-request-window',
+        type: 'request-window',
+        currentRoute: 'sign-account-op',
+        isReady: true
+      })
+      await flushMicrotaskQueue()
+
+      // The view used to restart the interval right here, which ran an update with version 0: it
+      // pulled the full list and then parsed it as a delta, once init() had set the version.
+      expect(controller.isReady).toBe(false)
+      expect(controller.updatePhishingInterval.running).toBe(false)
+      expect(controller.updatePhishingInterval.currentTimeout).toBe(PHISHING_ACTIVE_UPDATE_INTERVAL)
+      expect(fetchedUrls).toHaveLength(0)
+
+      releaseStorageRead()
+      await controller.init()
+      await controller.updatePhishingInterval.promise
+
+      // init() starts the interval, so the update finally runs - with the stored version, and on
+      // the active timeout the view asked for.
+      expect(controller.updatePhishingInterval.currentTimeout).toBe(PHISHING_ACTIVE_UPDATE_INTERVAL)
+      expect(fetchedUrls).toEqual([`${SCAMCHECKER_BASE_URL}/get_update?version=${STORED_VERSION}`])
+      expect(controller.getDomainBlacklistedStatus(`https://${DELTA_SCAM_DOMAIN}`)).toBe(
+        'BLACKLISTED'
+      )
+      // The stored entries survive a delta, and the added one is matched whatever its casing.
+      expect(controller.getDomainBlacklistedStatus(`https://${STORED_SCAM_DOMAIN}`)).toBe(
+        'BLACKLISTED'
+      )
+      expect(controller.getAddressBlacklistedStatus(CHECKSUMMED_DELTA_SCAM_ADDRESS)).toBe(
+        'BLACKLISTED'
+      )
+      expect(controller.getAddressBlacklistedStatus(STORED_SCAM_ADDRESS)).toBe('BLACKLISTED')
+
+      cleanup()
+    })
+
+    test('an update that somehow starts before init() completes still waits for the stored version', async () => {
+      const { controller, fetchedUrls, releaseStorageRead, cleanup } = await prepareBootRaceTest({
+        seedStorage: true
+      })
+
+      const initPromise = controller.init()
+      const updatePromise = controller.continuouslyUpdatePhishing()
+
+      await flushMicrotaskQueue()
+      expect(fetchedUrls).toHaveLength(0)
+
+      releaseStorageRead()
+      await Promise.all([initPromise, updatePromise])
+
+      expect(fetchedUrls[0]).toBe(`${SCAMCHECKER_BASE_URL}/get_update?version=${STORED_VERSION}`)
+
+      cleanup()
     })
   })
 
