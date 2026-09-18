@@ -62,12 +62,17 @@ export const EIP_1271_NOT_SUPPORTED_BY = [
 export const AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE =
   'Signing an AmbireOperation is not allowed'
 
-export const isAmbireOperationTypedData = (typedData: {
-  primaryType: string
-  types: Record<string, unknown>
-}) => {
-  if ('AmbireReadableOperation' in typedData.types) return false
-
+/**
+ * Check if the typedData's intention is to target the current account
+ */
+export const isCallToSelfOrAmbireOp = (
+  typedData: {
+    primaryType: string
+    types: Record<string, unknown>
+    domain: TypedDataDomain
+  },
+  account: Account
+) => {
   const isAmbireOp =
     typedData.primaryType === 'AmbireOperation' || 'AmbireOperation' in typedData.types
   const isAmbire4337Op =
@@ -76,7 +81,11 @@ export const isAmbireOperationTypedData = (typedData: {
     typedData.primaryType === 'AmbireExecuteAccountOp' ||
     'AmbireExecuteAccountOp' in typedData.types
 
-  return isAmbireOp || isAmbire4337Op || isAmbireExecuteOp
+  const verifyingContract = typedData.domain.verifyingContract
+  const isVerifyingContractSameAsAccount =
+    verifyingContract && verifyingContract.toLowerCase() === account.addr.toLowerCase()
+
+  return isAmbireOp || isAmbire4337Op || isAmbireExecuteOp || isVerifyingContractSameAsAccount
 }
 
 /**
@@ -532,7 +541,7 @@ export async function getEIP712Signature(
       )) as Hex
     }
 
-  if (isAmbireOperationTypedData(message) && !allowAmbireOperation) {
+  if (isCallToSelfOrAmbireOp(message, account) && !allowAmbireOperation) {
     throw new Error(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
   }
 
