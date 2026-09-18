@@ -68,7 +68,15 @@ export const isAmbireOperationTypedData = (typedData: {
 }) => {
   if ('AmbireReadableOperation' in typedData.types) return false
 
-  return typedData.primaryType === 'AmbireOperation' || 'AmbireOperation' in typedData.types
+  const isAmbireOp =
+    typedData.primaryType === 'AmbireOperation' || 'AmbireOperation' in typedData.types
+  const isAmbire4337Op =
+    typedData.primaryType === 'Ambire4337AccountOp' || 'Ambire4337AccountOp' in typedData.types
+  const isAmbireExecuteOp =
+    typedData.primaryType === 'AmbireExecuteAccountOp' ||
+    'AmbireExecuteAccountOp' in typedData.types
+
+  return isAmbireOp || isAmbire4337Op || isAmbireExecuteOp
 }
 
 /**
