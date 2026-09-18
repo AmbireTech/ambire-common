@@ -68,7 +68,7 @@ import {
   TraceCallDiscoveryStatus,
   Warning
 } from '../../interfaces/signAccountOp'
-import { SigningAuthRequirement, UnauthenticatedDapp } from '../../interfaces/signingAuth'
+import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import { UserRequest } from '../../interfaces/userRequest'
 import { getContractImplementation } from '../../libs/7702/7702'
 import {
@@ -87,6 +87,7 @@ import {
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
 import { getSendRecipients } from '../../libs/accountOp/sendRecipients'
+import { getUnauthenticatedDapps } from '../../libs/dapps/helpers'
 import {
   AccountOpIdentifiedBy,
   getSubmittedAccountOpNonce,
@@ -672,18 +673,10 @@ export class SignAccountOpController
    * Read live for the dapps, whose stored flag can change while the request is on screen.
    */
   get signingAuthRequirement(): SigningAuthRequirement | null {
-    const unauthenticatedDapps: UnauthenticatedDapp[] = []
-
-    this.#accountOp.calls.forEach((call) => {
-      if (!call.dapp?.id || unauthenticatedDapps.some(({ id }) => id === call.dapp!.id)) return
-
-      const storedDapp = this.#dapps.getDapp(call.dapp.id)
-      // Without a stored dapp there is nowhere to remember the confirmation, so asking for it
-      // would repeat on every single request
-      if (!storedDapp || storedDapp.signingAuthenticated) return
-
-      unauthenticatedDapps.push({ id: storedDapp.id, name: storedDapp.name })
-    })
+    const unauthenticatedDapps = getUnauthenticatedDapps(
+      this.#accountOp.calls.map((call) => call.dapp?.id),
+      (id) => this.#dapps.getDapp(id)
+    )
 
     // The cache belongs to a previous version of the calls until the activity read finishes,
     // so it must not be reported against the calls currently on screen
