@@ -23,6 +23,7 @@ export type SelectedAccountBalanceError = {
     | `stale-block-${string}`
     | 'loading-too-long'
     | 'defi-critical'
+    | 'defi-apps'
     | 'defi-prices'
     | `${string}-defi-positions-error`
     | keyof typeof PORTFOLIO_LIB_ERROR_NAMES
@@ -332,6 +333,33 @@ export const getNetworksWithErrors = ({
   })
 
   return errors
+}
+
+/**
+ * The DeFi apps (`defiApps`) live outside of the per-network state, so they are missed by the
+ * network loops above. Their failure silently lowers the total balance, hence the dedicated check.
+ */
+export const getDefiAppsErrors = (
+  portfolioState: SelectedAccountPortfolioState
+): SelectedAccountBalanceError[] => {
+  const defiAppsState = portfolioState.defiApps
+
+  if (!defiAppsState?.criticalError) return []
+
+  // The previously fetched positions are still displayed, so a recent success keeps this quiet
+  const lastSuccessfulUpdate = defiAppsState.lastSuccessfulUpdate
+  if (typeof lastSuccessfulUpdate === 'number' && Date.now() - lastSuccessfulUpdate < TEN_MINUTES)
+    return []
+
+  return [
+    {
+      id: 'defi-apps',
+      type: 'error',
+      networkNames: ['DeFi apps'],
+      title: 'Failed to retrieve your positions in some DeFi apps',
+      text: 'Your total balance may be lower than it actually is. Your funds are safe.'
+    }
+  ]
 }
 
 export const getNetworksWithDeFiPositionsErrorErrors = ({

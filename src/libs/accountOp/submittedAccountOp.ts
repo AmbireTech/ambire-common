@@ -121,6 +121,40 @@ export interface SubmittedAccountOpLike
 }
 
 /**
+ * Rebuilds a full `AccountOp` from a `SubmittedAccountOpLike` - e.g. to re-run `humanizeAccountOp`
+ * against a past activity item, which only carries the looser `SubmittedAccountOpLike` shape.
+ * Fields absent from `SubmittedAccountOpLike` (because they were optional on
+ * `SubmittedAccountOpActionFields`, or never persisted) fall back to `AccountOp`'s own defaults.
+ */
+export function submittedAccountOpToAccountOp(
+  submittedAccountOp: SubmittedAccountOpLike
+): AccountOp {
+  return {
+    id: submittedAccountOp.id,
+    accountAddr: submittedAccountOp.accountAddr,
+    chainId: submittedAccountOp.chainId,
+    signingKeyAddr: submittedAccountOp.signingKeyAddr ?? null,
+    signingKeyType: submittedAccountOp.signingKeyType ?? null,
+    nonce: submittedAccountOp.nonce ?? null,
+    eoaNonce: submittedAccountOp.eoaNonce,
+    calls: submittedAccountOp.calls,
+    feeCall: submittedAccountOp.feeCall,
+    activatorCall: submittedAccountOp.activatorCall,
+    gasLimit: submittedAccountOp.gasLimit ?? null,
+    signature: submittedAccountOp.signature ?? null,
+    gasFeePayment: submittedAccountOp.gasFeePayment,
+    txnId: submittedAccountOp.txnId,
+    status: submittedAccountOp.status,
+    asUserOperation: submittedAccountOp.asUserOperation,
+    signers: submittedAccountOp.signers,
+    signed: submittedAccountOp.signed,
+    safeTx: submittedAccountOp.safeTx,
+    meta: submittedAccountOp.meta,
+    flags: submittedAccountOp.flags
+  }
+}
+
+/**
  * Returns the account-level nonce to store in Activity. Safe transactions broadcast through a
  * bundler have an unrelated, random UserOperation nonce, which remains available on
  * `accountOp.asUserOperation.nonce` and must not replace the Safe transaction nonce.

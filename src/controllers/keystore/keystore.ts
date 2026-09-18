@@ -224,15 +224,6 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   set isReadyToStoreKeys(val) {
     this.#isReadyToStoreKeys = val
-
-    const hasQueuedData =
-      !!this.#seedsToAddOnKeystoreReady.length ||
-      !!this.#internalKeysToAddOnKeystoreReady.length ||
-      !!this.#externalKeysToAddOnKeystoreReady.length
-
-    if (val && hasQueuedData) {
-      void this.#addQueuedKeysAndSeeds()
-    }
   }
 
   async getKeyStoreUid() {
@@ -619,6 +610,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     }
 
     this.isReadyToStoreKeys = true
+
+    // Awaited, so that the caller can rely on the synced keys being stored by the time
+    // this resolves. Otherwise the accounts added by the sync stay without their keys
+    // for a while
+    await this.#addQueuedKeysAndSeeds()
   }
 
   async addSecret(secretId: string, secret: string, extraEntropy: string, leaveUnlocked: boolean) {
@@ -819,6 +815,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * under the same storage key and would otherwise overwrite each other.
    */
   async #addQueuedKeysAndSeeds() {
+    const hasQueuedData =
+      !!this.#seedsToAddOnKeystoreReady.length ||
+      !!this.#internalKeysToAddOnKeystoreReady.length ||
+      !!this.#externalKeysToAddOnKeystoreReady.length
+
+    if (!hasQueuedData) return
+
     const seedsToAdd = this.#seedsToAddOnKeystoreReady
     const internalKeysToAdd = this.#internalKeysToAddOnKeystoreReady
     const externalKeysToAdd = this.#externalKeysToAddOnKeystoreReady

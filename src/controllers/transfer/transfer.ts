@@ -8,6 +8,7 @@ import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { IDappsController } from '../../interfaces/dapp'
 import { AddressState } from '../../interfaces/domains'
+import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
@@ -20,6 +21,7 @@ import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
 import {
   AddressPoisoningMatch,
+  AmountAdjustmentInfo,
   ITransferController,
   TransferUpdate
 } from '../../interfaces/transfer'
@@ -32,7 +34,7 @@ import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
-import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpers'
+import { getTokenAmount, sortTokensByBalanceInUSD } from '../../libs/portfolio/helpers'
 import {
   getAmountAfterFeeReserve,
   getAmountAfterFeeSync,
@@ -145,6 +147,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #isMaxAmountSelected: boolean = false
 
+  #wasAmountAdjustedForFee: boolean = false
+
   #maxFeeReservation: { key: string; amount: bigint } | null = null
 
   #accounts: IAccountsController
@@ -160,6 +164,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   #phishing: IPhishingController
 
   #dapps: IDappsController
+
+  #erc7730: IErc7730Controller
 
   #relayerUrl: string
 
@@ -222,6 +228,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     relayerUrl: string,
     onBroadcastSuccess: OnBroadcastSuccess,
     ui: IUiController,
+    erc7730: IErc7730Controller,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
@@ -243,6 +250,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#providers = providers
     this.#phishing = phishing
     this.#dapps = dapps
+    this.#erc7730 = erc7730
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#ui = ui
@@ -342,41 +350,36 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   #setTokens() {
-    const tokens = this.#selectedAccount.portfolio.tokens
-      .filter((token) => {
-        const hasAmount = Number(getTokenAmount(token)) > 0
-        const isVisible = !token.flags.isHidden
+    // Indexed once rather than scanned inside the filter below, which runs for every
+    // token the account holds - a large portfolio runs to thousands of them.
+    const networkByChainId = new Map(this.#networks.networks.map((n) => [n.chainId, n]))
 
-        if (this.isTopUp) {
-          const tokenNetwork = this.#networks.networks.find(
-            (network) => network.chainId === token.chainId
-          )
+    const tokens = this.#selectedAccount.portfolio.tokens.filter((token) => {
+      const hasAmount = Number(getTokenAmount(token)) > 0
+      const isVisible = !token.flags.isHidden
 
-          return (
-            hasAmount &&
-            isVisible &&
-            tokenNetwork?.hasRelayer &&
-            token.flags.canTopUpGasTank &&
-            !token.flags.onGasTank
-          )
-        }
+      if (this.isTopUp) {
+        const tokenNetwork = networkByChainId.get(token.chainId)
 
         return (
           hasAmount &&
           isVisible &&
-          !token.flags.onGasTank &&
-          !token.flags.rewardsType &&
-          token.flags.defiTokenType !== AssetType.Borrow
+          tokenNetwork?.hasRelayer &&
+          token.flags.canTopUpGasTank &&
+          !token.flags.onGasTank
         )
-      })
-      .sort((a, b) => {
-        const tokenAinUSD = getTokenBalanceInUSD(a)
-        const tokenBinUSD = getTokenBalanceInUSD(b)
+      }
 
-        return tokenBinUSD - tokenAinUSD
-      })
+      return (
+        hasAmount &&
+        isVisible &&
+        !token.flags.onGasTank &&
+        !token.flags.rewardsType &&
+        token.flags.defiTokenType !== AssetType.Borrow
+      )
+    })
 
-    this.#tokens = tokens
+    this.#tokens = sortTokensByBalanceInUSD(tokens)
 
     if (this.selectedToken) {
       this.selectedToken =
@@ -457,6 +460,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (!token || Number(getTokenAmount(token)) === 0) {
       this.#selectedToken = null
       this.#isMaxAmountSelected = false
+      this.#wasAmountAdjustedForFee = false
       this.#resetMaxFeeReservation()
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
@@ -473,6 +477,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       prevSelectedToken?.chainId !== token?.chainId
     ) {
       this.#isMaxAmountSelected = false
+      this.#wasAmountAdjustedForFee = false
       this.#resetMaxFeeReservation()
       if (!token.priceIn.length) this.amountFieldMode = 'token'
       this.#setAmountAndNotifyUI('')
@@ -515,6 +520,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   resetForm(shouldDestroyAccountOp = true) {
     this.#isMaxAmountSelected = false
+    this.#wasAmountAdjustedForFee = false
     this.amount = ''
     this.amountInFiat = ''
     this.amountFieldMode = 'token'
@@ -662,6 +668,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
       this.#isMaxAmountSelected = false
+      this.#wasAmountAdjustedForFee = false
       this.#resetMaxFeeReservation()
       this.#setAmount(amount)
     }
@@ -671,6 +678,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       if (!Number(maxAmountAfterFeeReservation)) return
 
       this.#isMaxAmountSelected = true
+      this.#wasAmountAdjustedForFee = maxAmountAfterFeeReservation !== this.maxAmount
       this.#resetMaxFeeReservation()
       this.amountFieldMode = 'token'
       this.#setTokenAmount(maxAmountAfterFeeReservation, true)
@@ -942,7 +950,10 @@ export class TransferController extends EventEmitter implements ITransferControl
     const reservedFee =
       shouldReserveFee && this.#isMaxAmountSelected ? this.#getMaxReservedFeeAmount(fee) : fee
 
-    if (!shouldReserveFee) this.#resetMaxFeeReservation()
+    if (!shouldReserveFee) {
+      this.#wasAmountAdjustedForFee = false
+      this.#resetMaxFeeReservation()
+    }
 
     const currentAmount = this.amount
       ? parseUnits(
@@ -961,6 +972,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     if (desiredAmount === 0n || currentAmount === desiredAmount) return false
 
+    this.#wasAmountAdjustedForFee = shouldReserveFee
     this.#setTokenAmount(formatUnits(desiredAmount, this.selectedToken.decimals), true)
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.syncSignAccountOp()
@@ -969,43 +981,39 @@ export class TransferController extends EventEmitter implements ITransferControl
     return true
   }
 
-  /**
-   * When doing a MAX transfer or a close to MAX transfer out,
-   * if the selected fee token is the same as the transfer token,
-   * we automatically adjust the transfer amount so the user
-   * can successfully broadcast. For that, we put an additional
-   * warning telling him why this is happening
-   */
-  get amountAdjustmentWarning(): Validation | null {
-    if (!this.amount || !this.selectedToken || !this.#shouldReserveFeeFromTransferredToken()) {
+  /** Information needed by the UI when the transfer amount was reduced to leave funds for the fee. */
+  get amountAdjustmentInfo(): AmountAdjustmentInfo | null {
+    if (
+      !this.amount ||
+      !this.selectedToken ||
+      !this.#wasAmountAdjustedForFee ||
+      !this.#shouldReserveFeeFromTransferredToken()
+    ) {
       return null
     }
-
-    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
-    if (!gasFeePayment) return null
 
     const currentAmount = parseUnits(
       getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals),
       this.selectedToken.decimals
     )
-    const totalTokenAmount = getTokenAmount(this.selectedToken)
-    const maxAmountAfterFeeReservation = getAmountAfterFeeReserve(
-      totalTokenAmount,
-      gasFeePayment.amount
-    )
+    const feeAmount = getTokenAmount(this.selectedToken) - currentAmount
 
-    if (
-      maxAmountAfterFeeReservation > 0n &&
-      currentAmount > 0n &&
-      currentAmount + gasFeePayment.amount >= totalTokenAmount
-    ) {
-      return {
-        severity: 'warning',
-        message: 'Amount adjusted to cover blockchain fees'
-      }
+    if (feeAmount <= 0n) return null
+
+    return {
+      feeAmount: formatUnits(feeAmount, this.selectedToken.decimals),
+      tokenSymbol: this.selectedToken.symbol
     }
+  }
 
-    return null
+  /** Kept for clients that still render the previous validation-style adjustment message. */
+  get amountAdjustmentWarning(): Validation | null {
+    if (!this.amountAdjustmentInfo) return null
+
+    return {
+      severity: 'warning',
+      message: 'Amount adjusted to cover network fees'
+    }
   }
 
   async #updateRecipientHistoryAndPoisoning() {
@@ -1184,6 +1192,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       provider,
       phishing: this.#phishing,
       dapps: this.#dapps,
+      erc7730: this.#erc7730,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,
@@ -1310,6 +1319,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       hasPersistedState: this.hasPersistedState,
       isRecipientAddressViewOnly: this.isRecipientAddressViewOnly,
       isRecipientAddressBlacklisted: this.isRecipientAddressBlacklisted,
+      amountAdjustmentInfo: this.amountAdjustmentInfo,
       amountAdjustmentWarning: this.amountAdjustmentWarning
     }
   }

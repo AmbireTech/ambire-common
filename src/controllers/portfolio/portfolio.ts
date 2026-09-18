@@ -1,4 +1,6 @@
-import { getAddress } from 'ethers'
+import { getAddress } from 'viem'
+
+import { yieldToMain } from '@/utils/scheduler'
 
 import {
   IRecurringTimeout,
@@ -14,7 +16,8 @@ import {
 import { ETHEREUM_CHAIN_ID, INVICTUS_RPC_URL_IDENTIFIER } from '../../consts/networks'
 import {
   DEFAULT_STALE_RPC_BLOCK_THRESHOLD,
-  ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
+  ETHEREUM_STALE_RPC_BLOCK_THRESHOLD,
+  getDiscoveryTimeout
 } from '../../consts/portfolio'
 import {
   Account,
@@ -28,6 +31,7 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
@@ -64,8 +68,13 @@ import {
   convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
   getHintsError,
+  getTokenDataCacheKey,
   getTotal,
-  validateERC20Token
+  getAssetCacheKey,
+  getCollectibleCacheKey,
+  validateCollectibleOwnership,
+  validateERC20Token,
+  validateERC721Token
 } from '../../libs/portfolio/helpers'
 import {
   AccountAssetsState,
@@ -88,6 +97,7 @@ import {
   TokenDataCache,
   TokenDataCacheValue,
   TokenError,
+  AssetValidations,
   TokenResult,
   TokenValidationResult
 } from '../../libs/portfolio/interfaces'
@@ -155,11 +165,22 @@ export class PortfolioController
   // the response of the update call to be overwritten by a slower previous call.
   #queue: { [accountId: string]: { [chainId: string]: Promise<void> } }
 
-  validTokens: any = { erc20: {}, erc721: {} }
+  validTokens: AssetValidations = { erc20: {}, erc721: {} }
+
+  // Not part of the state, as the UI has no use for it. Keyed by standard too,
+  // as the same address can be checked as a token and as a collection at once.
+  #assetValidationsInProgress: Set<string> = new Set()
 
   temporaryTokens: TemporaryTokens = {}
 
   hasFundedHotAccount: boolean = false
+
+  /**
+   * The account's invite key for the Ambire Mobile app, returned by the relayer's
+   * `portfolio-additional` endpoint. Present only for accounts the relayer has generated
+   * one for; used to let the user activate the same account in the mobile app.
+   */
+  mobileInviteKeys: { [accountAddr: string]: string } = {}
 
   #portfolioLibs: Map<string, Portfolio>
 
@@ -253,7 +274,8 @@ export class PortfolioController
     banner: IBannerController,
     featureFlags: IFeatureFlagsController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
-    verification?: IVerificationController
+    verification?: IVerificationController,
+    platform: Platform = 'default'
   ) {
     super(eventEmitterRegistry)
 
@@ -358,7 +380,7 @@ export class PortfolioController
       },
       {
         timeoutSettings: {
-          timeoutAfter: 3000,
+          timeoutAfter: getDiscoveryTimeout(platform),
           timeoutErrorMessage: 'Velcro discovery timed out'
         },
         dedupeByKeys: ['chainId', 'accountAddr']
@@ -575,7 +597,7 @@ export class PortfolioController
     selectedAccountAddr?: string,
     shouldUpdatePortfolio?: boolean
   ) {
-    const didChange = await this.hints.removeCustomToken(customToken)
+    const didChange = await this.hints.removeCustomToken(customToken, selectedAccountAddr)
 
     if (didChange && shouldUpdatePortfolio) {
       await this.#updatePortfolioOnTokenChange(customToken.chainId, selectedAccountAddr)
@@ -944,7 +966,13 @@ export class PortfolioController
     allNetworks: boolean = false
   ) {
     await this.initialLoadPromise
-    if (this.validTokens.erc20[`${token.address}-${token.chainId}`]?.isValid === true) return
+
+    const key = getAssetCacheKey(token.address, token.chainId)
+    if (this.validTokens.erc20[key]?.isValid === true) return
+    // Repeated dispatches for the same token are one check, not several
+    const inProgressKey = `erc20-${key}`
+
+    if (this.#assetValidationsInProgress.has(inProgressKey)) return
 
     const provider = this.#providers.providers[token.chainId.toString()]
     if (!provider) {
@@ -954,29 +982,135 @@ export class PortfolioController
       return
     }
 
-    const result: TokenValidationResult = await validateERC20Token(
-      token,
-      accountId,
-      provider,
-      allNetworks
-        ? {
-            allNetworks: this.#networks.networks,
-            allProviders: this.#providers.providers,
-            enableNetworkDetection: true
-          }
-        : undefined
-    )
-    const { isValid, standard, error } = result
+    this.#assetValidationsInProgress.add(inProgressKey)
 
-    this.validTokens[standard] = {
-      ...this.validTokens[standard],
-      [`${token.address}-${token.chainId}`]: {
-        isValid,
-        error
-      }
+    try {
+      const result: TokenValidationResult = await validateERC20Token(
+        token,
+        accountId,
+        provider,
+        allNetworks
+          ? {
+              allNetworks: this.#networks.networks,
+              allProviders: this.#providers.providers,
+              enableNetworkDetection: true
+            }
+          : undefined
+      )
+      const { isValid, error } = result
+
+      this.#storeAssetValidation('erc20', key, { isValid, error })
+    } finally {
+      this.#assetValidationsInProgress.delete(inProgressKey)
     }
 
     this.emitUpdate()
+  }
+
+  /**
+   * Validates that the address is an ERC-721 collection before it's added as a
+   * custom one and stores the result in `validTokens.erc721`.
+   *
+   * `shouldRefetch` runs the check again for an address that already has a
+   * verdict, which the UI asks for after a network problem.
+   */
+  async updateCollectionValidation(
+    collection: { address: TokenResult['address']; chainId: TokenResult['chainId'] },
+    shouldRefetch?: boolean
+  ) {
+    await this.initialLoadPromise
+
+    const key = getAssetCacheKey(collection.address, collection.chainId)
+    // A verdict about the contract itself doesn't change for an address
+    if (this.validTokens.erc721[key] && !shouldRefetch) return
+    const inProgressKey = `erc721-${key}`
+    if (this.#assetValidationsInProgress.has(inProgressKey)) return
+
+    const provider = this.#providers.providers[collection.chainId.toString()]
+    if (!provider) {
+      const message = `Error while validating collection ${collection.address} (${collection.chainId}).`
+      this.emitError({ level: 'silent', message, error: new Error(message) })
+
+      return
+    }
+
+    this.#assetValidationsInProgress.add(inProgressKey)
+
+    try {
+      const {
+        isValid,
+        error,
+        collection: collectionMeta
+      } = await validateERC721Token(collection, provider)
+
+      this.#storeAssetValidation('erc721', key, { isValid, error, collection: collectionMeta })
+    } finally {
+      this.#assetValidationsInProgress.delete(inProgressKey)
+    }
+
+    this.emitUpdate()
+  }
+
+  /**
+   * Checks whether the account owns the collectible and stores the result in
+   * `validTokens.erc721`, keyed by the collection and the id.
+   *
+   * `shouldRefetch` checks again for a collectible that already has a verdict,
+   * which the UI asks for after a network problem.
+   */
+  async updateCollectibleValidation(
+    collectible: {
+      address: TokenResult['address']
+      chainId: TokenResult['chainId']
+      tokenId: bigint
+    },
+    accountId: AccountId,
+    shouldRefetch?: boolean
+  ) {
+    await this.initialLoadPromise
+
+    const key = getCollectibleCacheKey(
+      collectible.address,
+      collectible.chainId,
+      collectible.tokenId
+    )
+    // The owner can change, but only a new check would notice, so the verdict is
+    // kept until the user asks again
+    if (this.validTokens.erc721[key] && !shouldRefetch) return
+    const inProgressKey = `erc721-${key}`
+    if (this.#assetValidationsInProgress.has(inProgressKey)) return
+
+    const provider = this.#providers.providers[collectible.chainId.toString()]
+    if (!provider) {
+      const message = `Error while validating collectible ${collectible.tokenId} of ${collectible.address}.`
+      this.emitError({ level: 'silent', message, error: new Error(message) })
+
+      return
+    }
+
+    this.#assetValidationsInProgress.add(inProgressKey)
+
+    try {
+      const { isValid, error } = await validateCollectibleOwnership(
+        collectible,
+        accountId,
+        provider
+      )
+
+      this.#storeAssetValidation('erc721', key, { isValid, error })
+    } finally {
+      this.#assetValidationsInProgress.delete(inProgressKey)
+    }
+
+    this.emitUpdate()
+  }
+
+  #storeAssetValidation<S extends keyof AssetValidations>(
+    standard: S,
+    key: string,
+    validation: AssetValidations[S][string]
+  ) {
+    this.validTokens[standard] = { ...this.validTokens[standard], [key]: validation }
   }
 
   initializePortfolioLibIfNeeded(
@@ -1129,10 +1263,17 @@ export class PortfolioController
     this.#setNetworkLoading(accountId, 'rewards', true)
     this.emitUpdate()
 
+    const accountKeysCount = getAccountKeysCount({
+      accountAddr: accountId,
+      keys: this.#keystore.keys,
+      accounts: this.#accounts.accounts
+    })
+    const sigsParam = accountKeysCount > 0 ? `?sigs=${accountKeysCount}` : ''
+
     let res: any
     try {
       res = await this.#callRelayer(
-        `/v2/identity/${accountId}/portfolio-additional`,
+        `/v2/identity/${accountId}/portfolio-additional${sigsParam}`,
         'GET',
         undefined,
         undefined,
@@ -1252,6 +1393,10 @@ export class PortfolioController
         gasTankTokens,
         total: getTotal(gasTankTokens, null)
       }
+    }
+
+    if (res.data.mobileInviteKey) {
+      this.mobileInviteKeys[accountId] = res.data.mobileInviteKey
     }
 
     this.emitUpdate()
@@ -1479,7 +1624,7 @@ export class PortfolioController
       for (const [key, priceData] of Object.entries(response.prices)) {
         if (!priceData || !('price' in priceData) || !('baseCurrency' in priceData)) continue
 
-        networkTokenDataCache.set(key, [
+        networkTokenDataCache.set(getTokenDataCacheKey(key), [
           Date.now(),
           convertApiTokenDataToTokenDataCache(priceData as ExternalAPITokenMarketDataResponse)
         ])
@@ -1583,6 +1728,7 @@ export class PortfolioController
         defiMaxDataAgeMs,
         hasKeys: portfolioProps.hasKeys
       })
+      await yieldToMain()
       const allHints = this.hints.getAllHints(
         account.addr,
         network.chainId,
@@ -1637,6 +1783,8 @@ export class PortfolioController
             t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0' &&
             !t.flags.rewardsType
         ) ?? null
+
+      await yieldToMain()
 
       const newDefiState = getNewDefiState(
         state.result,
@@ -1726,7 +1874,8 @@ export class PortfolioController
           .getWalletStakingShareValue({
             chainId: network.chainId,
             tokens: combinedTokens,
-            provider: portfolioLib.provider
+            provider: portfolioLib.provider,
+            accountAddr: account.addr
           })
           .then((walletStaking) => {
             if (
@@ -1892,18 +2041,21 @@ export class PortfolioController
 
       const defi = response.defi
       // Throw the error after assigning the response so we can still use the returned hints
-      if ((response && 'errorState' in defi) || !('positions' in defi) || !defi.positions)
+      if (!defi || 'errorState' in defi)
         throw new Error(
           `Defi discovery failed. Error: ${
-            'errorState' in defi
+            defi && 'errorState' in defi
               ? defi.errorState[0]?.message || 'Unknown error (2)'
               : 'Unknown error'
           }`
         )
 
+      // An account with no positions in any DeFi app gets an empty object back, not an error
+      const positions = 'positions' in defi ? defi.positions || [] : []
+
       // Used only to sort assets and positions
       const positionsByProvider = getUniqueMergedPositions(
-        getFormattedApiPositions(defi.positions),
+        getFormattedApiPositions(positions),
         [],
         null
       )

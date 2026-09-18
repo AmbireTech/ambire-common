@@ -203,11 +203,19 @@ const getEModeCategoryText = (
 ): { action: string; category: string } | null =>
   AAVE_EMODE_CATEGORY_TEXT_BY_CHAIN_ID[chainId.toString()]?.[categoryId.toString()] || null
 
+const supplySelector = toFunctionSelector(supplyAbi[0])
+const flashLoanSimpleSelector = toFunctionSelector(flashLoanSimpleAbi[0])
+const repayWithATokensSelector = toFunctionSelector(repayWithATokensAbi[0])
+const repayWithPermitSelector = toFunctionSelector(repayWithPermitAbi[0])
+const supplyWithPermitSelector = toFunctionSelector(supplyWithPermitAbi[0])
+const withdrawBytes32Selector = toFunctionSelector(withdrawBytes32Abi[0])
+const setUserEModeSelector = toFunctionSelector(setUserEModeAbi[0])
+
 export const aaveV3Pool = (): {
   [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualization[]
 } => {
   return {
-    [toFunctionSelector(supplyAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    [supplySelector]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
 
       const { args } = decodeFunctionData({ abi: supplyAbi, data: call.data })
@@ -220,7 +228,7 @@ export const aaveV3Pool = (): {
         ...getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
       ]
     },
-    [toFunctionSelector(flashLoanSimpleAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    [flashLoanSimpleSelector]: (accountOp: AccountOp, call: HexIrCall) => {
       const { args } = decodeFunctionData({ abi: flashLoanSimpleAbi, data: call.data })
       const [receiverAddress, asset, amount] = args
 
@@ -231,17 +239,17 @@ export const aaveV3Pool = (): {
         getAddressVisualization(receiverAddress)
       ]
     },
-    [toFunctionSelector(repayWithATokensAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    [repayWithATokensSelector]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
 
       return [getAction('Repay with token A'), getLabel('to'), getAddressVisualization(call.to)]
     },
-    [toFunctionSelector(repayWithPermitAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    [repayWithPermitSelector]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
 
       return [getAction('Repay with permit'), getLabel('to'), getAddressVisualization(call.to)]
     },
-    [toFunctionSelector(supplyWithPermitAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    [supplyWithPermitSelector]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
 
       const { args } = decodeFunctionData({ abi: supplyWithPermitAbi, data: call.data })
@@ -257,7 +265,7 @@ export const aaveV3Pool = (): {
         getDeadline(deadline)
       ]
     },
-    [toFunctionSelector(withdrawBytes32Abi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    [withdrawBytes32Selector]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
 
       // @TODO  do some hecks for network OR
@@ -285,7 +293,7 @@ export const aaveV3Pool = (): {
         getAddressVisualization(call.to)
       ]
     },
-    [toFunctionSelector(setUserEModeAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    [setUserEModeSelector]: (accountOp: AccountOp, call: HexIrCall) => {
       const { args } = decodeFunctionData({ abi: setUserEModeAbi, data: call.data })
       const [categoryId] = args
       const eModeText = getEModeCategoryText(accountOp.chainId, categoryId)
