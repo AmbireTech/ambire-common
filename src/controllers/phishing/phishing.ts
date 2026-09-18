@@ -14,6 +14,8 @@ import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishin
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 import { getDappIdFromUrl, getNormalizedHostnameFromUrl } from '../../libs/dapps/helpers'
+import { AmbireIdbDatabase } from '../../services/storage/idbDatabase'
+import { PhishingPersistence } from '../../services/storage/phishingPersistence'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SUSPICIOUS_HOSTING_DOMAINS } from './suspiciousHostingDomains'
@@ -58,7 +60,7 @@ export function canBeTrustedByUser(url: string): boolean {
 export class PhishingController extends EventEmitter implements IPhishingController {
   #fetch: Fetch
 
-  #storage: IStorageController
+  #persistence: PhishingPersistence
 
   #addressBook: IAddressBookController
 
@@ -105,18 +107,25 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     fetch,
     storage,
     addressBook,
-    ui
+    ui,
+    idb
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
     storage: IStorageController
     addressBook: IAddressBookController
     ui: IUiController
+    /** Undefined where IndexedDB does not exist (mobile), which selects the key-value backend. */
+    idb?: AmbireIdbDatabase
   }) {
     super(eventEmitterRegistry)
 
     this.#fetch = fetch
-    this.#storage = storage
+    this.#persistence = new PhishingPersistence({
+      storage,
+      idb,
+      onError: ({ message, error }) => this.emitError({ level: 'silent', message, error })
+    })
     this.#addressBook = addressBook
     this.#ui = ui
 
@@ -164,12 +173,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   }
 
   async #load() {
-    const phishing = await this.#storage.get('phishing', {
-      version: 0,
-      updatedAt: 0,
-      domains: [],
-      addresses: []
-    })
+    const phishing = await this.#persistence.init()
 
     this.#version = phishing.version
     this.#updatedAt = phishing.updatedAt
@@ -281,7 +285,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const updatedAt = Date.now()
     this.#updatedAt = updatedAt
 
-    await this.#storage.set('phishing', {
+    await this.#persistence.save({
       version: this.#version,
       updatedAt,
       domains: [...this.#domains],
