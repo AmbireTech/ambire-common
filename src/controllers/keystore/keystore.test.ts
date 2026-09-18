@@ -2,7 +2,7 @@
 
 import { ethers, Wallet } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 import { InternalSigner, LedgerSigner } from '@test/keystore'
 
 import { produceMemoryStore } from '../../../test/helpers'
@@ -560,6 +560,28 @@ describe('KeystoreController signing authentication', () => {
       expect(keystoreCtrl.signingAuthResult?.status).toBe('failed')
       expect(keystoreCtrl.isUnlocked).toBe(true)
     })
+  })
+
+  // The web throws a DOMException named OperationError. Native WebCrypto throws whatever its own
+  // cipher raised, with no name and nothing in the message to go by - the user is told the same
+  // either way, because there is nothing else a failed decryption there can mean.
+  test.each([
+    [
+      'a named DOMException',
+      Object.assign(new Error('decrypt failed'), { name: 'OperationError' })
+    ],
+    ['the name only in the message', new Error('[OperationError]: The operation failed')],
+    ['nothing to go by', new Error('CipherJob failed')]
+  ])('a wrong secret is reported as one when the platform throws %s', async (_, thrown) => {
+    const decryptSpy = jest.spyOn(crypto.subtle, 'decrypt').mockRejectedValue(thrown)
+
+    await keystoreCtrl.verifySecret('password', pass)
+
+    expect(keystoreCtrl.signingAuthResult?.status).toBe('failed')
+    expect(keystoreCtrl.signingAuthResult?.error).toBe('Incorrect password. Please try again.')
+    expect(keystoreCtrl.errorMessage).toBe('Incorrect password. Please try again.')
+
+    decryptSpy.mockRestore()
   })
 
   test('resetSigningAuthResult clears the outcome and the error message', async () => {

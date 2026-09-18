@@ -433,26 +433,28 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     try {
       return await decrypt(secretKey, aesEncrypted)
     } catch (error: any) {
-      // Either wrong password or corrupted/tampered ciphertext
-      if (error?.name === 'OperationError') {
-        this.errorMessage = 'Incorrect password. Please try again.'
-        this.emitUpdate()
+      // Everything this does is deterministic apart from the decryption itself, and the only
+      // thing that makes that fail is the key not matching the ciphertext - a wrong password, or
+      // a payload that has been tampered with. The user can do nothing about the second, and the
+      // advice for both is the same, so they are told the same thing.
+      this.errorMessage = 'Incorrect password. Please try again.'
+      this.emitUpdate()
 
-        throw new EmittableError({
-          level: 'silent',
-          message: this.errorMessage,
-          error: new Error(this.errorMessage),
-          sendCrashReport: false
-        })
-      }
+      // The web reports it as a named DOMException. Native WebCrypto throws whatever its own
+      // cipher raised, with no name to go by, so anything else is reported to Sentry as well -
+      // it is the only way an actual platform failure hiding in here would ever be noticed.
+      const isRecognisedWrongSecret =
+        error?.name === 'OperationError' ||
+        (typeof error?.message === 'string' && error.message.includes('OperationError'))
 
-      // Anything else is unexpected so we should report to Sentry
       throw new EmittableError({
-        level: 'major',
-        message:
-          'Something went wrong when trying to unlock. Please try again or contact support if the problem persists.',
+        level: 'silent',
+        message: this.errorMessage,
         error:
-          error instanceof Error ? error : new Error('keystore: unexpected error during GCM unlock')
+          error instanceof Error
+            ? error
+            : new Error('keystore: unexpected error during GCM unlock'),
+        sendCrashReport: !isRecognisedWrongSecret
       })
     }
   }
