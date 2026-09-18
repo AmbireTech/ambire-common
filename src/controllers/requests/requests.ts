@@ -438,12 +438,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const { kind, meta, dappPromises } = req
 
       if (
-        !this.#selectedAccount.account ||
-        (kind === 'typedMessage' &&
-          isCallToSelfOrAmbireOp(
-            (meta as TypedMessageUserRequest['meta']).params,
-            this.#selectedAccount.account
-          ))
+        kind === 'typedMessage' &&
+        isCallToSelfOrAmbireOp(
+          (meta as TypedMessageUserRequest['meta']).params,
+          this.#selectedAccount.account
+        )
       ) {
         this.#rejectAmbireOperationTypedDataRequest(req as TypedMessageUserRequest)
         continue
@@ -1003,12 +1002,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           )
 
           if (
-            !this.#selectedAccount.account ||
-            (r.kind === 'typedMessage' &&
-              isCallToSelfOrAmbireOp(
-                (r as TypedMessageUserRequest).meta.params,
-                this.#selectedAccount.account
-              ))
+            r.kind === 'typedMessage' &&
+            isCallToSelfOrAmbireOp(
+              (r as TypedMessageUserRequest).meta.params,
+              this.#selectedAccount.account
+            )
           ) {
             this.#rejectAmbireOperationTypedDataRequest(r as TypedMessageUserRequest)
             return

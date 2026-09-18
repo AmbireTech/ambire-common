@@ -71,8 +71,11 @@ export const isCallToSelfOrAmbireOp = (
     types: Record<string, unknown>
     domain: TypedDataDomain
   },
-  account: Account
+  account?: Account | null
 ) => {
+  // allow this as an exception as we need it for smart accounts as signers
+  if ('AmbireReadableOperation' in typedData.types) return false
+
   const isAmbireOp =
     typedData.primaryType === 'AmbireOperation' || 'AmbireOperation' in typedData.types
   const isAmbire4337Op =
@@ -83,7 +86,7 @@ export const isCallToSelfOrAmbireOp = (
 
   const verifyingContract = typedData.domain.verifyingContract
   const isVerifyingContractSameAsAccount =
-    verifyingContract && verifyingContract.toLowerCase() === account.addr.toLowerCase()
+    verifyingContract && account && verifyingContract.toLowerCase() === account.addr.toLowerCase()
 
   return isAmbireOp || isAmbire4337Op || isAmbireExecuteOp || isVerifyingContractSameAsAccount
 }
