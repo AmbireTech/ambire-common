@@ -22,6 +22,7 @@ import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
+import { PrivacyPoolsActivityEntry } from './privacyPools'
 import type { FeeSpeed } from './signAccountOp'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
@@ -98,6 +99,18 @@ export type StorageProps = {
   // Safe
   automaticallyResolvedSafeTxns: AutomaticallyResolvedSafeTxn[]
   rejectedSafeTxns: string[]
+  // Privacy Pools
+  /**
+   * The SDK's own per-chain state, held as one blob because the plugin invents its storage keys at
+   * runtime while `StorageProps` is a closed map. Values are serialized stores, several megabytes
+   * each on mainnet - they are what spares the user a full rescan from the deployment block.
+   */
+  privacyPoolsState: { [key: string]: string }
+  /**
+   * Locally recorded operation log. Kept because the pool exposes no history of its own: notes
+   * carry no timestamp and no transaction id, and change notes look like fresh ones.
+   */
+  privacyPoolsActivity: PrivacyPoolsActivityEntry[]
   // Other
   signAccountOpFeeTokenPreference: {
     [chainId: string]: string | 'gasTank'
