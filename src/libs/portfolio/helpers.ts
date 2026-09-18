@@ -1,7 +1,8 @@
-import { Contract, formatUnits, ZeroAddress } from 'ethers'
+import { Contract, ZeroAddress } from 'ethers'
 import { getAddress } from 'viem'
 
 import IERC20 from '../../../contracts/compiled/IERC20.json'
+import IERC721 from '../../../contracts/compiled/IERC721.json'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
 import { Price } from '../../interfaces/assets'
 import { Network } from '../../interfaces/network'
@@ -12,6 +13,7 @@ import { PORTFOLIO_LIB_ERROR_NAMES } from './errorNames'
 import {
   AccountState,
   AssetMetadataFetchPlan,
+  AssetValidationReason,
   ERC721s,
   ExtendedErrorWithLevel,
   ExternalAPITokenMarketDataResponse,
@@ -281,6 +283,268 @@ export const validateERC20Token = async (
   }
 }
 
+const ERC721_INTERFACE_ID = '0x80ac58cd'
+const ERC1155_INTERFACE_ID = '0xd9b67a26'
+
+// Not available in the compiled IERC721 ABI
+const ERC721_METADATA_ABI = [
+  'function name() view returns (string)',
+  'function symbol() view returns (string)',
+  'function supportsInterface(bytes4 interfaceId) view returns (bool)'
+]
+
+/**
+ * Merges every source of ERC-721 hints for a network.
+ *
+ * The custom and the hidden collections are requested like any other, as the
+ * account may hold a collectible no other source knows about, and a hidden
+ * collection still has to be read to be listed as hidden. Their ids are added to
+ * what the other sources found.
+ *
+ * An entry without ids asks for the whole collection, which would override the
+ * exact ids of the other sources, so it is only used for a collection no other
+ * source named ids for.
+ */
+export const mergeCollectionHints = ({
+  additionalHints,
+  apiHints,
+  specialHints
+}: {
+  additionalHints?: ERC721s
+  apiHints: ERC721s
+  specialHints?: GetOptions['specialErc721Hints']
+}): ERC721s => {
+  const merged = mergeERC721s([additionalHints || {}, apiHints, specialHints?.learn || {}])
+
+  const addCollections = (collections: ERC721s) => {
+    Object.keys(collections).forEach((address) => {
+      let checksummed = address
+
+      try {
+        checksummed = getAddress(address)
+      } catch {
+        // Not an address, so it can't be a collection
+        return
+      }
+
+      const ids = collections[address] || []
+
+      if (!ids.length) {
+        // Asks for the whole collection, unless another source already named ids
+        if (!merged[checksummed]?.length) merged[checksummed] = []
+
+        return
+      }
+
+      const knownIds = merged[checksummed]
+
+      // The whole collection is already requested
+      if (knownIds && !knownIds.length) return
+
+      merged[checksummed] = [...new Set([...(knownIds || []), ...ids])]
+    })
+  }
+
+  addCollections(specialHints?.custom || {})
+  addCollections(specialHints?.hidden || {})
+
+  return merged
+}
+
+/**
+ * The collectibles of a collection that the account should see.
+ *
+ * A collection added by the user shows only the collectibles they added, so the
+ * rest of it doesn't come along with them. Collections added before the ids
+ * were recorded have none, which means the whole collection.
+ *
+ * `isDiscovered` marks a collection another source already found. Narrowing one
+ * of those down to the added ids would hide collectibles the account was already
+ * seeing, so only a collection that exists because it was added is narrowed.
+ */
+export const getVisibleCollectibles = ({
+  collectibles,
+  customIds,
+  hiddenIds,
+  isDiscovered
+}: {
+  collectibles: bigint[]
+  customIds?: bigint[]
+  hiddenIds?: bigint[]
+  isDiscovered?: boolean
+}) => {
+  // No hidden ids stands for the whole collection, the same way it does in the hints
+  if (hiddenIds && !hiddenIds.length) return []
+
+  const added =
+    customIds?.length && !isDiscovered
+      ? collectibles.filter((id) => customIds.includes(id))
+      : collectibles
+
+  if (!hiddenIds) return added
+
+  return added.filter((id) => !hiddenIds.includes(id))
+}
+
+/**
+ * Addresses reach the validation caches from user input, from dApps and from the
+ * portfolio, so they are normalized to always resolve to the same entry.
+ */
+export const normalizeAssetAddress = (address: string) => {
+  try {
+    return getAddress(address)
+  } catch {
+    // Not an address, so the raw value is the best key we have
+    return address
+  }
+}
+
+/** Key of a token or a collection in the validation cache */
+export const getAssetCacheKey = (address: string, chainId: bigint) =>
+  `${normalizeAssetAddress(address)}-${chainId}`
+
+/** Key of a single collectible in the validation cache */
+export const getCollectibleCacheKey = (address: string, chainId: bigint, tokenId: bigint) =>
+  `${getAssetCacheKey(address, chainId)}-${tokenId}`
+
+/**
+ * Decides whether a contract is a collection, based on what it exposes.
+ * Extracted so the decision can be tested without a provider.
+ */
+export const getErc721Validity = ({
+  supportsERC721,
+  supportsERC1155,
+  isContract,
+  hasDecimals
+}: {
+  supportsERC721?: boolean
+  supportsERC1155?: boolean
+  isContract: boolean
+  hasDecimals: boolean
+}): { isValid: boolean; reason: AssetValidationReason | null } => {
+  // Some collections (e.g. vote-escrow NFTs) expose decimals() too, so this has
+  // to be trusted over the checks below
+  if (supportsERC721 === true) return { isValid: true, reason: null }
+
+  // Multi edition NFTs are a different standard, which the portfolio can't read.
+  // Some of them expose ownerOf() too, so they would pass the checks below.
+  if (supportsERC1155 === true) return { isValid: false, reason: 'erc1155-unsupported' }
+
+  if (!isContract) return { isValid: false, reason: 'not-a-collection' }
+
+  if (hasDecimals) return { isValid: false, reason: 'is-a-token' }
+
+  // Whether the account owns collectibles of it doesn't matter, the same way a
+  // custom token is added regardless of its balance
+  return { isValid: true, reason: null }
+}
+
+/**
+ * Checks whether the account owns the collectible. Used when a collection can't
+ * be listed and the user names one of their collectibles explicitly.
+ */
+export const validateCollectibleOwnership = async (
+  collectible: { address: string; tokenId: bigint },
+  accountId: string,
+  provider: RPCProvider
+): Promise<TokenValidationResult> => {
+  const erc721 = new Contract(collectible.address, IERC721.abi, provider)
+  const invalid = (
+    type: 'network' | 'validation',
+    reason: AssetValidationReason
+  ): TokenValidationResult => ({
+    isValid: false,
+    standard: 'erc721',
+    error: { message: null, type, reason }
+  })
+
+  let owner
+  try {
+    owner = await erc721.ownerOf!(collectible.tokenId)
+  } catch (e: any) {
+    console.error('Error while checking the owner of a collectible', e)
+
+    if (isNetworkError(e)) return invalid('network', 'network-problem')
+
+    return invalid('validation', 'collectible-not-found')
+  }
+
+  if (typeof owner !== 'string' || owner.toLowerCase() !== accountId.toLowerCase())
+    return invalid('validation', 'collectible-not-owned')
+
+  return { isValid: true, standard: 'erc721', error: { message: null, type: null } }
+}
+
+/** An ERC-20 token is rejected too, as it also exposes name() and balanceOf() */
+export const validateERC721Token = async (
+  collection: { address: string; chainId: bigint },
+  provider: RPCProvider
+): Promise<TokenValidationResult> => {
+  const metadata = new Contract(collection.address, ERC721_METADATA_ABI, provider)
+  const erc20 = new Contract(collection.address, IERC20.abi, provider)
+
+  let hasNetworkError = false
+  const handleError = (e: any, operation: string) => {
+    console.error('Error during ERC721 validation operation:', operation, e)
+
+    if (isNetworkError(e)) hasNetworkError = true
+
+    return undefined
+  }
+
+  const [code, supportsERC721, supportsERC1155, decimals, name, symbol] = await Promise.all([
+    provider.getCode(collection.address).catch((e: any) => handleError(e, 'code')),
+    metadata.supportsInterface!(ERC721_INTERFACE_ID).catch((e: any) =>
+      handleError(e, 'supportsInterface')
+    ),
+    metadata.supportsInterface!(ERC1155_INTERFACE_ID).catch((e: any) => {
+      if (isNetworkError(e)) hasNetworkError = true
+      return undefined
+    }),
+    // A revert is the expected outcome for a collection, but a network problem
+    // must not read as one - it would leave a token looking like a collection
+    erc20.decimals!().catch((e: any) => {
+      if (isNetworkError(e)) hasNetworkError = true
+
+      return undefined
+    }),
+    // Optional, used for the preview
+    metadata.name!().catch(() => undefined),
+    metadata.symbol!().catch(() => undefined)
+  ])
+
+  if (hasNetworkError)
+    return {
+      isValid: false,
+      standard: 'erc721',
+      error: { message: null, type: 'network', reason: 'network-problem' }
+    }
+
+  const { isValid, reason } = getErc721Validity({
+    supportsERC721,
+    supportsERC1155,
+    isContract: typeof code === 'string' && code !== '0x',
+    hasDecimals: typeof decimals !== 'undefined'
+  })
+
+  if (!isValid)
+    return {
+      isValid: false,
+      standard: 'erc721',
+      error: { message: null, type: 'validation', reason }
+    }
+
+  return {
+    isValid: true,
+    standard: 'erc721',
+    error: { message: null, type: null },
+    collection: {
+      name: typeof name === 'string' ? name : null,
+      symbol: typeof symbol === 'string' ? symbol : null
+    }
+  }
+}
+
 // fetch the amountPostSimulation for the token if set
 // otherwise, the token.amount
 export const getTokenAmount = (token: TokenResult, beforeSimulation?: boolean): bigint => {
@@ -292,14 +556,33 @@ export const getTokenAmount = (token: TokenResult, beforeSimulation?: boolean): 
 export const getTokenUsdPrice = (token: TokenResult) =>
   token.priceIn.find(({ baseCurrency }) => baseCurrency === 'usd')?.price || 0
 
+/**
+ * The token's balance in USD. Called once per token on every portfolio update and
+ * once per token per comparison wherever a token list is sorted by it, so the
+ * amount is converted with plain number math: `formatUnits` builds a decimal
+ * string, which costs ~80us per call on a mid-range phone and dominated the
+ * sorting of a large portfolio. A float carries the same precision the caller
+ * ends up with either way, since the result is a float in both cases.
+ */
 export const getTokenBalanceInUSD = (token: TokenResult) => {
-  const amount = getTokenAmount(token)
-  const { decimals } = token
-  const balance = parseFloat(formatUnits(amount, decimals))
   const price = getTokenUsdPrice(token)
+  if (!price) return 0
+
+  const balance = Number(getTokenAmount(token)) / 10 ** token.decimals
 
   return balance * price
 }
+
+/**
+ * Tokens ordered by their USD balance, highest first. Each token's balance is
+ * calculated once instead of on every comparison, which is what a comparator
+ * that derives it would do (~20 times per token for a 1000-token portfolio).
+ */
+export const sortTokensByBalanceInUSD = <T extends TokenResult>(tokens: T[]): T[] =>
+  tokens
+    .map((token) => ({ token, balanceInUSD: getTokenBalanceInUSD(token) }))
+    .sort((a, b) => b.balanceInUSD - a.balanceInUSD)
+    .map(({ token }) => token)
 
 export const getTotal = (
   t: TokenResult[],
@@ -475,16 +758,42 @@ export const getSpecialHints = (
   const networkToBeLearnedNfts: ToBeLearnedAssets['erc721s'][string] =
     toBeLearnedAssets.erc721s?.[chainId.toString()] || {}
 
-  customTokens.forEach((token) => {
-    if (token.chainId === chainId && token.standard === 'ERC20') {
-      specialErc20Hints.custom.push(token.address)
+  // A collectible is requested by its id, while an entry without one requests
+  // every collectible of the collection (an empty array of ids)
+  const addCollectionHint = (
+    hints: ERC721s,
+    { address, tokenId }: { address: string; tokenId?: bigint }
+  ) => {
+    if (typeof tokenId !== 'bigint') {
+      hints[address] = []
+      return
     }
+
+    if (hints[address]?.length === 0) return
+
+    hints[address] = [...(hints[address] || []), tokenId]
+  }
+
+  customTokens.forEach((token) => {
+    if (token.chainId !== chainId) return
+
+    if (token.standard === 'ERC20') {
+      specialErc20Hints.custom.push(token.address)
+      return
+    }
+
+    if (token.standard === 'ERC721') addCollectionHint(specialErc721Hints.custom, token)
   })
 
   tokenPreferences.forEach((token) => {
-    if (token.chainId === chainId && token.isHidden) {
-      specialErc20Hints.hidden.push(token.address)
+    if (token.chainId !== chainId || !token.isHidden) return
+
+    if (token.standard === 'ERC721') {
+      addCollectionHint(specialErc721Hints.hidden, token)
+      return
     }
+
+    specialErc20Hints.hidden.push(token.address)
   })
 
   if (networkToBeLearnedTokens) {
@@ -654,6 +963,11 @@ export const getHardcodedCitreaPrices = (address: string): Price | null => {
 
   return null
 }
+
+/**
+ * The API may return the token checksummed or lowercase so we normalize it to lowercase to avoid cache misses.
+ */
+export const getTokenDataCacheKey = (address: string): string => address.toLowerCase()
 
 export const convertApiTokenDataToTokenDataCache = (
   tokenData: ExternalAPITokenMarketDataResponse | null
