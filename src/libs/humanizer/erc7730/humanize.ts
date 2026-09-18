@@ -1629,7 +1629,7 @@ const getExecTransactionGasRefund = (data: string): SafeTxGasRefund | null => {
   }
 }
 
-export const getGasRefundWarning = (gasRefund: SafeTxGasRefund | null): HumanizerWarning[] =>
+const getGasRefundWarning = (gasRefund: SafeTxGasRefund | null): HumanizerWarning[] =>
   gasRefund
     ? [
         getWarning(

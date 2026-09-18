@@ -3,7 +3,7 @@ import { Price } from '../../interfaces/assets'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
-import { buildSafeTxGasRefund, getGasRefundWarning } from '../../libs/humanizer/erc7730/humanize'
+import { buildSafeTxGasRefund } from '../../libs/humanizer/erc7730/humanize'
 import { shouldDisplaySafeDelegateCallWarning } from '../../libs/humanizer/modules/Safe'
 import { TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
@@ -119,6 +119,9 @@ function getSafeDelegateCallWarning(accountOp: AccountOp): Warning | null {
 // Reuses the same "sus" gas refund detection the humanizer already applies when a Safe signer
 // signs the raw SafeTx message (see getSafeTxMessageWarnings in libs/humanizer/erc7730/humanize.ts),
 // so the account-op level sign screen (i.e. signing with the Safe account itself) warns about it too.
+// The wording is intentionally its own (not humanizer's getGasRefundWarning text) - this renders
+// as a standalone banner with no adjacent visualization row, so it can't reference "the address
+// below" or "what is shown above" and has to spell out the address itself.
 function getSafeGasRefundWarning(accountOp: AccountOp): Warning | null {
   if (!accountOp.safeTx) return null
 
@@ -128,13 +131,16 @@ function getSafeGasRefundWarning(accountOp: AccountOp): Warning | null {
     accountOp.safeTx.gasToken,
     accountOp.safeTx.refundReceiver
   )
-  const [gasRefundWarning] = getGasRefundWarning(gasRefund)
-  if (!gasRefundWarning) return null
+  if (!gasRefund) return null
+
+  const text = gasRefund.refundReceiver
+    ? `This transaction also sends a separate payment to ${gasRefund.refundReceiver} as a "gas refund", on top of the transaction itself. Only proceed if you expect this.`
+    : `This transaction also sends a separate payment to whoever broadcasts it, as a "gas refund", on top of the transaction itself. Only proceed if you expect this.`
 
   return {
     id: 'safeGasRefund',
     title: 'Suspicious gas refund detected',
-    text: gasRefundWarning.content
+    text
   }
 }
 

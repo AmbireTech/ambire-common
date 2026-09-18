@@ -99,7 +99,10 @@ describe('getSafeGasRefundWarning', () => {
 
     expect(warning).toBeTruthy()
     expect(warning?.id).toBe('safeGasRefund')
-    expect(warning?.text).toContain('separate payment to the address below')
+    // this renders as a standalone banner, so it must spell out the address itself rather than
+    // reference "the address below"/"shown above" - there's no adjacent visualization to point at
+    expect(warning?.text).toContain('0x9999999999999999999999999999999999999999')
+    expect(warning?.text).not.toMatch(/below|above/)
   })
 
   test('warns when the Safe tx pays a gas refund to whoever broadcasts it (no fixed refundReceiver)', () => {
@@ -117,6 +120,7 @@ describe('getSafeGasRefundWarning', () => {
     expect(warning).toBeTruthy()
     expect(warning?.id).toBe('safeGasRefund')
     expect(warning?.text).toContain('whoever broadcasts it')
+    expect(warning?.text).not.toMatch(/below|above/)
   })
 
   test('does not warn when gasPrice is 0 (no gas refund is paid)', () => {
