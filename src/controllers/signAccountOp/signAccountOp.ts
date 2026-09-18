@@ -25,7 +25,7 @@ import {
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { PIMLICO } from '../../consts/bundlers'
-import { SINGLETON } from '../../consts/deploy'
+import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
@@ -3429,8 +3429,17 @@ export class SignAccountOpController
 
         // safe accounts have their signature prepopulated
         if (!this.account.safeCreation) {
-          const isHotEOA = accountState.isEOA && this.accountOp.signingKeyType === 'internal'
-          if (!isHotEOA) {
+          // Which signature format a 7702 EOA needs is dictated by the delegator
+          // it points to, not by the key type: the Ambire 7702 account validates
+          // the Ambire4337AccountOp typed data in unprotected mode, while the
+          // GridPlus one expects the standard AmbireOperation wrapping that smart
+          // accounts use. Getting this wrong fails the userOp with AA24.
+          const delegator =
+            accountState.delegatedContract ??
+            getContractImplementation(this.#network.chainId, this.accountKeyStoreKeys)
+          const signsAsAmbire7702Eoa =
+            accountState.isEOA && delegator.toLowerCase() === EIP_7702_AMBIRE_ACCOUNT.toLowerCase()
+          if (!signsAsAmbire7702Eoa) {
             const typedData = getTypedData(
               this.#network.chainId,
               this.accountOp.accountAddr,
