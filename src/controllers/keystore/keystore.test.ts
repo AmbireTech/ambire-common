@@ -561,33 +561,76 @@ describe('KeystoreController signing authentication', () => {
     })
   })
 
-  // The web throws a DOMException named OperationError; native WebCrypto throws whatever its
-  // cipher raised, with no name to go by. The user is told the same either way.
-  test.each([
-    [
-      'a named DOMException',
-      Object.assign(new Error('decrypt failed'), { name: 'OperationError' })
-    ],
-    ['the name only in the message', new Error('[OperationError]: The operation failed')],
-    ['nothing to go by', new Error('CipherJob failed')]
-  ])('a wrong secret is reported as one when the platform throws %s', async (_, thrown) => {
-    const decryptSpy = jest.spyOn(crypto.subtle, 'decrypt').mockRejectedValue(thrown)
+  // The web throws a DOMException named OperationError, native WebCrypto throws whatever its
+  // cipher raised with no name to go by - what the cipher rejected with must not matter
+  describe('the cipher rejecting is a wrong secret whatever it threw', () => {
+    suppressConsoleBeforeEach()
 
-    await keystoreCtrl.verifySecret('password', pass)
+    test.each([
+      [
+        'a named DOMException',
+        Object.assign(new Error('decrypt failed'), { name: 'OperationError' })
+      ],
+      ['nothing to go by', new Error('CipherJob failed')]
+    ])('the platform throws %s', async (_, thrown) => {
+      const decryptSpy = jest.spyOn(crypto.subtle, 'decrypt').mockRejectedValue(thrown)
 
-    expect(keystoreCtrl.signingAuthResult?.status).toBe('failed')
-    expect(keystoreCtrl.signingAuthResult?.error).toBe('Incorrect password. Please try again.')
-    expect(keystoreCtrl.errorMessage).toBe('Incorrect password. Please try again.')
+      await keystoreCtrl.verifySecret('password', pass)
 
-    decryptSpy.mockRestore()
+      expect(keystoreCtrl.signingAuthResult?.status).toBe('failed')
+      expect(keystoreCtrl.signingAuthResult?.error).toBe('Incorrect password. Please try again.')
+
+      decryptSpy.mockRestore()
+    })
   })
 
-  test('resetSigningAuthResult clears the outcome and the error message', async () => {
+  // Telling the user their password is wrong when the platform is what broke leaves them
+  // retrying a password that was right all along
+  describe('a platform failure is not reported as a wrong secret', () => {
+    suppressConsoleBeforeEach()
+
+    test('unlocking says something went wrong instead', async () => {
+      const importKeySpy = jest
+        .spyOn(crypto.subtle, 'importKey')
+        .mockRejectedValue(new Error('WebCrypto is unavailable'))
+
+      await keystoreCtrl.unlockWithSecret('password', pass)
+
+      expect(keystoreCtrl.errorMessage).not.toBe('Incorrect password. Please try again.')
+
+      importKeySpy.mockRestore()
+    })
+  })
+
+  describe('a verification leaves the unlock error alone', () => {
+    suppressConsoleBeforeEach()
+
+    // The two share `errorMessage`, so a failed fingerprint used to put "Incorrect password" on
+    // the password field of the screen behind it
+    test('a wrong secret is reported only through the result', async () => {
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+
+      expect(keystoreCtrl.signingAuthResult?.error).toBe('Incorrect password. Please try again.')
+      expect(keystoreCtrl.errorMessage).toBe('')
+    })
+
+    // Resetting used to clear `errorMessage` too, so opening a confirmation wiped an error the
+    // user had not read yet. A confirmation that actually passes still clears it, as it should.
+    test('resetting the result leaves an error the user has not read yet', async () => {
+      await keystoreCtrl.unlockWithSecret('password', `${pass}1`)
+      expect(keystoreCtrl.errorMessage).toBe('Incorrect password. Please try again.')
+
+      keystoreCtrl.resetSigningAuthResult()
+
+      expect(keystoreCtrl.errorMessage).toBe('Incorrect password. Please try again.')
+    })
+  })
+
+  test('resetSigningAuthResult clears the outcome', async () => {
     await keystoreCtrl.verifySecret('password', pass)
     keystoreCtrl.resetSigningAuthResult()
 
     expect(keystoreCtrl.signingAuthResult).toBe(null)
-    expect(keystoreCtrl.errorMessage).toBe('')
   })
 })
 

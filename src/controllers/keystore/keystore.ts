@@ -20,7 +20,8 @@ import {
   extractEntropyFromSeed,
   getBytesForSecret,
   migrateStoredPayloadsToGCM,
-  SCRYPT_PARAMS
+  SCRYPT_PARAMS,
+  WrongSecretError
 } from '@/libs/keystore/keystore'
 
 import EmittableError from '../../classes/EmittableError'
@@ -141,6 +142,9 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   signingAuthResult: SigningAuthResult | null = null
 
   #signingAuthResultId = 0
+
+  /** Set while `verifySecret` runs, so the shared unlock `errorMessage` is left alone. */
+  #isVerifyingSecret = false
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -432,26 +436,31 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   ): Promise<MainKey> {
     try {
       return await decrypt(secretKey, aesEncrypted)
-    } catch (error: any) {
-      // Only the decryption can fail here, and only because the key does not match the ciphertext: a
-      // wrong password or a tampered payload. The advice is the same for both, so the message is too.
-      this.errorMessage = 'Incorrect password. Please try again.'
-      this.emitUpdate()
+    } catch (error) {
+      // The unwrap marks the one failure the user can act on - the key not matching the ciphertext
+      // - so a broken platform is no longer reported to them as a wrong password
+      if (error instanceof WrongSecretError) {
+        // A verification carries its outcome in `signingAuthResult`, so it must not write the
+        // message the unlock screen reads
+        if (!this.#isVerifyingSecret) {
+          this.errorMessage = 'Incorrect password. Please try again.'
+          this.emitUpdate()
+        }
 
-      // The web names it a DOMException; native WebCrypto does not, so anything unrecognised also goes
-      // to Sentry - the only way an actual platform failure hiding in here would ever be noticed.
-      const isRecognisedWrongSecret =
-        error?.name === 'OperationError' ||
-        (typeof error?.message === 'string' && error.message.includes('OperationError'))
+        throw new EmittableError({
+          level: 'silent',
+          message: 'Incorrect password. Please try again.',
+          error: error.thrown instanceof Error ? error.thrown : error,
+          sendCrashReport: false
+        })
+      }
 
       throw new EmittableError({
-        level: 'silent',
-        message: this.errorMessage,
+        level: 'major',
+        message:
+          'Something went wrong when trying to unlock. Please try again or contact support if the problem persists.',
         error:
-          error instanceof Error
-            ? error
-            : new Error('keystore: unexpected error during GCM unlock'),
-        sendCrashReport: !isRecognisedWrongSecret
+          error instanceof Error ? error : new Error('keystore: unexpected error during GCM unlock')
       })
     }
   }
@@ -569,6 +578,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         this.signingAuthResult = null
         this.#signingAuthResultId += 1
         const id = this.#signingAuthResultId
+        this.#isVerifyingSecret = true
 
         try {
           await this.#unlockWithSecret(secretId, secret)
@@ -581,6 +591,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
           }
           // Re-thrown so a wrong secret keeps being reported the way unlocking reports it
           throw e
+        } finally {
+          this.#isVerifyingSecret = false
         }
       },
       true
@@ -588,10 +600,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   resetSigningAuthResult() {
-    if (!this.signingAuthResult && !this.errorMessage) return
+    if (!this.signingAuthResult) return
 
+    // Only the verification's own outcome is cleared - the shared `errorMessage` belongs to the
+    // unlock screen, and wiping it here cleared an error the user had not read yet
     this.signingAuthResult = null
-    this.errorMessage = ''
     this.emitUpdate()
   }
 
