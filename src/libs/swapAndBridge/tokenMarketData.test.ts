@@ -62,7 +62,7 @@ describe('marketDataRequestBatcher', () => {
 
     const ethereumRequest = requests.find((r) => r.url.includes('/ethereum?'))
     expect(ethereumRequest?.queueSegment).toHaveLength(2)
-    expect(ethereumRequest?.url).toContain('contract_addresses=0xaaa%2C0xccc')
+    expect(ethereumRequest?.url).toContain('contract_addresses=0xaaa,0xccc')
     expect(ethereumRequest?.url).toContain('vs_currencies=usd')
 
     const optimismRequest = requests.find((r) => r.url.includes('/optimistic-ethereum?'))
@@ -110,7 +110,7 @@ describe('marketDataRequestBatcher', () => {
 
     const nativeRequest = requests.find((r) => r.url.includes('/simple/price?'))
     expect(nativeRequest?.queueSegment).toHaveLength(2)
-    expect(nativeRequest?.url).toContain('ids=ethereum%2Cmatic-network')
+    expect(nativeRequest?.url).toContain('ids=ethereum,matic-network')
     expect(nativeRequest?.url).toContain('vs_currencies=usd')
     // Never mixed into the contract-address route, as ZeroAddress isn't a real contract
     expect(nativeRequest?.url).not.toContain('contract_addresses')

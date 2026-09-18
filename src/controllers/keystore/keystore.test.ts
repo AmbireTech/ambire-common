@@ -883,9 +883,9 @@ describe('accounts sync between two devices', () => {
 
   test('tells the UI about the synced keys once the onboarding password stores them', async () => {
     const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
-    // Storing the queued keys is detached from `addSecret`, so on a real device (where
-    // writes take a moment) it finishes after `addSecret` has already emitted. Without an
-    // update of its own the UI keeps rendering the synced accounts as if they had no keys.
+    // On a real device writes take a moment, so this guards that `addSecret` waits for the
+    // queued keys to be stored and emits afterwards. Without that update the UI keeps
+    // rendering the synced accounts as if they had no keys.
     const slowKeystore = new KeystoreController(
       'default',
       new StorageController(withSlowWrites(produceMemoryStore())),
@@ -898,10 +898,6 @@ describe('accounts sync between two devices', () => {
     slowKeystore.onUpdate(() => keyCountsSeenByTheUi.push(slowKeystore.keys.length))
 
     await slowKeystore.addSecret('password', importingPass, '', true)
-    // The detached storing is still in flight here, so give it room to finish and emit
-    for (let i = 0; i < 100 && keyCountsSeenByTheUi.at(-1) !== 2; i++) {
-      await wait(20)
-    }
 
     expect(slowKeystore.keys).toHaveLength(2)
     expect(keyCountsSeenByTheUi.at(-1)).toBe(2)

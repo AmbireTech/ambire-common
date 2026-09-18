@@ -51,7 +51,6 @@ import * as broadcastLib from '../../libs/broadcast/broadcast'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
-import { clearErc7730RegistryCache } from '../../libs/humanizer'
 import { HumanizerWarning } from '../../libs/humanizer/interfaces'
 import { UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
@@ -79,6 +78,7 @@ import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { DappsController } from '../dapps/dapps'
+import { Erc7730Controller } from '../erc7730/erc7730'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationFailureKind, EstimationStatus } from '../estimation/types'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
@@ -467,6 +467,11 @@ const init = async (
     externalSignerControllers?: ExternalSignerControllers
     onBroadcastSuccess?: (params: any) => Promise<void>
     featureFlags?: Partial<FeatureFlags>
+    /**
+     * Pause the controller the moment it is built, before its estimate and gas price intervals
+     * get to run. For tests that drive those intervals themselves.
+     */
+    pauseOnInit?: boolean
   }
 ) => {
   const storage: Storage = produceMemoryStore()
@@ -723,9 +728,17 @@ const init = async (
     fetchAndUpdateSpy.mockRestore()
     dapps = realDappsController
   }
+  // A real controller over the test's storage, not a stub - the ERC-7730 tests assert on
+  // descriptor caching, which is exactly what this controller owns.
+  const erc7730 = new Erc7730Controller({
+    storage: storageCtrl,
+    callRelayer,
+    ui: uiCtrl
+  })
   const controller = new SignAccountOpTesterController({
     type: options?.type,
     callRelayer: options?.callRelayer as BindedRelayerCall,
+    erc7730,
     accounts: accountsCtrl,
     networks: networksCtrl,
     keystore,
@@ -751,6 +764,10 @@ const init = async (
     hasNewEstimation: true,
     gasPrices: gasPricesOrMock
   })
+
+  // Must happen before the first await, otherwise the intervals scheduled by the constructor
+  // have already started their immediate run.
+  if (options?.pauseOnInit) controller.pause()
 
   return { controller, storageCtrl, signAccountOpPreference, accountsCtrl, portfolio }
 }
@@ -2993,8 +3010,6 @@ test('Signing [V1 with EOA payment]: working case', async () => {
 
 describe('ERC-7730 humanization', () => {
   test('shows loading, uses ERC-7730 data, caches it and fetches a shared batch descriptor once', async () => {
-    clearErc7730RegistryCache()
-
     const tokenAddress = '0x1111111111111111111111111111111111111111'
     const spender = '0x2222222222222222222222222222222222222222'
     const registryPath = 'registry/test/approve.json'
@@ -3074,17 +3089,17 @@ describe('ERC-7730 humanization', () => {
       controller.humanization.forEach((humanizedCall, index) => {
         expect(humanizedCall.fullVisualization?.[0]).toMatchObject({
           type: 'erc7730',
-          title: 'Approve with ERC-7730',
-          rows: [
+          intent: [expect.objectContaining({ content: 'Approve with ERC-7730' })],
+          fields: [
             {
+              type: 'single-value',
               label: 'Spender',
-              value: [{ type: 'address', address: spender }]
+              value: { type: 'address', address: spender }
             },
             {
+              type: 'single-value',
               label: 'Amount',
-              value: [
-                { type: 'token', address: tokenAddress, value: BigInt(index + 1), chainId: 1n }
-              ]
+              value: { type: 'token', address: tokenAddress, value: BigInt(index + 1), chainId: 1n }
             }
           ]
         })
@@ -3100,7 +3115,7 @@ describe('ERC-7730 humanization', () => {
       expect(callRelayer).not.toHaveBeenCalled()
       expect(controller.humanization[0]?.fullVisualization?.[0]).toMatchObject({
         type: 'erc7730',
-        title: 'Approve with ERC-7730'
+        intent: [expect.objectContaining({ content: 'Approve with ERC-7730' })]
       })
     } finally {
       controller.destroy()
@@ -3108,8 +3123,6 @@ describe('ERC-7730 humanization', () => {
   })
 
   test('falls back to the old humanizer when no ERC-7730 descriptor is available', async () => {
-    clearErc7730RegistryCache()
-
     const callRelayer = jest.fn(async (path: string, method?: string) => {
       if (path === '/v2/erc7730/account-op') {
         expect(method).toBe('GET')
@@ -3290,7 +3303,9 @@ describe('dapp verification banners', () => {
         id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
         type: 'warning',
         title: 'Suspicious app hosting',
-        text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
+        text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.',
+        // The dApp is on its own vercel.app subdomain, so the user may mark it as trusted.
+        trustableDappUrls: [suspiciousHostingDapp.url]
       }
     ])
   })
@@ -3995,6 +4010,11 @@ describe('reestimation loop', () => {
         token: nativeFeeToken
       }
     ]
+    // Building the controller normally fires one estimate straight away, on the real clock. That
+    // request is still waiting on the network when takeOverLoop switches to fake timers, so it
+    // finishes somewhere in the middle of the loop below, where it counts as a reestimate even
+    // though it never called the spy. The loop then reaches its limit one attempt short.
+    // pauseOnInit keeps that first estimate from starting at all.
     const { controller } = await init(
       eoaAccount,
       createEOAAccountOp(eoaAccount),
@@ -4005,7 +4025,8 @@ describe('reestimation loop', () => {
         updatedAt: Date.now()
       },
       loopGasPrices,
-      false
+      false,
+      { pauseOnInit: true }
     )
 
     // The gas price loop is not under test and would otherwise hit the network

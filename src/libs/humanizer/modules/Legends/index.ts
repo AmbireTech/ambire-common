@@ -40,6 +40,16 @@ const claimXpFromFeedbackAbi = parseAbi(['function claimXpFromFeedback(string)']
 const claimBitrefillCodeAbi = parseAbi(['function claimBitrefillCode()'])
 const revealMascotLetterAbi = parseAbi(['function revealMascotLetter()'])
 
+const mintLegacySelector = toFunctionSelector(mintLegacyAbi[0])
+const mintSelector = toFunctionSelector(mintAbi[0])
+const getDailyRewardSelector = toFunctionSelector(getDailyRewardAbi[0])
+const spinWheelSelector = toFunctionSelector(spinWheelAbi[0])
+const linkAndAcceptInviteSelector = toFunctionSelector(linkAndAcceptInviteAbi[0])
+const inviteSelector = toFunctionSelector(inviteAbi[0])
+const claimXpFromFeedbackSelector = toFunctionSelector(claimXpFromFeedbackAbi[0])
+const claimBitrefillCodeSelector = toFunctionSelector(claimBitrefillCodeAbi[0])
+const revealMascotLetterSelector = toFunctionSelector(revealMascotLetterAbi[0])
+
 const legendsModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const characterTypes: { [season: number]: string[] } = {
     '0': [
@@ -62,7 +72,7 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   }
   const matcher: Record<string, (call: HexIrCall) => any> = {
     // legacy mint function
-    [toFunctionSelector(mintLegacyAbi[0])]: (call) => {
+    [mintLegacySelector]: (call) => {
       const { args } = decodeFunctionData({ abi: mintLegacyAbi, data: call.data })
       const [heroType] = args
 
@@ -72,7 +82,7 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
         getLabel('for Ambire Rewards')
       ]
     },
-    [toFunctionSelector(mintAbi[0])]: (call) => {
+    [mintSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: mintAbi, data: call.data })
       const [heroType, season] = args
 
@@ -86,11 +96,11 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
         getLabel(`for Ambire Rewards season ${season}`)
       ]
     },
-    [toFunctionSelector(getDailyRewardAbi[0])]: () => [getAction('Unlock the treasure chest')],
-    [toFunctionSelector(spinWheelAbi[0])]: () => {
+    [getDailyRewardSelector]: () => [getAction('Unlock the treasure chest')],
+    [spinWheelSelector]: () => {
       return [getAction('Unlock the wheel of fortune')]
     },
-    [toFunctionSelector(linkAndAcceptInviteAbi[0])]: (call) => {
+    [linkAndAcceptInviteSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: linkAndAcceptInviteAbi, data: call.data })
       const [inviteeV2Account, inviteeEoaOrV1, inviter] = args
       const acceptInvitationVisualizationPrefix =
@@ -110,19 +120,19 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
         getAddressVisualization(inviteeV2Account)
       ]
     },
-    [toFunctionSelector(inviteAbi[0])]: (call) => {
+    [inviteSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: inviteAbi, data: call.data })
       const [invitee] = args
 
       return [getAction('Invite'), getAddressVisualization(invitee), getLabel('to Ambire Rewards')]
     },
-    [toFunctionSelector(claimXpFromFeedbackAbi[0])]: () => {
+    [claimXpFromFeedbackSelector]: () => {
       return [getAction('Claim XP'), getLabel('from'), getLabel('feedback form', true)]
     },
-    [toFunctionSelector(claimBitrefillCodeAbi[0])]: () => {
+    [claimBitrefillCodeSelector]: () => {
       return [getAction('Claim'), getLabel('cashback code for'), getLabel('Bitrefill', true)]
     },
-    [toFunctionSelector(revealMascotLetterAbi[0])]: () => {
+    [revealMascotLetterSelector]: () => {
       return [getAction('Reveal'), getLabel('a letter from'), getLabel('SHI_T_', true)]
     }
   }

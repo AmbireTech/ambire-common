@@ -25,7 +25,7 @@ import {
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { PIMLICO } from '../../consts/bundlers'
-import { SINGLETON } from '../../consts/deploy'
+import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
@@ -43,6 +43,7 @@ import { Account, AccountOnchainState, IAccountsController } from '../../interfa
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
+import { IErc7730Controller } from '../../interfaces/erc7730'
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
@@ -110,7 +111,8 @@ import {
   FullEstimationSummary
 } from '../../libs/estimate/interfaces'
 import { calculateFeeAmount } from '../../libs/fees/fees'
-import { fetchErc7730DescriptorsForAccountOp, humanizeAccountOp } from '../../libs/humanizer'
+import { humanizeAccountOp } from '../../libs/humanizer'
+import { Erc7730CallDescriptors } from '../../libs/humanizer/erc7730/types'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import {
   flattenHumanizerVisualizations,
@@ -238,6 +240,8 @@ export class SignAccountOpController
   #type: SignAccountOpType
 
   #callRelayer: BindedRelayerCall
+
+  #erc7730: IErc7730Controller
 
   #accounts: IAccountsController
 
@@ -460,6 +464,7 @@ export class SignAccountOpController
     eventEmitterRegistry,
     type,
     callRelayer,
+    erc7730,
     accounts,
     networks,
     keystore,
@@ -483,6 +488,7 @@ export class SignAccountOpController
     eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
     callRelayer: BindedRelayerCall
+    erc7730: IErc7730Controller
     accounts: IAccountsController
     networks: INetworksController
     keystore: IKeystoreController
@@ -506,6 +512,7 @@ export class SignAccountOpController
     super(eventEmitterRegistry, false)
     this.#type = type || 'default'
     this.#callRelayer = callRelayer
+    this.#erc7730 = erc7730
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
@@ -1117,7 +1124,7 @@ export class SignAccountOpController
 
   #setErc7730Humanization(
     humanizationId: number,
-    erc7730Descriptors: Awaited<ReturnType<typeof fetchErc7730DescriptorsForAccountOp>>
+    erc7730Descriptors: Erc7730CallDescriptors
   ) {
     if (
       !this.isCurrentHumanization(humanizationId) ||
@@ -1149,10 +1156,7 @@ export class SignAccountOpController
     await this.applyDescriptorFirstHumanization({
       humanizationId,
       fetchDescriptor: () =>
-        fetchErc7730DescriptorsForAccountOp(this.accountOp, {
-          callRelayer: this.#callRelayer,
-          provider: this.provider
-        }),
+        this.#erc7730.getDescriptorsForAccountOp(this.accountOp),
       applyDescriptorHumanization: (erc7730Descriptors, currentHumanizationId) =>
         this.#setErc7730Humanization(currentHumanizationId, erc7730Descriptors),
       applyFallbackHumanization: (currentHumanizationId) =>
@@ -3497,8 +3501,17 @@ export class SignAccountOpController
 
         // safe accounts have their signature prepopulated
         if (!this.account.safeCreation) {
-          const isHotEOA = accountState.isEOA && this.accountOp.signingKeyType === 'internal'
-          if (!isHotEOA) {
+          // Which signature format a 7702 EOA needs is dictated by the delegator
+          // it points to, not by the key type: the Ambire 7702 account validates
+          // the Ambire4337AccountOp typed data in unprotected mode, while the
+          // GridPlus one expects the standard AmbireOperation wrapping that smart
+          // accounts use. Getting this wrong fails the userOp with AA24.
+          const delegator =
+            accountState.delegatedContract ??
+            getContractImplementation(this.#network.chainId, this.accountKeyStoreKeys)
+          const signsAsAmbire7702Eoa =
+            accountState.isEOA && delegator.toLowerCase() === EIP_7702_AMBIRE_ACCOUNT.toLowerCase()
+          if (!signsAsAmbire7702Eoa) {
             const typedData = getTypedData(
               this.#network.chainId,
               this.accountOp.accountAddr,
@@ -3973,14 +3986,7 @@ export class SignAccountOpController
         message: 'No transaction response received after being broadcasted.'
       })
 
-    const clearSigningHumanization = hasErc7730Humanization(this.humanization)
-      ? this.humanization
-      : null
     const submittedAccountOpMeta = { ...accountOp.meta }
-    delete submittedAccountOpMeta.clearSigningHumanization
-    if (clearSigningHumanization) {
-      submittedAccountOpMeta.clearSigningHumanization = clearSigningHumanization
-    }
 
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,

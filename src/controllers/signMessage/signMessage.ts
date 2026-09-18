@@ -1,7 +1,5 @@
 import { toUtf8String } from 'ethers'
 
-import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
-
 import EmittableError from '../../classes/EmittableError'
 import ExternalSignerError from '../../classes/ExternalSignerError'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
@@ -11,6 +9,7 @@ import {
   DappVerificationBanner,
   IDappsController
 } from '../../interfaces/dapp'
+import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
@@ -22,15 +21,15 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
+import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import {
   ISignMessageController,
   SignMessageStatus,
   SignMessageUpdateParams
 } from '../../interfaces/signMessage'
-import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
 import { getDappIdFromUrl, getUnauthenticatedDapps } from '../../libs/dapps/helpers'
-import { fetchErc7730DescriptorForMessage, humanizeMessage } from '../../libs/humanizer'
+import { humanizeMessage } from '../../libs/humanizer'
 import { buildSafeMessageOrigin } from '../../libs/safe/helpers'
 import {
   addMessage,
@@ -84,7 +83,7 @@ export class SignMessageController
 
   #dapps?: IDappsController
 
-  #callRelayer?: BindedRelayerCall
+  #erc7730?: IErc7730Controller
 
   // Bumped when init() starts and whenever reset() is called; async operations
   // capture it and re-check after each await, so obsolete requests can't update
@@ -146,7 +145,7 @@ export class SignMessageController
     invite: IInviteController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
     dapps?: IDappsController,
-    callRelayer?: BindedRelayerCall
+    erc7730?: IErc7730Controller
   ) {
     super(eventEmitterRegistry)
 
@@ -157,7 +156,7 @@ export class SignMessageController
     this.#accounts = accounts
     this.#invite = invite
     this.#dapps = dapps
-    this.#callRelayer = callRelayer
+    this.#erc7730 = erc7730
     this.status = SignMessageStatus.Initial
 
     // `banners` is derived from DappsController state (the dapp verification status), so its
@@ -376,23 +375,20 @@ export class SignMessageController
 
   async #applyDescriptorFirstHumanization(humanizationId: number) {
     const messageToSign = this.messageToSign
-    const callRelayer = this.#callRelayer
+    const erc7730 = this.#erc7730
 
     if (!messageToSign) return
-    if (messageToSign.content.kind !== 'typedMessage' || !callRelayer) {
+    // `Erc7730Controller` is the only route to a descriptor (it owns the relayer and the cache), so
+    // its absence means clear signing is simply not available here - as in the auto-login flow,
+    // which builds this controller without any relayer access at all.
+    if (messageToSign.content.kind !== 'typedMessage' || !erc7730) {
       this.#setFallbackHumanization(humanizationId)
       return
     }
 
     await this.applyDescriptorFirstHumanization({
       humanizationId,
-      fetchDescriptor: async () => {
-        const provider = this.network
-          ? this.#providers.providers[this.network.chainId.toString()]
-          : undefined
-
-        return fetchErc7730DescriptorForMessage(messageToSign, callRelayer, provider)
-      },
+      fetchDescriptor: async () => erc7730.getDescriptorForMessage(messageToSign),
       applyDescriptorHumanization: (erc7730Descriptor, currentHumanizationId) => {
         if (!erc7730Descriptor) return false
 
@@ -408,7 +404,7 @@ export class SignMessageController
   humanize() {
     if (!this.messageToSign) return
 
-    if (this.messageToSign.content.kind !== 'typedMessage' || !this.#callRelayer) {
+    if (this.messageToSign.content.kind !== 'typedMessage' || !this.#erc7730) {
       const currentHumanizationId = this.#startHumanization()
       this.#setFallbackHumanization(currentHumanizationId)
       return
