@@ -77,6 +77,7 @@ import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { DappsController } from '../dapps/dapps'
+import { Erc7730Controller } from '../erc7730/erc7730'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationFailureKind, EstimationStatus } from '../estimation/types'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
@@ -87,7 +88,6 @@ import { NetworksController } from '../networks/networks'
 import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
-import { Erc7730Controller } from '../erc7730/erc7730'
 import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
 import { StorageController } from '../storage/storage'
@@ -466,6 +466,11 @@ const init = async (
     externalSignerControllers?: ExternalSignerControllers
     onBroadcastSuccess?: (params: any) => Promise<void>
     featureFlags?: Partial<FeatureFlags>
+    /**
+     * Pause the controller the moment it is built, before its estimate and gas price intervals
+     * get to run. For tests that drive those intervals themselves.
+     */
+    pauseOnInit?: boolean
   }
 ) => {
   const storage: Storage = produceMemoryStore()
@@ -556,7 +561,8 @@ const init = async (
     storage: storageCtrl,
     accounts: accountsCtrl,
     autoLogin: autoLoginCtrl,
-    banner: bannerCtrl
+    banner: bannerCtrl,
+    ui: uiCtrl
   })
   const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
   await accountsCtrl.initialLoadPromise
@@ -766,6 +772,10 @@ const init = async (
     hasNewEstimation: true,
     gasPrices: gasPricesOrMock
   })
+
+  // Must happen before the first await, otherwise the intervals scheduled by the constructor
+  // have already started their immediate run.
+  if (options?.pauseOnInit) controller.pause()
 
   return { controller, storageCtrl, signAccountOpPreference, accountsCtrl, portfolio }
 }
@@ -4008,6 +4018,11 @@ describe('reestimation loop', () => {
         token: nativeFeeToken
       }
     ]
+    // Building the controller normally fires one estimate straight away, on the real clock. That
+    // request is still waiting on the network when takeOverLoop switches to fake timers, so it
+    // finishes somewhere in the middle of the loop below, where it counts as a reestimate even
+    // though it never called the spy. The loop then reaches its limit one attempt short.
+    // pauseOnInit keeps that first estimate from starting at all.
     const { controller } = await init(
       eoaAccount,
       createEOAAccountOp(eoaAccount),
@@ -4018,7 +4033,8 @@ describe('reestimation loop', () => {
         updatedAt: Date.now()
       },
       loopGasPrices,
-      false
+      false,
+      { pauseOnInit: true }
     )
 
     // The gas price loop is not under test and would otherwise hit the network

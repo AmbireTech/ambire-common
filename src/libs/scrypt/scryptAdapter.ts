@@ -29,6 +29,20 @@ export class ScryptAdapter {
     this.#platform = platform
   }
 
+  /**
+   * Whether the derivation runs on a thread other than the caller's. True only on
+   * mobile, where scrypt-js is swapped for a native implementation that resolves
+   * from a background thread. Everywhere else the derivation holds the calling
+   * thread, so callers have to yield around it to keep the UI responsive.
+   */
+  get runsOffCallerThread(): boolean {
+    return this.#isMobile
+  }
+
+  get #isMobile(): boolean {
+    return this.#platform === 'mobile-android' || this.#platform === 'mobile-ios'
+  }
+
   async scrypt(
     password: Uint8Array<ArrayBufferLike>,
     salt: Uint8Array,
@@ -36,10 +50,8 @@ export class ScryptAdapter {
   ): Promise<Uint8Array> {
     const { N, r, p, dkLen } = params
 
-    const isMobile = this.#platform === 'mobile-android' || this.#platform === 'mobile-ios'
-
     // On mobile, scrypt-js is swapped for a fast native implementation, so use it.
-    if (isMobile) {
+    if (this.#isMobile) {
       // scrypt-js returns Promise<ArrayLike<number>>
       const result = await scryptJs(password, salt, N, r, p, dkLen, () => {})
       return new Uint8Array(result)

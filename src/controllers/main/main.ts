@@ -415,7 +415,8 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       accounts: this.accounts,
       autoLogin: this.autoLogin,
-      banner: this.banner
+      banner: this.banner,
+      ui: this.ui
     })
 
     this.portfolio = new PortfolioController(

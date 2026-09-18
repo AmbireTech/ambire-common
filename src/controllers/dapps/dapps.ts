@@ -68,6 +68,20 @@ import { canBeTrustedByUser } from '../phishing/phishing'
 
 const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
 
+// Indexed once, because the `dapps` getter asks this per dapp and it runs on every
+// update of this controller.
+const predefinedDappIds = new Set(predefinedDapps.map((d) => d.id))
+
+/**
+ * The categories present in a list of dapps, excluding the ones never shown. Takes the
+ * list rather than reading it back off the controller, so a caller that already has it
+ * does not derive it a second time.
+ */
+const getDappCategories = (dapps: Dapp[]): string[] =>
+  [
+    ...new Set(dapps.map((d) => d.category!).filter((c) => !!c && !categoriesToExclude.includes(c)))
+  ].sort()
+
 const mergeSource = (
   existing: ConnectionSource[] | undefined,
   source: ConnectionSource
@@ -241,7 +255,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     const filteredMap = new Map(this.#dapps)
 
     for (const [key, d] of filteredMap) {
-      const isPredefined = predefinedDapps.some((pd) => pd.id === d.id)
+      const isPredefined = predefinedDappIds.has(d.id)
       const isConnected = !!d.connectedSources?.length
       if (!isConnected && d.blacklisted === 'BLACKLISTED') {
         filteredMap.delete(key)
@@ -294,11 +308,7 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   get categories(): string[] {
-    return [
-      ...new Set(
-        this.dapps.map((d) => d.category!).filter((c) => !!c && !categoriesToExclude.includes(c))
-      )
-    ].sort()
+    return getDappCategories(this.dapps)
   }
 
   async #load() {
@@ -1660,15 +1670,19 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   toJSON() {
+    // `categories` derives from `dapps`, and both are part of the state sent to the UI.
+    // Deriving the list once here keeps a single update from filtering the catalog twice.
+    const dapps = this.dapps
+
     return {
       ...this,
       ...super.toJSON(),
-      dapps: this.dapps,
+      dapps,
       recentDapps: this.recentDapps,
+      categories: getDappCategories(dapps),
       dappToConnect: this.dappToConnect
         ? this.#withTrustFlags(this.dappToConnect, !!this.#dappToConnectContextStatus)
         : null,
-      categories: this.categories,
       isReady: this.isReady,
       trendingTokens: this.trendingTokens,
       shouldRetryFetchAndUpdate: this.shouldRetryFetchAndUpdate,
