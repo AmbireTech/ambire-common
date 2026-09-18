@@ -4,30 +4,45 @@ import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
 
-export interface HumanizerErc7730Row {
-  label: string
-  value: HumanizerVisualization[]
-}
+export type HumanizerErc7730Row = {
+  // The ERC-7730 field path this row was built from - used to match against `excludedFieldPaths`.
+  // Absent for rows synthesized outside real ERC-7730 fields (fallback/multicall/Safe rows), which
+  // are never candidates for exclusion anyway.
+  path?: string
+} & (
+  | {
+      // One embedded call of a `calldata` field, rendered inline on a single line and never split
+      // into rows of its own. Holds the nested `erc7730` visualization when that call had a
+      // descriptor, or the flat parts the legacy humanizer modules produced when it had none - so
+      // a module's own wording (e.g. "Swap X for Y") survives instead of being taken apart. Carries
+      // no label: the parts are the whole row.
+      type: 'call'
+      value: HumanizerVisualization[]
+    }
+  | {
+      // Any other field: its label and the single value the ERC-7730 formatter produced for it.
+      type: 'single-value'
+      label: string
+      value: HumanizerVisualization
+    }
+)
 
 export interface HumanizerErc7730Visualization {
   type: 'erc7730'
-  // The format's plain, non-interpolated short title (e.g. "Swap") per the
-  // ERC-7730 spec's `intent`. It never needs a token/decimals lookup, so it's
-  // always safe to use as-is - this is the string other logic reads (label
-  // comparisons, heuristics, non-rich surfaces) and the fallback text when
-  // `titleParts` is absent. Prefer `titleParts` for display when present.
-  title?: string
-  // The interpolated title (per the format's `interpolatedIntent`), split into
-  // renderable parts (text/token/address/...) so the UI can render a token
-  // amount with the same live decimals/symbol/price lookup used for row values
-  // (e.g. via a `type: 'token'` item), instead of requiring decimals to be
-  // statically known at humanization time. Present only when the format used
-  // `interpolatedIntent` AND every placeholder resolved successfully - per the
-  // spec, a failed interpolation falls back entirely to `title` above rather
-  // than leaking a raw/unformatted value into the UI.
-  titleParts?: HumanizerVisualization[]
+  // The rendered intent, as parts (text/token/address/action/...). `[action]`
+  // (from the spec's plain `intent`) when there's no `interpolatedIntent` or it
+  // failed to resolve; the full structured breakdown otherwise.
+  intent: HumanizerVisualization[]
+  // Paths of fields already rendered inline in `intent` (empty for the plain
+  // `[action]` form). Rows to display = `fields` filtered to exclude these -
+  // recomputed from `fields` rather than stored as a second row array, so a
+  // nested visualization tree doesn't double its own payload at every level.
+  excludedFieldPaths: string[]
+  // Every field turned into a row, regardless of what's excluded above - for
+  // heuristics (spender/recipient detection, swap pairing, layout complexity)
+  // that need full context independent of `intent`.
+  fields: HumanizerErc7730Row[]
   dapp?: Call['dapp']
-  rows: HumanizerErc7730Row[]
 }
 
 // @TODO remove property humanizerMeta

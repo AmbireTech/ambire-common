@@ -2,6 +2,7 @@ import { Route as LiFiRoute, Token as LiFiToken } from '@lifi/types'
 
 import { AccountOpIdentifiedBy } from '../libs/accountOp/submittedAccountOp'
 import { TokenResult } from '../libs/portfolio'
+import type { FeeExemptionReason } from '../libs/swapAndBridge/fee'
 import { ControllerInterface } from './controller'
 
 export type ISwapAndBridgeController = ControllerInterface<
@@ -185,6 +186,52 @@ export interface UniswapStatusResponse {
   }[]
 }
 
+export interface CowSwapOrderParameters {
+  sellToken: string
+  buyToken: string
+  receiver: string
+  sellAmount: string
+  buyAmount: string
+  validTo: number
+  appData: string
+  appDataHash?: string
+  feeAmount: string
+  kind: 'sell'
+  partiallyFillable: false
+  sellTokenBalance?: 'erc20'
+  buyTokenBalance?: 'erc20'
+}
+
+export interface CowSwapQuoteResponse {
+  quote: CowSwapOrderParameters & {
+    gasAmount: string
+    gasPrice: string
+    sellTokenPrice: string
+    signingScheme?: 'presign' | 'eip1271'
+  }
+  from?: string
+  expiration: string
+  id?: number
+  verified: boolean
+  protocolFeeBps?: string
+}
+
+export interface CowSwapOrderCreation extends CowSwapOrderParameters {
+  appDataHash: string
+  sellTokenBalance: 'erc20'
+  buyTokenBalance: 'erc20'
+  signingScheme: 'presign' | 'eip1271'
+  signature: '0x'
+  from: string
+  quoteId: number | null
+}
+
+export interface CowSwapRawRoute {
+  quoteResponse: CowSwapQuoteResponse
+  order: CowSwapOrderCreation
+  isEthFlow: boolean
+}
+
 export interface SwapAndBridgeRoute {
   providerId: string
   routeId: string
@@ -205,7 +252,7 @@ export interface SwapAndBridgeRoute {
   outputValueInUsd: number
   outputValueAfterGasInUsd?: number
   serviceTime: number
-  rawRoute: SocketAPIRoute | LiFiRoute | UniswapQuoteResponse
+  rawRoute: SocketAPIRoute | LiFiRoute | UniswapQuoteResponse | CowSwapRawRoute
   toToken: LiFiToken
   disabled: boolean
   disabledReason?: string
@@ -228,6 +275,8 @@ export interface SwapAndBridgeRoute {
    * @example - Wrapping and unwrapping natives
    */
   withConvenienceFee: boolean
+  /** Why the selected operation has no convenience fee. */
+  feeExemptionReason?: FeeExemptionReason
   isIntent?: boolean // we add this by ourselves
 }
 
@@ -596,6 +645,7 @@ export interface ProviderQuoteParams {
   isWrapOrUnwrap: boolean
   accountNativeBalance: bigint
   nativeSymbol: string
+  feePercent: number
 }
 
 export interface SwapProvider {
@@ -640,7 +690,8 @@ export interface SwapProvider {
     userAddress,
     sort,
     accountNativeBalance,
-    nativeSymbol
+    nativeSymbol,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote>
   getRouteStatus({
     txHash,
@@ -649,7 +700,8 @@ export interface SwapProvider {
     bridge,
     providerId,
     requestId,
-    routeId
+    routeId,
+    rawRoute
   }: {
     txHash: string
     fromChainId: number
@@ -658,6 +710,7 @@ export interface SwapProvider {
     providerId: string
     requestId?: string
     routeId?: string
+    rawRoute?: SwapAndBridgeRoute['rawRoute']
   }): Promise<SwapAndBridgeRouteStatusResult>
 }
 

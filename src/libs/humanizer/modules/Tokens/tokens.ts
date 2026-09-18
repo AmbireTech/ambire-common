@@ -62,6 +62,18 @@ const erc20DecreaseApprovalAbi = parseAbi([
  */
 type DecodedCall = { visualizations: HumanizerVisualization[]; warning?: HumanizerWarning }
 
+const erc721ApproveSelector = toFunctionSelector(erc721ApproveAbi[0])
+const erc721SetApprovalForAllSelector = toFunctionSelector(erc721SetApprovalForAllAbi[0])
+const erc721SafeTransferFromSelector = toFunctionSelector(erc721SafeTransferFromAbi[0])
+const erc721TransferFromSelector = toFunctionSelector(erc721TransferFromAbi[0])
+const erc20ApproveSelector = toFunctionSelector(erc20ApproveAbi[0])
+const erc20IncreaseAllowanceSelector = toFunctionSelector(erc20IncreaseAllowanceAbi[0])
+const erc20DecreaseAllowanceSelector = toFunctionSelector(erc20DecreaseAllowanceAbi[0])
+const erc20IncreaseApprovalSelector = toFunctionSelector(erc20IncreaseApprovalAbi[0])
+const erc20DecreaseApprovalSelector = toFunctionSelector(erc20DecreaseApprovalAbi[0])
+const erc20TransferSelector = toFunctionSelector(erc20TransferAbi[0])
+const erc20TransferFromSelector = toFunctionSelector(erc20TransferFromAbi[0])
+
 export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const nftTransferVisualization = (
     call: HexIrCall,
@@ -83,7 +95,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp
   }
 
   const matcher: Record<string, (call: HexIrCall) => DecodedCall> = {
-    [toFunctionSelector(erc721ApproveAbi[0])]: (call) => {
+    [erc721ApproveSelector]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc721ApproveAbi,
@@ -103,7 +115,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp
               ]
       }
     },
-    [toFunctionSelector(erc721SetApprovalForAllAbi[0])]: (call) => {
+    [erc721SetApprovalForAllSelector]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc721SetApprovalForAllAbi,
@@ -123,7 +135,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp
 
       return {
         visualizations: [
-          getAction('Grant approval', { warning: true }),
+          getAction('Grant approval'),
           getLabel('for all NFTs of'),
           getAddressVisualization(call.to),
           getLabel('to'),
@@ -131,6 +143,8 @@ export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp
         ],
         // there is no amount to check here - granting this hands over every item in the
         // collection, including items bought later, until it is revoked
+        // the `warning` below already flags the whole call element; marking the action itself
+        // as a warning too just makes the text harder to read without adding information
         warning: getWarning(
           'This app can transfer any item you own from this collection, now or later. Continue only if you trust it.',
           UNLIMITED_APPROVAL_WARNING_CODE,
@@ -139,10 +153,10 @@ export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp
         )
       }
     },
-    [toFunctionSelector(erc721SafeTransferFromAbi[0])]: (call) => ({
+    [erc721SafeTransferFromSelector]: (call) => ({
       visualizations: nftTransferVisualization(call, erc721SafeTransferFromAbi)
     }),
-    [toFunctionSelector(erc721TransferFromAbi[0])]: (call) => ({
+    [erc721TransferFromSelector]: (call) => ({
       visualizations: nftTransferVisualization(call, erc721TransferFromAbi)
     })
   }
@@ -183,7 +197,7 @@ export const genericErc20Humanizer = (
   ]
 
   const matcher: Record<string, (call: HexIrCall) => DecodedCall> = {
-    [toFunctionSelector(erc20ApproveAbi[0])]: (call) => {
+    [erc20ApproveSelector]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
 
       const { args } = decodeFunctionData({
@@ -212,7 +226,7 @@ export const genericErc20Humanizer = (
         warning: isUnlimitedAmount(value) ? getUnlimitedApprovalWarning(spender) : undefined
       }
     },
-    [toFunctionSelector(erc20IncreaseAllowanceAbi[0])]: (call) => {
+    [erc20IncreaseAllowanceSelector]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc20IncreaseAllowanceAbi,
@@ -224,7 +238,7 @@ export const genericErc20Humanizer = (
         warning: isUnlimitedAmount(addedValue) ? getUnlimitedApprovalWarning(spender) : undefined
       }
     },
-    [toFunctionSelector(erc20DecreaseAllowanceAbi[0])]: (call) => {
+    [erc20DecreaseAllowanceSelector]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc20DecreaseAllowanceAbi,
@@ -233,7 +247,7 @@ export const genericErc20Humanizer = (
       const [spender, subtractedValue] = args
       return { visualizations: revokeVisualizations(call.to, spender, subtractedValue) }
     },
-    [toFunctionSelector(erc20IncreaseApprovalAbi[0])]: (call) => {
+    [erc20IncreaseApprovalSelector]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc20IncreaseApprovalAbi,
@@ -245,7 +259,7 @@ export const genericErc20Humanizer = (
         warning: isUnlimitedAmount(addedValue) ? getUnlimitedApprovalWarning(spender) : undefined
       }
     },
-    [toFunctionSelector(erc20DecreaseApprovalAbi[0])]: (call) => {
+    [erc20DecreaseApprovalSelector]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc20DecreaseApprovalAbi,
@@ -254,7 +268,7 @@ export const genericErc20Humanizer = (
       const [spender, subtractedValue] = args
       return { visualizations: revokeVisualizations(call.to, spender, subtractedValue) }
     },
-    [toFunctionSelector(erc20TransferAbi[0])]: (call) => {
+    [erc20TransferSelector]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc20TransferAbi,
@@ -270,7 +284,7 @@ export const genericErc20Humanizer = (
         ]
       }
     },
-    [toFunctionSelector(erc20TransferFromAbi[0])]: (call) => {
+    [erc20TransferFromSelector]: (call) => {
       if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
       const { args } = decodeFunctionData({
         abi: erc20TransferFromAbi,

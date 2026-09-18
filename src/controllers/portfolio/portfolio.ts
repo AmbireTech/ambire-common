@@ -1,4 +1,6 @@
-import { getAddress } from 'ethers'
+import { getAddress } from 'viem'
+
+import { yieldToMain } from '@/utils/scheduler'
 
 import {
   IRecurringTimeout,
@@ -14,7 +16,8 @@ import {
 import { ETHEREUM_CHAIN_ID, INVICTUS_RPC_URL_IDENTIFIER } from '../../consts/networks'
 import {
   DEFAULT_STALE_RPC_BLOCK_THRESHOLD,
-  ETHEREUM_STALE_RPC_BLOCK_THRESHOLD
+  ETHEREUM_STALE_RPC_BLOCK_THRESHOLD,
+  getDiscoveryTimeout
 } from '../../consts/portfolio'
 import {
   Account,
@@ -28,6 +31,7 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
@@ -64,6 +68,7 @@ import {
   convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
   getHintsError,
+  getTokenDataCacheKey,
   getTotal,
   getAssetCacheKey,
   getCollectibleCacheKey,
@@ -103,6 +108,7 @@ import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
 import batcher from '../../utils/batcher'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
+import { WalletTokenController } from '../walletToken/walletToken'
 
 const EXTERNAL_API_HINTS_TTL = {
   dynamic: 15 * 60 * 1000,
@@ -169,6 +175,13 @@ export class PortfolioController
 
   hasFundedHotAccount: boolean = false
 
+  /**
+   * The account's invite key for the Ambire Mobile app, returned by the relayer's
+   * `portfolio-additional` endpoint. Present only for accounts the relayer has generated
+   * one for; used to let the user activate the same account in the mobile app.
+   */
+  mobileInviteKeys: { [accountAddr: string]: string } = {}
+
   #portfolioLibs: Map<string, Portfolio>
 
   #banner: IBannerController
@@ -207,6 +220,8 @@ export class PortfolioController
    * Handles token learning, temporary tokens, hints and their storage.
    */
   protected hints: HintsController
+
+  #walletToken: WalletTokenController
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
@@ -259,7 +274,8 @@ export class PortfolioController
     banner: IBannerController,
     featureFlags: IFeatureFlagsController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
-    verification?: IVerificationController
+    verification?: IVerificationController,
+    platform: Platform = 'default'
   ) {
     super(eventEmitterRegistry)
 
@@ -278,6 +294,8 @@ export class PortfolioController
     this.#banner = banner
     this.#featureFlags = featureFlags
     this.hints = new HintsController(storage, accounts, keystore)
+    this.#walletToken = new WalletTokenController()
+    this.#walletToken.onError((error) => this.emitError(error))
     // Re-emit hints updates as portfolio updates so the re-exposed getters
     // (customTokens, tokenPreferences) reach the UI when they change.
     this.hints.onUpdate((forceEmit) => this.propagateUpdate(forceEmit))
@@ -362,7 +380,7 @@ export class PortfolioController
       },
       {
         timeoutSettings: {
-          timeoutAfter: 3000,
+          timeoutAfter: getDiscoveryTimeout(platform),
           timeoutErrorMessage: 'Velcro discovery timed out'
         },
         dedupeByKeys: ['chainId', 'accountAddr']
@@ -1245,10 +1263,17 @@ export class PortfolioController
     this.#setNetworkLoading(accountId, 'rewards', true)
     this.emitUpdate()
 
+    const accountKeysCount = getAccountKeysCount({
+      accountAddr: accountId,
+      keys: this.#keystore.keys,
+      accounts: this.#accounts.accounts
+    })
+    const sigsParam = accountKeysCount > 0 ? `?sigs=${accountKeysCount}` : ''
+
     let res: any
     try {
       res = await this.#callRelayer(
-        `/v2/identity/${accountId}/portfolio-additional`,
+        `/v2/identity/${accountId}/portfolio-additional${sigsParam}`,
         'GET',
         undefined,
         undefined,
@@ -1368,6 +1393,10 @@ export class PortfolioController
         gasTankTokens,
         total: getTotal(gasTankTokens, null)
       }
+    }
+
+    if (res.data.mobileInviteKey) {
+      this.mobileInviteKeys[accountId] = res.data.mobileInviteKey
     }
 
     this.emitUpdate()
@@ -1595,7 +1624,7 @@ export class PortfolioController
       for (const [key, priceData] of Object.entries(response.prices)) {
         if (!priceData || !('price' in priceData) || !('baseCurrency' in priceData)) continue
 
-        networkTokenDataCache.set(key, [
+        networkTokenDataCache.set(getTokenDataCacheKey(key), [
           Date.now(),
           convertApiTokenDataToTokenDataCache(priceData as ExternalAPITokenMarketDataResponse)
         ])
@@ -1699,6 +1728,7 @@ export class PortfolioController
         defiMaxDataAgeMs,
         hasKeys: portfolioProps.hasKeys
       })
+      await yieldToMain()
       const allHints = this.hints.getAllHints(
         account.addr,
         network.chainId,
@@ -1753,6 +1783,8 @@ export class PortfolioController
             t.address === '0xE575cC6EC0B5d176127ac61aD2D3d9d19d1aa4a0' &&
             !t.flags.rewardsType
         ) ?? null
+
+      await yieldToMain()
 
       const newDefiState = getNewDefiState(
         state.result,
@@ -1829,12 +1861,46 @@ export class PortfolioController
             : (state.result?.lastExternalApiUpdateData ?? null),
           tokens: combinedTokens,
           total: getTotal(combinedTokens, newDefiState),
-          defiPositions: newDefiState
+          defiPositions: newDefiState,
+          ...(state.result?.walletStaking && { walletStaking: state.result.walletStaking })
         }
       }
       const verifiedState = accountState[network.chainId.toString()]
 
       this.emitUpdate()
+
+      if (verifiedState) {
+        void this.#walletToken
+          .getWalletStakingShareValue({
+            chainId: network.chainId,
+            tokens: combinedTokens,
+            provider: portfolioLib.provider,
+            accountAddr: account.addr
+          })
+          .then((walletStaking) => {
+            if (
+              !walletStaking ||
+              this.#state[account.addr]?.[network.chainId.toString()] !== verifiedState ||
+              !verifiedState.result
+            ) {
+              return
+            }
+
+            verifiedState.result.walletStaking = walletStaking
+            this.emitUpdate()
+          })
+          .catch((error) => {
+            const walletStakingError =
+              error instanceof Error
+                ? error
+                : new Error('Unable to update the WALLET staking conversion rate.')
+            this.emitError({
+              level: 'silent',
+              message: 'Unable to update the WALLET staking conversion rate.',
+              error: walletStakingError
+            })
+          })
+      }
 
       // Fire-and-forget: verify the just-fetched balances against Colibri without
       // blocking the portfolio update (balances are already emitted above). The
@@ -1975,18 +2041,21 @@ export class PortfolioController
 
       const defi = response.defi
       // Throw the error after assigning the response so we can still use the returned hints
-      if ((response && 'errorState' in defi) || !('positions' in defi) || !defi.positions)
+      if (!defi || 'errorState' in defi)
         throw new Error(
           `Defi discovery failed. Error: ${
-            'errorState' in defi
+            defi && 'errorState' in defi
               ? defi.errorState[0]?.message || 'Unknown error (2)'
               : 'Unknown error'
           }`
         )
 
+      // An account with no positions in any DeFi app gets an empty object back, not an error
+      const positions = 'positions' in defi ? defi.positions || [] : []
+
       // Used only to sort assets and positions
       const positionsByProvider = getUniqueMergedPositions(
-        getFormattedApiPositions(defi.positions),
+        getFormattedApiPositions(positions),
         [],
         null
       )

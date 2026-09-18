@@ -334,7 +334,8 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
     sort,
     accountNativeBalance,
     nativeSymbol,
-    isWrapOrUnwrap
+    isWrapOrUnwrap,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     const quotes = await this.#fetchFromAll<SwapAndBridgeQuote[]>(
       (provider: SwapProvider) =>
@@ -351,7 +352,8 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
             sort,
             accountNativeBalance,
             nativeSymbol,
-            isWrapOrUnwrap
+            isWrapOrUnwrap,
+            feePercent
           })
           .catch((e) => e),
       { chainIds: [fromChainId, toChainId] }
@@ -370,7 +372,8 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
     bridge,
     providerId,
     requestId,
-    routeId
+    routeId,
+    rawRoute
   }: {
     txHash: string
     fromChainId: number
@@ -379,6 +382,7 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
     providerId: string
     requestId?: string
     routeId?: string
+    rawRoute?: SwapAndBridgeRoute['rawRoute']
   }): Promise<SwapAndBridgeRouteStatusResult> {
     return this.#routeTo(providerId, 'getRouteStatus', {
       txHash,
@@ -386,7 +390,8 @@ export class SwapProviderParallelExecutor implements SwapProviderExecutor {
       toChainId,
       bridge,
       requestId,
-      routeId
+      routeId,
+      rawRoute
     })
   }
 }

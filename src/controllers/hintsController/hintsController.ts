@@ -1,5 +1,4 @@
-import { getAddress } from 'ethers'
-import { zeroAddress } from 'viem'
+import { getAddress, zeroAddress } from 'viem'
 
 import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
 import { AccountId, IAccountsController } from '@/interfaces/account'

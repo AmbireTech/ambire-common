@@ -21,9 +21,11 @@ import { RPCProvider } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
+  getLoadingNetworkInfo,
   getNetworkInfo,
   getNetworksUpdatedWithRelayerNetworks,
-  getValidNetworks
+  getValidNetworks,
+  isNetworkInfoPending
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -59,6 +61,9 @@ export class NetworksController extends EventEmitter implements INetworksControl
     rpcUrl: string
     info?: NetworkInfoLoading<NetworkInfo>
   } | null = null
+
+  // Prevents race conditions in setNetworkToAddOrUpdate
+  #networkToAddOrUpdateRequestId = 0
 
   areNetworksFetchingFromRelayer: boolean = false
 
@@ -360,9 +365,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
             network.chainId,
             provider,
             async (info) => {
-              if (Object.values(info).some((prop) => prop === 'LOADING')) {
-                return
-              }
+              if (isNetworkInfoPending(info)) return
 
               // If RPC is flagged there might be an issue with the RPC
               // this information will fail to return
@@ -394,42 +397,54 @@ export class NetworksController extends EventEmitter implements INetworksControl
       rpcUrl: string
     } | null = null
   ) {
-    await this.initialLoadPromise
+    this.#networkToAddOrUpdateRequestId += 1
+    const requestId = this.#networkToAddOrUpdateRequestId
 
-    if (networkToAddOrUpdate) {
-      this.networkToAddOrUpdate = networkToAddOrUpdate
-      this.emitUpdate()
-
-      await this.#useTempProvider(
-        { chainId: networkToAddOrUpdate.chainId, rpcUrl: networkToAddOrUpdate.rpcUrl },
-        async (provider) => {
-          await getNetworkInfo(
-            this.#fetch,
-            networkToAddOrUpdate.chainId,
-            provider,
-            (info) => {
-              if (this.networkToAddOrUpdate) {
-                this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
-                this.emitUpdate()
-              }
-            },
-            this.#networks[networkToAddOrUpdate.chainId.toString()]
-          )
-        }
-      )
-    } else {
+    if (!networkToAddOrUpdate) {
       this.networkToAddOrUpdate = null
       this.emitUpdate()
+      return
     }
+
+    // Seeded so the very first emission already carries the loading shape, instead of the
+    // UI rendering a frame of "?" rows before the probes report in.
+    this.networkToAddOrUpdate = {
+      ...networkToAddOrUpdate,
+      info: getLoadingNetworkInfo(networkToAddOrUpdate.chainId)
+    }
+    this.emitUpdate()
+
+    await this.initialLoadPromise
+
+    await this.#useTempProvider(
+      { chainId: networkToAddOrUpdate.chainId, rpcUrl: networkToAddOrUpdate.rpcUrl },
+      async (provider) => {
+        await getNetworkInfo(
+          this.#fetch,
+          networkToAddOrUpdate.chainId,
+          provider,
+          (info) => {
+            if (requestId !== this.#networkToAddOrUpdateRequestId) return
+            if (!this.networkToAddOrUpdate) return
+
+            this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
+            this.emitUpdate()
+          },
+          this.#networks[networkToAddOrUpdate.chainId.toString()]
+        )
+      }
+    )
   }
 
   async #addNetwork(network: AddNetworkRequestParams) {
     await this.initialLoadPromise
-    if (
-      !this.networkToAddOrUpdate?.info ||
-      Object.values(this.networkToAddOrUpdate.info).some((prop) => prop === 'LOADING')
-    ) {
-      return
+    // The redundant-looking `info` check is what narrows `networkToAddOrUpdate` below
+    if (!this.networkToAddOrUpdate?.info || isNetworkInfoPending(this.networkToAddOrUpdate.info)) {
+      throw new EmittableError({
+        message: "We're still checking this network. Please wait a moment and try again.",
+        level: 'expected',
+        error: new Error('settings: addNetwork called before the network info was resolved')
+      })
     }
 
     const chainIds = this.allNetworks.map((net) => net.chainId)
@@ -536,9 +551,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
               chainId,
               provider,
               async (info) => {
-                if (Object.values(info).some((prop) => prop === 'LOADING')) {
-                  return
-                }
+                if (isNetworkInfoPending(info)) return
 
                 const { feeOptions } = info as NetworkInfo
 
