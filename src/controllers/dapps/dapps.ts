@@ -129,6 +129,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   // dApp's own hosting. The user's trust covers the hosting only, so it must not silence this.
   #dappToConnectContextStatus: BlacklistedStatus | undefined
 
+  #dappToConnectSession: Session | undefined
+
   isReadyToDisplayDapps: boolean = true
 
   #isReady = false
@@ -1346,6 +1348,53 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (shouldPersistDapps) await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
   }
 
+  async #updateDappToConnectSecurityCheck(dapp: Dapp, session: Session) {
+    await this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
+      const intrinsicStatus = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
+
+      // Check whether the dApp is embedded in a dangerous top-level document
+      // (e.g. a phishing page hosting the dApp in an iframe). Context status is
+      // not stored in #dapps so the dApp's global status stays uncontaminated.
+      const contextStatus = this.#getFrameContextStatus(session)
+      // BLACKLISTED on the dApp itself always wins over any session context status.
+      const effectiveStatus =
+        intrinsicStatus === 'BLACKLISTED' ? 'BLACKLISTED' : (contextStatus ?? intrinsicStatus)
+
+      if (this.dappToConnect && this.dappToConnect.id === dapp.id) {
+        this.dappToConnect.blacklisted = effectiveStatus
+        // Remembered so the trust flags can tell a warning about the dApp's own hosting -
+        // which the user may silence - apart from one about the document embedding it.
+        this.#dappToConnectContextStatus = contextStatus
+      }
+
+      // Update #dapps with intrinsic status only — never the context-derived one.
+      const existingDapp = this.#dapps.get(dapp.id)
+      if (existingDapp && existingDapp.blacklisted !== intrinsicStatus) {
+        this.#dapps.set(dapp.id, { ...existingDapp, blacklisted: intrinsicStatus })
+      }
+
+      this.emitUpdate()
+    })
+  }
+
+  /** Enables scam checking and immediately refreshes the pending connection request. */
+  async enableScamCheckerAndRefreshDappToConnect() {
+    const dapp = this.dappToConnect
+    const session = this.#dappToConnectSession
+
+    if (dapp) {
+      dapp.blacklisted = 'LOADING'
+      this.#dappToConnectContextStatus = undefined
+      this.emitUpdate()
+    }
+
+    await this.#featureFlags.setFeatureFlag('scamAndPhishingChecker', true)
+
+    if (!dapp || !session || this.dappToConnect?.id !== dapp.id) return
+
+    await this.#updateDappToConnectSecurityCheck(dapp, session)
+  }
+
   async setDappToConnectIfNeeded(currentRequest: UserRequest | null) {
     try {
       if (currentRequest && currentRequest.kind === 'dappConnect') {
@@ -1364,37 +1413,13 @@ export class DappsController extends EventEmitter implements IDappsController {
           // Don't persist the preferences after the dapp has been disconnected
           delete this.dappToConnect.accountPreferences
           this.#dappToConnectContextStatus = undefined
+          this.#dappToConnectSession = dappPromises[0].session
           this.emitUpdate()
 
           const session = dappPromises[0].session
 
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
-            const intrinsicStatus = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
-
-            // Check whether the dApp is embedded in a dangerous top-level document
-            // (e.g. a phishing page hosting the dApp in an iframe). Context status is
-            // not stored in #dapps so the dApp's global status stays uncontaminated.
-            const contextStatus = this.#getFrameContextStatus(session)
-            // BLACKLISTED on the dApp itself always wins over any session context status.
-            const effectiveStatus =
-              intrinsicStatus === 'BLACKLISTED' ? 'BLACKLISTED' : (contextStatus ?? intrinsicStatus)
-
-            if (this.dappToConnect && this.dappToConnect.id === dapp.id) {
-              this.dappToConnect.blacklisted = effectiveStatus
-              // Remembered so the trust flags can tell a warning about the dApp's own hosting -
-              // which the user may silence - apart from one about the document embedding it.
-              this.#dappToConnectContextStatus = contextStatus
-            }
-
-            // Update #dapps with intrinsic status only — never the context-derived one.
-            const existingDapp = this.#dapps.get(dapp.id)
-            if (existingDapp && existingDapp.blacklisted !== intrinsicStatus) {
-              this.#dapps.set(dapp.id, { ...existingDapp, blacklisted: intrinsicStatus })
-            }
-
-            this.emitUpdate()
-          })
+          this.#updateDappToConnectSecurityCheck(dapp, session)
         }
 
         return
@@ -1403,6 +1428,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (this.dappToConnect) {
         this.dappToConnect = null
         this.#dappToConnectContextStatus = undefined
+        this.#dappToConnectSession = undefined
         this.emitUpdate()
       }
     } catch (err: any) {

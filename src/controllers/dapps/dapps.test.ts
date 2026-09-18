@@ -313,7 +313,7 @@ describe('DappsController', () => {
     })
   })
 
-  test('should resolve the dapp connection security check when the scam checker is disabled', async () => {
+  test('should refresh the dapp connection security check after enabling the scam checker', async () => {
     const session = new Session({ tabId: 1, url: 'https://metamask.github.io/test-dapp/' })
     session.setProp({ name: 'E2E Test Dapp' })
     const request: DappConnectRequest = {
@@ -341,6 +341,24 @@ describe('DappsController', () => {
     await controller.setDappToConnectIfNeeded(request)
 
     expect(controller.dappToConnect?.blacklisted).toBe('FAILED_TO_GET')
+
+    const updateDomainsSpy = jest
+      .spyOn(mainCtrl.phishing, 'updateDomainsBlacklistedStatus')
+      .mockImplementation(async (urls, callback) => {
+        expect(urls).toEqual([session.origin])
+        expect(controller.dappToConnect?.blacklisted).toBe('LOADING')
+        expect(mainCtrl.featureFlags.isFeatureEnabled('scamAndPhishingChecker')).toBe(true)
+        callback({ [session.id]: 'VERIFIED' })
+      })
+
+    try {
+      await controller.enableScamCheckerAndRefreshDappToConnect()
+
+      expect(updateDomainsSpy).toHaveBeenCalledTimes(1)
+      expect(controller.dappToConnect?.blacklisted).toBe('VERIFIED')
+    } finally {
+      updateDomainsSpy.mockRestore()
+    }
   })
 
   test('should sync dapps blacklisted status only when phishing.shouldSyncDapps is true', async () => {
