@@ -403,6 +403,29 @@ describe('DappsController', () => {
           callback(statuses as { [key: string]: BlacklistedStatus })
         })
 
+    test('should not return scam checker banners when the checker is disabled', async () => {
+      const updateDomainsSpy = mockDappVerificationStatuses({ 'aave.com': 'BLACKLISTED' })
+
+      try {
+        const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', predefinedDapps)
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+        })
+        await controller.fetchAndUpdatePromise
+
+        const aave = controller.getDapp('aave.com')!
+        expect(controller.getDappVerificationBanner([aave.url])?.id).toBe(
+          DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED
+        )
+
+        await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+
+        expect(controller.getDappVerificationBanner([aave.url])).toBeNull()
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
+
     test('should return loading banner for dapps with pending verification', async () => {
       const updateDomainsSpy = mockDappVerificationStatuses({ 'aave.com': 'LOADING' })
 

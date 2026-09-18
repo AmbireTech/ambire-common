@@ -1505,7 +1505,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   /**
-   * Returns the highest-priority dApp verification banner for the provided dApp URLs, or `null` if none apply.
+   * Returns the highest-priority dApp verification banner for the provided dApp URLs, or `null` if
+   * the scam checker is disabled or no banner applies.
    *
    * Priority order:
    * 1) dApp is blacklisted (`BLACKLISTED`)
@@ -1524,6 +1525,8 @@ export class DappsController extends EventEmitter implements IDappsController {
       sessionId
     }: { includeDappNamesInText?: boolean; sessionId?: string } = {}
   ): DappVerificationBanner | null {
+    if (!this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) return null
+
     const validDappUrls = dappUrls
       .map((url) => url?.toLowerCase())
       .filter((url): url is string => !!url)
