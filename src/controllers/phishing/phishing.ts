@@ -10,6 +10,7 @@ import {
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
@@ -64,6 +65,10 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   #ui: IUiController
 
+  #featureFlags: IFeatureFlagsController
+
+  #isScamAndPhishingCheckerEnabled: boolean
+
   #domains = new Set<string>()
 
   #addresses = new Set<string>()
@@ -105,13 +110,15 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     fetch,
     storage,
     addressBook,
-    ui
+    ui,
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
     storage: IStorageController
     addressBook: IAddressBookController
     ui: IUiController
+    featureFlags: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
 
@@ -119,6 +126,9 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#storage = storage
     this.#addressBook = addressBook
     this.#ui = ui
+    this.#featureFlags = featureFlags
+    this.#isScamAndPhishingCheckerEnabled =
+      this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')
 
     this.#updatePhishingInterval = new RecurringTimeout(
       async () => this.continuouslyUpdatePhishing(),
@@ -133,7 +143,10 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
       const shouldSwitchToActiveUpdateInterval =
         isActiveViewType && !isAlreadyUsingActiveUpdateInterval
-      if (shouldSwitchToActiveUpdateInterval)
+      if (
+        this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker') &&
+        shouldSwitchToActiveUpdateInterval
+      )
         this.#updatePhishingInterval.restart({
           timeout: PHISHING_ACTIVE_UPDATE_INTERVAL,
           runImmediately: true
@@ -145,9 +158,35 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       )
 
       const shouldSwitchToInactiveUpdateInterval = !hasAtLeastOneActiveViewOpen
-      if (shouldSwitchToInactiveUpdateInterval)
+      if (
+        this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker') &&
+        shouldSwitchToInactiveUpdateInterval
+      )
         this.#updatePhishingInterval.restart({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
     })
+
+    this.#featureFlags.onUpdate(() => {
+      const isEnabled = this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')
+      if (isEnabled === this.#isScamAndPhishingCheckerEnabled) return
+
+      this.#isScamAndPhishingCheckerEnabled = isEnabled
+      if (!isEnabled) {
+        this.#updatePhishingInterval.stop()
+        return
+      }
+
+      if (!this.isReady) return
+
+      const hasAtLeastOneActiveViewOpen = this.#ui.views.some((view) =>
+        PHISHING_ACTIVE_VIEW_TYPES.has(view.type)
+      )
+      this.#updatePhishingInterval.restart({
+        timeout: hasAtLeastOneActiveViewOpen
+          ? PHISHING_ACTIVE_UPDATE_INTERVAL
+          : PHISHING_INACTIVE_UPDATE_INTERVAL,
+        runImmediately: true
+      })
+    }, 'phishing')
   }
 
   /**
@@ -164,6 +203,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   }
 
   async #load() {
+    await this.#featureFlags.initialLoadPromise
+
     const phishing = await this.#storage.get('phishing', {
       version: 0,
       updatedAt: 0,
@@ -175,7 +216,9 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#updatedAt = phishing.updatedAt
     this.#domains = new Set(phishing.domains)
     this.#addresses = new Set(phishing.addresses)
-    this.updatePhishingInterval.start({ runImmediately: true })
+    if (this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) {
+      this.updatePhishingInterval.start({ runImmediately: true })
+    }
 
     this.isReady = true
     this.emitUpdate()
@@ -187,6 +230,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
    * 2) switches to the failed-retry interval when the fetch/update flow throws
    */
   async continuouslyUpdatePhishing() {
+    if (!this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) return
+
     if (this.#continuouslyUpdatePhishingPromise) {
       await this.#continuouslyUpdatePhishingPromise
 
@@ -536,6 +581,17 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     urls: string[],
     callback: (res: { [dappId: string]: BlacklistedStatus }) => void
   ) {
+    if (!this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) {
+      if (!urls.length) return
+
+      const statuses: { [dappId: string]: BlacklistedStatus } = {}
+      urls.forEach((url) => {
+        statuses[getDappIdFromUrl(url)] = 'FAILED_TO_GET'
+      })
+      callback(statuses)
+      return
+    }
+
     try {
       await this.#fetchAndSetDomainsBlacklistedStatus(urls, callback)
     } catch (err: any) {
@@ -551,6 +607,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     urls: string[],
     callback: (res: { [dappId: string]: BlacklistedStatus }) => void
   ) {
+    if (!this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) return
+
     try {
       await this.#fetchAndSetAddressesBlacklistedStatus(urls, callback)
     } catch (err: any) {
