@@ -360,6 +360,17 @@ export const getSafeHumanization = (
     }
 
     decodedTransactions.forEach((innerCall) => {
+      if (!innerCall.success) {
+        fullVisualization.push(getBreak(), getAction('Failed to parse', { warning: true }))
+        warnings.push(
+          getWarning(
+            'Part of this batch could not be read and is not shown above. Proceed with caution',
+            'SAFE{WALLET}_MULTISEND_PARSE_FAILED'
+          )
+        )
+        return
+      }
+
       // a delegatecall leg runs attacker-controlled code directly in the Safe's own storage,
       // so it must be flagged the same way a top-level delegatecall would be, even though it's
       // hidden a level deeper inside this batch
