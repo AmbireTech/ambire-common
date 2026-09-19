@@ -34,6 +34,7 @@ import { IEventEmitterRegistryController, Statuses } from '../../interfaces/even
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   AESGCMEncrypted,
+  ChangeKeystorePasswordParams,
   ExternalKey,
   IKeystoreController,
   InternalKey,
@@ -188,12 +189,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     try {
       this.#keystoreSecrets = await this.#storage.get('keystoreSecrets', [])
       this.isReadyToStoreKeys = this.#keystoreSecrets.length > 0
-    } catch (e) {
+    } catch (e: any) {
       this.emitError({
         message:
           'Something went wrong when initiating the Keystore. Please try again or contact support if the problem persists.',
         level: 'major',
-        error: new Error('keystore: failed to getMainKeyEncryptedWithSecrets() from storage')
+        error: new Error(e)
       })
     }
 
@@ -1440,15 +1441,20 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     return { ...keystoreSeed, seed, seedPassphrase }
   }
 
-  async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
+  async #changeKeystorePassword({
+    newPassword,
+    currentSecret,
+    extraEntropy
+  }: ChangeKeystorePasswordParams) {
     await this.initialLoadPromise
 
     // In the case the user wants to change their device password,
-    // they should also provide the previous password (oldSecret).
+    // they should also prove they are authorized to do so (currentSecret) - either with
+    // the previous password, or with the biometrics secret when they have it set up.
     //
     // However, in the case of KeyStore recovery, the user may have already forgotten the password,
     // but the Keystore is already unlocked with the recovery secret.
-    // Therefore, in the last case, we can't provide the oldSecret, and we should not validate it.
+    // Therefore, in the last case, we can't provide the currentSecret, and we should not validate it.
     //
     // However, there is one problem if we leave it that way:
     //
@@ -1460,7 +1466,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     // We are going to discuss it in the next meeting, but for now, we are leaving it as it is.
     // The long-term solution would be to refactor EmailVault recovery logic
     // and not unlock the Keystore with the recovery secret unless the user provides a new passphrase.
-    if (oldSecret) await this.#unlockWithSecret('password', oldSecret)
+    if (currentSecret) await this.#unlockWithSecret(currentSecret.id, currentSecret.value)
 
     if (!this.isUnlocked)
       throw new EmittableError({
@@ -1470,13 +1476,11 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       })
 
     await this.#removeSecret('password')
-    await this.#addSecret('password', newSecret, extraEntropy, true)
+    await this.#addSecret('password', newPassword, extraEntropy, true)
   }
 
-  async changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
-    await this.withStatus('changeKeystorePassword', () =>
-      this.#changeKeystorePassword(newSecret, oldSecret, extraEntropy)
-    )
+  async changeKeystorePassword(params: ChangeKeystorePasswordParams) {
+    await this.withStatus('changeKeystorePassword', () => this.#changeKeystorePassword(params))
   }
 
   async updateKeyPreferences(

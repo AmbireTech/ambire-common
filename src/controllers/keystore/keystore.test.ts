@@ -2,7 +2,7 @@
 
 import { ethers, Wallet } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { beforeEach, describe, expect, test } from '@jest/globals'
 import { InternalSigner, LedgerSigner } from '@test/keystore'
 
 import { produceMemoryStore } from '../../../test/helpers'
@@ -12,7 +12,12 @@ import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
-import { ExternalKey, IKeystoreController, InternalKey } from '../../interfaces/keystore'
+import {
+  ExternalKey,
+  IKeystoreController,
+  InternalKey,
+  MainKeyEncryptedWithSecret
+} from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import wait from '../../utils/wait'
@@ -325,7 +330,10 @@ describe('KeystoreController', () => {
   })
 
   test('should change keystore password', async () => {
-    await keystore.changeKeystorePassword(`${pass}1`, pass)
+    await keystore.changeKeystorePassword({
+      newPassword: `${pass}1`,
+      currentSecret: { id: 'password', value: pass }
+    })
 
     const secrets = await storage.get('keystoreSecrets', [])
     expect(secrets).toHaveLength(1)
@@ -790,5 +798,104 @@ describe('accounts sync between two devices', () => {
 
     expect(importingKeystore.keys).toHaveLength(2)
     expect(importingKeystore.seeds).toHaveLength(1)
+  })
+})
+
+describe('change password with biometrics', () => {
+  const biometricsSecret = 'a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6'
+  const newPass = 'newDevicePass'
+  const uiCtrl = new UiController({ uiManager })
+
+  let store: ReturnType<typeof produceMemoryStore>
+  let biometricsKeystore: IKeystoreController
+
+  const getStoredSecret = async (secretId: string) => {
+    const secrets: MainKeyEncryptedWithSecret[] = await store.get('keystoreSecrets', [])
+
+    return secrets.find((secret) => secret.id === secretId)
+  }
+
+  beforeEach(async () => {
+    store = produceMemoryStore()
+    biometricsKeystore = new KeystoreController(
+      'default',
+      new StorageController(store),
+      keystoreSigners,
+      uiCtrl
+    )
+    await biometricsKeystore.addSecret('password', pass, '', true)
+    await biometricsKeystore.addSecret('biometrics', biometricsSecret, '', true)
+    biometricsKeystore.lock()
+  })
+
+  test('should change the password when verified with the biometrics secret', async () => {
+    await biometricsKeystore.changeKeystorePassword({
+      newPassword: newPass,
+      currentSecret: { id: 'biometrics', value: biometricsSecret }
+    })
+
+    expect(biometricsKeystore.statuses.changeKeystorePassword).toBe('INITIAL')
+    expect(biometricsKeystore.errorMessage).toBe('')
+
+    biometricsKeystore.lock()
+    await biometricsKeystore.unlockWithSecret('password', newPass)
+
+    expect(biometricsKeystore.isUnlocked).toBe(true)
+  })
+
+  test('should keep the biometrics secret working after the change, because the main key is not rotated', async () => {
+    await biometricsKeystore.changeKeystorePassword({
+      newPassword: newPass,
+      currentSecret: { id: 'biometrics', value: biometricsSecret }
+    })
+
+    biometricsKeystore.lock()
+    await biometricsKeystore.unlockWithSecret('biometrics', biometricsSecret)
+
+    expect(biometricsKeystore.isUnlocked).toBe(true)
+    expect(biometricsKeystore.hasBiometricsSecret).toBe(true)
+  })
+
+  test('should rewrap the password secret with the current cipher, so no password unlock is required afterwards', async () => {
+    await biometricsKeystore.changeKeystorePassword({
+      newPassword: newPass,
+      currentSecret: { id: 'biometrics', value: biometricsSecret }
+    })
+
+    const passwordSecret = await getStoredSecret('password')
+
+    expect(passwordSecret?.aesEncrypted.cipherType).toBe('AES-GCM')
+    expect(biometricsKeystore.isPasswordUnlockRequired).toBe(false)
+  })
+
+  describe('Negative cases', () => {
+    suppressConsoleBeforeEach()
+
+    test('should not change the password when the biometrics secret is wrong', async () => {
+      await biometricsKeystore.changeKeystorePassword({
+        newPassword: newPass,
+        currentSecret: { id: 'biometrics', value: 'f6e5d4c3b2a1f6e5d4c3b2a1f6e5d4c3' }
+      })
+
+      expect(biometricsKeystore.errorMessage).toBe('Incorrect password. Please try again.')
+      expect(biometricsKeystore.isUnlocked).toBe(false)
+
+      await biometricsKeystore.unlockWithSecret('password', pass)
+
+      expect(biometricsKeystore.isUnlocked).toBe(true)
+    })
+
+    test('should not leave the old password working after a biometrics verified change', async () => {
+      await biometricsKeystore.changeKeystorePassword({
+        newPassword: newPass,
+        currentSecret: { id: 'biometrics', value: biometricsSecret }
+      })
+
+      biometricsKeystore.lock()
+      await biometricsKeystore.unlockWithSecret('password', pass)
+
+      expect(biometricsKeystore.isUnlocked).toBe(false)
+      expect(biometricsKeystore.errorMessage).toBe('Incorrect password. Please try again.')
+    })
   })
 })
