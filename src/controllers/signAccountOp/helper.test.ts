@@ -1,7 +1,11 @@
 import { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { getFeeTokenPriceUnavailableWarning, getSafeDelegateCallWarning } from './helper'
+import {
+  getFeeTokenPriceUnavailableWarning,
+  getSafeDelegateCallWarning,
+  getSafeGasRefundWarning
+} from './helper'
 
 const buildSafeTxFixture = (
   overrides: Partial<SafeMultisigTransactionResponse>
@@ -98,5 +102,62 @@ describe('getFeeTokenPriceUnavailableWarning', () => {
   test('does not warn when fee speeds are unavailable or already have USD prices', () => {
     expect(getFeeTokenPriceUnavailableWarning(false, false, true)).toBeNull()
     expect(getFeeTokenPriceUnavailableWarning(true, true, true)).toBeNull()
+  })
+})
+
+describe('getSafeGasRefundWarning', () => {
+  test('warns, at the accountOp level, when the Safe tx pays a gas refund to a fixed address', () => {
+    const accOpWithSafeTx: AccountOp = {
+      ...accountOp,
+      safeTx: buildSafeTxFixture({
+        baseGas: '1',
+        gasPrice: '1',
+        refundReceiver: '0x9999999999999999999999999999999999999999'
+      })
+    }
+
+    const warning = getSafeGasRefundWarning(accOpWithSafeTx)
+
+    expect(warning).toBeTruthy()
+    expect(warning?.id).toBe('safeGasRefund')
+    // this renders as a standalone banner, so it must spell out the address itself rather than
+    // reference "the address below"/"shown above" - there's no adjacent visualization to point at
+    expect(warning?.text).toContain('0x9999999999999999999999999999999999999999')
+    expect(warning?.text).not.toMatch(/below|above/)
+  })
+
+  test('warns when the Safe tx pays a gas refund to whoever broadcasts it (no fixed refundReceiver)', () => {
+    const accOpWithSafeTx: AccountOp = {
+      ...accountOp,
+      safeTx: buildSafeTxFixture({
+        baseGas: '1',
+        gasPrice: '1',
+        refundReceiver: '0x0000000000000000000000000000000000000000'
+      })
+    }
+
+    const warning = getSafeGasRefundWarning(accOpWithSafeTx)
+
+    expect(warning).toBeTruthy()
+    expect(warning?.id).toBe('safeGasRefund')
+    expect(warning?.text).toContain('whoever broadcasts it')
+    expect(warning?.text).not.toMatch(/below|above/)
+  })
+
+  test('does not warn when gasPrice is 0 (no gas refund is paid)', () => {
+    const accOpWithSafeTx: AccountOp = {
+      ...accountOp,
+      safeTx: buildSafeTxFixture({
+        baseGas: '1',
+        gasPrice: '0',
+        refundReceiver: '0x9999999999999999999999999999999999999999'
+      })
+    }
+
+    expect(getSafeGasRefundWarning(accOpWithSafeTx)).toBeNull()
+  })
+
+  test('does not warn when accountOp.safeTx is not set', () => {
+    expect(getSafeGasRefundWarning(accountOp)).toBeNull()
   })
 })

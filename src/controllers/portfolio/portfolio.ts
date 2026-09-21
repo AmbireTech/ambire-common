@@ -1417,6 +1417,8 @@ export class PortfolioController
 
     if (res.data.mobileInviteKey) {
       this.mobileInviteKeys[accountId] = res.data.mobileInviteKey
+    } else {
+      delete this.mobileInviteKeys[accountId]
     }
 
     this.emitUpdate()

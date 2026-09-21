@@ -1427,7 +1427,7 @@ const getSafeCallWarnings = (call: Call, safeAddr = call.to): HumanizerWarning[]
   return getSafeHumanization(safeAddr, call.to, call.value, call.data)?.warnings || []
 }
 
-type SafeTxGasRefund = {
+export type SafeTxGasRefund = {
   // undefined when `refundReceiver` is the zero address - Safe.sol's handlePayment then pays
   // tx.origin (whoever broadcasts this transaction) instead of a fixed address, it does NOT mean
   // no refund is paid
@@ -1447,7 +1447,7 @@ type SafeTxGasRefund = {
 // are static SafeTx/execTransaction fields, decodable without a relayer or ERC-7730 descriptor, so
 // this never depends on what fields an external descriptor declares - it works the same whether
 // the source is a signed SafeTx message or a broadcast execTransaction call.
-const buildSafeTxGasRefund = (
+export const buildSafeTxGasRefund = (
   baseGas: unknown,
   gasPrice: unknown,
   gasToken: unknown,
