@@ -61,6 +61,17 @@ interface BundleCall {
   warnings?: HumanizerWarning[]
 }
 
+const morphoSupplyCollateralSelector = toFunctionSelector(morphoSupplyCollateralAbi[0])
+const morphoBorrowSelector = toFunctionSelector(morphoBorrowAbi[0])
+const morphoRepaySelector = toFunctionSelector(morphoRepayAbi[0])
+const morphoWithdrawCollateralSelector = toFunctionSelector(morphoWithdrawCollateralAbi[0])
+const morphoFlashLoanSelector = toFunctionSelector(morphoFlashLoanAbi[0])
+const erc4626MintSelector = toFunctionSelector(erc4626MintAbi[0])
+const erc4626DepositSelector = toFunctionSelector(erc4626DepositAbi[0])
+const erc4626WithdrawSelector = toFunctionSelector(erc4626WithdrawAbi[0])
+const erc4626RedeemSelector = toFunctionSelector(erc4626RedeemAbi[0])
+const multicallSelector = toFunctionSelector(multicallAbi[0])
+
 const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) => {
   const matcher: { [sighash: string]: (call: BundleCall) => IrCall | undefined } = {
     // the below commented out humanizations are legit multicall humanizations
@@ -72,7 +83,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
     // [toFunctionSelector(wrapNativeAbi[0])]: ...
     // [toFunctionSelector(unwrapNativeAbi[0])]: ...
     // [toFunctionSelector(permit2TransferFromAbi[0])]: ...
-    [toFunctionSelector(morphoSupplyCollateralAbi[0])]: (call) => {
+    [morphoSupplyCollateralSelector]: (call) => {
       const { args } = decodeFunctionData({
         abi: morphoSupplyCollateralAbi,
         data: call.data
@@ -82,7 +93,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
       const fullVisualization = [getBreak(), getAction('Supply'), getToken(collateral, assets)]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, onBehalf) }
     },
-    [toFunctionSelector(morphoBorrowAbi[0])]: (call) => {
+    [morphoBorrowSelector]: (call) => {
       const { args } = decodeFunctionData({
         abi: morphoBorrowAbi,
         data: padCallData(call.data, 9)
@@ -97,7 +108,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
       ]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
     },
-    [toFunctionSelector(morphoRepayAbi[0])]: (call) => {
+    [morphoRepaySelector]: (call) => {
       const { args } = decodeFunctionData({
         abi: morphoRepayAbi,
         data: call.data
@@ -107,7 +118,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
       const fullVisualization = [getBreak(), getAction('Repay'), getToken(loanToken, assets)]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, onBehalf) }
     },
-    [toFunctionSelector(morphoWithdrawCollateralAbi[0])]: (call) => {
+    [morphoWithdrawCollateralSelector]: (call) => {
       const { args } = decodeFunctionData({
         abi: morphoWithdrawCollateralAbi,
         data: padCallData(call.data, 7)
@@ -121,7 +132,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
       ]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
     },
-    [toFunctionSelector(morphoFlashLoanAbi[0])]: (call) => {
+    [morphoFlashLoanSelector]: (call) => {
       const { args } = decodeFunctionData({
         abi: morphoFlashLoanAbi,
         data: call.data
@@ -134,7 +145,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
       ]
       return { ...call, fullVisualization }
     },
-    [toFunctionSelector(erc4626MintAbi[0])]: (call) => {
+    [erc4626MintSelector]: (call) => {
       const { args } = decodeFunctionData({
         abi: erc4626MintAbi,
         data: padCallData(call.data, 4)
@@ -147,7 +158,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
       ]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
     },
-    [toFunctionSelector(erc4626DepositAbi[0])]: (call) => {
+    [erc4626DepositSelector]: (call) => {
       const { args } = decodeFunctionData({
         abi: erc4626DepositAbi,
         data: padCallData(call.data, 4)
@@ -160,7 +171,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
       ]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
     },
-    [toFunctionSelector(erc4626WithdrawAbi[0])]: (call) => {
+    [erc4626WithdrawSelector]: (call) => {
       const { args } = decodeFunctionData({
         abi: erc4626WithdrawAbi,
         data: padCallData(call.data, 5)
@@ -173,7 +184,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
       ]
       return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
     },
-    [toFunctionSelector(erc4626RedeemAbi[0])]: (call) => {
+    [erc4626RedeemSelector]: (call) => {
       const { args } = decodeFunctionData({
         abi: erc4626RedeemAbi,
         data: padCallData(call.data, 5)
@@ -199,7 +210,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
 
 const Bundler3Module: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall => {
   const matcher: { [sighash: string]: (call: IrCall) => IrCall | undefined } = {
-    [toFunctionSelector(multicallAbi[0])]: (call) => {
+    [multicallSelector]: (call) => {
       if (!call.to) return
       if (call.value) return
       if (!isHexCall(call)) return

@@ -80,13 +80,18 @@ export type TokenResult = {
   }
 }
 
+/** A token or a collection, for the code that lists both */
+export type PortfolioAsset = TokenResult | CollectionResult
+
 export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
 }
 
-export interface CollectionResult extends TokenResult {
+export interface CollectionResult extends Omit<TokenResult, 'flags'> {
   name: string
   collectibles: bigint[]
+  /** A collection is never a fee token, on the gas tank or a rewards one */
+  flags: Pick<TokenResult['flags'], 'isHidden' | 'isCustom'>
   postSimulation?: {
     sending?: bigint[]
     receiving?: bigint[]
@@ -418,6 +423,12 @@ export type PortfolioNetworkResult = CommonResultProps &
     | 'discoveryTime'
   > & {
     defiPositions: DefiNetworkState
+    walletStaking?: {
+      shareValue: bigint
+      updatedAt: number
+      /** The xWALLET shares committed to a pending unstake, which can no longer be migrated. */
+      lockedShares?: bigint
+    }
     lastExternalApiUpdateData?: {
       lastUpdate: number
       hasHints: boolean
@@ -776,8 +787,39 @@ export type KnownTokenInfo = {
   chainIds?: number[]
 }
 
+/** Validation results of tokens and collections, keyed by `getAssetCacheKey` */
+export type AssetValidations = {
+  erc20: { [assetKey: string]: Pick<TokenValidationResult, 'isValid' | 'error'> }
+  erc721: { [assetKey: string]: Pick<TokenValidationResult, 'isValid' | 'error' | 'collection'> }
+}
+
+/**
+ * Why an asset was rejected. The UI phrases it, so the wording can be translated
+ * and the messages here stay for the logs.
+ */
+export type AssetValidationReason =
+  | 'network-problem'
+  | 'erc1155-unsupported'
+  | 'not-a-collection'
+  | 'is-a-token'
+  | 'collectible-not-found'
+  | 'collectible-not-owned'
+
 export type TokenValidationResult = {
   isValid: boolean
   standard: string
-  error: { message: string | null; type: 'network' | 'validation' | null }
+  error: {
+    message: string | null
+    type: 'network' | 'validation' | null
+    /** What the UI phrases for the user, see `AssetValidationReason` */
+    reason?: AssetValidationReason | null
+  }
+  /**
+   * Metadata of a valid ERC-721 collection, so it can be previewed before the
+   * user adds it. Not set for ERC-20 tokens.
+   */
+  collection?: {
+    name: string | null
+    symbol: string | null
+  }
 }

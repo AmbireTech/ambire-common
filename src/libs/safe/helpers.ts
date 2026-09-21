@@ -127,6 +127,10 @@ export function decodeMultiSend(transactionsHex: string) {
 
   while (i < bytes.length) {
     const operation = bytes[i]
+    // `noUncheckedIndexedAccess` types `bytes[i]` as `number | undefined`, but the `while`
+    // guard above only proves the array isn't fully consumed yet, not that a full encoded
+    // transaction remains. Bail out instead of pushing a malformed entry to the caller.
+    if (operation === undefined) break
     i += 1
 
     const to = hexlify(bytes.slice(i, i + 20))
