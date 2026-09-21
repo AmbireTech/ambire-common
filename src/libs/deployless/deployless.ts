@@ -310,6 +310,7 @@ export class Deployless {
     const callPromise = this.getCallPromise(callData, opts)
     const timeoutMs =
       opts.mode === DeploylessMode.Predeployed ? 40000 : this.isProviderInvictus ? 15000 : 20000
+    let timeoutId: NodeJS.Timeout | undefined
 
     // The ethers' providers retry failed calls every 1 second, making numerous attempts before finally resolving the promise.
     // To prevent prolonged retries, we use Promise.race to set a timeout. This way, the callPromise will either resolve
@@ -319,7 +320,7 @@ export class Deployless {
         callPromise,
         new Promise<string>((_resolve, reject) => {
           // Custom providers may take longer to respond, so we set a longer timeout for them.
-          setTimeout(
+          timeoutId = setTimeout(
             () =>
               reject(
                 new Error(
@@ -332,6 +333,8 @@ export class Deployless {
       ]),
       this.providerUrl
     )
+
+    if (timeoutId) clearTimeout(timeoutId)
 
     return decodeFunctionResult({
       abi: this.abi,
