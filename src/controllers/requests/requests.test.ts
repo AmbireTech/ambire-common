@@ -18,6 +18,7 @@ import {
 } from '../../interfaces/userRequest'
 import { generateUuid } from '../../utils/uuid'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
+import * as safeLib from '../../libs/safe/safe'
 
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
@@ -1143,6 +1144,108 @@ describe('RequestsController ', () => {
       (controller.userRequests[0] as CallsUserRequest).signAccountOp.accountOp.calls[0]!.to
     ).toBeUndefined()
   })
+  test('queues a validated Safe deployment before an app transaction on an undeployed network', async () => {
+    const { accountsCtrl, controller } = await prepareTest(true, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
+      to: '0x1234567890123456789012345678901234567890',
+      value: 0n,
+      data: '0x1234'
+    })
+    const reject = jest.fn()
+
+    await controller.build({
+      type: 'dappRequest',
+      params: {
+        request: {
+          method: 'eth_sendTransaction',
+          params: [
+            {
+              from: accountAddr,
+              to: ZeroAddress,
+              value: '0x0',
+              data: '0x'
+            }
+          ],
+          session: MOCK_SESSION
+        },
+        dappPromise: { id: 'safe-deploy-test', resolve: jest.fn(), reject, session: MOCK_SESSION }
+      }
+    })
+
+    const [deploymentRequest, transactionRequest] = controller.userRequests
+    expect(deploymentRequest?.kind).toBe('calls')
+    expect(transactionRequest?.kind).toBe('calls')
+    if (deploymentRequest?.kind !== 'calls' || transactionRequest?.kind !== 'calls') {
+      throw new Error('Expected two calls requests')
+    }
+    expect(deploymentRequest.meta).toMatchObject({
+      isSafeDeploy: true,
+      safeDeployForRequestId: transactionRequest.id
+    })
+    expect(deploymentRequest.dappPromises).toEqual([])
+    expect(deploymentRequest.signAccountOp.accountOp.meta?.isSafeDeploy).toBe(true)
+    expect(deploymentRequest.signAccountOp.accountOp.signingKeyAddr).toBeNull()
+    expect(deploymentRequest.signAccountOp.accountOp.signingKeyType).toBeNull()
+    expect(deploymentRequest.signAccountOp.safeEip712Data).toBeNull()
+    expect(deploymentRequest.signAccountOp.canBroadcast).toBe(true)
+    expect(deploymentRequest.signAccountOp.errors).not.toContainEqual(
+      expect.objectContaining({ code: 'NO_KEYS_AVAILABLE' })
+    )
+    expect(transactionRequest.meta.safeDeployRequestId).toBe(deploymentRequest.id)
+    expect(controller.currentUserRequest).toBe(deploymentRequest)
+
+    await controller.rejectUserRequests('User rejected the Safe deployment.', [
+      deploymentRequest.id
+    ])
+
+    expect(controller.userRequests).toEqual([])
+    expect(reject).toHaveBeenCalledTimes(1)
+  })
+
+  test('rejects the app transaction without creating requests when the Safe cannot be deployed', async () => {
+    const { accountsCtrl, controller } = await prepareTest(true, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue(null)
+    const reject = jest.fn()
+
+    await controller.build({
+      type: 'dappRequest',
+      params: {
+        request: {
+          method: 'eth_sendTransaction',
+          params: [
+            {
+              from: accountAddr,
+              to: ZeroAddress,
+              value: '0x0',
+              data: '0x'
+            }
+          ],
+          session: MOCK_SESSION
+        },
+        dappPromise: {
+          id: 'safe-deploy-failure-test',
+          resolve: jest.fn(),
+          reject,
+          session: MOCK_SESSION
+        }
+      }
+    })
+
+    expect(controller.userRequests).toEqual([])
+    expect(reject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("can't be deployed using its saved setup")
+      })
+    )
+  })
   test('resolve user request', async () => {
     const { controller, getCallsRequest } = await prepareTest()
 
@@ -1912,10 +2015,9 @@ describe('RequestsController ', () => {
 
       // Twice, because one rejection is never enough to offer silencing anyway
       for (let i = 0; i < DAPP_REJECTS_BEFORE_OFFERING_SILENCE; i++) {
-        // eslint-disable-next-line no-await-in-loop
         await buildDappRequest(controller, { resolve: () => {}, reject: () => {} })
         // What `selectAccount` does - the user acted on the wallet, not on the app
-        // eslint-disable-next-line no-await-in-loop
+
         await controller.closeRequestWindow({ isUserInitiated: false })
       }
 
@@ -1923,9 +2025,8 @@ describe('RequestsController ', () => {
 
       // The same close, but this time it really is the user turning the app away
       for (let i = 0; i < DAPP_REJECTS_BEFORE_OFFERING_SILENCE; i++) {
-        // eslint-disable-next-line no-await-in-loop
         await buildDappRequest(controller, { resolve: () => {}, reject: () => {} })
-        // eslint-disable-next-line no-await-in-loop
+
         await controller.closeRequestWindow()
       }
 

@@ -18,10 +18,12 @@ import SafeApiKit from '@safe-global/api-kit'
 
 import SafeAbi from '../../../contracts/compiled/Safe.json'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
+import { Account, SafeAccountCreation } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeAccountByOwner, SafeTx } from '../../interfaces/safe'
 import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
+import { Call } from '../accountOp/types'
 import { paginate } from '../../utils/paginate'
 import wait from '../../utils/wait'
 import { withTimeout } from '../../utils/with-timeout'
@@ -140,17 +142,32 @@ export async function getCalculatedSafeAddress(
   creation: SafeCreationInfoResponse,
   provider: RPCProvider
 ): Promise<Hex | null> {
+  return getCalculatedSafeAddressFromCreation(
+    {
+      factoryAddr: creation.factoryAddress as Hex,
+      singleton: creation.singleton as Hex,
+      setupData: creation.setupData as Hex,
+      saltNonce: toBeHex(BigInt(creation.saltNonce || 0), 32) as Hex
+    },
+    provider
+  )
+}
+
+async function getCalculatedSafeAddressFromCreation(
+  creation: Pick<SafeAccountCreation, 'factoryAddr' | 'singleton' | 'setupData' | 'saltNonce'>,
+  provider: RPCProvider
+): Promise<Hex | null> {
   const salt = keccak256(
-    concat([keccak256(creation.setupData), zeroPadValue(toBeHex(creation.saltNonce || 0), 32)])
+    concat([keccak256(creation.setupData), zeroPadValue(creation.saltNonce, 32)])
   )
   const factoryAbi = ['function proxyCreationCode() view returns (bytes)']
-  const factory = new Contract(creation.factoryAddress, factoryAbi, provider)
+  const factory = new Contract(creation.factoryAddr, factoryAbi, provider)
   let proxyCreationCode
   try {
     proxyCreationCode = await (factory as any).proxyCreationCode()
   } catch (e) {
     console.error(
-      `failed to call proxyCreationCode on Safe factory with addr: ${creation.factoryAddress}`,
+      `failed to call proxyCreationCode on Safe factory with addr: ${creation.factoryAddr}`,
       e
     )
     return null
@@ -160,7 +177,44 @@ export async function getCalculatedSafeAddress(
     proxyCreationCode,
     abiCoder.encode(['address'], [creation.singleton])
   ]) as Hex
-  return getCreate2Address(creation.factoryAddress, salt, keccak256(bytecode)) as Hex
+  return getCreate2Address(creation.factoryAddr, salt, keccak256(bytecode)) as Hex
+}
+
+/**
+ * Builds a Safe deployment call only when the stored creation data derives the imported address.
+ */
+export async function getSafeDeploymentCall(
+  account: Account,
+  provider: RPCProvider
+): Promise<Call | null> {
+  if (!account.safeCreation) return null
+
+  try {
+    const calculatedAddress = await getCalculatedSafeAddressFromCreation(
+      account.safeCreation,
+      provider
+    )
+    if (!calculatedAddress || calculatedAddress.toLowerCase() !== account.addr.toLowerCase()) {
+      return null
+    }
+
+    const factory = new Interface([
+      'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
+    ])
+
+    return {
+      to: account.safeCreation.factoryAddr,
+      value: 0n,
+      data: factory.encodeFunctionData('createProxyWithNonce', [
+        account.safeCreation.singleton,
+        account.safeCreation.setupData,
+        account.safeCreation.saltNonce
+      ]) as Hex
+    }
+  } catch (error) {
+    console.error(`failed to build Safe deployment call for ${account.addr}`, error)
+    return null
+  }
 }
 
 /**

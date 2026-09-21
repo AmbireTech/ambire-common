@@ -206,5 +206,43 @@ describe('User Operation tests', () => {
       expect(safeTxn.value).toBe(safeCall.value)
       expect(safeTxn.data).toBe(safeCall.data)
     })
+
+    test('should execute a Safe deployment directly through SAFE_SENDER', () => {
+      const deployCall = {
+        to: safeAccDeployed.safeCreation!.factoryAddr,
+        value: 0n,
+        data: '0x1234' as const
+      }
+      const feeCall = { to: FEE_COLLECTOR, value: 1n, data: '0x5678' as const }
+      const opOptimism: AccountOp = {
+        accountAddr: safeAccDeployed.addr,
+        signingKeyAddr: null,
+        signingKeyType: null,
+        gasLimit: null,
+        gasFeePayment: null,
+        chainId: optimism.chainId,
+        nonce: 0n,
+        signature: '0x',
+        calls: [deployCall],
+        feeCall,
+        id: 'safe-deploy',
+        meta: { isSafeDeploy: true }
+      }
+
+      const ambireAccount = new Interface(AmbireAccount.abi)
+      const calldata = getUserOpCalldata(safeAccDeployed, opOptimism, {
+        ...safeAccountState,
+        isDeployed: false
+      })
+      const outerCalls = ambireAccount.decodeFunctionData('executeBySender', calldata)[0]
+
+      expect(outerCalls).toHaveLength(2)
+      expect(outerCalls[0].to.toLowerCase()).toBe(deployCall.to.toLowerCase())
+      expect(outerCalls[0].value).toBe(deployCall.value)
+      expect(outerCalls[0].data).toBe(deployCall.data)
+      expect(outerCalls[1].to.toLowerCase()).toBe(feeCall.to.toLowerCase())
+      expect(outerCalls[1].value).toBe(feeCall.value)
+      expect(outerCalls[1].data).toBe(feeCall.data)
+    })
   })
 })

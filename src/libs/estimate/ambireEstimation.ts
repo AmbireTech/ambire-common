@@ -2,7 +2,12 @@ import { ZeroAddress } from 'ethers'
 
 import Estimation from '../../../contracts/compiled/Estimation.json'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { DEPLOYLESS_SIMULATION_FROM, OPTIMISTIC_ORACLE, SCROLL_ORACLE } from '../../consts/deploy'
+import {
+  DEPLOYLESS_SIMULATION_FROM,
+  OPTIMISTIC_ORACLE,
+  SAFE_SENDER,
+  SCROLL_ORACLE
+} from '../../consts/deploy'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { SCROLL_CHAIN_ID } from '../../consts/networks'
 import { AccountOnchainState } from '../../interfaces/account'
@@ -83,12 +88,15 @@ export async function ambireEstimateGas(
   }
 
   const shouldStateOverride = getShouldStateOverride(network, baseAcc)
+  // A Safe deployment must be simulated from a different address. Overriding the undeployed
+  // Safe itself would put code at its future address and make the factory's CREATE2 fail.
+  const simulationAccountAddr = op.meta?.isSafeDeploy ? SAFE_SENDER : account.addr
   const checkInnerCallsArgs = [
-    account.addr,
+    simulationAccountAddr,
     ...getAccountDeployParams(account),
-    [account.addr, op.nonce || 1, calls, '0x'],
+    [simulationAccountAddr, op.nonce || 1, calls, '0x'],
     getProbableCallData(op, accountState, baseAcc.shouldIncludeActivatorCall()),
-    shouldStateOverride ? [account.addr] : account.associatedKeys,
+    shouldStateOverride ? [simulationAccountAddr] : account.associatedKeys,
     feeTokens.map((feeToken) => feeToken.address),
     FEE_COLLECTOR,
     nativeToCheck,
@@ -99,7 +107,9 @@ export async function ambireEstimateGas(
       from: DEPLOYLESS_SIMULATION_FROM,
       blockTag: getPendingBlockTagIfSupported(network),
       mode: shouldStateOverride ? DeploylessMode.StateOverride : DeploylessMode.Detect,
-      stateToOverride: shouldStateOverride ? getNotAmbireStateOverride(account.addr, network) : null
+      stateToOverride: shouldStateOverride
+        ? getNotAmbireStateOverride(simulationAccountAddr, network)
+        : null
     })
     .catch(getHumanReadableEstimationError)
 

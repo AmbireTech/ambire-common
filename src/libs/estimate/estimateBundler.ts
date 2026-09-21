@@ -58,7 +58,8 @@ async function estimate(
   network: Network,
   userOp: UserOperation,
   switcher: BundlerSwitcher,
-  gasPrice: GasSpeeds
+  gasPrice: GasSpeeds,
+  shouldSkipStateOverride = false
 ): Promise<{
   estimation: BundlerEstimateResult | Error
   nonFatalErrors: Error[]
@@ -100,7 +101,11 @@ async function estimate(
     return humanReadable
   }
 
-  const stateOverride = baseAcc.getBundlerStateOverride(localUserOp)
+  // A Safe deployment targets the Safe's future CREATE2 address. The normal Safe override
+  // puts code at that address to bypass signature checks, which would make deployment revert.
+  const stateOverride = shouldSkipStateOverride
+    ? undefined
+    : baseAcc.getBundlerStateOverride(localUserOp)
   const estimationReq = bundler
     .estimate(localUserOp, network, stateOverride)
     .catch(estimateErrorCallback)
@@ -176,7 +181,14 @@ export async function bundlerEstimate(
   let latestGasPrice = gasPrice
   while (true) {
     // estimate
-    const estimations = await estimate(baseAcc, network, userOp, switcher, latestGasPrice)
+    const estimations = await estimate(
+      baseAcc,
+      network,
+      userOp,
+      switcher,
+      latestGasPrice,
+      !!op.meta?.isSafeDeploy
+    )
 
     // if no errors, return the results and get on with life
     if (!(estimations.estimation instanceof Error)) {

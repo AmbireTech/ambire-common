@@ -1,13 +1,29 @@
-import { concat, getAddress, getBytes, Interface, solidityPacked, ZeroAddress } from 'ethers'
+import {
+  AbiCoder,
+  concat,
+  getAddress,
+  getBytes,
+  getCreate2Address,
+  Interface,
+  keccak256,
+  solidityPacked,
+  ZeroAddress
+} from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
-import { getSafeAccountByOwner, normalizeSafeGlobalMessage, toCallsUserRequest } from './safe'
+import {
+  getSafeAccountByOwner,
+  getSafeDeploymentCall,
+  normalizeSafeGlobalMessage,
+  toCallsUserRequest
+} from './safe'
 
 import type { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
 import type { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 import type { Hex } from '../../interfaces/hex'
+import type { RPCProvider } from '../../interfaces/provider'
 
 const OWNER: Hex = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
 const OTHER_OWNER = '0x94b0080A00579C1307B0eF2C499AD98A8ce58e58'
@@ -76,6 +92,78 @@ const getSafeCreationInfo = (): SafeCreationInfoResponse => ({
 const createApi = (owners: string[] = [OWNER]) => ({
   getSafeCreationInfo: jest.fn(async () => getSafeCreationInfo()),
   getSafeInfo: jest.fn(async () => getSafeInfo(owners))
+})
+
+describe('getSafeDeploymentCall', () => {
+  const factoryAddr = '0x1234567890123456789012345678901234567890' as Hex
+  const singleton = '0x2345678901234567890123456789012345678901' as Hex
+  const setupData = '0x1234' as Hex
+  const saltNonce = `0x${'0'.repeat(63)}1` as Hex
+  const proxyCreationCode = '0x60006000' as Hex
+  const salt = keccak256(concat([keccak256(setupData), saltNonce]))
+  const bytecode = concat([proxyCreationCode, new AbiCoder().encode(['address'], [singleton])])
+  const safeAddr = getCreate2Address(factoryAddr, salt, keccak256(bytecode))
+  const account = {
+    addr: safeAddr,
+    associatedKeys: [OWNER],
+    initialPrivileges: [],
+    creation: null,
+    safeCreation: { factoryAddr, singleton, setupData, saltNonce, version: '1.4.1' },
+    preferences: { label: 'Safe', pfp: safeAddr }
+  }
+  const encodedProxyCreationCode = new AbiCoder().encode(['bytes'], [proxyCreationCode])
+
+  test('builds the factory call when the saved creation data derives the account address', async () => {
+    const provider = {
+      call: jest.fn(async () => encodedProxyCreationCode)
+    } as unknown as RPCProvider
+
+    const call = await getSafeDeploymentCall(account, provider)
+
+    expect(call).toEqual({
+      to: factoryAddr,
+      value: 0n,
+      data: new Interface([
+        'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
+      ]).encodeFunctionData('createProxyWithNonce', [singleton, setupData, saltNonce])
+    })
+  })
+
+  test('rejects saved creation data that derives a different account address', async () => {
+    const provider = {
+      call: jest.fn(async () => encodedProxyCreationCode)
+    } as unknown as RPCProvider
+
+    await expect(
+      getSafeDeploymentCall({ ...account, addr: OTHER_OWNER }, provider)
+    ).resolves.toBeNull()
+  })
+
+  test('returns null when the factory deployment data cannot be read on the network', async () => {
+    const provider = {
+      call: jest.fn(async () => {
+        throw new Error('factory unavailable')
+      })
+    } as unknown as RPCProvider
+
+    await expect(getSafeDeploymentCall(account, provider)).resolves.toBeNull()
+  })
+
+  test('returns null when the saved creation data is malformed', async () => {
+    const provider = {
+      call: jest.fn(async () => encodedProxyCreationCode)
+    } as unknown as RPCProvider
+
+    await expect(
+      getSafeDeploymentCall(
+        {
+          ...account,
+          safeCreation: { ...account.safeCreation, setupData: 'invalid-data' as Hex }
+        },
+        provider
+      )
+    ).resolves.toBeNull()
+  })
 })
 
 describe('toCallsUserRequest', () => {

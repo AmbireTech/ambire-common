@@ -97,6 +97,9 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     safeTx?: SafeMultisigTransactionResponse
     swapTxn?: SwapAndBridgeSendTxRequest
     quote?: SwapAndBridgeQuote
+    isSafeDeploy?: boolean
+    safeDeployRequestId?: UserRequestBase['id']
+    safeDeployForRequestId?: UserRequestBase['id']
   }
   signAccountOp: ISignAccountOpController
 }

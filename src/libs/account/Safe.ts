@@ -143,6 +143,12 @@ export class Safe extends BaseAccount {
   }
 
   getBroadcastCalldata(accountOp: AccountOp): Hex {
+    if (accountOp.meta?.isSafeDeploy) {
+      const deploymentCall = accountOp.calls[0]
+      if (!deploymentCall) throw new Error('Safe deployment transaction is missing')
+      return deploymentCall.data as Hex
+    }
+
     const exec = new Interface(execTransactionAbi)
     const calls = getSignableCalls(accountOp)
     const coder = new AbiCoder()
@@ -186,7 +192,7 @@ export class Safe extends BaseAccount {
     }
   }
 
-  // we're not deploying safe accounts
+  // Safe deployment does not use Ambire entry point deployment authorization.
   shouldSignDeployAuth(): boolean {
     return false
   }

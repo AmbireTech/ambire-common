@@ -240,4 +240,40 @@ describe('broadcast', () => {
     expect(rawTxn.gasLimit).toBe(50000n)
     expect(provider.send).not.toHaveBeenCalled()
   })
+
+  test('broadcasts a Safe deployment call directly instead of wrapping it in a Safe transaction', async () => {
+    const provider = getProvider('0x186a0')
+    const op = getAccountOp(50000n)
+    const deploymentCall = {
+      to: account.safeCreation!.factoryAddr,
+      value: 0n,
+      data: '0x1234' as const
+    }
+    op.calls = [deploymentCall]
+    op.meta = { isSafeDeploy: true }
+
+    const rawTxn = await buildRawTransaction(
+      account,
+      op,
+      { ...accountState, isDeployed: false },
+      provider,
+      network,
+      7,
+      BROADCAST_OPTIONS.byOtherEOA
+    )
+
+    expect(rawTxn.to).toBe(deploymentCall.to)
+    expect(rawTxn.value).toBe(deploymentCall.value)
+    expect(rawTxn.data).toBe(deploymentCall.data)
+    expect(provider.send).toHaveBeenCalledWith(
+      'eth_estimateGas',
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: signerAddr,
+          to: deploymentCall.to,
+          data: deploymentCall.data
+        })
+      ])
+    )
+  })
 })
