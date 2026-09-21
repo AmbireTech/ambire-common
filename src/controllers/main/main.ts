@@ -249,7 +249,8 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners,
     externalSignerControllers,
     uiManager,
-    privacyPoolsCircuitsBaseUrl
+    privacyPoolsCircuitsBaseUrl,
+    getPrivacyPoolsInitialState
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -270,6 +271,12 @@ export class MainController extends EventEmitter implements IMainController {
      * platform layer knows, so it is injected rather than derived here.
      */
     privacyPoolsCircuitsBaseUrl: string
+    /**
+     * Loads the pre-scanned Privacy Pools history a first sync starts from. Shipped by the platform
+     * layer, since only it knows how its build serves several megabytes of it - and absent is fine,
+     * it only means the first sync walks the chain itself.
+     */
+    getPrivacyPoolsInitialState?: () => Promise<Record<string, any>>
   }) {
     super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
@@ -426,6 +433,7 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       fetch: this.fetch,
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
+      getInitialState: getPrivacyPoolsInitialState,
       // A closure rather than a controller reference: `requests` is constructed further down, and
       // handing calls to the signing flow is the only thing Privacy Pools needs from it.
       buildCallsRequest: ({ calls, meta }) =>

@@ -140,6 +140,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #proverFactory: () => Promise<any>
 
+  /**
+   * The pre-scanned pool history a first sync starts from, when the platform layer ships one.
+   *
+   * Only ever consulted on a cold chain: the plugin prefers what it has already persisted, so this
+   * is the floor for a fresh install rather than something that can overwrite a synced wallet.
+   */
+  #getInitialState?: () => Promise<Record<string, any>>
+
   #unsubscribers: (() => void)[] = []
 
   /**
@@ -167,6 +175,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     storage,
     fetch,
     circuitsBaseUrl,
+    getInitialState,
     buildCallsRequest,
     eventEmitterRegistry
   }: {
@@ -181,6 +190,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
      * knows - an extension URL on the extension, a static path on the websites.
      */
     circuitsBaseUrl: string
+    /**
+     * Loads the shipped pool history, keyed the way the plugin keys its own store. A callback so
+     * the several megabytes it holds are fetched only when a chain actually needs them, and so the
+     * platform layer decides where they come from - a bundled asset, or nothing at all.
+     */
+    getInitialState?: () => Promise<Record<string, any>>
     buildCallsRequest: (params: {
       calls: Call[]
       meta: { chainId: bigint; accountAddr: string }
@@ -195,6 +210,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#storage = storage
     this.#fetch = fetch
     this.#buildCallsRequest = buildCallsRequest
+    this.#getInitialState = getInitialState
     this.#proverFactory = createProverFactory(circuitsBaseUrl)
 
     // Cleared when done so the resolved promise isn't carried in the state sent to the UI.
@@ -502,6 +518,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     const protocol = new PrivacyPoolsV1Protocol(host, {
       accountIndex: PRIVACY_POOLS_ACCOUNT_INDEX,
+      // Skipped entirely once this chain has a persisted store, so the cost of loading it is paid
+      // once per install rather than on every sync.
+      initialState: this.#getInitialState,
       entrypoint: {
         address: BigInt(config.entrypointAddress),
         deploymentBlock: config.deploymentBlock
