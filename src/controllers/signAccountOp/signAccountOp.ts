@@ -174,6 +174,7 @@ import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
+  getSafeGasRefundWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
@@ -4341,6 +4342,16 @@ export class SignAccountOpController
         type: 'warning',
         title: safeDelegateCallWarning.title,
         text: safeDelegateCallWarning.text || safeDelegateCallWarning.title
+      })
+    }
+
+    const safeGasRefundWarning = getSafeGasRefundWarning(this.accountOp)
+    if (safeGasRefundWarning) {
+      banners.push({
+        id: safeGasRefundWarning.id,
+        type: 'warning',
+        title: safeGasRefundWarning.title,
+        text: safeGasRefundWarning.text || safeGasRefundWarning.title
       })
     }
 
