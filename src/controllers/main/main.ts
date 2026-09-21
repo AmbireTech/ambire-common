@@ -522,11 +522,11 @@ export class MainController extends EventEmitter implements IMainController {
       this.networks,
       this.portfolio,
       this.safe,
+      this.featureFlags,
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       },
-      eventEmitterRegistry,
-      this.featureFlags
+      eventEmitterRegistry
     )
     this.transferScanner = new TransfersScannerController({
       activity: this.activity,

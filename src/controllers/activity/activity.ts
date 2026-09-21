@@ -11,8 +11,8 @@ import { Account, AccountId, IAccountsController } from '../../interfaces/accoun
 import { IActivityController } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-import { Fetch } from '../../interfaces/fetch'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
+import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
@@ -286,7 +286,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #safe: ISafeController
 
-  #featureFlags?: IFeatureFlagsController
+  #featureFlags: IFeatureFlagsController
 
   #onContractsDeployed: (network: Network) => Promise<void>
 
@@ -324,9 +324,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
     networks: INetworksController,
     portfolio: IPortfolioController,
     safe: ISafeController,
+    featureFlags: IFeatureFlagsController,
     onContractsDeployed: (network: Network) => Promise<void>,
-    eventEmitterRegistry?: IEventEmitterRegistryController,
-    featureFlags?: IFeatureFlagsController
+    eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
     this.#storage = storage
@@ -885,12 +885,11 @@ export class ActivityController extends EventEmitter implements IActivityControl
         chainId
       )
       if (shouldLearnTokens) {
-        const tokensWithAPrice =
-          this.#featureFlags?.isFeatureEnabled('tokenPrices') === false
-            ? foundTokens
-            : await new ScamFilter({ fetch: this.#fetch, network }).filterTokensWithoutAPrice(
-                foundTokens
-              )
+        const tokensWithAPrice = await new ScamFilter({
+          fetch: this.#fetch,
+          network,
+          isTokenPricesEnabled: () => this.#featureFlags.isFeatureEnabled('tokenPrices') !== false
+        }).filterTokensWithoutAPrice(foundTokens)
         this.#portfolio.addTokensToBeLearned(tokensWithAPrice, chainId)
       }
       const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens)

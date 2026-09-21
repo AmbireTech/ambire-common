@@ -673,6 +673,7 @@ const init = async (
     networksCtrl,
     portfolio,
     safe,
+    featureFlagsCtrl,
     () => Promise.resolve()
   )
   const estimationController = new EstimationController(

@@ -267,6 +267,7 @@ const activityCtrl = new ActivityController(
   networksCtrl,
   portfolioCtrl,
   safe,
+  featureFlagsCtrl,
   () => Promise.resolve()
 )
 
