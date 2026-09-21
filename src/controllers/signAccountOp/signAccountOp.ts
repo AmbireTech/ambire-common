@@ -409,7 +409,7 @@ export class SignAccountOpController
   /**
    * Should this signAccountOp instance simulate the accountOp it's
    * preparing as well as estimate. Simulaton is required in the
-   * original signAccountOp but should be avoided in swap&bridge
+   * original signAccountOp but should be avoided in swap&bridge and Safe deployments.
    */
   #shouldSimulate: boolean
 
@@ -570,7 +570,7 @@ export class SignAccountOpController
       readyToSign: this.readyToSign,
       stopRefetching: this.#stopRefetching
     }))
-    this.#shouldSimulate = shouldSimulate
+    this.#shouldSimulate = shouldSimulate && !this.#accountOp.meta?.isSafeDeploy
 
     this.#onBroadcastSuccess = onBroadcastSuccess
     if (onBroadcastFailed) this.#onBroadcastFailed = onBroadcastFailed
@@ -1047,10 +1047,7 @@ export class SignAccountOpController
     return true
   }
 
-  #setErc7730Humanization(
-    humanizationId: number,
-    erc7730Descriptors: Erc7730CallDescriptors
-  ) {
+  #setErc7730Humanization(humanizationId: number, erc7730Descriptors: Erc7730CallDescriptors) {
     if (
       !this.isCurrentHumanization(humanizationId) ||
       this.humanizationId !== humanizationId ||
@@ -1080,8 +1077,7 @@ export class SignAccountOpController
   async #applyDescriptorFirstHumanization(humanizationId: number) {
     await this.applyDescriptorFirstHumanization({
       humanizationId,
-      fetchDescriptor: () =>
-        this.#erc7730.getDescriptorsForAccountOp(this.accountOp),
+      fetchDescriptor: () => this.#erc7730.getDescriptorsForAccountOp(this.accountOp),
       applyDescriptorHumanization: (erc7730Descriptors, currentHumanizationId) =>
         this.#setErc7730Humanization(currentHumanizationId, erc7730Descriptors),
       applyFallbackHumanization: (currentHumanizationId) =>

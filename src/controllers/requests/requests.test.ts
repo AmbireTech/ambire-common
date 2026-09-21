@@ -1145,7 +1145,7 @@ describe('RequestsController ', () => {
     ).toBeUndefined()
   })
   test('queues a validated Safe deployment before an app transaction on an undeployed network', async () => {
-    const { accountsCtrl, controller } = await prepareTest(true, true)
+    const { accountsCtrl, controller, portfolioCtrl } = await prepareTest(true, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
@@ -1155,6 +1155,7 @@ describe('RequestsController ', () => {
       value: 0n,
       data: '0x1234'
     })
+    const simulateAccountOpSpy = jest.spyOn(portfolioCtrl, 'simulateAccountOp')
     const reject = jest.fn()
 
     await controller.build({
@@ -1195,6 +1196,9 @@ describe('RequestsController ', () => {
     expect(deploymentRequest.signAccountOp.errors).not.toContainEqual(
       expect.objectContaining({ code: 'NO_KEYS_AVAILABLE' })
     )
+    expect(
+      simulateAccountOpSpy.mock.calls.some(([accountOp]) => accountOp.meta?.isSafeDeploy)
+    ).toBe(false)
     expect(transactionRequest.meta.safeDeployRequestId).toBe(deploymentRequest.id)
     expect(controller.currentUserRequest).toBe(deploymentRequest)
 

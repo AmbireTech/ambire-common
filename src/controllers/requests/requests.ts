@@ -104,8 +104,8 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
-import type { Call } from '../../libs/accountOp/types'
 import type { EIP712TypedData } from '@safe-global/types-kit'
+import type { Call } from '../../libs/accountOp/types'
 import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/signAccountOp'
 
 const STATUS_WRAPPED_METHODS = {
@@ -657,6 +657,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   async #performSimulation(curR: CallsUserRequest) {
     try {
+      const isWaitingForSafeDeployment = !!curR.meta.safeDeployRequestId
+      if (curR.meta.isSafeDeploy || isWaitingForSafeDeployment) return
+
       // we don't perform a dashboard simulation on partially signed Safe txns
       // until they are opened on the SignAccountOp screen
       if (
