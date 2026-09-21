@@ -800,6 +800,39 @@ describe('RequestsController ', () => {
       if (request.kind === 'calls') request.signAccountOp.destroy()
     })
   })
+  test('does not reserve a Safe nonce for a deployment request', async () => {
+    const { controller, accountsCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+    const buildRequest = () =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [{ to: ZeroAddress, value: 1n, data: '0x' }],
+            meta: { accountAddr, chainId }
+          }
+        }
+      })
+
+    await buildRequest()
+    const deployRequest = controller.userRequests[0] as CallsUserRequest
+    deployRequest.meta.isSafeDeploy = true
+
+    await buildRequest()
+    const actionRequest = controller.userRequests.find(
+      (request) => request !== deployRequest
+    ) as CallsUserRequest
+
+    expect(deployRequest.signAccountOp.accountOp.nonce).toBe(119n)
+    expect(actionRequest.signAccountOp.accountOp.nonce).toBe(119n)
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
   test('BUG: ignores activity nonces when assigning a new Safe request', async () => {
     const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'

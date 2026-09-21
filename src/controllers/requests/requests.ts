@@ -254,6 +254,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const queuedNonces = this.userRequests.reduce<bigint[]>((nonces, request) => {
       if (
         request.kind !== 'calls' ||
+        request.meta.isSafeDeploy ||
         !request.signAccountOp.account.safeCreation ||
         request.signAccountOp.accountOp.accountAddr !== accountAddr ||
         request.signAccountOp.accountOp.chainId !== chainId
