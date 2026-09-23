@@ -115,6 +115,18 @@ describe('Transfer Controller', () => {
     })
     expect(transferController.amount).toBe('1')
   })
+  test('should clear the fiat amount when the amount is cleared to zero', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const ethOnEthereum = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)
+    await transferController.update({ selectedToken: ethOnEthereum })
+
+    await transferController.update({ amount: '1' })
+    expect(Number(transferController.amountInFiat)).toBeGreaterThan(0)
+
+    await transferController.update({ amount: '0' })
+    expect(Number(transferController.amountInFiat)).toBe(0)
+  })
   test('should set max amount minus fee when the selected fee token matches the transfer token', async () => {
     const { transferController, tokens } = await prepareTest()
 
