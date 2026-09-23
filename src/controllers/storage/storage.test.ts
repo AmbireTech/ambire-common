@@ -25,7 +25,8 @@ const ALL_MIGRATION_KEYS = [
   'cleanUpEmailVaultStorage',
   'fixSelectedAccountDismissedBannerIdsType',
   'migrateDappsAddConnectionSources',
-  'migrateDomainsCacheToNames'
+  'migrateDomainsCacheToNames',
+  'migrateDappsAddMissingIds'
 ]
 
 // Wraps a memory store and counts how many times each key is read and how many
@@ -234,6 +235,61 @@ describe('StorageController', () => {
       const storageCtrl = new StorageController(memStorage)
       const migrated = await storageCtrl.get('domainsCache', {})
       expect(migrated).toEqual(current)
+    })
+  })
+
+  describe('migrateDappsAddMissingIds', () => {
+    const MIGRATION_KEY = 'migrateDappsAddMissingIds'
+    const PASSED_BEFORE_THIS_MIGRATION = ALL_MIGRATION_KEYS.filter((key) => key !== MIGRATION_KEY)
+    const UNISWAP_URL = 'https://app.uniswap.org/'
+    const UNISWAP_ID = 'app.uniswap.org'
+    const baseDapp = {
+      name: 'Uniswap',
+      description: '',
+      url: UNISWAP_URL,
+      icon: null,
+      category: null,
+      tvl: null,
+      twitter: null,
+      geckoId: null,
+      chainIds: [],
+      isConnected: false,
+      connectedSources: [],
+      isFeatured: false,
+      isCustom: true,
+      chainId: 1,
+      favorite: false,
+      blacklisted: 'VERIFIED'
+    }
+
+    const bootWithDapps = async (dapps: any[]) => {
+      const memStorage: Storage = produceMemoryStore()
+      await memStorage.set('passedMigrations', PASSED_BEFORE_THIS_MIGRATION)
+      await memStorage.set('dappsV2', dapps)
+      const storageCtrl = new StorageController(memStorage)
+      const migrated = (await storageCtrl.get('dappsV2', [])) as any[]
+      const passed = await storageCtrl.get('passedMigrations', [])
+      return { migrated, passed }
+    }
+
+    test('derives the missing id from the url', async () => {
+      const { migrated, passed } = await bootWithDapps([baseDapp])
+
+      expect(migrated).toEqual([{ ...baseDapp, id: UNISWAP_ID }])
+      expect(passed).toContain(MIGRATION_KEY)
+    })
+
+    test('drops an id-less record whose derived id belongs to an existing record', async () => {
+      const existing = {
+        ...baseDapp,
+        id: UNISWAP_ID,
+        name: 'Existing Uniswap',
+        isConnected: true,
+        connectedSources: ['injected']
+      }
+      const { migrated } = await bootWithDapps([baseDapp, existing])
+
+      expect(migrated).toEqual([existing])
     })
   })
 

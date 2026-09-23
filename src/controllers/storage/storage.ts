@@ -8,7 +8,11 @@ import { IEventEmitterRegistryController, Statuses } from '../../interfaces/even
 import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
 import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
-import { getDappNameFromId, normalizeDappConnection } from '../../libs/dapps/helpers'
+import {
+  getDappIdFromUrl,
+  getDappNameFromId,
+  normalizeDappConnection
+} from '../../libs/dapps/helpers'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
 import {
@@ -77,6 +81,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#fixSelectedAccountDismissedBannerIdsType() // as of version 6.7.3
       await this.#migrateDappsAddConnectionSources() // As of v6.11.0
       await this.#migrateDomainsCacheToNames() // As of v6.14.0
+      await this.#migrateDappsAddMissingIds() // As of v6.21.8
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -642,6 +647,43 @@ export class StorageController extends EventEmitter implements IStorageControlle
     const needsMigration = dapps.some(hasConnectionDrift)
     if (needsMigration) {
       const migratedDapps = dapps.map(normalizeDappConnection)
+      await this.#storage.set('dappsV2', migratedDapps)
+    }
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
+  }
+
+  // Dapp ids were once derived only in memory and never written back (b87b11c32), so older
+  // `dappsV2` records may lack one. The dapps controller used to key such records under
+  // `undefined` and saved the connected and custom ones back on every catalog refresh, so they
+  // survived every update. Since the trailing-dot normalization (607e24fea) the load throws on
+  // them instead (Sentry EXTENSION-2QK). Derive the missing ids from the url.
+  // A record whose derived id is already taken is dropped, because the existing record is the one
+  // lookups resolve to and its permissions are the ones the user reviewed.
+  async #migrateDappsAddMissingIds() {
+    const MIGRATION_KEY = 'migrateDappsAddMissingIds'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const dapps = await this.#storage.get('dappsV2', [] as Dapp[])
+
+    if (dapps.some((d) => !d.id)) {
+      const takenIds = new Set(dapps.filter((d) => !!d.id).map((d) => d.id))
+      const migratedDapps: Dapp[] = []
+
+      dapps.forEach((dapp) => {
+        if (dapp.id) {
+          migratedDapps.push(dapp)
+          return
+        }
+        if (!dapp.url) return
+
+        const id = getDappIdFromUrl(dapp.url)
+        if (takenIds.has(id)) return
+
+        takenIds.add(id)
+        migratedDapps.push({ ...dapp, id })
+      })
+
       await this.#storage.set('dappsV2', migratedDapps)
     }
 
