@@ -1321,6 +1321,17 @@ export class SignAccountOpController
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
 
+    if (
+      !!this.account.safeCreation &&
+      accountState &&
+      !accountState.isDeployed &&
+      !this.accountOp.meta?.isSafeDeploy
+    ) {
+      errors.push({
+        title: `Safe not deployed on ${this.#network.name}.`
+      })
+    }
+
     // It may occur, only if there are no available signer.
     if (
       !this.accountOp.meta?.isSafeDeploy &&
