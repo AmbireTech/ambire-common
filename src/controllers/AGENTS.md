@@ -107,7 +107,7 @@ this.#persistence = new AccountOpsPersistence({
 })
 ```
 
-`AccountOpsPersistence` and `PhishingPersistence` are the two examples. Both pick an adapter in `#pickAdapter`, own the data migration, and degrade rather than throw — so the controller just calls methods.
+`AccountOpsPersistence` is the worked example. It picks an adapter in `#pickAdapter`, own the data migration, and degrade rather than throw — so the controller just calls methods.
 
 To add IDB persistence to a controller, follow the recipe in `services/storage/README.md` —
 it covers the schema entry, the adapter pair, the coordinator and the startup-window audit.
@@ -125,7 +125,6 @@ it covers the schema entry, the adapter pair, the coordinator and the startup-wi
 - `isEmpty()` cannot tell "never migrated" from "wiped, then partially repopulated". Accepted, not worth fixing.
 - Bulk writes must drop malformed legacy rows with a warning, not throw mid-batch. A partial commit makes `isEmpty()` false and disables the retry forever.
 - A `dbVersion` bump is one-way — an older build gets `VersionError` and falls back to key-value. Ship one alone, and land any store you already know you need before release.
-- Copy `PhishingPersistence` unless you need a partial startup read, it is the smaller shape.
 
 ## Other rules:
 

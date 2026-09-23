@@ -1,21 +1,14 @@
 # IndexedDB persistence layer
 
-Persistence for controller data that key-value storage handles badly. Two consumers, and they
-get different things out of it:
+Persistence for controller data that key-value storage handles badly. One consumer today,
+`ActivityController`:
 
-| | `ActivityController` | `PhishingController` |
-|---|---|---|
-| Layout | one row per op | one document under `snapshot` |
-| Read | bounded window, one page at a time | **whole document**, every load |
-| Write | one row per broadcast | **whole document**, per list update |
-| What it buys | row-level reads and writes on data that grows without bound | structured clone instead of a richJson string, and relief from the `chrome.storage.local` quota |
-
-Phishing is deliberately **not** row-level. `getDomainBlacklistedStatus` is synchronous — it is
-called from inside `.filter()` and `.forEach()` predicates in `DappsController`, with an
-explicit "do NOT await this" note — so the domain and address sets have to live in memory,
-which means every load reads the entire list whatever the layout. Splitting it into a row per
-domain would make the frequent operation (a load on every service-worker wake-up) slower to
-make the rare one (a write every 15 minutes at most, 6 hours at rest) faster.
+| | `ActivityController` |
+|---|---|
+| Layout | one row per op |
+| Read | bounded window, one page at a time |
+| Write | one row per broadcast |
+| What it buys | row-level reads and writes on data that grows without bound |
 
 This file covers the **runtime picture**: what each module does, the order things happen in,
 the invariants, and what each operation costs. For the step-by-step recipe to put a *new*
@@ -35,14 +28,12 @@ startup read.
 | `idbSchema.ts` | Declarative manifest: stores, keyPaths, indexes, `dbVersion`. The single source of truth for *structure*. Read by `reconcileSchema()`; contains no logic. |
 | `idbDatabase.ts` | Connection lifecycle (`openAmbireIdb()` singleton, `blocking`, `terminated`, invalidation) and upgrade orchestration (`reconcileSchema()`, `applyMigrations()`). |
 | `accountOpsPersistence.ts` | **The coordinator `ActivityController` talks to.** Picks an adapter, runs the data migration, falls back on failure, and keeps the in-memory cache coherent with a partially-loaded backend. |
-| `phishingPersistence.ts` | The coordinator `PhishingController` talks to. No cache to keep coherent, so it is the smaller template to copy. |
 | `activityIdb.ts` | Two `IActivityOpsBackend` adapters: `ActivityIdbStorage` (rows) and `ActivityKeyValueStorage` (blob, used on mobile). |
-| `phishingIdb.ts` | The two `IPhishingOpsBackend` adapters. Single-document, read and written whole — see the table above. |
 | `persistenceError.ts` | The `onError` contract both coordinators report through instead of throwing. |
 
 ## Adapters, and adding a service
 
-Each controller has an adapter contract — `IActivityOpsBackend`, `IPhishingOpsBackend` — with
+A controller declares an adapter contract — `IActivityOpsBackend` — with
 one implementation per storage service. A coordinator picks one in `#pickAdapter` and exposes
 plain methods, so the controller never branches on which backend it got and holds no IDB logic
 of its own.
@@ -63,9 +54,9 @@ changes, and nothing else in this layer does either.
 
 ## Adding IDB persistence to a controller
 
-1. Add the store to `AMBIRE_IDB_SCHEMA`. `reconcileSchema()` creates it and its indexes — never create them by hand in a handler. Bump `dbVersion` by 1 **only if the current version has shipped**; a store added before release joins the existing version, which is how `phishing` reached v1 without a bump. See the one-way warning below.
+1. Add the store to `AMBIRE_IDB_SCHEMA`. `reconcileSchema()` creates it and its indexes — never create them by hand in a handler. Bump `dbVersion` by 1 **only if the current version has shipped**; a store added before release joins the existing version. See the one-way warning below.
 2. Add an entry to `migrationHandlers` in `idbDatabase.ts` for the new version. A no-op is fine; handlers exist only to transform existing rows. The entry is mandatory so a version bump is always deliberate — a test enforces it.
-3. Declare a backend interface with the data methods the controller actually calls, plus `ensureMigrated(getStoredData, removeStoredData)` typed against the shape currently held in key-value storage. See `IActivityOpsBackend` (`interfaces/activity.ts`) or the smaller `IPhishingOpsBackend` for the pattern. Keep the interface to what is used _polymorphically_: `isEmpty()` and `migrateFromStorage()` are how the IDB implementation decides whether to migrate, so declare them on that class only. Putting them on the shared interface forces the key-value class to carry dead stub methods it never uses.
+3. Declare a backend interface with the data methods the controller actually calls, plus `ensureMigrated(getStoredData, removeStoredData)` typed against the shape currently held in key-value storage. See `IActivityOpsBackend` (`interfaces/activity.ts`) for the pattern. Keep the interface to what is used _polymorphically_: `isEmpty()` and `migrateFromStorage()` are how the IDB implementation decides whether to migrate, so declare them on that class only. Putting them on the shared interface forces the key-value class to carry dead stub methods it never uses.
 4. Implement it twice — once on IDB, once on key-value. `ensureMigrated` on the IDB implementation must, in order: return early if the store is not empty; return early if the legacy payload has no meaningful data (a blank payload would make the store non-empty and permanently skip a later real migration); write the payload; only THEN call `removeStoredData`, so a failed removal still leaves the migrated data in place and doesn't lose it. The key-value implementation makes `ensureMigrated` an outright no-op, since its data already lives in its final location.
 5. Add a coordinator in `services/storage/` that picks the adapter, runs `ensureMigrated()` as its **first await** (or a later read can observe a store the migration has not filled yet), and reports failures through an injected `onError` instead of throwing. The controller calls its methods and holds no IDB knowledge — see the rule above.
 6. **If the IDB backend loads only a subset at startup, audit every in-memory consumer.** This is the easiest way to introduce a silent bug. `ActivityController`'s startup read returns only the 20 most recent finalized ops per chain (plus all pending ones), which quietly weakened address-poisoning detection. Anything that reasons over the _full_ history must not scan the cache — give it a **separate durable index** instead, kept up to date on write and backfilled once from existing data. `sentToHistory.recipients` is the reference: expanding the cache on demand worked but reloaded the whole history into memory on a user-facing path, so it was replaced. Note that such an index outlives the rows it was derived from, which is usually desirable (a recipient evicted from history still raises a lookalike warning) but means "no rows" no longer implies "no index entries".
@@ -111,7 +102,7 @@ manifest entry and nothing else hand-written — never a create-store handler.
 
 It needs a `dbVersion` bump **only if the current version has shipped**: `reconcileSchema()`
 runs during `onupgradeneeded`, so an unbumped version never reaches installs that already have
-that version. A store added pre-release joins the existing one, which is how `phishing` reached
+that version. A store added pre-release joins the existing one, which is how `accountsOps` reached
 v1 without a bump.
 
 It runs on **every** upgrade and is idempotent, which closes two gaps a per-version handler
@@ -194,7 +185,6 @@ Two consequences:
 | `getOpsForAccountAndChain()` | Full group read. Called by `addExternalAccountOp`'s duplicate guard, which has to compare against the whole group rather than the loaded window. Deliberately not a txnId index: an internal op can carry a txnId per call (MultipleTxns), which a row-level index on `op.txnId` cannot see. |
 | `countOpsForAccount()` | `count()` over a key range — served from the index without deserializing rows. |
 | `hasAccountOpsSentTo()` | No backend read at all. Answers from `sentToHistory.recipients` — an O(1) key lookup, plus an O(recipients) comparison only for a first-time address. |
-| `loadSnapshot()` / `saveSnapshot()` | The whole phishing document, read on every load and rewritten per list update. See the table at the top for why it is not row-level. |
 
 ### The recipient index
 
@@ -249,6 +239,4 @@ timing that handler rule 2 is about — that was verified manually in Chrome and
 | `idbIntegration.test.ts` | The infrastructure itself: `reconcileSchema`, the handler chain, manifest drift guards |
 | `activityIdbMigration.test.ts` | `ActivityController` wiring: migration, startup read, paginated reads, op counts, the recipient backfill |
 | `idbDatabase.test.ts` | Singleton, schema reconciliation, handler-chain consistency |
-| `phishingIdb.test.ts` | Both phishing backends, against the real database |
-| `phishingIdbMigration.test.ts` | `PhishingController` wiring: manifest entry, migration, restart, key-value path |
-| `activity.test.ts`, `phishing.test.ts` | Pre-existing suites built without an `idb`, so they run the key-value path — the **mobile regression guard**. They should keep passing untouched. |
+| `activity.test.ts` | Pre-existing suite built without an `idb`, so it runs the key-value path — the **mobile regression guard**. They should keep passing untouched. |

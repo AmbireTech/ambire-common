@@ -51,18 +51,6 @@ export interface IdbAccountOpRow {
 }
 
 /**
- * Row stored in the 'phishing' store — a single document under the id 'snapshot'.
- * PhishingSnapshot is derived from this (Omit<…, 'id'>), so the fields live in one place.
- */
-export interface IdbPhishingRow {
-  id: string
-  version: number
-  updatedAt: number
-  domains: string[]
-  addresses: string[]
-}
-
-/**
  * Typed view of the database, so store names, key shapes, row shapes and index key types are
  * all checked at the call site instead of being `any`.
  *
@@ -82,10 +70,6 @@ export interface AmbireIdbSchema extends DBSchema {
       'by-account-chain-status': [string, string, AccountOpStatus]
       'by-txn-id': string
     }
-  }
-  phishing: {
-    key: string
-    value: IdbPhishingRow
   }
 }
 
@@ -144,11 +128,6 @@ export const AMBIRE_IDB_SCHEMA: IdbSchema = {
           multiEntry: true
         }
       ]
-    },
-    {
-      // Single document under the id 'snapshot' — no indexes, it is always read whole.
-      storeName: 'phishing',
-      keyPath: 'id'
     }
   ],
   // Human-readable changelog of the schema. Not read at runtime — the executable
@@ -159,7 +138,7 @@ export const AMBIRE_IDB_SCHEMA: IdbSchema = {
       fromVersion: 0,
       toVersion: 1,
       description:
-        'Initial schema: accountsOps store with timestamp and status indexes, phishing snapshot store'
+        'Initial schema: accountsOps store with timestamp, status and txnId indexes'
     }
   ]
 }
