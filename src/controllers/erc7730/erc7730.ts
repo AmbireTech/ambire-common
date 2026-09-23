@@ -1,4 +1,5 @@
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
@@ -81,6 +82,8 @@ export class Erc7730Controller extends EventEmitter {
 
   #callRelayer: BindedRelayerCall
 
+  #featureFlags: IFeatureFlagsController
+
   #ui: IUiController
 
   /** Reads a Safe proxy's singleton slot; undefined where no RPC access is available. */
@@ -106,12 +109,14 @@ export class Erc7730Controller extends EventEmitter {
   constructor({
     storage,
     callRelayer,
+    featureFlags,
     providers,
     ui,
     eventEmitterRegistry
   }: {
     storage: IStorageController
     callRelayer: BindedRelayerCall
+    featureFlags: IFeatureFlagsController
     /** Omit where no RPC access is available. */
     providers?: IProvidersController
     ui: IUiController
@@ -121,6 +126,7 @@ export class Erc7730Controller extends EventEmitter {
 
     this.#storage = storage
     this.#callRelayer = callRelayer
+    this.#featureFlags = featureFlags
     this.#ui = ui
     this.#providers = providers
 
@@ -476,6 +482,9 @@ export class Erc7730Controller extends EventEmitter {
   }
 
   async getDescriptorsForAccountOp(accountOp: AccountOp): Promise<Erc7730CallDescriptors> {
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#featureFlags.isFeatureEnabled('clearSigning')) return {}
+
     try {
       const known = await this.#gather((state) => planErc7730Wants(accountOp, state))
 
@@ -494,6 +503,9 @@ export class Erc7730Controller extends EventEmitter {
   }
 
   async getDescriptorForMessage(message: Message): Promise<Erc7730ResolvedDescriptor | null> {
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#featureFlags.isFeatureEnabled('clearSigning')) return null
+
     try {
       const known = await this.#gather((state) => planErc7730MessageWants(message, state))
 

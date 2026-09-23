@@ -392,7 +392,12 @@ export class PortfolioController
   }
 
   async updateExchangeList() {
-    if (this.exchangeState.isLoading || this.exchangeState.retryCount >= 5) return
+    if (
+      !this.#featureFlags.isFeatureEnabled('tokenPrices') ||
+      this.exchangeState.isLoading ||
+      this.exchangeState.retryCount >= 5
+    )
+      return
 
     this.exchangeState.isLoading = true
 
@@ -434,6 +439,8 @@ export class PortfolioController
   }
 
   private async fetchBlacklist(): Promise<void> {
+    if (!this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) return
+
     try {
       if (this.#blacklist.isLoading) return
       this.#blacklist.isLoading = true
@@ -1135,7 +1142,12 @@ export class PortfolioController
       try {
         const provider = providers[network.chainId.toString()]
         if (!provider) return null
-        this.#portfolioLibs.set(key, new Portfolio(this.#fetch, provider, network, this.#velcroUrl))
+        this.#portfolioLibs.set(
+          key,
+          new Portfolio(this.#fetch, provider, network, this.#velcroUrl, undefined, () =>
+            this.#featureFlags.isFeatureEnabled('tokenPrices')
+          )
+        )
       } catch (e: any) {
         this.emitError({
           level: 'silent',
@@ -1263,28 +1275,36 @@ export class PortfolioController
     this.#setNetworkLoading(accountId, 'rewards', true)
     this.emitUpdate()
 
-    const accountKeysCount = getAccountKeysCount({
-      accountAddr: accountId,
-      keys: this.#keystore.keys,
-      accounts: this.#accounts.accounts
-    })
-    const sigsParam = accountKeysCount > 0 ? `?sigs=${accountKeysCount}` : ''
-
-    let res: any
-    try {
-      res = await this.#callRelayer(
-        `/v2/identity/${accountId}/portfolio-additional${sigsParam}`,
-        'GET',
-        undefined,
-        undefined,
-        5000
-      )
-    } catch (e: any) {
-      console.error('relayer error for portfolio additional')
-      this.#setNetworkLoading(accountId, 'gasTank', false, e)
-      this.#setNetworkLoading(accountId, 'rewards', false, e)
-      this.emitUpdate()
-      return
+    let res: any = {
+      data: {
+        rewards: {},
+        rewardsProjectionDataV2: {},
+        frozenRewardSeason1: 0,
+        gasTank: { balance: [] }
+      }
+    }
+    if (this.#featureFlags.isFeatureEnabled('gasTank')) {
+      const accountKeysCount = getAccountKeysCount({
+        accountAddr: accountId,
+        keys: this.#keystore.keys,
+        accounts: this.#accounts.accounts
+      })
+      const sigsParam = accountKeysCount > 0 ? `?sigs=${accountKeysCount}` : ''
+      try {
+        res = await this.#callRelayer(
+          `/v2/identity/${accountId}/portfolio-additional${sigsParam}`,
+          'GET',
+          undefined,
+          undefined,
+          5000
+        )
+      } catch (e: any) {
+        console.error('relayer error for portfolio additional')
+        this.#setNetworkLoading(accountId, 'gasTank', false, e)
+        this.#setNetworkLoading(accountId, 'rewards', false, e)
+        this.emitUpdate()
+        return
+      }
     }
 
     if (res.data.banner) {
@@ -1774,7 +1794,8 @@ export class PortfolioController
           this.#fetch,
           state.result?.defiPositions.positionsByProvider || [],
           discoveryData?.data?.defi?.positions,
-          getIsExternalApiDefiPositionsCallSuccessful(discoveryData)
+          getIsExternalApiDefiPositionsCallSuccessful(discoveryData),
+          this.#featureFlags.isFeatureEnabled('tokenPrices')
         )
       ])
 

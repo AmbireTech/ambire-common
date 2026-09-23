@@ -44,6 +44,70 @@ describe('PhishingController', () => {
     expect(controller).toBeDefined()
   })
 
+  test('should enable the scam and phishing checker by default', async () => {
+    const { controller, mainCtrl } = await prepareTest()
+
+    expect(mainCtrl.featureFlags.isFeatureEnabled('scamAndPhishingChecker')).toBe(true)
+    expect(controller.updatePhishingInterval.running).toBe(true)
+  })
+
+  test('should resolve domain checks without fetching and skip address checks when the checker is disabled', async () => {
+    const fetchMock = jest.fn()
+    const { mainCtrl } = await makeMainController(undefined, {
+      skipDappsAndPhishingInit: true,
+      overrides: {
+        fetch: fetchMock,
+        featureFlags: { scamAndPhishingChecker: false }
+      }
+    })
+    const controller = mainCtrl.phishing
+
+    await controller.init()
+    expect(controller.updatePhishingInterval.running).toBe(false)
+
+    jest.restoreAllMocks()
+    fetchMock.mockClear()
+    const domainCallback = jest.fn()
+    const addressCallback = jest.fn()
+
+    await controller.continuouslyUpdatePhishing()
+    await controller.updateDomainsBlacklistedStatus(['https://example.com'], domainCallback)
+    await controller.updateAddressesBlacklistedStatus(
+      ['0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'],
+      addressCallback
+    )
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(domainCallback).toHaveBeenCalledWith({ 'example.com': 'FAILED_TO_GET' })
+    expect(addressCallback).not.toHaveBeenCalled()
+  })
+
+  test('should check addresses when the checker is enabled', async () => {
+    const address = '0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e'
+    const { controller } = await prepareTest([], [address])
+    const callback = jest.fn()
+
+    await controller.updateAddressesBlacklistedStatus([address], callback)
+
+    expect(callback).toHaveBeenCalledWith({ [address]: 'BLACKLISTED' })
+  })
+
+  test('should stop updates when disabled and restart immediately when re-enabled', async () => {
+    const { controller, mainCtrl } = await prepareTest()
+    const stopSpy = jest.spyOn(controller.updatePhishingInterval, 'stop')
+
+    await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+    expect(stopSpy).toHaveBeenCalled()
+
+    const restartSpy = jest.spyOn(controller.updatePhishingInterval, 'restart')
+    await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', true)
+
+    expect(restartSpy).toHaveBeenCalledWith({
+      timeout: PHISHING_INACTIVE_UPDATE_INTERVAL,
+      runImmediately: true
+    })
+  })
+
   describe('deferred init', () => {
     test('isReady is false before init() and true after the load completes', async () => {
       const { controller } = await prepareTest(['foourmemez.com'], [], true)

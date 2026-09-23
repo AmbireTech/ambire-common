@@ -7,6 +7,7 @@ import {
   PERMIT2_APPROVE_SELECTOR,
   SAFE_TX_PRIMARY_TYPE
 } from '@/libs/humanizer/erc7730/consts'
+
 import { FEE_COLLECTOR } from '../../../consts/addresses'
 import { execTransactionAbi } from '../../../consts/safe'
 import { Message } from '../../../interfaces/userRequest'
@@ -19,14 +20,14 @@ import { humanizeCallWithErc7730 } from './humanize'
 import { MULTICALL_DESCRIPTOR, MULTICALL_SELECTOR } from './multicall'
 import {
   Erc7730CalldataIndex,
+  Erc7730CallDescriptors,
   Erc7730Descriptor,
   Erc7730Eip712Index,
   Erc7730Eip712IndexEntry,
-  Erc7730CallDescriptors,
   Erc7730Field,
   Erc7730Known,
-  Erc7730ResolvedDescriptor,
   Erc7730Resolution,
+  Erc7730ResolvedDescriptor,
   Erc7730TypedDataTypes,
   Erc7730Want
 } from './types'
