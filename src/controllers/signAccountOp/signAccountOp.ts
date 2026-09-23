@@ -3126,7 +3126,7 @@ export class SignAccountOpController
     }
 
     try {
-      if (isSafeDeploy && broadcastOption !== BROADCAST_OPTIONS.byBundler) {
+      if (isSafeDeploy) {
         this.#updateAccountOp({ signature: '0x' })
       } else if (
         this.account.safeCreation &&
@@ -3485,10 +3485,6 @@ export class SignAccountOpController
             userOperation.signature = signature
             this.#updateAccountOp({ signature })
           }
-        } else if (isSafeDeploy) {
-          // SAFE_SENDER is authorized by the paymaster, so the deployment itself has no
-          // Safe-owner signature. Keep the account-op signature populated for broadcast state.
-          this.#updateAccountOp({ signature: '0x' })
         }
 
         this.#updateAccountOp({ asUserOperation: userOperation })

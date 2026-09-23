@@ -77,8 +77,15 @@ export class Safe extends BaseAccount {
 
   getAvailableFeeOptions(
     estimation: FullEstimationSummary,
-    feePaymentOptions: FeePaymentOption[]
+    feePaymentOptions: FeePaymentOption[],
+    op: AccountOp
   ): FeePaymentOption[] {
+    if (op.meta?.isSafeDeploy) {
+      return feePaymentOptions.filter(
+        (option) => option.paidBy !== this.account.addr && isNative(option.token)
+      )
+    }
+
     const hasPaymaster =
       estimation.bundlerEstimation &&
       estimation.bundlerEstimation.paymaster.isUsable() &&

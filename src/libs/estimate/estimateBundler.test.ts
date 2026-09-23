@@ -3,7 +3,7 @@
 import { parseEther } from 'ethers'
 import fetch from 'node-fetch'
 
-import { describe, expect, jest, test } from '@jest/globals'
+import { describe, expect, test } from '@jest/globals'
 
 import { relayerUrl } from '../../../test/config'
 import { getAccountsInfo } from '../../../test/helpers'
@@ -59,89 +59,6 @@ const areUpdatesForbidden = () => {
 }
 
 paymasterFactory.init(relayerUrl, fetch, () => {})
-
-test('does not put code at a Safe future address while estimating its deployment', async () => {
-  const safeAccount: Account = {
-    ...smartAccDeployed,
-    creation: null,
-    safeCreation: {
-      factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
-      singleton: '0x41675C099F32341bf84BFc5382aF534df5C7461a',
-      saltNonce: '0x00',
-      setupData: '0x',
-      version: '1.4.1'
-    }
-  }
-  const accountState = {
-    isDeployed: false,
-    nonce: 0n,
-    erc4337Nonce: 0n,
-    threshold: 1
-  } as any
-  const getBundlerStateOverride = jest.fn(() => ({
-    [safeAccount.addr]: { code: '0x1234' }
-  }))
-  const baseAccount = {
-    supportsBundlerEstimation: () => true,
-    getAccount: () => safeAccount,
-    getBundlerStateOverride
-  } as any
-  const bundlerEstimation = {
-    preVerificationGas: '0x1',
-    verificationGasLimit: '0x2',
-    callGasLimit: '0x3',
-    paymasterVerificationGasLimit: '0x4',
-    paymasterPostOpGasLimit: '0x5'
-  }
-  const bundler = {
-    getName: () => PIMLICO,
-    estimate: jest.fn(async () => bundlerEstimation),
-    decodeBundlerError: jest.fn()
-  }
-  const switcher = {
-    getBundler: () => bundler,
-    canSwitch: () => false
-  } as any
-  const paymaster = {
-    getFeeCallForEstimation: () => undefined,
-    getFeeCallType: () => undefined,
-    isUsable: () => false,
-    upgrade: jest.fn(async () => undefined)
-  }
-  const createPaymasterSpy = jest
-    .spyOn(paymasterFactory, 'create')
-    .mockResolvedValue(paymaster as any)
-  const gasPrice = {
-    slow: { maxFeePerGas: '0x1', maxPriorityFeePerGas: '0x1' },
-    medium: { maxFeePerGas: '0x1', maxPriorityFeePerGas: '0x1' },
-    fast: { maxFeePerGas: '0x1', maxPriorityFeePerGas: '0x1' },
-    ape: { maxFeePerGas: '0x1', maxPriorityFeePerGas: '0x1' }
-  } as GasSpeeds
-  const accountOp: AccountOp = {
-    id: 'safe-deployment',
-    accountAddr: safeAccount.addr,
-    signingKeyAddr: null,
-    signingKeyType: null,
-    gasLimit: null,
-    gasFeePayment: null,
-    chainId: base.chainId,
-    nonce: 0n,
-    signature: '0x',
-    calls: [{ to: safeAccount.safeCreation!.factoryAddr, value: 0n, data: '0x1234' }],
-    meta: { isSafeDeploy: true }
-  }
-
-  try {
-    await expect(
-      bundlerEstimate(baseAccount, accountState, accountOp, base, [], {} as any, gasPrice, switcher)
-    ).resolves.toMatchObject(bundlerEstimation)
-
-    expect(getBundlerStateOverride).not.toHaveBeenCalled()
-    expect(bundler.estimate).toHaveBeenCalledWith(expect.any(Object), base, undefined)
-  } finally {
-    createPaymasterSpy.mockRestore()
-  }
-})
 
 describe('Bundler estimation tests', () => {
   describe('Estimation tests: optimism, undeployed', () => {

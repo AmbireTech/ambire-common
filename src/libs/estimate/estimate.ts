@@ -43,7 +43,12 @@ export async function getEstimation(
   )
   let bundlerGasPrices: GasSpeeds | undefined
   const bundlerEstimation = async (): Promise<Erc4337GasLimits | Error | null> => {
-    if (!baseAcc.supportsBundlerEstimation() || !network.erc4337.hasBundlerSupport) return null
+    if (
+      op.meta?.isSafeDeploy ||
+      !baseAcc.supportsBundlerEstimation() ||
+      !network.erc4337.hasBundlerSupport
+    )
+      return null
 
     const gasPrice = await fetchBundlerGasPrice(baseAcc, network, switcher)
     if (gasPrice instanceof Error) return gasPrice

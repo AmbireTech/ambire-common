@@ -109,10 +109,6 @@ export function getUserOpCalldata(account: Account, op: AccountOp, state: Accoun
 
   // executeBySender on SAFE_SENDER + inner call to the safe
   if (account.safeCreation) {
-    if (op.meta?.isSafeDeploy) {
-      return ambireAccount.encodeFunctionData('executeBySender', [getSignableCalls(op)])
-    }
-
     // rotations
     // the fee call should not be a part of the safe txn as it will revert
     // it should be a part of the SAFE_SIGNER commitment though
