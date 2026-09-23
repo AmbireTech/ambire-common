@@ -288,21 +288,48 @@ describe('PhishingController', () => {
       cleanup()
     })
 
-    test('an update that somehow starts before init() completes still waits for the stored version', async () => {
+    test('an update called while init() is loading fetches nothing, and init() runs it with the stored version', async () => {
       const { controller, fetchedUrls, releaseStorageRead, cleanup } = await prepareBootRaceTest({
         seedStorage: true
       })
 
       const initPromise = controller.init()
-      const updatePromise = controller.continuouslyUpdatePhishing()
+      await controller.continuouslyUpdatePhishing()
 
-      await flushMicrotaskQueue()
+      // The early call returns without fetching, since init() has not read the version yet.
+      expect(controller.isReady).toBe(false)
       expect(fetchedUrls).toHaveLength(0)
 
       releaseStorageRead()
-      await Promise.all([initPromise, updatePromise])
+      await initPromise
+      await controller.updatePhishingInterval.promise
 
-      expect(fetchedUrls[0]).toBe(`${SCAMCHECKER_BASE_URL}/get_update?version=${STORED_VERSION}`)
+      // Only the update init() starts runs, and it asks for a delta from the stored version.
+      expect(fetchedUrls).toEqual([`${SCAMCHECKER_BASE_URL}/get_update?version=${STORED_VERSION}`])
+
+      cleanup()
+    })
+
+    test('an update called before init() was ever called fetches nothing', async () => {
+      const { controller, fetchedUrls, releaseStorageRead, cleanup } = await prepareBootRaceTest({
+        seedStorage: true
+      })
+
+      releaseStorageRead()
+      await controller.continuouslyUpdatePhishing()
+      await flushMicrotaskQueue()
+
+      // Running here would ask for the full list with version 0 and later parse it as a delta.
+      expect(controller.initialLoadPromise).toBeUndefined()
+      expect(controller.isReady).toBe(false)
+      expect(controller.updatePhishingInterval.running).toBe(false)
+      expect(fetchedUrls).toHaveLength(0)
+
+      await controller.init()
+      await controller.updatePhishingInterval.promise
+
+      expect(fetchedUrls).toEqual([`${SCAMCHECKER_BASE_URL}/get_update?version=${STORED_VERSION}`])
+      expect(controller.getAddressBlacklistedStatus(STORED_SCAM_ADDRESS)).toBe('BLACKLISTED')
 
       cleanup()
     })

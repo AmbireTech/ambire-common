@@ -339,8 +339,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
    */
   async continuouslyUpdatePhishing() {
     // The update decides between a full snapshot and a delta based on the version, so it must not
-    // run before the version is read from storage.
-    await this.initialLoadPromise
+    // run before the version is read from storage. init() starts the interval once it is.
+    if (!this.isReady) return
 
     if (this.#continuouslyUpdatePhishingPromise) {
       await this.#continuouslyUpdatePhishingPromise
@@ -438,10 +438,6 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         throw new Error(`Phishing snapshot holds domains that are not strings (url: ${res.url})`)
       if (addresses.some((address) => typeof address !== 'string'))
         throw new Error(`Phishing snapshot holds addresses that are not strings (url: ${res.url})`)
-      // An empty snapshot would silently turn phishing detection off for everything we already
-      // know about, so the list we have is kept until the relayer serves a real one again.
-      if (!domains.length && this.#domains.size)
-        throw new Error(`Phishing snapshot is empty, keeping the local lists (url: ${res.url})`)
 
       this.#version = phishing.version
       this.#domains = new Set<string>(domains)
