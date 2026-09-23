@@ -1079,6 +1079,29 @@ describe('Portfolio Controller ', () => {
       expect(getSimulatedCollection(controller)?.amountPostSimulation).toBe(0n)
     })
 
+    test('discardSimulation refreshes from the confirmed block when there is no local simulation', async () => {
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
+      const accountOp = await getAccountOp()
+      const confirmedAccountOp = {
+        ...accountOp['1']![0]!,
+        blockNumber: 12345
+      }
+
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      const updatePortfolioStateSpy = jest
+        .spyOn(controller as any, 'updatePortfolioState')
+        .mockResolvedValue([true, null])
+
+      await controller.discardSimulation([confirmedAccountOp])
+
+      expect(updatePortfolioStateSpy).toHaveBeenCalledTimes(1)
+      expect(updatePortfolioStateSpy.mock.calls[0]?.[3]).toEqual(
+        expect.objectContaining({ blockTag: confirmedAccountOp.blockNumber })
+      )
+      expect(getEthereumPortfolioState(controller).accountOps).toBeUndefined()
+    })
+
     test('discardSimulation does not affect a different account op, even if they are called together', async () => {
       const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const ethereum = networks.find((network) => network.chainId === 1n)!

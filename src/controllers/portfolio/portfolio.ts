@@ -890,6 +890,7 @@ export class PortfolioController
       [accountAddr: string]: {
         networksByChainId: { [chainId: string]: Network }
         accountOpIdsByChainId: { [chainId: string]: string[] }
+        confirmedBlockNumberByChainId: { [chainId: string]: number }
       }
     } = {}
 
@@ -913,7 +914,8 @@ export class PortfolioController
       if (!updatesByAccount[accountAddr]) {
         updatesByAccount[accountAddr] = {
           networksByChainId: {},
-          accountOpIdsByChainId: {}
+          accountOpIdsByChainId: {},
+          confirmedBlockNumberByChainId: {}
         }
       }
 
@@ -922,11 +924,31 @@ export class PortfolioController
         ...(updatesByAccount[accountAddr].accountOpIdsByChainId[chainIdString] || []),
         accountOp.id
       ]
+
+      // make sure we're fetching at least the accountOp's blockNumber
+      const confirmedBlockNumber =
+        'blockNumber' in accountOp && typeof accountOp.blockNumber === 'number'
+          ? accountOp.blockNumber
+          : undefined
+      const currentConfirmedBlockNumber =
+        updatesByAccount[accountAddr].confirmedBlockNumberByChainId[chainIdString]
+
+      if (
+        confirmedBlockNumber !== undefined &&
+        (currentConfirmedBlockNumber === undefined ||
+          confirmedBlockNumber > currentConfirmedBlockNumber)
+      ) {
+        updatesByAccount[accountAddr].confirmedBlockNumberByChainId[chainIdString] =
+          confirmedBlockNumber
+      }
     })
 
     await Promise.all(
       Object.entries(updatesByAccount).map(
-        async ([accountAddr, { networksByChainId, accountOpIdsByChainId }]) => {
+        async ([
+          accountAddr,
+          { networksByChainId, accountOpIdsByChainId, confirmedBlockNumberByChainId }
+        ]) => {
           const networksToUpdate = Object.values(networksByChainId)
 
           this.debugLog('simulation', `Discarding simulation for ${accountAddr}`, () => ({
@@ -934,7 +956,8 @@ export class PortfolioController
             chainIds: Object.keys(networksByChainId)
           }))
           await this.updateSelectedAccount(accountAddr, networksToUpdate, undefined, {
-            accountOpIdsToDiscard: accountOpIdsByChainId
+            accountOpIdsToDiscard: accountOpIdsByChainId,
+            confirmedBlockNumberByChainId
           })
         }
       )
@@ -2028,6 +2051,7 @@ export class PortfolioController
       isManualUpdate?: boolean
       bypassServerSideCache?: boolean
       accountOpIdsToDiscard?: { [chainId: string]: string[] }
+      confirmedBlockNumberByChainId?: { [chainId: string]: number }
     }
   ) {
     const {
@@ -2038,7 +2062,8 @@ export class PortfolioController
       defiMaxDataAgeMs = -1,
       isManualUpdate,
       bypassServerSideCache,
-      accountOpIdsToDiscard
+      accountOpIdsToDiscard,
+      confirmedBlockNumberByChainId
     } = opts || {}
     await this.initialLoadPromise
     const selectedAccount = this.#accounts.accounts.find((x) => x.addr === accountId)
@@ -2087,9 +2112,12 @@ export class PortfolioController
 
           // Read and filter the latest simulation inside the queue so an older confirmed
           // AccountOp cannot discard a newer simulation that was already queued before it.
+          // A confirmed AccountOp may have no local simulation (for example, a Safe transaction
+          // loaded from the Safe queue), but its portfolio still needs to be refreshed.
           if (
             accountOpIdsToDiscardOnNetwork &&
-            !simulatedAccountOps?.some((op) => accountOpIdsToDiscardSet.has(op.id))
+            simulatedAccountOps &&
+            !simulatedAccountOps.some((op) => accountOpIdsToDiscardSet.has(op.id))
           )
             return
 
@@ -2099,7 +2127,7 @@ export class PortfolioController
           // When a new txn comes, pendingToBeConfirmed simulations will be dropped
           // and that's fine as you care about the simulation of your current txn
           const accountOpsToSimulate = accountOpIdsToDiscardOnNetwork
-            ? simulatedAccountOps!.filter((op) => !accountOpIdsToDiscardSet.has(op.id))
+            ? simulatedAccountOps?.filter((op) => !accountOpIdsToDiscardSet.has(op.id))
             : currentAccountOps || simulatedAccountOps
 
           // Even if maxDataAgeMs is set to a non-zero value, we want to force an update when the AccountOps change.
@@ -2112,6 +2140,7 @@ export class PortfolioController
             paramsMaxDataAgeMsUnused
           )
           const state = simulation?.states?.[network.chainId.toString()] || networkAccountState
+          const confirmedBlockNumber = confirmedBlockNumberByChainId?.[network.chainId.toString()]
 
           const baseAcc = state
             ? getBaseAccount(
@@ -2131,7 +2160,10 @@ export class PortfolioController
               maxDataAgeMs,
               isManualUpdate,
               bypassServerSideCache,
-              blockTag: 'both',
+              blockTag:
+                accountOpsToSimulate?.length || confirmedBlockNumber === undefined
+                  ? 'both'
+                  : confirmedBlockNumber,
               defiMaxDataAgeMs,
               ...(accountOpsToSimulate &&
                 accountOpsToSimulate.length &&
