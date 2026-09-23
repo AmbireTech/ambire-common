@@ -120,6 +120,8 @@ const getPreviousBlockNumber = (blockNumber: number) => (blockNumber > 0 ? block
 
 const normalizeTxnId = (txnId?: string | null) => txnId?.toLowerCase()
 
+const ACCOUNT_OP_PENDING_TIMEOUT_MINS = 30
+
 /**
  * Take all txnIds from the account op
  * - normal case: accountOp.txnId
@@ -1177,24 +1179,53 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // implementation is in background.ts
     let newestOpTimestamp: number = 0
 
+    const declareStuckIfExpired = (accountOp: SubmittedAccountOp) => {
+      if (
+        accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed ||
+        !hasTimePassedSinceBroadcast(accountOp, ACCOUNT_OP_PENDING_TIMEOUT_MINS)
+      )
+        return
+
+      if (isIdentifiedByMultipleTxn(accountOp.identifiedBy)) {
+        accountOp.calls.forEach((call) => {
+          if (call.status === AccountOpStatus.BroadcastedButNotConfirmed)
+            call.status = AccountOpStatus.BroadcastButStuck
+        })
+        accountOp.status = AccountOpStatus.BroadcastButStuck
+        updatedAccountsOps.push(accountOp)
+      } else {
+        const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.BroadcastButStuck)
+        if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+      }
+
+      shouldEmitUpdate = true
+    }
+
     // Limit the number of iterations to optimize the performance on accounts with large transaction history
     const MAX_OPS_TO_ITERATE_PER_CHAIN = 50
 
     await Promise.all(
       Object.keys(this.#accountsOps[accountAddr]).map(async (keyAsChainId) => {
-        const network = this.#networks.networks.find((n) => n.chainId.toString() === keyAsChainId)
-        if (!network) return
-        const provider = this.#providers.providers[network.chainId.toString()]
-        if (!provider) return
-
-        const allOps = this.#accountsOps[accountAddr]![network.chainId.toString()]
+        const allOps = this.#accountsOps[accountAddr]![keyAsChainId]
 
         if (!allOps || !allOps.length) return
 
-        const recentOps = Array.isArray(allOps) ? allOps.slice(0, MAX_OPS_TO_ITERATE_PER_CHAIN) : []
-        const opsToUpdate = recentOps.filter(
-          (op) => op.status === AccountOpStatus.BroadcastedButNotConfirmed
-        )
+        const opsToUpdate = allOps
+          .filter((op) => op.status === AccountOpStatus.BroadcastedButNotConfirmed)
+          .slice(0, MAX_OPS_TO_ITERATE_PER_CHAIN)
+
+        // user might have turned off his network
+        const network = this.#networks.networks.find((n) => n.chainId.toString() === keyAsChainId)
+        if (!network) {
+          opsToUpdate.forEach(declareStuckIfExpired)
+          return
+        }
+        const provider = this.#providers.providers[network.chainId.toString()]
+        if (!provider) {
+          opsToUpdate.forEach(declareStuckIfExpired)
+          return
+        }
+
         const confirmedOps = allOps.filter(
           (op) => op.status === AccountOpStatus.Success || op.status === AccountOpStatus.Failure
         )
@@ -1212,59 +1243,50 @@ export class ActivityController extends EventEmitter implements IActivityControl
               newestOpTimestamp = accountOp.timestamp
             }
 
-            const declareStuckIfFiveMinsPassed = async (op: SubmittedAccountOp) => {
-              if (hasTimePassedSinceBroadcast(op, 5)) {
-                const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.BroadcastButStuck)
-                if (updatedOpIfAny) {
-                  updatedAccountsOps.push(updatedOpIfAny)
-                }
-              }
-            }
+            try {
+              const hasConfirmedOpWithSameEoaNonce =
+                accountOp.eoaNonce !== null &&
+                typeof accountOp.eoaNonce !== 'undefined' &&
+                confirmedOps.some((op) => op !== accountOp && op.eoaNonce === accountOp.eoaNonce)
 
-            const hasConfirmedOpWithSameEoaNonce =
-              accountOp.eoaNonce !== null &&
-              typeof accountOp.eoaNonce !== 'undefined' &&
-              confirmedOps.some((op) => op !== accountOp && op.eoaNonce === accountOp.eoaNonce)
-
-            if (hasConfirmedOpWithSameEoaNonce) {
-              const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.UnknownButPastNonce)
-              if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-              return
-            }
-
-            const txIds = []
-            if (accountOp.identifiedBy.type !== 'MultipleTxns') {
-              const fetchTxnIdResult = await fetchTxnId(
-                accountOp.identifiedBy,
-                network,
-                this.#callRelayer,
-                accountOp
-              )
-              if (fetchTxnIdResult.status === 'rejected') {
-                const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.Rejected)
+              if (hasConfirmedOpWithSameEoaNonce) {
+                const updatedOpIfAny = updateOpStatus(
+                  accountOp,
+                  AccountOpStatus.UnknownButPastNonce
+                )
                 if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
                 return
               }
-              if (fetchTxnIdResult.status === 'not_found') {
-                await declareStuckIfFiveMinsPassed(accountOp)
-                return
+
+              const txIds = []
+              if (accountOp.identifiedBy.type !== 'MultipleTxns') {
+                const fetchTxnIdResult = await fetchTxnId(
+                  accountOp.identifiedBy,
+                  network,
+                  this.#callRelayer,
+                  accountOp
+                )
+                if (fetchTxnIdResult.status === 'rejected') {
+                  const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.Rejected)
+                  if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+                  return
+                }
+                if (fetchTxnIdResult.status === 'not_found') return
+
+                const txnId = fetchTxnIdResult.txnId as string
+
+                accountOp.txnId = txnId
+                txIds.push(txnId)
+              } else {
+                const limit = !provider.batchMaxCount || provider.batchMaxCount > 1 ? 100 : 3
+                txIds.push(
+                  ...accountOp.calls
+                    .filter((call) => !!call.status && call.txnId)
+                    .map((call) => call.txnId)
+                    .slice(0, limit)
+                )
               }
 
-              const txnId = fetchTxnIdResult.txnId as string
-
-              accountOp.txnId = txnId
-              txIds.push(txnId)
-            } else {
-              const limit = !provider.batchMaxCount || provider.batchMaxCount > 1 ? 100 : 3
-              txIds.push(
-                ...accountOp.calls
-                  .filter((call) => !!call.status && call.txnId)
-                  .map((call) => call.txnId)
-                  .slice(0, limit)
-              )
-            }
-
-            try {
               const receipts = await Promise.all(
                 // no catch, throw an error if one promise doesn't complete
                 txIds.map((txnId) => (txnId ? provider.getTransactionReceipt(txnId) : null))
@@ -1372,21 +1394,25 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 }
 
                 // if there's no receipt, confirm there's a txn
-                // if there's no txn and 15 minutes have passed, declare it a failure
+                // if it remains unresolved for 30 minutes, declare it stuck
 
                 const txn = txnId ? await provider.getTransaction(txnId) : null
 
                 if (txn) continue
-                await declareStuckIfFiveMinsPassed(accountOp)
               }
-            } catch {
+            } catch (error) {
               this.emitError({
                 level: 'silent',
                 message: `Failed to determine transaction status on network with id ${accountOp.chainId} for ${accountOp.txnId}.`,
-                error: new Error(
-                  `activity: failed to get transaction receipt for ${accountOp.txnId}`
-                )
+                error:
+                  error instanceof Error
+                    ? error
+                    : new Error(
+                        `activity: failed to get transaction receipt for ${accountOp.txnId}`
+                      )
               })
+            } finally {
+              declareStuckIfExpired(accountOp)
             }
 
             if (shouldScheduleBalanceChangesTask && typeof lastReceiptBlockNumber !== 'undefined') {

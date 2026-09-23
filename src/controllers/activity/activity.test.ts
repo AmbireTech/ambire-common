@@ -83,6 +83,16 @@ const SUBMITTED_ACCOUNT_OP = {
   }
 } as submittedAccountOp.SubmittedAccountOp
 
+const buildSubmittedAccountOp = (
+  overrides: Partial<submittedAccountOp.SubmittedAccountOp> = {}
+): submittedAccountOp.SubmittedAccountOp => ({
+  ...SUBMITTED_ACCOUNT_OP,
+  id: generateUuid(),
+  timestamp: Date.now(),
+  calls: SUBMITTED_ACCOUNT_OP.calls.map((call) => ({ ...call })),
+  ...overrides
+})
+
 const SIGNED_MESSAGE: SignedMessage = {
   fromRequestId: 1,
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -613,7 +623,8 @@ describe('Activity Controller ', () => {
         identifiedBy: {
           type: 'Transaction',
           identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
-        }
+        },
+        timestamp: Date.now() - 31 * 60 * 1000
       } as submittedAccountOp.SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
@@ -700,6 +711,137 @@ describe('Activity Controller ', () => {
           gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
         })
       )
+    })
+
+    test('expires unresolved account ops only after 30 minutes', async () => {
+      const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockRejectedValue(new Error('status lookup failed'))
+
+      const recentAccountOp = buildSubmittedAccountOp({
+        timestamp: Date.now() - 29 * 60 * 1000
+      })
+      const expiredAccountOp = buildSubmittedAccountOp({
+        timestamp: Date.now() - 31 * 60 * 1000
+      })
+
+      await controller.addAccountOp(recentAccountOp)
+      await controller.addAccountOp(expiredAccountOp)
+      await controller.updateAccountsOpsStatuses()
+
+      const accountOps = controller.getAccountOpsForAccount({
+        accountAddr: recentAccountOp.accountAddr
+      })
+      expect(accountOps.find(({ id }) => id === recentAccountOp.id)?.status).toBe(
+        AccountOpStatus.BroadcastedButNotConfirmed
+      )
+      expect(accountOps.find(({ id }) => id === expiredAccountOp.id)?.status).toBe(
+        AccountOpStatus.BroadcastButStuck
+      )
+    })
+
+    test('expires an old transaction that remains pending without a receipt', async () => {
+      const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest.spyOn(provider, 'getTransactionReceipt').mockResolvedValue(null)
+      jest.spyOn(provider, 'getTransaction').mockResolvedValue({} as any)
+      const accountOp = buildSubmittedAccountOp({
+        timestamp: Date.now() - 31 * 60 * 1000
+      })
+
+      await controller.addAccountOp(accountOp)
+      await controller.updateAccountsOpsStatuses()
+
+      expect(
+        controller.getAccountOpsForAccount({ accountAddr: accountOp.accountAddr })[0]?.status
+      ).toBe(AccountOpStatus.BroadcastButStuck)
+    })
+
+    test('expires an old account op when its provider is unavailable', async () => {
+      const { controller } = await prepareTest()
+      jest.spyOn(mainCtrl.providers, 'providers', 'get').mockReturnValue({})
+      const accountOp = buildSubmittedAccountOp({
+        timestamp: Date.now() - 31 * 60 * 1000
+      })
+
+      await controller.addAccountOp(accountOp)
+      await controller.updateAccountsOpsStatuses()
+
+      expect(
+        controller.getAccountOpsForAccount({ accountAddr: accountOp.accountAddr })[0]?.status
+      ).toBe(AccountOpStatus.BroadcastButStuck)
+    })
+
+    test('checks old pending account ops even when 50 newer operations are finalized', async () => {
+      const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockRejectedValue(new Error('status lookup failed'))
+      const expiredAccountOp = buildSubmittedAccountOp({
+        timestamp: Date.now() - 31 * 60 * 1000
+      })
+      await controller.addAccountOp(expiredAccountOp)
+
+      for (let i = 0; i < 50; i++) {
+        await controller.addAccountOp(
+          buildSubmittedAccountOp({
+            status: AccountOpStatus.Success,
+            timestamp: Date.now() + i,
+            balanceChanges: []
+          })
+        )
+      }
+
+      await controller.updateAccountsOpsStatuses()
+
+      const accountOps = controller.getAccountOpsForAccount({
+        accountAddr: expiredAccountOp.accountAddr
+      })
+      expect(accountOps.find(({ id }) => id === expiredAccountOp.id)?.status).toBe(
+        AccountOpStatus.BroadcastButStuck
+      )
+    })
+
+    test('expires every unresolved call in an old multiple-transaction account op', async () => {
+      const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockRejectedValue(new Error('status lookup failed'))
+      const accountOp = buildSubmittedAccountOp({
+        identifiedBy: {
+          type: 'MultipleTxns',
+          identifier: '0xtransaction-1-0xtransaction-2'
+        },
+        calls: [
+          {
+            ...SUBMITTED_ACCOUNT_OP.calls[0]!,
+            txnId: '0xtransaction-1',
+            status: AccountOpStatus.BroadcastedButNotConfirmed
+          },
+          {
+            ...SUBMITTED_ACCOUNT_OP.calls[0]!,
+            txnId: '0xtransaction-2',
+            status: AccountOpStatus.BroadcastedButNotConfirmed
+          }
+        ],
+        timestamp: Date.now() - 31 * 60 * 1000
+      })
+
+      await controller.addAccountOp(accountOp)
+      await controller.updateAccountsOpsStatuses()
+
+      const updatedAccountOp = controller.getAccountOpsForAccount({
+        accountAddr: accountOp.accountAddr
+      })[0]!
+      expect(updatedAccountOp.status).toBe(AccountOpStatus.BroadcastButStuck)
+      expect(updatedAccountOp.calls.map(({ status }) => status)).toEqual([
+        AccountOpStatus.BroadcastButStuck,
+        AccountOpStatus.BroadcastButStuck
+      ])
     })
 
     test('should display pending txns banners', async () => {
