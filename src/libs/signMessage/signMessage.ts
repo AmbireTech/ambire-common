@@ -27,7 +27,6 @@ import { Network } from '../../interfaces/network'
 import { SafeTx } from '../../interfaces/safe'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { PlainTextMessageUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
-import isSameAddr from '../../utils/isSameAddr'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import {
   AccountOp,
@@ -73,9 +72,6 @@ export const isCallToSelfOrAmbireOp = (
   },
   account?: Account | null
 ) => {
-  // allow this as an exception as we need it for smart accounts as signers
-  if ('AmbireReadableOperation' in typedData.types) return false
-
   const isAmbireOp =
     typedData.primaryType === 'AmbireOperation' || 'AmbireOperation' in typedData.types
   const isAmbire4337Op =
@@ -119,14 +115,6 @@ export const wrapWallet = (signature: string, walletAddr: string) => {
   return `${signature}${wallet32bytes}02`
 }
 
-// allow v1 accounts to have v2 signers
-export interface AmbireReadableOperation {
-  addr: Hex
-  chainId: bigint
-  nonce: bigint
-  calls: { to: Hex; value: bigint; data: Hex }[]
-}
-
 type WithHardwareWalletSigningRequest = <T>(
   request: HardwareWalletSigningRequest,
   sign: () => Promise<T>
@@ -167,62 +155,6 @@ export const adaptTypedMessageForMetaMaskSigUtil = (
           (typedMessage.domain.salt as unknown as ArrayBuffer)
         : undefined
     }
-  }
-}
-
-export const getAmbireReadableTypedData = (
-  chainId: bigint,
-  verifyingAddr: string,
-  v1Execute: AmbireReadableOperation
-): TypedMessageUserRequest['meta']['params'] => {
-  const domain: TypedDataDomain = {
-    name: 'Ambire',
-    version: '1',
-    chainId: chainId.toString(),
-    verifyingContract: verifyingAddr,
-    salt: toBeHex(0, 32)
-  }
-  const types = {
-    EIP712Domain: [
-      {
-        name: 'name',
-        type: 'string'
-      },
-      {
-        name: 'version',
-        type: 'string'
-      },
-      {
-        name: 'chainId',
-        type: 'uint256'
-      },
-      {
-        name: 'verifyingContract',
-        type: 'address'
-      },
-      {
-        name: 'salt',
-        type: 'bytes32'
-      }
-    ],
-    Calls: [
-      { name: 'to', type: 'address' },
-      { name: 'value', type: 'uint256' },
-      { name: 'data', type: 'bytes' }
-    ],
-    AmbireReadableOperation: [
-      { name: 'account', type: 'address' },
-      { name: 'chainId', type: 'uint256' },
-      { name: 'nonce', type: 'uint256' },
-      { name: 'calls', type: 'Calls[]' }
-    ]
-  }
-
-  return {
-    domain,
-    types,
-    message: v1Execute,
-    primaryType: 'AmbireOperation'
   }
 }
 
@@ -586,33 +518,6 @@ export async function getEIP712Signature(
     throw new Error(
       `Signer with address ${signer.key.addr} does not have privileges to execute this operation. Please choose a different signer and try again`
     )
-  }
-
-  if ('AmbireReadableOperation' in message.types) {
-    const ambireReadableOperation = message.message as AmbireReadableOperation
-    if (isSameAddr(ambireReadableOperation.addr, account.addr)) {
-      throw new Error(
-        'signature error: trying to sign an AmbireReadableOperation for the same address. Please contact support'
-      )
-    }
-
-    const hash = hexlify(
-      getSignableHash(
-        ambireReadableOperation.addr,
-        ambireReadableOperation.chainId,
-        ambireReadableOperation.nonce,
-        ambireReadableOperation.calls.map(callToTuple)
-      )
-    )
-    const ambireOperation = getTypedData(ambireReadableOperation.chainId, account.addr, hash)
-    const signature = wrapStandard(
-      await signWithHardwareWalletSigningRequest(
-        { type: 'eip-712', data: ambireOperation },
-        () => signer.signTypedData(ambireOperation),
-        withHardwareWalletSigningRequest
-      )
-    )
-    return { signature: wrapWallet(signature, account.addr) as Hex }
   }
 
   return {
