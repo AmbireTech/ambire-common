@@ -11,7 +11,8 @@ import { getUniqueAccountsArray } from '../../libs/account/account'
 import {
   getDappIdFromUrl,
   getDappNameFromId,
-  normalizeDappConnection
+  normalizeDappConnection,
+  normalizeHostname
 } from '../../libs/dapps/helpers'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
@@ -653,13 +654,15 @@ export class StorageController extends EventEmitter implements IStorageControlle
     await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
-  // Dapp ids were once derived only in memory and never written back (b87b11c32), so older
-  // `dappsV2` records may lack one. The dapps controller used to key such records under
-  // `undefined` and saved the connected and custom ones back on every catalog refresh, so they
-  // survived every update. Since the trailing-dot normalization (607e24fea) the load throws on
-  // them instead (Sentry EXTENSION-2QK). Derive the missing ids from the url.
+  // Dapp ids were derived only in memory (b87b11c32) and reached storage only when a dapp was later
+  // changed. Since 6c4c1036a even that stopped, so older `dappsV2` records may lack one. The dapps
+  // controller used to key such records under `undefined` and saved the connected and custom ones
+  // back on every catalog refresh, so they survived every update. Since the trailing-dot
+  // normalization (607e24fea) the load throws on them instead (Sentry EXTENSION-2QK). Derive the
+  // missing ids from the url.
   // A record whose derived id is already taken is dropped, because the existing record is the one
-  // lookups resolve to and its permissions are the ones the user reviewed.
+  // lookups resolve to and its permissions are the ones the user reviewed. Existing ids are
+  // compared in their trailing-dot-free form, the one the dapps controller loads them under.
   async #migrateDappsAddMissingIds() {
     const MIGRATION_KEY = 'migrateDappsAddMissingIds'
     if (this.#passedMigrations.has(MIGRATION_KEY)) return
@@ -667,7 +670,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     const dapps = await this.#storage.get('dappsV2', [] as Dapp[])
 
     if (dapps.some((d) => !d.id)) {
-      const takenIds = new Set(dapps.filter((d) => !!d.id).map((d) => d.id))
+      const takenIds = new Set(dapps.filter((d) => !!d.id).map((d) => normalizeHostname(d.id)))
       const migratedDapps: Dapp[] = []
 
       dapps.forEach((dapp) => {

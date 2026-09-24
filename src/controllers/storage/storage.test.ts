@@ -291,6 +291,50 @@ describe('StorageController', () => {
 
       expect(migrated).toEqual([existing])
     })
+
+    test('drops an id-less record when the existing id still carries a trailing dot', async () => {
+      const existingWithTrailingDot = {
+        ...baseDapp,
+        id: `${UNISWAP_ID}.`,
+        name: 'Existing Uniswap'
+      }
+      const { migrated } = await bootWithDapps([baseDapp, existingWithTrailingDot])
+
+      expect(migrated).toEqual([existingWithTrailingDot])
+    })
+
+    test('keeps only the first of several id-less records that derive the same id', async () => {
+      const first = { ...baseDapp, name: 'First Uniswap' }
+      const second = { ...baseDapp, name: 'Second Uniswap', url: 'https://www.app.uniswap.org/' }
+      const { migrated } = await bootWithDapps([first, second])
+
+      expect(migrated).toEqual([{ ...first, id: UNISWAP_ID }])
+    })
+
+    test('drops an id-less record without a url, since no id can be derived for it', async () => {
+      const withoutUrl: Partial<typeof baseDapp> = { ...baseDapp }
+      delete withoutUrl.url
+      const { migrated, passed } = await bootWithDapps([withoutUrl])
+
+      expect(migrated).toEqual([])
+      expect(passed).toContain(MIGRATION_KEY)
+    })
+
+    test('writes only the migration marker when every record already has an id', async () => {
+      const withId = { ...baseDapp, id: UNISWAP_ID }
+      const counting = produceCountingStore()
+      await counting.store.set('passedMigrations', PASSED_BEFORE_THIS_MIGRATION)
+      await counting.store.set('dappsV2', [withId])
+      counting.reset()
+
+      const storageCtrl = new StorageController(counting.store)
+      const passed = await storageCtrl.get('passedMigrations', [])
+
+      // The single write is the `passedMigrations` marker, `dappsV2` is left as it was.
+      expect(counting.setCount()).toBe(1)
+      expect(passed).toContain(MIGRATION_KEY)
+      expect(await storageCtrl.get('dappsV2', [])).toEqual([withId])
+    })
   })
 
   describe('migration sweep performance', () => {
