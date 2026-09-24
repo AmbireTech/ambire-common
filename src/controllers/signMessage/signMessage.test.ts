@@ -1,4 +1,5 @@
-import { clearErc7730RegistryCache } from '@/libs/humanizer'
+import { ZeroAddress } from 'ethers'
+
 import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { describe, expect, jest, test } from '@jest/globals'
 
@@ -13,12 +14,14 @@ import {
   verifiedDapp
 } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
+import { mockUiManager } from '../../../test/helpers/ui'
 import { InternalSigner } from '../../../test/keystore'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
 import { IKeystoreController } from '../../interfaces/keystore'
@@ -27,6 +30,9 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import * as safeLib from '../../libs/safe/safe'
+import { Erc7730Controller } from '../erc7730/erc7730'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
+import { UiController } from '../ui/ui'
 import { SignMessageController } from './signMessage'
 
 const account: Account = {
@@ -116,6 +122,31 @@ const createPermitTypedMessage = (): Message => ({
   }
 })
 
+/**
+ * `SignMessageController` reaches the relayer only through `Erc7730Controller`, which owns the
+ * fetching, the descriptor cache and its persistence - so the tests give it a real one over the
+ * mocked relayer, with the cache kept in memory for the duration of the test.
+ */
+const { uiManager } = mockUiManager()
+const uiCtrl = new UiController({ uiManager })
+
+const makeErc7730Controller = (callRelayer: any, featureFlags?: IFeatureFlagsController) => {
+  const store: Record<string, any> = {}
+  const storage = {
+    get: async (key: string, defaultValue?: any) => (key in store ? store[key] : defaultValue),
+    set: async (key: string, value: any) => {
+      store[key] = value
+    }
+  }
+
+  return new Erc7730Controller({
+    storage: storage as any,
+    callRelayer,
+    featureFlags: featureFlags || new FeatureFlagsController({}, storage as any),
+    ui: uiCtrl
+  })
+}
+
 describe('SignMessageController', () => {
   let signMessageController: ISignMessageController
   let keystoreCtrl: IKeystoreController
@@ -124,10 +155,9 @@ describe('SignMessageController', () => {
   let providersCtrl: IProvidersController
   let inviteCtrl: IInviteController
   let dappsCtrl: IDappsController
+  let featureFlagsCtrl: IFeatureFlagsController
 
-  beforeEach(() => {
-    clearErc7730RegistryCache()
-  })
+  beforeEach(() => {})
   beforeAll(async () => {
     const { mainCtrl } = await makeMainController(
       async (storageCtrl) => {
@@ -144,6 +174,7 @@ describe('SignMessageController', () => {
     accountsCtrl = mainCtrl.accounts
     inviteCtrl = mainCtrl.invite
     dappsCtrl = mainCtrl.dapps
+    featureFlagsCtrl = mainCtrl.featureFlags
   })
 
   beforeEach(async () => {
@@ -375,7 +406,7 @@ describe('SignMessageController', () => {
       inviteCtrl,
       undefined,
       dappsCtrl,
-      callRelayer
+      makeErc7730Controller(callRelayer, featureFlagsCtrl)
     )
 
     await signMessageController.init({ messageToSign: typedMessageToSign })
@@ -431,15 +462,17 @@ describe('SignMessageController', () => {
     )
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Authorize spending of tokens',
-      rows: [
+      intent: [{ type: 'action', content: 'Authorize spending of tokens' }],
+      fields: [
         {
+          type: 'single-value',
           label: 'Spender',
-          value: [{ type: 'address', address: '0x0000000000000000000000000000000000000000' }]
+          value: { type: 'address', address: '0x0000000000000000000000000000000000000000' }
         },
         {
+          type: 'single-value',
           label: 'Max spending amount',
-          value: [{ type: 'token', address: usdc, value: 133700n, chainId: 1n }]
+          value: { type: 'token', address: usdc, value: 133700n, chainId: 1n }
         }
       ]
     })
@@ -454,8 +487,47 @@ describe('SignMessageController', () => {
     expect(callRelayer).not.toHaveBeenCalled()
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: 'Authorize spending of tokens'
+      intent: [{ type: 'action', content: 'Authorize spending of tokens' }]
     })
+  })
+
+  test('uses fallback humanization without calling the relayer when clear signing is disabled', async () => {
+    const callRelayer = jest.fn(async () => {
+      throw new Error('The relayer should not be called')
+    })
+    const accountsController = {
+      initialLoadPromise: Promise.resolve(),
+      accounts: [account],
+      getOrFetchAccountOnChainState: jest.fn(() => Promise.resolve(accountOnchainState))
+    } as unknown as IAccountsController
+    await featureFlagsCtrl.setFeatureFlag('clearSigning', false)
+
+    try {
+      signMessageController = new SignMessageController(
+        keystoreCtrl,
+        providersCtrl,
+        networksCtrl,
+        accountsController,
+        {},
+        inviteCtrl,
+        undefined,
+        dappsCtrl,
+        makeErc7730Controller(callRelayer, featureFlagsCtrl)
+      )
+
+      await signMessageController.init({ messageToSign: createPermitTypedMessage() })
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0)
+      })
+
+      expect(callRelayer).not.toHaveBeenCalled()
+      expect(signMessageController.isHumanizing).toBe(false)
+      expect(signMessageController.humanizedMessage?.fullVisualization).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ type: 'erc7730' })])
+      )
+    } finally {
+      await featureFlagsCtrl.setFeatureFlag('clearSigning', true)
+    }
   })
 
   test('humanizes a 1inch Order EIP-712 descriptor served as raw relayer JSON', async () => {
@@ -582,7 +654,7 @@ describe('SignMessageController', () => {
       inviteCtrl,
       undefined,
       dappsCtrl,
-      callRelayer
+      makeErc7730Controller(callRelayer, featureFlagsCtrl)
     )
 
     await signMessageController.init({ messageToSign: typedMessageToSign })
@@ -608,29 +680,29 @@ describe('SignMessageController', () => {
     )
     expect(signMessageController.humanizedMessage?.fullVisualization?.[0]).toMatchObject({
       type: 'erc7730',
-      title: '1inch Order'
+      intent: [{ type: 'action', content: '1inch Order' }]
     })
     const visualization = signMessageController.humanizedMessage?.fullVisualization?.[0] as any
 
-    expect(visualization.rows.map((row: any) => row.label)).toEqual([
+    expect(visualization.fields.map((row: any) => row.label)).toEqual([
       'From',
       'Send',
       'Receive minimum'
     ])
-    expect(visualization.rows).not.toEqual(
+    expect(visualization.fields).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           label: 'To'
         })
       ])
     )
-    expect(visualization.rows[1].value[0]).toMatchObject({
+    expect(visualization.fields[1].value).toMatchObject({
       type: 'token',
       address: '0x350a791bfc2c21f9ed5d10980dad2e2638ffa7f6',
       value: 366891214241290415n,
       chainId: 10n
     })
-    expect(visualization.rows[2].value[0]).toMatchObject({
+    expect(visualization.fields[2].value).toMatchObject({
       type: 'token',
       address: '0x76fb31fb4af56892a25e32cfc43de717950c9278',
       value: 39061263450812873n,
@@ -732,7 +804,7 @@ describe('SignMessageController', () => {
         kind: 'typedMessage',
         domain: {
           chainId: 1,
-          verifyingContract: account.addr
+          verifyingContract: ZeroAddress
         },
         types: {
           EIP712Domain: [
@@ -859,7 +931,9 @@ describe('SignMessageController', () => {
           id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
           type: 'warning',
           title: 'Suspicious app hosting',
-          text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
+          text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.',
+          // The dApp is on its own vercel.app subdomain, so the user may mark it as trusted.
+          trustableDappUrls: [suspiciousHostingDapp.url]
         }
       ])
     })

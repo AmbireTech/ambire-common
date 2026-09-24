@@ -23,6 +23,7 @@ import {
 } from '../../interfaces/account'
 import { IAccountPickerController } from '../../interfaces/accountPicker'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
@@ -72,6 +73,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #networks: INetworksController
 
   #providers: IProvidersController
+
+  #featureFlags?: IFeatureFlagsController
 
   #externalSignerControllers: ExternalSignerControllers
 
@@ -183,6 +186,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     externalSignerControllers,
     relayerUrl,
     fetch,
+    featureFlags,
     sendUiMessage,
     onAddAccountsSuccessCallback
   }: {
@@ -194,6 +198,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     externalSignerControllers: ExternalSignerControllers
     relayerUrl: string
     fetch: Fetch
+    featureFlags?: IFeatureFlagsController
     sendUiMessage: (params: {}) => void
     onAddAccountsSuccessCallback: () => Promise<void>
   }) {
@@ -202,6 +207,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#keystore = keystore
     this.#networks = networks
     this.#providers = providers
+    this.#featureFlags = featureFlags
     this.#externalSignerControllers = externalSignerControllers
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#sendUiMessage = sendUiMessage
@@ -983,7 +989,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         trezor: this.#externalSignerControllers.trezor?.deviceId || '',
         lattice: this.#externalSignerControllers?.lattice?.deviceId || '',
         qr: this.#externalSignerControllers.qr?.deviceId || '',
-        nfc: this.#externalSignerControllers.nfc?.deviceId || ''
+        nfc: this.#externalSignerControllers.nfc?.deviceId || '',
+        pq1: this.#externalSignerControllers.pq1?.deviceId || ''
       }
 
       const deviceModels: { [key in ExternalKey['type']]: string } = {
@@ -991,7 +998,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
         lattice: this.#externalSignerControllers.lattice?.deviceModel || '',
         qr: this.#externalSignerControllers.qr?.deviceModel || '',
-        nfc: this.#externalSignerControllers.nfc?.deviceModel || ''
+        nfc: this.#externalSignerControllers.nfc?.deviceModel || '',
+        pq1: this.#externalSignerControllers.pq1?.deviceModel || ''
       }
 
       const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || ''
@@ -1388,6 +1396,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   async #findAndSetLinkedAccounts({ accounts }: { accounts: Account[] }) {
     if (!this.shouldSearchForLinkedAccounts) return
+    if (this.#featureFlags?.isFeatureEnabled('ambireSmartAccounts') === false) return
 
     if (accounts.length === 0) return
 
@@ -1523,6 +1532,19 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       this.#findAndSetLinkedAccountsAbortController = undefined
     })
     await this.findAndSetLinkedAccountsPromise
+  }
+
+  async enableAmbireSmartAccountsAndRescan() {
+    if (!this.#featureFlags) return
+
+    await this.#featureFlags.setFeatureFlag('ambireSmartAccounts', true)
+    this.#derivedAccounts = []
+    await this.setPage({
+      page: this.page,
+      pageSize: this.pageSize,
+      shouldSearchForLinkedAccounts: true,
+      shouldGetAccountsUsedOnNetworks: true
+    })
   }
 
   /**

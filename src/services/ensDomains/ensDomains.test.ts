@@ -336,6 +336,25 @@ describe('getEnsExpiry', () => {
 })
 
 describe('resolveENSDomain', () => {
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  it('does not request an avatar when avatar resolution is disabled', async () => {
+    const address = makeAddress(0) as `0x${string}`
+    jest.spyOn(viemEnsModule, 'getEnsAddress').mockResolvedValue(address)
+    const getEnsAvatarSpy = jest.spyOn(viemEnsModule, 'getEnsAvatar')
+
+    const result = await resolveENSDomain({
+      provider: STUB_PROVIDER,
+      domain: 'private.eth',
+      options: { resolveAvatar: false, expiry: null }
+    })
+
+    expect(getEnsAvatarSpy).not.toHaveBeenCalled()
+    expect(result).toEqual({ address, avatar: null, expiry: null })
+  })
+
   it('live mainnet: resolves the address, avatar and the exact ENS expiry for vitalik.eth', async () => {
     const result = await resolveENSDomain({ provider: ethereumProvider, domain: 'vitalik.eth' })
 

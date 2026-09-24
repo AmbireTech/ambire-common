@@ -25,6 +25,7 @@ import {
 import { SwapAmountWarning } from '../../consts/safeguards/swapAmountWarnings'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -38,6 +39,7 @@ import {
   SwapAndBridgeUserTx
 } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest } from '../../interfaces/userRequest'
+import { COWSWAP_EXPLORER_URL } from '../../services/cowswap/constants'
 import { LIFI_EXPLORER_URL } from '../../services/lifi/consts'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 import { isBasicAccount } from '../account/account'
@@ -134,20 +136,25 @@ const getBannedToTokenList = (chainId: string): string[] => {
   return Object.keys(list[chainId])
 }
 
-const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
-  // Pending tokens go on top
-  const isAPending =
-    typeof a.amountPostSimulation === 'bigint' && a.amountPostSimulation !== BigInt(a.amount)
-  const isBPending =
-    typeof b.amountPostSimulation === 'bigint' && b.amountPostSimulation !== BigInt(b.amount)
+type TokenSortKey = { isPending: boolean; balanceInUSD: number }
 
-  if (isAPending && !isBPending) return -1
-  if (!isAPending && isBPending) return 1
+/**
+ * Everything the order of a token depends on, read once per token instead of on
+ * every comparison - which for a large portfolio is around twenty times each.
+ */
+const getTokenSortKey = (token: TokenResult): TokenSortKey => ({
+  isPending:
+    typeof token.amountPostSimulation === 'bigint' &&
+    token.amountPostSimulation !== BigInt(token.amount),
+  balanceInUSD: getTokenBalanceInUSD(token)
+})
+
+const compareTokenSortKeys = (a: TokenSortKey, b: TokenSortKey) => {
+  // Pending tokens go on top
+  if (a.isPending !== b.isPending) return a.isPending ? -1 : 1
 
   // Otherwise, higher balance comes first
-  const aBalanceUSD = getTokenBalanceInUSD(a)
-  const bBalanceUSD = getTokenBalanceInUSD(b)
-  if (aBalanceUSD !== bBalanceUSD) return bBalanceUSD - aBalanceUSD
+  if (a.balanceInUSD !== b.balanceInUSD) return b.balanceInUSD - a.balanceInUSD
 
   return 0
 }
@@ -155,12 +162,20 @@ const sortTokensByPendingAndBalance = (a: TokenResult, b: TokenResult) => {
 export const attemptToSortTokensByMarketCap = async ({
   fetch,
   chainId,
-  tokens
+  tokens,
+  featureFlags
 }: {
   fetch: Fetch
   chainId: number
   tokens: SwapAndBridgeToToken[]
+  featureFlags: Pick<IFeatureFlagsController, 'isFeatureEnabled'>
 }) => {
+  if (
+    !featureFlags.isFeatureEnabled('tokenPrices') ||
+    !featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')
+  )
+    return tokens
+
   try {
     const tokenAddressesByMarketCapRes = await fetch(
       `https://cena.ambire.com/api/v3/lists/byMarketCap/${chainId}`
@@ -207,32 +222,40 @@ export const sortTokenListResponse = (
   tokenListResponse: SwapAndBridgeToToken[],
   accountPortfolioTokenList: TokenResult[]
 ) => {
-  return tokenListResponse.sort((a: SwapAndBridgeToToken, b: SwapAndBridgeToToken) => {
-    const aInPortfolio = accountPortfolioTokenList.find((t) => t.address === a.address)
-    const bInPortfolio = accountPortfolioTokenList.find((t) => t.address === b.address)
+  const sortKeyByAddress = new Map(
+    accountPortfolioTokenList.map((t) => [t.address.toLowerCase(), getTokenSortKey(t)])
+  )
 
-    // Tokens in portfolio should come first
-    if (aInPortfolio && !bInPortfolio) return -1
-    if (!aInPortfolio && bInPortfolio) return 1
+  // The portfolio lookup is done once per token rather than on every comparison. The
+  // service provider's list runs to thousands of tokens, so the sort makes tens of
+  // thousands of comparisons, and lowercasing both addresses in each one is what made
+  // deriving this list block the JS thread for hundreds of milliseconds.
+  return tokenListResponse
+    .map((token) => ({ token, sortKey: sortKeyByAddress.get(token.address.toLowerCase()) }))
+    .sort((a, b) => {
+      // Tokens in portfolio should come first
+      if (a.sortKey && !b.sortKey) return -1
+      if (!a.sortKey && b.sortKey) return 1
 
-    if (aInPortfolio && bInPortfolio) {
-      const comparisonResult = sortTokensByPendingAndBalance(aInPortfolio, bInPortfolio)
-      if (comparisonResult !== 0) return comparisonResult
-    }
+      if (a.sortKey && b.sortKey) return compareTokenSortKeys(a.sortKey, b.sortKey)
 
-    // Otherwise, don't change, persist the order from the service provider
-    return 0
-  })
+      // Otherwise, don't change, persist the order from the service provider
+      return 0
+    })
+    .map(({ token }) => token)
 }
 
 export const sortPortfolioTokenList = (accountPortfolioTokenList: TokenResult[]) => {
-  return accountPortfolioTokenList.sort((a, b) => {
-    const comparisonResult = sortTokensByPendingAndBalance(a, b)
-    if (comparisonResult !== 0) return comparisonResult
+  return accountPortfolioTokenList
+    .map((token) => ({ token, sortKey: getTokenSortKey(token), symbol: token.symbol || '' }))
+    .sort((a, b) => {
+      const comparisonResult = compareTokenSortKeys(a.sortKey, b.sortKey)
+      if (comparisonResult !== 0) return comparisonResult
 
-    // Otherwise, just alphabetical
-    return (a.symbol || '').localeCompare(b.symbol || '')
-  })
+      // Otherwise, just alphabetical
+      return a.symbol.localeCompare(b.symbol)
+    })
+    .map(({ token }) => token)
 }
 
 /**
@@ -483,6 +506,11 @@ export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
   return route.fromChainId !== route.toChainId
 }
 
+/** Returns whether the route completes asynchronously after the user's transaction. */
+export const getIsIntentRoute = (route: SwapAndBridgeRoute) => {
+  return getIsBridgeRoute(route) || route.providerId === 'cowswap' || route.isIntent === true
+}
+
 /**
  * Checks if a network is supported by our Swap & Bridge service provider. As of v4.43.0
  * there are 16 networks supported, so user could have (many) custom networks that are not.
@@ -708,6 +736,9 @@ export const calculateAmountWarnings = (
 
 const getLink = (route: SwapAndBridgeActiveRoute) => {
   const providerId = route.route ? route.route.providerId : route.serviceProviderId
+  if (providerId === 'cowswap') {
+    return `${COWSWAP_EXPLORER_URL}/orders/${route.activeRouteId}`
+  }
   if (providerId === 'socket' || providerId === 'socketv3')
     return `${SOCKET_EXPLORER_URL}/tx/${route.userTxHash}`
   return `${LIFI_EXPLORER_URL}/tx/${route.userTxHash}`
@@ -744,7 +775,7 @@ const getSwapSponsorship = ({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   providerId,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  isBridge,
+  isIntent,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   feePercent
 }: {
@@ -755,7 +786,7 @@ const getSwapSponsorship = ({
   feeTokenPriceInUsd: number | undefined
   feeTokenDecimals: number | undefined
   providerId: string | undefined
-  isBridge: boolean
+  isIntent: boolean
   feePercent: number
 }):
   | {
@@ -775,7 +806,7 @@ const getSwapSponsorship = ({
   //   !fromAmountInUsd ||
   //   !feeTokenPriceInUsd ||
   //   !feeTokenDecimals ||
-  //   (providerId === 'uniswap' && isBridge) ||
+  //   (providerId === 'uniswap' && isIntent) ||
   //   feePercent === 0
   // )
   //   return undefined

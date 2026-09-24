@@ -84,6 +84,19 @@ export const getDelegateCallWarning = (
   return warnings
 }
 
+const setupSelector = toFunctionSelector(setupAbi[0])
+const addOwnerWithThresholdSelector = toFunctionSelector(addOwnerWithThresholdAbi[0])
+const changeThresholdSelector = toFunctionSelector(changeThresholdAbi[0])
+const removeOwnerSelector = toFunctionSelector(removeOwnerAbi[0])
+const swapOwnerSelector = toFunctionSelector(swapOwnerAbi[0])
+const enableModuleSelector = toFunctionSelector(enableModuleAbi[0])
+const disableModuleSelector = toFunctionSelector(disableModuleAbi[0])
+const setGuardSelector = toFunctionSelector(setGuardAbi[0])
+const setFallbackHandlerSelector = toFunctionSelector(setFallbackHandlerAbi[0])
+const setDomainVerifierSelector = toFunctionSelector(setDomainVerifierAbi[0])
+const multiSendSelector = toFunctionSelector(multiSendAbi[0])
+const execTransactionSelector = toFunctionSelector(execTransactionAbi[0])
+
 export const getSafeHumanization = (
   safeAddr?: string,
   to?: string,
@@ -117,7 +130,7 @@ export const getSafeHumanization = (
     }
   }
 
-  if (selector === toFunctionSelector(setupAbi[0])) {
+  if (selector === setupSelector) {
     const { args } = decodeFunctionData({ abi: setupAbi, data })
     const [
       owners,
@@ -172,7 +185,10 @@ export const getSafeHumanization = (
       if (setupCallHumanization?.warnings) warnings.push(...setupCallHumanization.warnings)
     }
 
-    warnings.push(getWarning(`Safe setup configuration detected`, 'SAFE{WALLET}_CONFIG_CHANGE'))
+    // `setup` can only ever succeed once per Safe proxy (the Safe contract itself guards
+    // `setupOwners` against being called on an already-initialized account), so a decodable
+    // `setup` call is always this account's creation, never a change to an existing one - nothing
+    // to warn about here.
 
     return {
       visuals: fullVisualization,
@@ -180,7 +196,7 @@ export const getSafeHumanization = (
     }
   }
 
-  if (selector === toFunctionSelector(addOwnerWithThresholdAbi[0])) {
+  if (selector === addOwnerWithThresholdSelector) {
     const { args } = decodeFunctionData({
       abi: addOwnerWithThresholdAbi,
       data: padCallData(data, 2)
@@ -203,7 +219,7 @@ export const getSafeHumanization = (
     }
   }
 
-  if (selector === toFunctionSelector(changeThresholdAbi[0])) {
+  if (selector === changeThresholdSelector) {
     const { args } = decodeFunctionData({ abi: changeThresholdAbi, data: padCallData(data, 1) })
     const [newThreshold] = args
     fullVisualization.push(...[getAction('Set threshold to'), getLabel(newThreshold)])
@@ -216,7 +232,7 @@ export const getSafeHumanization = (
     }
   }
 
-  if (selector === toFunctionSelector(removeOwnerAbi[0])) {
+  if (selector === removeOwnerSelector) {
     const { args } = decodeFunctionData({ abi: removeOwnerAbi, data: padCallData(data, 3) })
     const [, removedOwner, newThreshold] = args
     fullVisualization.push(
@@ -236,7 +252,7 @@ export const getSafeHumanization = (
     }
   }
 
-  if (selector === toFunctionSelector(swapOwnerAbi[0])) {
+  if (selector === swapOwnerSelector) {
     const { args } = decodeFunctionData({ abi: swapOwnerAbi, data: padCallData(data, 3) })
     const [, removedOwner, newOwner] = args
     fullVisualization.push(
@@ -255,7 +271,7 @@ export const getSafeHumanization = (
     }
   }
 
-  if (selector === toFunctionSelector(enableModuleAbi[0])) {
+  if (selector === enableModuleSelector) {
     const { args } = decodeFunctionData({ abi: enableModuleAbi, data: padCallData(data, 1) })
     const [module] = args
     fullVisualization.push(...[getAction('Enable module:'), getAddressVisualization(module)])
@@ -271,7 +287,7 @@ export const getSafeHumanization = (
     }
   }
 
-  if (selector === toFunctionSelector(disableModuleAbi[0])) {
+  if (selector === disableModuleSelector) {
     const { args } = decodeFunctionData({ abi: disableModuleAbi, data: padCallData(data, 2) })
     const [, module] = args
     fullVisualization.push(...[getAction('Disable module:'), getAddressVisualization(module)])
@@ -280,7 +296,7 @@ export const getSafeHumanization = (
     }
   }
 
-  if (selector === toFunctionSelector(setGuardAbi[0])) {
+  if (selector === setGuardSelector) {
     const { args } = decodeFunctionData({ abi: setGuardAbi, data: padCallData(data, 1) })
     const [guard] = args
     fullVisualization.push(...[getAction('Set guard:'), getAddressVisualization(guard)])
@@ -289,7 +305,7 @@ export const getSafeHumanization = (
     }
   }
 
-  if (selector === toFunctionSelector(setFallbackHandlerAbi[0])) {
+  if (selector === setFallbackHandlerSelector) {
     const { args } = decodeFunctionData({
       abi: setFallbackHandlerAbi,
       data: padCallData(data, 1)
@@ -322,7 +338,7 @@ export const getSafeHumanization = (
     }
   }
 
-  if (selector === toFunctionSelector(setDomainVerifierAbi[0])) {
+  if (selector === setDomainVerifierSelector) {
     const { args } = decodeFunctionData({ abi: setDomainVerifierAbi, data: padCallData(data, 2) })
     const [, newVerifier] = args
     fullVisualization.push(
@@ -347,7 +363,7 @@ export const getSafeHumanization = (
     }
   }
 
-  if (selector === toFunctionSelector(multiSendAbi[0])) {
+  if (selector === multiSendSelector) {
     fullVisualization.push(getAction('Batch of transactions'))
 
     let decodedTransactions: ReturnType<typeof decodeMultiSend> = []
@@ -360,6 +376,17 @@ export const getSafeHumanization = (
     }
 
     decodedTransactions.forEach((innerCall) => {
+      if (!innerCall.success) {
+        fullVisualization.push(getBreak(), getAction('Failed to parse', { warning: true }))
+        warnings.push(
+          getWarning(
+            'Part of this batch could not be read and is not shown above. Proceed with caution',
+            'SAFE{WALLET}_MULTISEND_PARSE_FAILED'
+          )
+        )
+        return
+      }
+
       // a delegatecall leg runs attacker-controlled code directly in the Safe's own storage,
       // so it must be flagged the same way a top-level delegatecall would be, even though it's
       // hidden a level deeper inside this batch
@@ -390,7 +417,7 @@ export const getSafeHumanization = (
 
 const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall => {
   const matcher = {
-    [toFunctionSelector(execTransactionAbi[0])]: (matchedCall: HexIrCall): IrCall | undefined => {
+    [execTransactionSelector]: (matchedCall: HexIrCall): IrCall | undefined => {
       if (!matchedCall.to) return
       if (matchedCall.value) return
       let args: unknown[]
