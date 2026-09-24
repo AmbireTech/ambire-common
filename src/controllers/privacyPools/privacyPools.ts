@@ -1,4 +1,4 @@
-import { formatUnits, Interface, JsonRpcProvider } from 'ethers'
+import { formatUnits, Interface, isAddress, JsonRpcProvider } from 'ethers'
 
 import {
   createPPv1Broadcaster,
@@ -113,7 +113,7 @@ const toReadableWithdrawalError = (error: any) => {
 
   return new EmittableError({
     message:
-      'This amount is too small to cover the network fee for withdrawing it. Please try a larger amount.',
+      'This amount is too small to cover the network fee for sending it. Please try a larger amount.',
     level: 'expected',
     error
   })
@@ -1351,16 +1351,26 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     const { paymaster } = config
     if (!paymaster)
       throw new EmittableError({
-        message: 'Withdrawing from Privacy Pools is not available on this network yet.',
+        message: 'Sending from a Privacy Pools account is not available on this network yet.',
         level: 'expected',
         error: new Error(`privacyPools: no paymaster configured for chain ${chainId}`)
+      })
+
+    // Checked here and not only in the form: the proof commits to the recipient, and one made out
+    // to a malformed or zero address would burn the funds it releases
+    if (!isAddress(recipient) || BigInt(recipient) === 0n)
+      throw new EmittableError({
+        message: 'Please enter a valid address to send to.',
+        level: 'expected',
+        error: new Error('privacyPools: invalid withdrawal recipient')
       })
 
     // One at a time, across phrases: only one proved withdrawal is ever kept, so a second would
     // silently replace the first one's proof while it is still being built.
     if (this.#isOperationInFlight())
       throw new EmittableError({
-        message: 'Another withdrawal is still in progress. Please wait for it to finish.',
+        message:
+          'Another transfer from a Privacy Pools account is still in progress. Please wait for it to finish.',
         level: 'expected',
         error: new Error('privacyPools: a withdrawal is already in flight')
       })
@@ -1378,6 +1388,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     try {
       await this.#assertPoolIsSponsored(chainId, tokenAddress)
+
+      // The SDK syncs the chain before proving, so the sync goes through the queue first - where it
+      // cannot run beside another one - and leaves the SDK's own only the blocks since
+      await this.#queueSync(chainId, seedId)
 
       const protocol = await this.#getProtocol(chainId, seedId)
 
@@ -1414,7 +1428,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       this.#failOperation(
         operation,
         toReadableWithdrawalError(error),
-        'The withdrawal could not be prepared. Please try again.'
+        'The transfer could not be prepared. Please try again.'
       )
     }
 
@@ -1442,7 +1456,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     const symbol = getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)?.symbol || 'this token'
     throw new EmittableError({
-      message: `Withdrawing ${symbol} from Privacy Pools is not supported yet.`,
+      message: `Sending ${symbol} from a Privacy Pools account is not supported yet.`,
       level: 'expected',
       error: new Error(`privacyPools: no paymaster adapter for pool ${poolAddress}`)
     })
@@ -1461,7 +1475,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     if (!operation || !privateOp)
       throw new EmittableError({
-        message: 'There is no withdrawal ready to send.',
+        message: 'There is no transfer ready to send.',
         level: 'expected',
         error: new Error('privacyPools: no prepared withdrawal')
       })
@@ -1508,7 +1522,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       const message = this.#failOperation(
         { ...operation, phase: 'broadcasting' },
         error,
-        'The withdrawal could not be sent. Please prepare it again.'
+        'The transfer could not be sent. Please try again.'
       )
       this.#updateActivity(operation.id, { status: 'failed', error: message })
     }

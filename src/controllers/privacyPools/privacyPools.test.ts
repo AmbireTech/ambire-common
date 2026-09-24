@@ -40,6 +40,8 @@ type RunningSync = { protocol: FakeProtocol; seedId: string; chainId: bigint; ga
 
 const ETHEREUM_ENTRYPOINT = getPrivacyPoolsChainConfig(1n)!.entrypointAddress
 const USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+const ETHEREUM_ETH_POOL = '0xf241d57c6debae225c0f2e6ea1529373c9a9c9fb'
+const WITHDRAWAL_RECIPIENT = '0xc4A6bB5139123bD6ba0CF387828a9A3a73EF8D1e'
 const DEPOSITOR = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
 
 const ENTRYPOINT_INTERFACE = new Interface([
@@ -76,6 +78,9 @@ class FakeProtocol {
 
   prepareShieldCount = 0
 
+  /** How many syncs this plugin had done when it was asked to prove - see `prepareUnshield`. */
+  syncCountWhenProving: number | null = null
+
   constructor(host: any) {
     this.host = host
     protocols.push(this)
@@ -111,6 +116,13 @@ class FakeProtocol {
         }
       ]
     }
+  }
+
+  // Proving is not faked: a withdrawal the controller would accept needs a signed userOp, and what
+  // the tests check is what happens before one is asked for
+  async prepareUnshield() {
+    this.syncCountWhenProving = this.syncCount
+    throw new Error('prepareUnshield is not faked')
   }
 
   async notes() {
@@ -175,7 +187,8 @@ const fakeProviderCall = async ({ data }: { to: string; data: string }) => {
     const [asset] = ENTRYPOINT_INTERFACE.decodeFunctionData('assetConfig', data)
 
     return ENTRYPOINT_INTERFACE.encodeFunctionResult('assetConfig', [
-      '0x0000000000000000000000000000000000000001',
+      // The Ethereum ETH pool, which the paymaster has an adapter for
+      ETHEREUM_ETH_POOL,
       String(asset).toLowerCase() === USDC ? MINIMUM_USDC_DEPOSIT : MINIMUM_DEPOSIT,
       50n,
       100n
@@ -677,6 +690,54 @@ describe('PrivacyPoolsController', () => {
 
       selectedAccount.select('seed-b')
       expect(controller.activity).toEqual([])
+    })
+  })
+  describe('sending from a Privacy Pools account', () => {
+    it('refuses to prove a transfer to something that is not an address', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      await expect(
+        controller.prepareWithdrawal({
+          chainId: '1',
+          tokenAddress: ZERO_ADDRESS,
+          amount: 10n ** 17n,
+          recipient: 'vitalik'
+        })
+      ).rejects.toThrow(EmittableError)
+      await expect(
+        controller.prepareWithdrawal({
+          chainId: '1',
+          tokenAddress: ZERO_ADDRESS,
+          amount: 10n ** 17n,
+          recipient: ZERO_ADDRESS
+        })
+      ).rejects.toThrow(EmittableError)
+
+      expect(controller.operation).toBeNull()
+      expect(runningSyncs).toHaveLength(0)
+    })
+
+    it('syncs the account through the queue before proving', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      const preparing = controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        amount: 10n ** 17n,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+      await releaseSync('seed-a')
+      await preparing
+
+      const [protocol] = protocols
+      expect(protocol?.syncCountWhenProving).toBe(1)
+      // Proving itself failed, which leaves the transfer failed with a sentence for the user
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error: 'The transfer could not be prepared. Please try again.'
+      })
     })
   })
 })
