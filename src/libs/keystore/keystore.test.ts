@@ -15,6 +15,7 @@ import {
   encryptWithKey,
   extractEntropyFromSeed,
   getBytesForSecret,
+  isWrongSecretError,
   migrateStoredPayloadsToGCM,
   reconstructSeedFromEntropy,
   SCRYPT_PARAMS,
@@ -266,6 +267,28 @@ describe('Keystore lib', () => {
       const exportedMainKey = new Uint8Array(await crypto.subtle.exportKey('raw', mainKey))
 
       expect(hexlify(decrypted)).toBe(hexlify(exportedMainKey))
+    })
+  })
+
+  describe('isWrongSecretError', () => {
+    test('recognizes the browser Web Crypto authentication tag mismatch', () => {
+      expect(isWrongSecretError(new DOMException('', 'OperationError'))).toBe(true)
+    })
+
+    test('recognizes the React Native (react-native-quick-crypto) authentication tag mismatch', () => {
+      // A plain Error out of native OpenSSL, which is all React Native's Web Crypto gives us
+      const error = new Error(
+        'Cipher.final(...): Cipher final failed: error:00000000:lib(0)::reason(0)'
+      )
+
+      expect(error.name).toBe('Error')
+      expect(isWrongSecretError(error)).toBe(true)
+    })
+
+    test('does not treat an unexpected failure as a wrong secret', () => {
+      expect(isWrongSecretError(new Error('invalid arrayify value'))).toBe(false)
+      expect(isWrongSecretError(new TypeError('key is not a CryptoKey'))).toBe(false)
+      expect(isWrongSecretError(undefined)).toBe(false)
     })
   })
 

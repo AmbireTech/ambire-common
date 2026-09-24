@@ -102,8 +102,20 @@ export const encryptMainKeyWithSecret = async (
 }
 
 /**
+ * Whether a failed main key decryption means the secret was wrong (or the ciphertext was tampered
+ * with), as opposed to an unexpected failure. Browsers report the AES-GCM authentication tag
+ * mismatch as an `OperationError`, while React Native's Web Crypto (react-native-quick-crypto)
+ * surfaces the very same mismatch as a plain OpenSSL error from `Cipher.final()`.
+ */
+export const isWrongSecretError = (error: any): boolean => {
+  if (error?.name === 'OperationError') return true
+
+  return typeof error?.message === 'string' && error.message.includes('Cipher final failed')
+}
+
+/**
  * The counterpart of `encryptMainKeyWithSecret` - decrypts a main key that was wrapped with a secret.
- * Throws an `OperationError` if the secret is wrong (or the ciphertext was tampered with).
+ * Throws an error `isWrongSecretError` recognizes if the secret is wrong (or the ciphertext was tampered with).
  */
 export const decryptMainKeyWithSecret = async (
   secretKey: Uint8Array<ArrayBuffer>,
