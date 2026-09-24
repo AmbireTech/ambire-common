@@ -29,6 +29,7 @@ import {
   IPrivacyPoolsController,
   PrivacyPoolsAccount,
   PrivacyPoolsActivityEntry,
+  PrivacyPoolsDepositAssetConfig,
   PrivacyPoolsChainConfig,
   PrivacyPoolsChainState,
   PrivacyPoolsChainSyncState,
@@ -51,6 +52,7 @@ import { createProverFactory } from '../../libs/privacyPools/prover'
 import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
 import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
 import { readPaymasterWithdrawal } from '../../libs/privacyPools/paymasterWithdrawal'
+import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { generateUuid } from '../../utils/uuid'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -61,6 +63,60 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 export const STATUS_WRAPPED_METHODS = {
   sync: 'INITIAL'
 } as const
+
+const NATIVE_DEPOSIT_SIGNATURE = 'deposit(uint256)'
+const ERC20_DEPOSIT_SIGNATURE = 'deposit(address,uint256,uint256)'
+
+/** The entrypoint's two deposit functions - native and ERC-20 - the only calls a deposit makes. */
+const ENTRYPOINT_DEPOSIT_INTERFACE = new Interface([
+  'function deposit(uint256 _precommitment) payable returns (uint256)',
+  'function deposit(address _asset, uint256 _value, uint256 _precommitment) returns (uint256)'
+])
+
+/**
+ * How long a broadcast deposit blocks another into the same account, while it most likely has
+ * not landed yet. See `#broadcastDeposits`.
+ */
+const DEPOSIT_CONFIRMATION_WINDOW_MS = 15 * 60 * 1000
+
+/**
+ * Reads an entrypoint deposit call: what it deposits, how much, and under which precommitment.
+ * Null for any other call.
+ */
+const readDeposit = ({
+  data,
+  value
+}: {
+  data: string
+  value: bigint
+}): { precommitment: bigint; assetAddress: string; amount: bigint } | null => {
+  const parsed = ENTRYPOINT_DEPOSIT_INTERFACE.parseTransaction({ data, value })
+  if (!parsed) return null
+
+  if (parsed.signature === NATIVE_DEPOSIT_SIGNATURE)
+    return {
+      precommitment: BigInt(parsed.args[0]),
+      assetAddress: toPrivacyPoolsAssetAddress(ZERO_ADDRESS),
+      amount: value
+    }
+
+  if (parsed.signature === ERC20_DEPOSIT_SIGNATURE)
+    return {
+      precommitment: BigInt(parsed.args[2]),
+      assetAddress: String(parsed.args[0]),
+      amount: BigInt(parsed.args[1])
+    }
+
+  return null
+}
+
+const readDepositPrecommitment = (data: string): bigint | null => {
+  try {
+    return readDeposit({ data, value: 0n })?.precommitment ?? null
+  } catch {
+    return null
+  }
+}
 
 const ERC20_INTERFACE = new Interface([
   'function approve(address spender, uint256 amount)',
@@ -138,16 +194,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #kohakuStorage: Storage
 
   /**
-   * Hands a set of calls to the regular signing flow. A callback rather than a direct
-   * `RequestsController` reference, because that controller is built after this one and because
-   * this is the only thing Privacy Pools needs from it.
-   */
-  #buildCallsRequest: (params: {
-    calls: Call[]
-    meta: { chainId: bigint; accountAddr: string }
-  }) => Promise<void>
-
-  /**
    * Told which accounts were just removed, so whoever selects accounts can move off one that was
    * selected. A callback because removal also happens here on its own, when a phrase is deleted.
    */
@@ -222,6 +268,35 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #activity: PrivacyPoolsActivityEntry[] = []
 
   /**
+   * The next deposit's precommitment per `${chainId}:${seedId}`, derived once - see
+   * `#getNextDepositPrecommitment` - with the sync it was derived after. `epoch` is null while that
+   * sync is still under way.
+   */
+  #nextDepositPrecommitments = new Map<
+    string,
+    { derivation: Promise<bigint>; epoch: number | null }
+  >()
+
+  /**
+   * How many syncs have completed per `${chainId}:${seedId}`. A derived precommitment is good only
+   * for the sync it followed: any later one may have seen a deposit land, which moves it on.
+   */
+  #syncEpochs = new Map<string, number>()
+
+  /** Deposits `buildDepositCalls` prepared, by precommitment, so a broadcast can be told one. */
+  #preparedDeposits = new Map<bigint, { seedId: string; chainId: string }>()
+
+  /**
+   * When each recognised deposit was broadcast, by precommitment.
+   *
+   * A second deposit into the same account before the first lands would carry the same
+   * precommitment, and the entrypoint rejects a reused one - so building one is refused for a
+   * while. Not until the deposit is seen on chain, because a broadcast that never lands would then
+   * block the account for good.
+   */
+  #broadcastDeposits = new Map<bigint, number>()
+
+  /**
    * The proved-but-unsent withdrawal. Private: it carries the proof and the signed userOp, neither
    * of which the UI needs - it reads the fee off `operation.quote`.
    */
@@ -242,6 +317,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #getShippedInitialState?: () => Promise<Record<string, any>>
 
   #unsubscribers: (() => void)[] = []
+
+  /**
+   * What the entrypoint requires of a deposit, per `${chainId}:${tokenAddress}` (lowercase) - read
+   * from the chain once per session, as the form needs it to validate what is typed.
+   */
+  depositAssetConfigs: { [key: string]: PrivacyPoolsDepositAssetConfig } = {}
 
   /**
    * The wallet's Privacy Pools accounts, at most one per stored recovery phrase. Removed along with
@@ -268,7 +349,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     fetch,
     circuitsBaseUrl,
     getInitialState,
-    buildCallsRequest,
     onAccountsRemoved,
     eventEmitterRegistry
   }: {
@@ -289,10 +369,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
      * platform layer decides where they come from - a bundled asset, or nothing at all.
      */
     getInitialState?: () => Promise<Record<string, any>>
-    buildCallsRequest: (params: {
-      calls: Call[]
-      meta: { chainId: bigint; accountAddr: string }
-    }) => Promise<void>
     onAccountsRemoved: (seedIds: string[]) => Promise<void>
     eventEmitterRegistry?: IEventEmitterRegistryController
   }) {
@@ -314,7 +390,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
           error: error instanceof Error ? error : new Error('privacyPools: storage write failed')
         })
     })
-    this.#buildCallsRequest = buildCallsRequest
     this.#onAccountsRemoved = onAccountsRemoved
     this.#getShippedInitialState = getInitialState
     this.#proverFactory = createProverFactory(circuitsBaseUrl)
@@ -772,7 +847,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * same chain and phrase returns the sync already queued or running rather than adding another.
    */
   async syncChain(chainId: string): Promise<void> {
-    const seedId = this.#assertAvailableAndGetSeedId()
+    return this.#queueSync(chainId, this.#assertAvailableAndGetSeedId())
+  }
+
+  /** Queues a sync for any account, not only the selected one - see `syncChain`. */
+  #queueSync(chainId: string, seedId: string): Promise<void> {
     const jobKey = this.#protocolKey(chainId, seedId)
     const existingJob = this.#syncJobs.get(jobKey)
     if (existingJob) return existingJob
@@ -864,6 +943,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         }
       }
 
+      // A deposit may have landed, which moves the next one's precommitment on
+      const syncKey = this.#protocolKey(chainId, seedId)
+      this.#syncEpochs.set(syncKey, (this.#syncEpochs.get(syncKey) || 0) + 1)
+
       // The sync has persisted the chain's history by now, so every other phrase's plugin on this
       // chain is behind the store - and this one is exactly at it.
       const chainVersion = (this.#chainVersions.get(chainId) || 0) + 1
@@ -922,87 +1005,284 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Moves funds into the pool.
+   * The calls that send funds from one of the wallet's accounts into a Privacy Pools account - a
+   * deposit, in the protocol's terms.
    *
-   * Handed to the regular signing flow rather than broadcast here, because a deposit is an ordinary
-   * transaction from the user's own account and deserves the same fee handling, simulation and
-   * confirmation as any other.
+   * Only built here: the caller hands them to the regular signing flow, because a deposit is an
+   * ordinary transaction from the sending account and deserves the same fee handling, simulation
+   * and confirmation as any other. Nothing is recorded until it is broadcast - see
+   * `onAccountOpBroadcast`.
    *
    * For ERC-20s the SDK builds only the entrypoint call, while `Entrypoint.deposit` pulls the funds
    * with `transferFrom` - so the approval has to be prepended here or the deposit reverts.
    *
-   * The deposit is public by nature: the pool stores the depositing address and emits it. Nothing
-   * here hides that, and the screen says so.
+   * The deposit is public by nature: the pool stores the sending address and emits it. Nothing here
+   * hides that, and the screen says so.
    */
-  async deposit({
+  async buildDepositCalls({
+    seedId,
+    accountAddr,
     chainId,
     tokenAddress,
     amount
-  }: AssetRef & { chainId: string; amount: bigint }): Promise<void> {
-    const seedId = this.#assertAvailableAndGetSeedId()
+  }: AssetRef & {
+    /** The Privacy Pools account receiving the funds. */
+    seedId: string
+    /** The wallet account sending them. */
+    accountAddr: string
+    chainId: string
+    amount: bigint
+  }): Promise<Call[]> {
+    await this.initialLoadPromise
+
+    if (!this.accounts.some((account) => account.seedId === seedId))
+      throw new EmittableError({
+        message: 'This Privacy Pools account is no longer in your wallet.',
+        level: 'expected',
+        error: new Error(`privacyPools: no account for seed ${seedId}`)
+      })
+
+    if (!this.#keystore.isUnlocked)
+      throw new EmittableError({
+        message: 'Please unlock your wallet to send to a Privacy Pools account.',
+        level: 'expected',
+        error: new Error('privacyPools: keystore locked')
+      })
+
     const config = getPrivacyPoolsChainConfig(BigInt(chainId))
-    if (!config) throw new Error(`privacyPools: unsupported chain ${chainId}`)
+    if (!config || !this.supportedChainIds.includes(chainId))
+      throw new EmittableError({
+        message: 'Privacy Pools accounts cannot receive funds on this network.',
+        level: 'expected',
+        error: new Error(`privacyPools: unsupported chain ${chainId}`)
+      })
 
     const asset = getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)
     if (!asset)
       throw new EmittableError({
-        message: 'This token cannot be deposited into Privacy Pools.',
+        message: 'This token cannot be sent to a Privacy Pools account.',
         level: 'expected',
         error: new Error(`privacyPools: unsupported asset ${tokenAddress} on chain ${chainId}`)
       })
 
     if (amount > asset.maxDeposit)
       throw new EmittableError({
-        message: `Privacy Pools accepts at most ${formatUnits(asset.maxDeposit, asset.decimals)} ${
-          asset.symbol
-        } per deposit.`,
+        message: `A Privacy Pools account accepts at most ${formatUnits(
+          asset.maxDeposit,
+          asset.decimals
+        )} ${asset.symbol} at a time.`,
         level: 'expected',
         error: new Error('privacyPools: deposit above the operator ceiling')
       })
 
-    const protocol = await this.#getProtocol(chainId, seedId)
+    const { minimumDepositAmount } = await this.loadDepositAssetConfig(chainId, tokenAddress)
+    if (amount < minimumDepositAmount)
+      throw new EmittableError({
+        message: `A Privacy Pools account accepts at least ${formatUnits(
+          minimumDepositAmount,
+          asset.decimals
+        )} ${asset.symbol} at a time.`,
+        level: 'expected',
+        error: new Error('privacyPools: deposit below the entrypoint minimum')
+      })
 
-    const { txns } = await protocol.prepareShield({
-      asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(tokenAddress) },
-      amount
+    const precommitment = await this.#getNextDepositPrecommitment(chainId, seedId)
+
+    if (this.#isDepositAwaitingChain(precommitment))
+      throw new EmittableError({
+        message:
+          'Your previous transfer to this Privacy Pools account is still being confirmed. Please try again once it is.',
+        level: 'expected',
+        error: new Error('privacyPools: the next precommitment is still in a pending deposit')
+      })
+
+    this.#preparedDeposits.set(precommitment, { seedId, chainId })
+
+    const depositCall: Call = asset.isNative
+      ? {
+          to: config.entrypointAddress,
+          value: amount,
+          data: ENTRYPOINT_DEPOSIT_INTERFACE.encodeFunctionData(NATIVE_DEPOSIT_SIGNATURE, [
+            precommitment
+          ])
+        }
+      : {
+          to: config.entrypointAddress,
+          value: 0n,
+          data: ENTRYPOINT_DEPOSIT_INTERFACE.encodeFunctionData(ERC20_DEPOSIT_SIGNATURE, [
+            asset.address,
+            amount,
+            precommitment
+          ])
+        }
+
+    if (asset.isNative) return [depositCall]
+
+    return [...(await this.#approvalCallIfNeeded(chainId, asset, amount, accountAddr)), depositCall]
+  }
+
+  /**
+   * What the entrypoint requires of a deposit of this asset, read once and then kept - also on
+   * `depositAssetConfigs`, for the form to validate against as the amount is typed.
+   */
+  async loadDepositAssetConfig(
+    chainId: string,
+    tokenAddress: string
+  ): Promise<PrivacyPoolsDepositAssetConfig> {
+    const key = `${chainId}:${tokenAddress.toLowerCase()}`
+    const loaded = this.depositAssetConfigs[key]
+    if (loaded) return loaded
+
+    const config = getPrivacyPoolsChainConfig(BigInt(chainId))
+    if (!config) throw new Error(`privacyPools: unsupported chain ${chainId}`)
+
+    try {
+      const { minimumDepositAmount, vettingFeeBps } = await readEntrypointAssetConfig({
+        provider: this.#getProvider(chainId),
+        entrypointAddress: config.entrypointAddress,
+        assetAddress: toPrivacyPoolsAssetAddress(tokenAddress)
+      })
+      const assetConfig = { minimumDepositAmount, vettingFeeBps }
+
+      this.depositAssetConfigs = { ...this.depositAssetConfigs, [key]: assetConfig }
+      this.emitUpdate()
+
+      return assetConfig
+    } catch (error: any) {
+      throw new EmittableError({
+        message: 'Could not check what Privacy Pools accepts for this token. Please try again.',
+        level: 'major',
+        error: error instanceof Error ? error : new Error('privacyPools: asset config read failed')
+      })
+    }
+  }
+
+  /**
+   * The precommitment the next deposit into this account on this chain is made with.
+   *
+   * It comes from how many deposits the phrase has on chain, so it stays the same until one lands -
+   * which is what makes it worth deriving once rather than for every amount typed: deriving it
+   * syncs the chain for the phrase first, through the queue like any other sync. The amount is not
+   * part of it, so the deposit itself is encoded here for whatever amount is asked for.
+   *
+   * The SDK builds the transaction that carries it; only the precommitment is taken from it, and
+   * only once the transaction is confirmed to go to the configured entrypoint.
+   */
+  #getNextDepositPrecommitment(chainId: string, seedId: string): Promise<bigint> {
+    const key = this.#protocolKey(chainId, seedId)
+    const cached = this.#nextDepositPrecommitments.get(key)
+    const isCachedCurrent =
+      !!cached && (cached.epoch === null || cached.epoch === (this.#syncEpochs.get(key) || 0))
+    if (cached && isCachedCurrent) return cached.derivation
+
+    const entry: { derivation: Promise<bigint>; epoch: number | null } = {
+      derivation: Promise.resolve(0n),
+      epoch: null
+    }
+    const derivation = (async () => {
+      await this.#queueSync(chainId, seedId)
+      // Pinned to the sync just awaited, which is the one it is derived after
+      entry.epoch = this.#syncEpochs.get(key) || 0
+
+      const config = getPrivacyPoolsChainConfig(BigInt(chainId))
+      if (!config) throw new Error(`privacyPools: unsupported chain ${chainId}`)
+
+      const protocol = await this.#getProtocol(chainId, seedId)
+      const { txns } = await protocol.prepareShield({
+        asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(ZERO_ADDRESS) },
+        amount: 1n
+      })
+      const [txn] = txns
+      if (!txn || txn.to.toLowerCase() !== config.entrypointAddress.toLowerCase())
+        throw new Error('privacyPools: the prepared deposit does not go to the entrypoint')
+
+      const precommitment = readDepositPrecommitment(txn.data)
+      if (precommitment === null)
+        throw new Error('privacyPools: the prepared deposit is not an entrypoint deposit')
+
+      return precommitment
+    })()
+
+    entry.derivation = derivation
+    this.#nextDepositPrecommitments.set(key, entry)
+    // Not kept when it fails, so the next attempt derives it again rather than failing forever
+    derivation.catch(() => {
+      if (this.#nextDepositPrecommitments.get(key) === entry)
+        this.#nextDepositPrecommitments.delete(key)
     })
 
-    const account = this.#selectedAccount.account
-    if (!account) throw new Error('privacyPools: no selected account')
+    return derivation.catch((error) => {
+      if (error instanceof EmittableError) throw error
 
-    const depositCalls: Call[] = txns.map((txn) => ({
-      to: txn.to,
-      data: txn.data,
-      value: txn.value
-    }))
+      throw new EmittableError({
+        message: 'Could not prepare the transfer to this Privacy Pools account. Please try again.',
+        level: 'major',
+        error:
+          error instanceof Error ? error : new Error('privacyPools: deposit preparation failed')
+      })
+    })
+  }
 
-    const calls = asset.isNative
-      ? depositCalls
-      : [
-          ...(await this.#approvalCallIfNeeded(chainId, asset, amount, account.addr)),
-          ...depositCalls
-        ]
+  #isDepositAwaitingChain(precommitment: bigint) {
+    const broadcastAt = this.#broadcastDeposits.get(precommitment)
 
-    const entry: PrivacyPoolsActivityEntry = {
-      id: generateUuid(),
-      seedId,
-      chainId,
-      type: 'deposit',
-      tokenAddress,
-      isNative: asset.isNative,
-      amount,
-      recipient: null,
-      status: 'pending',
-      createdAt: Date.now()
-    }
-    this.#activity.push(entry)
+    return !!broadcastAt && Date.now() - broadcastAt < DEPOSIT_CONFIRMATION_WINDOW_MS
+  }
+
+  /**
+   * Records the deposits a just-broadcast account op carries, whichever way it was signed - the
+   * inline transfer, a batch, a request window.
+   *
+   * Only deposits `buildDepositCalls` prepared are recognised, by their precommitment: that is what
+   * ties one to a Privacy Pools account, and a deposit into someone else's is none of this wallet's
+   * business.
+   */
+  async onAccountOpBroadcast({
+    accountAddr,
+    chainId,
+    calls,
+    txnId
+  }: {
+    accountAddr: string
+    chainId: bigint
+    calls: Call[]
+    txnId?: string
+  }) {
+    const config = getPrivacyPoolsChainConfig(chainId)
+    if (!config) return
+
+    const entries = calls
+      .filter((call) => call.to?.toLowerCase() === config.entrypointAddress.toLowerCase())
+      .map((call) => readDeposit(call))
+      .filter((deposit): deposit is NonNullable<typeof deposit> => !!deposit)
+      .map((deposit) => ({ deposit, prepared: this.#preparedDeposits.get(deposit.precommitment) }))
+      .filter(({ prepared }) => prepared?.chainId === chainId.toString())
+      .map(({ deposit, prepared }): PrivacyPoolsActivityEntry => {
+        const now = Date.now()
+        this.#broadcastDeposits.set(deposit.precommitment, now)
+
+        return {
+          id: generateUuid(),
+          seedId: prepared!.seedId,
+          chainId: chainId.toString(),
+          type: 'deposit',
+          tokenAddress: fromPrivacyPoolsAssetAddress(deposit.assetAddress),
+          isNative: isPrivacyPoolsNativeAsset(fromPrivacyPoolsAssetAddress(deposit.assetAddress)),
+          amount: deposit.amount,
+          recipient: null,
+          depositor: accountAddr,
+          status: 'pending',
+          createdAt: now,
+          broadcastedAt: now,
+          txnId
+        }
+      })
+
+    if (!entries.length) return
+
+    this.#activity.push(...entries)
     this.emitUpdate()
     await this.#persistActivity()
-
-    await this.#buildCallsRequest({
-      calls,
-      meta: { chainId: BigInt(chainId), accountAddr: account.addr }
-    })
   }
 
   /**
@@ -1469,6 +1749,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#sagaHydratedKeys.clear()
     this.#protocolChainVersions.clear()
     this.#kohakuKeystores.clear()
+    this.#nextDepositPrecommitments.clear()
+    this.#syncEpochs.clear()
     this.#syncJobs.clear()
     this.#pendingSyncsByChain.clear()
     this.#syncStatesByChain = {}

@@ -446,10 +446,6 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       getInitialState: getPrivacyPoolsInitialState,
-      // A closure rather than a controller reference: `requests` is constructed further down, and
-      // handing calls to the signing flow is the only thing Privacy Pools needs from it.
-      buildCallsRequest: ({ calls, meta }) =>
-        this.requests.build({ type: 'calls', params: { userRequestParams: { calls, meta } } }),
       onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
     })
 
@@ -1199,6 +1195,9 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
     await this.activity.addAccountOp(submittedAccountOp)
+    // Transfers into a Privacy Pools account go out as ordinary account ops, however they were
+    // signed, so this is the one place all of them pass through
+    await this.privacyPools.onAccountOpBroadcast(submittedAccountOp)
     await this.ui.notification.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple

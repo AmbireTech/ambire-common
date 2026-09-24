@@ -238,6 +238,11 @@ export type PrivacyPoolsActivityEntry = {
   amount: bigint
   /** Public address for withdrawals and reclaims, null for deposits. */
   recipient: string | null
+  /**
+   * The wallet account a deposit was sent from. Kept because only that address can take the
+   * deposit back if it is never approved - see `PrivacyPoolsActivityType`'s 'reclaim'.
+   */
+  depositor?: string
   status: PrivacyPoolsActivityStatus
   createdAt: number
   /** Set for deposits once the transaction is signed and sent. */
@@ -249,6 +254,16 @@ export type PrivacyPoolsActivityEntry = {
   /** What the paymaster took out of a withdrawal for its gas. */
   fee?: bigint
   txnId?: string
+}
+
+/**
+ * What the entrypoint requires of a deposit of one asset, read from the chain since 0xBow tunes it
+ * per deployment. See `PrivacyPoolsEntrypointAssetConfig` for the full tuple.
+ */
+export type PrivacyPoolsDepositAssetConfig = {
+  minimumDepositAmount: bigint
+  /** The share of each deposit the entrypoint keeps, in basis points. */
+  vettingFeeBps: bigint
 }
 
 /**

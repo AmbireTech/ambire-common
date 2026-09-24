@@ -1,12 +1,19 @@
+import { Interface } from 'ethers'
+
 import { expect, jest } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import EmittableError from '../../classes/EmittableError'
-import { getPrivacyPoolsChainConfig, getPrivacyPoolsStoreKey } from '../../consts/privacyPools'
+import {
+  getPrivacyPoolsAsset,
+  getPrivacyPoolsChainConfig,
+  getPrivacyPoolsStoreKey
+} from '../../consts/privacyPools'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { ZERO_ADDRESS } from '../../services/socket/constants'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
 import { PrivacyPoolsController } from './privacyPools'
@@ -31,6 +38,31 @@ const createDeferred = (): Deferred => {
 
 type RunningSync = { protocol: FakeProtocol; seedId: string; chainId: bigint; gate: Deferred }
 
+const ETHEREUM_ENTRYPOINT = getPrivacyPoolsChainConfig(1n)!.entrypointAddress
+const USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+const DEPOSITOR = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+
+const ENTRYPOINT_INTERFACE = new Interface([
+  'function deposit(uint256 _precommitment) payable returns (uint256)',
+  'function deposit(address _asset, uint256 _value, uint256 _precommitment) returns (uint256)',
+  'function assetConfig(address asset) view returns (address pool, uint256 minimumDepositAmount, uint256 vettingFeeBPS, uint256 maxRelayFeeBPS)'
+])
+const ERC20_INTERFACE = new Interface([
+  'function allowance(address owner, address spender) view returns (uint256)',
+  'function approve(address spender, uint256 amount)'
+])
+
+const MINIMUM_DEPOSIT = 10n ** 16n
+const MINIMUM_USDC_DEPOSIT = 10n ** 6n
+
+/** How many deposits each phrase has on chain - what its next precommitment follows from. */
+let depositCountBySeed: { [seedId: string]: number } = {}
+let allowance = 0n
+let preparedDepositTarget = ETHEREUM_ENTRYPOINT
+
+const getPrecommitment = (seedId: string) =>
+  BigInt(seedId.length * 1000 + (depositCountBySeed[seedId] || 0))
+
 const protocols: FakeProtocol[] = []
 let runningSyncs: RunningSync[] = []
 let notesBySeed: { [seedId: string]: { label: bigint; amount: bigint; approved: boolean }[] } = {}
@@ -41,6 +73,8 @@ class FakeProtocol {
   seedId: string | null = null
 
   syncCount = 0
+
+  prepareShieldCount = 0
 
   constructor(host: any) {
     this.host = host
@@ -59,6 +93,24 @@ class FakeProtocol {
     // What the real plugin does at the end of every sync: persist the chain's public history
     const config = getPrivacyPoolsChainConfig(chainId)
     if (config) await this.host.storage.set(getPrivacyPoolsStoreKey(config), `synced-${Date.now()}`)
+  }
+
+  // The real one syncs first as well, which the controller has already queued by this point
+  async prepareShield() {
+    this.prepareShieldCount += 1
+    this.seedId = await this.host.keystore.deriveAt("m/28784'/1'/0'/0")
+
+    return {
+      txns: [
+        {
+          to: preparedDepositTarget,
+          value: 1n,
+          data: ENTRYPOINT_INTERFACE.encodeFunctionData('deposit(uint256)', [
+            getPrecommitment(this.seedId as string)
+          ])
+        }
+      ]
+    }
   }
 
   async notes() {
@@ -117,10 +169,26 @@ class FakeNetworks extends EventEmitter {
   networks = [{ chainId: 1n }]
 }
 
+/** Answers the only two reads a deposit makes: the entrypoint's asset config and an allowance. */
+const fakeProviderCall = async ({ data }: { to: string; data: string }) => {
+  if (data.startsWith(ENTRYPOINT_INTERFACE.getFunction('assetConfig')!.selector)) {
+    const [asset] = ENTRYPOINT_INTERFACE.decodeFunctionData('assetConfig', data)
+
+    return ENTRYPOINT_INTERFACE.encodeFunctionResult('assetConfig', [
+      '0x0000000000000000000000000000000000000001',
+      String(asset).toLowerCase() === USDC ? MINIMUM_USDC_DEPOSIT : MINIMUM_DEPOSIT,
+      50n,
+      100n
+    ])
+  }
+
+  return ERC20_INTERFACE.encodeFunctionResult('allowance', [allowance])
+}
+
 class FakeProviders extends EventEmitter {
   initialLoadPromise = Promise.resolve()
 
-  providers = { '1': { getNetwork: async () => ({ chainId: 1n }) } }
+  providers = { '1': { getNetwork: async () => ({ chainId: 1n }), call: fakeProviderCall } }
 }
 
 const flush = () =>
@@ -164,7 +232,6 @@ const prepareTest = async ({ accounts = ['seed-a', 'seed-b'] }: { accounts?: str
     storage,
     fetch: jest.fn() as any,
     circuitsBaseUrl: '',
-    buildCallsRequest: jest.fn(async () => {}),
     onAccountsRemoved
   })
   await controller.initialLoadPromise
@@ -176,6 +243,9 @@ describe('PrivacyPoolsController', () => {
   beforeEach(() => {
     protocols.length = 0
     runningSyncs = []
+    depositCountBySeed = {}
+    allowance = 0n
+    preparedDepositTarget = ETHEREUM_ENTRYPOINT
     notesBySeed = {
       'seed-a': [{ label: 1n, amount: 10n, approved: true }],
       'seed-b': [{ label: 2n, amount: 20n, approved: false }]
@@ -246,7 +316,6 @@ describe('PrivacyPoolsController', () => {
         storage,
         fetch: jest.fn() as any,
         circuitsBaseUrl: '',
-        buildCallsRequest: jest.fn(async () => {}),
         onAccountsRemoved: jest.fn(async () => {})
       })
       await controller.initialLoadPromise
@@ -436,6 +505,178 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-b')
       await syncB
       expect(controller.chains['1']?.notes.map((note) => note.label)).toEqual([2n])
+    })
+  })
+  describe('deposits', () => {
+    const ONE_ETH = 10n ** 18n
+
+    const buildDeposit = (
+      controller: PrivacyPoolsController,
+      overrides: Partial<Parameters<PrivacyPoolsController['buildDepositCalls']>[0]> = {}
+    ) =>
+      controller.buildDepositCalls({
+        seedId: 'seed-b',
+        accountAddr: DEPOSITOR,
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        amount: ONE_ETH,
+        ...overrides
+      })
+
+    it('builds a deposit into an account that is not the selected one, after syncing it', async () => {
+      const { controller } = await prepareTest()
+
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+      const calls = await building
+
+      expect(calls).toEqual([
+        {
+          to: ETHEREUM_ENTRYPOINT,
+          value: ONE_ETH,
+          data: ENTRYPOINT_INTERFACE.encodeFunctionData('deposit(uint256)', [
+            getPrecommitment('seed-b')
+          ])
+        }
+      ])
+    })
+
+    it('derives the precommitment once for every amount typed', async () => {
+      const { controller } = await prepareTest()
+
+      const first = buildDeposit(controller)
+      await releaseSync('seed-b')
+      await first
+      const [secondCall] = await buildDeposit(controller, { amount: 2n * ONE_ETH })
+
+      expect(secondCall?.value).toBe(2n * ONE_ETH)
+      expect(protocols.reduce((total, protocol) => total + protocol.prepareShieldCount, 0)).toBe(1)
+      expect(protocols.reduce((total, protocol) => total + protocol.syncCount, 0)).toBe(1)
+    })
+
+    it('refuses amounts Privacy Pools does not accept', async () => {
+      const { controller } = await prepareTest()
+
+      await expect(buildDeposit(controller, { amount: MINIMUM_DEPOSIT - 1n })).rejects.toThrow(
+        EmittableError
+      )
+      await expect(buildDeposit(controller, { amount: 10_001n * ONE_ETH })).rejects.toThrow(
+        EmittableError
+      )
+      await expect(
+        buildDeposit(controller, { tokenAddress: '0x0000000000000000000000000000000000000abc' })
+      ).rejects.toThrow(EmittableError)
+    })
+
+    it('refuses a deposit into an account the wallet does not have', async () => {
+      const { controller } = await prepareTest({ accounts: ['seed-a'] })
+
+      await expect(buildDeposit(controller)).rejects.toThrow(EmittableError)
+      expect(runningSyncs).toHaveLength(0)
+    })
+
+    it('refuses a prepared deposit that goes anywhere but the entrypoint, and retries after', async () => {
+      const { controller } = await prepareTest()
+      preparedDepositTarget = '0x000000000000000000000000000000000000dEaD'
+
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+      await expect(building).rejects.toThrow(EmittableError)
+
+      preparedDepositTarget = ETHEREUM_ENTRYPOINT
+      const retrying = buildDeposit(controller)
+      await releaseSync('seed-b')
+      await expect(retrying).resolves.toHaveLength(1)
+    })
+
+    it('prepends an approval only when the allowance does not cover an ERC-20', async () => {
+      const { controller } = await prepareTest()
+      const amount = 5n * 10n ** 6n
+
+      const building = buildDeposit(controller, { tokenAddress: USDC, amount })
+      await releaseSync('seed-b')
+      const withApproval = await building
+
+      expect(withApproval).toEqual([
+        {
+          // The configured asset address, which is checksummed
+          to: getPrivacyPoolsAsset(1n, USDC)!.address,
+          value: 0n,
+          data: ERC20_INTERFACE.encodeFunctionData('approve', [ETHEREUM_ENTRYPOINT, amount])
+        },
+        {
+          to: ETHEREUM_ENTRYPOINT,
+          value: 0n,
+          data: ENTRYPOINT_INTERFACE.encodeFunctionData('deposit(address,uint256,uint256)', [
+            USDC,
+            amount,
+            getPrecommitment('seed-b')
+          ])
+        }
+      ])
+
+      allowance = amount
+      await expect(buildDeposit(controller, { tokenAddress: USDC, amount })).resolves.toHaveLength(
+        1
+      )
+    })
+
+    it('records a broadcast deposit with its sender and refuses another until the chain moves on', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+      const calls = await building
+      await controller.onAccountOpBroadcast({
+        accountAddr: DEPOSITOR,
+        chainId: 1n,
+        calls,
+        txnId: '0xabc'
+      })
+
+      selectedAccount.select('seed-b')
+      expect(controller.activity).toMatchObject([
+        {
+          type: 'deposit',
+          seedId: 'seed-b',
+          depositor: DEPOSITOR,
+          amount: ONE_ETH,
+          tokenAddress: ZERO_ADDRESS,
+          isNative: true,
+          status: 'pending',
+          txnId: '0xabc'
+        }
+      ])
+      // Same precommitment, since the first one has not landed
+      await expect(buildDeposit(controller)).rejects.toThrow(EmittableError)
+
+      // It lands, and the next sync moves the precommitment on
+      depositCountBySeed['seed-b'] = 1
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-b')
+      await syncing
+      const next = buildDeposit(controller)
+      await releaseSync('seed-b')
+      await expect(next).resolves.toHaveLength(1)
+    })
+
+    it('ignores deposits it did not prepare', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+
+      await controller.onAccountOpBroadcast({
+        accountAddr: DEPOSITOR,
+        chainId: 1n,
+        calls: [
+          {
+            to: ETHEREUM_ENTRYPOINT,
+            value: ONE_ETH,
+            data: ENTRYPOINT_INTERFACE.encodeFunctionData('deposit(uint256)', [123n])
+          }
+        ]
+      })
+
+      selectedAccount.select('seed-b')
+      expect(controller.activity).toEqual([])
     })
   })
 })
