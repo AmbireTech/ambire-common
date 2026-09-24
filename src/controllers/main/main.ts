@@ -77,6 +77,7 @@ import { IMainController, STATUS_WRAPPED_METHODS } from '@/interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '@/interfaces/network'
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
+import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { IPortfolioController } from '@/interfaces/portfolio'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
@@ -250,7 +251,8 @@ export class MainController extends EventEmitter implements IMainController {
     featureFlags,
     keystoreSigners,
     externalSignerControllers,
-    uiManager
+    uiManager,
+    idb
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -267,6 +269,7 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
+    idb?: AmbireIdbDatabase
   }) {
     super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
@@ -387,10 +390,12 @@ export class MainController extends EventEmitter implements IMainController {
         const currentSelectedAcc = this.selectedAccount.account
         if (!currentSelectedAcc) return { status: 'no-selected-account' }
         let totalUsdBalance = this.selectedAccount.portfolio.totalBalance
-        let numberOfTransactions = this.activity.getAccountOpsForAccount({
-          accountAddr: currentSelectedAcc.addr,
-          sortAccOps: false
-        }).length
+        // Not getAccountOpsForAccount().length — that returns the in-memory cache, which
+        // on the IndexedDB backend holds only the bounded startup window, so a heavy
+        // account would report ~20 per chain and match the wrong minTxnsTotal bucket.
+        const numberOfTransactions = this.activity.getTotalOpsCountForAccount(
+          currentSelectedAcc.addr
+        )
         const hasKeys =
           getAccountKeysCount({
             accountAddr: currentSelectedAcc.addr,
@@ -526,7 +531,8 @@ export class MainController extends EventEmitter implements IMainController {
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       },
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      idb
     )
     this.transferScanner = new TransfersScannerController({
       activity: this.activity,

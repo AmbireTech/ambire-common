@@ -86,7 +86,48 @@ Most controllers have `initialLoadPromise` that resolves when the controller fin
 ### Example:
 The networks controller that reads the network list from storage (which is async) exposes an `initialLoadPromise` that resolves when the networks are loaded. Then, the providers controller awaits the networks controller's `initialLoadPromise` in its own `initialLoadPromise` before initializing the providers, ensuring it has the network data available. The networks controller also awaits its own `initialLoadPromise` in its methods that read the network list, to ensure the data is loaded before accessing it.
 
+## IndexedDB persistence
+
+> `src/services/storage/README.md` documents the runtime side of this layer — module map,
+> startup order, invariants, and the cost of each operation. This section is the recipe for
+> putting a new controller on IDB; read that one to understand what already runs.
+
+Most controllers persist through `StorageController` (`chrome.storage.local` / `AsyncStorage`), which reads and writes a whole key as one blob. Controllers whose data grows without bound, or whose blob is large enough that richJson-stringifying it hurts, can persist in IndexedDB instead — row-per-record where the access pattern allows it, as a single document where it does not. `ActivityController` is the reference implementation.
+
+IDB is **not available everywhere**. The extension/web background calls `openAmbireIdb()` and passes the connection down through `MainController`; on mobile it passes `undefined`.
+
+**Controllers must contain no IDB-specific logic at all** — no adapter construction, no availability branching, no migration code. That lives in a persistence coordinator in `services/storage/`. The controller receives the connection only to hand it to that coordinator — it never calls a method on it:
+
+```ts
+this.#persistence = new AccountOpsPersistence({
+  storage,
+  idb,
+  getCache: () => this.#accountsOps,
+  onError: ({ message, error }) => this.emitError({ level: 'silent', message, error })
+})
+```
+
+`AccountOpsPersistence` is the worked example. It picks an adapter in `#pickAdapter`, own the data migration, and degrade rather than throw — so the controller just calls methods.
+
+To add IDB persistence to a controller, follow the recipe in `services/storage/README.md` —
+it covers the schema entry, the adapter pair, the coordinator and the startup-window audit.
+
+### Two different things are called "migration"
+
+- **Schema migration** — stores and indexes _inside_ IDB. Declared in `AMBIRE_IDB_SCHEMA` (`services/storage/idbSchema.ts`) and applied by `reconcileSchema()` / `applyMigrations()` in `idbDatabase.ts` during `onupgradeneeded`. `openAmbireIdb()` is awaited before any controller is constructed, so these always complete before the first read.
+- **Data migration** — moving a controller's existing payload _out of_ key-value storage _into_ IDB, once. This is `ensureMigrated()` on the backend, and it runs at controller load time.
+
+### Other things to know
+
+- A `StorageController` migration cannot reach a key that already moved to IDB — it would rewrite the dead legacy copy. Use an `idbDatabase.ts` migration handler instead.
+- Keep the legacy key as a fallback while the IDB path is new, and record which backend is active (`activityStorageBackend`, written by `#recordActiveBackend`).
+- That copy is frozen at migration time. It is a recovery floor, never a source of truth, and decide up front when it gets deleted.
+- `isEmpty()` cannot tell "never migrated" from "wiped, then partially repopulated". Accepted, not worth fixing.
+- Bulk writes must drop malformed legacy rows with a warning, not throw mid-batch. A partial commit makes `isEmpty()` false and disables the retry forever.
+- A `dbVersion` bump is one-way — an older build gets `VersionError` and falls back to key-value. Ship one alone, and land any store you already know you need before release.
+
 ## Other rules:
+
 - Never use raw `setInterval`. Always use `RecurringTimeout` from `@common/utils/RecurringTimeout`.
 - Long-running background intervals must be declared in `ContinuousUpdatesController`, which orchestrates their lifecycle based on app state and controller events. If you need a new background loop, add it there and wire its start/stop/restart logic through the existing event subscriptions.
 - Never call `this.storage.set()` in parallel. Always await the previous call before making another one.

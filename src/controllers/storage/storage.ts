@@ -8,6 +8,7 @@ import { IEventEmitterRegistryController, Statuses } from '../../interfaces/even
 import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
 import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
+import { indexRecipientsFromOps } from '../../libs/activity/sentToHistory'
 import { getDappNameFromId, normalizeDappConnection } from '../../libs/dapps/helpers'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
@@ -77,6 +78,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#fixSelectedAccountDismissedBannerIdsType() // as of version 6.7.3
       await this.#migrateDappsAddConnectionSources() // As of v6.11.0
       await this.#migrateDomainsCacheToNames() // As of v6.14.0
+      await this.#indexSentToHistoryFromAccountsOps() // As of the accountsOps → IDB release
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -105,6 +107,35 @@ export class StorageController extends EventEmitter implements IStorageControlle
   // Now, all network properties are pre-calculated and stored in a structured format: { [key: NetworkId]: Network } in the storage.
   // This function migrates the data from the old NetworkPreferences to the new structure
   // to ensure compatibility and prevent breaking the extension after updating to v4.24.0
+  /**
+   * Seed sentToHistory.recipients from existing transaction history.
+   *
+   * hasAccountOpsSentTo answers "have I sent here before" and the address-poisoning lookalike
+   * check from that index alone. It is only written on broadcast, so without this a user with
+   * existing history starts empty — every known recipient reads as first-time and poisoning
+   * warnings silently stop.
+   *
+   * Runs here rather than in ActivityController because migrations complete before any
+   * controller reads, which is also the last moment accountsOps still holds the full history
+   * in key-value storage: ActivityController moves it into IndexedDB during its own load.
+   */
+  async #indexSentToHistoryFromAccountsOps() {
+    const MIGRATION_KEY = 'indexSentToHistoryFromAccountsOps'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const [accountsOps, sentToHistory] = await Promise.all([
+      this.#storage.get('accountsOps', {}),
+      this.#storage.get('sentToHistory', { domains: {}, recipients: {} })
+    ])
+
+    if (Object.keys(accountsOps).length) {
+      indexRecipientsFromOps(sentToHistory, accountsOps)
+      await this.#storage.set('sentToHistory', sentToHistory)
+    }
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
+  }
+
   async #migrateNetworkPreferencesToNetworks() {
     const MIGRATION_KEY = 'migrateNetworkPreferencesToNetworks'
     if (this.#passedMigrations.has(MIGRATION_KEY)) return
