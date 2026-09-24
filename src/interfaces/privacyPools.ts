@@ -243,6 +243,11 @@ export type PrivacyPoolsActivityEntry = {
    * deposit back if it is never approved - see `PrivacyPoolsActivityType`'s 'reclaim'.
    */
   depositor?: string
+  /**
+   * The account op a deposit went out in, which is what tells when it has landed - see
+   * `PrivacyPoolsController.onAccountOpStatusUpdate`.
+   */
+  accountOpId?: string
   status: PrivacyPoolsActivityStatus
   createdAt: number
   /** Set for deposits once the transaction is signed and sent. */

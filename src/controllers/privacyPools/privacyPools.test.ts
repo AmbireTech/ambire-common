@@ -10,6 +10,7 @@ import {
   getPrivacyPoolsStoreKey
 } from '../../consts/privacyPools'
 import { IKeystoreController } from '../../interfaces/keystore'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -178,8 +179,17 @@ class FakeSelectedAccount extends EventEmitter {
 class FakeNetworks extends EventEmitter {
   initialLoadPromise = Promise.resolve()
 
-  networks = [{ chainId: 1n }]
+  networks = [{ chainId: 1n, nativeAssetId: 'ethereum', platformId: 'ethereum' }]
 }
+
+/** Answers the price service like it would: ETH by its id, tokens by their lowercase address. */
+const fakeFetch = jest.fn(async (url: string) => ({
+  ok: true,
+  json: async () =>
+    url.includes('/simple/price')
+      ? { ethereum: { usd: 3000 } }
+      : { [USDC]: { usd: 1 }, '0xdac17f958d2ee523a2206206994597c13d831ec7': { usd: 1 } }
+}))
 
 /** Answers the only two reads a deposit makes: the entrypoint's asset config and an allowance. */
 const fakeProviderCall = async ({ data }: { to: string; data: string }) => {
@@ -243,7 +253,7 @@ const prepareTest = async ({ accounts = ['seed-a', 'seed-b'] }: { accounts?: str
     providers: new FakeProviders() as unknown as IProvidersController,
     selectedAccount: selectedAccount as unknown as ISelectedAccountController,
     storage,
-    fetch: jest.fn() as any,
+    fetch: fakeFetch as any,
     circuitsBaseUrl: '',
     onAccountsRemoved
   })
@@ -258,6 +268,7 @@ describe('PrivacyPoolsController', () => {
     runningSyncs = []
     depositCountBySeed = {}
     allowance = 0n
+    fakeFetch.mockClear()
     preparedDepositTarget = ETHEREUM_ENTRYPOINT
     notesBySeed = {
       'seed-a': [{ label: 1n, amount: 10n, approved: true }],
@@ -327,7 +338,7 @@ describe('PrivacyPoolsController', () => {
         providers: new FakeProviders() as unknown as IProvidersController,
         selectedAccount: new FakeSelectedAccount() as unknown as ISelectedAccountController,
         storage,
-        fetch: jest.fn() as any,
+        fetch: fakeFetch as any,
         circuitsBaseUrl: '',
         onAccountsRemoved: jest.fn(async () => {})
       })
@@ -673,6 +684,46 @@ describe('PrivacyPoolsController', () => {
       await expect(next).resolves.toHaveLength(1)
     })
 
+    it('settles a recorded deposit once the account op it went out in has an outcome', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+      const calls = await building
+      await controller.onAccountOpBroadcast({
+        id: 'account-op-1',
+        accountAddr: DEPOSITOR,
+        chainId: 1n,
+        calls
+      })
+      selectedAccount.select('seed-b')
+
+      // Still on its way: nothing to settle yet
+      await controller.onAccountOpStatusUpdate({
+        id: 'account-op-1',
+        status: AccountOpStatus.BroadcastedButNotConfirmed
+      })
+      expect(controller.activity[0]?.status).toBe('pending')
+
+      // Another account op says nothing about this deposit
+      await controller.onAccountOpStatusUpdate({
+        id: 'account-op-2',
+        status: AccountOpStatus.Success
+      })
+      expect(controller.activity[0]?.status).toBe('pending')
+
+      await controller.onAccountOpStatusUpdate({
+        id: 'account-op-1',
+        status: AccountOpStatus.Failure
+      })
+      expect(controller.activity[0]?.status).toBe('failed')
+      // Settled once: a later status does not reopen it
+      await controller.onAccountOpStatusUpdate({
+        id: 'account-op-1',
+        status: AccountOpStatus.Success
+      })
+      expect(controller.activity[0]?.status).toBe('failed')
+    })
+
     it('ignores deposits it did not prepare', async () => {
       const { controller, selectedAccount } = await prepareTest()
 
@@ -738,6 +789,47 @@ describe('PrivacyPoolsController', () => {
         status: 'failed',
         error: 'The transfer could not be prepared. Please try again.'
       })
+    })
+  })
+  describe('prices', () => {
+    it('prices every asset the pools accept, not only those held, when syncing', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+      await waitUntil(() => Object.keys(controller.prices).length > 0)
+
+      expect(controller.prices).toMatchObject({
+        [`1:${ZERO_ADDRESS}`]: 3000,
+        [`1:${USDC}`]: 1,
+        '1:0xdac17f958d2ee523a2206206994597c13d831ec7': 1
+      })
+      const tokenPriceUrl = fakeFetch.mock.calls
+        .map(([url]) => url)
+        .find((url) => url.includes('/token_price/'))
+      // Every configured token of the chain is asked for, so the request reveals no holdings
+      getPrivacyPoolsChainConfig(1n)!
+        .assets.filter(({ isNative }) => !isNative)
+        .forEach(({ address }) => expect(tokenPriceUrl).toContain(address.toLowerCase()))
+    })
+
+    it('does not ask again while the prices are fresh', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      const first = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await first
+      await waitUntil(() => Object.keys(controller.prices).length > 0)
+      const requestsAfterFirst = fakeFetch.mock.calls.length
+
+      const second = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await second
+
+      expect(fakeFetch.mock.calls.length).toBe(requestsAfterFirst)
     })
   })
 })

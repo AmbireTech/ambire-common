@@ -41,7 +41,7 @@ import {
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
-import { Call } from '../../libs/accountOp/types'
+import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import {
   createKohakuKeystore,
   createKohakuNetwork,
@@ -52,6 +52,7 @@ import { createProverFactory } from '../../libs/privacyPools/prover'
 import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
 import { encodePrivacyPoolsDeposit, readPrivacyPoolsDeposit } from '../../libs/privacyPools/deposit'
 import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
+import { fetchPrivacyPoolsPrices } from '../../libs/privacyPools/prices'
 import { readPaymasterWithdrawal } from '../../libs/privacyPools/paymasterWithdrawal'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { generateUuid } from '../../utils/uuid'
@@ -70,6 +71,23 @@ export const STATUS_WRAPPED_METHODS = {
  * not landed yet. See `#broadcastDeposits`.
  */
 const DEPOSIT_CONFIRMATION_WINDOW_MS = 15 * 60 * 1000
+
+/** How long prices are kept before a sync asks for them again. */
+const PRICES_MAX_AGE_MS = 5 * 60 * 1000
+
+/** What an account op's final status means for the deposits in it, or null while it has none. */
+const getDepositOutcome = (status?: AccountOpStatus): 'success' | 'failed' | null => {
+  if (status === AccountOpStatus.Success || status === AccountOpStatus.UnknownButPastNonce)
+    return 'success'
+  if (
+    status === AccountOpStatus.Failure ||
+    status === AccountOpStatus.Rejected ||
+    status === AccountOpStatus.BroadcastButStuck
+  )
+    return 'failed'
+
+  return null
+}
 
 const readDepositPrecommitment = (data: string): bigint | null =>
   readPrivacyPoolsDeposit({ data, value: 0n })?.precommitment ?? null
@@ -279,6 +297,17 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * from the chain once per session, as the form needs it to validate what is typed.
    */
   depositAssetConfigs: { [key: string]: PrivacyPoolsDepositAssetConfig } = {}
+
+  /**
+   * USD prices of the assets the pools accept, keyed as `getPrivacyPoolsPriceKey` does. Kept here
+   * rather than taken from the portfolio: with a Privacy Pools account selected there is no
+   * selected account's portfolio to price anything.
+   */
+  prices: { [priceKey: string]: number } = {}
+
+  #pricesFetchedAt = 0
+
+  #pricesRequest: Promise<void> | null = null
 
   /**
    * The wallet's Privacy Pools accounts, at most one per stored recovery phrase. Removed along with
@@ -803,7 +832,41 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * same chain and phrase returns the sync already queued or running rather than adding another.
    */
   async syncChain(chainId: string): Promise<void> {
-    return this.#queueSync(chainId, this.#assertAvailableAndGetSeedId())
+    const seedId = this.#assertAvailableAndGetSeedId()
+    // A balance is worth little without what it is worth, and a sync is when it is looked at
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#refreshPrices()
+
+    return this.#queueSync(chainId, seedId)
+  }
+
+  /** Asks for prices again once they are older than `PRICES_MAX_AGE_MS`, one request at a time. */
+  async #refreshPrices() {
+    if (this.#pricesRequest || Date.now() - this.#pricesFetchedAt < PRICES_MAX_AGE_MS) return
+
+    this.#pricesRequest = (async () => {
+      try {
+        this.prices = await fetchPrivacyPoolsPrices({
+          fetch: this.#fetch,
+          networks: this.#networks.networks.filter(({ chainId }) =>
+            this.supportedChainIds.includes(chainId.toString())
+          )
+        })
+        this.#pricesFetchedAt = Date.now()
+        this.emitUpdate()
+      } catch (error: any) {
+        // The balances stand without them - the previous prices, if any, stay on screen
+        this.emitError({
+          level: 'silent',
+          message: 'Could not load the prices of what is in Privacy Pools.',
+          error: error instanceof Error ? error : new Error('privacyPools: prices request failed')
+        })
+      } finally {
+        this.#pricesRequest = null
+      }
+    })()
+
+    await this.#pricesRequest
   }
 
   /** Queues a sync for any account, not only the selected one - see `syncChain`. */
@@ -1171,6 +1234,26 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     })
   }
 
+  /**
+   * Settles the deposits that went out in an account op, once its outcome is known. Nothing else
+   * can tell: the pool's own records carry no transaction to match a deposit by.
+   */
+  async onAccountOpStatusUpdate({ id, status }: { id: string; status?: AccountOpStatus }) {
+    const outcome = getDepositOutcome(status)
+    if (!outcome) return
+
+    const isSettlingAny = this.#activity.some(
+      (entry) => entry.accountOpId === id && entry.status === 'pending'
+    )
+    if (!isSettlingAny) return
+
+    this.#activity = this.#activity.map((entry) =>
+      entry.accountOpId === id && entry.status === 'pending' ? { ...entry, status: outcome } : entry
+    )
+    this.emitUpdate()
+    await this.#persistActivity()
+  }
+
   #isDepositAwaitingChain(precommitment: bigint) {
     const broadcastAt = this.#broadcastDeposits.get(precommitment)
 
@@ -1186,11 +1269,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * business.
    */
   async onAccountOpBroadcast({
+    id: accountOpId,
     accountAddr,
     chainId,
     calls,
     txnId
   }: {
+    id?: string
     accountAddr: string
     chainId: bigint
     calls: Call[]
@@ -1222,7 +1307,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
           status: 'pending',
           createdAt: now,
           broadcastedAt: now,
-          txnId
+          txnId,
+          accountOpId
         }
       })
 

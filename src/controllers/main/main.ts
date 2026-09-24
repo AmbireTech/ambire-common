@@ -1673,6 +1673,7 @@ export class MainController extends EventEmitter implements IMainController {
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+          void this.privacyPools.onAccountOpStatusUpdate(op)
 
           // we scan for logs only if Success & a dapp interaction has been made
           // because only a dapp interaction might have a receiving txn after;
