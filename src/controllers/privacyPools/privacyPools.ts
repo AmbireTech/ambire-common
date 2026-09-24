@@ -12,6 +12,7 @@ import {
   fromPrivacyPoolsAssetAddress,
   getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig,
+  getPrivacyPoolsStoreKey,
   isPrivacyPoolsNativeAsset,
   PRIVACY_POOLS_ACCOUNT_INDEX,
   PRIVACY_POOLS_ACTIVITY_STORAGE_KEY,
@@ -25,6 +26,7 @@ import { INetworksController } from '../../interfaces/network'
 import {
   IPrivacyPoolsController,
   PrivacyPoolsActivityEntry,
+  PrivacyPoolsChainConfig,
   PrivacyPoolsChainState,
   PrivacyPoolsChainSyncState,
   PrivacyPoolsNote,
@@ -45,6 +47,7 @@ import {
   createKohakuStorage
 } from '../../libs/kohaku/host'
 import { createProverFactory } from '../../libs/privacyPools/prover'
+import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
 import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
 import { createRelayerClient, createSelfRelayClient } from '../../libs/privacyPools/relayerClient'
 import { createGuardedRelayerClient } from '../../libs/privacyPools/relayerGuard'
@@ -69,6 +72,18 @@ const ERC20_INTERFACE = new Interface([
  * that means native is derived here rather than passed alongside, so the two can never disagree.
  */
 type AssetRef = { tokenAddress: string }
+
+/**
+ * A prepared withdrawal in the only shape this wallet asks for - the one a relayer broadcasts.
+ *
+ * The SDK also prepares paymaster-sponsored withdrawals, which carry a signed userOp instead of a
+ * relayer quote, so what `prepareUnshield` returns is a union. The relayer variant is not exported
+ * on its own, hence narrowing the union rather than naming it.
+ */
+type PreparedRelayerWithdrawal = Exclude<
+  Awaited<ReturnType<PrivacyPoolsV1Protocol['prepareUnshield']>>,
+  { mode: 'paymaster' }
+>
 
 /**
  * Owns the wallet's Privacy Pools state: one plugin per (chain, recovery phrase), the notes those
@@ -115,6 +130,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #providerInstances = new Map<string, JsonRpcProvider>()
 
   /**
+   * Which live plugins read their pool history from the CDN rather than the chain.
+   *
+   * Tracked because that reading is worth doing exactly once. See `#dropSagaHydratedProtocols`.
+   */
+  #sagaHydratedKeys = new Set<string>()
+
+  /**
    * The sync in flight per chain, so a second caller joins the first rather than starting a
    * parallel walk of the same pool. `sync()` is not cheap - a cold mainnet chain is hundreds of
    * sequential `eth_getLogs` calls.
@@ -136,7 +158,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * The proved-but-unsent withdrawal. Private: it carries the proof and the relayer's signed
    * commitment, neither of which the UI needs - it reads the fee off `operation.quote`.
    */
-  #pendingWithdrawal: Awaited<ReturnType<PrivacyPoolsV1Protocol['prepareUnshield']>> | null = null
+  #pendingWithdrawal: PreparedRelayerWithdrawal | null = null
 
   #proverFactory: () => Promise<any>
 
@@ -145,8 +167,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    *
    * Only ever consulted on a cold chain: the plugin prefers what it has already persisted, so this
    * is the floor for a fresh install rather than something that can overwrite a synced wallet.
+   *
+   * Optional, and increasingly beside the point - a chain with a `sagaSyncUrl` reads the same
+   * history from the CDN, fresher and without several megabytes in the build. See
+   * `#resolveInitialState` for what a chain starts from when nothing is shipped.
    */
-  #getInitialState?: () => Promise<Record<string, any>>
+  #getShippedInitialState?: () => Promise<Record<string, any>>
 
   #unsubscribers: (() => void)[] = []
 
@@ -210,7 +236,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#storage = storage
     this.#fetch = fetch
     this.#buildCallsRequest = buildCallsRequest
-    this.#getInitialState = getInitialState
+    this.#getShippedInitialState = getInitialState
     this.#proverFactory = createProverFactory(circuitsBaseUrl)
 
     // Cleared when done so the resolved promise isn't carried in the state sent to the UI.
@@ -271,6 +297,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         staleKeys.forEach((key) => {
           this.#protocols.delete(key)
           this.#providerInstances.delete(key)
+          this.#sagaHydratedKeys.delete(key)
         })
 
         this.propagateUpdate(forceEmit)
@@ -497,11 +524,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * for self-relayed ones. Both instances hydrate from the same persisted store, so the second one
    * costs a deserialization rather than a rescan.
    */
-  #getProtocol(
+  async #getProtocol(
     chainId: string,
     seedId: string,
     mode: PrivacyPoolsWithdrawalMode = 'relayed'
-  ): PrivacyPoolsV1Protocol {
+  ): Promise<PrivacyPoolsV1Protocol> {
     const key = this.#protocolKey(chainId, seedId, mode)
     const existing = this.#protocols.get(key)
     if (existing) return existing
@@ -515,12 +542,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     // Its URL is never fetched - `createSelfRelayClient` ignores it.
     const relayers = mode === 'self' ? { 'Your wallet': 'self' } : config.relayers
     const relayerNameByUrl = new Map(Object.entries(relayers).map(([name, url]) => [url, name]))
+    const { dataService, isSagaHydrated } = await this.#getDataService(config, host.provider)
 
     const protocol = new PrivacyPoolsV1Protocol(host, {
       accountIndex: PRIVACY_POOLS_ACCOUNT_INDEX,
       // Skipped entirely once this chain has a persisted store, so the cost of loading it is paid
       // once per install rather than on every sync.
-      initialState: this.#getInitialState,
+      initialState: this.#resolveInitialState,
+      dataService,
       entrypoint: {
         address: BigInt(config.entrypointAddress),
         deploymentBlock: config.deploymentBlock
@@ -552,8 +581,97 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     this.#protocols.set(key, protocol)
     this.#providerInstances.set(key, provider)
+    if (isSagaHydrated) this.#sagaHydratedKeys.add(key)
 
     return protocol
+  }
+
+  /**
+   * What a chain with no stored history of its own starts from, keyed the way the plugin keys its
+   * own store.
+   *
+   * Two things are merged. A platform layer that ships a pre-scanned history contributes it as it
+   * comes. Every other chain still gets the block its entrypoint was deployed at, because the SDK
+   * starts its entrypoint walk wherever this says the last sync reached - and with nothing to say,
+   * that is block zero, twenty-two million blocks of `eth_getLogs` before the first event that
+   * exists. Nothing else is claimed: the pools are left empty, so they are read in full.
+   */
+  #resolveInitialState = async (): Promise<Record<string, any>> => {
+    const shipped = this.#getShippedInitialState ? await this.#getShippedInitialState() : {}
+
+    return PRIVACY_POOLS_SUPPORTED_CHAIN_IDS.reduce((state, chainId) => {
+      const config = getPrivacyPoolsChainConfig(chainId)
+      if (!config) return state
+
+      const key = getPrivacyPoolsStoreKey(config)
+      if (state[key]) return state
+
+      return {
+        ...state,
+        [key]: { sync: { lastSyncedBlock: `0x${config.deploymentBlock.toString(16)}` } }
+      }
+    }, shipped)
+  }
+
+  /**
+   * How this chain's plugin reads the chain.
+   *
+   * The CDN is offered only for a cold chain, because its reader replays a pool's whole history on
+   * every call - it ignores the block a sync asks it to start from. That is exactly what a first
+   * sync wants and exactly what every later one does not, so a warm chain reads its handful of new
+   * blocks from the provider. See `#dropSagaHydratedProtocols` for the other half of that.
+   *
+   * The provider-backed reader underneath is used either way, and is the parallel one in both
+   * cases - a warm sync is a few windows, a cold Sepolia is thousands.
+   */
+  async #getDataService(config: PrivacyPoolsChainConfig, provider: Host['provider']) {
+    const canUseSaga = !!config.sagaSyncUrl && (await this.#isChainCold(config))
+
+    return createPrivacyPoolsDataService({
+      provider,
+      ...(canUseSaga
+        ? { saga: { sourceUrl: config.sagaSyncUrl as string, chainId: config.chainId } }
+        : {}),
+      onSagaUnavailable: (error) =>
+        this.emitError({
+          message:
+            'Loading your Privacy Pools history is taking the slow route on this network. It will still finish.',
+          level: 'silent',
+          error:
+            error instanceof Error ? error : new Error('privacyPools: saga hydration unavailable')
+        })
+    })
+  }
+
+  /** Whether the plugin has stored nothing for this chain yet. */
+  async #isChainCold(config: PrivacyPoolsChainConfig): Promise<boolean> {
+    try {
+      const stored = await this.#storage.get('privacyPoolsState', {})
+
+      return !stored[getPrivacyPoolsStoreKey(config)]
+    } catch {
+      // A store that cannot be read is a store with nothing in it as far as this decision goes,
+      // and reading from the CDN is the cheaper way to be wrong.
+      return true
+    }
+  }
+
+  /**
+   * Drops the plugins that hydrated a chain from the CDN, once they have.
+   *
+   * The CDN reader is built for a cold chain and replays everything on every call, so keeping one
+   * alive would re-download and re-parse a pool's whole history on every later sync. Dropping it
+   * costs nothing: the history it fetched is already persisted, so the plugin built in its place
+   * hydrates from the store and reads only the blocks since.
+   */
+  #dropSagaHydratedProtocols(chainId: string) {
+    this.#sagaHydratedKeys.forEach((key) => {
+      if (!key.startsWith(`${chainId}:`)) return
+
+      this.#protocols.delete(key)
+      this.#providerInstances.delete(key)
+      this.#sagaHydratedKeys.delete(key)
+    })
   }
 
   /**
@@ -647,7 +765,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.emitUpdate()
 
     try {
-      const protocol = this.#getProtocol(chainId, seedId)
+      const protocol = await this.#getProtocol(chainId, seedId)
 
       await protocol.sync()
 
@@ -670,6 +788,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
           }))
         }
       }
+
+      // Whatever the CDN fetched is persisted by now, so the plugin that fetched it has done its
+      // one job and the next sync should read the few new blocks from the provider instead.
+      this.#dropSagaHydratedProtocols(chainId)
 
       this.#writeChainSyncState(chainId, {
         syncStatus: 'ready',
@@ -743,7 +865,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         error: new Error('privacyPools: deposit above the operator ceiling')
       })
 
-    const protocol = this.#getProtocol(chainId, seedId)
+    const protocol = await this.#getProtocol(chainId, seedId)
 
     const { txns } = await protocol.prepareShield({
       asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(tokenAddress) },
@@ -904,7 +1026,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     })
 
     try {
-      const protocol = this.#getProtocol(chainId, seedId, mode)
+      const protocol = await this.#getProtocol(chainId, seedId, mode)
 
       // Quoting and proving happen inside this one call; the guard installed in
       // `relayerClientFactory` is what sits between them.
@@ -916,6 +1038,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         },
         recipient as any
       )
+
+      // The SDK types a prepared withdrawal as a union since it gained paymaster-sponsored ones,
+      // which are broadcast as a userOp rather than handed to a relayer. We never ask for that
+      // mode, so a payload carrying it means the SDK ignored what we asked for.
+      if (privateOp.mode === 'paymaster')
+        throw new Error('privacyPools: the withdrawal came back in an unsupported form')
 
       const { quote, relayerId } = privateOp.quoteData
       const feeBps = BigInt(quote.feeBPS)
@@ -1119,7 +1247,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     labels: bigint[]
   }): Promise<Call[]> {
     const seedId = this.#assertAvailableAndGetSeedId()
-    const protocol = this.#getProtocol(chainId, seedId)
+    const protocol = await this.#getProtocol(chainId, seedId)
 
     const { txns } = await protocol.ragequit(labels)
 
@@ -1152,6 +1280,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #teardown({ wipeNotes }: { wipeNotes: boolean }) {
     this.#protocols.clear()
     this.#providerInstances.clear()
+    this.#sagaHydratedKeys.clear()
     this.#chainRuns.clear()
     this.#syncStatesByChain = {}
 

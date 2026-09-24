@@ -41,6 +41,12 @@ export type PrivacyPoolsChainConfig = {
   /** 0xBow's association-set API for this chain. */
   aspUrl: string
   /**
+   * Where this chain's pool history is published as static, verifiable files, when someone
+   * publishes it. Set only for chains the saga-sync CDN actually carries - a chain without one
+   * rebuilds its history from the provider, which is correct but slow.
+   */
+  sagaSyncUrl?: string
+  /**
    * Relayer name to base URL, including the `/relayer` path prefix. More than one on purpose:
    * the SDK quotes them in parallel, takes the cheapest, and tolerates individual failures, and
    * they stop accepting at different gas prices.

@@ -32,6 +32,20 @@ export const PRIVACY_POOLS_DERIVATION_PATH_PREFIX = "m/28784'/1'/"
  */
 export const PRIVACY_POOLS_ACCOUNT_INDEX = 0
 
+/**
+ * Where the pools' event history is published as static files, signed and content-addressed.
+ *
+ * Run by fatlabs, who also build the protocol's circuits. Reading a pool from here costs one
+ * request and about a second, against the thousands of sequential `eth_getLogs` calls the same
+ * history costs from a provider - which is the whole reason a first sync used to take a quarter of
+ * an hour.
+ *
+ * Only Ethereum is published, and only the pools: the entrypoint has no stream, so its own walk
+ * still goes to the provider. Nothing here is trusted on its word - the client checks every file
+ * against the digests in the signed manifest before the SDK sees an event.
+ */
+export const PRIVACY_POOLS_SAGA_SYNC_URL = 'https://saga.fatsolutions.xyz'
+
 const nativeAsset = (symbol: string, maxDeposit: bigint): PrivacyPoolsAsset => ({
   address: ZERO_ADDRESS as Hex,
   symbol,
@@ -54,6 +68,7 @@ export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig 
     entrypointAddress: '0x6818809EefCe719E480a7526D76bD3e561526b46',
     deploymentBlock: 22153713n,
     aspUrl: 'https://api.0xbow.io',
+    sagaSyncUrl: PRIVACY_POOLS_SAGA_SYNC_URL,
     relayers: {
       'Fast Relay': 'https://fastrelay.xyz/relayer',
       'Cloaked Relay': 'https://api.clkd.xyz/relayer'
@@ -226,6 +241,19 @@ export const PRIVACY_POOLS_ACTIVITY_STORAGE_KEY = 'privacyPoolsActivity'
 
 export const getPrivacyPoolsChainConfig = (chainId: bigint): PrivacyPoolsChainConfig | undefined =>
   PRIVACY_POOLS_CHAINS[chainId.toString()]
+
+/**
+ * Where the plugin keeps a chain's history, in the plugin's own key format.
+ *
+ * Mirrored here rather than read from the SDK, which does not export it, because two things the
+ * wallet does need the key before a plugin exists: shipping that chain a starting state, and
+ * telling whether the chain has any history at all yet.
+ */
+export const getPrivacyPoolsStoreKey = ({
+  chainId,
+  entrypointAddress
+}: PrivacyPoolsChainConfig): string =>
+  `privacy-pool-state-${chainId.toString()}-${BigInt(entrypointAddress).toString()}`
 
 /** Whether an address is how this wallet writes "the chain's native token". */
 export const isPrivacyPoolsNativeAsset = (address: string): boolean =>
