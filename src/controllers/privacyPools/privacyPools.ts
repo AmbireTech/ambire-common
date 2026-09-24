@@ -16,6 +16,7 @@ import {
   getPrivacyPoolsStoreKey,
   isPrivacyPoolsNativeAsset,
   PRIVACY_POOLS_ACCOUNT_INDEX,
+  PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY,
   PRIVACY_POOLS_ACTIVITY_STORAGE_KEY,
   PRIVACY_POOLS_SUPPORTED_CHAIN_IDS,
   toPrivacyPoolsAssetAddress
@@ -26,6 +27,7 @@ import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import {
   IPrivacyPoolsController,
+  PrivacyPoolsAccount,
   PrivacyPoolsActivityEntry,
   PrivacyPoolsChainConfig,
   PrivacyPoolsChainState,
@@ -236,6 +238,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #unsubscribers: (() => void)[] = []
 
   /**
+   * The wallet's Privacy Pools accounts, at most one per stored recovery phrase. Removed along with
+   * their phrase, since nothing in them can be reached once it is gone.
+   */
+  accounts: PrivacyPoolsAccount[] = []
+
+  /**
    * The latest withdrawal - the one in flight, or the last one until dismissed - whichever phrase
    * it belongs to. Reaches the UI through `operation`, only while its phrase is on screen.
    */
@@ -321,6 +329,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#activity = (await this.#storage.get(PRIVACY_POOLS_ACTIVITY_STORAGE_KEY, [])).filter(
       (entry) => !!entry.seedId
     )
+    this.accounts = await this.#storage.get(PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY, [])
+    // A phrase deleted while this controller was not around to see it
+    await this.#forgetAccountsOfDeletedSeeds()
 
     this.#subscribeToDependencies()
     this.emitUpdate()
@@ -338,6 +349,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         // Locking must drop the derived note secrets, not merely hide the UI. The notes go with
         // them: nothing derived from the phrase may outlive the lock.
         if (!this.#keystore.isUnlocked && this.#hasPhraseDerivedState()) this.#teardown()
+
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#forgetAccountsOfDeletedSeeds()
 
         this.propagateUpdate(forceEmit)
       }, 'privacyPools'),
@@ -1323,6 +1337,89 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     const { txns } = await protocol.ragequit(labels)
 
     return txns.map((txn) => ({ to: txn.to, data: txn.data, value: txn.value }))
+  }
+
+  /**
+   * Adds the Privacy Pools account of a stored recovery phrase.
+   *
+   * Nothing is derived or synced here - that happens once the account is opened.
+   */
+  async addAccount(seedId: string): Promise<void> {
+    await this.initialLoadPromise
+
+    if (!this.#keystore.seeds.some((seed) => seed.id === seedId))
+      throw new EmittableError({
+        message: 'This recovery phrase is no longer in your wallet.',
+        level: 'expected',
+        error: new Error(`privacyPools: no stored seed ${seedId}`)
+      })
+
+    if (this.accounts.some((account) => account.seedId === seedId))
+      throw new EmittableError({
+        message: 'This recovery phrase already has a Privacy Pools account.',
+        level: 'expected',
+        error: new Error(`privacyPools: seed ${seedId} already has an account`)
+      })
+
+    this.accounts = [...this.accounts, { seedId, createdAt: Date.now() }]
+    this.emitUpdate()
+    await this.#persistAccounts()
+  }
+
+  /**
+   * Removes a Privacy Pools account, not its funds: they stay in the pools, tied to the recovery
+   * phrase, and adding the account again finds them. Its activity log is kept for the same reason.
+   */
+  async removeAccount(seedId: string): Promise<void> {
+    await this.initialLoadPromise
+
+    this.#forgetAccount(seedId)
+    this.emitUpdate()
+    await this.#persistAccounts()
+  }
+
+  /** Drops an account and everything derived for it, leaving the activity log to the caller. */
+  #forgetAccount(seedId: string) {
+    this.accounts = this.accounts.filter((account) => account.seedId !== seedId)
+
+    this.#protocols.forEach((_, key) => {
+      if (key.endsWith(`:${seedId}`)) this.#dropProtocol(key)
+    })
+    this.#kohakuKeystores.delete(seedId)
+    delete this.#notesByIdentity[seedId]
+  }
+
+  /**
+   * Removes the accounts whose recovery phrase is no longer stored, with their activity log: once
+   * the phrase is gone, nothing in them can be reached, and importing it again starts afresh.
+   */
+  async #forgetAccountsOfDeletedSeeds() {
+    const storedSeedIds = new Set(this.#keystore.seeds.map((seed) => seed.id))
+    const orphanedSeedIds = this.accounts
+      .map((account) => account.seedId)
+      .filter((seedId) => !storedSeedIds.has(seedId))
+
+    if (!orphanedSeedIds.length) return
+
+    orphanedSeedIds.forEach((seedId) => this.#forgetAccount(seedId))
+    this.#activity = this.#activity.filter((entry) => !orphanedSeedIds.includes(entry.seedId))
+    this.emitUpdate()
+
+    // One after the other: the store must never have two writes in flight
+    await this.#persistAccounts()
+    await this.#persistActivity()
+  }
+
+  async #persistAccounts() {
+    try {
+      await this.#storage.set(PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY, this.accounts)
+    } catch (error: any) {
+      this.emitError({
+        message: 'Could not save your Privacy Pools accounts on this device.',
+        level: 'major',
+        error: error instanceof Error ? error : new Error('privacyPools: accounts write failed')
+      })
+    }
   }
 
   #updateActivity(id: string, update: Partial<PrivacyPoolsActivityEntry>) {

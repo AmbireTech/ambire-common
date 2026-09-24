@@ -219,6 +219,9 @@ export const PRIVACY_POOLS_CIRCUIT_PATHS = {
 /** Storage key holding the local operation log. The pool exposes no history of its own. */
 export const PRIVACY_POOLS_ACTIVITY_STORAGE_KEY = 'privacyPoolsActivity'
 
+/** Storage key holding the wallet's Privacy Pools accounts. */
+export const PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY = 'privacyPoolsAccounts'
+
 export const getPrivacyPoolsChainConfig = (chainId: bigint): PrivacyPoolsChainConfig | undefined =>
   PRIVACY_POOLS_CHAINS[chainId.toString()]
 

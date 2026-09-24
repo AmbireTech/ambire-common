@@ -22,7 +22,7 @@ import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
-import { PrivacyPoolsActivityEntry } from './privacyPools'
+import { PrivacyPoolsAccount, PrivacyPoolsActivityEntry } from './privacyPools'
 import type { FeeSpeed } from './signAccountOp'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
@@ -111,6 +111,8 @@ export type StorageProps = {
    * carry no timestamp and no transaction id, and change notes look like fresh ones.
    */
   privacyPoolsActivity: PrivacyPoolsActivityEntry[]
+  /** The wallet's Privacy Pools accounts, at most one per stored recovery phrase. */
+  privacyPoolsAccounts: PrivacyPoolsAccount[]
   // Other
   signAccountOpFeeTokenPreference: {
     [chainId: string]: string | 'gasTank'

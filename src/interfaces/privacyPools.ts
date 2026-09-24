@@ -70,6 +70,19 @@ export type PrivacyPoolsPaymasterConfig = {
   poolAdapters: { [poolAddress: string]: Hex }
 }
 
+/**
+ * A Privacy Pools account: the notes one stored recovery phrase holds in the pools.
+ *
+ * Identified by the phrase rather than by an address, because it has none - deposits and
+ * withdrawals are tied to secrets derived from the phrase, and each withdrawal is sent from a fresh
+ * single-use sender. At most one per phrase: its secrets come from a fixed account index, so a
+ * second one would hold the very same notes.
+ */
+export type PrivacyPoolsAccount = {
+  seedId: string
+  createdAt: number
+}
+
 export type PrivacyPoolsSyncStatus = 'idle' | 'initializing' | 'syncing' | 'ready'
 
 /**
