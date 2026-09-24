@@ -305,26 +305,30 @@ describe('SelectedAccount Controller', () => {
       storedAccounts = accounts,
       selectedAccount = accounts[0]!.addr,
       selectedPrivacyPoolsAccount = null,
-      privacyPoolsSeedIds = [PRIVACY_POOLS_SEED_ID]
+      privacyPoolsSeedIds = [PRIVACY_POOLS_SEED_ID],
+      withStoredSeed = true
     }: {
       storedAccounts?: typeof accounts
       selectedAccount?: string | null
       selectedPrivacyPoolsAccount?: string | null
       privacyPoolsSeedIds?: string[]
+      // Off where the keystore decrypts its seeds, which the metadata-only one cannot survive
+      withStoredSeed?: boolean
     } = {}) => {
       const { mainCtrl } = await makeMainController(async (storageCtrl) => {
         await storageCtrl.set('accounts', storedAccounts)
         if (selectedAccount) await storageCtrl.set('selectedAccount', selectedAccount)
         if (selectedPrivacyPoolsAccount)
           await storageCtrl.set('selectedPrivacyPoolsAccount', selectedPrivacyPoolsAccount)
-        await storageCtrl.set('keystoreSeeds', [
-          {
-            id: PRIVACY_POOLS_SEED_ID,
-            label: 'Privacy seed',
-            seed: {} as any,
-            hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
-          }
-        ])
+        if (withStoredSeed)
+          await storageCtrl.set('keystoreSeeds', [
+            {
+              id: PRIVACY_POOLS_SEED_ID,
+              label: 'Privacy seed',
+              seed: {} as any,
+              hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+            }
+          ])
         await storageCtrl.set(
           'privacyPoolsAccounts',
           privacyPoolsSeedIds.map((seedId) => ({ seedId, createdAt: 1 }))
@@ -424,6 +428,23 @@ describe('SelectedAccount Controller', () => {
 
       expect(selectedAccountCtrl.account?.addr).toBe(accounts[0]!.addr)
       expect(selectedAccountCtrl.privacyPoolsAccountId).toBeNull()
+    })
+
+    it('creating one from a new recovery phrase selects it and derives no regular account', async () => {
+      const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest({
+        privacyPoolsSeedIds: [],
+        withStoredSeed: false
+      })
+      await mainCtrl.keystore.addSecret('password', 'password', '', false)
+      await mainCtrl.keystore.unlockWithSecret('password', 'password')
+
+      await mainCtrl.addPrivacyPoolsAccountFromNewSeed({})
+
+      const [newSeed] = mainCtrl.keystore.seeds
+      expect(newSeed?.notBackedUp).toBe(true)
+      expect(mainCtrl.privacyPools.accounts.map((account) => account.seedId)).toEqual([newSeed?.id])
+      expect(selectedAccountCtrl.privacyPoolsAccountId).toBe(newSeed?.id)
+      expect(mainCtrl.accounts.accounts).toHaveLength(accounts.length)
     })
 
     it('removing the only account of either kind leaves nothing selected', async () => {

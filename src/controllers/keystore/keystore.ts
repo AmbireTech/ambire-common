@@ -759,6 +759,30 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     return this.#tempSeed
   }
 
+  /**
+   * Generates a new recovery phrase and stores it straight away, returning the id it is stored
+   * with. For a phrase that no account is derived from through the account picker - a Privacy
+   * Pools account's - so, unlike `generateTempSeed`, it never passes through the temp seed another
+   * flow may be holding.
+   *
+   * Flagged as not backed up and as newly generated, exactly like a generated temp seed.
+   */
+  async addGeneratedSeed({ extraEntropy }: { extraEntropy?: string }): Promise<string> {
+    const seed = new EntropyGenerator().generateRandomMnemonic(12, extraEntropy || '').phrase
+
+    const [seedId] = await this.#addSeeds([
+      {
+        seed,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        notBackedUp: true,
+        isNewlyGenerated: true
+      }
+    ])
+    if (!seedId) throw new Error('keystore: the generated seed was not stored')
+
+    return seedId
+  }
+
   deleteTempSeed(shouldUpdate = true) {
     this.#tempSeed = null
     if (shouldUpdate) this.emitUpdate()

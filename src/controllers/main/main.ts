@@ -1016,6 +1016,27 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  /**
+   * Creates a new recovery phrase with only a Privacy Pools account on it, and selects it - no
+   * regular account is derived from the phrase.
+   *
+   * The phrase is stored as not backed up, and the UI asks for a backup right away: it is the only
+   * way to recover whatever the account will hold.
+   */
+  async addPrivacyPoolsAccountFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'selectAccount',
+      async () => {
+        const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
+        await this.privacyPools.addAccount(seedId)
+        await this.#selectPrivacyPoolsAccount(seedId)
+      },
+      true
+    )
+  }
+
   async selectPrivacyPoolsAccount(seedId: string) {
     await this.initialLoadPromise
 
