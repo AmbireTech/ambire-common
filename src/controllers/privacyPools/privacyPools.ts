@@ -5,7 +5,7 @@ import {
   OxBowAspService,
   PrivacyPoolsV1Protocol
 } from '@kohaku-eth/privacy-pools'
-import type { Host } from '@kohaku-eth/plugins'
+import type { Host, Storage } from '@kohaku-eth/plugins'
 
 import EmittableError from '../../classes/EmittableError'
 import {
@@ -127,6 +127,15 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #fetch: Fetch
 
   /**
+   * The one storage adapter every plugin persists through.
+   *
+   * Shared rather than built per plugin, because the adapter caches the whole blob and rewrites it
+   * on every save. Two plugins with a cache each - two recovery phrases on the same device - would
+   * each write back their own copy, and the last one would silently undo the other's progress.
+   */
+  #kohakuStorage: Storage
+
+  /**
    * Hands a set of calls to the regular signing flow. A callback rather than a direct
    * `RequestsController` reference, because that controller is built after this one and because
    * this is the only thing Privacy Pools needs from it.
@@ -245,6 +254,17 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#selectedAccount = selectedAccount
     this.#storage = storage
     this.#fetch = fetch
+    this.#kohakuStorage = createKohakuStorage({
+      storage,
+      storageKey: 'privacyPoolsState',
+      onError: (error, message) =>
+        this.emitError({
+          message:
+            message || 'Privacy Pools could not save its progress. It will be rebuilt next time.',
+          level: 'silent',
+          error: error instanceof Error ? error : new Error('privacyPools: storage write failed')
+        })
+    })
     this.#buildCallsRequest = buildCallsRequest
     this.#getShippedInitialState = getInitialState
     this.#proverFactory = createProverFactory(circuitsBaseUrl)
@@ -499,17 +519,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #getHost(provider: JsonRpcProvider, seedId: string): Host {
     return {
       network: createKohakuNetwork(this.#fetch),
-      storage: createKohakuStorage({
-        storage: this.#storage,
-        storageKey: 'privacyPoolsState',
-        onError: (error, message) =>
-          this.emitError({
-            message:
-              message || 'Privacy Pools could not save its progress. It will be rebuilt next time.',
-            level: 'silent',
-            error: error instanceof Error ? error : new Error('privacyPools: storage write failed')
-          })
-      }),
+      storage: this.#kohakuStorage,
       keystore: createKohakuKeystore((path) => this.#keystore.derivePrivacyPoolsKey(seedId, path)),
       provider: createKohakuProvider(provider)
     }
@@ -637,9 +647,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /** Whether the plugin has stored nothing for this chain yet. */
   async #isChainCold(config: PrivacyPoolsChainConfig): Promise<boolean> {
     try {
-      const stored = await this.#storage.get('privacyPoolsState', {})
-
-      return !stored[getPrivacyPoolsStoreKey(config)]
+      // Read through the shared adapter rather than the raw store, so a save still in flight from
+      // another phrase's sync already counts.
+      return !(await this.#kohakuStorage.get(getPrivacyPoolsStoreKey(config)))
     } catch {
       // A store that cannot be read is a store with nothing in it as far as this decision goes,
       // and reading from the CDN is the cheaper way to be wrong.
