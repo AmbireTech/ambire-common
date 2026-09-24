@@ -130,7 +130,7 @@ describe('xWALLET conversion', () => {
 
     expect(walletAmount).toBe(10_001_600_000_000_000n)
     expect(getXWalletConversionText(xWalletAmount, walletAmount)).toBe(
-      '0.00047 xWALLET = 0.01 WALLET'
+      '0.00047 $xWALLET = 0.01 $WALLET'
     )
   })
 })
