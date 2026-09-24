@@ -3416,8 +3416,11 @@ describe('traceCall asset discovery', () => {
     const controller = await initTraceCall(onUpdateAfterTraceCallSuccess)
 
     const discovered = ['0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48']
-    const createAccessListDeferred = createDeferred<string[]>()
-    createAccessListCallSpy.mockReturnValue(createAccessListDeferred.promise)
+    const debugTraceCallDeferred = createDeferred<{
+      tokens: string[]
+      nfts: [string, bigint[]][]
+    }>()
+    debugTraceCallSpy.mockReturnValue(debugTraceCallDeferred.promise)
     addTokensToBeLearnedSpy.mockReturnValue(true)
 
     jest.useFakeTimers()
@@ -3428,32 +3431,86 @@ describe('traceCall asset discovery', () => {
 
     // A second request while one is in progress is a no-op (reentrancy guard).
     await (controller as any).traceCall()
-    expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
+    expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
 
     // Resolving discovery learns the assets, fires the success callback and
     // settles on Done.
-    createAccessListDeferred.resolve(discovered)
+    debugTraceCallDeferred.resolve({ tokens: discovered, nfts: [] })
     await traceCallPromise
 
     expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(discovered, 1n)
-    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
-      discovered.map((address) => [address, []]),
-      smartAccount.addr,
-      1n
-    )
+    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith([], smartAccount.addr, 1n)
+    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
     expect(onUpdateAfterTraceCallSuccess).toHaveBeenCalledTimes(1)
     expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
   })
 
-  test('falls back to debug_traceCall when the access list fails and skips the callback when nothing is learned', async () => {
+  test('prefers log-capable discovery and identifies a Uniswap v4 position NFT', async () => {
+    const controller = await initTraceCall()
+    const positionManager = '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e'
+    const mintedPositionId = 12345n
+    const discoveredAddresses = [
+      '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+      positionManager
+    ]
+
+    debugTraceCallSpy.mockResolvedValueOnce({
+      tokens: discoveredAddresses,
+      nfts: [[positionManager, [mintedPositionId]]]
+    })
+    addErc721sToBeLearnedSpy.mockReturnValueOnce(true)
+
+    await (controller as any).traceCall()
+
+    expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
+    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
+    expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(discoveredAddresses, 1n)
+    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
+      [[positionManager, [mintedPositionId]]],
+      smartAccount.addr,
+      1n
+    )
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+  })
+
+  test('uses access-list candidates when log-capable discovery methods are unavailable', async () => {
+    const controller = await initTraceCall()
+    const positionManager = '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e'
+
+    createAccessListCallSpy.mockResolvedValueOnce([positionManager])
+    debugTraceCallSpy.mockRejectedValueOnce(new Error('trace failed'))
+    ethSimulateV1Spy.mockRejectedValueOnce(new Error('simulate failed'))
+
+    await (controller as any).traceCall()
+
+    expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith([positionManager], 1n)
+    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
+      [[positionManager, []]],
+      smartAccount.addr,
+      1n
+    )
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+
+    controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+    jest.clearAllMocks()
+
+    await (controller as any).traceCall()
+
+    expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
+  })
+
+  test('uses debug_traceCall first and skips later methods when it succeeds', async () => {
     const onUpdateAfterTraceCallSuccess = jest.fn(async () => {})
     const controller = await initTraceCall(onUpdateAfterTraceCallSuccess)
 
     const emitErrorSpy = jest.fn()
     ;(controller as any).emitError = emitErrorSpy
 
-    getShouldUseAccessListCallSpy.mockReturnValue(true)
-    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
     debugTraceCallSpy.mockResolvedValueOnce({
       tokens: ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
       nfts: []
@@ -3461,11 +3518,10 @@ describe('traceCall asset discovery', () => {
 
     await (controller as any).traceCall()
 
-    // The access list failure is not emitted as an error (it would be reported to
-    // Sentry) because there is a retry/fallback mechanism; discovery falls back to
-    // debug_traceCall and no error is emitted once a fallback succeeds.
     expect(emitErrorSpy).not.toHaveBeenCalled()
     expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
+    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
     expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(
       ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
       1n
@@ -3475,14 +3531,12 @@ describe('traceCall asset discovery', () => {
     expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
   })
 
-  test('falls back to eth_simulateV1 when both the access list and debug trace fail', async () => {
+  test('falls back to eth_simulateV1 when debug trace fails', async () => {
     const controller = await initTraceCall()
 
     const emitErrorSpy = jest.fn()
     ;(controller as any).emitError = emitErrorSpy
 
-    getShouldUseAccessListCallSpy.mockReturnValue(true)
-    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
     debugTraceCallSpy.mockRejectedValueOnce(new Error('trace failed'))
     ethSimulateV1Spy.mockResolvedValueOnce({
       tokens: ['0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'],
@@ -3493,6 +3547,7 @@ describe('traceCall asset discovery', () => {
 
     expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
     expect(ethSimulateV1Spy).toHaveBeenCalledTimes(1)
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
     expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(
       ['0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'],
       1n
@@ -3502,16 +3557,14 @@ describe('traceCall asset discovery', () => {
       smartAccount.addr,
       1n
     )
-    // Neither the access list nor the debug_traceCall failures are emitted as
-    // errors, since eth_simulateV1 (the last fallback) succeeds.
+    // The debug_traceCall failure is not emitted as an error because
+    // eth_simulateV1 succeeds.
     expect(emitErrorSpy).not.toHaveBeenCalled()
     expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
   })
 
   test('tries the last successful method first on the next discovery', async () => {
     const controller = await initTraceCall()
-
-    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
 
     await (controller as any).traceCall()
 
@@ -3528,8 +3581,6 @@ describe('traceCall asset discovery', () => {
   test('falls back to the other methods when the cached method fails', async () => {
     const controller = await initTraceCall()
 
-    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
-
     await (controller as any).traceCall()
 
     controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
@@ -3539,10 +3590,10 @@ describe('traceCall asset discovery', () => {
     await (controller as any).traceCall()
 
     expect(debugTraceCallSpy.mock.invocationCallOrder[0]).toBeLessThan(
-      createAccessListCallSpy.mock.invocationCallOrder[0]!
+      ethSimulateV1Spy.mock.invocationCallOrder[0]!
     )
-    expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
-    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+    expect(ethSimulateV1Spy).toHaveBeenCalledTimes(1)
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
   })
 
   test('sets Failed and emits a silent error when discovery throws', async () => {
@@ -3575,6 +3626,10 @@ describe('traceCall asset discovery', () => {
       const controller = await initTraceCall()
 
       getShouldUseAccessListCallSpy.mockReturnValue(useAccessList)
+      if (useAccessList) {
+        debugTraceCallSpy.mockRejectedValue(new Error('trace failed'))
+        ethSimulateV1Spy.mockRejectedValue(new Error('simulate failed'))
+      }
 
       const deferredA = createDeferred<any>()
       const deferredB = createDeferred<any>()
@@ -3587,6 +3642,10 @@ describe('traceCall asset discovery', () => {
 
       armNextCall(deferredA)
       const runA = (controller as any).traceCall()
+      if (useAccessList) {
+        await wait(0)
+        expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
+      }
 
       // Supersede the in-flight run A with a newer run B.
       controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
