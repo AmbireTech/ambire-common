@@ -75,6 +75,24 @@ describe('AddressBookController', () => {
       '0x31800a810A2d9C3315dc714e1Eb988bd6A641eF0'
     )
   })
+  it('the selected account is left out of the contacts', async () => {
+    await selectedAccountCtrl.setAccount(MOCK_ACCOUNTS[1]!)
+
+    expect(getContactFromName('Account 1')).toBeUndefined()
+    expect(getContactFromName(DEFAULT_ACCOUNT_LABEL)?.isWalletAccount).toBeTruthy()
+  })
+  it('every wallet account is in contacts while a Privacy Pools account is selected', async () => {
+    await selectedAccountCtrl.setPrivacyPoolsAccount('privacy-pools-seed')
+
+    expect(selectedAccountCtrl.account).toBeNull()
+    MOCK_ACCOUNTS.forEach(({ addr }) => {
+      expect(
+        addressBookController.contacts.find((contact) => contact.address === addr)?.isWalletAccount
+      ).toBeTruthy()
+    })
+
+    await selectedAccountCtrl.setAccount(MOCK_ACCOUNTS[0]!)
+  })
   it('add contact', async () => {
     await addressBookController.addContact('vitaly', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
 
