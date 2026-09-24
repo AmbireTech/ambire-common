@@ -650,6 +650,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
       this.erc7730,
+      this.privacyPools,
       eventEmitterRegistry
     )
     this.domains = new DomainsController({

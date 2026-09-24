@@ -15,6 +15,11 @@ export interface TransferUpdate {
   addressState?: AddressStateOptional
   isRecipientAddressUnknownAgreed?: boolean
   amountFieldMode?: 'token' | 'fiat'
+  /**
+   * Sends to a Privacy Pools account instead of an address, by the id of its recovery phrase. Null
+   * goes back to sending to an address.
+   */
+  privacyPoolsRecipient?: string | null
 }
 
 export type AddressPoisoningMatch = {
