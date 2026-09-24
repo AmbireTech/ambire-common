@@ -51,6 +51,29 @@ export interface IdbAccountOpRow {
 }
 
 /**
+ * One blocklisted domain per row. The domain IS the key, so a lookup is a primary-key point
+ * read and an update touches only the rows the server's delta named.
+ */
+export interface IdbPhishingDomainRow {
+  domain: string
+}
+
+/** One blocklisted address per row, lowercased on write so lookups need no normalization. */
+export interface IdbPhishingAddressRow {
+  address: string
+}
+
+/**
+ * Single document under the id 'meta'. Holds only the checkpoint the update protocol needs,
+ * so it stays small enough to read on every service-worker wake-up.
+ */
+export interface IdbPhishingMetaRow {
+  id: string
+  version: number
+  updatedAt: number
+}
+
+/**
  * Typed view of the database, so store names, key shapes, row shapes and index key types are
  * all checked at the call site instead of being `any`.
  *
@@ -70,6 +93,18 @@ export interface AmbireIdbSchema extends DBSchema {
       'by-account-chain-status': [string, string, AccountOpStatus]
       'by-txn-id': string
     }
+  }
+  phishingDomains: {
+    key: string
+    value: IdbPhishingDomainRow
+  }
+  phishingAddresses: {
+    key: string
+    value: IdbPhishingAddressRow
+  }
+  phishingMeta: {
+    key: string
+    value: IdbPhishingMetaRow
   }
 }
 
@@ -128,6 +163,22 @@ export const AMBIRE_IDB_SCHEMA: IdbSchema = {
           multiEntry: true
         }
       ]
+    },
+    {
+      // Row per domain rather than one blob: the server sends add/remove deltas, so an update
+      // writes only what changed, and a lookup is a primary-key point read.
+      storeName: 'phishingDomains',
+      keyPath: 'domain'
+    },
+    {
+      storeName: 'phishingAddresses',
+      keyPath: 'address'
+    },
+    {
+      // Version checkpoint only. Written in the same transaction as the rows it describes, so
+      // a crash cannot leave rows applied under a stale version and replay or skip a delta.
+      storeName: 'phishingMeta',
+      keyPath: 'id'
     }
   ],
   // Human-readable changelog of the schema. Not read at runtime — the executable
@@ -138,7 +189,7 @@ export const AMBIRE_IDB_SCHEMA: IdbSchema = {
       fromVersion: 0,
       toVersion: 1,
       description:
-        'Initial schema: accountsOps store with timestamp, status and txnId indexes'
+        'Initial schema: accountsOps with timestamp, status and txnId indexes; phishing domain, address and meta stores'
     }
   ]
 }
