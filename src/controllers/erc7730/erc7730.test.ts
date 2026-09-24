@@ -1,6 +1,8 @@
 import { describe, expect, jest, test } from '@jest/globals'
 
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IUiController } from '../../interfaces/ui'
+import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import {
   ERC7730_CACHE_TTL_MS,
@@ -49,10 +51,92 @@ const accountOp = {
 const makeUi = (sendUiMessage = jest.fn()): IUiController =>
   ({ message: { sendUiMessage } }) as unknown as IUiController
 
-const makeController = (storage: any, callRelayer: any) =>
-  new Erc7730Controller({ storage, callRelayer, ui: makeUi() })
+const makeFeatureFlags = (isClearSigningEnabled = true): IFeatureFlagsController =>
+  ({
+    initialLoadPromise: undefined,
+    isFeatureEnabled: jest.fn(() => isClearSigningEnabled)
+  }) as unknown as IFeatureFlagsController
+
+const makeController = (
+  storage: any,
+  callRelayer: any,
+  featureFlags = makeFeatureFlags(),
+  providers?: any
+) => new Erc7730Controller({ storage, callRelayer, featureFlags, providers, ui: makeUi() })
 
 describe('Erc7730Controller', () => {
+  test('does not request account-op descriptors when clear signing is disabled', async () => {
+    const callRelayer = makeCallRelayer()
+    const controller = makeController(makeStorage(), callRelayer, makeFeatureFlags(false))
+
+    await expect(controller.getDescriptorsForAccountOp(accountOp)).resolves.toEqual({})
+    expect(callRelayer).not.toHaveBeenCalled()
+  })
+
+  test('does not make relayer or provider requests for messages when clear signing is disabled', async () => {
+    const callRelayer = makeCallRelayer()
+    const provider = { getStorage: jest.fn() }
+    const controller = makeController(makeStorage(), callRelayer, makeFeatureFlags(false), {
+      providers: { '1': provider },
+      initialLoadPromise: undefined
+    })
+    const message = {
+      content: {
+        kind: 'typedMessage',
+        types: {},
+        domain: { chainId: 1, verifyingContract: CONTRACT_ADDRESS },
+        message: {},
+        primaryType: 'SafeTx'
+      },
+      chainId: 1n
+    } as Message
+
+    await expect(controller.getDescriptorForMessage(message)).resolves.toBeNull()
+    expect(callRelayer).not.toHaveBeenCalled()
+    expect(provider.getStorage).not.toHaveBeenCalled()
+  })
+
+  test('waits for the persisted clear signing opt-out before making requests', async () => {
+    let isClearSigningEnabled = true
+    let finishLoading!: () => void
+    const initialLoadPromise = new Promise<void>((resolve) => {
+      finishLoading = resolve
+    })
+    const featureFlags = {
+      initialLoadPromise,
+      isFeatureEnabled: jest.fn(() => isClearSigningEnabled)
+    } as unknown as IFeatureFlagsController
+    const callRelayer = makeCallRelayer()
+    const controller = makeController(makeStorage(), callRelayer, featureFlags)
+
+    const descriptorsPromise = controller.getDescriptorsForAccountOp(accountOp)
+    expect(callRelayer).not.toHaveBeenCalled()
+
+    isClearSigningEnabled = false
+    finishLoading()
+
+    await expect(descriptorsPromise).resolves.toEqual({})
+    expect(callRelayer).not.toHaveBeenCalled()
+  })
+
+  test('returns no cached descriptors after clear signing is disabled', async () => {
+    let isClearSigningEnabled = true
+    const featureFlags = {
+      initialLoadPromise: undefined,
+      isFeatureEnabled: jest.fn(() => isClearSigningEnabled)
+    } as unknown as IFeatureFlagsController
+    const callRelayer = makeCallRelayer()
+    const controller = makeController(makeStorage(), callRelayer, featureFlags)
+
+    await expect(controller.getDescriptorsForAccountOp(accountOp)).resolves.not.toEqual({})
+
+    isClearSigningEnabled = false
+    callRelayer.mockClear()
+
+    await expect(controller.getDescriptorsForAccountOp(accountOp)).resolves.toEqual({})
+    expect(callRelayer).not.toHaveBeenCalled()
+  })
+
   test('persists the fetched descriptors as a full snapshot', async () => {
     const storage = makeStorage()
     const controller = makeController(storage, makeCallRelayer())
@@ -192,6 +276,7 @@ describe('Erc7730Controller', () => {
     const controller = new Erc7730Controller({
       storage: makeStorage(),
       callRelayer: makeCallRelayer() as any,
+      featureFlags: makeFeatureFlags(),
       ui: makeUi(sendUiMessage)
     })
 
@@ -202,5 +287,25 @@ describe('Erc7730Controller', () => {
       ok: true,
       res: expect.any(Object)
     })
+  })
+
+  test('replies to the UI request with an empty result when clear signing is disabled', async () => {
+    const sendUiMessage = jest.fn()
+    const callRelayer = makeCallRelayer()
+    const controller = new Erc7730Controller({
+      storage: makeStorage(),
+      callRelayer,
+      featureFlags: makeFeatureFlags(false),
+      ui: makeUi(sendUiMessage)
+    })
+
+    await controller.resolveDescriptorsForAccountOp(accountOp, 'request-1')
+
+    expect(sendUiMessage).toHaveBeenCalledWith({
+      requestId: 'request-1',
+      ok: true,
+      res: {}
+    })
+    expect(callRelayer).not.toHaveBeenCalled()
   })
 })

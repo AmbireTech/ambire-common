@@ -1,3 +1,5 @@
+import { ZeroAddress } from 'ethers'
+
 import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { describe, expect, jest, test } from '@jest/globals'
 
@@ -19,6 +21,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
 import { IInviteController } from '../../interfaces/invite'
 import { IKeystoreController } from '../../interfaces/keystore'
@@ -28,6 +31,7 @@ import { ISignMessageController } from '../../interfaces/signMessage'
 import { Message } from '../../interfaces/userRequest'
 import * as safeLib from '../../libs/safe/safe'
 import { Erc7730Controller } from '../erc7730/erc7730'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { UiController } from '../ui/ui'
 import { SignMessageController } from './signMessage'
 
@@ -126,7 +130,7 @@ const createPermitTypedMessage = (): Message => ({
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
 
-const makeErc7730Controller = (callRelayer: any) => {
+const makeErc7730Controller = (callRelayer: any, featureFlags?: IFeatureFlagsController) => {
   const store: Record<string, any> = {}
   const storage = {
     get: async (key: string, defaultValue?: any) => (key in store ? store[key] : defaultValue),
@@ -138,6 +142,7 @@ const makeErc7730Controller = (callRelayer: any) => {
   return new Erc7730Controller({
     storage: storage as any,
     callRelayer,
+    featureFlags: featureFlags || new FeatureFlagsController({}, storage as any),
     ui: uiCtrl
   })
 }
@@ -150,6 +155,7 @@ describe('SignMessageController', () => {
   let providersCtrl: IProvidersController
   let inviteCtrl: IInviteController
   let dappsCtrl: IDappsController
+  let featureFlagsCtrl: IFeatureFlagsController
 
   beforeEach(() => {})
   beforeAll(async () => {
@@ -168,6 +174,7 @@ describe('SignMessageController', () => {
     accountsCtrl = mainCtrl.accounts
     inviteCtrl = mainCtrl.invite
     dappsCtrl = mainCtrl.dapps
+    featureFlagsCtrl = mainCtrl.featureFlags
   })
 
   beforeEach(async () => {
@@ -399,7 +406,7 @@ describe('SignMessageController', () => {
       inviteCtrl,
       undefined,
       dappsCtrl,
-      makeErc7730Controller(callRelayer)
+      makeErc7730Controller(callRelayer, featureFlagsCtrl)
     )
 
     await signMessageController.init({ messageToSign: typedMessageToSign })
@@ -482,6 +489,45 @@ describe('SignMessageController', () => {
       type: 'erc7730',
       intent: [{ type: 'action', content: 'Authorize spending of tokens' }]
     })
+  })
+
+  test('uses fallback humanization without calling the relayer when clear signing is disabled', async () => {
+    const callRelayer = jest.fn(async () => {
+      throw new Error('The relayer should not be called')
+    })
+    const accountsController = {
+      initialLoadPromise: Promise.resolve(),
+      accounts: [account],
+      getOrFetchAccountOnChainState: jest.fn(() => Promise.resolve(accountOnchainState))
+    } as unknown as IAccountsController
+    await featureFlagsCtrl.setFeatureFlag('clearSigning', false)
+
+    try {
+      signMessageController = new SignMessageController(
+        keystoreCtrl,
+        providersCtrl,
+        networksCtrl,
+        accountsController,
+        {},
+        inviteCtrl,
+        undefined,
+        dappsCtrl,
+        makeErc7730Controller(callRelayer, featureFlagsCtrl)
+      )
+
+      await signMessageController.init({ messageToSign: createPermitTypedMessage() })
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0)
+      })
+
+      expect(callRelayer).not.toHaveBeenCalled()
+      expect(signMessageController.isHumanizing).toBe(false)
+      expect(signMessageController.humanizedMessage?.fullVisualization).not.toEqual(
+        expect.arrayContaining([expect.objectContaining({ type: 'erc7730' })])
+      )
+    } finally {
+      await featureFlagsCtrl.setFeatureFlag('clearSigning', true)
+    }
   })
 
   test('humanizes a 1inch Order EIP-712 descriptor served as raw relayer JSON', async () => {
@@ -608,7 +654,7 @@ describe('SignMessageController', () => {
       inviteCtrl,
       undefined,
       dappsCtrl,
-      makeErc7730Controller(callRelayer)
+      makeErc7730Controller(callRelayer, featureFlagsCtrl)
     )
 
     await signMessageController.init({ messageToSign: typedMessageToSign })
@@ -758,7 +804,7 @@ describe('SignMessageController', () => {
         kind: 'typedMessage',
         domain: {
           chainId: 1,
-          verifyingContract: account.addr
+          verifyingContract: ZeroAddress
         },
         types: {
           EIP712Domain: [

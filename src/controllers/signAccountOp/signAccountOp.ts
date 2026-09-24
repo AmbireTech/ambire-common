@@ -174,6 +174,7 @@ import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
+  getSafeGasRefundWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
@@ -565,11 +566,17 @@ export class SignAccountOpController
       this.#featureFlags
     )
     this.#onUpdateAfterTraceCallSuccess = onUpdateAfterTraceCallSuccess
-    this.gasPrice = new GasPriceController(network, provider, this.baseAccount, () => ({
-      estimation: this.estimation,
-      readyToSign: this.readyToSign,
-      stopRefetching: this.#stopRefetching
-    }))
+    this.gasPrice = new GasPriceController(
+      network,
+      provider,
+      this.baseAccount,
+      () => ({
+        estimation: this.estimation,
+        readyToSign: this.readyToSign,
+        stopRefetching: this.#stopRefetching
+      }),
+      this.#featureFlags
+    )
     this.#shouldSimulate = shouldSimulate
 
     this.#onBroadcastSuccess = onBroadcastSuccess
@@ -1047,10 +1054,7 @@ export class SignAccountOpController
     return true
   }
 
-  #setErc7730Humanization(
-    humanizationId: number,
-    erc7730Descriptors: Erc7730CallDescriptors
-  ) {
+  #setErc7730Humanization(humanizationId: number, erc7730Descriptors: Erc7730CallDescriptors) {
     if (
       !this.isCurrentHumanization(humanizationId) ||
       this.humanizationId !== humanizationId ||
@@ -1080,8 +1084,7 @@ export class SignAccountOpController
   async #applyDescriptorFirstHumanization(humanizationId: number) {
     await this.applyDescriptorFirstHumanization({
       humanizationId,
-      fetchDescriptor: () =>
-        this.#erc7730.getDescriptorsForAccountOp(this.accountOp),
+      fetchDescriptor: () => this.#erc7730.getDescriptorsForAccountOp(this.accountOp),
       applyDescriptorHumanization: (erc7730Descriptors, currentHumanizationId) =>
         this.#setErc7730Humanization(currentHumanizationId, erc7730Descriptors),
       applyFallbackHumanization: (currentHumanizationId) =>
@@ -1516,7 +1519,8 @@ export class SignAccountOpController
       const feeTokenHasPrice = this.feeSpeeds[identifier]?.every((speed) => !!speed.amountUsd)
       const feeTokenPriceUnavailableWarning = getFeeTokenPriceUnavailableWarning(
         !!this.hasSpeeds(identifier),
-        !!feeTokenHasPrice
+        !!feeTokenHasPrice,
+        this.#featureFlags.isFeatureEnabled('tokenPrices')
       )
 
       // push the warning only if the txn is not sponsored
@@ -2391,20 +2395,20 @@ export class SignAccountOpController
 
     return {
       slow: {
-        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.slow.maxFeePerGas), 5n),
-        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.slow.maxPriorityFeePerGas), 5n)
+        maxFeePerGas: this.gasPrices.slow.maxFeePerGas,
+        maxPriorityFeePerGas: this.gasPrices.slow.maxPriorityFeePerGas
       },
       medium: {
-        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.medium.maxFeePerGas), 7n),
-        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.medium.maxPriorityFeePerGas), 7n)
+        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.medium.maxFeePerGas), 5n),
+        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.medium.maxPriorityFeePerGas), 5n)
       },
       fast: {
-        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.fast.maxFeePerGas), 10n),
-        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.fast.maxPriorityFeePerGas), 10n)
+        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.fast.maxFeePerGas), 7n),
+        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.fast.maxPriorityFeePerGas), 7n)
       },
       ape: {
-        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.ape.maxFeePerGas), 20n),
-        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.ape.maxPriorityFeePerGas), 20n)
+        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.ape.maxFeePerGas), 10n),
+        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.ape.maxPriorityFeePerGas), 10n)
       }
     }
   }
@@ -4341,6 +4345,16 @@ export class SignAccountOpController
         type: 'warning',
         title: safeDelegateCallWarning.title,
         text: safeDelegateCallWarning.text || safeDelegateCallWarning.title
+      })
+    }
+
+    const safeGasRefundWarning = getSafeGasRefundWarning(this.accountOp)
+    if (safeGasRefundWarning) {
+      banners.push({
+        id: safeGasRefundWarning.id,
+        type: 'warning',
+        title: safeGasRefundWarning.title,
+        text: safeGasRefundWarning.text || safeGasRefundWarning.title
       })
     }
 
