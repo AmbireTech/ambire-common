@@ -236,10 +236,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #unsubscribers: (() => void)[] = []
 
   /**
-   * The withdrawal on screen - the one in flight, or the last one until dismissed. Public because
-   * proving takes ten seconds and up, and the UI has nothing else to show meanwhile.
+   * The latest withdrawal - the one in flight, or the last one until dismissed - whichever phrase
+   * it belongs to. Reaches the UI through `operation`, only while its phrase is on screen.
    */
-  operation: PrivacyPoolsOperation | null = null
+  #operation: PrivacyPoolsOperation | null = null
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -428,6 +428,19 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         ]
       })
     )
+  }
+
+  /**
+   * The withdrawal on screen - the one in flight, or the last one until dismissed. Public because
+   * proving takes ten seconds and up, and the UI has nothing else to show meanwhile.
+   *
+   * Hidden while another phrase is on screen, rather than dropped: a withdrawal cannot be stopped
+   * mid-proof, and switching back must show it where it was.
+   */
+  get operation(): PrivacyPoolsOperation | null {
+    if (this.#operation?.seedId !== this.#getSeedIdForSelectedAccount()) return null
+
+    return this.#operation
   }
 
   /** Whether any chain has completed a scan for this phrase, i.e. whether there is anything to show. */
@@ -1013,6 +1026,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   #startOperation(params: {
+    seedId: string
     chainId: string
     tokenAddress: string
     isNative: boolean
@@ -1029,16 +1043,33 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       error: null
     }
 
-    this.operation = operation
+    this.#operation = operation
     this.emitUpdate()
 
     return operation
   }
 
-  dismissOperation() {
-    if (this.operation?.status === 'pending' && this.operation.phase !== 'ready') return
+  /**
+   * Replaces the operation with a later state of itself, unless it has been wiped or superseded
+   * meanwhile - by a lock, most notably, which a proof or a broadcast in flight cannot notice.
+   */
+  #updateOperation(operation: PrivacyPoolsOperation): boolean {
+    if (this.#operation?.id !== operation.id) return false
 
-    this.operation = null
+    this.#operation = operation
+
+    return true
+  }
+
+  #isOperationInFlight() {
+    return this.#operation?.status === 'pending' && this.#operation.phase !== 'ready'
+  }
+
+  dismissOperation() {
+    // Only the one on screen, so another phrase's cannot be dismissed from here
+    if (!this.operation || this.#isOperationInFlight()) return
+
+    this.#operation = null
     this.#discardPending()
     this.emitUpdate()
   }
@@ -1080,9 +1111,19 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         error: new Error(`privacyPools: no paymaster configured for chain ${chainId}`)
       })
 
+    // One at a time, across phrases: only one proved withdrawal is ever kept, so a second would
+    // silently replace the first one's proof while it is still being built.
+    if (this.#isOperationInFlight())
+      throw new EmittableError({
+        message: 'Another withdrawal is still in progress. Please wait for it to finish.',
+        level: 'expected',
+        error: new Error('privacyPools: a withdrawal is already in flight')
+      })
+
     this.#discardPending()
 
     const operation = this.#startOperation({
+      seedId,
       chainId,
       tokenAddress,
       isNative: isPrivacyPoolsNativeAsset(tokenAddress),
@@ -1117,12 +1158,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         amount
       })
 
-      this.#pendingWithdrawal = privateOp
-      this.operation = {
+      const isStillCurrent = this.#updateOperation({
         ...operation,
         phase: 'ready',
         quote: { feeAmount: fee, amountAfterFee: amount - fee }
-      }
+      })
+      // A proof that finished after a lock must not be kept for a withdrawal nobody can see.
+      if (isStillCurrent) this.#pendingWithdrawal = privateOp
     } catch (error: any) {
       this.#failOperation(
         operation,
@@ -1168,6 +1210,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * way: a userOp can land after the wait for its receipt gives up, and the balance is what tells.
    */
   async broadcastWithdrawal(): Promise<void> {
+    // The one on screen: a withdrawal of a phrase that is not can't be sent from here
     const operation = this.operation
     const privateOp = this.#pendingWithdrawal
 
@@ -1178,7 +1221,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         error: new Error('privacyPools: no prepared withdrawal')
       })
 
-    const seedId = this.#assertAvailableAndGetSeedId()
+    this.#assertAvailableAndGetSeedId()
+    const { seedId } = operation
 
     const entry: PrivacyPoolsActivityEntry = {
       id: operation.id,
@@ -1194,7 +1238,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
     this.#activity.push(entry)
 
-    this.operation = { ...operation, phase: 'broadcasting' }
+    this.#updateOperation({ ...operation, phase: 'broadcasting' })
     this.emitUpdate()
 
     // Sent once: the userOp's sender is single-use (nonce 0), so a retry of the same payload could
@@ -1213,7 +1257,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         txnId: txHash
       })
 
-      this.operation = { ...operation, status: 'success', phase: 'finalizing' }
+      this.#updateOperation({ ...operation, status: 'success', phase: 'finalizing' })
       this.emitUpdate()
     } catch (error: any) {
       const message = this.#failOperation(
@@ -1249,7 +1293,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #failOperation(operation: PrivacyPoolsOperation, error: any, fallback: string): string {
     const message = error instanceof EmittableError ? error.message : fallback
 
-    this.operation = { ...operation, status: 'failed', error: message }
+    this.#updateOperation({ ...operation, status: 'failed', error: message })
     this.emitError({
       message,
       level: 'major',
@@ -1327,7 +1371,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#pendingSyncsByChain.clear()
     this.#syncStatesByChain = {}
     this.#notesByIdentity = {}
-    this.operation = null
+    this.#operation = null
     this.#discardPending()
     this.emitUpdate()
   }
@@ -1348,7 +1392,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       chains: this.chains,
       balances: this.balances,
       activity: this.activity,
-      hasSyncedAnyChain: this.hasSyncedAnyChain
+      hasSyncedAnyChain: this.hasSyncedAnyChain,
+      operation: this.operation
     }
   }
 }

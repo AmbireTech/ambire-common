@@ -183,6 +183,8 @@ export type PrivacyPoolsOperationPhase =
 export type PrivacyPoolsOperation = {
   // The id of the matching activity entry, so the two can never drift apart
   id: string
+  /** The recovery phrase whose notes are being withdrawn - the operation is shown only with it. */
+  seedId: string
   chainId: string
   tokenAddress: string
   isNative: boolean
