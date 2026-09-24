@@ -198,6 +198,31 @@ export type InternalKey = {
   meta: {
     createdAt: number | null
     fromSeedId?: string
+    /**
+     * Whether this address has nothing on chain from before `createdAt` - its birthday. Anything
+     * that scans the chain for the address can then start there instead of at the chain's origin.
+     *
+     * True when the address came from a recovery phrase this wallet generated itself, which makes
+     * the claim provable - the phrase did not exist before that moment, so neither did the
+     * address. Also true, but only assumed, for keys that predate the wallet dating them at all;
+     * `isBirthdayAssumed` tells the two apart.
+     *
+     * False means the age is unknown and a scan has to cover everything: an imported phrase can be
+     * any age, and so can the addresses under it.
+     *
+     * Absent means the key has not been through `backfillKeyBirthdays` yet, which happens once on
+     * load and leaves nothing absent afterwards.
+     */
+    hasNoPriorHistory?: boolean
+    /**
+     * Whether `hasNoPriorHistory` was assumed rather than established.
+     *
+     * The assumption holds for every address created before the wallet started dating them, since
+     * nothing that scans by birthday existed then either. It can be wrong in one narrow way: a
+     * recovery phrase already used in another wallet that derives the same addresses, whose
+     * earlier activity a scan starting at the assumed birthday would not see.
+     */
+    isBirthdayAssumed?: boolean
     [key: string]: any
   }
 }
@@ -238,6 +263,15 @@ export type KeystoreSeed = {
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   notBackedUp?: boolean
+  /**
+   * Whether this wallet generated the phrase rather than being given it.
+   *
+   * It is what makes an address derived from it datable: a generated phrase has no past, so every
+   * address under it is new as of the moment it was stored. Absent for phrases imported by the
+   * user and for phrases synced from another device, where we only know when we first saw them.
+   * See `InternalKey['meta'].hasNoPriorHistory`.
+   */
+  isNewlyGenerated?: boolean
 }
 
 export type StoredKeystoreSeed = Omit<KeystoreSeed, 'seed' | 'seedPassphrase'> & {
@@ -253,6 +287,8 @@ export type KeystoreTempSeed = {
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
   notBackedUp?: boolean
+  /** See `KeystoreSeed['isNewlyGenerated']`. Set only by `generateTempSeed`. */
+  isNewlyGenerated?: boolean
 }
 
 export type KeystoreSignerType = {

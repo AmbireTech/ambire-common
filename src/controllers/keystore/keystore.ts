@@ -5,7 +5,16 @@ import {
   encryptWithPublicKey,
   publicKeyByPrivateKey
 } from 'eth-crypto'
-import { computeAddress, concat, getBytes, hexlify, keccak256, Mnemonic, Wallet } from 'ethers'
+import {
+  computeAddress,
+  concat,
+  getBytes,
+  HDNodeWallet,
+  hexlify,
+  keccak256,
+  Mnemonic,
+  Wallet
+} from 'ethers'
 
 import {
   CIPHER,
@@ -22,6 +31,7 @@ import {
   migrateStoredPayloadsToGCM,
   SCRYPT_PARAMS
 } from '@/libs/keystore/keystore'
+import { backfillKeyBirthdays } from '@/libs/keystore/keyBirthday'
 
 import EmittableError from '../../classes/EmittableError'
 import {
@@ -29,8 +39,10 @@ import {
   DERIVATION_OPTIONS,
   HD_PATH_TEMPLATE_TYPE
 } from '../../consts/derivation'
+import { PRIVACY_POOLS_DERIVATION_PATH_PREFIX } from '../../consts/privacyPools'
 import { Account } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { Hex } from '../../interfaces/hex'
 import { KeyIterator } from '../../interfaces/keyIterator'
 import {
   AESGCMEncrypted,
@@ -160,6 +172,29 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     })
   }
 
+  /**
+   * Writes back the birthdays assumed on load.
+   *
+   * Persisted rather than recomputed each time so the assumed date is fixed at the first run
+   * instead of moving forward with every startup - a birthday that drifted would put a note made
+   * today out of reach of tomorrow's scan.
+   *
+   * A failed write is not a failed load: the keys are already usable, and the only cost is that
+   * the next startup assumes the birthdays again. Reported silently so it still reaches Sentry
+   * without telling the user their keystore is broken.
+   */
+  async #persistAssumedKeyBirthdays(keys: StoredKey[]) {
+    try {
+      await this.#storage.set('keystoreKeys', keys)
+    } catch (e: any) {
+      this.emitError({
+        message: 'Could not save when this account was created.',
+        level: 'silent',
+        error: e instanceof Error ? e : new Error('keystore: failed to persist key birthdays')
+      })
+    }
+  }
+
   async #load() {
     try {
       const [keystoreSeeds, keyStoreUid, keystoreKeys] = await Promise.all([
@@ -175,7 +210,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         // of the extension supported only one saved seed which lacked id and label props.
         return { ...s, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' }
       })
-      this.#keystoreKeys = keystoreKeys
+      // Dates the keys stored before the wallet recorded birthdays.
+      const { keys: datedKeys, hasBackfilled } = backfillKeyBirthdays(keystoreKeys)
+      this.#keystoreKeys = datedKeys
+      if (hasBackfilled) await this.#persistAssumedKeyBirthdays(datedKeys)
     } catch (e: any) {
       this.emitError({
         message:
@@ -671,12 +709,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   get seeds() {
     return this.#keystoreSeeds.map(
-      ({ id, label, hdPathTemplate, seedPassphrase, notBackedUp }) => ({
+      ({ id, label, hdPathTemplate, seedPassphrase, notBackedUp, isNewlyGenerated }) => ({
         id,
         label: label || 'Unnamed Recovery Seed',
         hdPathTemplate,
         withPassphrase: !!seedPassphrase,
-        notBackedUp
+        notBackedUp,
+        isNewlyGenerated
       })
     )
   }
@@ -709,12 +748,39 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     this.#tempSeed = {
       seed,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-      notBackedUp: true
+      notBackedUp: true,
+      // The only place this can be known: the phrase is being created right now, so nothing can
+      // have been done with it before. Every address derived from it is datable because of this.
+      isNewlyGenerated: true
     }
 
     this.emitUpdate()
 
     return this.#tempSeed
+  }
+
+  /**
+   * Generates a new recovery phrase and stores it straight away, returning the id it is stored
+   * with. For a phrase that no account is derived from through the account picker - a Privacy
+   * Pools account's - so, unlike `generateTempSeed`, it never passes through the temp seed another
+   * flow may be holding.
+   *
+   * Flagged as not backed up and as newly generated, exactly like a generated temp seed.
+   */
+  async addGeneratedSeed({ extraEntropy }: { extraEntropy?: string }): Promise<string> {
+    const seed = new EntropyGenerator().generateRandomMnemonic(12, extraEntropy || '').phrase
+
+    const [seedId] = await this.#addSeeds([
+      {
+        seed,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        notBackedUp: true,
+        isNewlyGenerated: true
+      }
+    ])
+    if (!seedId) throw new Error('keystore: the generated seed was not stored')
+
+    return seedId
   }
 
   deleteTempSeed(shouldUpdate = true) {
@@ -766,7 +832,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     try {
       // Entries are pushed as they are built, so that duplicates and labels are
       // resolved against the seeds added earlier in the same batch as well
-      for (const { seed, seedPassphrase, hdPathTemplate, notBackedUp, id } of seedsToAdd) {
+      for (const {
+        seed,
+        seedPassphrase,
+        hdPathTemplate,
+        notBackedUp,
+        isNewlyGenerated,
+        id
+      } of seedsToAdd) {
         const existingEntry = await this.#findStoredSeed(seed, seedPassphrase)
         if (existingEntry) {
           ids.push(existingEntry.id)
@@ -781,7 +854,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
             ? await encryptWithKey(this.#mainKey, new TextEncoder().encode(seedPassphrase))
             : null,
           hdPathTemplate,
-          notBackedUp
+          notBackedUp,
+          isNewlyGenerated
         }
 
         this.#keystoreSeeds.push(newEntry)
@@ -1438,6 +1512,31 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     const { seed, seedPassphrase } = await decryptStoredSeed(this.#mainKey, keystoreSeed)
 
     return { ...keystoreSeed, seed, seedPassphrase }
+  }
+
+  /**
+   * Derives one Privacy Pools note secret from a stored recovery phrase.
+   *
+   * Exists so the phrase itself never reaches `@kohaku-eth/privacy-pools`. The SDK's host contract
+   * is a keystore with a single `deriveAt(path)` method, and its own bundled implementation keeps
+   * the mnemonic - which would put the phrase inside an unaudited alpha dependency for as long as
+   * the plugin lives. This hands back one derived key and nothing else.
+   *
+   * The prefix check is the security boundary: the SDK chooses the paths, so without it a bug or a
+   * malicious bump could ask for the user's EVM keys and get them.
+   */
+  async derivePrivacyPoolsKey(seedId: KeystoreSeed['id'], path: string): Promise<Hex> {
+    await this.initialLoadPromise
+
+    if (!this.isUnlocked) throw new Error('keystore: not unlocked')
+
+    if (!path.startsWith(PRIVACY_POOLS_DERIVATION_PATH_PREFIX))
+      throw new Error(`keystore: refusing to derive a key outside Privacy Pools' paths (${path})`)
+
+    const { seed, seedPassphrase } = await this.getSavedSeed(seedId)
+
+    return HDNodeWallet.fromMnemonic(Mnemonic.fromPhrase(seed, seedPassphrase), path)
+      .privateKey as Hex
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {

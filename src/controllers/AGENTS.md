@@ -129,10 +129,11 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **ProvidersController** – Initializes and manages JSON-RPC providers for each configured network.
 - **PhishingController** – Maintains and updates a list of phishing domains and addresses to protect users.
 - **PortfolioController** – Fetches and caches token balances, DeFi positions, and price data per account.
+- **PrivacyPoolsController** – Manages Privacy Pools (0xBow) accounts, at most one per recovery phrase, and their shielded notes: syncs pools, reports approved/pending balances, and builds deposit, withdrawal and public-reclaim operations.
 - **WalletTokenController** – Loads and validates WALLET-token data for the portfolio, including the cached xWALLET conversion rate.
 - **RequestsController** – Handles all requests (e.g., signing, connecting to an app, etc.), which come from the app UI and dApps.
 - **SafeController** – Integrates with Safe (Gnosis Safe) multisig wallets for transaction and message fetching.
-- **SelectedAccountController** – Tracks the currently selected account and derives its data (e.g., portfolio and auto login policies)
+- **SelectedAccountController** – Tracks the currently selected account - a regular one, or a Privacy Pools one in its place - and derives its data (e.g., portfolio and auto login policies)
 - **SignAccountOpController** – Prepares and signs transactions (accountOps); uses `EstimationController` and `GasPriceController` internally
 - **SignMessageController** – Used to sign offchain messages (e.g., personal_sign, EIP-712) and SIWE messages;
 - **StorageController** – Persists and migrates application state across versions.

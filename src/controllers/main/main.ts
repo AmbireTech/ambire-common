@@ -33,6 +33,7 @@ import { KeystoreController } from '@/controllers/keystore/keystore'
 import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
+import { PrivacyPoolsController } from '@/controllers/privacyPools/privacyPools'
 import { ProvidersController } from '@/controllers/providers/providers'
 import { RequestsController } from '@/controllers/requests/requests'
 import { SafeController } from '@/controllers/safe/safe'
@@ -78,6 +79,7 @@ import { AddNetworkRequestParams, INetworksController, Network } from '@/interfa
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
 import { IPortfolioController } from '@/interfaces/portfolio'
+import { IPrivacyPoolsController } from '@/interfaces/privacyPools'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
 import { ISafeController } from '@/interfaces/safe'
@@ -209,6 +211,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   selectedAccount: ISelectedAccountController
 
+  privacyPools: IPrivacyPoolsController
+
   requests: IRequestsController
 
   banner: IBannerController
@@ -250,7 +254,9 @@ export class MainController extends EventEmitter implements IMainController {
     featureFlags,
     keystoreSigners,
     externalSignerControllers,
-    uiManager
+    uiManager,
+    privacyPoolsCircuitsBaseUrl,
+    getPrivacyPoolsInitialState
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -267,6 +273,17 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
+    /**
+     * Where the Privacy Pools circuit artifacts are served from. A build asset whose URL only the
+     * platform layer knows, so it is injected rather than derived here.
+     */
+    privacyPoolsCircuitsBaseUrl: string
+    /**
+     * Loads the pre-scanned Privacy Pools history a first sync starts from. Shipped by the platform
+     * layer, since only it knows how its build serves several megabytes of it - and absent is fine,
+     * it only means the first sync walks the chain itself.
+     */
+    getPrivacyPoolsInitialState?: () => Promise<Record<string, any>>
   }) {
     super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
@@ -417,6 +434,19 @@ export class MainController extends EventEmitter implements IMainController {
       autoLogin: this.autoLogin,
       banner: this.banner,
       ui: this.ui
+    })
+
+    this.privacyPools = new PrivacyPoolsController({
+      eventEmitterRegistry,
+      keystore: this.keystore,
+      networks: this.networks,
+      providers: this.providers,
+      selectedAccount: this.selectedAccount,
+      storage: this.storage,
+      fetch: this.fetch,
+      circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
+      getInitialState: getPrivacyPoolsInitialState,
+      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
     })
 
     this.portfolio = new PortfolioController(
@@ -620,6 +650,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
       this.erc7730,
+      this.privacyPools,
       eventEmitterRegistry
     )
     this.domains = new DomainsController({
@@ -868,6 +899,14 @@ export class MainController extends EventEmitter implements IMainController {
 
     await this.survey.initialLoadPromise
 
+    await this.privacyPools.initialLoadPromise
+    // A Privacy Pools account restored as selected that is gone by now - removed with its recovery
+    // phrase, possibly while the wallet was still loading
+    const { privacyPoolsAccountId } = this.selectedAccount
+    if (privacyPoolsAccountId && !this.#hasPrivacyPoolsAccount(privacyPoolsAccountId)) {
+      await this.#selectFallbackAccount()
+    }
+
     this.isReady = true
     this.emitUpdate()
   }
@@ -903,19 +942,7 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     this.isOffline = false
-    // call closeRequestWindow while still on the currently selected account to allow proper
-    // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
-    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
-      // Switching accounts is the user acting on the wallet, not refusing the apps that
-      // happened to be waiting, so it must not count towards the spam detection.
-      await this.requests.closeRequestWindow({ isUserInitiated: false })
-    }
-    const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
-      ({ kind }) => kind === 'swapAndBridge'
-    )
-    if (swapAndBridgeSigningRequest) {
-      await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
-    }
+    await this.#leaveSelectedAccount()
     await this.selectedAccount.setAccount(accountToSelect)
     // Update reverse lookup data and ENS expiry
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -950,6 +977,130 @@ export class MainController extends EventEmitter implements IMainController {
     ])
   }
 
+  /** Cleans up after the account on screen, before another one - of either kind - is selected. */
+  async #leaveSelectedAccount() {
+    // call closeRequestWindow while still on the currently selected account to allow proper
+    // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
+    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
+      // Switching accounts is the user acting on the wallet, not refusing the apps that
+      // happened to be waiting, so it must not count towards the spam detection.
+      await this.requests.closeRequestWindow({ isUserInitiated: false })
+    }
+    const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
+      ({ kind }) => kind === 'swapAndBridge'
+    )
+    if (swapAndBridgeSigningRequest) {
+      await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
+    }
+  }
+
+  #hasPrivacyPoolsAccount(seedId: string) {
+    return this.privacyPools.accounts.some((account) => account.seedId === seedId)
+  }
+
+  /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
+  async addPrivacyPoolsAccount(seedId: string) {
+    await this.initialLoadPromise
+
+    // Wrapped as a whole, so a refused account is shown to the user rather than left to propagate
+    await this.withStatus(
+      'selectAccount',
+      async () => {
+        await this.privacyPools.addAccount(seedId)
+        await this.#selectPrivacyPoolsAccount(seedId)
+      },
+      true
+    )
+  }
+
+  /**
+   * Creates a new recovery phrase with only a Privacy Pools account on it, and selects it - no
+   * regular account is derived from the phrase.
+   *
+   * The phrase is stored as not backed up, and the UI asks for a backup right away: it is the only
+   * way to recover whatever the account will hold.
+   */
+  async addPrivacyPoolsAccountFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'selectAccount',
+      async () => {
+        const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
+        await this.privacyPools.addAccount(seedId)
+        await this.#selectPrivacyPoolsAccount(seedId)
+      },
+      true
+    )
+  }
+
+  async selectPrivacyPoolsAccount(seedId: string) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'selectAccount',
+      async () => this.#selectPrivacyPoolsAccount(seedId),
+      true
+    )
+  }
+
+  /**
+   * Puts a Privacy Pools account on screen, leaving no regular account selected.
+   *
+   * Apps are deliberately not told: what they should see while a Privacy Pools account is selected
+   * is not decided yet, so they keep whatever account they had.
+   */
+  async #selectPrivacyPoolsAccount(seedId: string) {
+    if (!this.#hasPrivacyPoolsAccount(seedId)) {
+      console.error(`Privacy Pools account of recovery phrase ${seedId} does not exist`)
+      return
+    }
+
+    await this.#leaveSelectedAccount()
+    await this.selectedAccount.setPrivacyPoolsAccount(seedId)
+    this.swapAndBridge.reset()
+    this.transfer.reset({ destroyAccountOp: true })
+
+    // forceEmitUpdate to update the getters in the FE state of the ctrls
+    await Promise.all([
+      this.activity.forceEmitUpdate(),
+      this.requests.forceEmitUpdate(),
+      this.addressBook.forceEmitUpdate(),
+      this.swapAndBridge.forceEmitUpdate(),
+      this.forceEmitUpdate()
+    ])
+  }
+
+  /**
+   * Selects what should be on screen once the selected account is gone: the first regular account,
+   * else the first Privacy Pools account, else nothing - which is the signed-out state.
+   */
+  async #selectFallbackAccount() {
+    const [firstAccount] = this.accounts.accounts
+    if (firstAccount) {
+      await this.#selectAccount(firstAccount.addr)
+      return
+    }
+
+    const [firstPrivacyPoolsAccount] = this.privacyPools.accounts
+    if (firstPrivacyPoolsAccount) {
+      await this.#selectPrivacyPoolsAccount(firstPrivacyPoolsAccount.seedId)
+      return
+    }
+
+    await this.selectedAccount.setPrivacyPoolsAccount(null)
+    this.emitUpdate()
+  }
+
+  async #onPrivacyPoolsAccountsRemoved(seedIds: string[]) {
+    const { privacyPoolsAccountId } = this.selectedAccount
+    if (!privacyPoolsAccountId || !seedIds.includes(privacyPoolsAccountId)) return
+    // Still loading: `#load` makes this same check once everything it needs is in place
+    if (!this.isReady) return
+
+    await this.#selectFallbackAccount()
+  }
+
   async #onAccountPickerSuccess() {
     if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator))
       await this.keystore.persistTempSeed()
@@ -961,8 +1112,18 @@ export class MainController extends EventEmitter implements IMainController {
         hdPathTemplate: this.accountPicker.hdPathTemplate
       })
 
+      // Stamped here rather than in the key iterator, which derives addresses without knowing
+      // where the phrase came from. An address under a phrase this wallet generated has no past,
+      // so its `createdAt` is a real boundary - see `InternalKey['meta'].hasNoPriorHistory`.
       this.accountPicker.readyToAddKeys.internal = this.accountPicker.readyToAddKeys.internal.map(
-        (key) => ({ ...key, meta: { ...key.meta, fromSeedId: storedSeed.id } })
+        (key) => ({
+          ...key,
+          meta: {
+            ...key.meta,
+            fromSeedId: storedSeed.id,
+            hasNoPriorHistory: !!storedSeed.isNewlyGenerated
+          }
+        })
       )
     }
 
@@ -1035,6 +1196,9 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
     await this.activity.addAccountOp(submittedAccountOp)
+    // Transfers into a Privacy Pools account go out as ordinary account ops, however they were
+    // signed, so this is the one place all of them pass through
+    await this.privacyPools.onAccountOpBroadcast(submittedAccountOp)
     await this.ui.notification.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple
@@ -1509,6 +1673,7 @@ export class MainController extends EventEmitter implements IMainController {
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+          void this.privacyPools.onAccountOpStatusUpdate(op)
 
           // we scan for logs only if Success & a dapp interaction has been made
           // because only a dapp interaction might have a receiving txn after;
@@ -1651,7 +1816,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.dapps.removeAccountData(address)
 
       if (this.selectedAccount.account?.addr === address) {
-        await this.#selectAccount(this.accounts.accounts[0]?.addr ?? null)
+        await this.#selectFallbackAccount()
       }
 
       this.emitUpdate()
