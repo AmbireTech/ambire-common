@@ -37,6 +37,7 @@ import { genericErc20Humanizer, genericErc721Humanizer } from './modules/Tokens'
 import traderJoeModule from './modules/TraderJoe'
 import TrustlessManifestoModule from './modules/TrustlessManifesto'
 import { uniswapHumanizer } from './modules/Uniswap'
+import privacyPoolsModule from './modules/PrivacyPools'
 import { WALLETModule } from './modules/WALLET'
 import wrappingModule from './modules/Wrapping'
 
@@ -49,6 +50,7 @@ const singleCallHumanizerModules: HumanizerCallModule[] = [
   TrustlessManifestoModule,
   LidoModule,
   gasTankModule,
+  privacyPoolsModule,
   airdropsModule,
   uniswapHumanizer,
   curveModule,

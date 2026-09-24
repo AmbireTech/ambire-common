@@ -50,6 +50,7 @@ import {
 } from '../../libs/kohaku/host'
 import { createProverFactory } from '../../libs/privacyPools/prover'
 import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
+import { encodePrivacyPoolsDeposit, readPrivacyPoolsDeposit } from '../../libs/privacyPools/deposit'
 import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
 import { readPaymasterWithdrawal } from '../../libs/privacyPools/paymasterWithdrawal'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
@@ -64,59 +65,14 @@ export const STATUS_WRAPPED_METHODS = {
   sync: 'INITIAL'
 } as const
 
-const NATIVE_DEPOSIT_SIGNATURE = 'deposit(uint256)'
-const ERC20_DEPOSIT_SIGNATURE = 'deposit(address,uint256,uint256)'
-
-/** The entrypoint's two deposit functions - native and ERC-20 - the only calls a deposit makes. */
-const ENTRYPOINT_DEPOSIT_INTERFACE = new Interface([
-  'function deposit(uint256 _precommitment) payable returns (uint256)',
-  'function deposit(address _asset, uint256 _value, uint256 _precommitment) returns (uint256)'
-])
-
 /**
  * How long a broadcast deposit blocks another into the same account, while it most likely has
  * not landed yet. See `#broadcastDeposits`.
  */
 const DEPOSIT_CONFIRMATION_WINDOW_MS = 15 * 60 * 1000
 
-/**
- * Reads an entrypoint deposit call: what it deposits, how much, and under which precommitment.
- * Null for any other call.
- */
-const readDeposit = ({
-  data,
-  value
-}: {
-  data: string
-  value: bigint
-}): { precommitment: bigint; assetAddress: string; amount: bigint } | null => {
-  const parsed = ENTRYPOINT_DEPOSIT_INTERFACE.parseTransaction({ data, value })
-  if (!parsed) return null
-
-  if (parsed.signature === NATIVE_DEPOSIT_SIGNATURE)
-    return {
-      precommitment: BigInt(parsed.args[0]),
-      assetAddress: toPrivacyPoolsAssetAddress(ZERO_ADDRESS),
-      amount: value
-    }
-
-  if (parsed.signature === ERC20_DEPOSIT_SIGNATURE)
-    return {
-      precommitment: BigInt(parsed.args[2]),
-      assetAddress: String(parsed.args[0]),
-      amount: BigInt(parsed.args[1])
-    }
-
-  return null
-}
-
-const readDepositPrecommitment = (data: string): bigint | null => {
-  try {
-    return readDeposit({ data, value: 0n })?.precommitment ?? null
-  } catch {
-    return null
-  }
-}
+const readDepositPrecommitment = (data: string): bigint | null =>
+  readPrivacyPoolsDeposit({ data, value: 0n })?.precommitment ?? null
 
 const ERC20_INTERFACE = new Interface([
   'function approve(address spender, uint256 amount)',
@@ -1098,23 +1054,15 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     this.#preparedDeposits.set(precommitment, { seedId, chainId })
 
-    const depositCall: Call = asset.isNative
-      ? {
-          to: config.entrypointAddress,
-          value: amount,
-          data: ENTRYPOINT_DEPOSIT_INTERFACE.encodeFunctionData(NATIVE_DEPOSIT_SIGNATURE, [
-            precommitment
-          ])
-        }
-      : {
-          to: config.entrypointAddress,
-          value: 0n,
-          data: ENTRYPOINT_DEPOSIT_INTERFACE.encodeFunctionData(ERC20_DEPOSIT_SIGNATURE, [
-            asset.address,
-            amount,
-            precommitment
-          ])
-        }
+    const depositCall: Call = {
+      to: config.entrypointAddress,
+      ...encodePrivacyPoolsDeposit({
+        isNative: asset.isNative,
+        assetAddress: asset.address,
+        amount,
+        precommitment
+      })
+    }
 
     if (asset.isNative) return [depositCall]
 
@@ -1253,7 +1201,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     const entries = calls
       .filter((call) => call.to?.toLowerCase() === config.entrypointAddress.toLowerCase())
-      .map((call) => readDeposit(call))
+      .map((call) => readPrivacyPoolsDeposit(call))
       .filter((deposit): deposit is NonNullable<typeof deposit> => !!deposit)
       .map((deposit) => ({ deposit, prepared: this.#preparedDeposits.get(deposit.precommitment) }))
       .filter(({ prepared }) => prepared?.chainId === chainId.toString())
