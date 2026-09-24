@@ -71,14 +71,20 @@ describe('PhishingController', () => {
 
   test('should get dapps blacklisted status', async () => {
     const { controller } = await prepareTest(['foourmemez.com'])
-    expect(controller.getDomainBlacklistedStatus('https://foourmemez.com')).toBe('BLACKLISTED')
-    expect(controller.getDomainBlacklistedStatus('https://rewards.ambire.com')).toBe('VERIFIED')
+    expect(await controller.resolveDomainBlacklistedStatus('https://foourmemez.com')).toBe(
+      'BLACKLISTED'
+    )
+    expect(await controller.resolveDomainBlacklistedStatus('https://rewards.ambire.com')).toBe(
+      'VERIFIED'
+    )
   })
 
   test('should get addresses blacklisted status', async () => {
     const { controller } = await prepareTest([], ['0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e'])
     expect(
-      controller.getDomainBlacklistedStatus('https://0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e')
+      await controller.resolveDomainBlacklistedStatus(
+        'https://0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e'
+      )
     ).not.toBe('BLACKLISTED') // addresses are checked separately via updateAddressesBlacklistedStatus
   })
 
@@ -89,24 +95,30 @@ describe('PhishingController', () => {
 
     test('should return BLACKLISTED for a listed address, whatever the casing of the checked address', async () => {
       const { controller } = await prepareTest([], [LOWERCASE_SCAM_ADDRESS])
-      expect(controller.getAddressBlacklistedStatus(LOWERCASE_SCAM_ADDRESS)).toBe('BLACKLISTED')
-      expect(controller.getAddressBlacklistedStatus(CHECKSUMMED_SCAM_ADDRESS)).toBe('BLACKLISTED')
+      expect(await controller.resolveAddressBlacklistedStatus(LOWERCASE_SCAM_ADDRESS)).toBe(
+        'BLACKLISTED'
+      )
+      expect(await controller.resolveAddressBlacklistedStatus(CHECKSUMMED_SCAM_ADDRESS)).toBe(
+        'BLACKLISTED'
+      )
     })
 
     test('should return VERIFIED for an address that is not in the list', async () => {
       const { controller } = await prepareTest([], [LOWERCASE_SCAM_ADDRESS])
-      expect(controller.getAddressBlacklistedStatus(SAFE_ADDRESS)).toBe('VERIFIED')
+      expect(await controller.resolveAddressBlacklistedStatus(SAFE_ADDRESS)).toBe('VERIFIED')
     })
 
     test('should return VERIFIED and never throw for input that is not an address', async () => {
       const { controller } = await prepareTest([], [LOWERCASE_SCAM_ADDRESS])
-      expect(controller.getAddressBlacklistedStatus('not-an-address')).toBe('VERIFIED')
-      expect(controller.getAddressBlacklistedStatus('')).toBe('VERIFIED')
+      expect(await controller.resolveAddressBlacklistedStatus('not-an-address')).toBe('VERIFIED')
+      expect(await controller.resolveAddressBlacklistedStatus('')).toBe('VERIFIED')
     })
 
     test('should return undefined while the list is empty, so that callers can tell it apart from a checked address', async () => {
       const { controller } = await prepareTest()
-      expect(controller.getAddressBlacklistedStatus(LOWERCASE_SCAM_ADDRESS)).toBeUndefined()
+      expect(
+        await controller.resolveAddressBlacklistedStatus(LOWERCASE_SCAM_ADDRESS)
+      ).toBeUndefined()
     })
   })
 
@@ -156,7 +168,7 @@ describe('PhishingController', () => {
       const { controller } = await prepareTest()
 
       for (const domain of SUSPICIOUS_HOSTING_DOMAINS) {
-        expect(controller.getDomainBlacklistedStatus(`https://${domain}/some/path`)).toBe(
+        expect(await controller.resolveDomainBlacklistedStatus(`https://${domain}/some/path`)).toBe(
           'SUSPICIOUS_HOSTING'
         )
       }
@@ -164,23 +176,23 @@ describe('PhishingController', () => {
 
     test('getDomainBlacklistedStatus returns SUSPICIOUS_HOSTING for subdomains', async () => {
       const { controller } = await prepareTest()
-      expect(controller.getDomainBlacklistedStatus('https://my-dapp.vercel.app')).toBe(
+      expect(await controller.resolveDomainBlacklistedStatus('https://my-dapp.vercel.app')).toBe(
         'SUSPICIOUS_HOSTING'
       )
-      expect(controller.getDomainBlacklistedStatus('https://my-site.github.io/repo')).toBe(
-        'SUSPICIOUS_HOSTING'
-      )
-      expect(controller.getDomainBlacklistedStatus('https://bafkrei.ipfs.io')).toBe(
+      expect(
+        await controller.resolveDomainBlacklistedStatus('https://my-site.github.io/repo')
+      ).toBe('SUSPICIOUS_HOSTING')
+      expect(await controller.resolveDomainBlacklistedStatus('https://bafkrei.ipfs.io')).toBe(
         'SUSPICIOUS_HOSTING'
       )
     })
 
     test('getDomainBlacklistedStatus does not flag parent domains like google.com', async () => {
       const { controller } = await prepareTest()
-      expect(controller.getDomainBlacklistedStatus('https://google.com')).not.toBe(
+      expect(await controller.resolveDomainBlacklistedStatus('https://google.com')).not.toBe(
         'SUSPICIOUS_HOSTING'
       )
-      expect(controller.getDomainBlacklistedStatus('https://vercel.com')).not.toBe(
+      expect(await controller.resolveDomainBlacklistedStatus('https://vercel.com')).not.toBe(
         'SUSPICIOUS_HOSTING'
       )
     })
@@ -188,7 +200,9 @@ describe('PhishingController', () => {
     test('BLACKLISTED from phishing DB takes priority over SUSPICIOUS_HOSTING', async () => {
       // sites.google.com is in SUSPICIOUS_HOSTING_DOMAINS but also in the phishing DB
       const { controller } = await prepareTest(['sites.google.com'])
-      expect(controller.getDomainBlacklistedStatus('https://sites.google.com')).toBe('BLACKLISTED')
+      expect(await controller.resolveDomainBlacklistedStatus('https://sites.google.com')).toBe(
+        'BLACKLISTED'
+      )
     })
 
     test('getDomainBlacklistedStatus returns SUSPICIOUS_HOSTING for a fully-qualified host with a trailing dot', async () => {
@@ -196,42 +210,42 @@ describe('PhishingController', () => {
 
       // "my-dapp.vercel.app." loads the identical site as "my-dapp.vercel.app" - DNS, TLS and the
       // browser treat the trailing root-label dot as the same host - so it must not slip through.
-      expect(controller.getDomainBlacklistedStatus('https://my-dapp.vercel.app./')).toBe(
+      expect(await controller.resolveDomainBlacklistedStatus('https://my-dapp.vercel.app./')).toBe(
         'SUSPICIOUS_HOSTING'
       )
-      expect(controller.getDomainBlacklistedStatus('https://example.web.app./claim')).toBe(
-        'SUSPICIOUS_HOSTING'
-      )
-      expect(controller.getDomainBlacklistedStatus('https://sites.google.com./view/fake')).toBe(
-        'SUSPICIOUS_HOSTING'
-      )
+      expect(
+        await controller.resolveDomainBlacklistedStatus('https://example.web.app./claim')
+      ).toBe('SUSPICIOUS_HOSTING')
+      expect(
+        await controller.resolveDomainBlacklistedStatus('https://sites.google.com./view/fake')
+      ).toBe('SUSPICIOUS_HOSTING')
     })
 
     test('getDomainBlacklistedStatus flags a trailing-dot host regardless of casing, www. or repeated dots', async () => {
       const { controller } = await prepareTest(['some-other-phishing-site.com'])
 
-      expect(controller.getDomainBlacklistedStatus('https://My-Dapp.Vercel.App./')).toBe(
+      expect(await controller.resolveDomainBlacklistedStatus('https://My-Dapp.Vercel.App./')).toBe(
         'SUSPICIOUS_HOSTING'
       )
-      expect(controller.getDomainBlacklistedStatus('https://www.my-dapp.vercel.app./')).toBe(
-        'SUSPICIOUS_HOSTING'
-      )
-      expect(controller.getDomainBlacklistedStatus('https://my-dapp.vercel.app../')).toBe(
+      expect(
+        await controller.resolveDomainBlacklistedStatus('https://www.my-dapp.vercel.app./')
+      ).toBe('SUSPICIOUS_HOSTING')
+      expect(await controller.resolveDomainBlacklistedStatus('https://my-dapp.vercel.app../')).toBe(
         'SUSPICIOUS_HOSTING'
       )
       // The URL parser maps the ideographic full stop to a regular dot, trailing one included.
-      expect(controller.getDomainBlacklistedStatus('https://my-dapp。vercel。app。/')).toBe(
-        'SUSPICIOUS_HOSTING'
-      )
+      expect(
+        await controller.resolveDomainBlacklistedStatus('https://my-dapp。vercel。app。/')
+      ).toBe('SUSPICIOUS_HOSTING')
     })
 
     test('getDomainBlacklistedStatus keeps not flagging parent domains written with a trailing dot', async () => {
       const { controller } = await prepareTest(['some-other-phishing-site.com'])
 
-      expect(controller.getDomainBlacklistedStatus('https://google.com./')).not.toBe(
+      expect(await controller.resolveDomainBlacklistedStatus('https://google.com./')).not.toBe(
         'SUSPICIOUS_HOSTING'
       )
-      expect(controller.getDomainBlacklistedStatus('https://vercel.com./')).not.toBe(
+      expect(await controller.resolveDomainBlacklistedStatus('https://vercel.com./')).not.toBe(
         'SUSPICIOUS_HOSTING'
       )
     })
@@ -255,36 +269,46 @@ describe('PhishingController', () => {
     test('getDomainBlacklistedStatus returns BLACKLISTED for a host-level phishing DB entry visited with a trailing dot', async () => {
       const { controller } = await prepareTest(['example.web.app'])
 
-      expect(controller.getDomainBlacklistedStatus('https://example.web.app')).toBe('BLACKLISTED')
-      expect(controller.getDomainBlacklistedStatus('https://example.web.app./')).toBe('BLACKLISTED')
-      expect(controller.getDomainBlacklistedStatus('https://example.web.app./claim?ref=1')).toBe(
+      expect(await controller.resolveDomainBlacklistedStatus('https://example.web.app')).toBe(
         'BLACKLISTED'
       )
+      expect(await controller.resolveDomainBlacklistedStatus('https://example.web.app./')).toBe(
+        'BLACKLISTED'
+      )
+      expect(
+        await controller.resolveDomainBlacklistedStatus('https://example.web.app./claim?ref=1')
+      ).toBe('BLACKLISTED')
     })
 
     test('getDomainBlacklistedStatus returns BLACKLISTED for an apex phishing DB entry and its subdomains visited with a trailing dot', async () => {
       const { controller } = await prepareTest(['foourmemez.com'])
 
-      expect(controller.getDomainBlacklistedStatus('https://foourmemez.com./')).toBe('BLACKLISTED')
-      expect(controller.getDomainBlacklistedStatus('https://claim.foourmemez.com./')).toBe(
+      expect(await controller.resolveDomainBlacklistedStatus('https://foourmemez.com./')).toBe(
         'BLACKLISTED'
       )
+      expect(
+        await controller.resolveDomainBlacklistedStatus('https://claim.foourmemez.com./')
+      ).toBe('BLACKLISTED')
     })
 
     test('getDomainBlacklistedStatus matches an internationalized phishing DB entry written in unicode with a trailing dot', async () => {
       // The DB stores punycode, which is also what the URL parser produces for a unicode host.
       const { controller } = await prepareTest(['xn--e1afmkfd.xn--90ae'])
 
-      expect(controller.getDomainBlacklistedStatus('https://пример.бг./')).toBe('BLACKLISTED')
-      expect(controller.getDomainBlacklistedStatus('https://xn--e1afmkfd.xn--90ae./')).toBe(
+      expect(await controller.resolveDomainBlacklistedStatus('https://пример.бг./')).toBe(
         'BLACKLISTED'
       )
+      expect(
+        await controller.resolveDomainBlacklistedStatus('https://xn--e1afmkfd.xn--90ae./')
+      ).toBe('BLACKLISTED')
     })
 
     test('getDomainBlacklistedStatus returns VERIFIED for an unrelated host with a trailing dot', async () => {
       const { controller } = await prepareTest(['example.web.app'])
 
-      expect(controller.getDomainBlacklistedStatus('https://rewards.ambire.com./')).toBe('VERIFIED')
+      expect(await controller.resolveDomainBlacklistedStatus('https://rewards.ambire.com./')).toBe(
+        'VERIFIED'
+      )
     })
 
     test('updateDomainsBlacklistedStatus keys the callback by the canonical dApp id', async () => {

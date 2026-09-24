@@ -14,6 +14,9 @@ import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishin
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 import { getDappIdFromUrl, getNormalizedHostnameFromUrl } from '../../libs/dapps/helpers'
+import { AmbireIdbDatabase } from '../../services/storage/idbDatabase'
+import { PhishingDelta } from '../../services/storage/phishingIdb'
+import { PhishingPersistence } from '../../services/storage/phishingPersistence'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -167,15 +170,17 @@ function isSuspiciousHostingDomain(url: string): boolean {
 export class PhishingController extends EventEmitter implements IPhishingController {
   #fetch: Fetch
 
-  #storage: IStorageController
+  #persistence: PhishingPersistence
+
+  /**
+   * Whether a list has ever been stored. Distinguishes "never fetched" from "checked and
+   * absent", which the in-memory sets used to signal by being empty.
+   */
+  #hasStoredList = false
 
   #addressBook: IAddressBookController
 
   #ui: IUiController
-
-  #domains = new Set<string>()
-
-  #addresses = new Set<string>()
 
   // Local versioning, used for requesting incremental phishing list updates.
   #version: number = 0
@@ -214,18 +219,25 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     fetch,
     storage,
     addressBook,
-    ui
+    ui,
+    idb
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
     storage: IStorageController
     addressBook: IAddressBookController
     ui: IUiController
+    /** Undefined where IndexedDB does not exist (mobile), which selects the key-value backend. */
+    idb?: AmbireIdbDatabase
   }) {
     super(eventEmitterRegistry)
 
     this.#fetch = fetch
-    this.#storage = storage
+    this.#persistence = new PhishingPersistence({
+      storage,
+      idb,
+      onError: ({ message, error }) => this.emitError({ level: 'silent', message, error })
+    })
     this.#addressBook = addressBook
     this.#ui = ui
 
@@ -273,17 +285,13 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   }
 
   async #load() {
-    const phishing = await this.#storage.get('phishing', {
-      version: 0,
-      updatedAt: 0,
-      domains: [],
-      addresses: []
-    })
+    // The checkpoint ONLY. The background process reloads constantly, so waiting on the whole
+    // list here would pay for every wake-up; lookups read one entry at a time instead.
+    const meta = await this.#persistence.init()
 
-    this.#version = phishing.version
-    this.#updatedAt = phishing.updatedAt
-    this.#domains = new Set(phishing.domains)
-    this.#addresses = new Set(phishing.addresses)
+    this.#version = meta.version
+    this.#updatedAt = meta.updatedAt
+    this.#hasStoredList = !!meta.version
     this.updatePhishingInterval.start({ runImmediately: true })
 
     this.isReady = true
@@ -355,34 +363,35 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     const phishing = await res.json()
 
-    if (this.#version) {
-      // Incremental update: apply add/remove operations on top of local sets.
+    // The server speaks in deltas, so the delta is what gets written — only the entries it
+    // names, rather than the whole list.
+    const isIncremental = !!this.#version
+    const delta: PhishingDelta = { domains: [], addresses: [] }
+    let fullDomains: string[] = []
+    let fullAddresses: string[] = []
+
+    if (isIncremental) {
       this.#version = phishing.toVersion || 0
       ;(phishing.domains || []).forEach(
         ({ op, domain }: { op: 'add' | 'remove'; domain: string }) => {
-          if (op === 'add') this.#domains.add(domain)
-          if (op === 'remove') this.#domains.delete(domain)
+          delta.domains.push({ op, value: domain })
         }
       )
       ;(phishing.addresses || []).forEach(
         ({ op, address }: { op: 'add' | 'remove'; address: string }) => {
-          // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup,
-          // regardless of the casing the relayer used.
-          const normalizedAddress = address.toLowerCase()
-          if (op === 'add') this.#addresses.add(normalizedAddress)
-          if (op === 'remove') this.#addresses.delete(normalizedAddress)
+          // Normalized to lowercase so a lookup matches without normalizing first, regardless
+          // of the casing the relayer used.
+          delta.addresses.push({ op, value: address.toLowerCase() })
         }
       )
     } else {
-      // Initial/full update: replace local sets with the server snapshot.
+      // Initial/full update: the server sent the whole list, so it replaces what is stored.
       this.#version = phishing.version || 0
-      this.#domains = new Set(phishing.domains || [])
-      // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup, regardless
-      // of the casing the relayer used.
-      this.#addresses = new Set(
-        (phishing.addresses || []).map((address: string) => address.toLowerCase())
-      )
+      fullDomains = phishing.domains || []
+      fullAddresses = (phishing.addresses || []).map((address: string) => address.toLowerCase())
     }
+
+    this.#hasStoredList = true
 
     this.#shouldSyncDapps = true
     this.emitUpdate()
@@ -390,12 +399,17 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const updatedAt = Date.now()
     this.#updatedAt = updatedAt
 
-    await this.#storage.set('phishing', {
-      version: this.#version,
-      updatedAt,
-      domains: [...this.#domains],
-      addresses: [...this.#addresses]
-    })
+    const meta = { version: this.#version, updatedAt }
+
+    if (isIncremental) {
+      await this.#persistence.applyDelta(delta, meta)
+    } else {
+      await this.#persistence.replaceAll({
+        ...meta,
+        domains: fullDomains,
+        addresses: fullAddresses
+      })
+    }
 
     if (this.updatePhishingInterval.currentTimeout === PHISHING_FAILED_TO_GET_UPDATE_INTERVAL) {
       this.updatePhishingInterval.updateTimeout({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
@@ -403,7 +417,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     // NOTE: used for debugging only
     // console.log(
-    //   `[PhishingController] Update applied (version=${this.#version}, domains=${this.#domains.size}, addresses=${this.#addresses.size})`
+    //   `[PhishingController] Update applied (version=${this.#version})`
     // )
   }
 
@@ -440,20 +454,15 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       return
     }
 
-    // Priority: BLACKLISTED (phishing DB) > SUSPICIOUS_HOSTING > VERIFIED.
-    dappsData.forEach(({ url, dappId }) => {
-      if (
-        this.#domains.size &&
-        (this.#domains.has(dappId) || this.#domains.has(getDomain(dappId)!))
-      ) {
-        this.#domainsBlacklistedStatus.set(dappId, 'BLACKLISTED')
-        return
-      }
-      if (isSuspiciousHostingDomain(url)) {
-        this.#domainsBlacklistedStatus.set(dappId, 'SUSPICIOUS_HOSTING')
-        return
-      }
-      if (this.#domains.size) this.#domainsBlacklistedStatus.set(dappId, 'VERIFIED')
+    // Priority: BLACKLISTED > SUSPICIOUS_HOSTING > VERIFIED — all of it inside
+    // resolveDomainBlacklistedStatus, which reads one entry rather than a loaded list.
+    const resolved = await Promise.all(
+      dappsData.map(({ url }) => this.resolveDomainBlacklistedStatus(url))
+    )
+    dappsData.forEach(({ dappId }, i) => {
+      const status = resolved[i]
+      // Undefined means "cannot say" — left unset so the network fallback below picks it up.
+      if (status) this.#domainsBlacklistedStatus.set(dappId, status)
     })
 
     // Filter: we only fetch for ones that are missing or stale
@@ -478,7 +487,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       )
     this.emitUpdate()
 
-    if (!dappsToFetch.length) return // there will be dappsToFetch only if this.#domains is still empty
+    if (!dappsToFetch.length) return // only populated when the stored list could not answer
 
     const res = await fetchWithTimeout(
       this.#fetch,
@@ -541,8 +550,11 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       return false
     })
 
-    addresses.forEach((addr) => {
-      const status = this.getAddressBlacklistedStatus(addr)
+    const resolvedAddresses = await Promise.all(
+      addresses.map((addr) => this.resolveAddressBlacklistedStatus(addr))
+    )
+    addresses.forEach((addr, i) => {
+      const status = resolvedAddresses[i]
       if (status) this.#addressesBlacklistedStatus.set(addr, status)
     })
 
@@ -595,7 +607,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       )
     this.emitUpdate()
 
-    if (!addressesToFetch.length) return // there will be addressesToFetch only if this.#addresses is still empty
+    if (!addressesToFetch.length) return // only populated when the stored list could not answer
 
     const res = await fetchWithTimeout(
       this.#fetch,
@@ -671,30 +683,56 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     }
   }
 
-  getDomainBlacklistedStatus(url: string): BlacklistedStatus | undefined {
-    const dappId = getDappIdFromUrl(url)
-    if (!dappId) return undefined
-
-    // BLACKLISTED (phishing DB) always takes highest priority.
-    if (this.#domains.size) {
-      if (this.#domains.has(dappId) || this.#domains.has(getDomain(dappId)!)) return 'BLACKLISTED'
-      if (isSuspiciousHostingDomain(url)) return 'SUSPICIOUS_HOSTING'
-      return 'VERIFIED'
-    }
-    // DB not yet loaded - SUSPICIOUS_HOSTING_DOMAINS still detectable without it.
-    if (isSuspiciousHostingDomain(url)) return 'SUSPICIOUS_HOSTING'
-    return undefined
-  }
-
   /**
    * Resolves the blacklisted status of an address from the locally stored phishing list, without a
    * network request. Returns undefined while the list is not loaded yet, so that callers can tell
    * "not blacklisted" apart from "not checked yet".
    */
-  getAddressBlacklistedStatus(address: string): BlacklistedStatus | undefined {
-    if (!this.#addresses.size) return undefined
+  /**
+   * Whether a URL is hosted on a shared platform legitimate dApps do not use as a primary
+   * domain. A constant list, so this stays synchronous and needs no storage — which is what
+   * lets the frame-context banner answer without waiting on a lookup.
+   */
+  isSuspiciousHostingDomain(url: string): boolean {
+    return isSuspiciousHostingDomain(url)
+  }
 
-    return this.#addresses.has(address.toLowerCase()) ? 'BLACKLISTED' : 'VERIFIED'
+  /**
+   * Whether a domain is on the list, read one entry at a time instead of from an in-memory
+   * set. `undefined` means "cannot say" — the list has never been fetched, or the lookup
+   * failed. Never VERIFIED in either case, or a scam domain would read as safe.
+   */
+  async resolveDomainBlacklistedStatus(url: string): Promise<BlacklistedStatus | undefined> {
+    const dappId = getDappIdFromUrl(url)
+    if (!dappId) return undefined
+
+    if (!this.#hasStoredList) {
+      if (isSuspiciousHostingDomain(url)) return 'SUSPICIOUS_HOSTING'
+
+      return undefined
+    }
+
+    const parent = getDomain(dappId)
+    const [onList, parentOnList] = await Promise.all([
+      this.#persistence.hasDomain(dappId),
+      parent ? this.#persistence.hasDomain(parent) : Promise.resolve(false)
+    ])
+
+    if (onList === null || parentOnList === null) return undefined
+    if (onList || parentOnList) return 'BLACKLISTED'
+    if (isSuspiciousHostingDomain(url)) return 'SUSPICIOUS_HOSTING'
+
+    return 'VERIFIED'
+  }
+
+  /** Whether an address is on the list. Undefined means "cannot say", never "safe". */
+  async resolveAddressBlacklistedStatus(address: string): Promise<BlacklistedStatus | undefined> {
+    if (!this.#hasStoredList) return undefined
+
+    const onList = await this.#persistence.hasAddress(address)
+    if (onList === null) return undefined
+
+    return onList ? 'BLACKLISTED' : 'VERIFIED'
   }
 
   toJSON() {
