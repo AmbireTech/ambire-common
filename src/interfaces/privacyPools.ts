@@ -47,13 +47,27 @@ export type PrivacyPoolsChainConfig = {
    */
   sagaSyncUrl?: string
   /**
-   * Relayer name to base URL, including the `/relayer` path prefix. More than one on purpose:
-   * the SDK quotes them in parallel, takes the cheapest, and tolerates individual failures, and
-   * they stop accepting at different gas prices.
+   * The ERC-4337 paymaster that sponsors withdrawals on this chain. Absent where none is deployed,
+   * and withdrawals are unavailable there.
    */
-  relayers: { [name: string]: string }
+  paymaster?: PrivacyPoolsPaymasterConfig
   /** The assets this chain's pools accept, in the order the UI should offer them. */
   assets: PrivacyPoolsAsset[]
+}
+
+/**
+ * How a withdrawal is sponsored: the userOp's gas is paid by the paymaster, which takes its fee out
+ * of the withdrawn amount, so the recipient never needs ETH of its own and nothing the user owns
+ * pays gas next to it.
+ */
+export type PrivacyPoolsPaymasterConfig = {
+  entryPointAddress: Hex
+  paymasterAddress: Hex
+  /**
+   * Pool address (lowercase, the way the SDK looks it up) to the adapter that withdraws from it
+   * during paymaster validation. A pool missing here cannot be withdrawn from.
+   */
+  poolAdapters: { [poolAddress: string]: Hex }
 }
 
 export type PrivacyPoolsSyncStatus = 'idle' | 'initializing' | 'syncing' | 'ready'
@@ -135,43 +149,28 @@ export type PrivacyPoolsChainSyncState = Pick<
 export type PrivacyPoolsIdentityChainState = Pick<PrivacyPoolsChainState, 'lastSyncedAt' | 'notes'>
 
 /**
- * A relayer's answer for one withdrawal, after we have checked it against what we asked for.
+ * What a prepared withdrawal costs, after we have checked it against what we asked for.
  *
- * The SDK does not validate the quote it proves against - `quoteThunk.validateWithdrawalData` is
- * an empty function with a TODO - so these fields are what our own guard decoded out of the
- * relayer's `withdrawalData` and confirmed, not what the relayer claimed alongside it.
+ * Decoded out of the signed userOp's `paymasterData` - the bytes the paymaster and the pool will
+ * actually act on - rather than taken from the SDK's word. See `readPaymasterWithdrawal`.
  */
 export type PrivacyPoolsQuote = {
-  relayerName: string
-  feeBps: bigint
+  /** The gas fee the paymaster keeps, in the withdrawn token's units. */
   feeAmount: bigint
-  /** What the recipient actually receives, after the relayer's cut. */
+  /** What the recipient actually receives, after the fee. */
   amountAfterFee: bigint
-  /** Unix ms after which the relayer's signed commitment is no longer accepted. */
-  expiresAt: number
 }
 
 /**
- * How a withdrawal reaches the chain.
- * - 'relayed' - a third-party relayer broadcasts and takes a fee. The only mode where the
- *   recipient never needs prior ETH, and so the only one that lets it be a brand new address.
- * - 'self' - we broadcast `Entrypoint.relay` ourselves with a zero fee. Costs one public link
- *   between the address paying gas and the recipient, so it is for reclaiming to an address
- *   already known to be the user's, for amounts no relayer will take, and for when relayers are
- *   down - never as a cheaper way to reach a fresh address.
- */
-export type PrivacyPoolsWithdrawalMode = 'relayed' | 'self'
-
-/**
  * How far along a withdrawal is. No percentage to be had - the SDK reports nothing while it works -
- * so these are the points the controller can observe: picking a note and quoting (seconds),
- * proving (~10s and up, the bulk of the wait), a pause for the user to confirm the fee,
- * broadcasting, then the refresh that confirms it.
+ * so these are the points the controller can observe: proving and pricing the gas (~10s and up,
+ * the bulk of the wait - the proof is usually built twice, once more after the bundler refines the
+ * gas limits), a pause for the user to confirm the fee, broadcasting, then the refresh that
+ * confirms it.
  */
 export type PrivacyPoolsOperationPhase =
-  | 'quoting'
   | 'proving'
-  /** Proved and quoted, waiting for the user to send it. Nothing is spent until they do. */
+  /** Proved and priced, waiting for the user to send it. Nothing is spent until they do. */
   | 'ready'
   | 'broadcasting'
   | 'finalizing'
@@ -189,7 +188,6 @@ export type PrivacyPoolsOperation = {
   isNative: boolean
   amount: bigint
   recipient: string
-  mode: PrivacyPoolsWithdrawalMode
   status: PrivacyPoolsActivityStatus
   phase: PrivacyPoolsOperationPhase
   startedAt: number
@@ -234,9 +232,8 @@ export type PrivacyPoolsActivityEntry = {
   error?: string
   /** What the entrypoint took on the way in, recorded rather than recomputed. */
   vettingFee?: bigint
-  /** What the relayer took on the way out, for withdrawals in 'relayed' mode. */
-  relayFee?: bigint
-  mode?: PrivacyPoolsWithdrawalMode
+  /** What the paymaster took out of a withdrawal for its gas. */
+  fee?: bigint
   txnId?: string
 }
 

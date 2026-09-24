@@ -92,10 +92,12 @@ describe('consts/privacyPools', () => {
       })
     })
 
-    it('keeps every relayer URL on the path the service actually mounts', () => {
+    // The SDK looks the adapter up by the lowercase pool address, so a checksummed key never matches
+    // and the withdrawal fails with "no paymaster adapter configured".
+    it('keys every paymaster adapter by the lowercase pool address', () => {
       Object.values(PRIVACY_POOLS_CHAINS).forEach((chain) => {
-        Object.values(chain.relayers).forEach((url) => {
-          expect(url.endsWith('/relayer')).toBe(true)
+        Object.keys(chain.paymaster?.poolAdapters || {}).forEach((poolAddress) => {
+          expect(poolAddress).toBe(poolAddress.toLowerCase())
         })
       })
     })

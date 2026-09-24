@@ -11,6 +11,7 @@ import EmittableError from '../../classes/EmittableError'
 import {
   fromPrivacyPoolsAssetAddress,
   getPrivacyPoolsAsset,
+  getPrivacyPoolsBundlerUrl,
   getPrivacyPoolsChainConfig,
   getPrivacyPoolsStoreKey,
   isPrivacyPoolsNativeAsset,
@@ -31,10 +32,8 @@ import {
   PrivacyPoolsChainSyncState,
   PrivacyPoolsNote,
   PrivacyPoolsOperation,
-  PrivacyPoolsOperationPhase,
   PrivacyPoolsTokenBalance,
-  PrivacyPoolsUnavailableReason,
-  PrivacyPoolsWithdrawalMode
+  PrivacyPoolsUnavailableReason
 } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -49,8 +48,7 @@ import {
 import { createProverFactory } from '../../libs/privacyPools/prover'
 import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
 import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
-import { createRelayerClient, createSelfRelayClient } from '../../libs/privacyPools/relayerClient'
-import { createGuardedRelayerClient } from '../../libs/privacyPools/relayerGuard'
+import { readPaymasterWithdrawal } from '../../libs/privacyPools/paymasterWithdrawal'
 import { generateUuid } from '../../utils/uuid'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -74,16 +72,38 @@ const ERC20_INTERFACE = new Interface([
 type AssetRef = { tokenAddress: string }
 
 /**
- * A prepared withdrawal in the only shape this wallet asks for - the one a relayer broadcasts.
+ * A prepared withdrawal in the only shape this wallet asks for - a paymaster-sponsored ERC-4337
+ * userOp, already built and signed by the withdrawal's single-use sender.
  *
- * The SDK also prepares paymaster-sponsored withdrawals, which carry a signed userOp instead of a
- * relayer quote, so what `prepareUnshield` returns is a union. The relayer variant is not exported
- * on its own, hence narrowing the union rather than naming it.
+ * The SDK also prepares relayer withdrawals, so what `prepareUnshield` returns is a union. The
+ * paymaster variant is not exported on its own, hence narrowing the union rather than naming it.
  */
-type PreparedRelayerWithdrawal = Exclude<
+type PreparedPaymasterWithdrawal = Extract<
   Awaited<ReturnType<PrivacyPoolsV1Protocol['prepareUnshield']>>,
   { mode: 'paymaster' }
 >
+
+/**
+ * What the SDK throws when the paymaster's gas fee would exceed the withdrawn amount. Matched by
+ * its exact wording because the SDK throws a plain `Error` with no code to tell it apart.
+ */
+const FEE_ABOVE_AMOUNT_SDK_MESSAGE = 'Withdrawal amount too small to cover the sponsored gas fee'
+
+/**
+ * Turns the one SDK failure a user can act on into a sentence they can read. Everything else is
+ * passed through, and shown as the generic fallback.
+ */
+const toReadableWithdrawalError = (error: any) => {
+  if (!(error instanceof Error) || !error.message.includes(FEE_ABOVE_AMOUNT_SDK_MESSAGE))
+    return error
+
+  return new EmittableError({
+    message:
+      'This amount is too small to cover the network fee for withdrawing it. Please try a larger amount.',
+    level: 'expected',
+    error
+  })
+}
 
 /**
  * Owns the wallet's Privacy Pools state: one plugin per (chain, recovery phrase), the notes those
@@ -123,9 +143,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    */
   #protocols = new Map<string, PrivacyPoolsV1Protocol>()
 
-  /** Entrypoint relay fee ceilings, keyed `chainId:assetAddress`. See `#getMaxRelayFeeBps`. */
-  #maxRelayFeeBpsByAsset: Map<string, bigint> = new Map()
-
   /** The provider each plugin was built against, so a provider swap can invalidate it. */
   #providerInstances = new Map<string, JsonRpcProvider>()
 
@@ -155,10 +172,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #seedId: string | null = null
 
   /**
-   * The proved-but-unsent withdrawal. Private: it carries the proof and the relayer's signed
-   * commitment, neither of which the UI needs - it reads the fee off `operation.quote`.
+   * The proved-but-unsent withdrawal. Private: it carries the proof and the signed userOp, neither
+   * of which the UI needs - it reads the fee off `operation.quote`.
    */
-  #pendingWithdrawal: PreparedRelayerWithdrawal | null = null
+  #pendingWithdrawal: PreparedPaymasterWithdrawal | null = null
 
   #proverFactory: () => Promise<any>
 
@@ -181,13 +198,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * proving takes ten seconds and up, and the UI has nothing else to show meanwhile.
    */
   operation: PrivacyPoolsOperation | null = null
-
-  /**
-   * The calls a self-relayed withdrawal is sent with, once prepared. Public because the wallet
-   * signs and broadcasts them through the regular transaction flow, unlike a relayed withdrawal
-   * which this controller sends itself.
-   */
-  selfRelayCalls: Call[] | null = null
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -512,24 +522,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return provider
   }
 
-  #protocolKey(chainId: string, seedId: string, mode: PrivacyPoolsWithdrawalMode) {
-    return `${chainId}:${seedId}:${mode}`
+  #protocolKey(chainId: string, seedId: string) {
+    return `${chainId}:${seedId}`
   }
 
-  /**
-   * The plugin for a chain and phrase.
-   *
-   * Split by withdrawal mode because the relayer client is fixed at construction and the two modes
-   * need different ones - a real HTTP client for relayed withdrawals, a synthetic zero-fee quote
-   * for self-relayed ones. Both instances hydrate from the same persisted store, so the second one
-   * costs a deserialization rather than a rescan.
-   */
-  async #getProtocol(
-    chainId: string,
-    seedId: string,
-    mode: PrivacyPoolsWithdrawalMode = 'relayed'
-  ): Promise<PrivacyPoolsV1Protocol> {
-    const key = this.#protocolKey(chainId, seedId, mode)
+  /** The plugin for a chain and phrase. */
+  async #getProtocol(chainId: string, seedId: string): Promise<PrivacyPoolsV1Protocol> {
+    const key = this.#protocolKey(chainId, seedId)
     const existing = this.#protocols.get(key)
     if (existing) return existing
 
@@ -538,10 +537,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     const provider = this.#getProvider(chainId)
     const host = this.#getHost(provider, seedId)
-    // `quoteThunk` throws on an empty relayer map, so the self-relay path still needs one entry.
-    // Its URL is never fetched - `createSelfRelayClient` ignores it.
-    const relayers = mode === 'self' ? { 'Your wallet': 'self' } : config.relayers
-    const relayerNameByUrl = new Map(Object.entries(relayers).map(([name, url]) => [url, name]))
     const { dataService, isSagaHydrated } = await this.#getDataService(config, host.provider)
 
     const protocol = new PrivacyPoolsV1Protocol(host, {
@@ -554,29 +549,25 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         address: BigInt(config.entrypointAddress),
         deploymentBlock: config.deploymentBlock
       },
-      relayersList: relayers,
       proverFactory: this.#proverFactory,
       // 0xBow's API rather than the SDK's IPFS default, which depends on ipfs.io being up and on
       // the CID in the last on-chain root update still being pinned.
       aspServiceFactory: () =>
         new OxBowAspService({ network: host.network, aspUrl: config.aspUrl }),
-      // The seam that lets us check a quote before proving against it - `prepareUnshield` quotes
-      // and proves in one call and exposes nothing in between. See `relayerGuard`.
-      // Cast confined to this boundary: `IRelayerClient` is not exported from the SDK, so the
-      // guarded client is written against a matching shape declared in `relayerGuard`.
-      relayerClientFactory: (() =>
-        createGuardedRelayerClient({
-          client: mode === 'self' ? createSelfRelayClient() : createRelayerClient(this.#fetch),
-          relayerNameByUrl,
-          getOnChainMaxRelayFeeBps: (asset) => this.#getMaxRelayFeeBps(chainId, asset),
-          describeAmount: (asset, amount) => this.#describeAssetAmount(chainId, asset, amount),
-          onRejected: (_relayerName, error) =>
-            this.emitError({
-              message: error.message,
-              level: 'major',
-              error
-            })
-        })) as any
+      // Passed explicitly rather than left to the SDK's built-in table, so the adapters a
+      // withdrawal is checked against in `readPaymasterWithdrawal` are the same ones it is built
+      // with, and so the bundler is reached with our own key. Empty for a chain without a
+      // paymaster, which makes the SDK refuse the withdrawal rather than fall back to its table.
+      paymasterConfig: config.paymaster
+        ? {
+            [Number(config.chainId)]: {
+              bundlerUrl: getPrivacyPoolsBundlerUrl(config.chainId),
+              entryPointAddress: config.paymaster.entryPointAddress,
+              paymasterAddress: config.paymaster.paymasterAddress,
+              poolsAccountsMap: config.paymaster.poolAdapters
+            }
+          }
+        : {}
     })
 
     this.#protocols.set(key, protocol)
@@ -672,54 +663,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       this.#providerInstances.delete(key)
       this.#sagaHydratedKeys.delete(key)
     })
-  }
-
-  /**
-   * The entrypoint's relay fee ceiling for an asset, memoized per chain and asset.
-   *
-   * Memoized because it is operator configuration that changes about never, and it would otherwise
-   * be read once per relayer on every quote round. Resolves null when the read fails, which turns
-   * the check off for that attempt rather than blocking a withdrawal over an RPC hiccup - and the
-   * failure is not cached, so the next attempt tries again.
-   */
-  async #getMaxRelayFeeBps(chainId: string, asset: bigint): Promise<bigint | null> {
-    const assetAddress = `0x${asset.toString(16).padStart(40, '0')}`
-    const key = `${chainId}:${assetAddress}`
-    const cached = this.#maxRelayFeeBpsByAsset.get(key)
-    if (cached !== undefined) return cached
-
-    const config = getPrivacyPoolsChainConfig(BigInt(chainId))
-    if (!config) return null
-
-    try {
-      const { maxRelayFeeBps } = await readEntrypointAssetConfig({
-        provider: this.#getProvider(chainId),
-        entrypointAddress: config.entrypointAddress,
-        assetAddress
-      })
-
-      this.#maxRelayFeeBpsByAsset.set(key, maxRelayFeeBps)
-
-      return maxRelayFeeBps
-    } catch (error: any) {
-      // Silent: the user is mid-withdrawal and this only costs them an earlier, clearer refusal -
-      // the entrypoint still enforces the same ceiling itself.
-      this.emitError({
-        message: 'Could not read the withdrawal fee limit for this pool.',
-        level: 'silent',
-        error
-      })
-
-      return null
-    }
-  }
-
-  /** Renders an SDK-side asset amount the way the rest of the wallet writes it, for messages. */
-  #describeAssetAmount(chainId: string, asset: bigint, amount: bigint): string {
-    const config = getPrivacyPoolsAsset(BigInt(chainId), fromPrivacyPoolsAssetAddress(asset))
-    if (!config) return amount.toString()
-
-    return `${formatUnits(amount, config.decimals)} ${config.symbol}`
   }
 
   #writeChainSyncState(chainId: string, update: Partial<PrivacyPoolsChainSyncState>) {
@@ -953,13 +896,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     isNative: boolean
     amount: bigint
     recipient: string
-    mode: PrivacyPoolsWithdrawalMode
   }): PrivacyPoolsOperation {
     const operation: PrivacyPoolsOperation = {
       id: generateUuid(),
       ...params,
       status: 'pending',
-      phase: 'quoting',
+      phase: 'proving',
       startedAt: Date.now(),
       quote: null,
       error: null
@@ -969,13 +911,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.emitUpdate()
 
     return operation
-  }
-
-  #setPhase(phase: PrivacyPoolsOperationPhase) {
-    if (!this.operation) return
-
-    this.operation = { ...this.operation, phase }
-    this.emitUpdate()
   }
 
   dismissOperation() {
@@ -989,11 +924,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /**
    * Proves a withdrawal without sending it.
    *
-   * Split from broadcasting because the proof is the expensive half - ten seconds on a desktop and
-   * longer on weak hardware - and the fee is not known until the quote comes back. Doing both in
-   * one call would either commit the user to a fee they never saw, or throw the proof away when a
-   * relayer refuses the send. This way the screen can show what the withdrawal will actually cost,
-   * and a failed broadcast can be retried against the work already done.
+   * Split from broadcasting because the proof is the expensive half - ten seconds and up on a
+   * desktop, usually twice over - and the fee is not known until the userOp is priced. Doing both
+   * in one call would commit the user to a fee they never saw. This way the screen can show what
+   * the withdrawal will actually cost before anything is sent.
+   *
+   * Sponsored by an ERC-4337 paymaster: a single-use sender derived from the phrase submits the
+   * userOp, the paymaster pays its gas and takes a fee out of the withdrawn amount. Nothing the
+   * user owns pays gas next to the recipient, and the recipient never needs ETH of its own.
    *
    * Not wrapped in `withStatus`: proving runs long with no way to abort, which is exactly the shape
    * `withStatus` must not wrap. Progress is reported through `operation`.
@@ -1002,17 +940,23 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     chainId,
     tokenAddress,
     amount,
-    recipient,
-    mode = 'relayed'
+    recipient
   }: AssetRef & {
     chainId: string
     amount: bigint
     recipient: string
-    mode?: PrivacyPoolsWithdrawalMode
   }): Promise<void> {
     const seedId = this.#assertAvailableAndGetSeedId()
     const config = getPrivacyPoolsChainConfig(BigInt(chainId))
     if (!config) throw new Error(`privacyPools: unsupported chain ${chainId}`)
+
+    const { paymaster } = config
+    if (!paymaster)
+      throw new EmittableError({
+        message: 'Withdrawing from Privacy Pools is not available on this network yet.',
+        level: 'expected',
+        error: new Error(`privacyPools: no paymaster configured for chain ${chainId}`)
+      })
 
     this.#discardPending()
 
@@ -1021,61 +965,46 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       tokenAddress,
       isNative: isPrivacyPoolsNativeAsset(tokenAddress),
       amount,
-      recipient,
-      mode
+      recipient
     })
 
     try {
-      const protocol = await this.#getProtocol(chainId, seedId, mode)
+      await this.#assertPoolIsSponsored(chainId, tokenAddress)
 
-      // Quoting and proving happen inside this one call; the guard installed in
-      // `relayerClientFactory` is what sits between them.
-      this.#setPhase('proving')
+      const protocol = await this.#getProtocol(chainId, seedId)
+
+      // Pricing the gas, proving, and signing the userOp all happen inside this one call.
       const privateOp = await protocol.prepareUnshield(
         {
           asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(tokenAddress) },
           amount
         },
-        recipient as any
+        recipient as any,
+        { mode: 'paymaster' }
       )
 
-      // The SDK types a prepared withdrawal as a union since it gained paymaster-sponsored ones,
-      // which are broadcast as a userOp rather than handed to a relayer. We never ask for that
-      // mode, so a payload carrying it means the SDK ignored what we asked for.
-      if (privateOp.mode === 'paymaster')
+      // The SDK types a prepared withdrawal as a union of relayer and paymaster ones. We only ever
+      // ask for the paymaster mode, so anything else means the SDK ignored what we asked for.
+      if (privateOp.mode !== 'paymaster')
         throw new Error('privacyPools: the withdrawal came back in an unsupported form')
 
-      const { quote, relayerId } = privateOp.quoteData
-      const feeBps = BigInt(quote.feeBPS)
-      const feeAmount = (amount * feeBps) / 10000n
+      const { fee } = readPaymasterWithdrawal({
+        withdrawal: privateOp.withdrawal,
+        paymaster,
+        recipient,
+        amount
+      })
 
       this.#pendingWithdrawal = privateOp
-      this.selfRelayCalls =
-        mode === 'self'
-          ? [
-              {
-                to: privateOp.txData.to,
-                data: privateOp.txData.data,
-                value: privateOp.txData.value
-              }
-            ]
-          : null
-
       this.operation = {
         ...operation,
         phase: 'ready',
-        quote: {
-          relayerName: relayerId,
-          feeBps,
-          feeAmount,
-          amountAfterFee: amount - feeAmount,
-          expiresAt: quote.feeCommitment.expiration
-        }
+        quote: { feeAmount: fee, amountAfterFee: amount - fee }
       }
     } catch (error: any) {
       this.#failOperation(
         operation,
-        error,
+        toReadableWithdrawalError(error),
         'The withdrawal could not be prepared. Please try again.'
       )
     }
@@ -1084,15 +1013,37 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Sends the prepared withdrawal.
+   * Refuses, before any proving, a token whose pool the paymaster has no adapter for.
    *
-   * A relayed one goes to the relayer that quoted it - that is what lets the recipient be an
-   * address which has never held ETH, since the relayer broadcasts and pays the gas, taking its fee
-   * out of the withdrawn amount.
+   * The SDK would refuse it too, but only after syncing - and with a sentence meant for developers.
+   * The pool is read from the entrypoint rather than configured, so a pool replaced behind the
+   * same token is caught here rather than trusted.
+   */
+  async #assertPoolIsSponsored(chainId: string, tokenAddress: string) {
+    const config = getPrivacyPoolsChainConfig(BigInt(chainId))
+    if (!config?.paymaster) throw new Error(`privacyPools: no paymaster for chain ${chainId}`)
+
+    const { poolAddress } = await readEntrypointAssetConfig({
+      provider: this.#getProvider(chainId),
+      entrypointAddress: config.entrypointAddress,
+      assetAddress: toPrivacyPoolsAssetAddress(tokenAddress)
+    })
+
+    if (config.paymaster.poolAdapters[poolAddress.toLowerCase()]) return
+
+    const symbol = getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)?.symbol || 'this token'
+    throw new EmittableError({
+      message: `Withdrawing ${symbol} from Privacy Pools is not supported yet.`,
+      level: 'expected',
+      error: new Error(`privacyPools: no paymaster adapter for pool ${poolAddress}`)
+    })
+  }
+
+  /**
+   * Sends the prepared withdrawal to the bundler and waits for it to land.
    *
-   * A self-relayed one goes through the wallet's own signing flow instead, because
-   * `Entrypoint.relay` accepts any sender. That costs one public link between the address paying
-   * gas and the recipient, which is why it is the fallback rather than the default.
+   * The userOp is already signed, so this only forwards it. The pooled balance is refreshed either
+   * way: a userOp can land after the wait for its receipt gives up, and the balance is what tells.
    */
   async broadcastWithdrawal(): Promise<void> {
     const operation = this.operation
@@ -1106,25 +1057,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       })
 
     const seedId = this.#assertAvailableAndGetSeedId()
-    const config = getPrivacyPoolsChainConfig(BigInt(operation.chainId))
-    if (!config) throw new Error(`privacyPools: unsupported chain ${operation.chainId}`)
-
-    // Relayers sign a fee commitment that is good for 60 seconds, and this step waits on the user,
-    // who may take longer than that to read the fee and decide. Sending a lapsed commitment is
-    // refused by the relayer with an error of its own making, so it is caught here instead - the
-    // proof is over a quote that no longer stands, so the withdrawal has to be prepared again.
-    const expiresAt = operation.quote?.expiresAt
-    if (operation.mode === 'relayed' && expiresAt && expiresAt <= Date.now()) {
-      this.#discardPending()
-      this.#failOperation(
-        operation,
-        new Error('privacyPools: relayer fee commitment expired before the user confirmed'),
-        "The relayer's offer ran out while it was waiting for you. Please prepare the withdrawal again - nothing was sent and nothing was spent."
-      )
-      this.emitUpdate()
-
-      return
-    }
 
     const entry: PrivacyPoolsActivityEntry = {
       id: operation.id,
@@ -1136,75 +1068,44 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       amount: operation.amount,
       recipient: operation.recipient,
       status: 'pending',
-      createdAt: operation.startedAt,
-      mode: operation.mode
+      createdAt: operation.startedAt
     }
     this.#activity.push(entry)
 
     this.operation = { ...operation, phase: 'broadcasting' }
     this.emitUpdate()
 
-    if (operation.mode === 'self') {
-      const calls = this.selfRelayCalls
-      const account = this.#selectedAccount.account
-
-      try {
-        if (!calls?.length) throw new Error('privacyPools: no self-relay calls prepared')
-        if (!account) throw new Error('privacyPools: no selected account')
-
-        await this.#buildCallsRequest({
-          calls,
-          meta: { chainId: BigInt(operation.chainId), accountAddr: account.addr }
-        })
-
-        // Handed off, not confirmed: the signing flow owns it from here, and the activity entry
-        // resolves when the transaction it produces does.
-        this.#discardPending()
-        this.operation = { ...operation, status: 'success', phase: 'finalizing' }
-        this.emitUpdate()
-      } catch (error: any) {
-        const message = this.#failOperation(
-          operation,
-          error,
-          'The withdrawal could not be sent. You can try again.'
-        )
-        this.#updateActivity(operation.id, { status: 'failed', error: message })
-      }
-
-      await this.#persistActivity()
-
-      return
-    }
+    // Sent once: the userOp's sender is single-use (nonce 0), so a retry of the same payload could
+    // only fail - or duplicate one that did land. A failed send is prepared again from scratch.
+    this.#discardPending()
 
     try {
       const host = this.#getHost(this.#getProvider(operation.chainId), seedId)
-      const broadcaster = createPPv1Broadcaster(host, { broadcasterUrl: config.relayers })
+      // No relayers: a paymaster withdrawal goes to the bundler URL carried in the payload.
+      const broadcaster = createPPv1Broadcaster(host, { broadcasterUrl: {} })
       const { txHash } = await broadcaster.broadcast(privateOp)
 
-      this.#discardPending()
       this.#updateActivity(operation.id, {
         status: 'success',
-        relayFee: operation.quote?.feeAmount,
+        fee: operation.quote?.feeAmount,
         txnId: txHash
       })
 
       this.operation = { ...operation, status: 'success', phase: 'finalizing' }
       this.emitUpdate()
-
-      // The note is spent and a change note took its place; nothing else reports that.
-      await this.syncChain(operation.chainId)
     } catch (error: any) {
-      // The proof is kept: the relayer refusing does not invalidate it, and re-proving would cost
-      // the user another ten seconds for the same result.
       const message = this.#failOperation(
-        operation,
+        { ...operation, phase: 'broadcasting' },
         error,
-        'The relayer could not send the withdrawal. You can try again.'
+        'The withdrawal could not be sent. Please prepare it again.'
       )
       this.#updateActivity(operation.id, { status: 'failed', error: message })
     }
 
     await this.#persistActivity()
+
+    // The note is spent and a change note took its place; nothing else reports that.
+    await this.syncChain(operation.chainId)
   }
 
   /**
@@ -1212,15 +1113,19 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    *
    * Worth doing explicitly rather than leaving it to be overwritten: the pending operation holds a
    * proof over a specific note, and keeping it around after the user has moved on invites sending
-   * it later against a quote that has since expired.
+   * it later at a gas price that has since moved on.
    */
   #discardPending() {
     this.#pendingWithdrawal = null
-    this.selfRelayCalls = null
   }
 
+  /**
+   * Only an `EmittableError` carries a sentence meant for the user. Anything else comes from the
+   * SDK, the bundler or the chain, in words no user should have to read, so it is shown as the
+   * fallback and kept as the underlying error.
+   */
   #failOperation(operation: PrivacyPoolsOperation, error: any, fallback: string): string {
-    const message = error instanceof EmittableError ? error.message : error?.message || fallback
+    const message = error instanceof EmittableError ? error.message : fallback
 
     this.operation = { ...operation, status: 'failed', error: message }
     this.emitError({

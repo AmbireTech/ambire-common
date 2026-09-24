@@ -69,9 +69,17 @@ export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig 
     deploymentBlock: 22153713n,
     aspUrl: 'https://api.0xbow.io',
     sagaSyncUrl: PRIVACY_POOLS_SAGA_SYNC_URL,
-    relayers: {
-      'Fast Relay': 'https://fastrelay.xyz/relayer',
-      'Cloaked Relay': 'https://api.clkd.xyz/relayer'
+    paymaster: {
+      entryPointAddress: '0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108',
+      paymasterAddress: '0xe06CB96C57D2442f8F60F5017354BC08F7e91308',
+      poolAdapters: {
+        // ETH pool -> privacypools_simple_eth adapter
+        '0xf241d57c6debae225c0f2e6ea1529373c9a9c9fb': '0x0a230D83f16209E2692494a0ae139aAD8C96bde9',
+        // USDT pool -> privacypools_complex_usdt_100 adapter
+        '0xe859c0bd25f260baee534fb52e307d3b64d24572': '0xFcA5515D05f372Db8E03Bcc6b1a96BF4aC006f33',
+        // USDC pool -> privacypools_complex_usdc_100 adapter
+        '0xb419c2867ab3cbc78921660cb95150d95a94ce86': '0x16B7d484c634985FbafaaaC6f3ee14e9eFDa4889'
+      }
     },
     assets: [
       nativeAsset('ETH', 10_000n * 10n ** 18n),
@@ -145,10 +153,8 @@ export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig 
     entrypointAddress: '0x34A2068192b1297f2a7f85D7D8CdE66F8F0921cB',
     deploymentBlock: 8461453n,
     aspUrl: 'https://dw.0xbow.io',
-    relayers: {
-      'Testnet Relay': 'https://testnet-relayer.privacypools.com/relayer',
-      'Freedom Relay': 'https://fastrelay.xyz/relayer'
-    },
+    // No `paymaster`: the SDK ships no paymaster for Sepolia yet, so withdrawals are unavailable
+    // here until one is deployed. Deposits, balances and reclaims are unaffected.
     assets: [
       nativeAsset('ETH', 1n * 10n ** 18n),
       {
@@ -174,46 +180,20 @@ export const PRIVACY_POOLS_SUPPORTED_CHAIN_IDS = Object.values(PRIVACY_POOLS_CHA
 )
 
 /**
- * Where the relayer service mounts its router. The operators run 0xBow's own Express app, which
- * does `app.use('/relayer', ...)`, while the SDK's client requests `${relayerUrl}/quote` with no
- * prefix of its own - so the prefix has to live in the configured URL above. Kept here because a
- * bare host answers 404 and the failure looks like a dead relayer rather than a wrong path.
+ * The bundler a withdrawal's userOp is estimated and sent through.
+ *
+ * Pimlico specifically, not whichever bundler the network is configured with: the SDK prices the
+ * userOp with `pimlico_getUserOperationGasPrice`, which no other bundler answers. Our own key when
+ * the build has one, so withdrawals are not throttled by the public endpoint's rate limit - the
+ * same key the regular transaction flow already sends to Pimlico.
  */
-export const PRIVACY_POOLS_RELAYER_PATH_PREFIX = '/relayer'
+export const getPrivacyPoolsBundlerUrl = (chainId: bigint): string => {
+  const apiKey = process.env.REACT_APP_PIMLICO_API_KEY
 
-/**
- * Bound on how much of the withdrawn amount a relayer may keep, checked before we prove against
- * its quote. The entrypoint enforces its own per-asset `maxRelayFeeBPS` on chain, so this is the
- * earlier and stricter of the two.
- *
- * Temporarily off. A relayer's fee is mostly the gas it fronts, so on a small withdrawal it is a
- * large share of the amount by arithmetic rather than by greed - a 10% ceiling refused every
- * relayer and left the funds unwithdrawable, which is worse than an expensive withdrawal the user
- * agreed to. The checks that matter are unaffected: the committed recipient must be the one the
- * user typed, and the committed fee may not exceed the advertised one. What replaces the ceiling
- * is the user - a withdrawal stops at `phase: 'ready'` showing the exact fee and the exact amount
- * the recipient gets, and nothing is spent until they confirm.
- *
- * Off does not mean unbounded: the entrypoint's own per-asset `maxRelayFeeBPS` is read from the
- * chain and enforced before proving - see `readEntrypointAssetConfig`. That ceiling is the real
- * one, since exceeding it reverts the relay, and it is set per deployment (1% on Sepolia, 10% on
- * Ethereum) rather than guessed here.
- *
- * Set it back to a bigint to re-arm it. Null rather than a very large number so the check is
- * skipped outright instead of being nominally on and never firing.
- */
-export const PRIVACY_POOLS_MAX_RELAY_FEE_BPS: bigint | null = null
-
-/**
- * How much of a relayer's signed fee commitment has to be left for us to prove against it. Quotes
- * carry their own `expiration`, but proving takes ~10s on a desktop and longer on weak hardware,
- * so one that is about to lapse is refused up front rather than after the work is done.
- *
- * Measured: 0xBow's relayers issue commitments good for exactly 60 seconds. So this must stay well
- * under 60s or every quote is refused the moment network latency eats into it - and comfortably
- * above the ~10s of proving, or we accept a quote that cannot survive the work it is for.
- */
-export const PRIVACY_POOLS_QUOTE_MIN_REMAINING_MS = 25_000
+  return apiKey
+    ? `https://api.pimlico.io/v2/${chainId.toString()}/rpc?apikey=${apiKey}`
+    : `https://public.pimlico.io/v2/${chainId.toString()}/rpc`
+}
 
 /**
  * Circuit artifacts are served from the app as same-origin assets - see the extension's webpack

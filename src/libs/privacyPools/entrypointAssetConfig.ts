@@ -5,17 +5,15 @@ import { Interface, JsonRpcProvider } from 'ethers'
  *
  * Read from the chain rather than configured, unlike the asset list in `consts/privacyPools`:
  * these are operator-tunable and 0xBow does tune them per deployment - Sepolia caps the relay fee
- * at 1% while Ethereum allows 10%. A stale copy would let the wallet prove a withdrawal the
- * entrypoint then reverts.
+ * at 1% while Ethereum allows 10% - and a pool can be replaced behind the same asset.
  */
 export type PrivacyPoolsEntrypointAssetConfig = {
   poolAddress: string
   minimumDepositAmount: bigint
   vettingFeeBps: bigint
   /**
-   * The largest share of a withdrawal the entrypoint will hand a relayer. Exceeding it reverts
-   * the relay transaction with `RelayFeeGreaterThanMax()`, after the proof has been built and the
-   * relayer has spent gas - so it has to be checked before proving, not discovered on chain.
+   * The largest share of a withdrawal the entrypoint will hand a relayer. Only binds withdrawals
+   * sent through `Entrypoint.relay`; paymaster-sponsored ones call the pool directly.
    */
   maxRelayFeeBps: bigint
 }
@@ -27,9 +25,9 @@ const ENTRYPOINT_INTERFACE = new Interface([
 /**
  * Reads an asset's entrypoint configuration.
  *
- * The SDK fetches the same tuple in `getPoolForAsset` but keeps it to itself - nothing in
- * `@kohaku-eth/privacy-pools` ever compares a relayer's quoted fee against `maxRelayFeeBPS`, which
- * is why the wallet reads it separately.
+ * The SDK fetches the same tuple in `getPoolForAsset` but keeps it to itself, so the wallet reads
+ * it separately - to learn which pool an asset's withdrawal goes through before any work is done
+ * on it.
  */
 export const readEntrypointAssetConfig = async ({
   provider,
