@@ -87,10 +87,10 @@ import {
   getAccountOpNonce,
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
-import { getSendRecipients } from '../../libs/accountOp/sendRecipients'
 import { getUnauthenticatedDapps } from '../../libs/dapps/helpers'
 import {
   AccountOpIdentifiedBy,
+  getAccountOpRecipients,
   getSubmittedAccountOpNonce,
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
@@ -314,13 +314,11 @@ export class SignAccountOpController
   status: Status | null = null
 
   /**
-   * The recipients of this account op the account has never sent to before. Resolved
-   * asynchronously from the activity, so it is cached here instead of read on every access.
+   * The recipients of this account op the account has never sent to before, together with the
+   * account op they were resolved for. Resolved asynchronously from the activity, so it is cached
+   * here instead of read on every access.
    */
-  #firstTimeRecipients: string[] = []
-
-  /** The account op the cached `#firstTimeRecipients` were resolved for. */
-  #firstTimeRecipientsForAccountOpId: string | null = null
+  #firstTimeRecipients: { accountOpId: string; recipients: string[] } | null = null
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR' = 'INITIAL'
 
@@ -643,9 +641,9 @@ export class SignAccountOpController
    */
   async #updateFirstTimeRecipients() {
     const accountOpId = this.#accountOp.id
-    const recipients = getSendRecipients(this.#accountOp.calls).filter(
-      (recipient) => recipient.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
-    )
+    const recipients = getAccountOpRecipients(this.#accountOp)
+      .map(({ address }) => address)
+      .filter((recipient) => recipient.toLowerCase() !== FEE_COLLECTOR.toLowerCase())
 
     try {
       const sentToResults = await Promise.all(
@@ -658,8 +656,10 @@ export class SignAccountOpController
       // describes an account op that is no longer on screen
       if (accountOpId !== this.#accountOp.id) return
 
-      this.#firstTimeRecipients = recipients.filter((_, index) => !sentToResults[index]!.found)
-      this.#firstTimeRecipientsForAccountOpId = accountOpId
+      this.#firstTimeRecipients = {
+        accountOpId,
+        recipients: recipients.filter((_, index) => !sentToResults[index]!.found)
+      }
       this.emitUpdate()
     } catch (error) {
       // Leaving the cache untouched means the recipients are not reported as first time ones,
@@ -681,15 +681,16 @@ export class SignAccountOpController
    */
   get signingAuthRequirement(): SigningAuthRequirement | null {
     const unauthenticatedDapps = getUnauthenticatedDapps(
-      this.#accountOp.calls.map((call) => call.dapp?.id),
-      (id) => this.#dapps.getDapp(id)
+      this.#accountOp.calls.map((call) =>
+        call.dapp?.id ? this.#dapps.getDapp(call.dapp.id) : undefined
+      )
     )
 
     // The cache belongs to a previous version of the calls until the activity read finishes,
     // so it must not be reported against the calls currently on screen
     const firstTimeRecipients =
-      this.#firstTimeRecipientsForAccountOpId === this.#accountOp.id
-        ? this.#firstTimeRecipients
+      this.#firstTimeRecipients?.accountOpId === this.#accountOp.id
+        ? this.#firstTimeRecipients.recipients
         : []
 
     if (!firstTimeRecipients.length && !unauthenticatedDapps.length) return null

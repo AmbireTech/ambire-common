@@ -810,9 +810,9 @@ export class SignMessageController
 
     // Looked up by dapp id, which is what dapps are stored under - looking up by the registrable
     // domain silently found nothing for every dapp on a subdomain
-    const unauthenticatedDapps = getUnauthenticatedDapps([getDappIdFromUrl(this.dapp.url)], (id) =>
-      dapps.getDapp(id)
-    )
+    const unauthenticatedDapps = getUnauthenticatedDapps([
+      dapps.getDapp(getDappIdFromUrl(this.dapp.url))
+    ])
     if (!unauthenticatedDapps.length) return null
 
     return { firstTimeRecipients: [], unauthenticatedDapps }

@@ -141,6 +141,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    */
   signingAuthResult: SigningAuthResult | null = null
 
+  /**
+   * Stamped on every `signingAuthResult` and read nowhere else. It only makes two identical
+   * outcomes differ, so the UI's reconciled state still re-renders on the second one - keep it.
+   */
   #signingAuthResultId = 0
 
   /** Set while `verifySecret` runs, so the shared unlock `errorMessage` is left alone. */
