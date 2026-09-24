@@ -3880,6 +3880,8 @@ describe('broadcasting a batch one transaction at a time', () => {
 
   const initBatch = async (overrides?: { callRelayer?: any }) => {
     const submittedAccountOps: any[] = []
+    const broadcastStatusesOnSuccess: SignAccountOpTesterController['broadcastStatus'][] = []
+    let broadcastingController: SignAccountOpTesterController | undefined
     const feePaymentOptions = [
       {
         paidBy: eoaAccount.addr,
@@ -3907,11 +3909,15 @@ describe('broadcasting a batch one transaction at a time', () => {
         callRelayer: overrides?.callRelayer || ((async () => ({})) as any),
         onBroadcastSuccess: async ({ submittedAccountOp }: any) => {
           submittedAccountOps.push(submittedAccountOp)
+          if (broadcastingController) {
+            broadcastStatusesOnSuccess.push(broadcastingController.broadcastStatus)
+          }
         }
       }
     )
+    broadcastingController = controller
 
-    return { controller, submittedAccountOps }
+    return { controller, submittedAccountOps, broadcastStatusesOnSuccess }
   }
 
   /**
@@ -3957,6 +3963,34 @@ describe('broadcasting a batch one transaction at a time', () => {
     expect(submittedAccountOps[0].calls).toHaveLength(3)
     expect(submittedAccountOps[0].identifiedBy.type).toBe('MultipleTxns')
     expect(getPartialBroadcastError(controller)).toBeUndefined()
+  })
+
+  test('stays in the loading broadcast status until the broadcast success handler finishes', async () => {
+    const { controller, submittedAccountOps, broadcastStatusesOnSuccess } = await initBatch()
+    mockBroadcastChain(null)
+
+    expect(controller.broadcastStatus).toBe('INITIAL')
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Closing the request of a signed Safe txn keeps its dashboard simulation only while the
+    // status is still loading. The success handler is where that request gets closed, so
+    // flipping the status before the handler finishes would drop the simulation of every
+    // broadcast Safe txn.
+    expect(submittedAccountOps).toHaveLength(1)
+    expect(broadcastStatusesOnSuccess).toEqual(['LOADING'])
+    expect(controller.broadcastStatus).toBe('INITIAL')
+  })
+
+  test('does not reach the broadcast success handler and leaves the loading status when nothing was sent', async () => {
+    const { controller, submittedAccountOps, broadcastStatusesOnSuccess } = await initBatch()
+    mockBroadcastChain(0)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(submittedAccountOps).toHaveLength(0)
+    expect(broadcastStatusesOnSuccess).toEqual([])
+    expect(controller.broadcastStatus).toBe('INITIAL')
   })
 
   test('keeps every call but reports only the hashes that went out', async () => {

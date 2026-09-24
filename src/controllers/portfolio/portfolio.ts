@@ -2087,8 +2087,11 @@ export class PortfolioController
 
           // Read and filter the latest simulation inside the queue so an older confirmed
           // AccountOp cannot discard a newer simulation that was already queued before it.
+          // Safe accounts are refreshed even without a matching simulation, because signed
+          // Safe txns are intentionally not simulated while waiting in the Safe queue.
           if (
             accountOpIdsToDiscardOnNetwork &&
+            !selectedAccount.safeCreation &&
             !simulatedAccountOps?.some((op) => accountOpIdsToDiscardSet.has(op.id))
           )
             return
@@ -2099,7 +2102,7 @@ export class PortfolioController
           // When a new txn comes, pendingToBeConfirmed simulations will be dropped
           // and that's fine as you care about the simulation of your current txn
           const accountOpsToSimulate = accountOpIdsToDiscardOnNetwork
-            ? simulatedAccountOps!.filter((op) => !accountOpIdsToDiscardSet.has(op.id))
+            ? simulatedAccountOps?.filter((op) => !accountOpIdsToDiscardSet.has(op.id))
             : currentAccountOps || simulatedAccountOps
 
           // Even if maxDataAgeMs is set to a non-zero value, we want to force an update when the AccountOps change.
