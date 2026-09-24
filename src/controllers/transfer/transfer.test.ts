@@ -431,6 +431,12 @@ describe('Transfer Controller - Privacy Pools recipient', () => {
 
   test('drops the typed address and every check that is about one', async () => {
     const { transferController } = await prepareOpenTransfer()
+    // Already a token the account accepts, so picking the account does not change it
+    await transferController.update({
+      selectedToken: transferController.tokens.find(
+        ({ chainId, address }) => chainId === 1n && address === ZeroAddress
+      )
+    })
     await transferController.update({
       addressState: {
         fieldValue: PLACEHOLDER_RECIPIENT,
@@ -439,10 +445,13 @@ describe('Transfer Controller - Privacy Pools recipient', () => {
         isDomainResolving: false
       }
     })
+    const programmaticUpdateCounterBefore = transferController.programmaticUpdateCounter
 
     await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
 
     expect(transferController.addressState.fieldValue).toBe('')
+    // So the field drops what was typed, instead of disagreeing with the controller
+    expect(transferController.programmaticUpdateCounter).not.toBe(programmaticUpdateCounterBefore)
     expect(transferController.isRecipientAddressUnknown).toBe(false)
     expect(transferController.isRecipientAddressFirstTimeSend).toBe(false)
     expect(transferController.validationFormMsgs.recipientAddress.severity).toBe('success')

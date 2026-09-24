@@ -835,6 +835,9 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (seedId) {
       this.addressState = { ...DEFAULT_ADDRESS_STATE }
       this.#onRecipientAddressChange()
+      // The address field may still hold what was typed to find the account in the list, so the
+      // UI has to be told to take the cleared value
+      this.programmaticUpdateCounter += 1
     }
 
     this.destroySignAccountOp()
