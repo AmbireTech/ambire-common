@@ -133,6 +133,12 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   isRecipientAddressUnknown = false
 
+  /**
+   * Whether the recipient is on the locally stored phishing list. A field rather than a getter:
+   * the lookup reads storage one entry at a time, so it cannot run inside a synchronous read.
+   */
+  isRecipientAddressBlacklisted = false
+
   isRecipientAddressUnknownAgreed = false
 
   isRecipientHumanizerKnownTokenOrSmartContract = false
@@ -288,6 +294,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#phishing.onUpdate((forceEmit) => {
       if (!this.#currentTransferSessionId || !isAddress(this.recipientAddress)) return
 
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.checkIsRecipientAddressBlacklisted()
       this.propagateUpdate(forceEmit)
     }, 'transfer-recipient-phishing-check')
 
@@ -621,16 +629,6 @@ export class TransferController extends EventEmitter implements ITransferControl
     return getAddressFromAddressState(this.addressState)
   }
 
-  /**
-   * Whether the recipient is in the locally stored phishing list. The list is kept up to date by
-   * the PhishingController, so the lookup needs no network request.
-   */
-  get isRecipientAddressBlacklisted() {
-    if (!isAddress(this.recipientAddress)) return false
-
-    return this.#phishing.getAddressBlacklistedStatus(this.recipientAddress) === 'BLACKLISTED'
-  }
-
   async update({
     humanizerInfo,
     selectedToken,
@@ -697,6 +695,22 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.emitUpdate()
   }
 
+  /**
+   * Re-resolves the phishing status of the current recipient. Runs wherever the recipient can
+   * change, and again when the list itself updates.
+   */
+  async checkIsRecipientAddressBlacklisted() {
+    const next = isAddress(this.recipientAddress)
+      ? (await this.#phishing.resolveAddressBlacklistedStatus(this.recipientAddress)) ===
+        'BLACKLISTED'
+      : false
+
+    if (next === this.isRecipientAddressBlacklisted) return
+
+    this.isRecipientAddressBlacklisted = next
+    this.emitUpdate()
+  }
+
   checkIsRecipientAddressUnknown() {
     if (!isAddress(this.recipientAddress)) {
       this.isRecipientAddressUnknown = false
@@ -753,6 +767,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     this.checkIsRecipientAddressViewOnly()
     this.checkIsRecipientAddressUnknown()
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.checkIsRecipientAddressBlacklisted()
     this.#fetchRecipientAccountStateIfNeeded()
   }
 
