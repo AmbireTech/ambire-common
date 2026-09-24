@@ -69,6 +69,20 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   account: Account | null = null
 
   /**
+   * The Privacy Pools account on screen, by the id of the recovery phrase it belongs to, or null
+   * when a regular account is.
+   *
+   * Kept here rather than in the Privacy Pools controller because it is part of what "the selected
+   * account" means to the UI - whether anyone is signed in, what the dashboard shows - and this
+   * controller's state reaches a view before its first paint.
+   *
+   * Exclusive with `account`, which is null while a Privacy Pools account is selected: it has no
+   * address of its own, and nothing that reads `account` - the portfolio, apps, signing - is meant
+   * to act on it.
+   */
+  privacyPoolsAccountId: string | null = null
+
+  /**
    * Holds the selected account portfolio that is used by the UI to display the portfolio.
    * It includes the portfolio and defi positions for the selected account.
    * It is updated when the portfolio or defi positions controllers are updated.
@@ -127,12 +141,16 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   async #load() {
     await this.#accounts.initialLoadPromise
 
-    const [selectedAccountAddress, selectedAccountDismissedBannerIds] = await Promise.all([
-      this.#storage.get('selectedAccount', null),
-      this.#storage.get('selectedAccountDismissedBannerIds', {})
-    ])
+    const [selectedAccountAddress, selectedAccountDismissedBannerIds, privacyPoolsAccountId] =
+      await Promise.all([
+        this.#storage.get('selectedAccount', null),
+        this.#storage.get('selectedAccountDismissedBannerIds', {}),
+        this.#storage.get('selectedPrivacyPoolsAccount', null)
+      ])
     this.dismissedBannerIds = selectedAccountDismissedBannerIds
     this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
+    // Only when no regular account is selected, in case storage ever holds both
+    this.privacyPoolsAccountId = this.account ? null : privacyPoolsAccountId
     this.isReady = true
 
     this.emitUpdate()
@@ -195,6 +213,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   async setAccount(account: Account | null) {
     this.account = account
+    // Selecting a regular account deselects the Privacy Pools one. Clearing it leaves it as is,
+    // since that is also how a Privacy Pools account gets selected - see `setPrivacyPoolsAccount`.
+    if (account) this.privacyPoolsAccountId = null
     this.balanceAffectingErrors = []
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
 
@@ -218,7 +239,22 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       await this.#storage.remove('selectedAccount')
     } else {
       await this.#storage.set('selectedAccount', account.addr)
+      await this.#storage.remove('selectedPrivacyPoolsAccount')
     }
+  }
+
+  /**
+   * Selects a Privacy Pools account, clearing the regular one. Null clears both, which is the
+   * signed-out state.
+   */
+  async setPrivacyPoolsAccount(seedId: string | null) {
+    // Set before `account` is cleared, so no update goes out with neither one selected - the UI
+    // reads that as signed out.
+    this.privacyPoolsAccountId = seedId
+    await this.setAccount(null)
+
+    if (seedId) await this.#storage.set('selectedPrivacyPoolsAccount', seedId)
+    else await this.#storage.remove('selectedPrivacyPoolsAccount')
   }
 
   #updateSelectedAccount(skipUpdate: boolean = false) {

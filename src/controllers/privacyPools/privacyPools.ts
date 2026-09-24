@@ -148,6 +148,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }) => Promise<void>
 
   /**
+   * Told which accounts were just removed, so whoever selects accounts can move off one that was
+   * selected. A callback because removal also happens here on its own, when a phrase is deleted.
+   */
+  #onAccountsRemoved: (seedIds: string[]) => Promise<void>
+
+  /**
    * One plugin per `${chainId}:${seedId}`. Keyed by both because a plugin binds a chain's provider
    * to one phrase's secrets, and switching either has to produce a different instance rather than
    * reuse one that would scan for the wrong notes.
@@ -263,6 +269,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     circuitsBaseUrl,
     getInitialState,
     buildCallsRequest,
+    onAccountsRemoved,
     eventEmitterRegistry
   }: {
     keystore: IKeystoreController
@@ -286,6 +293,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       calls: Call[]
       meta: { chainId: bigint; accountAddr: string }
     }) => Promise<void>
+    onAccountsRemoved: (seedIds: string[]) => Promise<void>
     eventEmitterRegistry?: IEventEmitterRegistryController
   }) {
     super(eventEmitterRegistry)
@@ -307,6 +315,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         })
     })
     this.#buildCallsRequest = buildCallsRequest
+    this.#onAccountsRemoved = onAccountsRemoved
     this.#getShippedInitialState = getInitialState
     this.#proverFactory = createProverFactory(circuitsBaseUrl)
 
@@ -396,9 +405,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   get unavailableReason(): PrivacyPoolsUnavailableReason | null {
-    // Structural reasons first: they don't change by unlocking, so telling a hardware-wallet user
-    // to unlock would send them to do something that cannot help.
-    if (!this.#getSeedIdForSelectedAccount()) return 'no-seed'
+    // Structural reasons first: they don't change by unlocking, so telling a user with no Privacy
+    // Pools account selected to unlock would send them to do something that cannot help.
+    if (!this.#getSelectedSeedId()) return 'no-account'
     if (!this.supportedChainIds.length) return 'unsupported-network'
     if (!this.#keystore.isUnlocked) return 'locked'
 
@@ -414,7 +423,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * there. A getter rather than a field, so the split stays an implementation detail.
    */
   get chains(): { [chainId: string]: PrivacyPoolsChainState } {
-    const seedId = this.#getSeedIdForSelectedAccount()
+    const seedId = this.#getSelectedSeedId()
     const identityChains = (seedId && this.#notesByIdentity[seedId]) || {}
     const chainIds = new Set([
       ...this.supportedChainIds,
@@ -452,7 +461,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * mid-proof, and switching back must show it where it was.
    */
   get operation(): PrivacyPoolsOperation | null {
-    if (this.#operation?.seedId !== this.#getSeedIdForSelectedAccount()) return null
+    if (this.#operation?.seedId !== this.#getSelectedSeedId()) return null
 
     return this.#operation
   }
@@ -505,7 +514,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * notes they sit beside - accounts sharing a phrase share the notes, so they share the log.
    */
   get activity(): PrivacyPoolsActivityEntry[] {
-    const seedId = this.#getSeedIdForSelectedAccount()
+    const seedId = this.#getSelectedSeedId()
     if (!seedId) return []
 
     return this.#activity
@@ -514,35 +523,27 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * The note secrets come from the recovery phrase the selected account's key was derived from, so
-   * they only exist for accounts that have one.
+   * The recovery phrase of the selected Privacy Pools account - the one the note secrets are
+   * derived from. Null when a regular account is selected, or when the selection no longer points
+   * at an account and a phrase this wallet still has.
    */
-  #getSeedIdForSelectedAccount(): string | null {
-    const account = this.#selectedAccount.account
-    if (!account) return null
+  #getSelectedSeedId(): string | null {
+    const seedId = this.#selectedAccount.privacyPoolsAccountId
+    if (!seedId) return null
+    if (!this.accounts.some((account) => account.seedId === seedId)) return null
+    if (!this.#keystore.seeds.some((seed) => seed.id === seedId)) return null
 
-    const storedSeedIds = new Set(this.#keystore.seeds.map((seed) => seed.id))
-
-    for (const key of this.#keystore.keys) {
-      if (key.type !== 'internal') continue
-      if (!account.associatedKeys.includes(key.addr)) continue
-
-      const { fromSeedId } = key.meta
-      if (fromSeedId && storedSeedIds.has(fromSeedId)) return fromSeedId
-    }
-
-    return null
+    return seedId
   }
 
   #assertAvailableAndGetSeedId(): string {
     const reason = this.unavailableReason
 
-    if (reason === 'no-seed')
+    if (reason === 'no-account')
       throw new EmittableError({
-        message:
-          'Privacy Pools needs an account created from a recovery phrase. Hardware wallets and imported private keys cannot be used.',
+        message: 'Please select a Privacy Pools account first.',
         level: 'expected',
-        error: new Error('privacyPools: selected account has no seed')
+        error: new Error('privacyPools: no Privacy Pools account selected')
       })
 
     if (reason === 'unsupported-network')
@@ -559,7 +560,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         error: new Error('privacyPools: keystore locked')
       })
 
-    const seedId = this.#getSeedIdForSelectedAccount()
+    const seedId = this.#getSelectedSeedId()
     if (!seedId)
       throw new EmittableError({
         message: 'Privacy Pools is not available for this account.',
@@ -845,8 +846,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
       const notes = await protocol.notes()
 
-      // Locked while syncing: nothing derived from the phrase may be written back.
+      // Locked while syncing: nothing derived from the phrase may be written back. Nor for an
+      // account removed meanwhile, whose notes would otherwise outlive it.
       if (generation !== this.#generation) return null
+      if (!this.accounts.some((account) => account.seedId === seedId)) return null
 
       this.#notesByIdentity[seedId] = {
         ...(this.#notesByIdentity[seedId] || {}),
@@ -1376,6 +1379,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#forgetAccount(seedId)
     this.emitUpdate()
     await this.#persistAccounts()
+    await this.#onAccountsRemoved([seedId])
   }
 
   /** Drops an account and everything derived for it, leaving the activity log to the caller. */
@@ -1408,6 +1412,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     // One after the other: the store must never have two writes in flight
     await this.#persistAccounts()
     await this.#persistActivity()
+    await this.#onAccountsRemoved(orphanedSeedIds)
   }
 
   async #persistAccounts() {

@@ -449,7 +449,8 @@ export class MainController extends EventEmitter implements IMainController {
       // A closure rather than a controller reference: `requests` is constructed further down, and
       // handing calls to the signing flow is the only thing Privacy Pools needs from it.
       buildCallsRequest: ({ calls, meta }) =>
-        this.requests.build({ type: 'calls', params: { userRequestParams: { calls, meta } } })
+        this.requests.build({ type: 'calls', params: { userRequestParams: { calls, meta } } }),
+      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
     })
 
     this.portfolio = new PortfolioController(
@@ -901,6 +902,14 @@ export class MainController extends EventEmitter implements IMainController {
 
     await this.survey.initialLoadPromise
 
+    await this.privacyPools.initialLoadPromise
+    // A Privacy Pools account restored as selected that is gone by now - removed with its recovery
+    // phrase, possibly while the wallet was still loading
+    const { privacyPoolsAccountId } = this.selectedAccount
+    if (privacyPoolsAccountId && !this.#hasPrivacyPoolsAccount(privacyPoolsAccountId)) {
+      await this.#selectFallbackAccount()
+    }
+
     this.isReady = true
     this.emitUpdate()
   }
@@ -936,19 +945,7 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     this.isOffline = false
-    // call closeRequestWindow while still on the currently selected account to allow proper
-    // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
-    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
-      // Switching accounts is the user acting on the wallet, not refusing the apps that
-      // happened to be waiting, so it must not count towards the spam detection.
-      await this.requests.closeRequestWindow({ isUserInitiated: false })
-    }
-    const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
-      ({ kind }) => kind === 'swapAndBridge'
-    )
-    if (swapAndBridgeSigningRequest) {
-      await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
-    }
+    await this.#leaveSelectedAccount()
     await this.selectedAccount.setAccount(accountToSelect)
     // Update reverse lookup data and ENS expiry
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -981,6 +978,109 @@ export class MainController extends EventEmitter implements IMainController {
       this.dapps.onSelectedAccountChange(toAccountAddr),
       this.forceEmitUpdate()
     ])
+  }
+
+  /** Cleans up after the account on screen, before another one - of either kind - is selected. */
+  async #leaveSelectedAccount() {
+    // call closeRequestWindow while still on the currently selected account to allow proper
+    // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
+    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
+      // Switching accounts is the user acting on the wallet, not refusing the apps that
+      // happened to be waiting, so it must not count towards the spam detection.
+      await this.requests.closeRequestWindow({ isUserInitiated: false })
+    }
+    const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
+      ({ kind }) => kind === 'swapAndBridge'
+    )
+    if (swapAndBridgeSigningRequest) {
+      await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
+    }
+  }
+
+  #hasPrivacyPoolsAccount(seedId: string) {
+    return this.privacyPools.accounts.some((account) => account.seedId === seedId)
+  }
+
+  /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
+  async addPrivacyPoolsAccount(seedId: string) {
+    await this.initialLoadPromise
+
+    // Wrapped as a whole, so a refused account is shown to the user rather than left to propagate
+    await this.withStatus(
+      'selectAccount',
+      async () => {
+        await this.privacyPools.addAccount(seedId)
+        await this.#selectPrivacyPoolsAccount(seedId)
+      },
+      true
+    )
+  }
+
+  async selectPrivacyPoolsAccount(seedId: string) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'selectAccount',
+      async () => this.#selectPrivacyPoolsAccount(seedId),
+      true
+    )
+  }
+
+  /**
+   * Puts a Privacy Pools account on screen, leaving no regular account selected.
+   *
+   * Apps are deliberately not told: what they should see while a Privacy Pools account is selected
+   * is not decided yet, so they keep whatever account they had.
+   */
+  async #selectPrivacyPoolsAccount(seedId: string) {
+    if (!this.#hasPrivacyPoolsAccount(seedId)) {
+      console.error(`Privacy Pools account of recovery phrase ${seedId} does not exist`)
+      return
+    }
+
+    await this.#leaveSelectedAccount()
+    await this.selectedAccount.setPrivacyPoolsAccount(seedId)
+    this.swapAndBridge.reset()
+    this.transfer.reset({ destroyAccountOp: true })
+
+    // forceEmitUpdate to update the getters in the FE state of the ctrls
+    await Promise.all([
+      this.activity.forceEmitUpdate(),
+      this.requests.forceEmitUpdate(),
+      this.addressBook.forceEmitUpdate(),
+      this.swapAndBridge.forceEmitUpdate(),
+      this.forceEmitUpdate()
+    ])
+  }
+
+  /**
+   * Selects what should be on screen once the selected account is gone: the first regular account,
+   * else the first Privacy Pools account, else nothing - which is the signed-out state.
+   */
+  async #selectFallbackAccount() {
+    const [firstAccount] = this.accounts.accounts
+    if (firstAccount) {
+      await this.#selectAccount(firstAccount.addr)
+      return
+    }
+
+    const [firstPrivacyPoolsAccount] = this.privacyPools.accounts
+    if (firstPrivacyPoolsAccount) {
+      await this.#selectPrivacyPoolsAccount(firstPrivacyPoolsAccount.seedId)
+      return
+    }
+
+    await this.selectedAccount.setPrivacyPoolsAccount(null)
+    this.emitUpdate()
+  }
+
+  async #onPrivacyPoolsAccountsRemoved(seedIds: string[]) {
+    const { privacyPoolsAccountId } = this.selectedAccount
+    if (!privacyPoolsAccountId || !seedIds.includes(privacyPoolsAccountId)) return
+    // Still loading: `#load` makes this same check once everything it needs is in place
+    if (!this.isReady) return
+
+    await this.#selectFallbackAccount()
   }
 
   async #onAccountPickerSuccess() {
@@ -1694,7 +1794,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.dapps.removeAccountData(address)
 
       if (this.selectedAccount.account?.addr === address) {
-        await this.#selectAccount(this.accounts.accounts[0]?.addr ?? null)
+        await this.#selectFallbackAccount()
       }
 
       this.emitUpdate()

@@ -73,6 +73,8 @@ export type StorageProps = {
   // Selected account
   dismissedBanners: (string | number)[]
   selectedAccount: string | null
+  /** The selected Privacy Pools account, by its recovery phrase id - exclusive with `selectedAccount`. */
+  selectedPrivacyPoolsAccount: string | null
   selectedAccountDismissedBannerIds: { [key: string]: string[] }
   // Email vault
   emailVault: {

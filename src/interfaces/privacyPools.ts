@@ -88,11 +88,10 @@ export type PrivacyPoolsSyncStatus = 'idle' | 'initializing' | 'syncing' | 'read
 /**
  * Why Privacy Pools can't be used right now, so the UI can explain rather than just disable:
  * - 'locked' - the keystore is locked, so the note secrets can't be derived
- * - 'no-seed' - the account has no key from a stored recovery phrase (hardware, private key,
- *   view-only), and the secrets are derived from that phrase
+ * - 'no-account' - no Privacy Pools account is selected; a regular one is, or none at all
  * - 'unsupported-network' - no Privacy Pools chain is in the user's network list
  */
-export type PrivacyPoolsUnavailableReason = 'locked' | 'no-seed' | 'unsupported-network'
+export type PrivacyPoolsUnavailableReason = 'locked' | 'no-account' | 'unsupported-network'
 
 /**
  * Whether a note may be spent privately, decided by the Association Set Provider rather than by
