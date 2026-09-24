@@ -171,8 +171,12 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.#phishing.onUpdate(() => {
       if (!this.#phishing.shouldSyncDapps) return
-      this.#syncDappsBlacklistedStatusWithPhishing()
-      this.#phishing.resetShouldSyncDapps()
+      // The sync now reads storage, so the flag is cleared only once it has actually run —
+      // resetting first would drop an update that arrived while it was still in flight.
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#syncDappsBlacklistedStatusWithPhishing().then(() =>
+        this.#phishing.resetShouldSyncDapps()
+      )
     })
 
     // Retry fetching and updating dapps after 5 minutes of user inactivity if the initial attempt fails
@@ -345,14 +349,27 @@ export class DappsController extends EventEmitter implements IDappsController {
     // const lastDappsUpdateVersion = 'debug-force-fetch'
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) {
-      const dappsWithoutBlacklistedStatus = Array.from(this.#dapps.values()).filter(
-        (d) =>
-          !d.blacklisted ||
-          ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted) ||
-          // Re-check dApps stored with a non-SUSPICIOUS_HOSTING status that now match the
-          // suspicious hosting pattern, so existing entries are migrated on startup.
-          (d.blacklisted !== 'SUSPICIOUS_HOSTING' &&
-            this.#phishing.getDomainBlacklistedStatus(d.url) === 'SUSPICIOUS_HOSTING')
+      const allDapps = Array.from(this.#dapps.values())
+      const hasNoUsableStatus = (d: Dapp) =>
+        !d.blacklisted || ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted)
+
+      // Re-check dApps stored with a non-SUSPICIOUS_HOSTING status that now match the
+      // suspicious hosting pattern, so existing entries are migrated on startup. Only these
+      // need a lookup — the rest already qualify, so they are not queried at all.
+      const needsRecheck = allDapps.filter(
+        (d) => !hasNoUsableStatus(d) && d.blacklisted !== 'SUSPICIOUS_HOSTING'
+      )
+      const recheckedStatuses = await Promise.all(
+        needsRecheck.map((d) => this.#phishing.resolveDomainBlacklistedStatus(d.url))
+      )
+      const nowSuspicious = new Set(
+        needsRecheck
+          .filter((_, i) => recheckedStatuses[i] === 'SUSPICIOUS_HOSTING')
+          .map((d) => d.id)
+      )
+
+      const dappsWithoutBlacklistedStatus = allDapps.filter(
+        (d) => hasNoUsableStatus(d) || nowSuspicious.has(d.id)
       )
       // IMPORTANT: Do NOT await this call — we want `isReadyToDisplayDapps` to resolve immediately
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -544,12 +561,18 @@ export class DappsController extends EventEmitter implements IDappsController {
     )
   }
 
-  #syncDappsBlacklistedStatusWithPhishing() {
+  async #syncDappsBlacklistedStatusWithPhishing() {
     if (!this.#dapps.size) return
 
+    // Resolved together rather than one after another: each is an independent point read.
+    const entries = Array.from(this.#dapps.entries())
+    const statuses = await Promise.all(
+      entries.map(([, dapp]) => this.#phishing.resolveDomainBlacklistedStatus(dapp.url))
+    )
+
     let hasUpdatedDapps = false
-    this.#dapps.forEach((dapp, dappId) => {
-      const updatedStatus = this.#phishing.getDomainBlacklistedStatus(dapp.url)
+    entries.forEach(([dappId, dapp], i) => {
+      const updatedStatus = statuses[i]
       if (!updatedStatus || dapp.blacklisted === updatedStatus) return
 
       this.#dapps.set(dappId, { ...dapp, blacklisted: updatedStatus })
@@ -618,10 +641,22 @@ export class DappsController extends EventEmitter implements IDappsController {
       // The session id has no per-document component, so a reused session may come from an
       // earlier visit. Refresh the frame context instead of trusting what it was created with.
       existingSession.updateFrameContext({ frameId, topFrameUrl })
+      await this.#resolveTopFrameStatus(existingSession)
+
       return existingSession
     }
 
-    return this.#createDappSession({ windowId, tabId, url, wcTopic, frameId, topFrameUrl })
+    const session = await this.#createDappSession({
+      windowId,
+      tabId,
+      url,
+      wcTopic,
+      frameId,
+      topFrameUrl
+    })
+    await this.#resolveTopFrameStatus(session)
+
+    return session
   }
 
   getDappSessionByWcTopic(wcTopic: string): Session | undefined {
@@ -1324,11 +1359,29 @@ export class DappsController extends EventEmitter implements IDappsController {
    * context (mobile WebViews, WalletConnect), or the top frame is not dangerous. Frames between
    * the top one and the dApp are not visible without the `webNavigation` permission - not checked.
    */
+  /**
+   * Resolves the top frame's status onto the session, so #getFrameContextStatus can stay
+   * synchronous for the banner getters that call it.
+   */
+  async #resolveTopFrameStatus(session: Session) {
+    const { topFrameOrigin } = session
+    if (!topFrameOrigin || topFrameOrigin === session.origin) return
+
+    session.topFrameBlacklisted =
+      await this.#phishing.resolveDomainBlacklistedStatus(topFrameOrigin)
+  }
+
   #getFrameContextStatus(session: Session): BlacklistedStatus | undefined {
     const { topFrameOrigin } = session
     if (!topFrameOrigin || topFrameOrigin === session.origin) return undefined
 
-    const status = this.#phishing.getDomainBlacklistedStatus(topFrameOrigin)
+    // Suspicious hosting is a constant list, so it answers immediately and does not depend on
+    // the session having been through #resolveTopFrameStatus.
+    if (this.#phishing.isSuspiciousHostingDomain(topFrameOrigin)) return 'SUSPICIOUS_HOSTING'
+
+    // Only the blocklist half needs storage. Resolved onto the session when its frame context
+    // was set; undefined means "not established yet", never stale.
+    const status = session.topFrameBlacklisted
     // A BLACKLISTED top frame is still only a dangerous context for this dApp, so it maps to
     // SUSPICIOUS_HOSTING - BLACKLISTED belongs to the top frame's own domain, not to this dApp.
     if (status === 'BLACKLISTED' || status === 'SUSPICIOUS_HOSTING') return 'SUSPICIOUS_HOSTING'

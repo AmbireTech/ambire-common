@@ -344,22 +344,26 @@ describe('DappsController', () => {
     const shouldSyncSpy = jest
       .spyOn(mainCtrl.phishing, 'shouldSyncDapps', 'get')
       .mockReturnValue(false)
-    const getDomainStatusSpy = jest.spyOn(mainCtrl.phishing, 'getDomainBlacklistedStatus')
+    // The sync reads storage now, so it resolves a tick later than the emit that triggers it
+    const getDomainStatusSpy = jest.spyOn(mainCtrl.phishing, 'resolveDomainBlacklistedStatus')
     const resetShouldSyncSpy = jest.spyOn(mainCtrl.phishing, 'resetShouldSyncDapps')
 
     ;(mainCtrl.phishing as any).emitUpdate()
+    await wait(1)
 
     expect(controller.getDapp('test-dapp.com')?.blacklisted).toBe('VERIFIED')
     expect(getDomainStatusSpy).not.toHaveBeenCalled()
     expect(resetShouldSyncSpy).not.toHaveBeenCalled()
 
     shouldSyncSpy.mockReturnValue(true)
-    getDomainStatusSpy.mockImplementation((url: string) =>
+    getDomainStatusSpy.mockImplementation(async (url: string) =>
       url === 'https://test-dapp.com' ? 'BLACKLISTED' : undefined
     )
     ;(mainCtrl.phishing as any).emitUpdate()
+    await wait(1)
 
     expect(controller.getDapp('test-dapp.com')?.blacklisted).toBe('BLACKLISTED')
+    // Cleared only after the sync ran, not before it
     expect(resetShouldSyncSpy).toHaveBeenCalledTimes(1)
   })
 
