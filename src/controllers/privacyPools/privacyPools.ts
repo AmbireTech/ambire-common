@@ -5,7 +5,7 @@ import {
   OxBowAspService,
   PrivacyPoolsV1Protocol
 } from '@kohaku-eth/privacy-pools'
-import type { Host, Storage } from '@kohaku-eth/plugins'
+import type { Host, Keystore, Storage } from '@kohaku-eth/plugins'
 
 import EmittableError from '../../classes/EmittableError'
 import {
@@ -163,13 +163,48 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #sagaHydratedKeys = new Set<string>()
 
   /**
-   * The sync in flight per chain, so a second caller joins the first rather than starting a
-   * parallel walk of the same pool. `sync()` is not cheap - a cold mainnet chain is hundreds of
-   * sequential `eth_getLogs` calls.
+   * One key adapter per phrase, outliving the plugins built on it, so a rebuilt plugin reuses the
+   * keys already derived instead of paying a fresh pbkdf2 for each of them again.
    */
-  #chainRuns = new Map<string, Promise<void>>()
+  #kohakuKeystores = new Map<string, Keystore>()
+
+  /**
+   * The tail every sync is chained onto, so syncs run one at a time whatever their network or
+   * phrase.
+   *
+   * Serialized rather than parallel because the expensive part of a sync - reading the pools'
+   * history - is the same for every phrase on a network. The first one pays for it and persists
+   * it, and every phrase after it starts from that and only reads the few blocks since. Two in
+   * parallel would each walk the whole history, doubling the RPC load to reach the same state.
+   */
+  #syncQueue: Promise<void> = Promise.resolve()
+
+  /** The queued or running sync per `${chainId}:${seedId}`, so asking again joins it. */
+  #syncJobs = new Map<string, Promise<void>>()
+
+  /**
+   * How many syncs are queued or running per chain. The chain reads as syncing while any is, for
+   * every phrase - they all wait on the same history.
+   */
+  #pendingSyncsByChain = new Map<string, number>()
 
   #syncStatesByChain: { [chainId: string]: PrivacyPoolsChainSyncState } = {}
+
+  /**
+   * Bumped whenever a sync persists a chain's history. A plugin reads the store only once, when it
+   * is built, so one built before the latest save would walk again the blocks another phrase's
+   * sync has already read. See `#getProtocol`.
+   */
+  #chainVersions = new Map<string, number>()
+
+  /** The chain version each live plugin's in-memory state matches. */
+  #protocolChainVersions = new Map<string, number>()
+
+  /**
+   * Bumped on every lock. A sync cannot be aborted, so one still running when the wallet locks
+   * would otherwise write back the notes the lock just wiped.
+   */
+  #generation = 0
 
   /** Notes per `${seedId}` then per chain, so switching accounts keeps each phrase's own view. */
   #notesByIdentity: {
@@ -177,8 +212,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   } = {}
 
   #activity: PrivacyPoolsActivityEntry[] = []
-
-  #seedId: string | null = null
 
   /**
    * The proved-but-unsent withdrawal. Private: it carries the proof and the signed userOp, neither
@@ -304,19 +337,18 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       this.#keystore.onUpdate((forceEmit) => {
         // Locking must drop the derived note secrets, not merely hide the UI. The notes go with
         // them: nothing derived from the phrase may outlive the lock.
-        if (!this.#keystore.isUnlocked && this.#seedId) this.#teardown({ wipeNotes: true })
+        if (!this.#keystore.isUnlocked && this.#hasPhraseDerivedState()) this.#teardown()
 
         this.propagateUpdate(forceEmit)
       }, 'privacyPools'),
 
-      this.#selectedAccount.onUpdate((forceEmit) => {
-        const seedId = this.#getSeedIdForSelectedAccount()
-        // A different phrase means different notes, so nothing built for the previous one may be
-        // reused - but its notes stay in their own bucket, so switching back shows them at once.
-        if (this.#seedId && seedId !== this.#seedId) this.#teardown({ wipeNotes: false })
-
-        this.propagateUpdate(forceEmit)
-      }, 'privacyPools'),
+      // Switching accounts drops nothing: every phrase has its own plugins and its own notes, so
+      // switching back shows them at once, and a sync still running for the previous phrase keeps
+      // going and leaves the network's history warm for the next one.
+      this.#selectedAccount.onUpdate(
+        (forceEmit) => this.propagateUpdate(forceEmit),
+        'privacyPools'
+      ),
 
       this.#providers.onUpdate((forceEmit) => {
         const staleKeys = [...this.#providerInstances.keys()].filter((key) => {
@@ -324,11 +356,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
           return this.#providers.providers[chainId] !== this.#providerInstances.get(key)
         })
 
-        staleKeys.forEach((key) => {
-          this.#protocols.delete(key)
-          this.#providerInstances.delete(key)
-          this.#sagaHydratedKeys.delete(key)
-        })
+        staleKeys.forEach((key) => this.#dropProtocol(key))
 
         this.propagateUpdate(forceEmit)
       }, 'privacyPools'),
@@ -372,7 +400,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * there. A getter rather than a field, so the split stays an implementation detail.
    */
   get chains(): { [chainId: string]: PrivacyPoolsChainState } {
-    const identityChains = (this.#seedId && this.#notesByIdentity[this.#seedId]) || {}
+    const seedId = this.#getSeedIdForSelectedAccount()
+    const identityChains = (seedId && this.#notesByIdentity[seedId]) || {}
     const chainIds = new Set([
       ...this.supportedChainIds,
       ...Object.keys(this.#syncStatesByChain),
@@ -449,10 +478,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * notes they sit beside - accounts sharing a phrase share the notes, so they share the log.
    */
   get activity(): PrivacyPoolsActivityEntry[] {
-    if (!this.#seedId) return []
+    const seedId = this.#getSeedIdForSelectedAccount()
+    if (!seedId) return []
 
     return this.#activity
-      .filter((entry) => entry.seedId === this.#seedId)
+      .filter((entry) => entry.seedId === seedId)
       .sort((a, b) => b.createdAt - a.createdAt)
   }
 
@@ -510,9 +540,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         error: new Error('privacyPools: no seed id')
       })
 
-    // Recorded so a later account switch can tell that the live plugins belong to another phrase.
-    this.#seedId = seedId
-
     return seedId
   }
 
@@ -520,7 +547,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return {
       network: createKohakuNetwork(this.#fetch),
       storage: this.#kohakuStorage,
-      keystore: createKohakuKeystore((path) => this.#keystore.derivePrivacyPoolsKey(seedId, path)),
+      keystore: this.#getKohakuKeystore(seedId),
       provider: createKohakuProvider(provider)
     }
   }
@@ -532,15 +559,42 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return provider
   }
 
+  #getKohakuKeystore(seedId: string): Keystore {
+    const existing = this.#kohakuKeystores.get(seedId)
+    if (existing) return existing
+
+    const keystore = createKohakuKeystore((path) =>
+      this.#keystore.derivePrivacyPoolsKey(seedId, path)
+    )
+    this.#kohakuKeystores.set(seedId, keystore)
+
+    return keystore
+  }
+
   #protocolKey(chainId: string, seedId: string) {
     return `${chainId}:${seedId}`
   }
 
-  /** The plugin for a chain and phrase. */
+  #dropProtocol(key: string) {
+    this.#protocols.delete(key)
+    this.#providerInstances.delete(key)
+    this.#sagaHydratedKeys.delete(key)
+    this.#protocolChainVersions.delete(key)
+  }
+
+  /**
+   * The plugin for a chain and phrase.
+   *
+   * Rebuilt when another phrase's sync has persisted newer history since it was built, so it
+   * starts from that rather than from what it last held in memory.
+   */
   async #getProtocol(chainId: string, seedId: string): Promise<PrivacyPoolsV1Protocol> {
     const key = this.#protocolKey(chainId, seedId)
+    const chainVersion = this.#chainVersions.get(chainId) || 0
     const existing = this.#protocols.get(key)
-    if (existing) return existing
+
+    if (existing && this.#protocolChainVersions.get(key) === chainVersion) return existing
+    if (existing) this.#dropProtocol(key)
 
     const config = getPrivacyPoolsChainConfig(BigInt(chainId))
     if (!config) throw new Error(`privacyPools: unsupported chain ${chainId}`)
@@ -582,6 +636,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     this.#protocols.set(key, protocol)
     this.#providerInstances.set(key, provider)
+    this.#protocolChainVersions.set(key, chainVersion)
     if (isSagaHydrated) this.#sagaHydratedKeys.add(key)
 
     return protocol
@@ -667,11 +722,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    */
   #dropSagaHydratedProtocols(chainId: string) {
     this.#sagaHydratedKeys.forEach((key) => {
-      if (!key.startsWith(`${chainId}:`)) return
-
-      this.#protocols.delete(key)
-      this.#providerInstances.delete(key)
-      this.#sagaHydratedKeys.delete(key)
+      if (key.startsWith(`${chainId}:`)) this.#dropProtocol(key)
     })
   }
 
@@ -689,29 +740,67 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /**
    * Walks a chain's pools and decrypts whatever belongs to this phrase.
    *
-   * Joinable rather than queued: a second caller awaits the run already in flight. A cold mainnet
-   * sync is hundreds of sequential `eth_getLogs` calls, so two of them against the same chain
-   * would double the RPC load to reach the same state.
+   * Queued behind any sync already running (see `#syncQueue`), and joinable: asking again for the
+   * same chain and phrase returns the sync already queued or running rather than adding another.
    */
   async syncChain(chainId: string): Promise<void> {
     const seedId = this.#assertAvailableAndGetSeedId()
-    const inFlight = this.#chainRuns.get(chainId)
-    if (inFlight) return inFlight
+    const jobKey = this.#protocolKey(chainId, seedId)
+    const existingJob = this.#syncJobs.get(jobKey)
+    if (existingJob) return existingJob
 
-    const run = this.#syncChain(chainId, seedId).finally(() => {
-      this.#chainRuns.delete(chainId)
-    })
+    const generation = this.#generation
 
-    this.#chainRuns.set(chainId, run)
+    this.#pendingSyncsByChain.set(chainId, (this.#pendingSyncsByChain.get(chainId) || 0) + 1)
+    // Shown at once rather than when the sync gets its turn, so a sync waiting behind another
+    // reads as under way instead of as nothing happening.
+    if (!this.#isChainSyncing(chainId)) {
+      this.#writeChainSyncState(chainId, {
+        syncStatus: 'syncing',
+        syncStartedAt: Date.now(),
+        error: null
+      })
+      this.emitUpdate()
+    }
 
-    return run
+    const job: Promise<void> = this.#syncQueue
+      .then(async () => {
+        const error = await this.#runSync(chainId, seedId, generation)
+        this.#settleChainSync(chainId, generation, error)
+      })
+      .finally(() => {
+        // A lock clears the map, so what is under this key may already be a newer sync
+        if (this.#syncJobs.get(jobKey) === job) this.#syncJobs.delete(jobKey)
+      })
+
+    this.#syncJobs.set(jobKey, job)
+    this.#syncQueue = job
+
+    return job
   }
 
-  async #syncChain(chainId: string, seedId: string): Promise<void> {
-    const hasSyncedBefore = !!this.#notesByIdentity[seedId]?.[chainId]?.lastSyncedAt
+  #isChainSyncing(chainId: string) {
+    const syncStatus = this.#syncStatesByChain[chainId]?.syncStatus
 
+    return syncStatus === 'syncing' || syncStatus === 'initializing'
+  }
+
+  /**
+   * One sync, once its turn comes. Resolves with the error to show for the chain, or null.
+   *
+   * Never rejects: a failed sync must not break the queue for the syncs behind it.
+   */
+  async #runSync(chainId: string, seedId: string, generation: number): Promise<string | null> {
+    // Locked while this waited its turn - the secrets it was queued with are gone.
+    if (generation !== this.#generation) return null
+
+    const config = getPrivacyPoolsChainConfig(BigInt(chainId))
+    const isChainCold = !!config && (await this.#isChainCold(config))
+
+    // 'initializing' is the chain's own first read, whichever phrase happens to trigger it: that
+    // is the walk that takes minutes. A phrase new to an already read chain only reads the tail.
     this.#writeChainSyncState(chainId, {
-      syncStatus: hasSyncedBefore ? 'syncing' : 'initializing',
+      syncStatus: isChainCold ? 'initializing' : 'syncing',
       syncStartedAt: Date.now(),
       error: null
     })
@@ -729,6 +818,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
       const notes = await protocol.notes()
 
+      // Locked while syncing: nothing derived from the phrase may be written back.
+      if (generation !== this.#generation) return null
+
       this.#notesByIdentity[seedId] = {
         ...(this.#notesByIdentity[seedId] || {}),
         [chainId]: {
@@ -742,28 +834,48 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         }
       }
 
+      // The sync has persisted the chain's history by now, so every other phrase's plugin on this
+      // chain is behind the store - and this one is exactly at it.
+      const chainVersion = (this.#chainVersions.get(chainId) || 0) + 1
+      this.#chainVersions.set(chainId, chainVersion)
+      this.#protocolChainVersions.set(this.#protocolKey(chainId, seedId), chainVersion)
+
       // Whatever the CDN fetched is persisted by now, so the plugin that fetched it has done its
       // one job and the next sync should read the few new blocks from the provider instead.
       this.#dropSagaHydratedProtocols(chainId)
 
-      this.#writeChainSyncState(chainId, {
-        syncStatus: 'ready',
-        syncStartedAt: null,
-        error: null
-      })
+      return null
     } catch (error: any) {
-      this.#writeChainSyncState(chainId, {
-        syncStatus: 'idle',
-        syncStartedAt: null,
-        error: 'Could not load your Privacy Pools balance on this network. Please try again.'
-      })
+      if (generation !== this.#generation) return null
 
       this.emitError({
         message: 'Could not load your Privacy Pools balance. Please try again.',
         level: 'silent',
         error: error instanceof Error ? error : new Error('privacyPools: sync failed')
       })
+
+      return 'Could not load your Privacy Pools balance on this network. Please try again.'
     }
+  }
+
+  /**
+   * Resolves the chain's status once a sync is done, unless another is still queued for it - the
+   * chain keeps reading as syncing until the last one finishes.
+   */
+  #settleChainSync(chainId: string, generation: number, error: string | null) {
+    // The lock that superseded this sync has already reset everything it would settle
+    if (generation !== this.#generation) return
+
+    const pendingSyncs = (this.#pendingSyncsByChain.get(chainId) || 1) - 1
+    this.#pendingSyncsByChain.set(chainId, pendingSyncs)
+
+    if (!pendingSyncs)
+      this.#writeChainSyncState(chainId, {
+        syncStatus: error ? 'idle' : 'ready',
+        syncStartedAt: null,
+        error
+      })
+    else if (error) this.#writeChainSyncState(chainId, { error })
 
     this.emitUpdate()
   }
@@ -1187,21 +1299,34 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
   }
 
+  #hasPhraseDerivedState() {
+    return (
+      !!this.#protocols.size ||
+      !!this.#kohakuKeystores.size ||
+      !!this.#syncJobs.size ||
+      !!Object.keys(this.#notesByIdentity).length
+    )
+  }
+
   /**
-   * Drops everything derived from the recovery phrase. `wipeNotes` distinguishes a lock, where
-   * nothing derived may stay in memory, from an account switch, where the previous phrase's notes
-   * stay in their own bucket so switching back shows them at once.
+   * Drops everything derived from any recovery phrase, on lock: nothing derived may stay in memory
+   * once the phrases are out of reach.
+   *
+   * A sync already running cannot be stopped, so it is left to finish in the queue - `#generation`
+   * makes it discard what it finds, and a sync asked for after unlocking waits behind it rather
+   * than walking the same history in parallel.
    */
-  #teardown({ wipeNotes }: { wipeNotes: boolean }) {
+  #teardown() {
+    this.#generation += 1
     this.#protocols.clear()
     this.#providerInstances.clear()
     this.#sagaHydratedKeys.clear()
-    this.#chainRuns.clear()
+    this.#protocolChainVersions.clear()
+    this.#kohakuKeystores.clear()
+    this.#syncJobs.clear()
+    this.#pendingSyncsByChain.clear()
     this.#syncStatesByChain = {}
-
-    if (wipeNotes) this.#notesByIdentity = {}
-
-    this.#seedId = null
+    this.#notesByIdentity = {}
     this.operation = null
     this.#discardPending()
     this.emitUpdate()
@@ -1210,7 +1335,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   destroy() {
     this.#unsubscribers.forEach((unsubscribe) => unsubscribe())
     this.#unsubscribers = []
-    this.#teardown({ wipeNotes: true })
+    this.#teardown()
   }
 
   toJSON() {
