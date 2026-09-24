@@ -1,3 +1,5 @@
+import { ZeroAddress } from 'ethers'
+
 import { ERC7730_DESCRIPTOR_WAIT_MS } from '@/libs/humanizer/erc7730/consts'
 import { describe, expect, jest, test } from '@jest/globals'
 
@@ -802,7 +804,7 @@ describe('SignMessageController', () => {
         kind: 'typedMessage',
         domain: {
           chainId: 1,
-          verifyingContract: account.addr
+          verifyingContract: ZeroAddress
         },
         types: {
           EIP712Domain: [
