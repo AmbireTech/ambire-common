@@ -56,7 +56,7 @@ export const getXWalletConversionText = (xWalletAmount: bigint, walletAmount: bi
   const formattedXWalletAmount = formatDecimals(Number(formatUnits(xWalletAmount, 18)), 'amount')
   const formattedWalletAmount = formatDecimals(Number(formatUnits(walletAmount, 18)), 'amount')
 
-  return `${formattedXWalletAmount} xWALLET = ${formattedWalletAmount} WALLET`
+  return `${formattedXWalletAmount} $xWALLET = ${formattedWalletAmount} $WALLET`
 }
 
 /**
