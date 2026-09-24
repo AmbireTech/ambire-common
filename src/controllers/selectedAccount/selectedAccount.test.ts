@@ -2,6 +2,7 @@ import { expect } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -291,6 +292,153 @@ describe('SelectedAccount Controller', () => {
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
     expect(didSetToFalse).toBe(false)
     unsubscribe()
+  })
+
+  describe('Privacy Pools account', () => {
+    const PRIVACY_POOLS_SEED_ID = 'privacy-pools-seed'
+
+    /**
+     * A wallet with the two regular accounts and one Privacy Pools account. The stored seed only
+     * needs its metadata here - nothing is decrypted or derived.
+     */
+    const preparePrivacyPoolsTest = async ({
+      storedAccounts = accounts,
+      selectedAccount = accounts[0]!.addr,
+      selectedPrivacyPoolsAccount = null,
+      privacyPoolsSeedIds = [PRIVACY_POOLS_SEED_ID]
+    }: {
+      storedAccounts?: typeof accounts
+      selectedAccount?: string | null
+      selectedPrivacyPoolsAccount?: string | null
+      privacyPoolsSeedIds?: string[]
+    } = {}) => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', storedAccounts)
+        if (selectedAccount) await storageCtrl.set('selectedAccount', selectedAccount)
+        if (selectedPrivacyPoolsAccount)
+          await storageCtrl.set('selectedPrivacyPoolsAccount', selectedPrivacyPoolsAccount)
+        await storageCtrl.set('keystoreSeeds', [
+          {
+            id: PRIVACY_POOLS_SEED_ID,
+            label: 'Privacy seed',
+            seed: {} as any,
+            hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+          }
+        ])
+        await storageCtrl.set(
+          'privacyPoolsAccounts',
+          privacyPoolsSeedIds.map((seedId) => ({ seedId, createdAt: 1 }))
+        )
+      })
+      await mainCtrl.initialLoadPromise
+
+      return { mainCtrl, selectedAccountCtrl: mainCtrl.selectedAccount }
+    }
+
+    it('selecting one leaves no regular account selected, in memory and in storage', async () => {
+      const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest()
+
+      await mainCtrl.selectPrivacyPoolsAccount(PRIVACY_POOLS_SEED_ID)
+
+      expect(selectedAccountCtrl.account).toBeNull()
+      expect(selectedAccountCtrl.privacyPoolsAccountId).toBe(PRIVACY_POOLS_SEED_ID)
+      expect(await mainCtrl.storage.get('selectedAccount', null)).toBeNull()
+      expect(await mainCtrl.storage.get('selectedPrivacyPoolsAccount', null)).toBe(
+        PRIVACY_POOLS_SEED_ID
+      )
+    })
+
+    it('selecting a regular account deselects the Privacy Pools one', async () => {
+      const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest()
+      await mainCtrl.selectPrivacyPoolsAccount(PRIVACY_POOLS_SEED_ID)
+
+      await mainCtrl.selectAccount(accounts[1]!.addr)
+
+      expect(selectedAccountCtrl.account?.addr).toBe(accounts[1]!.addr)
+      expect(selectedAccountCtrl.privacyPoolsAccountId).toBeNull()
+      expect(await mainCtrl.storage.get('selectedPrivacyPoolsAccount', null)).toBeNull()
+    })
+
+    it('never reports neither account selected while switching between the two kinds', async () => {
+      const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest()
+      const selectionStates: boolean[] = []
+      const unsubscribe = selectedAccountCtrl.onUpdate(() => {
+        selectionStates.push(
+          !!selectedAccountCtrl.account || !!selectedAccountCtrl.privacyPoolsAccountId
+        )
+      })
+
+      await mainCtrl.selectPrivacyPoolsAccount(PRIVACY_POOLS_SEED_ID)
+      await mainCtrl.selectAccount(accounts[0]!.addr)
+      unsubscribe()
+
+      expect(selectionStates.length).toBeGreaterThan(0)
+      expect(selectionStates.every(Boolean)).toBe(true)
+    })
+
+    it('does not select a Privacy Pools account that does not exist', async () => {
+      const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest()
+
+      await mainCtrl.selectPrivacyPoolsAccount('unknown-seed')
+
+      expect(selectedAccountCtrl.account?.addr).toBe(accounts[0]!.addr)
+      expect(selectedAccountCtrl.privacyPoolsAccountId).toBeNull()
+    })
+
+    it('is restored as selected on the next start', async () => {
+      const { selectedAccountCtrl } = await preparePrivacyPoolsTest({
+        selectedAccount: null,
+        selectedPrivacyPoolsAccount: PRIVACY_POOLS_SEED_ID
+      })
+
+      expect(selectedAccountCtrl.account).toBeNull()
+      expect(selectedAccountCtrl.privacyPoolsAccountId).toBe(PRIVACY_POOLS_SEED_ID)
+    })
+
+    it('a restored selection whose account is gone falls back to the first regular account', async () => {
+      const { selectedAccountCtrl } = await preparePrivacyPoolsTest({
+        selectedAccount: null,
+        selectedPrivacyPoolsAccount: 'deleted-seed'
+      })
+
+      expect(selectedAccountCtrl.account?.addr).toBe(accounts[0]!.addr)
+      expect(selectedAccountCtrl.privacyPoolsAccountId).toBeNull()
+    })
+
+    it('removing the last regular account selects the Privacy Pools account', async () => {
+      const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest({
+        storedAccounts: [accounts[0]!]
+      })
+
+      await mainCtrl.removeAccount(accounts[0]!.addr)
+
+      expect(selectedAccountCtrl.account).toBeNull()
+      expect(selectedAccountCtrl.privacyPoolsAccountId).toBe(PRIVACY_POOLS_SEED_ID)
+    })
+
+    it('removing the selected Privacy Pools account selects a regular account', async () => {
+      const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest()
+      await mainCtrl.selectPrivacyPoolsAccount(PRIVACY_POOLS_SEED_ID)
+
+      await mainCtrl.privacyPools.removeAccount(PRIVACY_POOLS_SEED_ID)
+
+      expect(selectedAccountCtrl.account?.addr).toBe(accounts[0]!.addr)
+      expect(selectedAccountCtrl.privacyPoolsAccountId).toBeNull()
+    })
+
+    it('removing the only account of either kind leaves nothing selected', async () => {
+      const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest({
+        storedAccounts: [],
+        selectedAccount: null,
+        selectedPrivacyPoolsAccount: PRIVACY_POOLS_SEED_ID
+      })
+
+      await mainCtrl.privacyPools.removeAccount(PRIVACY_POOLS_SEED_ID)
+
+      expect(selectedAccountCtrl.account).toBeNull()
+      expect(selectedAccountCtrl.privacyPoolsAccountId).toBeNull()
+      expect(await mainCtrl.storage.get('selectedPrivacyPoolsAccount', null)).toBeNull()
+    })
   })
 
   describe('Banners', () => {
