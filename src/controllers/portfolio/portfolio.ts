@@ -36,7 +36,6 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { IVerificationController } from '../../interfaces/verification'
-import { IWalletTokenController } from '../../interfaces/walletToken'
 import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -106,10 +105,10 @@ import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { getFlags } from '../../libs/portfolio/tokenProcessing'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
+import { getWalletStakingShareValue } from '../../libs/walletStaking/shareValue'
 import batcher from '../../utils/batcher'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
-import { WalletTokenController } from '../walletToken/walletToken'
 
 const EXTERNAL_API_HINTS_TTL = {
   dynamic: 15 * 60 * 1000,
@@ -222,8 +221,6 @@ export class PortfolioController
    */
   protected hints: HintsController
 
-  #walletToken: IWalletTokenController
-
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
@@ -276,12 +273,7 @@ export class PortfolioController
     featureFlags: IFeatureFlagsController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
     verification?: IVerificationController,
-    platform: Platform = 'default',
-    /**
-     * The MainController passes its registered instance. Without it (e.g. in tests), the portfolio
-     * creates its own, which doesn't know the transactions made from this device.
-     */
-    walletToken?: IWalletTokenController
+    platform: Platform = 'default'
   ) {
     super(eventEmitterRegistry)
 
@@ -300,20 +292,6 @@ export class PortfolioController
     this.#banner = banner
     this.#featureFlags = featureFlags
     this.hints = new HintsController(storage, accounts, keystore)
-    if (walletToken) {
-      this.#walletToken = walletToken
-    } else {
-      const ownWalletToken = new WalletTokenController({
-        storage,
-        featureFlags,
-        providers,
-        callRelayer: this.#callRelayer,
-        getInternalAccountOps: async () => []
-      })
-      // Not registered in the event emitter registry, so its errors are reported through the portfolio
-      ownWalletToken.onError((error) => this.emitError(error))
-      this.#walletToken = ownWalletToken
-    }
     // Re-emit hints updates as portfolio updates so the re-exposed getters
     // (customTokens, tokenPreferences) reach the UI when they change.
     this.hints.onUpdate((forceEmit) => this.propagateUpdate(forceEmit))
@@ -1911,13 +1889,13 @@ export class PortfolioController
       this.emitUpdate()
 
       if (verifiedState) {
-        void this.#walletToken
-          .getWalletStakingShareValue({
-            chainId: network.chainId,
-            tokens: combinedTokens,
-            provider: portfolioLib.provider,
-            accountAddr: account.addr
-          })
+        void getWalletStakingShareValue({
+          chainId: network.chainId,
+          tokens: combinedTokens,
+          provider: portfolioLib.provider,
+          accountAddr: account.addr,
+          onError: (error) => this.emitError(error)
+        })
           .then((walletStaking) => {
             if (
               !walletStaking ||

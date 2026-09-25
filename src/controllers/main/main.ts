@@ -423,17 +423,6 @@ export class MainController extends EventEmitter implements IMainController {
       ui: this.ui
     })
 
-    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
-    this.walletToken = new WalletTokenController({
-      eventEmitterRegistry,
-      storage: this.storage,
-      featureFlags: this.featureFlags,
-      providers: this.providers,
-      callRelayer: this.callRelayer,
-      // The activity controller is created after the portfolio, which uses this controller
-      getInternalAccountOps: (accountAddr, chainId) =>
-        this.activity.getInternalAccountOps(accountAddr, chainId)
-    })
     this.portfolio = new PortfolioController(
       this.storage,
       this.fetch,
@@ -447,8 +436,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.featureFlags,
       eventEmitterRegistry,
       this.verification,
-      platform,
-      this.walletToken
+      platform
     )
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
       this.emailVault = new EmailVaultController(
@@ -507,6 +495,7 @@ export class MainController extends EventEmitter implements IMainController {
       selectedAccount: this.selectedAccount,
       featureFlags: this.featureFlags
     })
+    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.erc7730 = new Erc7730Controller({
       storage: this.storage,
       callRelayer: this.callRelayer,
@@ -543,6 +532,14 @@ export class MainController extends EventEmitter implements IMainController {
       },
       eventEmitterRegistry
     )
+    this.walletToken = new WalletTokenController({
+      eventEmitterRegistry,
+      storage: this.storage,
+      featureFlags: this.featureFlags,
+      providers: this.providers,
+      callRelayer: this.callRelayer,
+      activity: this.activity
+    })
     this.transferScanner = new TransfersScannerController({
       activity: this.activity,
       networks: this.networks,

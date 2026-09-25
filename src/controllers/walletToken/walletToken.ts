@@ -1,12 +1,11 @@
 import { Contract } from 'ethers'
 
 import { WALLET_STAKING_ADDR } from '../../consts/addresses'
+import { IActivityController } from '../../interfaces/activity'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IProvidersController, RPCProvider } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
-import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
-import { TokenResult } from '../../libs/portfolio/interfaces'
 import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
 import {
   findWalletStakingLeaveLogsInTxns,
@@ -26,30 +25,11 @@ import {
   walletStakingInterface,
   WalletStakingRelayerLog
 } from '../../libs/walletStaking/pendingWithdrawal'
-import {
-  getXWalletLockedShares,
-  WALLET_STAKING_CHAIN_ID,
-  XWalletShareValueCache,
-  xWalletShareValueCache
-} from '../../libs/walletStaking/shareValue'
+import { WALLET_STAKING_CHAIN_ID } from '../../libs/walletStaking/shareValue'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-type WalletTokenBalance = Pick<TokenResult, 'address' | 'amount' | 'amountPostSimulation'>
-
 export const WALLET_STAKING_RELAYER_LOGS_TIMEOUT_MS = 5000
-
-export type XWalletLockedSharesGetter = (
-  provider: RPCProvider,
-  accountAddr: string
-) => Promise<bigint>
-
-export type WalletStakingShareValue = {
-  shareValue: bigint
-  updatedAt: number
-  /** Undefined while unknown - the per-account lookup is optional and may fail on its own. */
-  lockedShares?: bigint
-}
 
 /** Why the transaction ID that the user entered didn't reveal a pending withdrawal. */
 export type WalletStakingTxnIdLookupError = 'invalid' | 'not-found' | 'failed'
@@ -67,8 +47,8 @@ export interface AccountPendingWalletWithdrawals {
 type LeaveLogsByAccount = { [accountAddr: string]: WalletStakingRelayerLog[] }
 
 /**
- * Loads WALLET-token data: the xWALLET conversion rate needed by the portfolio, and the pending
- * $WALLET withdrawals (unstakes) of each account.
+ * Loads the pending $WALLET withdrawals (unstakes) of each account. The xWALLET conversion rate
+ * that the portfolio shows is loaded by the portfolio itself (`getWalletStakingShareValue`).
  *
  * The withdrawals are found from the staking contract's leave logs. The relayer returns them,
  * but that sends the account address to the relayer, so the user can opt out
@@ -77,10 +57,6 @@ type LeaveLogsByAccount = { [accountAddr: string]: WalletStakingRelayerLog[] }
  * of active withdrawals are stored, so a withdrawal found once stays known.
  */
 export class WalletTokenController extends EventEmitter {
-  #xWalletShareValueCache: Pick<XWalletShareValueCache, 'get'>
-
-  #getXWalletLockedShares: XWalletLockedSharesGetter
-
   #storage: IStorageController
 
   #featureFlags: IFeatureFlagsController
@@ -89,7 +65,7 @@ export class WalletTokenController extends EventEmitter {
 
   #callRelayer: BindedRelayerCall
 
-  #getInternalAccountOps: (accountAddr: string, chainId: bigint) => Promise<SubmittedAccountOp[]>
+  #activity: IActivityController
 
   /** The stored leave logs, keyed by the lowercase account address. */
   #leaveLogs: LeaveLogsByAccount = {}
@@ -109,28 +85,22 @@ export class WalletTokenController extends EventEmitter {
     featureFlags,
     providers,
     callRelayer,
-    getInternalAccountOps,
-    shareValueCache = xWalletShareValueCache,
-    lockedSharesGetter = getXWalletLockedShares
+    activity
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     storage: IStorageController
     featureFlags: IFeatureFlagsController
     providers: IProvidersController
     callRelayer: BindedRelayerCall
-    /** Returns the account ops that the account submitted from this device on one network. */
-    getInternalAccountOps: (accountAddr: string, chainId: bigint) => Promise<SubmittedAccountOp[]>
-    shareValueCache?: Pick<XWalletShareValueCache, 'get'>
-    lockedSharesGetter?: XWalletLockedSharesGetter
+    /** Gives the unstake transactions made from this device. */
+    activity: IActivityController
   }) {
     super(eventEmitterRegistry)
     this.#storage = storage
     this.#featureFlags = featureFlags
     this.#providers = providers
     this.#callRelayer = callRelayer
-    this.#getInternalAccountOps = getInternalAccountOps
-    this.#xWalletShareValueCache = shareValueCache
-    this.#getXWalletLockedShares = lockedSharesGetter
+    this.#activity = activity
 
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -146,80 +116,6 @@ export class WalletTokenController extends EventEmitter {
         message: 'Unable to load the stored $WALLET withdrawals.',
         error: error instanceof Error ? error : new Error('Unable to load the leave logs.')
       })
-    }
-  }
-
-  /** Returns the xWALLET conversion rate when the portfolio contains an xWALLET balance. */
-  async getWalletStakingShareValue({
-    chainId,
-    tokens,
-    provider,
-    accountAddr
-  }: {
-    chainId: bigint
-    tokens: WalletTokenBalance[]
-    provider: RPCProvider
-    accountAddr?: string
-  }): Promise<WalletStakingShareValue | null> {
-    if (chainId !== WALLET_STAKING_CHAIN_ID) return null
-
-    const hasXWalletBalance = tokens.some(
-      (token) =>
-        token.address.toLowerCase() === WALLET_STAKING_ADDR.toLowerCase() &&
-        (token.amount > 0n || (token.amountPostSimulation || 0n) > 0n)
-    )
-    if (!hasXWalletBalance) return null
-
-    try {
-      const { shareValue, updatedAt, refreshError } =
-        await this.#xWalletShareValueCache.get(provider)
-
-      if (refreshError) {
-        this.emitError({
-          level: 'silent',
-          message: 'Unable to refresh the WALLET staking conversion rate.',
-          error: refreshError
-        })
-      }
-
-      return {
-        shareValue,
-        updatedAt,
-        lockedShares: await this.#getLockedShares(provider, accountAddr)
-      }
-    } catch (error) {
-      const shareValueError =
-        error instanceof Error
-          ? error
-          : new Error('Unable to load the WALLET staking conversion rate.')
-      this.emitError({
-        level: 'silent',
-        message: 'Unable to load the WALLET staking conversion rate.',
-        error: shareValueError
-      })
-
-      return null
-    }
-  }
-
-  /**
-   * The locked shares are a nice-to-have next to the conversion rate, so a failure here is
-   * reported and swallowed rather than dropping the share value the rest of the app relies on.
-   */
-  async #getLockedShares(provider: RPCProvider, accountAddr?: string): Promise<bigint | undefined> {
-    if (!accountAddr) return undefined
-
-    try {
-      return await this.#getXWalletLockedShares(provider, accountAddr)
-    } catch (error) {
-      this.emitError({
-        level: 'silent',
-        message: 'Unable to load the locked xWALLET shares.',
-        error:
-          error instanceof Error ? error : new Error('Unable to load the locked xWALLET shares.')
-      })
-
-      return undefined
     }
   }
 
@@ -403,7 +299,10 @@ export class WalletTokenController extends EventEmitter {
    * receipt that fails to load is reported, and the other receipts are still used.
    */
   async #getLocalTxnsLeaveLogs(accountAddr: string, provider: RPCProvider) {
-    const accountOps = await this.#getInternalAccountOps(accountAddr, WALLET_STAKING_CHAIN_ID)
+    const accountOps = await this.#activity.getInternalAccountOps(
+      accountAddr,
+      WALLET_STAKING_CHAIN_ID
+    )
     const txnIds = getWalletStakingLeaveTxnIds(accountOps)
     if (!txnIds.length) return []
 
