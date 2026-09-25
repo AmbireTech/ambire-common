@@ -414,6 +414,18 @@ export const predefinedDapps: Dapp[] = [
     description: 'Leading DEX on Base Chain with staking and farming.',
     twitter: 'BaseSwapDEX',
     category: 'Dexes'
+  },
+  // DefiLlama returns an empty `url` (flagged as `deadUrl`) for CoW Swap, so it can't come from there
+  {
+    id: 'swap.cow.fi',
+    url: 'https://swap.cow.fi',
+    name: 'CoW Swap',
+    icon: 'https://icons.llamao.fi/icons/protocols/cowswap',
+    description:
+      'CoW Swap finds the lowest prices across all exchanges and aggregators & saves you more by matching Coincidences of Wants (CoWs) and protecting from MEV',
+    chainIds: [1, 100, 42161, 8453, 137, 43114, 56],
+    twitter: 'CoWSwap',
+    category: 'DEX Aggregator'
   }
 ]
 
