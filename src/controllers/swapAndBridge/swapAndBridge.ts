@@ -706,8 +706,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         this.fromSelectedToken.decimals
       )
 
-      if (!formattedAmount) return
-
       const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
       // There is absolutely 0 reason to display the same amount of decimals for the usd

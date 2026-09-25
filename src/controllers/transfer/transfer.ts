@@ -827,8 +827,6 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.selectedToken.decimals
       )
 
-      if (!formattedAmount) return
-
       const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
       this.amountInFiat = formatUnits(
