@@ -1319,7 +1319,13 @@ describe('RequestsController ', () => {
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
-    jest.spyOn(safeLib, 'findDeployData').mockResolvedValue(null)
+    jest.spyOn(safeLib, 'findDeployData').mockResolvedValue({
+      factoryAddr: '0x',
+      singleton: '0x',
+      setupData: '0x',
+      saltNonce: '0x',
+      version: ''
+    })
     const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
     const reject = jest.fn()
 

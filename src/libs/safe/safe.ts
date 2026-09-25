@@ -192,15 +192,55 @@ async function getCalculatedSafeAddressFromCreation(
 const safeProxyFactoryInterface = new Interface([
   'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
 ])
+const safeProxyFactorySelector = safeProxyFactoryInterface
+  .getFunction('createProxyWithNonce')!
+  .selector.slice(2)
+
+/** Returns whether all fields required to redeploy a Safe are available. */
+export function hasCompleteSafeCreationData(
+  creation: Partial<SafeAccountCreation> | null | undefined
+): boolean {
+  return !!(
+    creation?.factoryAddr &&
+    creation.factoryAddr !== '0x' &&
+    creation.singleton &&
+    creation.singleton !== '0x' &&
+    creation.setupData &&
+    creation.setupData !== '0x' &&
+    creation.saltNonce &&
+    creation.saltNonce !== '0x' &&
+    creation.version
+  )
+}
+
+function getEmptySafeCreationData(): SafeAccountCreation {
+  return {
+    factoryAddr: '0x',
+    singleton: '0x',
+    setupData: '0x',
+    saltNonce: '0x',
+    version: ''
+  }
+}
+
+async function getSafeVersion(safeAddr: string, provider: RPCProvider): Promise<string> {
+  try {
+    const safe = new Contract(safeAddr, SafeAbi, provider)
+    const version = await (safe as any).VERSION()
+    return typeof version === 'string' ? version : ''
+  } catch (error) {
+    console.error(`failed to retrieve Safe version for ${safeAddr}`, error)
+    return ''
+  }
+}
 
 function decodeSafeDeploymentData(
   transactionData: string,
   factoryAddr: Hex
 ): Pick<SafeAccountCreation, 'factoryAddr' | 'singleton' | 'setupData' | 'saltNonce'>[] {
-  const selector = safeProxyFactoryInterface.getFunction('createProxyWithNonce')!.selector.slice(2)
   const normalizedTransactionData = transactionData.toLowerCase()
   const deploymentData = []
-  let selectorIndex = normalizedTransactionData.indexOf(selector)
+  let selectorIndex = normalizedTransactionData.indexOf(safeProxyFactorySelector)
 
   while (selectorIndex !== -1) {
     try {
@@ -218,22 +258,27 @@ function decodeSafeDeploymentData(
       // The selector can occur in unrelated calldata. Continue looking for a valid deployment call.
     }
 
-    selectorIndex = normalizedTransactionData.indexOf(selector, selectorIndex + selector.length)
+    selectorIndex = normalizedTransactionData.indexOf(
+      safeProxyFactorySelector,
+      selectorIndex + safeProxyFactorySelector.length
+    )
   }
 
   return deploymentData
 }
 
 /**
- * Recovers and validates a Safe's creation data from the deployment transaction indexed by the
- * Safe Transaction Service.
+ * Returns the Safe creation data available from the Safe Transaction Service, recovering missing
+ * fields from the validated deployment transaction when possible.
  */
 export async function findDeployData(
   safeAddr: string,
   chainId: bigint,
   provider: RPCProvider,
   apiKitFactory: SafeDeploymentApiKitFactory = getApiKit
-): Promise<SafeAccountCreation | null> {
+): Promise<SafeAccountCreation> {
+  let safeCreation = getEmptySafeCreationData()
+
   try {
     const creationInfo = await withTimeout(
       () => apiKitFactory(chainId).getSafeCreationInfo(safeAddr),
@@ -242,34 +287,47 @@ export async function findDeployData(
         message: `Safe API: get Safe creation info timed out after ${SAFE_API_TIMEOUT_MS}ms`
       }
     )
-    if (!creationInfo.transactionHash || !creationInfo.factoryAddress) return null
+    safeCreation = {
+      factoryAddr: (creationInfo.factoryAddress || '0x') as Hex,
+      singleton: (creationInfo.singleton || '0x') as Hex,
+      setupData: (creationInfo.setupData || '0x') as Hex,
+      saltNonce:
+        creationInfo.saltNonce !== null && creationInfo.saltNonce !== undefined
+          ? (toBeHex(BigInt(creationInfo.saltNonce), 32) as Hex)
+          : '0x',
+      version: await getSafeVersion(safeAddr, provider)
+    }
+
+    if (hasCompleteSafeCreationData(safeCreation)) return safeCreation
+    if (!creationInfo.transactionHash) return safeCreation
 
     const transaction = await provider.getTransaction(creationInfo.transactionHash)
-    if (!transaction?.data) return null
+    if (!transaction?.data) return safeCreation
 
-    const factoryAddr = getAddress(creationInfo.factoryAddress) as Hex
+    let factoryAddr = safeCreation.factoryAddr
+    if (
+      factoryAddr === '0x' &&
+      transaction.to &&
+      transaction.data.toLowerCase().startsWith(`0x${safeProxyFactorySelector}`)
+    ) {
+      factoryAddr = getAddress(transaction.to) as Hex
+    }
+    if (factoryAddr === '0x') return safeCreation
+
+    factoryAddr = getAddress(factoryAddr) as Hex
     const deploymentData = decodeSafeDeploymentData(transaction.data, factoryAddr)
-    let deployData = null
 
     for (const candidate of deploymentData) {
       const calculatedAddress = await getCalculatedSafeAddressFromCreation(candidate, provider)
       if (calculatedAddress?.toLowerCase() !== safeAddr.toLowerCase()) continue
 
-      deployData = candidate
-      break
+      return { ...candidate, version: safeCreation.version }
     }
-
-    if (!deployData) return null
-
-    const safe = new Contract(safeAddr, SafeAbi, provider)
-    const version = await (safe as any).VERSION()
-    if (typeof version !== 'string' || !version) return null
-
-    return { ...deployData, version }
   } catch (error) {
     console.error(`failed to find Safe deployment data for ${safeAddr}`, error)
-    return null
   }
+
+  return safeCreation
 }
 
 /**

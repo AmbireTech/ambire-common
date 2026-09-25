@@ -92,7 +92,11 @@ import {
   messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
-import { findDeployData, getSafeDeploymentCall } from '../../libs/safe/safe'
+import {
+  findDeployData,
+  getSafeDeploymentCall,
+  hasCompleteSafeCreationData
+} from '../../libs/safe/safe'
 import {
   AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
   isCallToSelfOrAmbireOp
@@ -2449,7 +2453,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     for (const network of sourceNetworks) {
       const provider = this.#providers.providers[network.chainId.toString()]!
       const safeCreation = await findDeployData(account.addr, network.chainId, provider)
-      if (!safeCreation) continue
+      if (!hasCompleteSafeCreationData(safeCreation)) continue
 
       await this.#accounts.updateSafeCreation(account.addr, safeCreation)
       return safeCreation
@@ -2642,22 +2646,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
       const provider = this.#providers.providers[network.chainId.toString()]!
       let safeDeploymentCall: Call | null = null
-
-      const isSafeAccount = !!account.safeCreation
+      const safeDeploymentSourceNetworks = this.#getPossibleSafeDeploymentSourceNetworks(
+        account.addr
+      )
+      const isSafeAccount =
+        !!account.safeCreation ||
+        (account.creation === null && safeDeploymentSourceNetworks.length > 0)
 
       // safe account, not deployed and this isn't the deploy txn
       if (isSafeAccount && !accountState.isDeployed && !meta.isSafeDeploy) {
         // if a property needed for the deploy is missing, we search for it
-        if (
-          !account.safeCreation ||
-          account.safeCreation.factoryAddr === '0x' ||
-          account.safeCreation.singleton === '0x' ||
-          account.safeCreation.setupData === '0x' ||
-          account.safeCreation.saltNonce === '0x'
-        ) {
+        if (!hasCompleteSafeCreationData(account.safeCreation)) {
           const safeCreation = await this.#recoverSafeCreation(
             account,
-            this.#getPossibleSafeDeploymentSourceNetworks(account.addr)
+            safeDeploymentSourceNetworks
           )
           if (safeCreation) account = { ...account, safeCreation }
         }
