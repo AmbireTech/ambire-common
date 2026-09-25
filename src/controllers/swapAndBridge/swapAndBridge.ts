@@ -86,7 +86,7 @@ import {
   getFeeTokenForSponsorship,
   getIsIntentRoute,
   getIsTokenEligibleForSwapAndBridge,
-  getSwapAndBridgeCalls,
+  getApprovalAndActionCalls,
   getSwapSponsorship,
   isNoFeeToken,
   isTxnBridge,
@@ -3274,7 +3274,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         ) as CallsUserRequest
       )?.signAccountOp.accountOp.calls || []
 
-    const swapOrBridgeCalls = await getSwapAndBridgeCalls(
+    const swapOrBridgeCalls = await getApprovalAndActionCalls(
       userTxn,
       this.#selectedAccount.account,
       provider,

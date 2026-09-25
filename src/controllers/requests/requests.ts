@@ -27,6 +27,7 @@ import { IEventEmitterRegistryController, Statuses } from '../../interfaces/even
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, IKeystoreController } from '../../interfaces/keystore'
+import { ILimitOrdersController } from '../../interfaces/limitOrders'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -60,6 +61,7 @@ import {
   RequestPosition,
   SignUserRequest,
   SiweMessageUserRequest,
+  LimitOrderRequest,
   SwapAndBridgeRequest,
   TransferRequest,
   TypedMessageUserRequest,
@@ -108,7 +110,8 @@ import type { Call } from '../../libs/accountOp/types'
 import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/signAccountOp'
 
 const STATUS_WRAPPED_METHODS = {
-  buildSwapAndBridgeUserRequest: 'INITIAL'
+  buildSwapAndBridgeUserRequest: 'INITIAL',
+  buildLimitOrderUserRequest: 'INITIAL'
 } as const
 
 const ONE_CLICK_WINDOW_SIZE = {
@@ -168,6 +171,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #transfer: ITransferController
 
   #swapAndBridge: ISwapAndBridgeController
+
+  #limitOrders: ILimitOrdersController
 
   #transactionManager?: ITransactionManagerController
 
@@ -291,6 +296,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     keystore,
     transfer,
     swapAndBridge,
+    limitOrders,
     transactionManager,
     safe,
     ui,
@@ -327,6 +333,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     keystore: IKeystoreController
     transfer: ITransferController
     swapAndBridge: ISwapAndBridgeController
+    limitOrders: ILimitOrdersController
     transactionManager?: ITransactionManagerController
     ui: IUiController
     safe: ISafeController
@@ -360,6 +367,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#keystore = keystore
     this.#transfer = transfer
     this.#swapAndBridge = swapAndBridge
+    this.#limitOrders = limitOrders
     this.#transactionManager = transactionManager
     this.#ui = ui
     this.#safe = safe
@@ -418,6 +426,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         r.kind === 'siwe' ||
         r.kind === 'benzin' ||
         r.kind === 'swapAndBridge' ||
+        r.kind === 'limitOrder' ||
         r.kind === 'transfer'
       ) {
         return r.meta.accountAddr === this.#selectedAccount.account?.addr
@@ -732,6 +741,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       if (
         this.currentUserRequest?.kind === 'swapAndBridge' ||
+        this.currentUserRequest?.kind === 'limitOrder' ||
         this.currentUserRequest?.kind === 'transfer'
       ) {
         customSize = ONE_CLICK_WINDOW_SIZE
@@ -1368,6 +1378,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (type === 'swapAndBridgeRequest') {
       await this.#buildSwapAndBridgeUserRequest(params)
+    }
+
+    if (type === 'limitOrderRequest') {
+      await this.#buildLimitOrderUserRequest(params)
     }
 
     if (type === 'claimWalletRequest') {
@@ -2322,6 +2336,32 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     )
   }
 
+  async #buildLimitOrderUserRequest({ openActionWindow }: { openActionWindow: boolean }) {
+    await this.withStatus(
+      'buildLimitOrderUserRequest',
+      async () => {
+        const userRequestParams = this.#limitOrders.requestParams
+        if (!userRequestParams) {
+          throw new EmittableError({
+            level: 'major',
+            message: 'The limit order is not ready for review. Please try again.',
+            error: new Error('Missing prepared limit-order request')
+          })
+        }
+
+        const executionType = openActionWindow ? 'open-request-window' : 'queue'
+        const userRequest = await this.#createOrUpdateCallsUserRequest(
+          userRequestParams,
+          executionType
+        )
+        if (userRequest) {
+          await this.addUserRequests([userRequest], { position: 'last', executionType })
+        }
+      },
+      true
+    )
+  }
+
   async #buildClaimWalletUserRequest({ token }: { token: TokenResult }) {
     if (!this.#selectedAccount.account) return
 
@@ -2689,17 +2729,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   /**
    * Don't allow the user to open new request windows
-   * if there's a pending to sign action (swap and bridge or transfer)
+   * if there's a pending one-click action (swap and bridge, limit order or transfer)
    * with a hardware wallet (аpplies to Trezor only, since it doesn't work in a pop-up and must be opened in an request window).
    * This is done to prevent complications with the signing process- e.g. a new request
-   * being sent to the hardware wallet while the swap and bridge (or transfer) is still pending.
+   * being sent to the hardware wallet while the one-click action is still pending.
    * @returns {boolean} - true if an error was thrown
    * @throws {Error} - if throwRpcError is true
    */
   async #guardHWSigning(throwRpcError = false): Promise<boolean> {
     const pendingRequest = this.visibleUserRequests.find(
-      ({ kind }) => kind === 'swapAndBridge' || kind === 'transfer'
-    ) as SwapAndBridgeRequest | TransferRequest | undefined
+      ({ kind }) => kind === 'swapAndBridge' || kind === 'limitOrder' || kind === 'transfer'
+    ) as SwapAndBridgeRequest | LimitOrderRequest | TransferRequest | undefined
 
     if (!pendingRequest) return false
 
@@ -2713,6 +2753,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       if (pendingRequest.kind === 'swapAndBridge') {
         this.#swapAndBridge.reset()
+      } else if (pendingRequest.kind === 'limitOrder') {
+        this.#limitOrders.resetForm()
       } else {
         this.#transfer.resetForm()
       }
@@ -2730,6 +2772,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         message: 'Please complete the pending transfer action.',
         error: 'Pending transfer action',
         rpcError: 'You have a pending transfer action. Please complete it before signing.'
+      },
+      limitOrder: {
+        message: 'Please complete the pending limit order.',
+        error: 'Pending limit order',
+        rpcError: 'You have a pending limit order. Please complete it before signing.'
       }
     }
 
@@ -2835,6 +2882,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         return r.meta.switchToAccountAddr !== address
       }
       if (r.kind === 'swapAndBridge') {
+        return r.meta.accountAddr !== address
+      }
+      if (r.kind === 'limitOrder') {
         return r.meta.accountAddr !== address
       }
 

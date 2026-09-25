@@ -39,6 +39,8 @@ export interface FeatureFlags {
   namoshiDomains: boolean
   /** Resolve GNS names (.gwei) on Ethereum. */
   gnsDomains: boolean
+  /** Enables CoW limit orders in builds where the feature is available. */
+  limitOrders: boolean
 }
 
 export const defaultFeatureFlags: FeatureFlags = {
@@ -60,5 +62,6 @@ export const defaultFeatureFlags: FeatureFlags = {
   swapAndBridgeTokenInfo: true,
   // @TODO: Introduce a setting and flip to false
   namoshiDomains: true,
-  gnsDomains: true
+  gnsDomains: true,
+  limitOrders: false
 }

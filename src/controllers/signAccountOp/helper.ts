@@ -10,7 +10,11 @@ import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers
 import { AccountState } from '../../libs/portfolio/interfaces'
 import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/formatters'
 
-export type SignAccountOpType = 'default' | 'one-click-swap-and-bridge' | 'one-click-transfer'
+export type SignAccountOpType =
+  | 'default'
+  | 'one-click-swap-and-bridge'
+  | 'one-click-limit-order'
+  | 'one-click-transfer'
 
 function getFeeSpeedIdentifier(option: FeePaymentOption, accountAddr: string) {
   return `${option.paidBy}:${option.token.address}:${option.token.symbol.toLowerCase()}:${

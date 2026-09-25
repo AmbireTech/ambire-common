@@ -125,6 +125,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **HintsController** – Owns the portfolio's token/NFT hints (learned assets, to-be-learned assets, custom tokens, token preferences) and their storage; a sub-controller of the PortfolioController.
 - **InviteController** – Verifies invite codes against the Relayer and stores the OG status; the gate itself (`verify`/`grantAccess`) is enforced only by the mobile router, the extension no longer enforces it.
 - **KeystoreController** – Encrypts seeds and private keys under a multi-secret–wrapped main key, manages unlock state, and routes signing to internal or hardware-backed keys.
+- **LimitOrdersController** – Prepares, validates, reviews, and places same-network CoW limit orders.
 - **NetworksController** – Manages blockchain networks and their configuration
 - **ProvidersController** – Initializes and manages JSON-RPC providers for each configured network.
 - **PhishingController** – Maintains and updates a list of phishing domains and addresses to protect users.

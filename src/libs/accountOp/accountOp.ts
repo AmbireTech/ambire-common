@@ -4,6 +4,7 @@ import { EIP7702Auth } from '../../consts/7702'
 import { SINGLETON } from '../../consts/deploy'
 import { AccountId } from '../../interfaces/account'
 import { Key } from '../../interfaces/keystore'
+import type { LimitOrderData } from '../../interfaces/limitOrders'
 import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from '../../interfaces/swapAndBridge'
 import { PaymasterService } from '../erc7677/types'
 import { UserOperation } from '../userOperation/types'
@@ -83,6 +84,8 @@ export interface AccountOp {
     entryPointAuthorization?: string
     paymasterService?: PaymasterService
     swapTxn?: SwapAndBridgeSendTxRequest
+    /** CoW limit order committed to by the reviewed approval and pre-sign calls. */
+    limitOrder?: LimitOrderData
     quote?: SwapAndBridgeQuote
     walletSendCallsVersion?: string
     delegation?: EIP7702Auth

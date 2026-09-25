@@ -430,7 +430,8 @@ const shouldBuildApproval = async (
   }
 }
 
-const getSwapAndBridgeCalls = async (
+/** Builds an optional token approval followed by the protocol action call. */
+const getApprovalAndActionCalls = async (
   userTx: SwapAndBridgeSendTxRequest,
   account: Account,
   provider: RPCProvider,
@@ -489,7 +490,7 @@ const getSwapAndBridgeRequestParams = async (
   meta: CallsUserRequest['meta']
 }> => {
   return {
-    calls: await getSwapAndBridgeCalls(userTx, account, provider, state),
+    calls: await getApprovalAndActionCalls(userTx, account, provider, state),
     meta: {
       chainId,
       accountAddr: account.addr,
@@ -895,7 +896,8 @@ export {
   getFeeTokenForSponsorship,
   getLink,
   getSlippage,
-  getSwapAndBridgeCalls,
+  getApprovalAndActionCalls,
+  getApprovalAndActionCalls as getSwapAndBridgeCalls,
   getSwapAndBridgeRequestParams,
   getSwapSponsorship,
   isNoFeeToken,

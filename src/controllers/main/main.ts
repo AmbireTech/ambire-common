@@ -30,6 +30,7 @@ import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '@/controllers/featureFlags/featureFlags'
 import { InviteController } from '@/controllers/invite/invite'
 import { KeystoreController } from '@/controllers/keystore/keystore'
+import { LimitOrdersController } from '@/controllers/limitOrders/limitOrders'
 import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
@@ -67,6 +68,7 @@ import { IFeatureFlagsController } from '@/interfaces/featureFlags'
 import { Fetch } from '@/interfaces/fetch'
 import { Hex } from '@/interfaces/hex'
 import { IInviteController } from '@/interfaces/invite'
+import { ILimitOrdersController } from '@/interfaces/limitOrders'
 import {
   ExternalSignerControllers,
   IKeystoreController,
@@ -114,6 +116,7 @@ import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
 import { CowSwapAPI } from '@/services/cowswap/api'
+import { LimitOrderAPI } from '@/services/cowswap/limitOrderApi'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketV3API } from '@/services/socketv3/api'
@@ -182,6 +185,8 @@ export class MainController extends EventEmitter implements IMainController {
   signMessage: ISignMessageController
 
   swapAndBridge: ISwapAndBridgeController
+
+  limitOrders: ILimitOrdersController
 
   transactionManager?: ITransactionManagerController
 
@@ -543,6 +548,28 @@ export class MainController extends EventEmitter implements IMainController {
     const SocketProvider = new SocketV3API({ fetch, apiKey: bungeeApiKey })
     const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
     const CowSwapProvider = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
+    this.limitOrders = new LimitOrdersController({
+      eventEmitterRegistry,
+      api: new LimitOrderAPI({ fetch, apiKey: cowSwapApiKey }),
+      accounts: this.accounts,
+      activity: this.activity,
+      callRelayer: this.callRelayer,
+      dapps: this.dapps,
+      erc7730: this.erc7730,
+      externalSignerControllers: this.#externalSignerControllers,
+      featureFlags: this.featureFlags,
+      keystore: this.keystore,
+      networks: this.networks,
+      onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
+      onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this),
+      phishing: this.phishing,
+      portfolio: this.portfolio,
+      providers: this.providers,
+      relayerUrl,
+      selectedAccount: this.selectedAccount,
+      signAccountOpPreference: this.signAccountOpPreference,
+      getUserRequests: () => this.requests?.userRequests || []
+    })
     this.swapAndBridge = new SwapAndBridgeController({
       eventEmitterRegistry,
       callRelayer: this.callRelayer,
@@ -678,6 +705,7 @@ export class MainController extends EventEmitter implements IMainController {
       keystore: this.keystore,
       transfer: this.transfer,
       swapAndBridge: this.swapAndBridge,
+      limitOrders: this.limitOrders,
       ui: this.ui,
       safe: this.safe,
       transactionManager: this.transactionManager,
@@ -910,11 +938,11 @@ export class MainController extends EventEmitter implements IMainController {
       // happened to be waiting, so it must not count towards the spam detection.
       await this.requests.closeRequestWindow({ isUserInitiated: false })
     }
-    const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
-      ({ kind }) => kind === 'swapAndBridge'
+    const oneClickSigningRequest = this.requests.visibleUserRequests.find(
+      ({ kind }) => kind === 'swapAndBridge' || kind === 'limitOrder'
     )
-    if (swapAndBridgeSigningRequest) {
-      await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
+    if (oneClickSigningRequest) {
+      await this.requests.removeUserRequests([oneClickSigningRequest.id])
     }
     await this.selectedAccount.setAccount(accountToSelect)
     // Update reverse lookup data and ENS expiry
@@ -928,6 +956,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.#continuousUpdates?.restartAccountsOpsStatusesInterval({ runImmediately: true })
     this.swapAndBridge.updateActiveRoutesInterval.restart({ runImmediately: true })
     this.swapAndBridge.reset()
+    this.limitOrders.resetForm()
     this.transfer.reset({ destroyAccountOp: true })
 
     // Don't await this as it's not critical for the account selection
@@ -945,6 +974,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.requests.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.swapAndBridge.forceEmitUpdate(),
+      this.limitOrders.forceEmitUpdate(),
       this.dapps.onSelectedAccountChange(toAccountAddr),
       this.forceEmitUpdate()
     ])
@@ -1033,6 +1063,8 @@ export class MainController extends EventEmitter implements IMainController {
       delete accountOp.meta.quote
     }
 
+    if (accountOp.meta?.limitOrder) this.limitOrders.handleBroadcastSuccess(accountOp)
+
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
     await this.activity.addAccountOp(submittedAccountOp)
     await this.ui.notification.create({
@@ -1070,6 +1102,12 @@ export class MainController extends EventEmitter implements IMainController {
       this.swapAndBridge.signAccountOpController.fromRequestId === fromRequestId
     ) {
       signAccountOp = this.swapAndBridge.signAccountOpController
+    } else if (
+      type === 'one-click-limit-order' &&
+      this.limitOrders.signAccountOpController &&
+      this.limitOrders.signAccountOpController.fromRequestId === fromRequestId
+    ) {
+      signAccountOp = this.limitOrders.signAccountOpController
     } else if (
       type === 'one-click-transfer' &&
       this.transfer.signAccountOpController &&
@@ -1141,6 +1179,16 @@ export class MainController extends EventEmitter implements IMainController {
         signAccountOp.accountOp.accountAddr &&
       this.transfer.signAccountOpController.accountOp.chainId === signAccountOp.accountOp.chainId &&
       this.transfer.signAccountOpController.isSignAndBroadcastInProgress
+    ) {
+      isSignAndBroadcastInProgressOnThisAccountAndChain = true
+    } else if (
+      type !== 'one-click-limit-order' &&
+      this.limitOrders.signAccountOpController &&
+      this.limitOrders.signAccountOpController.accountOp.accountAddr ===
+        signAccountOp.accountOp.accountAddr &&
+      this.limitOrders.signAccountOpController.accountOp.chainId ===
+        signAccountOp.accountOp.chainId &&
+      this.limitOrders.signAccountOpController.isSignAndBroadcastInProgress
     ) {
       isSignAndBroadcastInProgressOnThisAccountAndChain = true
     }
@@ -2163,6 +2211,19 @@ export class MainController extends EventEmitter implements IMainController {
       (n) => n.chainId === signAccountOp.accountOp.chainId
     )
 
+    this.updateSelectedAccountPortfolio({ networks: network ? [network] : undefined })
+    this.emitUpdate()
+  }
+
+  onOneClickLimitOrderClose() {
+    this.limitOrders.unloadScreen('request-window')
+
+    const signAccountOp = this.limitOrders.signAccountOpController
+    if (!signAccountOp) return
+
+    const network = this.networks.networks.find(
+      (n) => n.chainId === signAccountOp.accountOp.chainId
+    )
     this.updateSelectedAccountPortfolio({ networks: network ? [network] : undefined })
     this.emitUpdate()
   }

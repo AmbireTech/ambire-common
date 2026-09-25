@@ -60,6 +60,12 @@ export type BuildRequest =
       }
     }
   | {
+      type: 'limitOrderRequest'
+      params: {
+        openActionWindow: boolean
+      }
+    }
+  | {
       type: 'claimWalletRequest' | 'mintVestingRequest'
       params: {
         token: TokenResult

@@ -3790,7 +3790,11 @@ export class SignAccountOpController
         //
         // unless it's the build-in swap - we want to throw an error and
         // allow the user to retry in this case
-        if (multipleTxnsBroadcastRes.length && this.#type !== 'one-click-swap-and-bridge') {
+        if (
+          multipleTxnsBroadcastRes.length &&
+          this.#type !== 'one-click-swap-and-bridge' &&
+          this.#type !== 'one-click-limit-order'
+        ) {
           transactionRes = {
             nonce: senderNonce,
             identifiedBy: {

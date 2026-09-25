@@ -13,6 +13,7 @@ import { AutoLoginStatus, SiweValidityStatus } from './autoLogin'
 import { Dapp, DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { ISignAccountOpController } from './signAccountOp'
+import type { LimitOrderData } from './limitOrders'
 import { EIP7702Signature } from './signatures'
 import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from './swapAndBridge'
 
@@ -96,6 +97,7 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     safeTxnProps?: { txnId: Hex; signature: Hex; nonce: bigint }
     safeTx?: SafeMultisigTransactionResponse
     swapTxn?: SwapAndBridgeSendTxRequest
+    limitOrder?: LimitOrderData
     quote?: SwapAndBridgeQuote
   }
   signAccountOp: ISignAccountOpController
@@ -209,6 +211,10 @@ export interface SwapAndBridgeRequest extends UserRequestBase<[]> {
   kind: 'swapAndBridge'
 }
 
+export interface LimitOrderRequest extends UserRequestBase<[]> {
+  kind: 'limitOrder'
+}
+
 export interface TransferRequest extends UserRequestBase<[]> {
   kind: 'transfer'
 }
@@ -252,6 +258,7 @@ export type UserRequest =
   | BenzinUserRequest
   | SwitchAccountRequest
   | SwapAndBridgeRequest
+  | LimitOrderRequest
   | TransferRequest
   | GetEncryptionPublicKeyRequest
   | DecryptRequest

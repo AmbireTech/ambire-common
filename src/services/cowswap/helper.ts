@@ -112,11 +112,19 @@ export const getProtocolFeeAmount = (buyAmount: bigint, protocolFeeBps: number) 
   return (buyAmount * protocolFeeBpsWithPrecision) / denominator
 }
 
-export const buildAppData = ({ slippageBps, feeBps }: { slippageBps: number; feeBps?: number }) => {
+const buildAppData = ({
+  orderClass,
+  feeBps,
+  slippageBps
+}: {
+  orderClass: 'market' | 'limit'
+  feeBps?: number
+  slippageBps?: number
+}) => {
   const appData = {
     appCode: COWSWAP_APP_CODE,
     metadata: {
-      orderClass: { orderClass: 'market' },
+      orderClass: { orderClass },
       ...(feeBps
         ? {
             partnerFee: {
@@ -125,7 +133,7 @@ export const buildAppData = ({ slippageBps, feeBps }: { slippageBps: number; fee
             }
           }
         : {}),
-      quote: { slippageBips: slippageBps }
+      ...(slippageBps === undefined ? {} : { quote: { slippageBips: slippageBps } })
     },
     version: COWSWAP_APP_DATA_VERSION
   }
@@ -136,6 +144,19 @@ export const buildAppData = ({ slippageBps, feeBps }: { slippageBps: number; fee
     appDataHash: keccak256(toUtf8Bytes(fullAppData))
   }
 }
+
+/** Builds app data for a short-lived market order. */
+export const buildMarketOrderAppData = ({
+  slippageBps,
+  feeBps
+}: {
+  slippageBps: number
+  feeBps?: number
+}) => buildAppData({ orderClass: 'market', slippageBps, feeBps })
+
+/** Builds app data for a long-lived limit order. */
+export const buildLimitOrderAppData = ({ feeBps }: { feeBps?: number }) =>
+  buildAppData({ orderClass: 'limit', feeBps })
 
 export const computeOrderUid = ({
   chainId,
