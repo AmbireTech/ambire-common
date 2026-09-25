@@ -1465,10 +1465,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
-    // When the price endpoint is down, tokens come back without a USD price. We must
-    // not exclude them as "priceless" in that case, otherwise switching to an account
-    // with such tokens would wrongly hide them. Skip the price requirement for chains
-    // that currently have a price fetch error.
+    // When price fetching is disabled or the endpoint is down, tokens come back without
+    // a USD price. We must not exclude them as "priceless" in that case, otherwise
+    // switching to an account with such tokens would wrongly hide them. Skip the price
+    // requirement entirely when disabled and for chains with a current price fetch error.
     const chainIdsWithPriceError = new Set<string>()
     const priceError = this.#selectedAccount.balanceAffectingErrors.find(
       (error) => error.id === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
@@ -1477,6 +1477,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       const network = this.#networks.networks.find((n) => n.name === networkName)
       if (network) chainIdsWithPriceError.add(network.chainId.toString())
     })
+
+    const areTokenPricesEnabled = this.#featureFlags.isFeatureEnabled('tokenPrices')
 
     const tokens = nextPortfolioTokenList
       .filter(
@@ -1489,7 +1491,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           getIsTokenEligibleForSwapAndBridge(
             token,
             true,
-            !chainIdsWithPriceError.has(token.chainId.toString())
+            areTokenPricesEnabled && !chainIdsWithPriceError.has(token.chainId.toString())
           ) && !token.flags.isHidden
       )
       .map((token) => ({

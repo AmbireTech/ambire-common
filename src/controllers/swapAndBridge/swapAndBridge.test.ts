@@ -615,6 +615,24 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromChainId).toEqual(10)
     expect(swapAndBridgeController.toChainId).toEqual(10)
   })
+  test('should only require portfolio token prices when token prices are enabled', async () => {
+    const controller = buildSwapAndBridgeController()
+    const tokensWithoutPrices = PORTFOLIO_TOKENS.map((token) => ({ ...token, priceIn: [] }))
+
+    try {
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
+      await controller.updatePortfolioTokenList(tokensWithoutPrices)
+      expect(controller.portfolioTokenList).toEqual([])
+
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', false)
+      await controller.updatePortfolioTokenList(tokensWithoutPrices)
+
+      expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
+      expect(controller.fromSelectedToken).not.toBeNull()
+    } finally {
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
+    }
+  })
   test('should expose the wrap exemption before a quote is available', () => {
     const network = networksCtrl.networks.find(({ chainId }) => chainId === 10n)
     if (!network?.wrappedAddr)
