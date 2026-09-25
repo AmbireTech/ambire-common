@@ -433,7 +433,20 @@ export const predefinedDapps: Dapp[] = [
     url: 'https://tornadocash.eth.limo',
     name: 'Tornado Cash',
     icon: 'https://icons.llamao.fi/icons/protocols/tornado-cash',
-    description: 'Non-custodial anonymous transactions on Ethereum.',
+    description:
+      'Non-custodial anonymous transactions on Ethereum. Opens the official app through the eth.limo service - the fastest way to load it.',
+    twitter: 'TornadoCash',
+    category: 'Privacy'
+  },
+  // Same `tornadocash.eth` app as above, but the inbrowser.link gateway verifies every file
+  // against its IPFS hash in the browser, so there is no need to trust a gateway server
+  {
+    id: 'tornadocash-eth.ipns.inbrowser.link',
+    url: 'https://tornadocash-eth.ipns.inbrowser.link',
+    name: 'Tornado Cash',
+    icon: 'https://icons.llamao.fi/icons/protocols/tornado-cash',
+    description:
+      'Non-custodial anonymous transactions on Ethereum. Opens the same official app, but your browser checks every file itself, so you do not have to trust a middleman server. Slower to load.',
     twitter: 'TornadoCash',
     category: 'Privacy'
   }
