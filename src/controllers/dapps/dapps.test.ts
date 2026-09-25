@@ -313,6 +313,54 @@ describe('DappsController', () => {
     })
   })
 
+  test('should refresh the dapp connection security check after enabling the scam checker', async () => {
+    const session = new Session({ tabId: 1, url: 'https://metamask.github.io/test-dapp/' })
+    session.setProp({ name: 'E2E Test Dapp' })
+    const request: DappConnectRequest = {
+      id: 1,
+      kind: 'dappConnect',
+      meta: { params: {} },
+      dappPromises: [
+        {
+          id: '',
+          resolve: () => {},
+          reject: () => {},
+          meta: {},
+          session
+        }
+      ]
+    }
+
+    const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
+      await storageCtrl.set('dappsV2', predefinedDapps)
+      await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+    })
+    await controller.initialLoadPromise
+    await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+
+    await controller.setDappToConnectIfNeeded(request)
+
+    expect(controller.dappToConnect?.blacklisted).toBe('FAILED_TO_GET')
+
+    const updateDomainsSpy = jest
+      .spyOn(mainCtrl.phishing, 'updateDomainsBlacklistedStatus')
+      .mockImplementation(async (urls, callback) => {
+        expect(urls).toEqual([session.origin])
+        expect(controller.dappToConnect?.blacklisted).toBe('LOADING')
+        expect(mainCtrl.featureFlags.isFeatureEnabled('scamAndPhishingChecker')).toBe(true)
+        callback({ [session.id]: 'VERIFIED' })
+      })
+
+    try {
+      await controller.enableScamCheckerAndRefreshDappToConnect()
+
+      expect(updateDomainsSpy).toHaveBeenCalledTimes(1)
+      expect(controller.dappToConnect?.blacklisted).toBe('VERIFIED')
+    } finally {
+      updateDomainsSpy.mockRestore()
+    }
+  })
+
   test('should sync dapps blacklisted status only when phishing.shouldSyncDapps is true', async () => {
     const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
       await storageCtrl.set('dappsV2', [
@@ -372,6 +420,29 @@ describe('DappsController', () => {
         .mockImplementation(async (_urls, callback) => {
           callback(statuses as { [key: string]: BlacklistedStatus })
         })
+
+    test('should not return scam checker banners when the checker is disabled', async () => {
+      const updateDomainsSpy = mockDappVerificationStatuses({ 'aave.com': 'BLACKLISTED' })
+
+      try {
+        const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', predefinedDapps)
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+        })
+        await controller.fetchAndUpdatePromise
+
+        const aave = controller.getDapp('aave.com')!
+        expect(controller.getDappVerificationBanner([aave.url])?.id).toBe(
+          DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED
+        )
+
+        await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+
+        expect(controller.getDappVerificationBanner([aave.url])).toBeNull()
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
 
     test('should return loading banner for dapps with pending verification', async () => {
       const updateDomainsSpy = mockDappVerificationStatuses({ 'aave.com': 'LOADING' })
@@ -2510,6 +2581,17 @@ describe('DappsController', () => {
       expect(stored.tokens).toHaveLength(2)
       expect(typeof stored.updatedAt).toBe('number')
       expect(stored.updatedAt).toBeGreaterThan(0)
+    })
+
+    test('does not fetch trending tokens when swap and bridge token info is disabled', async () => {
+      const { controller, mainCtrl } = await prepareTest(seedStorage)
+      await mainCtrl.featureFlags.setFeatureFlag('swapAndBridgeTokenInfo', false)
+      const fetchMock = mainCtrl.fetch as jest.Mock
+      fetchMock.mockClear()
+
+      await controller.updateTrendingTokens()
+
+      expect(fetchMock).not.toHaveBeenCalled()
     })
 
     test('restores trending tokens from storage on init', async () => {

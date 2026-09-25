@@ -1,11 +1,14 @@
 import { parseUnits } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 import { Token as LiFiToken } from '@lifi/types'
 
+import { defaultFeatureFlags, FeatureFlags } from '../../consts/featureFlags'
+import { Fetch } from '../../interfaces/fetch'
 import { SwapAndBridgeQuote, SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
 import { TokenResult } from '../portfolio'
 import {
+  attemptToSortTokensByMarketCap,
   calculateAmountWarnings,
   enrichRouteWithOutputUsdPrice,
   getFeeTokenForSponsorship,
@@ -14,6 +17,71 @@ import {
   getSwapSponsorship,
   sortTokenListResponse
 } from './swapAndBridge'
+
+const makeFeatureFlags = (overrides: Partial<FeatureFlags> = {}) => {
+  const flags = { ...defaultFeatureFlags, ...overrides }
+
+  return {
+    isFeatureEnabled: (flag: keyof FeatureFlags) => flags[flag]
+  }
+}
+
+describe('attemptToSortTokensByMarketCap', () => {
+  const makeTokens = (): SwapAndBridgeToToken[] => [
+    {
+      address: '0x0000000000000000000000000000000000000001',
+      chainId: 1,
+      decimals: 18,
+      name: 'Token One',
+      symbol: 'ONE'
+    },
+    {
+      address: '0x0000000000000000000000000000000000000002',
+      chainId: 1,
+      decimals: 18,
+      name: 'Token Two',
+      symbol: 'TWO'
+    }
+  ]
+
+  test.each([
+    ['token prices', { tokenPrices: false }],
+    ['token auto discovery', { tokenAndDefiAutoDiscovery: false }]
+  ] as const)('does not make a request wn %s is disabled', async (_, disabledFlag) => {
+    const fetch = jest.fn()
+    const tokens = makeTokens()
+
+    const result = await attemptToSortTokensByMarketCap({
+      fetch: fetch as unknown as Fetch,
+      chainId: 1,
+      tokens,
+      featureFlags: makeFeatureFlags(disabledFlag)
+    })
+
+    expect(fetch).not.toHaveBeenCalled()
+    expect(result).toBe(tokens)
+  })
+
+  test('requests market cap data and sorts tokens when both options are enabled', async () => {
+    const tokens = makeTokens()
+    const higherPriorityToken = tokens[1]
+    const lowerPriorityToken = tokens[0]
+    const fetch = jest.fn(async () => ({
+      status: 200,
+      json: async () => ({ data: [higherPriorityToken.address, lowerPriorityToken.address] })
+    })) as unknown as Fetch
+
+    const result = await attemptToSortTokensByMarketCap({
+      fetch,
+      chainId: 1,
+      tokens,
+      featureFlags: makeFeatureFlags()
+    })
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(result).toEqual([higherPriorityToken, lowerPriorityToken])
+  })
+})
 
 // Helper function to create a mock route for testing
 const createMockRoute = ({

@@ -124,6 +124,7 @@ const prepareTest = async (mode: 'accountsOps' | 'signedMessages' = 'accountsOps
     mainCtrl.networks,
     mainCtrl.portfolio,
     mainCtrl.safe,
+    mainCtrl.featureFlags,
     () => Promise.resolve()
   )
 
@@ -1152,6 +1153,7 @@ describe('Activity Controller ', () => {
       mainCtrl.networks,
       mainCtrl.portfolio,
       mainCtrl.safe,
+      mainCtrl.featureFlags,
       () => Promise.resolve()
     )
 

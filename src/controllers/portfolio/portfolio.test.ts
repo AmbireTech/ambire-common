@@ -3778,6 +3778,51 @@ describe('Portfolio Controller ', () => {
       jest.restoreAllMocks()
     })
 
+    test('should not fetch blacklist when the scam and phishing checker is disabled', async () => {
+      const blacklistFetch = jest.fn(() =>
+        Promise.resolve(createJsonResponse(mockBlacklistResponse))
+      )
+      const fetchOverride = createBlacklistFetchOverride(blacklistFetch)
+
+      const { storageCtrl } = await prepareTest({
+        fetchOverride,
+        featureFlags: { scamAndPhishingChecker: false },
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
+      })
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(false)
+      expect(blacklistFetch).not.toHaveBeenCalled()
+      expect(await storageCtrl.get('tokenBlacklist', null)).toBeNull()
+    })
+
+    test('should not refresh a stale cached blacklist when the checker is disabled', async () => {
+      const staleCachedBlacklist = {
+        blacklistAddrs: { '1': [getAddress(mockBlacklistResponse.blacklistAddrs['1'][0]!)] },
+        blacklistBySymbols: ['claim'],
+        updatedAt: Date.now() - BLACKLIST_UPDATE_INTERVAL - 60 * 1000
+      }
+      const blacklistFetch = jest.fn(() =>
+        Promise.resolve(createJsonResponse(mockBlacklistResponse))
+      )
+      const fetchOverride = createBlacklistFetchOverride(blacklistFetch)
+
+      const { controller } = await prepareTest({
+        fetchOverride,
+        featureFlags: { scamAndPhishingChecker: false },
+        initialSetStorage: async (storageCtrlInner) => {
+          await storageCtrlInner.set('tokenBlacklist', staleCachedBlacklist)
+        },
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
+      })
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(false)
+      expect(blacklistFetch).not.toHaveBeenCalled()
+      // @ts-expect-error test - access private getter
+      expect(controller.blacklist).toEqual({ ...staleCachedBlacklist, isLoading: false })
+    })
+
     test('should fetch blacklist from API successfully', async () => {
       const { restore } = suppressConsole()
       const fetchOverride = createBlacklistFetchOverride(() =>
