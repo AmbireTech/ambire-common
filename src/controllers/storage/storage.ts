@@ -148,8 +148,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
         accounts.map((a: any) => {
           return {
             ...a,
-            // @ts-expect-error expected to warn, because "accountPreferences" are now legacy (now missing)
-            preferences: this.#storage.accountPreferences[a.addr] || {
+            preferences: accountPreferences[a.addr] || {
               label: DEFAULT_ACCOUNT_LABEL,
               pfp: a.addr
             }
