@@ -39,6 +39,12 @@ export interface FeatureFlags {
   namoshiDomains: boolean
   /** Resolve GNS names (.gwei) on Ethereum. */
   gnsDomains: boolean
+  /**
+   * Off by default. When enabled, privacy opt-outs that are shipped in a future
+   * version of the wallet start turned off, instead of with their default value.
+   * A privacy opt-out counts as new when it is not in the flags that are stored.
+   */
+  newPrivacyFeaturesOffByDefault: boolean
 }
 
 export const defaultFeatureFlags: FeatureFlags = {
@@ -60,5 +66,34 @@ export const defaultFeatureFlags: FeatureFlags = {
   swapAndBridgeTokenInfo: true,
   // @TODO: Introduce a setting and flip to false
   namoshiDomains: true,
-  gnsDomains: true
+  gnsDomains: true,
+  newPrivacyFeaturesOffByDefault: false
+}
+
+/**
+ * Tells if each feature flag is a privacy opt-out (a feature that can send user
+ * data to a third party). When `newPrivacyFeaturesOffByDefault` is enabled, the
+ * privacy opt-outs that are new to the user start turned off.
+ * The `Record` type makes each new flag declare here if it is a privacy opt-out.
+ */
+export const IS_PRIVACY_OPT_OUT_FLAG: Record<keyof FeatureFlags, boolean> = {
+  withTransactionManagerController: false,
+  withEmailVaultController: false,
+  withContinuousUpdatesController: false,
+  testnetMode: false,
+  tokenAndDefiAutoDiscovery: true,
+  clearSigning: true,
+  apiForFunctionSelectors: true,
+  gasTank: true,
+  networkConfig: true,
+  ambireSmartAccounts: true,
+  scamAndPhishingChecker: true,
+  tokenPrices: true,
+  erc4337: true,
+  eip7702: true,
+  keepEnsProfilesUpToDate: true,
+  swapAndBridgeTokenInfo: true,
+  namoshiDomains: true,
+  gnsDomains: true,
+  newPrivacyFeaturesOffByDefault: false
 }
