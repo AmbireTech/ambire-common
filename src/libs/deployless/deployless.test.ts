@@ -5,7 +5,8 @@ import { describe, expect, jest, test } from '@jest/globals'
 import { addressOne } from '../../../test/config'
 import { getRpcProvider } from '../../services/provider'
 import { compile } from './compile'
-import { Deployless, DeploylessMode } from './deployless'
+import { ProviderError } from '../../classes/ProviderError'
+import { Deployless, DeploylessMode, INVALID_CALL_RESPONSE_ERROR_MESSAGE } from './deployless'
 
 const helloWorld = compile('HelloWorld', {
   contractsFolder: 'test/contracts'
@@ -100,6 +101,32 @@ describe('Deployless', () => {
       expect(error.message).toBe('rpc-timeout. Rpc: custom')
     } finally {
       setTimeoutSpy.mockRestore()
+      jest.useRealTimers()
+    }
+  })
+
+  test('rejects with a ProviderError when the state override call returns null', async () => {
+    jest.useFakeTimers()
+    const fakeProvider = {
+      call: jest.fn(),
+      send: jest.fn<() => Promise<null>>().mockResolvedValue(null)
+    }
+    const localDeployless = new Deployless(
+      fakeProvider as any,
+      helloWorld.abi,
+      helloWorld.bin,
+      helloWorld.binRuntime
+    )
+
+    try {
+      const error = await localDeployless
+        .call('helloWorld', [], { mode: DeploylessMode.StateOverride })
+        .catch((e) => e)
+
+      expect(error).toBeInstanceOf(ProviderError)
+      expect(error.message).toBe(INVALID_CALL_RESPONSE_ERROR_MESSAGE)
+    } finally {
+      jest.clearAllTimers()
       jest.useRealTimers()
     }
   })
