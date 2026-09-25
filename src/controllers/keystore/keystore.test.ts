@@ -2,7 +2,7 @@
 
 import { ethers, Wallet } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 import { InternalSigner, LedgerSigner } from '@test/keystore'
 
 import { produceMemoryStore } from '../../../test/helpers'
@@ -489,6 +489,148 @@ describe('KeystoreController recovery phrase backup state', () => {
     await keystoreCtrl.markSeedAsBackedUp('does-not-exist')
 
     expect(keystoreCtrl.seeds[0]!.notBackedUp).toBe(true)
+  })
+})
+
+describe('KeystoreController signing authentication', () => {
+  let keystoreCtrl: IKeystoreController
+
+  beforeEach(async () => {
+    const storageCtrl = new StorageController(produceMemoryStore())
+    const uiCtrl = new UiController({ uiManager })
+    keystoreCtrl = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
+    await keystoreCtrl.addSecret('password', pass, '', false)
+    await keystoreCtrl.unlockWithSecret('password', pass)
+  })
+
+  test('the correct secret is confirmed and the keystore stays unlocked', async () => {
+    await keystoreCtrl.verifySecret('password', pass)
+
+    expect(keystoreCtrl.signingAuthResult).toMatchObject({ status: 'success', error: null })
+    expect(keystoreCtrl.isUnlocked).toBe(true)
+  })
+
+  // Two in a row are otherwise deeply identical, and the UI's reconciled state hands an unchanged
+  // result back as the same reference - so the screen never learns the second one happened
+  test('a second confirmation is distinguishable from the one before it', async () => {
+    await keystoreCtrl.verifySecret('password', pass)
+    const first = keystoreCtrl.signingAuthResult
+
+    await keystoreCtrl.verifySecret('password', pass)
+    const second = keystoreCtrl.signingAuthResult
+
+    expect(second?.status).toBe('success')
+    expect(second?.id).not.toBe(first?.id)
+  })
+
+  describe('a wrong secret', () => {
+    suppressConsoleBeforeEach()
+
+    test('is rejected without locking the keystore', async () => {
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+
+      expect(keystoreCtrl.signingAuthResult?.status).toBe('failed')
+      expect(keystoreCtrl.signingAuthResult?.error).toBe('Incorrect password. Please try again.')
+      // A failed confirmation must never lock the user out of the session they are already in
+      expect(keystoreCtrl.isUnlocked).toBe(true)
+    })
+
+    test('can be followed by the correct one', async () => {
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+      await keystoreCtrl.verifySecret('password', pass)
+
+      expect(keystoreCtrl.signingAuthResult).toMatchObject({ status: 'success', error: null })
+    })
+
+    test('two failures in a row are distinguishable from each other', async () => {
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+      const first = keystoreCtrl.signingAuthResult
+
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+      const second = keystoreCtrl.signingAuthResult
+
+      expect(second?.status).toBe('failed')
+      expect(second?.id).not.toBe(first?.id)
+    })
+
+    test('is rejected when the secret does not exist at all', async () => {
+      await keystoreCtrl.verifySecret('biometrics', pass)
+
+      expect(keystoreCtrl.signingAuthResult?.status).toBe('failed')
+      expect(keystoreCtrl.isUnlocked).toBe(true)
+    })
+  })
+
+  // The web throws a DOMException named OperationError, native WebCrypto throws whatever its
+  // cipher raised with no name to go by - what the cipher rejected with must not matter
+  describe('the cipher rejecting is a wrong secret whatever it threw', () => {
+    suppressConsoleBeforeEach()
+
+    test.each([
+      [
+        'a named DOMException',
+        Object.assign(new Error('decrypt failed'), { name: 'OperationError' })
+      ],
+      ['nothing to go by', new Error('CipherJob failed')]
+    ])('the platform throws %s', async (_, thrown) => {
+      const decryptSpy = jest.spyOn(crypto.subtle, 'decrypt').mockRejectedValue(thrown)
+
+      await keystoreCtrl.verifySecret('password', pass)
+
+      expect(keystoreCtrl.signingAuthResult?.status).toBe('failed')
+      expect(keystoreCtrl.signingAuthResult?.error).toBe('Incorrect password. Please try again.')
+
+      decryptSpy.mockRestore()
+    })
+  })
+
+  // Telling the user their password is wrong when the platform is what broke leaves them
+  // retrying a password that was right all along
+  describe('a platform failure is not reported as a wrong secret', () => {
+    suppressConsoleBeforeEach()
+
+    test('unlocking says something went wrong instead', async () => {
+      const importKeySpy = jest
+        .spyOn(crypto.subtle, 'importKey')
+        .mockRejectedValue(new Error('WebCrypto is unavailable'))
+
+      await keystoreCtrl.unlockWithSecret('password', pass)
+
+      expect(keystoreCtrl.errorMessage).not.toBe('Incorrect password. Please try again.')
+
+      importKeySpy.mockRestore()
+    })
+  })
+
+  describe('a verification leaves the unlock error alone', () => {
+    suppressConsoleBeforeEach()
+
+    // The two share `errorMessage`, so a failed fingerprint used to put "Incorrect password" on
+    // the password field of the screen behind it
+    test('a wrong secret is reported only through the result', async () => {
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+
+      expect(keystoreCtrl.signingAuthResult?.error).toBe('Incorrect password. Please try again.')
+      expect(keystoreCtrl.errorMessage).toBe('')
+    })
+
+    // Resetting used to clear `errorMessage` too, so opening a confirmation wiped an error the
+    // user had not read yet. A confirmation that actually passes still clears it, as it should.
+    test('resetting the result leaves an error the user has not read yet', async () => {
+      await keystoreCtrl.unlockWithSecret('password', `${pass}1`)
+      expect(keystoreCtrl.errorMessage).toBe('Incorrect password. Please try again.')
+
+      keystoreCtrl.resetSigningAuthResult()
+
+      expect(keystoreCtrl.errorMessage).toBe('Incorrect password. Please try again.')
+    })
+  })
+
+  test('resetSigningAuthResult clears the outcome', async () => {
+    await keystoreCtrl.verifySecret('password', pass)
+    keystoreCtrl.resetSigningAuthResult()
+
+    expect(keystoreCtrl.signingAuthResult).toBe(null)
   })
 })
 

@@ -706,8 +706,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         this.fromSelectedToken.decimals
       )
 
-      if (!formattedAmount) return
-
       const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
       // There is absolutely 0 reason to display the same amount of decimals for the usd
@@ -1056,6 +1054,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return this.#serviceProviderAPI.getProvidersInfo()
   }
 
+  get #areAllSwapProvidersDisabled() {
+    const swapProviders = this.swapProviders
+
+    return (
+      swapProviders.length > 0 &&
+      swapProviders.every(({ id }) => this.disabledSwapProviderIds.includes(id))
+    )
+  }
+
   /** Returns a copy of the provider ids the user has switched off. */
   getDisabledSwapProviderIds(): string[] {
     return [...this.disabledSwapProviderIds]
@@ -1094,6 +1101,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     this.disabledSwapProviderIds = disabledSwapProviderIds
     const providerSettingsUpdateId = ++this.#swapProviderSettingsUpdateId
+    if (this.#areAllSwapProvidersDisabled) {
+      this.removeError('to-token-list-fetch-failed', false)
+    }
     this.#cachedSupportedChains = { lastFetched: 0, data: [] }
     this.#toTokenList = {}
     this.#updateQuoteId = undefined
@@ -1562,6 +1572,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const providerSettingsUpdateId = this.#swapProviderSettingsUpdateId
 
     if (!toTokenListKeyAtStart || !fromChainId || !toChainId) return
+
+    if (this.#areAllSwapProvidersDisabled) {
+      const hasTokenListFetchError = this.errors.some(
+        ({ id }) => id === 'to-token-list-fetch-failed'
+      )
+      const shouldResetSelectedToken = shouldReset && !!this.toSelectedToken
+
+      if (shouldReset) this.toSelectedToken = null
+      this.removeError(
+        'to-token-list-fetch-failed',
+        hasTokenListFetchError || shouldResetSelectedToken
+      )
+      return
+    }
 
     let toTokenList = this.#toTokenList[toTokenListKeyAtStart]
 

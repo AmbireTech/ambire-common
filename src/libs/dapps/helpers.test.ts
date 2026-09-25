@@ -1,7 +1,13 @@
 import { expect } from '@jest/globals'
 
 import { predefinedDapps } from '../../consts/dapps/dapps'
-import { getDappIdFromUrl, getNormalizedHostnameFromUrl, normalizeHostname } from './helpers'
+import { Dapp } from '../../interfaces/dapp'
+import {
+  getDappIdFromUrl,
+  getNormalizedHostnameFromUrl,
+  getUnauthenticatedDapps,
+  normalizeHostname
+} from './helpers'
 
 describe('dapps helpers', () => {
   describe('normalizeHostname', () => {
@@ -87,6 +93,41 @@ describe('dapps helpers', () => {
 
     it('falls back to the raw input when it is not a url', () => {
       expect(getDappIdFromUrl('not a url')).toBe('not a url')
+    })
+  })
+
+  describe('getUnauthenticatedDapps', () => {
+    const dapp = (id: string, signingAuthenticated?: boolean) =>
+      ({ id, name: `Dapp ${id}`, url: `https://${id}`, signingAuthenticated }) as Dapp
+
+    it('returns the dapps not yet confirmed for, as id and name only', () => {
+      expect(getUnauthenticatedDapps([dapp('a.com'), dapp('b.com', false)])).toEqual([
+        { id: 'a.com', name: 'Dapp a.com' },
+        { id: 'b.com', name: 'Dapp b.com' }
+      ])
+    })
+
+    it('leaves out dapps already confirmed for', () => {
+      expect(getUnauthenticatedDapps([dapp('a.com', true), dapp('b.com')])).toEqual([
+        { id: 'b.com', name: 'Dapp b.com' }
+      ])
+    })
+
+    it('skips dapps the catalog does not know, as the confirmation cannot be remembered', () => {
+      expect(getUnauthenticatedDapps([undefined, dapp('a.com'), undefined])).toEqual([
+        { id: 'a.com', name: 'Dapp a.com' }
+      ])
+    })
+
+    it('dedupes a dapp behind several calls, keeping the first-seen order', () => {
+      expect(getUnauthenticatedDapps([dapp('b.com'), dapp('a.com'), dapp('b.com')])).toEqual([
+        { id: 'b.com', name: 'Dapp b.com' },
+        { id: 'a.com', name: 'Dapp a.com' }
+      ])
+    })
+
+    it('returns nothing for no dapps', () => {
+      expect(getUnauthenticatedDapps([])).toEqual([])
     })
   })
 })

@@ -1,6 +1,7 @@
 import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IDappsController } from '../../interfaces/dapp'
+import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -20,6 +21,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
   constructor(props: {
     type?: SignAccountOpType
     callRelayer: BindedRelayerCall
+    erc7730: IErc7730Controller
     accounts: IAccountsController
     networks: INetworksController
     keystore: IKeystoreController

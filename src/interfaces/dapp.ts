@@ -66,6 +66,11 @@ export interface ExtraDappInfo {
   grantedPermissionId?: string
   accountPreferences?: DappAccountPreferences
   grantedPermissionAt?: number
+  /**
+   * Whether the user already confirmed their password/biometrics to sign for this dapp. Absent on
+   * older dapps, which is why it is a positive flag - they should ask once, like new ones.
+   */
+  signingAuthenticated?: boolean
 }
 
 export type Dapp = PredefinedDapp & Partial<ExtraDappInfo>

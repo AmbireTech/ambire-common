@@ -7,26 +7,27 @@ import {
   PERMIT2_APPROVE_SELECTOR,
   SAFE_TX_PRIMARY_TYPE
 } from '@/libs/humanizer/erc7730/consts'
+
 import { FEE_COLLECTOR } from '../../../consts/addresses'
 import { execTransactionAbi } from '../../../consts/safe'
 import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
-import { decodeMultiSend } from '../../safe/helpers'
+import { decodeMultiSend, SuccessfullyDecoded } from '../../safe/helpers'
 import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
 import { getEip712EncodeTypeHash } from './eip712'
 import { humanizeCallWithErc7730 } from './humanize'
 import { MULTICALL_DESCRIPTOR, MULTICALL_SELECTOR } from './multicall'
 import {
   Erc7730CalldataIndex,
+  Erc7730CallDescriptors,
   Erc7730Descriptor,
   Erc7730Eip712Index,
   Erc7730Eip712IndexEntry,
-  Erc7730CallDescriptors,
   Erc7730Field,
   Erc7730Known,
-  Erc7730ResolvedDescriptor,
   Erc7730Resolution,
+  Erc7730ResolvedDescriptor,
   Erc7730TypedDataTypes,
   Erc7730Want
 } from './types'
@@ -598,11 +599,13 @@ const getSafeTxCallsFromExecTransactionHead = (call: Call): Call[] | null => {
     const transactionsHex = multiSendDecoded[0]
     if (typeof transactionsHex !== 'string') return null
 
-    return decodeMultiSend(transactionsHex).map((transaction) => ({
-      to: transaction.to,
-      data: transaction.data,
-      value: transaction.value
-    }))
+    return decodeMultiSend(transactionsHex)
+      .filter((transaction): transaction is SuccessfullyDecoded => transaction.success)
+      .map((transaction) => ({
+        to: transaction.to,
+        data: transaction.data,
+        value: transaction.value
+      }))
   } catch {
     return null
   }
@@ -640,11 +643,13 @@ const getSafeTxCallsFromExecTransactionCall = (call: Call): Call[] | null => {
     const transactionsHex = multiSendDecoded[0]
     if (typeof transactionsHex !== 'string') return null
 
-    return decodeMultiSend(transactionsHex).map((transaction) => ({
-      to: transaction.to,
-      data: transaction.data,
-      value: transaction.value
-    }))
+    return decodeMultiSend(transactionsHex)
+      .filter((transaction): transaction is SuccessfullyDecoded => transaction.success)
+      .map((transaction) => ({
+        to: transaction.to,
+        data: transaction.data,
+        value: transaction.value
+      }))
   } catch {
     return getSafeTxCallsFromExecTransactionHead(call)
   }

@@ -39,6 +39,7 @@ There are two patterns:
    // In MainController
    new SwapAndBridgeController({
      portfolioUpdate: (chainIds) => {
+       const networks = this.networks.networks.filter((n) => chainIds.includes(n.chainId))
        this.updateSelectedAccountPortfolio({ networks })
      },
      onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this)
@@ -87,14 +88,14 @@ Most controllers have `initialLoadPromise` that resolves when the controller fin
 The networks controller that reads the network list from storage (which is async) exposes an `initialLoadPromise` that resolves when the networks are loaded. Then, the providers controller awaits the networks controller's `initialLoadPromise` in its own `initialLoadPromise` before initializing the providers, ensuring it has the network data available. The networks controller also awaits its own `initialLoadPromise` in its methods that read the network list, to ensure the data is loaded before accessing it.
 
 ## Other rules:
-- Never use raw `setInterval`. Always use `RecurringTimeout` from `@common/utils/RecurringTimeout`.
+- Never use raw `setInterval`. Always use `RecurringTimeout` from `src/classes/recurringTimeout/recurringTimeout.ts`.
 - Long-running background intervals must be declared in `ContinuousUpdatesController`, which orchestrates their lifecycle based on app state and controller events. If you need a new background loop, add it there and wire its start/stop/restart logic through the existing event subscriptions.
 - Never call `this.storage.set()` in parallel. Always await the previous call before making another one.
 - Always use `this.emitError` for error handling in controllers; all emitted errors are reported to Sentry and logged, and non-silent errors are also displayed as toasts in the UI. Public methods must never let errors propagate — use `EmittableError` (thrown inside a `withStatus` wrapper, which auto-emits it) or `try/catch` + `emitError({ level, message, error })` otherwise.
 - Public state is serialized and sent to the UI on every update, so it should be minimal and only include what's necessary for the UI. Do not store large data or sensitive data in public state. Use private fields for that and expose only derived non-sensitive data in public state if needed.
 - NEVER write expensive calculations inside getters.
 - NEVER emit updates in getters. Getters should be pure and side-effect free.
-- Getter values are not automatically propagated to the UI. To update a getter value, you need to call `this.emitUpdate()`. Be VERY careful with this - you should NEVER write a getter that depends on data from another controller without subscribing to that controller's updates and calling `this.propagateUpdate(...)` in the subscription callback, otherwise the UI will not update when the underlying data changes.
+- Getter values are not automatically propagated to the UI; call `this.emitUpdate()` to push a new value. A getter that reads another controller's data also needs a subscription to that controller's updates that calls `this.propagateUpdate(...)`, otherwise the UI keeps showing stale data when the underlying data changes.
 - If a controller depends on the state of the UI (e.g., which screen it is on), it should subscribe to `this.ui.uiEvent.on`
 - When retrying failed background fetches, use a retry counter with a maximum number of attempts (reset on success) and an increasing delay. For periodic polling with retry, use `RecurringTimeout` with adaptive intervals (shorter on failure, longer on success). See `PortfolioController.updateExchangeList()`, `DappsController.#retryFetchAndUpdateInterval`, and `ContractNamesController`'s `retryAfter` timestamps for examples.
 - ALWAYS guard async operations that update state with appropriate stale-data checks, such as debounce, unique ID/version checks, or cancellation with `AbortController`, to prevent state corruption from out-of-order or concurrent operations. Examples of these patterns can be found in `SwapAndBridgeController` and `AccountPickerController`.
@@ -113,6 +114,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **AutoLoginController** – Manages SIWE auto-login policies and signatures for dApp sessions.
 - **BannerController** – Aggregates in-app notification banners based on account and app state.
 - **ContinuousUpdatesController** – Orchestrates periodic background updates for multiple controllers (e.g., portfolio and activity)
+- **ContractInfoController** – Fetches and caches function selectors for contracts.
 - **ContractNamesController** – Resolves human-readable names for smart-contract addresses via the relayer.
 - **DappsController** – Manages dApp connections, sessions, verification status, and the dApp catalog.
 - **DebugController** – Toggles per-controller debug logging at runtime (developer tool); persists toggles and hydrates the `debugLogger` module.
@@ -123,7 +125,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **EstimationController** – Estimates gas, fees, and payment options for smart-account transactions.
 - **GasPriceController** – Fetches and formats gas-price recommendations and bundler gas speeds.
 - **HintsController** – Owns the portfolio's token/NFT hints (learned assets, to-be-learned assets, custom tokens, token preferences) and their storage; a sub-controller of the PortfolioController.
-- **InviteController** – Verifies invite codes against the Relayer and stores the OG status; the gate itself (`verify`/`grantAccess`) is enforced only by the mobile router, the extension no longer enforces it.
+- **InviteController** – Verifies invite codes against the Relayer and stores the OG status; the gate itself (`verify`/`grantAccess`) is enforced only by the mobile router.
 - **KeystoreController** – Encrypts seeds and private keys under a multi-secret–wrapped main key, manages unlock state, and routes signing to internal or hardware-backed keys.
 - **NetworksController** – Manages blockchain networks and their configuration
 - **ProvidersController** – Initializes and manages JSON-RPC providers for each configured network.
@@ -144,3 +146,4 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **TransactionManagerController** – Coordinates the transaction flow, delegating to form state and intent controllers
 - **TransactionFormState** – Manages the shared transaction form state (amount, tokens, validation)
 - **IntentController** – Handles intent-based transaction quotes and cross-chain swap parameters.
+- **VerificationController** – Verifies RPC portfolio balances by re-fetching them through the Colibri light client at the same block, and tracks each network's verification status.

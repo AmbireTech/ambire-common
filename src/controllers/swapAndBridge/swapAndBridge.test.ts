@@ -17,7 +17,7 @@ import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import { Storage } from '../../interfaces/storage'
-import { SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
+import { SocketAPIToken } from '../../interfaces/swapAndBridge'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
@@ -26,6 +26,7 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
+import { Erc7730Controller } from '../erc7730/erc7730'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
@@ -227,8 +228,15 @@ const selectedAccountCtrl = new SelectedAccountController({
 const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
 
 const callRelayer = relayerCall.bind({ url: '', fetch })
-
 const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
+const erc7730Ctrl = new Erc7730Controller({
+  storage: storageCtrl,
+  callRelayer,
+  featureFlags: featureFlagsCtrl,
+  providers: providersCtrl,
+  ui: uiCtrl
+})
+
 const portfolioCtrl = new PortfolioController(
   storageCtrl,
   fetch,
@@ -259,6 +267,7 @@ const activityCtrl = new ActivityController(
   networksCtrl,
   portfolioCtrl,
   safe,
+  featureFlagsCtrl,
   () => Promise.resolve()
 )
 
@@ -266,7 +275,8 @@ const phishingCtrl = new PhishingController({
   fetch,
   storage: storageCtrl,
   addressBook: addressBookCtrl,
-  ui: uiCtrl
+  ui: uiCtrl,
+  featureFlags: featureFlagsCtrl
 })
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
@@ -327,6 +337,7 @@ const buildSwapAndBridgeController = (controllerStorage: StorageController = sto
     signAccountOpPreference,
     featureFlags: featureFlagsCtrl,
     swapProvider: socketAPIMock as any,
+    erc7730: erc7730Ctrl,
     keystore,
     portfolio: portfolioCtrl,
     providers: providersCtrl,
@@ -371,7 +382,8 @@ const transferCtrl = new TransferController(
   dappsControllerMock,
   relayerUrl,
   () => Promise.resolve(),
-  uiCtrl
+  uiCtrl,
+  erc7730Ctrl
 )
 
 requestsCtrl = new RequestsController({
@@ -382,6 +394,7 @@ requestsCtrl = new RequestsController({
   activity: activityCtrl,
   phishing: phishingCtrl,
   dapps: dappsControllerMock,
+  erc7730: erc7730Ctrl,
   accounts: accountsCtrl,
   networks: networksCtrl,
   providers: providersCtrl,
@@ -455,6 +468,37 @@ describe('SwapAndBridge Controller', () => {
     expect(emittedDisabledProviderIds).toContainEqual([])
     await expect(storageCtrl.get('disabledSwapProviderIds', [])).resolves.toEqual([])
     unsubscribe()
+  })
+  test('should clear the token list error and skip fetching when all providers are disabled', async () => {
+    await swapAndBridgeController.initForm('all-providers-disabled-test')
+    const toSelectedToken = swapAndBridgeController.toTokenShortList[0]!
+    swapAndBridgeController.addOrUpdateError({
+      id: 'to-token-list-fetch-failed',
+      title: 'Token list fetch failed',
+      level: 'error'
+    })
+    const getToTokenListSpy = jest.spyOn(socketAPIMock, 'getToTokenList')
+    getToTokenListSpy.mockClear()
+
+    await swapAndBridgeController.setSwapProviderEnabled('socket', false)
+
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual(['socket'])
+    expect(getToTokenListSpy).not.toHaveBeenCalled()
+    expect(swapAndBridgeController.errors).not.toContainEqual(
+      expect.objectContaining({ id: 'to-token-list-fetch-failed' })
+    )
+
+    swapAndBridgeController.toSelectedToken = toSelectedToken
+    await swapAndBridgeController.updateToTokenList(true)
+
+    expect(getToTokenListSpy).not.toHaveBeenCalled()
+    expect(swapAndBridgeController.toSelectedToken).toBeNull()
+    expect(swapAndBridgeController.errors).not.toContainEqual(
+      expect.objectContaining({ id: 'to-token-list-fetch-failed' })
+    )
+
+    await swapAndBridgeController.setSwapProviderEnabled('socket', true)
+    swapAndBridgeController.unloadScreen('all-providers-disabled-test', true)
   })
   test('should enable only CoW Swap when MEV protection is enabled', async () => {
     jest.spyOn(socketAPIMock, 'getProvidersInfo').mockReturnValue([
@@ -538,10 +582,15 @@ describe('SwapAndBridge Controller', () => {
     const persistedStorage = new StorageController(produceMemoryStore())
     await persistedStorage.set('disabledSwapProviderIds', ['socket', 'unknown-provider', 'socket'])
     const restoredController = buildSwapAndBridgeController(persistedStorage)
+    const getToTokenListSpy = jest.spyOn(socketAPIMock, 'getToTokenList')
 
     await restoredController.initForm('restore-disabled-providers-test')
 
     expect(restoredController.getDisabledSwapProviderIds()).toEqual(['socket'])
+    expect(getToTokenListSpy).not.toHaveBeenCalled()
+    expect(restoredController.errors).not.toContainEqual(
+      expect.objectContaining({ id: 'to-token-list-fetch-failed' })
+    )
     restoredController.unloadScreen('restore-disabled-providers-test', true)
   })
   test('should initForm', async () => {
@@ -599,21 +648,25 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController.quote = previousQuote
   })
   test('should emit token list updates while providers are still loading', async () => {
-    const partialToken: SwapAndBridgeToToken = {
+    const partialToken: SocketAPIToken = {
       address: '0x0000000000000000000000000000000000000001',
       chainId: 137,
       decimals: 18,
       name: 'Partial token',
-      symbol: 'PARTIAL'
+      symbol: 'PARTIAL',
+      icon: '',
+      logoURI: ''
     }
-    const finalToken: SwapAndBridgeToToken = {
+    const finalToken: SocketAPIToken = {
       address: '0x0000000000000000000000000000000000000002',
       chainId: 137,
       decimals: 18,
       name: 'Final token',
-      symbol: 'FINAL'
+      symbol: 'FINAL',
+      icon: '',
+      logoURI: ''
     }
-    let resolveTokenList!: (tokens: SwapAndBridgeToToken[]) => void
+    let resolveTokenList!: (tokens: SocketAPIToken[]) => void
     const getToTokenListSpy = jest.spyOn(socketAPIMock, 'getToTokenList').mockImplementation(
       (params: any) =>
         new Promise((resolve) => {
@@ -847,13 +900,15 @@ describe('SwapAndBridge Controller', () => {
     const prevToChainId = swapAndBridgeController.toChainId
     const prevFromSelectedTokenAddress = swapAndBridgeController.fromSelectedToken?.address
     const prevToSelectedTokenAddress = swapAndBridgeController.toSelectedToken?.address
-    const fiatBefore = swapAndBridgeController.fromAmountInFiat
     await swapAndBridgeController.switchFromAndToTokens()
     expect(swapAndBridgeController.fromChainId).toEqual(prevToChainId)
     expect(swapAndBridgeController.toChainId).toEqual(prevFromChainId)
     expect(swapAndBridgeController.toSelectedToken?.address).toEqual(prevFromSelectedTokenAddress)
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(prevToSelectedTokenAddress)
-    expect(swapAndBridgeController.fromAmountInFiat).toEqual(fiatBefore)
+    // The switched-in token has fewer decimals, so the carried over amount rounds down to
+    // nothing - the fiat amount has to follow it instead of keeping the previous token's value
+    expect(Number(swapAndBridgeController.fromAmount)).toBeLessThan(1e-8)
+    expect(Number(swapAndBridgeController.fromAmountInFiat)).toBe(0)
     await swapAndBridgeController.switchFromAndToTokens()
     expect(swapAndBridgeController.fromChainId).toEqual(prevFromChainId)
     expect(swapAndBridgeController.toChainId).toEqual(prevToChainId)
@@ -1377,6 +1432,17 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromAmount).toEqual('1.0')
     expect(swapAndBridgeController.validateFromAmount.severity).toEqual('success')
   })
+  test('should clear the fiat amount when the amount is cleared to zero', () => {
+    swapAndBridgeController.updateForm({ fromSelectedToken: PORTFOLIO_TOKENS[0] })
+    swapAndBridgeController.updateForm({ fromAmountFieldMode: 'token' })
+
+    swapAndBridgeController.updateForm({ fromAmount: '1' })
+    expect(Number(swapAndBridgeController.fromAmountInFiat)).toBeGreaterThan(0)
+
+    // The amount field turns a cleared input into a '0', so the fiat amount has to follow it
+    swapAndBridgeController.updateForm({ fromAmount: '0' })
+    expect(Number(swapAndBridgeController.fromAmountInFiat)).toBe(0)
+  })
   test('should unload screen', () => {
     swapAndBridgeController.unloadScreen('1')
     expect(swapAndBridgeController.formStatus).toEqual('empty')
@@ -1414,6 +1480,7 @@ describe('SwapAndBridge Controller: to token market data', () => {
       signAccountOpPreference,
       featureFlags: featureFlagsCtrl,
       swapProvider: socketAPIMock as any,
+      erc7730: erc7730Ctrl,
       keystore,
       portfolio: portfolioCtrl,
       providers: providersCtrl,

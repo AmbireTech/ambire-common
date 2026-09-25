@@ -28,7 +28,12 @@ import { paginate } from '../../utils/paginate'
 import wait from '../../utils/wait'
 import { withTimeout } from '../../utils/with-timeout'
 import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
-import { decodeMultiSend, multiCallAbi, parseSafeMessageOrigin } from './helpers'
+import {
+  decodeMultiSend,
+  multiCallAbi,
+  parseSafeMessageOrigin,
+  SuccessfullyDecoded
+} from './helpers'
 
 import type {
   AddMessageOptions,
@@ -451,7 +456,11 @@ export function toCallsUserRequest(
         // if it is, use it; otherwise, construct a single call reqx
         const multisendInterface = new Interface(multiCallAbi)
         const multiSendCall = multisendInterface.decodeFunctionData('multiSend', txn.data!)
-        calls = decodeMultiSend(multiSendCall[0]).map((call) => ({
+        const decodedCalls = decodeMultiSend(multiSendCall[0])
+        if (!decodedCalls.every((call): call is SuccessfullyDecoded => call.success)) {
+          throw new Error('failed to decode one or more multiSend calls')
+        }
+        calls = decodedCalls.map((call) => ({
           to: call.to,
           value: call.value,
           data: call.data
