@@ -183,7 +183,7 @@ describe('Activity Controller ', () => {
         nonce: 226n,
         txnId: '0x1111111111111111111111111111111111111111111111111111111111111111',
         timestamp: 1_700_000_100_000,
-        calls: [{ to: trustedRecipient, value: 0n, data: '0x' }]
+        calls: [{ to: trustedRecipient, value: 1n, data: '0x' }]
       })
 
       const trustedRecipientResult = await controller.hasAccountOpsSentTo(
@@ -325,7 +325,7 @@ describe('Activity Controller ', () => {
         nonce: 227n,
         txnId: '0x2222222222222222222222222222222222222222222222222222222222222222',
         timestamp: 1_700_000_200_000,
-        calls: [{ to: normalizedPoisoningRecipient4to4, value: 0n, data: '0x' }]
+        calls: [{ to: normalizedPoisoningRecipient4to4, value: 1n, data: '0x' }]
       })
 
       const nonFirstTimeSendResult = await controller.hasAccountOpsSentTo(
@@ -1193,7 +1193,7 @@ describe('Activity Controller ', () => {
       // await controller.recordSentToDomain('alice.eth', DOMAIN_ADDR_A, SENT_AT)
       await controller.addAccountOp({
         ...SUBMITTED_ACCOUNT_OP,
-        calls: [{ to: DOMAIN_ADDR_A, recipientDomain: 'alice.eth', value: 0n, data: '0x' }]
+        calls: [{ to: DOMAIN_ADDR_A, recipientDomain: 'alice.eth', value: 1n, data: '0x' }]
       })
 
       // Checksummed, and the domain lookup is case-insensitive.
@@ -1207,15 +1207,40 @@ describe('Activity Controller ', () => {
       await controller.addAccountOp({
         ...SUBMITTED_ACCOUNT_OP,
         timestamp: SENT_AT,
-        calls: [{ to: DOMAIN_ADDR_B, recipientDomain: 'alice.eth', value: 0n, data: '0x' }]
+        calls: [{ to: DOMAIN_ADDR_B, recipientDomain: 'alice.eth', value: 1n, data: '0x' }]
       })
       await controller.addAccountOp({
         ...SUBMITTED_ACCOUNT_OP,
         timestamp: SENT_AT_LATER,
-        calls: [{ to: DOMAIN_ADDR_A, recipientDomain: 'alice.eth', value: 0n, data: '0x' }]
+        calls: [{ to: DOMAIN_ADDR_A, recipientDomain: 'alice.eth', value: 1n, data: '0x' }]
       })
 
       expect(controller.getSentToDomainAddress('alice.eth')).toBe(getAddress(DOMAIN_ADDR_A))
+    })
+
+    it('does not record the target of a contract interaction as sent to', async () => {
+      const { controller } = await prepareTest()
+      // Addresses no other test sends to, as the storage is shared between tests
+      const contract = '0x1111111254EEB25477B68fb85Ed929f73A960582'
+      const spender = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
+
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        // approve(spender, 1) on the contract - neither receives funds
+        calls: [
+          {
+            to: contract,
+            value: 0n,
+            data: `0x095ea7b3000000000000000000000000${spender.slice(2).toLowerCase()}0000000000000000000000000000000000000000000000000000000000000001`
+          }
+        ]
+      })
+
+      const { found } = await controller.hasAccountOpsSentTo(
+        contract,
+        SUBMITTED_ACCOUNT_OP.accountAddr
+      )
+      expect(found).toBe(false)
     })
 
     it('stores recipients checksummed', async () => {
@@ -1227,7 +1252,7 @@ describe('Activity Controller ', () => {
         nonce: 302n,
         txnId: '0x4c8a1d6f93b072e5af18c34d9e6072b1f5a83c0d7e29b46f1a0c5d8e3b97f246',
         timestamp: SENT_AT_LATER,
-        calls: [{ to: recipientLower, value: 0n, data: '0x' }]
+        calls: [{ to: recipientLower, value: 1n, data: '0x' }]
       })
 
       const stored = await storage.get('sentToHistory', { domains: {}, recipients: {} })
