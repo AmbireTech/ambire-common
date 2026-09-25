@@ -68,6 +68,9 @@ const DEPOSIT_CONFIRMATION_WINDOW_MS = 15 * 60 * 1000
 /** How long prices are kept before a sync asks for them again. */
 const PRICES_MAX_AGE_MS = 5 * 60 * 1000
 
+/** How recently a chain must have been read for opening the account not to read it again. */
+const SYNC_MAX_AGE_MS = 60 * 1000
+
 /** What an account op's final status means for the deposits in it, or null while it has none. */
 const getDepositOutcome = (status?: AccountOpStatus): 'success' | 'failed' | null => {
   if (status === AccountOpStatus.Success || status === AccountOpStatus.UnknownButPastNonce)
@@ -1053,7 +1056,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Syncs every chain this wallet can use, for the account on screen.
+   * Syncs every chain this wallet can use, for the account on screen, however recently it was read
+   * - what refreshing it does. Opening it goes through `syncIfStale` instead.
    *
    * Not wrapped in `withStatus`, which refuses a call while the previous one runs: a first read
    * takes minutes, and opening another account meanwhile must still queue its sync - see
@@ -1062,6 +1066,33 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   async sync(): Promise<void> {
     try {
       await Promise.all(this.supportedChainIds.map((chainId) => this.syncChain(chainId)))
+    } catch (error: any) {
+      this.#emitSyncError(error)
+    }
+  }
+
+  /**
+   * What opening the account on screen does: syncs every chain it has not read in the last minute,
+   * rather than every chain every time it is opened. Not wrapped in `withStatus`, for the reason
+   * `sync` is not.
+   *
+   * Nothing is read until the account's recovery phrase is backed up. The first read of a network
+   * takes minutes, and the phrase is the only way to recover the account - so the dashboard asks
+   * for the backup first, and the account is read once it is done.
+   */
+  async syncIfStale(): Promise<void> {
+    try {
+      const seedId = this.#assertAvailableAndGetSeedId()
+      if (this.#keystore.seeds.find(({ id }) => id === seedId)?.notBackedUp) return
+
+      const identityChains = this.#notesByIdentity[seedId] || {}
+      const staleChainIds = this.supportedChainIds.filter((chainId) => {
+        const lastSyncedAt = identityChains[chainId]?.lastSyncedAt
+
+        return !lastSyncedAt || Date.now() - lastSyncedAt >= SYNC_MAX_AGE_MS
+      })
+
+      await Promise.all(staleChainIds.map((chainId) => this.syncChain(chainId)))
     } catch (error: any) {
       this.#emitSyncError(error)
     }

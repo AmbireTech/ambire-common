@@ -151,7 +151,7 @@ class FakeKeystore extends EventEmitter {
 
   isUnlocked = true
 
-  seeds: { id: string }[] = [{ id: 'seed-a' }, { id: 'seed-b' }]
+  seeds: { id: string; notBackedUp?: boolean }[] = [{ id: 'seed-a' }, { id: 'seed-b' }]
 
   keys = []
 
@@ -552,6 +552,82 @@ describe('PrivacyPoolsController', () => {
       expect(controller.chains['1']?.notes.map((note) => note.label)).toEqual([2n])
     })
   })
+  describe('syncing on opening an account', () => {
+    it('reads only the networks not read in the last minute', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      let clock = 1_000_000
+      const now = jest.spyOn(Date, 'now').mockImplementation(() => clock)
+
+      try {
+        selectedAccount.select('seed-a')
+        const firstOpening = controller.syncIfStale()
+        await releaseSync('seed-a')
+        await firstOpening
+
+        clock += 59_000
+        await controller.syncIfStale()
+        expect(runningSyncs).toHaveLength(0)
+
+        clock += 1_000
+        const laterOpening = controller.syncIfStale()
+        await releaseSync('seed-a')
+        await laterOpening
+
+        expect(protocols.reduce((total, protocol) => total + protocol.syncCount, 0)).toBe(2)
+      } finally {
+        now.mockRestore()
+      }
+    })
+
+    it('reads each account on its own schedule', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+
+      selectedAccount.select('seed-a')
+      const openingA = controller.syncIfStale()
+      await releaseSync('seed-a')
+      await openingA
+
+      // Read a moment ago for the first phrase, never for the second
+      selectedAccount.select('seed-b')
+      const openingB = controller.syncIfStale()
+      await releaseSync('seed-b')
+      await openingB
+
+      expect(controller.chains['1']?.lastSyncedAt).not.toBeNull()
+    })
+
+    it('does not read an account until its recovery phrase is backed up', async () => {
+      const { controller, keystore, selectedAccount } = await prepareTest()
+      keystore.seeds = [{ id: 'seed-a', notBackedUp: true }, { id: 'seed-b' }]
+
+      selectedAccount.select('seed-a')
+      await controller.syncIfStale()
+      expect(runningSyncs).toHaveLength(0)
+      expect(controller.chains['1']?.syncStatus).toBe('idle')
+
+      keystore.seeds = [{ id: 'seed-a' }, { id: 'seed-b' }]
+      const opening = controller.syncIfStale()
+      await releaseSync('seed-a')
+      await opening
+      expect(controller.chains['1']?.lastSyncedAt).not.toBeNull()
+    })
+
+    it('reads again on a refresh however recent the last read is', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+
+      selectedAccount.select('seed-a')
+      const opening = controller.syncIfStale()
+      await releaseSync('seed-a')
+      await opening
+
+      const refresh = controller.sync()
+      await releaseSync('seed-a')
+      await refresh
+
+      expect(protocols.reduce((total, protocol) => total + protocol.syncCount, 0)).toBe(2)
+    })
+  })
+
   describe('network statuses', () => {
     it('tells the first read of a network from later ones, with how long each took', async () => {
       const { controller, selectedAccount } = await prepareTest()
