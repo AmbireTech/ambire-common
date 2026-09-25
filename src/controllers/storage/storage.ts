@@ -84,7 +84,12 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#migrateDomainsCacheToNames() // As of v6.14.0
       await this.#migrateDappsAddMissingIds() // As of v6.21.8
     } catch (error) {
-      console.error('Storage migration error: ', error)
+      // Reported, because a failed migration skips all the ones after it on every start
+      this.emitError({
+        level: 'silent',
+        message: 'Some of your saved wallet data could not be updated to the latest version.',
+        error: error instanceof Error ? error : new Error(`Storage migration error: ${error}`)
+      })
     }
   }
 
