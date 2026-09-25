@@ -8,6 +8,7 @@ import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/su
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { Erc7730PersistedRegistryCache } from '../libs/humanizer/erc7730/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
+import { WalletStakingRelayerLog } from '../libs/walletStaking/pendingWithdrawal'
 import {
   AccountAssetsState as PortfolioAccountAssetsState,
   LearnedAssets,
@@ -136,6 +137,10 @@ export type StorageProps = {
   functionSelectors: Selectors
   // Per-controller debug logging toggles. Only enabled ones are stored
   debugLogNamespaces: Record<string, boolean>
+  // The $WALLET staking leave logs (in the relayer's shape) of each account's pending withdrawals,
+  // keyed by the lowercase account address. Kept so that the withdrawals are known without the
+  // relayer, e.g. when the user opted out of the withdrawals lookup
+  walletStakingLeaveLogs: { [accountAddr: string]: WalletStakingRelayerLog[] }
 }
 
 export interface Storage {

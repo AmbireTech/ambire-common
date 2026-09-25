@@ -703,6 +703,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await Promise.all(promises)
   }
 
+  /** Returns the account ops that the account submitted from this device on one network. */
+  async getInternalAccountOps(accountAddr: string, chainId: bigint): Promise<SubmittedAccountOp[]> {
+    await this.#initialLoadPromise
+
+    return this.#accountsOps[accountAddr]?.[chainId.toString()] || []
+  }
+
   removeNetworkData(chainId: bigint) {
     Object.keys(this.accountsOps).forEach(async (sessionId) => {
       const state = this.accountsOps[sessionId]
