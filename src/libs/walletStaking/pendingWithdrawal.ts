@@ -123,16 +123,21 @@ export const parseWalletStakingRelayerLogsResponse = (
 }
 
 /**
- * Returns the account-specific storage key of the legacy pending withdrawal cache. The UI wrote
- * it before the withdrawals moved to the WalletTokenController (the cache held only the latest
- * withdrawal). It is read only by the storage migration.
+ * Returns an account-specific key for the persisted pending withdrawal cache.
+ *
+ * @deprecated The UI wrote this cache (only the latest withdrawal) before the withdrawals moved to
+ * the WalletTokenController, which stores them as leave logs under `walletStakingLeaveLogs`.
+ * Nothing reads or writes this key any more.
  */
-export const getLegacyPendingWalletWithdrawalStorageKey = (
-  accountAddr: string
-): `walletStakingPendingWithdrawal:${string}` =>
+export const getPendingWalletWithdrawalStorageKey = (accountAddr: string) =>
   `walletStakingPendingWithdrawal:${accountAddr.toLowerCase()}`
 
-/** Converts a persisted pending withdrawal into its runtime bigint representation. */
+/**
+ * Converts a persisted pending withdrawal into its runtime bigint representation.
+ *
+ * @deprecated Parses the pending withdrawal cache of `getPendingWalletWithdrawalStorageKey`,
+ * which is no longer used.
+ */
 export const parseCachedPendingWalletWithdrawal = (
   value: unknown
 ): PendingWalletWithdrawal | null => {
@@ -229,10 +234,7 @@ export const getUniqueAccountWalletStakingLeaveLogs = (
   return Array.from(entriesById.values())
 }
 
-/**
- * Builds the WALLET staking leave log of a withdrawal, in the shape that the relayer returns.
- * Used to convert the legacy pending withdrawal cache, which kept only the decoded withdrawal.
- */
+/** Builds the WALLET staking leave log of a withdrawal, in the shape that the relayer returns. */
 export const encodeWalletStakingLeaveLog = (
   accountAddr: string,
   { shares, unlocksAt, maxTokens }: PendingWalletWithdrawal

@@ -2,10 +2,6 @@ import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { Storage } from '../../interfaces/storage'
-import {
-  encodeWalletStakingLeaveLog,
-  getLegacyPendingWalletWithdrawalStorageKey as legacyKey
-} from '../../libs/walletStaking/pendingWithdrawal'
 import { StorageController } from './storage'
 
 const ALL_MIGRATION_KEYS = [
@@ -30,8 +26,7 @@ const ALL_MIGRATION_KEYS = [
   'fixSelectedAccountDismissedBannerIdsType',
   'migrateDappsAddConnectionSources',
   'migrateDomainsCacheToNames',
-  'migrateDappsAddMissingIds',
-  'migrateWalletStakingPendingWithdrawalCache'
+  'migrateDappsAddMissingIds'
 ]
 
 // Wraps a memory store and counts how many times each key is read and how many
@@ -339,46 +334,6 @@ describe('StorageController', () => {
       expect(counting.setCount()).toBe(1)
       expect(passed).toContain(MIGRATION_KEY)
       expect(await storageCtrl.get('dappsV2', [])).toEqual([withId])
-    })
-  })
-
-  describe('migrateWalletStakingPendingWithdrawalCache', () => {
-    const ACCOUNT = '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'
-    const OTHER_ACCOUNT = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
-    const withdrawal = { shares: 10n, unlocksAt: 100n, maxTokens: 1000n }
-
-    test('converts the cached withdrawal into a leave log and removes the legacy key', async () => {
-      const memStorage: Storage = produceMemoryStore()
-      const existingLog = encodeWalletStakingLeaveLog(ACCOUNT, { ...withdrawal, shares: 20n })
-      await memStorage.set('accounts', [{ addr: ACCOUNT }, { addr: OTHER_ACCOUNT }])
-      await memStorage.set('walletStakingLeaveLogs', { [ACCOUNT.toLowerCase()]: [existingLog] })
-      await memStorage.set(legacyKey(ACCOUNT), {
-        shares: '10',
-        unlocksAt: '100',
-        maxTokens: '1000'
-      })
-
-      const storageCtrl = new StorageController(memStorage)
-      const leaveLogs = await storageCtrl.get('walletStakingLeaveLogs', {})
-
-      expect(leaveLogs).toEqual({
-        [ACCOUNT.toLowerCase()]: [existingLog, encodeWalletStakingLeaveLog(ACCOUNT, withdrawal)]
-      })
-      expect(await memStorage.get(legacyKey(ACCOUNT), undefined)).toBeUndefined()
-      expect(await storageCtrl.get('passedMigrations', [])).toContain(
-        'migrateWalletStakingPendingWithdrawalCache'
-      )
-    })
-
-    test('removes an invalid legacy cache entry without adding a leave log', async () => {
-      const memStorage: Storage = produceMemoryStore()
-      await memStorage.set('accounts', [{ addr: ACCOUNT }])
-      await memStorage.set(legacyKey(ACCOUNT), { shares: 'invalid' })
-
-      const storageCtrl = new StorageController(memStorage)
-
-      expect(await storageCtrl.get('walletStakingLeaveLogs', {})).toEqual({})
-      expect(await memStorage.get(legacyKey(ACCOUNT), undefined)).toBeUndefined()
     })
   })
 

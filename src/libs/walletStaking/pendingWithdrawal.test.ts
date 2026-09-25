@@ -7,7 +7,7 @@ import {
   encodeWalletStakingLeaveLog,
   formatPendingWalletWithdrawalDuration,
   getActivePendingWalletWithdrawals,
-  getLegacyPendingWalletWithdrawalStorageKey,
+  getPendingWalletWithdrawalStorageKey,
   getPendingWalletWithdrawalCommitmentId,
   getPendingWalletWithdrawalId,
   getPendingWalletWithdrawalSummary,
@@ -81,7 +81,7 @@ describe('pending WALLET withdrawal helpers', () => {
   })
 
   test('parses an account-specific legacy cache entry', () => {
-    expect(getLegacyPendingWalletWithdrawalStorageKey(ACCOUNT.toUpperCase())).toBe(
+    expect(getPendingWalletWithdrawalStorageKey(ACCOUNT.toUpperCase())).toBe(
       `walletStakingPendingWithdrawal:${ACCOUNT}`
     )
     expect(

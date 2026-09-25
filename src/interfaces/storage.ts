@@ -141,9 +141,6 @@ export type StorageProps = {
   // keyed by the lowercase account address. Kept so that the withdrawals are known without the
   // relayer, e.g. when the user opted out of the withdrawals lookup
   walletStakingLeaveLogs: { [accountAddr: string]: WalletStakingRelayerLog[] }
-  // Legacy: the pending $WALLET withdrawal cache that the UI kept for each account. Only the
-  // storage migration reads it, before it removes it
-  [legacyWalletStakingKey: `walletStakingPendingWithdrawal:${string}`]: unknown
 }
 
 export interface Storage {
