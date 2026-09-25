@@ -39,6 +39,7 @@ There are two patterns:
    // In MainController
    new SwapAndBridgeController({
      portfolioUpdate: (chainIds) => {
+       const networks = this.networks.networks.filter((n) => chainIds.includes(n.chainId))
        this.updateSelectedAccountPortfolio({ networks })
      },
      onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this)
@@ -87,7 +88,7 @@ Most controllers have `initialLoadPromise` that resolves when the controller fin
 The networks controller that reads the network list from storage (which is async) exposes an `initialLoadPromise` that resolves when the networks are loaded. Then, the providers controller awaits the networks controller's `initialLoadPromise` in its own `initialLoadPromise` before initializing the providers, ensuring it has the network data available. The networks controller also awaits its own `initialLoadPromise` in its methods that read the network list, to ensure the data is loaded before accessing it.
 
 ## Other rules:
-- Never use raw `setInterval`. Always use `RecurringTimeout` from `@common/utils/RecurringTimeout`.
+- Never use raw `setInterval`. Always use `RecurringTimeout` from `src/classes/recurringTimeout/recurringTimeout.ts`.
 - Long-running background intervals must be declared in `ContinuousUpdatesController`, which orchestrates their lifecycle based on app state and controller events. If you need a new background loop, add it there and wire its start/stop/restart logic through the existing event subscriptions.
 - Never call `this.storage.set()` in parallel. Always await the previous call before making another one.
 - Always use `this.emitError` for error handling in controllers; all emitted errors are reported to Sentry and logged, and non-silent errors are also displayed as toasts in the UI. Public methods must never let errors propagate — use `EmittableError` (thrown inside a `withStatus` wrapper, which auto-emits it) or `try/catch` + `emitError({ level, message, error })` otherwise.
@@ -113,6 +114,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **AutoLoginController** – Manages SIWE auto-login policies and signatures for dApp sessions.
 - **BannerController** – Aggregates in-app notification banners based on account and app state.
 - **ContinuousUpdatesController** – Orchestrates periodic background updates for multiple controllers (e.g., portfolio and activity)
+- **ContractInfoController** – Fetches and caches function selectors for contracts.
 - **ContractNamesController** – Resolves human-readable names for smart-contract addresses via the relayer.
 - **DappsController** – Manages dApp connections, sessions, verification status, and the dApp catalog.
 - **DebugController** – Toggles per-controller debug logging at runtime (developer tool); persists toggles and hydrates the `debugLogger` module.
@@ -144,3 +146,4 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **TransactionManagerController** – Coordinates the transaction flow, delegating to form state and intent controllers
 - **TransactionFormState** – Manages the shared transaction form state (amount, tokens, validation)
 - **IntentController** – Handles intent-based transaction quotes and cross-chain swap parameters.
+- **VerificationController** – Verifies RPC portfolio balances by re-fetching them through the Colibri light client at the same block, and tracks each network's verification status.
