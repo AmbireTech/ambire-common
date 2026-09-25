@@ -50,7 +50,8 @@ import { getIsViewOnly } from '../../utils/accounts'
 import { getAddressFromAddressState, getDomainFromAddressState } from '../../utils/domains'
 import {
   convertTokenPriceToBigInt,
-  getSafeAmountFromFieldValue
+  getSafeAmountFromFieldValue,
+  truncateFiatAmountDecimals
 } from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -680,7 +681,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#isMaxAmountSelected = true
       this.#wasAmountAdjustedForFee = maxAmountAfterFeeReservation !== this.maxAmount
       this.#resetMaxFeeReservation()
-      this.amountFieldMode = 'token'
+      // Keeps the field in whichever mode the user picked - the max is still set from the exact
+      // token balance, so fiat mode doesn't round it and leave dust behind.
       this.#setTokenAmount(maxAmountAfterFeeReservation, true)
     }
 
@@ -829,10 +831,14 @@ export class TransferController extends EventEmitter implements ITransferControl
 
       const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
-      this.amountInFiat = formatUnits(
-        formattedAmount * tokenPriceBigInt,
-        // Shift the decimal point by the number of decimals in the token price
-        this.selectedToken.decimals + tokenPriceDecimals
+      // The fiat field shows this as-is when switched to, so cut it down to a displayable
+      // precision instead of the token's full one (up to 18 decimals)
+      this.amountInFiat = truncateFiatAmountDecimals(
+        formatUnits(
+          formattedAmount * tokenPriceBigInt,
+          // Shift the decimal point by the number of decimals in the token price
+          this.selectedToken.decimals + tokenPriceDecimals
+        )
       )
     }
   }

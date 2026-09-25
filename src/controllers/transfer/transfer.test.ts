@@ -8,6 +8,10 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
 import { TokenResult } from '../../libs/portfolio'
 import * as ensDomainsModule from '../../services/ensDomains/ensDomains'
+import {
+  safeTokenAmountAndNumberMultiplication,
+  truncateFiatAmountDecimals
+} from '../../utils/numbers/formatters'
 import { DomainsController } from '../domains/domains'
 
 const ethereum = networks.find((x) => x.chainId === 1n)
@@ -126,6 +130,34 @@ describe('Transfer Controller', () => {
 
     await transferController.update({ amount: '0' })
     expect(Number(transferController.amountInFiat)).toBe(0)
+  })
+  test('should keep fiat mode when setting the max amount', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const ethOnEthereum = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    await transferController.update({ selectedToken: ethOnEthereum, amountFieldMode: 'fiat' })
+    await transferController.update({ shouldSetMaxAmount: true })
+
+    expect(transferController.amountFieldMode).toBe('fiat')
+    expect(transferController.amount).toBe(transferController.maxAmount)
+  })
+  test('should keep the fiat amount at a displayable precision when switching to fiat mode', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const ethOnEthereum = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    await transferController.update({ selectedToken: ethOnEthereum })
+    await transferController.update({ shouldSetMaxAmount: true })
+    await transferController.update({ amountFieldMode: 'fiat' })
+
+    expect(transferController.amountInFiat).toBe(
+      truncateFiatAmountDecimals(
+        safeTokenAmountAndNumberMultiplication(
+          ethOnEthereum.amount,
+          ethOnEthereum.decimals,
+          ethOnEthereum.priceIn[0]!.price
+        )
+      )
+    )
   })
   test('should set max amount minus fee when the selected fee token matches the transfer token', async () => {
     const { transferController, tokens } = await prepareTest()
