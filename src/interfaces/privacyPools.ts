@@ -146,8 +146,18 @@ export type PrivacyPoolsChainState = {
    * balances are on screen and spendable.
    */
   error: string | null
+  /**
+   * Whether the chain's history has been read on this device - the one-time part of using a
+   * network, which takes minutes where every later sync takes seconds. False while that first read
+   * is waiting or running, null until it has been looked up.
+   */
+  isInitialSyncDone: boolean | null
+  /** How long that first read took, in milliseconds, when it ran since the wallet started. */
+  initialSyncDuration: number | null
   // Tells "never synced" (show placeholders) apart from "syncing again" (keep what is on screen)
   lastSyncedAt: number | null
+  /** How long this identity's latest sync of the chain took, in milliseconds. */
+  lastSyncDuration: number | null
   notes: PrivacyPoolsNote[]
 }
 
@@ -157,8 +167,20 @@ export type PrivacyPoolsChainSyncState = Pick<
   'syncStatus' | 'syncStartedAt' | 'error'
 >
 
+/**
+ * What is known about reading a chain at all, rather than about the sync in flight. Shared by
+ * every identity and kept through a lock: none of it comes from a recovery phrase.
+ */
+export type PrivacyPoolsChainHistory = Pick<
+  PrivacyPoolsChainState,
+  'isInitialSyncDone' | 'initialSyncDuration'
+>
+
 /** The half that belongs to one identity - the notes it owns in that chain's pools. */
-export type PrivacyPoolsIdentityChainState = Pick<PrivacyPoolsChainState, 'lastSyncedAt' | 'notes'>
+export type PrivacyPoolsIdentityChainState = Pick<
+  PrivacyPoolsChainState,
+  'lastSyncedAt' | 'lastSyncDuration' | 'notes'
+>
 
 /**
  * What a prepared withdrawal costs, after we have checked it against what we asked for.

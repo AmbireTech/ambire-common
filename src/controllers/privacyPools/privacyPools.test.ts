@@ -236,8 +236,11 @@ const releaseSync = async (seedId: string) => {
   running.gate.resolve()
 }
 
-const prepareTest = async ({ accounts = ['seed-a', 'seed-b'] }: { accounts?: string[] } = {}) => {
-  const storage = new StorageController(produceMemoryStore())
+const prepareTest = async ({
+  accounts = ['seed-a', 'seed-b'],
+  // Passed to start again from what an earlier controller left in storage, as after a restart
+  storage = new StorageController(produceMemoryStore())
+}: { accounts?: string[]; storage?: StorageController } = {}) => {
   await storage.set(
     'privacyPoolsAccounts',
     accounts.map((seedId) => ({ seedId, createdAt: 1 }))
@@ -531,6 +534,121 @@ describe('PrivacyPoolsController', () => {
       expect(controller.chains['1']?.notes.map((note) => note.label)).toEqual([2n])
     })
   })
+  describe('network statuses', () => {
+    it('tells the first read of a network from later ones, with how long each took', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      let clock = 1_000
+      const now = jest.spyOn(Date, 'now').mockImplementation(() => clock)
+
+      try {
+        selectedAccount.select('seed-a')
+        const syncA = controller.syncChain('1')
+        await waitUntil(() => runningSyncs.length === 1)
+        expect(controller.chains['1']?.isInitialSyncDone).toBe(false)
+
+        clock = 61_000
+        await releaseSync('seed-a')
+        await syncA
+        expect(controller.chains['1']).toMatchObject({
+          isInitialSyncDone: true,
+          initialSyncDuration: 60_000,
+          lastSyncDuration: 60_000
+        })
+
+        selectedAccount.select('seed-b')
+        const syncB = controller.syncChain('1')
+        await waitUntil(() => runningSyncs.length === 1)
+        clock = 63_000
+        await releaseSync('seed-b')
+        await syncB
+
+        // The second phrase only read what was new, and the first read is still the first read
+        expect(controller.chains['1']).toMatchObject({
+          initialSyncDuration: 60_000,
+          lastSyncDuration: 2_000
+        })
+        selectedAccount.select('seed-a')
+        expect(controller.chains['1']?.lastSyncDuration).toBe(60_000)
+      } finally {
+        now.mockRestore()
+      }
+    })
+
+    it('says a network never read before is in for its first read while it still waits its turn', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+
+      selectedAccount.select('seed-a')
+      const syncEthereum = controller.syncChain('1')
+      await waitUntil(() => runningSyncs.length === 1)
+      // Queued behind the one running, on a network whose history is not stored either
+      const syncSepolia = controller.syncChain('11155111')
+
+      await waitUntil(() => controller.chains['11155111']?.isInitialSyncDone === false)
+      expect(controller.chains['11155111']?.syncStatus).toBe('syncing')
+
+      await releaseSync('seed-a')
+      await Promise.all([syncEthereum, syncSepolia])
+    })
+
+    it('keeps what it knows about a network through a lock', async () => {
+      const { controller, keystore, selectedAccount } = await prepareTest()
+
+      selectedAccount.select('seed-a')
+      const syncA = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncA
+      const { initialSyncDuration } = controller.chains['1']!
+
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      keystore.isUnlocked = true
+      keystore.fireUpdate()
+
+      expect(controller.chains['1']).toMatchObject({
+        isInitialSyncDone: true,
+        initialSyncDuration,
+        // The phrase's own sync went with the lock
+        lastSyncDuration: null
+      })
+    })
+
+    it('knows a network read before a restart has been read, without timing a first read', async () => {
+      const { controller: before, selectedAccount: selectedBefore, storage } = await prepareTest()
+      selectedBefore.select('seed-a')
+      const firstSync = before.syncChain('1')
+      await releaseSync('seed-a')
+      await firstSync
+
+      const { controller, selectedAccount } = await prepareTest({ storage })
+      selectedAccount.select('seed-a')
+      const sync = controller.syncChain('1')
+      await waitUntil(() => controller.chains['1']?.isInitialSyncDone === true)
+      expect(controller.chains['1']?.syncStatus).toBe('syncing')
+
+      await releaseSync('seed-a')
+      await sync
+      expect(controller.chains['1']?.initialSyncDuration).toBeNull()
+    })
+
+    it('does not count a failed first read as done', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+
+      selectedAccount.select('seed-a')
+      const syncA = controller.syncChain('1')
+      await waitUntil(() => runningSyncs.length === 1)
+      const [running] = runningSyncs
+      runningSyncs = []
+      running!.gate.reject(new Error('RPC is down'))
+      await syncA
+
+      expect(controller.chains['1']).toMatchObject({
+        isInitialSyncDone: false,
+        initialSyncDuration: null,
+        lastSyncDuration: null
+      })
+    })
+  })
+
   describe('deposits', () => {
     const ONE_ETH = 10n ** 18n
 

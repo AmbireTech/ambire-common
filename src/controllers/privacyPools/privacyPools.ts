@@ -31,9 +31,10 @@ import {
   PrivacyPoolsActivityEntry,
   PrivacyPoolsDepositAssetConfig,
   PrivacyPoolsChainConfig,
+  PrivacyPoolsChainHistory,
   PrivacyPoolsChainState,
   PrivacyPoolsChainSyncState,
-  PrivacyPoolsNote,
+  PrivacyPoolsIdentityChainState,
   PrivacyPoolsOperation,
   PrivacyPoolsTokenBalance,
   PrivacyPoolsUnavailableReason
@@ -218,6 +219,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #syncStatesByChain: { [chainId: string]: PrivacyPoolsChainSyncState } = {}
 
+  /** Per chain, kept through a lock - see `PrivacyPoolsChainHistory`. */
+  #chainHistories: { [chainId: string]: PrivacyPoolsChainHistory } = {}
+
   /**
    * Bumped whenever a sync persists a chain's history. A plugin reads the store only once, when it
    * is built, so one built before the latest save would walk again the blocks another phrase's
@@ -236,7 +240,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /** Notes per `${seedId}` then per chain, so switching accounts keeps each phrase's own view. */
   #notesByIdentity: {
-    [seedId: string]: { [chainId: string]: { notes: PrivacyPoolsNote[]; lastSyncedAt: number } }
+    [seedId: string]: { [chainId: string]: PrivacyPoolsIdentityChainState }
   } = {}
 
   #activity: PrivacyPoolsActivityEntry[] = []
@@ -498,6 +502,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
           syncStartedAt: null,
           error: null
         }
+        const history = this.#chainHistories[chainId] || {
+          isInitialSyncDone: null,
+          initialSyncDuration: null
+        }
         const identity = identityChains[chainId]
 
         return [
@@ -505,7 +513,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
           {
             chainId,
             ...sync,
+            ...history,
             lastSyncedAt: identity?.lastSyncedAt ?? null,
+            lastSyncDuration: identity?.lastSyncDuration ?? null,
             notes: identity?.notes ?? []
           }
         ]
@@ -814,6 +824,31 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     })
   }
 
+  #writeChainHistory(chainId: string, update: Partial<PrivacyPoolsChainHistory>) {
+    this.#chainHistories[chainId] = {
+      ...(this.#chainHistories[chainId] || { isInitialSyncDone: null, initialSyncDuration: null }),
+      ...update
+    }
+  }
+
+  /**
+   * Looks up whether a chain's history has been read on this device, once per chain. Asked for when
+   * a sync is, so a network in for the long first read says so while it still waits its turn.
+   */
+  async #lookUpInitialSync(chainId: string) {
+    if (typeof this.#chainHistories[chainId]?.isInitialSyncDone === 'boolean') return
+
+    const config = getPrivacyPoolsChainConfig(BigInt(chainId))
+    if (!config) return
+
+    const isChainCold = await this.#isChainCold(config)
+    // A sync that got its turn meanwhile has found out itself, and may have read the chain since
+    if (typeof this.#chainHistories[chainId]?.isInitialSyncDone === 'boolean') return
+
+    this.#writeChainHistory(chainId, { isInitialSyncDone: !isChainCold })
+    this.emitUpdate()
+  }
+
   #writeChainSyncState(chainId: string, update: Partial<PrivacyPoolsChainSyncState>) {
     this.#syncStatesByChain[chainId] = {
       ...(this.#syncStatesByChain[chainId] || {
@@ -877,6 +912,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     const generation = this.#generation
 
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#lookUpInitialSync(chainId)
+
     this.#pendingSyncsByChain.set(chainId, (this.#pendingSyncsByChain.get(chainId) || 0) + 1)
     // Shown at once rather than when the sync gets its turn, so a sync waiting behind another
     // reads as under way instead of as nothing happening.
@@ -922,20 +960,31 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     const config = getPrivacyPoolsChainConfig(BigInt(chainId))
     const isChainCold = !!config && (await this.#isChainCold(config))
+    const startedAt = Date.now()
 
     // 'initializing' is the chain's own first read, whichever phrase happens to trigger it: that
     // is the walk that takes minutes. A phrase new to an already read chain only reads the tail.
     this.#writeChainSyncState(chainId, {
       syncStatus: isChainCold ? 'initializing' : 'syncing',
-      syncStartedAt: Date.now(),
+      syncStartedAt: startedAt,
       error: null
     })
+    this.#writeChainHistory(chainId, { isInitialSyncDone: !isChainCold })
     this.emitUpdate()
 
     try {
       const protocol = await this.#getProtocol(chainId, seedId)
 
       await protocol.sync()
+      const syncDuration = Date.now() - startedAt
+
+      // The history is persisted by now, whoever's phrase it was read for and whether or not the
+      // wallet has been locked since: it is the chain's, not the phrase's
+      if (isChainCold)
+        this.#writeChainHistory(chainId, {
+          isInitialSyncDone: true,
+          initialSyncDuration: syncDuration
+        })
 
       // `notes` is optional on the plugin interface - it exists only when the plugin declares a
       // note type, which PPv1 does. Checked rather than asserted so a future SDK that drops it
@@ -953,6 +1002,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         ...(this.#notesByIdentity[seedId] || {}),
         [chainId]: {
           lastSyncedAt: Date.now(),
+          lastSyncDuration: syncDuration,
           notes: notes.map((note) => ({
             label: note.label,
             tokenAddress: fromPrivacyPoolsAssetAddress(note.assetAddress),
@@ -1784,7 +1834,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Drops everything derived from any recovery phrase, on lock: nothing derived may stay in memory
-   * once the phrases are out of reach.
+   * once the phrases are out of reach. What is known about the chains themselves stays - see
+   * `PrivacyPoolsChainHistory`.
    *
    * A sync already running cannot be stopped, so it is left to finish in the queue - `#generation`
    * makes it discard what it finds, and a sync asked for after unlocking waits behind it rather
