@@ -21,7 +21,7 @@ import {
   PRIVACY_POOLS_SUPPORTED_CHAIN_IDS,
   toPrivacyPoolsAssetAddress
 } from '../../consts/privacyPools'
-import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -58,14 +58,6 @@ import { readPaymasterWithdrawal } from '../../libs/privacyPools/paymasterWithdr
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { generateUuid } from '../../utils/uuid'
 import EventEmitter from '../eventEmitter/eventEmitter'
-
-/**
- * Only `sync` is wrapped. Preparing and broadcasting a withdrawal run long with no way to abort,
- * which `withStatus` must not wrap - they report through `operation` instead.
- */
-export const STATUS_WRAPPED_METHODS = {
-  sync: 'INITIAL'
-} as const
 
 /**
  * How long a broadcast deposit blocks another into the same account, while it most likely has
@@ -324,8 +316,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * it belongs to. Reaches the UI through `operation`, only while its phrase is on screen.
    */
   #operation: PrivacyPoolsOperation | null = null
-
-  statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
   initialLoadPromise?: Promise<void>
 
@@ -1062,15 +1052,32 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.emitUpdate()
   }
 
-  /** Syncs every chain this wallet can use, for the account on screen. */
+  /**
+   * Syncs every chain this wallet can use, for the account on screen.
+   *
+   * Not wrapped in `withStatus`, which refuses a call while the previous one runs: a first read
+   * takes minutes, and opening another account meanwhile must still queue its sync - see
+   * `#syncQueue`. What is in flight is reported per chain instead, through `chains`.
+   */
   async sync(): Promise<void> {
-    await this.withStatus(
-      'sync',
-      async () => {
-        await Promise.all(this.supportedChainIds.map((chainId) => this.syncChain(chainId)))
-      },
-      true
-    )
+    try {
+      await Promise.all(this.supportedChainIds.map((chainId) => this.syncChain(chainId)))
+    } catch (error: any) {
+      this.#emitSyncError(error)
+    }
+  }
+
+  #emitSyncError(error: any) {
+    if (error instanceof EmittableError) {
+      this.emitError(error)
+      return
+    }
+
+    this.emitError({
+      message: 'Could not load your Privacy Pools balance. Please try again.',
+      level: 'major',
+      error: error instanceof Error ? error : new Error('privacyPools: sync failed')
+    })
   }
 
   /**

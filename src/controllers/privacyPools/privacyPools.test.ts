@@ -515,6 +515,24 @@ describe('PrivacyPoolsController', () => {
       expect(controller.chains['1']?.lastSyncedAt).toBeNull()
     })
 
+    it('syncs an account opened while another one still syncs', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+
+      selectedAccount.select('seed-a')
+      const syncA = controller.sync()
+      await waitUntil(() => runningSyncs.length === 1)
+
+      // Opening the second account while the first one's read is still under way
+      selectedAccount.select('seed-b')
+      const syncB = controller.sync()
+
+      await releaseSync('seed-a')
+      await releaseSync('seed-b')
+      await Promise.all([syncA, syncB])
+
+      expect(controller.chains['1']?.notes.map((note) => note.label)).toEqual([2n])
+    })
+
     it('lets the syncs behind a failed one run', async () => {
       const { controller, selectedAccount } = await prepareTest()
 
