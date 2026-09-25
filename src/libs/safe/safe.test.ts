@@ -14,13 +14,18 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
 import {
+  findDeployData,
   getSafeAccountByOwner,
   getSafeDeploymentCall,
   normalizeSafeGlobalMessage,
   toCallsUserRequest
 } from './safe'
 
-import type { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
+import type {
+  AllTransactionsListResponse,
+  SafeCreationInfoResponse,
+  SafeInfoResponse
+} from '@safe-global/api-kit'
 import type { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 import type { Hex } from '../../interfaces/hex'
 import type { RPCProvider } from '../../interfaces/provider'
@@ -94,7 +99,7 @@ const createApi = (owners: string[] = [OWNER]) => ({
   getSafeInfo: jest.fn(async () => getSafeInfo(owners))
 })
 
-describe('getSafeDeploymentCall', () => {
+describe('Safe deployment data', () => {
   const factoryAddr = '0x1234567890123456789012345678901234567890' as Hex
   const singleton = '0x2345678901234567890123456789012345678901' as Hex
   const setupData = '0x1234' as Hex
@@ -112,6 +117,136 @@ describe('getSafeDeploymentCall', () => {
     preferences: { label: 'Safe', pfp: safeAddr }
   }
   const encodedProxyCreationCode = new AbiCoder().encode(['bytes'], [proxyCreationCode])
+  const deployTransactionData = new Interface([
+    'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
+  ]).encodeFunctionData('createProxyWithNonce', [singleton, setupData, saltNonce])
+  const deployTransactionHash = `0x${'2'.repeat(64)}` as Hex
+  const deployTransactionHistory: AllTransactionsListResponse = {
+    count: 1,
+    next: null,
+    previous: null,
+    results: [
+      {
+        txType: 'ETHEREUM_TRANSACTION',
+        executionDate: '2025-01-01T00:00:00Z',
+        to: factoryAddr,
+        data: deployTransactionData,
+        txHash: deployTransactionHash,
+        from: OWNER,
+        transfers: []
+      }
+    ]
+  }
+  const deploySafeCreationInfo: SafeCreationInfoResponse = {
+    ...getSafeCreationInfo(),
+    transactionHash: deployTransactionHash,
+    factoryAddress: factoryAddr,
+    singleton,
+    setupData,
+    saltNonce: '1'
+  }
+
+  test('recovers and validates Safe deployment data from the indexed creation transaction', async () => {
+    const getSafeCreationInfo = jest.fn(async () => deploySafeCreationInfo)
+    const provider = {
+      getTransaction: jest.fn(async () => ({
+        to: factoryAddr,
+        data: deployTransactionData
+      })),
+      call: jest
+        .fn()
+        .mockResolvedValueOnce(encodedProxyCreationCode)
+        .mockResolvedValueOnce(new AbiCoder().encode(['string'], ['1.4.1']))
+    } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toEqual({
+      factoryAddr: getAddress(factoryAddr),
+      singleton: getAddress(singleton),
+      setupData,
+      saltNonce,
+      version: '1.4.1'
+    })
+    expect(getSafeCreationInfo).toHaveBeenCalledWith(safeAddr)
+    expect(provider.getTransaction).toHaveBeenCalledWith(deployTransactionHash)
+  })
+
+  test('recovers deployment data when the factory call is nested in other calldata', async () => {
+    const getSafeCreationInfo = jest.fn(async () => deploySafeCreationInfo)
+    const nestedTransactionData = new Interface([
+      'function execute(bytes data)'
+    ]).encodeFunctionData('execute', [deployTransactionData])
+    const provider = {
+      getTransaction: jest.fn(async () => ({
+        to: OTHER_OWNER,
+        data: nestedTransactionData
+      })),
+      call: jest
+        .fn()
+        .mockResolvedValueOnce(encodedProxyCreationCode)
+        .mockResolvedValueOnce(new AbiCoder().encode(['string'], ['1.4.1']))
+    } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toMatchObject({
+      factoryAddr: getAddress(factoryAddr),
+      singleton: getAddress(singleton),
+      setupData,
+      saltNonce
+    })
+  })
+
+  test('returns null when the creation record does not contain a deployment transaction', async () => {
+    const getSafeCreationInfo = jest.fn(async () => ({
+      ...deploySafeCreationInfo,
+      transactionHash: ''
+    }))
+    const provider = { getTransaction: jest.fn() } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toBeNull()
+    expect(provider.getTransaction).not.toHaveBeenCalled()
+  })
+
+  test('returns null when the indexed deployment transaction is unavailable from the RPC', async () => {
+    const getSafeCreationInfo = jest.fn(async () => deploySafeCreationInfo)
+    const provider = {
+      getTransaction: jest.fn(async () => null)
+    } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toBeNull()
+  })
+
+  test('returns null when the indexed transaction does not include a Safe deployment', async () => {
+    const getSafeCreationInfo = jest.fn(async () => deploySafeCreationInfo)
+    const provider = {
+      getTransaction: jest.fn(async () => ({ to: factoryAddr, data: '0x1234' }))
+    } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toBeNull()
+  })
+
+  test('rejects deployment data that derives a different Safe address', async () => {
+    const getSafeCreationInfo = jest.fn(async () => deploySafeCreationInfo)
+    const provider = {
+      getTransaction: jest.fn(async () => ({
+        to: factoryAddr,
+        data: deployTransactionData
+      })),
+      call: jest.fn(async () => encodedProxyCreationCode)
+    } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(OTHER_OWNER, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toBeNull()
+  })
 
   test('builds the factory call when the saved creation data derives the account address', async () => {
     const provider = {

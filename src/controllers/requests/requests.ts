@@ -16,8 +16,14 @@ import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
+import { SAFE_NETWORKS } from '../../consts/safe'
 import { MAX_DAPP_CALLS_PER_REQUEST } from '../../consts/safeguards/dappRequestSpam'
-import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
+import {
+  Account,
+  AccountOnchainState,
+  IAccountsController,
+  SafeAccountCreation
+} from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
@@ -86,7 +92,7 @@ import {
   messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
-import { getSafeDeploymentCall } from '../../libs/safe/safe'
+import { findDeployData, getSafeDeploymentCall } from '../../libs/safe/safe'
 import {
   AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
   isCallToSelfOrAmbireOp
@@ -2427,6 +2433,31 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     ]
   }
 
+  #getPossibleSafeDeploymentSourceNetworks(accountAddr: Account['addr']): Network[] {
+    return this.#networks.networks.filter(
+      ({ chainId }) =>
+        SAFE_NETWORKS.includes(Number(chainId)) &&
+        !!this.#providers.providers[chainId.toString()] &&
+        !!this.#accounts.accountStates[accountAddr]?.[chainId.toString()]?.isDeployed
+    )
+  }
+
+  async #recoverSafeCreation(
+    account: Account,
+    sourceNetworks: Network[]
+  ): Promise<SafeAccountCreation | null> {
+    for (const network of sourceNetworks) {
+      const provider = this.#providers.providers[network.chainId.toString()]!
+      const safeCreation = await findDeployData(account.addr, network.chainId, provider)
+      if (!safeCreation) continue
+
+      await this.#accounts.updateSafeCreation(account.addr, safeCreation)
+      return safeCreation
+    }
+
+    return null
+  }
+
   async #createOrUpdateCallsUserRequests(
     {
       calls,
@@ -2588,7 +2619,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         ? [safeDeploymentRequest, existingUserRequest]
         : [existingUserRequest]
     } else {
-      const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
+      let account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountStateBefore =
         this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
@@ -2612,7 +2643,41 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const provider = this.#providers.providers[network.chainId.toString()]!
       let safeDeploymentCall: Call | null = null
 
-      if (account.safeCreation && !accountState.isDeployed && !meta.isSafeDeploy) {
+      const isSafeAccount = !!account.safeCreation
+
+      // safe account, not deployed and this isn't the deploy txn
+      if (isSafeAccount && !accountState.isDeployed && !meta.isSafeDeploy) {
+        // if a property needed for the deploy is missing, we search for it
+        if (
+          !account.safeCreation ||
+          account.safeCreation.factoryAddr === '0x' ||
+          account.safeCreation.singleton === '0x' ||
+          account.safeCreation.setupData === '0x' ||
+          account.safeCreation.saltNonce === '0x'
+        ) {
+          const safeCreation = await this.#recoverSafeCreation(
+            account,
+            this.#getPossibleSafeDeploymentSourceNetworks(account.addr)
+          )
+          if (safeCreation) account = { ...account, safeCreation }
+        }
+
+        if (!account.safeCreation) {
+          this.emitError({
+            level: 'expected',
+            message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE,
+            error: new Error(`Safe deployment data could not be recovered for ${account.addr}`)
+          })
+          dappPromises.forEach((promise) => {
+            promise.reject(
+              ethErrors.rpc.transactionRejected({
+                message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+              })
+            )
+          })
+          return []
+        }
+
         safeDeploymentCall = await getSafeDeploymentCall(account, provider)
 
         if (!safeDeploymentCall) {

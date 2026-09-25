@@ -1245,6 +1245,110 @@ describe('RequestsController ', () => {
     expect(reject).toHaveBeenCalledTimes(1)
   })
 
+  test('recovers and stores missing Safe deployment data before building the deployment', async () => {
+    const { accountsCtrl, controller, storageCtrl } = await prepareTest(true, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
+    account.safeCreation = undefined
+
+    Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
+      state.isDeployed = false
+    })
+    accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
+    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+
+    const recoveredSafeCreation = {
+      factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
+      singleton: '0x2345678901234567890123456789012345678901' as Hex,
+      saltNonce: `0x${'0'.repeat(63)}1` as Hex,
+      setupData: '0x1234' as Hex,
+      version: '1.4.1'
+    }
+    const findDeployDataSpy = jest
+      .spyOn(safeLib, 'findDeployData')
+      .mockResolvedValue(recoveredSafeCreation)
+    jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
+      to: recoveredSafeCreation.factoryAddr,
+      value: 0n,
+      data: '0x1234'
+    })
+
+    await controller.build({
+      type: 'dappRequest',
+      params: {
+        request: {
+          method: 'eth_sendTransaction',
+          params: [{ from: accountAddr, to: ZeroAddress, value: '0x0', data: '0x' }],
+          session: MOCK_SESSION
+        },
+        dappPromise: {
+          id: 'recover-safe-deploy-test',
+          resolve: jest.fn(),
+          reject: jest.fn(),
+          session: MOCK_SESSION
+        }
+      }
+    })
+
+    expect(findDeployDataSpy).toHaveBeenCalledWith(accountAddr, 10n, expect.anything())
+    expect(accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)?.safeCreation).toEqual(
+      recoveredSafeCreation
+    )
+    const storedAccounts = await storageCtrl.get('accounts', [])
+    expect(storedAccounts.find(({ addr }) => addr === accountAddr)?.safeCreation).toEqual(
+      recoveredSafeCreation
+    )
+    expect(controller.userRequests).toHaveLength(2)
+
+    await controller.rejectUserRequests(
+      'Test cleanup',
+      controller.userRequests.map(({ id }) => id)
+    )
+  })
+
+  test('rejects a Safe deployment when missing creation data cannot be recovered', async () => {
+    const { accountsCtrl, controller } = await prepareTest(true, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
+    account.safeCreation = undefined
+
+    Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
+      state.isDeployed = false
+    })
+    accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
+    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(safeLib, 'findDeployData').mockResolvedValue(null)
+    const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+    const reject = jest.fn()
+
+    await controller.build({
+      type: 'dappRequest',
+      params: {
+        request: {
+          method: 'eth_sendTransaction',
+          params: [{ from: accountAddr, to: ZeroAddress, value: '0x0', data: '0x' }],
+          session: MOCK_SESSION
+        },
+        dappPromise: {
+          id: 'failed-safe-deploy-recovery-test',
+          resolve: jest.fn(),
+          reject,
+          session: MOCK_SESSION
+        }
+      }
+    })
+
+    expect(controller.userRequests).toEqual([])
+    expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+    expect(reject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: expect.stringContaining("can't be deployed using its saved setup")
+      })
+    )
+  })
+
   test('rejects the app transaction without creating requests when the Safe cannot be deployed', async () => {
     const { accountsCtrl, controller } = await prepareTest(true, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
