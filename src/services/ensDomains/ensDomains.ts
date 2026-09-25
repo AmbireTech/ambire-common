@@ -1,4 +1,4 @@
-import { isAddress, labelhash, namehash } from 'viem'
+import { Address, isAddress, labelhash, namehash } from 'viem'
 import { getEnsAddress, getEnsAvatar as viemGetEnsAvatar, getEnsName, normalize } from 'viem/ens'
 
 import { RPCProvider } from '@/interfaces/provider'
@@ -68,7 +68,7 @@ async function resolveENSDomain({
     /** Whether to resolve the avatar record. Defaults to true. */
     resolveAvatar?: boolean
     /** Universal resolver to query. Defaults to the ENS one. */
-    universalResolverAddress?: string
+    universalResolverAddress?: Address
     /**
      * Registrar/NameWrapper config for reading the registration expiry. Omit to use the ENS
      * defaults; pass `null` for services without an ENS registrar (they have no expiry to read).
@@ -122,7 +122,7 @@ async function reverseLookupEns(
   addresses: string[],
   provider: RPCProvider,
   options?: {
-    universalResolverAddress?: string
+    universalResolverAddress?: Address
   }
 ): Promise<ReverseLookupResult> {
   if (!addresses.length) return {}
@@ -205,7 +205,7 @@ async function getEnsAvatar(
   name: string,
   provider: RPCProvider,
   options?: {
-    universalResolverAddress?: string
+    universalResolverAddress?: Address
   }
 ) {
   const normalizedName = normalize(name)
