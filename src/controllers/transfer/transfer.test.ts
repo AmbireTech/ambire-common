@@ -131,6 +131,16 @@ describe('Transfer Controller', () => {
     await transferController.update({ amount: '0' })
     expect(Number(transferController.amountInFiat)).toBe(0)
   })
+  test('should not carry an amount error over to a form without a selected token', async () => {
+    const { transferController, tokens } = await prepareTest()
+
+    const ethOnEthereum = tokens.find((t) => t.address === ZeroAddress && t.chainId === 1n)!
+    await transferController.update({ selectedToken: ethOnEthereum, amount: '1000000' })
+    expect(transferController.validationFormMsgs.amount.message).toBe('Insufficient amount.')
+
+    transferController.selectedToken = null
+    expect(transferController.validationFormMsgs.amount.message).toBe('')
+  })
   test('should keep fiat mode when setting the max amount', async () => {
     const { transferController, tokens } = await prepareTest()
 

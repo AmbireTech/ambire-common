@@ -563,7 +563,9 @@ export class TransferController extends EventEmitter implements ITransferControl
   get validationFormMsgs() {
     if (!this.isInitialized) return DEFAULT_VALIDATION_FORM_MSGS
 
-    const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
+    // A copy, so a failed validation doesn't leak into the shared defaults (e.g. an "Insufficient
+    // amount." error showing up later for an account with no tokens to select)
+    const validationFormMsgsNew = { ...DEFAULT_VALIDATION_FORM_MSGS }
 
     if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
       // if the recipientAcc is an account in the extension
