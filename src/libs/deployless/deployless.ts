@@ -5,6 +5,7 @@ import {
   decodeFunctionResult,
   encodeAbiParameters,
   encodeFunctionData,
+  isHex,
   numberToHex
 } from 'viem'
 
@@ -44,6 +45,10 @@ function toRpcQuantity(value: string, field: string): string {
     throw new Error(`${field} is not a valid amount: ${value}`, { cause: error })
   }
 }
+
+/** Error message for when the network answers a call with no data or with data that isn't hex. */
+export const INVALID_CALL_RESPONSE_ERROR_MESSAGE =
+  'The network returned an empty or invalid response'
 
 export enum DeploylessMode {
   Detect,
@@ -333,10 +338,18 @@ export class Deployless {
       this.providerUrl
     )
 
+    // `send` resolves with the raw RPC result, which some RPCs return as null
+    if (typeof returnDataRaw !== 'string' || !isHex(returnDataRaw)) {
+      throw new ProviderError({
+        originalError: new Error(INVALID_CALL_RESPONSE_ERROR_MESSAGE),
+        providerUrl: this.providerUrl
+      })
+    }
+
     return decodeFunctionResult({
       abi: this.abi,
       functionName: methodName,
-      data: returnDataRaw as `0x${string}`
+      data: returnDataRaw
     })
   }
 }

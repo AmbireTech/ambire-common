@@ -20,7 +20,8 @@ import {
   extractEntropyFromSeed,
   getBytesForSecret,
   migrateStoredPayloadsToGCM,
-  SCRYPT_PARAMS
+  SCRYPT_PARAMS,
+  WrongSecretError
 } from '@/libs/keystore/keystore'
 
 import EmittableError from '../../classes/EmittableError'
@@ -48,6 +49,7 @@ import {
   MainKeyEncryptedWithSecret,
   MainKeyOld,
   ReadyToAddKeys,
+  SigningAuthResult,
   StoredKey,
   StoredKeystoreSeed
 } from '../../interfaces/keystore'
@@ -68,6 +70,7 @@ const KEYSTORE_UNEXPECTED_ERROR_MESSAGE =
 
 export const STATUS_WRAPPED_METHODS = {
   unlockWithSecret: 'INITIAL',
+  verifySecret: 'INITIAL',
   addSecret: 'INITIAL',
   addSeed: 'INITIAL',
   updateSeed: 'INITIAL',
@@ -131,6 +134,21 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   #isReadyToStoreKeys: boolean = false
 
   errorMessage: string = ''
+
+  /**
+   * The outcome of the last `verifySecret` call. Unlike a status, it survives until the UI
+   * resets it, so a re-authentication prompt can read the result no matter when it re-renders.
+   */
+  signingAuthResult: SigningAuthResult | null = null
+
+  /**
+   * Stamped on every `signingAuthResult` and read nowhere else. It only makes two identical
+   * outcomes differ, so the UI's reconciled state still re-renders on the second one - keep it.
+   */
+  #signingAuthResultId = 0
+
+  /** Set while `verifySecret` runs, so the shared unlock `errorMessage` is left alone. */
+  #isVerifyingSecret = false
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
 
@@ -413,21 +431,25 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   ): Promise<MainKey> {
     try {
       return await decrypt(secretKey, aesEncrypted)
-    } catch (error: any) {
-      // Either wrong password or corrupted/tampered ciphertext
-      if (error?.name === 'OperationError') {
-        this.errorMessage = 'Incorrect password. Please try again.'
-        this.emitUpdate()
+    } catch (error) {
+      // The unwrap marks the one failure the user can act on - the key not matching the ciphertext
+      // - so a broken platform is no longer reported to them as a wrong password
+      if (error instanceof WrongSecretError) {
+        // A verification carries its outcome in `signingAuthResult`, so it must not write the
+        // message the unlock screen reads
+        if (!this.#isVerifyingSecret) {
+          this.errorMessage = 'Incorrect password. Please try again.'
+          this.emitUpdate()
+        }
 
         throw new EmittableError({
           level: 'silent',
-          message: this.errorMessage,
-          error: new Error(this.errorMessage),
+          message: 'Incorrect password. Please try again.',
+          error: error.thrown instanceof Error ? error.thrown : error,
           sendCrashReport: false
         })
       }
 
-      // Anything else is unexpected so we should report to Sentry
       throw new EmittableError({
         level: 'major',
         message:
@@ -538,6 +560,47 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   async unlockWithSecret(secretId: string, secret: string) {
     await this.withStatus('unlockWithSecret', () => this.#unlockWithSecret(secretId, secret), true)
+  }
+
+  /**
+   * Re-checks a secret on an already unlocked keystore, so the user can prove their identity before
+   * signing. Goes through the unlock path, which is a no-op for the lock state when unlocked.
+   */
+  async verifySecret(secretId: string, secret: string) {
+    await this.withStatus(
+      'verifySecret',
+      async () => {
+        this.signingAuthResult = null
+        this.#signingAuthResultId += 1
+        const id = this.#signingAuthResultId
+        this.#isVerifyingSecret = true
+
+        try {
+          await this.#unlockWithSecret(secretId, secret)
+          this.signingAuthResult = { status: 'success', error: null, id }
+        } catch (e: any) {
+          this.signingAuthResult = {
+            status: 'failed',
+            error: e?.message || 'Could not confirm your identity. Please try again.',
+            id
+          }
+          // Re-thrown so a wrong secret keeps being reported the way unlocking reports it
+          throw e
+        } finally {
+          this.#isVerifyingSecret = false
+        }
+      },
+      true
+    )
+  }
+
+  resetSigningAuthResult() {
+    if (!this.signingAuthResult) return
+
+    // Only the verification's own outcome is cleared - the shared `errorMessage` belongs to the
+    // unlock screen, and wiping it here cleared an error the user had not read yet
+    this.signingAuthResult = null
+    this.emitUpdate()
   }
 
   async #addSecret(
