@@ -115,7 +115,8 @@ describe('getSafeDeploymentCall', () => {
 
   test('builds the factory call when the saved creation data derives the account address', async () => {
     const provider = {
-      call: jest.fn(async () => encodedProxyCreationCode)
+      call: jest.fn(async () => encodedProxyCreationCode),
+      getCode: jest.fn(async () => '0x6000')
     } as unknown as RPCProvider
 
     const call = await getSafeDeploymentCall(account, provider)
@@ -127,6 +128,27 @@ describe('getSafeDeploymentCall', () => {
         'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
       ]).encodeFunctionData('createProxyWithNonce', [singleton, setupData, saltNonce])
     })
+  })
+
+  test('returns null when the singleton is not deployed on the network', async () => {
+    const provider = {
+      call: jest.fn(async () => encodedProxyCreationCode),
+      getCode: jest.fn(async () => '0x')
+    } as unknown as RPCProvider
+
+    await expect(getSafeDeploymentCall(account, provider)).resolves.toBeNull()
+    expect(provider.getCode).toHaveBeenCalledWith(singleton)
+  })
+
+  test('returns null when the singleton deployment cannot be checked', async () => {
+    const provider = {
+      call: jest.fn(async () => encodedProxyCreationCode),
+      getCode: jest.fn(async () => {
+        throw new Error('singleton unavailable')
+      })
+    } as unknown as RPCProvider
+
+    await expect(getSafeDeploymentCall(account, provider)).resolves.toBeNull()
   })
 
   test('rejects saved creation data that derives a different account address', async () => {

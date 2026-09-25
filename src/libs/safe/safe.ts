@@ -186,7 +186,8 @@ async function getCalculatedSafeAddressFromCreation(
 }
 
 /**
- * Builds a Safe deployment call only when the stored creation data derives the imported address.
+ * Builds a Safe deployment call only when the stored creation data derives the imported address
+ * and the configured singleton is deployed on the target network.
  */
 export async function getSafeDeploymentCall(
   account: Account,
@@ -202,6 +203,9 @@ export async function getSafeDeploymentCall(
     if (!calculatedAddress || calculatedAddress.toLowerCase() !== account.addr.toLowerCase()) {
       return null
     }
+
+    const singletonCode = await provider.getCode(account.safeCreation.singleton)
+    if (singletonCode === '0x') return null
 
     const factory = new Interface([
       'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
