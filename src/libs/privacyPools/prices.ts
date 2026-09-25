@@ -1,6 +1,9 @@
+import { formatUnits } from 'ethers'
+
 import { getPrivacyPoolsChainConfig } from '../../consts/privacyPools'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
+import { PrivacyPoolsTokenBalance } from '../../interfaces/privacyPools'
 
 const PRICES_API_URL = 'https://cena.ambire.com/api/v3/simple'
 
@@ -12,6 +15,27 @@ const NO_PRICES: PricesResponse = {}
 /** How a price is keyed: `${chainId}:${tokenAddress}`, the address lowercase, native as zero. */
 export const getPrivacyPoolsPriceKey = (chainId: string | bigint, tokenAddress: string) =>
   `${chainId.toString()}:${tokenAddress.toLowerCase()}`
+
+/**
+ * The USD value of a Privacy Pools account per chain: the approved part of each balance - what can
+ * be sent on, and the figure its dashboard shows. A token with no known price adds nothing, rather
+ * than making the whole chain's value unknown.
+ */
+export const getPrivacyPoolsValuePerChain = (
+  balances: { [chainId: string]: PrivacyPoolsTokenBalance[] },
+  prices: { [priceKey: string]: number }
+): { [chainId: string]: number } =>
+  Object.fromEntries(
+    Object.entries(balances).map(([chainId, chainBalances]) => [
+      chainId,
+      chainBalances.reduce((total, balance) => {
+        const price = prices[getPrivacyPoolsPriceKey(chainId, balance.tokenAddress)]
+        if (price === undefined) return total
+
+        return total + Number(formatUnits(balance.approvedAmount, balance.decimals)) * price
+      }, 0)
+    ])
+  )
 
 /**
  * USD prices of every asset the pools accept on the given networks, from the same price service
