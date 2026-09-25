@@ -3,7 +3,7 @@ import { Price } from '../../interfaces/assets'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
-import { buildSafeTxGasRefund } from '../../libs/humanizer/erc7730/humanize'
+import { buildSafeTxGasRefund } from '../../libs/humanizer/erc7730/safeTxGasRefund'
 import { shouldDisplaySafeDelegateCallWarning } from '../../libs/humanizer/modules/Safe'
 import { TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
@@ -98,9 +98,10 @@ const getUnknownTokenWarning = (pending: AccountState, chainId: bigint): Warning
 
 const getFeeTokenPriceUnavailableWarning = (
   hasSpeed: boolean,
-  feeTokenHasPrice: boolean
+  feeTokenHasPrice: boolean,
+  areTokenPricesEnabled: boolean
 ): Warning | null => {
-  if (!hasSpeed || feeTokenHasPrice) return null
+  if (!areTokenPricesEnabled || !hasSpeed || feeTokenHasPrice) return null
 
   return WARNINGS.feeTokenPriceUnavailable
 }

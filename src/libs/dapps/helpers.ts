@@ -8,6 +8,7 @@ import {
   RawTrendingToken,
   TrendingToken
 } from '../../interfaces/dapp'
+import { UnauthenticatedDapp } from '../../interfaces/signingAuth'
 
 /**
  * Strips the trailing dot(s) a hostname may carry when written in fully-qualified form
@@ -174,6 +175,24 @@ function unifyDefiLlamaDappUrl(url: string) {
   } catch {
     return url // If it's not a valid URL, return as-is
   }
+}
+
+/**
+ * Which of these stored dapps the user has not yet confirmed their password/biometrics to sign
+ * for, deduplicated and in the order they came in. A dapp the catalog does not know (`undefined`)
+ * is skipped: there is nowhere to remember the confirmation, so asking would repeat on every request.
+ */
+export function getUnauthenticatedDapps(dapps: (Dapp | undefined)[]): UnauthenticatedDapp[] {
+  const unauthenticatedDapps: UnauthenticatedDapp[] = []
+
+  dapps.forEach((dapp) => {
+    if (!dapp || dapp.signingAuthenticated) return
+    if (unauthenticatedDapps.some(({ id }) => id === dapp.id)) return
+
+    unauthenticatedDapps.push({ id: dapp.id, name: dapp.name })
+  })
+
+  return unauthenticatedDapps
 }
 
 /**

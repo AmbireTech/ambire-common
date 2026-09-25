@@ -120,17 +120,48 @@ export function getSafeBroadcastTxn(
   }
 }
 
-export function decodeMultiSend(transactionsHex: string) {
+/**
+ * A single Gnosis Safe MultiSend entry, decoded from its packed byte encoding.
+ */
+export interface SuccessfullyDecoded {
+  success: true
+  operation: number
+  to: string
+  value: bigint
+  data: string
+}
+
+/**
+ * A MultiSend entry that could not be decoded because the remaining bytes don't
+ * hold a full, well-formed entry (e.g. truncated or malformed calldata).
+ */
+export interface FailedDecoded {
+  success: false
+  /** Human-readable reason the remaining bytes couldn't be read as a MultiSend entry */
+  reason: string
+}
+
+// operation (1 byte) + to (20 bytes) + value (32 bytes) + dataLength (32 bytes)
+const MULTI_SEND_HEADER_SIZE = 1 + 20 + 32 + 32
+
+export function decodeMultiSend(transactionsHex: string): (SuccessfullyDecoded | FailedDecoded)[] {
   const bytes = getBytes(transactionsHex)
   let i = 0
-  const results = []
+  const results: (SuccessfullyDecoded | FailedDecoded)[] = []
 
   while (i < bytes.length) {
-    const operation = bytes[i]
-    // `noUncheckedIndexedAccess` types `bytes[i]` as `number | undefined`, but the `while`
-    // guard above only proves the array isn't fully consumed yet, not that a full encoded
-    // transaction remains. Bail out instead of pushing a malformed entry to the caller.
-    if (operation === undefined) break
+    const remaining = bytes.length - i
+
+    // Not enough bytes left for a full header, so the remainder can't be a real entry.
+    if (remaining < MULTI_SEND_HEADER_SIZE) {
+      results.push({
+        success: false,
+        reason: `${remaining} byte(s) left, which is not enough for a transaction header (needs ${MULTI_SEND_HEADER_SIZE})`
+      })
+      break
+    }
+
+    const operation = bytes[i] as number
     i += 1
 
     const to = hexlify(bytes.slice(i, i + 20))
@@ -142,10 +173,20 @@ export function decodeMultiSend(transactionsHex: string) {
     const dataLength = Number(BigInt(hexlify(bytes.slice(i, i + 32))))
     i += 32
 
+    // The declared data length doesn't fit in what's left, so the entry is truncated.
+    if (dataLength > bytes.length - i) {
+      results.push({
+        success: false,
+        reason: `declared data length ${dataLength} exceeds the ${bytes.length - i} byte(s) left`
+      })
+      break
+    }
+
     const data = hexlify(bytes.slice(i, i + dataLength))
     i += dataLength
 
     results.push({
+      success: true,
       operation,
       to,
       value,

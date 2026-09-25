@@ -7,18 +7,31 @@ const scheduledActions: {
   [chainId: string]:
     | {
         promise: Promise<any>
-        data: { callback: Function; address: string }[]
+        data: {
+          callback: (arg: { tokenInfo?: TokenResult; nftInfo?: { name: string } }) => void
+          address: string
+        }[]
       }
     | undefined
 } = {}
 
-export async function executeBatchedFetch(network: Network): Promise<void> {
+export async function executeBatchedFetch(
+  network: Network,
+  isTokenPricesEnabled: () => boolean
+): Promise<void> {
   const rpcUrl = network.selectedRpcUrl || network.rpcUrls[0]!
   const provider = getRpcProvider([rpcUrl], network.chainId)
   const allAddresses =
     Array.from(new Set(scheduledActions[network.chainId.toString()]?.data.map((i) => i.address))) ||
     []
-  const portfolio = new Portfolio(fetch as any, provider, network)
+  const portfolio = new Portfolio(
+    fetch as any,
+    provider,
+    network,
+    undefined,
+    undefined,
+    isTokenPricesEnabled
+  )
   const options: Partial<GetOptions> = {
     disableAutoDiscovery: true,
     additionalErc20Hints: allAddresses,
@@ -49,13 +62,14 @@ export async function executeBatchedFetch(network: Network): Promise<void> {
 export async function resolveAssetInfo(
   address: string,
   network: Network,
-  callback: (arg: { tokenInfo?: TokenResult; nftInfo?: { name: string } }) => void
+  callback: (arg: { tokenInfo?: TokenResult; nftInfo?: { name: string } }) => void,
+  isTokenPricesEnabled: () => boolean
 ): Promise<void> {
   if (!scheduledActions[network.chainId.toString()]?.data?.length) {
     scheduledActions[network.chainId.toString()] = {
       promise: new Promise((resolve, reject) => {
         setTimeout(async () => {
-          await executeBatchedFetch(network).catch(reject)
+          await executeBatchedFetch(network, isTokenPricesEnabled).catch(reject)
           scheduledActions[network.chainId.toString()] = undefined
           resolve(0)
         }, 500)

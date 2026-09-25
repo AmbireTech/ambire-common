@@ -876,7 +876,7 @@ export default [
     chainId: 42161n,
     address: '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf',
     symbol: 'cbbtc',
-    decimals: 18,
+    decimals: 8,
     icon: 'https://assets.coingecko.com/coins/images/40143/standard/cbbtc.webp?1726136727'
   },
   {
@@ -906,30 +906,6 @@ export default [
     symbol: 'zchf',
     decimals: 18,
     icon: 'https://assets.coingecko.com/coins/images/37150/standard/Coin_Logo_Frankencoin_1024px.png?1728679791'
-  },
-  {
-    address: '0x382bB369d343125BfB2117af9c149795C6C65C50',
-    symbol: 'usdc',
-    chainId: 66n,
-    disableGasTankDeposit: true,
-    decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
-  },
-  {
-    address: '0xc946DAf81b08146B1C7A8Da2A851Ddf2B3EAaf85',
-    symbol: 'usdt',
-    chainId: 66n,
-    disableGasTankDeposit: true,
-    decimals: 6,
-    icon: 'https://assets.coingecko.com/coins/images/325/small/Tether-logo.png'
-  },
-  {
-    address: '0xEF71CA2EE68F45B9Ad6F72fbdb33d707b872315C',
-    symbol: 'ethk',
-    chainId: 66n,
-    disableGasTankDeposit: true,
-    decimals: 18,
-    icon: 'https://assets.coingecko.com/coins/images/18537/small/0xef71ca2ee68f45b9ad6f72fbdb33d707b872315c.png'
   },
   {
     address: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA',
@@ -998,7 +974,7 @@ export default [
     chainId: 8453n,
     address: '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf',
     symbol: 'cbbtc',
-    decimals: 18,
+    decimals: 8,
     icon: 'https://assets.coingecko.com/coins/images/40143/standard/cbbtc.webp?1726136727'
   },
   {
@@ -1042,15 +1018,6 @@ export default [
     symbol: 'wsteth',
     decimals: 18,
     icon: 'https://coin-images.coingecko.com/coins/images/18834/small/wstETH.png'
-  },
-  {
-    // USDC
-    address: '0x06eFdBFf2a14a7c8E15944D1F4A48F9F95F663A4',
-    chainId: 130n,
-    disableGasTankDeposit: true,
-    symbol: 'usdc',
-    decimals: 6,
-    icon: 'https://assets.coingecko.com/coins/images/6319/small/USD_Coin_icon.png'
   },
   {
     // usd₮0
@@ -1112,7 +1079,7 @@ export default [
     chainId: 57073n,
     disableGasTankDeposit: true,
     symbol: 'kbtc',
-    decimals: 18,
+    decimals: 8,
     icon: 'https://assets.coingecko.com/coins/images/50879/standard/kBTC.png?1730321084'
   },
   // ctUSD
