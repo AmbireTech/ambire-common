@@ -166,7 +166,8 @@ describe('WalletTokenController pending withdrawals', () => {
       status: 'loaded',
       latestWithdrawal: withdrawals[2],
       totalShares: 40n,
-      txnIdLookupError: null
+      txnIdLookupError: null,
+      isTxnIdLookupLoading: false
     })
     expect(storage.store.walletStakingLeaveLogs).toEqual({
       [ACCOUNT_KEY]: [getLeaveLog(withdrawals[0]!), getLeaveLog(withdrawals[2]!)]
@@ -331,7 +332,8 @@ describe('WalletTokenController pending withdrawals', () => {
         status: 'loaded',
         latestWithdrawal: withdrawals[0],
         totalShares: 10n,
-        txnIdLookupError: null
+        txnIdLookupError: null,
+        isTxnIdLookupLoading: false
       })
       expect(storage.store.walletStakingLeaveLogs).toEqual({
         [ACCOUNT_KEY]: [getLeaveLog(withdrawals[0]!)]
@@ -368,6 +370,28 @@ describe('WalletTokenController pending withdrawals', () => {
         txnIdLookupError: 'not-found'
       })
       expect(storage.store.walletStakingLeaveLogs).toEqual({})
+    })
+
+    test('keeps the status while the entered transaction is checked, so no loader replaces the screen', async () => {
+      const provider = makeProvider({ receipts: { [TXN_ID]: { logs: [] } } })
+      const { controller } = getWithdrawalsController({ isLookupEnabled: false, provider })
+      await controller.loadPendingWithdrawals(ACCOUNT_ADDR)
+      const statuses: string[] = []
+      const lookupLoadingStates: boolean[] = []
+      controller.onUpdate(() => {
+        statuses.push(controller.pendingWithdrawals[ACCOUNT_ADDR]!.status)
+        lookupLoadingStates.push(controller.pendingWithdrawals[ACCOUNT_ADDR]!.isTxnIdLookupLoading)
+      })
+
+      await controller.findPendingWithdrawalInTxn(ACCOUNT_ADDR, TXN_ID)
+
+      expect(statuses.every((status) => status === 'loaded')).toBe(true)
+      expect(lookupLoadingStates[0]).toBe(true)
+      expect(controller.pendingWithdrawals[ACCOUNT_ADDR]).toMatchObject({
+        status: 'loaded',
+        isTxnIdLookupLoading: false,
+        txnIdLookupError: 'not-found'
+      })
     })
 
     test('reports a transaction that could not be read', async () => {

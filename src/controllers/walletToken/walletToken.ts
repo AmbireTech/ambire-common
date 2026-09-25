@@ -42,6 +42,11 @@ export interface AccountPendingWalletWithdrawals {
   /** The shares of all active withdrawals, which the xWALLET balance must back. */
   totalShares: bigint
   txnIdLookupError: WalletStakingTxnIdLookupError | null
+  /**
+   * True while a transaction ID that the user entered is checked. Kept apart from `status`, so
+   * that the check doesn't replace the screen with a loader.
+   */
+  isTxnIdLookupLoading: boolean
 }
 
 type LeaveLogsByAccount = { [accountAddr: string]: WalletStakingRelayerLog[] }
@@ -136,7 +141,10 @@ export class WalletTokenController extends EventEmitter {
       return
     }
 
-    this.#setAccountPendingWithdrawals(accountAddr, { status: 'loading', txnIdLookupError: null })
+    this.#setAccountPendingWithdrawals(accountAddr, {
+      isTxnIdLookupLoading: true,
+      txnIdLookupError: null
+    })
 
     let txnLeaveLogs: WalletStakingRelayerLog[] = []
     try {
@@ -155,7 +163,7 @@ export class WalletTokenController extends EventEmitter {
         error: error instanceof Error ? error : new Error('Unable to check the transaction.')
       })
       this.#setAccountPendingWithdrawals(accountAddr, {
-        status: this.pendingWithdrawals[accountAddr]?.latestWithdrawal ? 'loaded' : 'error',
+        isTxnIdLookupLoading: false,
         txnIdLookupError: 'failed'
       })
       return
@@ -163,7 +171,7 @@ export class WalletTokenController extends EventEmitter {
 
     if (!txnLeaveLogs.length) {
       this.#setAccountPendingWithdrawals(accountAddr, {
-        status: 'loaded',
+        isTxnIdLookupLoading: false,
         txnIdLookupError: 'not-found'
       })
       return
@@ -181,6 +189,8 @@ export class WalletTokenController extends EventEmitter {
       const activeWithdrawalIds = new Set(activeWithdrawals.map(getPendingWalletWithdrawalId))
       return txnWithdrawalIds.some((id) => activeWithdrawalIds.has(id)) ? null : 'not-found'
     })
+    // Also cleared when a newer load replaced this one, which then leaves the state as it is
+    this.#setAccountPendingWithdrawals(accountAddr, { isTxnIdLookupLoading: false })
   }
 
   /**
@@ -199,10 +209,11 @@ export class WalletTokenController extends EventEmitter {
     this.#loadRequestIds.set(accountKey, requestId)
     const isStale = () => this.#loadRequestIds.get(accountKey) !== requestId
 
-    this.#setAccountPendingWithdrawals(accountAddr, {
-      status: 'loading',
-      ...(!getTxnIdLookupError && { txnIdLookupError: null })
-    })
+    // A lookup of a transaction that the user entered keeps the current status, so that the
+    // screen isn't replaced with a loader while the entered transaction is checked
+    if (!getTxnIdLookupError) {
+      this.#setAccountPendingWithdrawals(accountAddr, { status: 'loading', txnIdLookupError: null })
+    }
 
     try {
       await this.initialLoadPromise
@@ -334,6 +345,7 @@ export class WalletTokenController extends EventEmitter {
       latestWithdrawal: null,
       totalShares: 0n,
       txnIdLookupError: null,
+      isTxnIdLookupLoading: false,
       ...this.pendingWithdrawals[accountAddr],
       ...update
     }
