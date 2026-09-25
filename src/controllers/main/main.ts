@@ -10,6 +10,7 @@ import {
 import { FeatureFlags } from '@/consts/featureFlags'
 import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
 import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
+import { ETHEREUM_CHAIN_ID } from '@/consts/networks'
 import { AccountPickerController } from '@/controllers/accountPicker/accountPicker'
 import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
@@ -113,6 +114,10 @@ import { getAccountKeysCount } from '@/libs/keys/keys'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
+import {
+  findPendingWalletWithdrawalsInTxns,
+  getWalletStakingLeaveTxnIds
+} from '@/libs/walletStaking/localWithdrawals'
 import { CowSwapAPI } from '@/services/cowswap/api'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
@@ -1786,6 +1791,50 @@ export class MainController extends EventEmitter implements IMainController {
         accountAddressesToRemove: []
       })
     })
+  }
+
+  /**
+   * Finds the account's pending $WALLET withdrawals (unstakes) without the relayer, so that the
+   * account address stays private. It reads the receipts of the unstake transactions that this
+   * device knows about and of the `extraTxnIds` that the user entered, and replies to the UI
+   * request with the withdrawals found in each transaction.
+   */
+  async findPendingWalletWithdrawalsInLocalTxns(
+    { accountAddr, extraTxnIds = [] }: { accountAddr: string; extraTxnIds?: string[] },
+    requestId?: string
+  ) {
+    try {
+      const provider = this.providers.providers[ETHEREUM_CHAIN_ID.toString()]
+      if (!provider) throw new Error('main: the Ethereum provider is not available')
+
+      const accountOps = await this.activity.getInternalAccountOps(accountAddr, ETHEREUM_CHAIN_ID)
+      const txnIds = [...getWalletStakingLeaveTxnIds(accountOps), ...extraTxnIds]
+      const { results, failedTxnIds, errors } = await findPendingWalletWithdrawalsInTxns(
+        txnIds,
+        accountAddr,
+        provider
+      )
+      errors.forEach((error) => {
+        this.emitError({ error, message: error.message, level: 'silent' })
+      })
+
+      if (requestId) {
+        this.ui.message.sendUiMessage({ requestId, ok: true, res: { results, failedTxnIds } })
+      }
+    } catch (error: any) {
+      this.emitError({
+        error: error instanceof Error ? error : new Error(String(error)),
+        message: 'We couldn’t check your unstake transactions. Please try again.',
+        level: 'silent'
+      })
+      if (requestId) {
+        this.ui.message.sendUiMessage({
+          requestId,
+          ok: false,
+          error: error?.message || 'findPendingWalletWithdrawalsInLocalTxns failed'
+        })
+      }
+    }
   }
 
   async reloadSelectedAccount(options?: {

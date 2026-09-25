@@ -35,6 +35,14 @@ export interface FeatureFlags {
    * can opt out of it.
    */
   swapAndBridgeTokenInfo: boolean
+  /**
+   * Find the pending $WALLET withdrawals (unstakes) of the account through
+   * Ambire's relayer logs. Requires sending the account address to the relayer,
+   * so the user can opt out of it. When disabled, the withdrawals are found
+   * only from the locally known transactions and from transaction ids that
+   * the user enters.
+   */
+  walletStakingWithdrawalsLookup: boolean
   /** Resolve Namoshi names (.btc, .citrea) on Citrea. */
   namoshiDomains: boolean
   /** Resolve GNS names (.gwei) on Ethereum. */
@@ -58,6 +66,7 @@ export const defaultFeatureFlags: FeatureFlags = {
   eip7702: true,
   keepEnsProfilesUpToDate: false,
   swapAndBridgeTokenInfo: true,
+  walletStakingWithdrawalsLookup: true,
   // @TODO: Introduce a setting and flip to false
   namoshiDomains: true,
   gnsDomains: true
