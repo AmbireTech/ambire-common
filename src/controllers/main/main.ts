@@ -10,7 +10,6 @@ import {
 import { FeatureFlags } from '@/consts/featureFlags'
 import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
 import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
-import { ETHEREUM_CHAIN_ID } from '@/consts/networks'
 import { AccountPickerController } from '@/controllers/accountPicker/accountPicker'
 import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
@@ -50,6 +49,7 @@ import { TransferController } from '@/controllers/transfer/transfer'
 import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
 import { VerificationController } from '@/controllers/verification/verification'
+import { WalletTokenController } from '@/controllers/walletToken/walletToken'
 import { Account, IAccountsController } from '@/interfaces/account'
 import { IAccountPickerController } from '@/interfaces/accountPicker'
 import { IActivityController } from '@/interfaces/activity'
@@ -94,6 +94,7 @@ import { ITransfersScannerController } from '@/interfaces/transferScanner'
 import { isExtensionOverlayView, IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
+import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
 import {
@@ -114,10 +115,6 @@ import { getAccountKeysCount } from '@/libs/keys/keys'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
-import {
-  findPendingWalletWithdrawalsInTxns,
-  getWalletStakingLeaveTxnIds
-} from '@/libs/walletStaking/localWithdrawals'
 import { CowSwapAPI } from '@/services/cowswap/api'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
@@ -207,6 +204,8 @@ export class MainController extends EventEmitter implements IMainController {
   contractNames: IContractNamesController
 
   contractInfo: IContractInfoController
+
+  walletToken: IWalletTokenController
 
   autoLogin: IAutoLoginController
 
@@ -424,6 +423,17 @@ export class MainController extends EventEmitter implements IMainController {
       ui: this.ui
     })
 
+    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
+    this.walletToken = new WalletTokenController({
+      eventEmitterRegistry,
+      storage: this.storage,
+      featureFlags: this.featureFlags,
+      providers: this.providers,
+      callRelayer: this.callRelayer,
+      // The activity controller is created after the portfolio, which uses this controller
+      getInternalAccountOps: (accountAddr, chainId) =>
+        this.activity.getInternalAccountOps(accountAddr, chainId)
+    })
     this.portfolio = new PortfolioController(
       this.storage,
       this.fetch,
@@ -437,7 +447,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.featureFlags,
       eventEmitterRegistry,
       this.verification,
-      platform
+      platform,
+      this.walletToken
     )
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
       this.emailVault = new EmailVaultController(
@@ -496,7 +507,6 @@ export class MainController extends EventEmitter implements IMainController {
       selectedAccount: this.selectedAccount,
       featureFlags: this.featureFlags
     })
-    this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.erc7730 = new Erc7730Controller({
       storage: this.storage,
       callRelayer: this.callRelayer,
@@ -1791,50 +1801,6 @@ export class MainController extends EventEmitter implements IMainController {
         accountAddressesToRemove: []
       })
     })
-  }
-
-  /**
-   * Finds the account's pending $WALLET withdrawals (unstakes) without the relayer, so that the
-   * account address stays private. It reads the receipts of the unstake transactions that this
-   * device knows about and of the `extraTxnIds` that the user entered, and replies to the UI
-   * request with the withdrawals found in each transaction.
-   */
-  async findPendingWalletWithdrawalsInLocalTxns(
-    { accountAddr, extraTxnIds = [] }: { accountAddr: string; extraTxnIds?: string[] },
-    requestId?: string
-  ) {
-    try {
-      const provider = this.providers.providers[ETHEREUM_CHAIN_ID.toString()]
-      if (!provider) throw new Error('main: the Ethereum provider is not available')
-
-      const accountOps = await this.activity.getInternalAccountOps(accountAddr, ETHEREUM_CHAIN_ID)
-      const txnIds = [...getWalletStakingLeaveTxnIds(accountOps), ...extraTxnIds]
-      const { results, failedTxnIds, errors } = await findPendingWalletWithdrawalsInTxns(
-        txnIds,
-        accountAddr,
-        provider
-      )
-      errors.forEach((error) => {
-        this.emitError({ error, message: error.message, level: 'silent' })
-      })
-
-      if (requestId) {
-        this.ui.message.sendUiMessage({ requestId, ok: true, res: { results, failedTxnIds } })
-      }
-    } catch (error: any) {
-      this.emitError({
-        error: error instanceof Error ? error : new Error(String(error)),
-        message: 'We couldn’t check your unstake transactions. Please try again.',
-        level: 'silent'
-      })
-      if (requestId) {
-        this.ui.message.sendUiMessage({
-          requestId,
-          ok: false,
-          error: error?.message || 'findPendingWalletWithdrawalsInLocalTxns failed'
-        })
-      }
-    }
   }
 
   async reloadSelectedAccount(options?: {

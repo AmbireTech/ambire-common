@@ -17,6 +17,12 @@ import {
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
 import {
+  encodeWalletStakingLeaveLog,
+  getLegacyPendingWalletWithdrawalStorageKey,
+  parseCachedPendingWalletWithdrawal,
+  WalletStakingRelayerLog
+} from '../../libs/walletStaking/pendingWithdrawal'
+import {
   getShouldMigrateKeystoreSeedsWithoutHdPath,
   migrateCustomTokens,
   migrateHiddenTokens,
@@ -83,6 +89,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#migrateDappsAddConnectionSources() // As of v6.11.0
       await this.#migrateDomainsCacheToNames() // As of v6.14.0
       await this.#migrateDappsAddMissingIds() // As of v6.21.8
+      await this.#migrateWalletStakingPendingWithdrawalCache() // As of v6.22.0
     } catch (error) {
       console.error('Storage migration error: ', error)
     }
@@ -800,6 +807,47 @@ export class StorageController extends EventEmitter implements IStorageControlle
   // As of version 6.14.0, the domains cache moved from per-service fields
   // (`ens`, `namoshi`, `ensAvatar`, `ensExpiry`) stored directly on the entry to a
   // `{ names, avatar, expiry }` shape. Normalize any legacy entry left in storage.
+  /**
+   * The UI cached the latest pending $WALLET withdrawal of each account under its own key. The
+   * WalletTokenController now keeps the withdrawals as leave logs (the relayer's shape) under
+   * `walletStakingLeaveLogs`, so each cached withdrawal is converted into a leave log and the
+   * legacy key is removed. The controller checks every log against the staking contract before
+   * showing it, so a converted log that is no longer active is dropped on the next load.
+   */
+  async #migrateWalletStakingPendingWithdrawalCache() {
+    const MIGRATION_KEY = 'migrateWalletStakingPendingWithdrawalCache'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const accounts: { addr: string }[] = await this.#storage.get('accounts', [])
+    const leaveLogs: { [accountAddr: string]: WalletStakingRelayerLog[] } = await this.#storage.get(
+      'walletStakingLeaveLogs',
+      {}
+    )
+    let hasMigratedLeaveLogs = false
+
+    for (const { addr } of accounts) {
+      const legacyKey = getLegacyPendingWalletWithdrawalStorageKey(addr)
+      const legacyValue = await this.#storage.get(legacyKey, undefined)
+      if (legacyValue === undefined) continue
+
+      const withdrawal = parseCachedPendingWalletWithdrawal(legacyValue)
+      if (withdrawal) {
+        const accountKey = addr.toLowerCase()
+        leaveLogs[accountKey] = [
+          ...(leaveLogs[accountKey] || []),
+          encodeWalletStakingLeaveLog(addr, withdrawal)
+        ]
+        hasMigratedLeaveLogs = true
+      }
+
+      await this.#storage.remove(legacyKey)
+    }
+
+    if (hasMigratedLeaveLogs) await this.#storage.set('walletStakingLeaveLogs', leaveLogs)
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
+  }
+
   async #migrateDomainsCacheToNames() {
     const MIGRATION_KEY = 'migrateDomainsCacheToNames'
     if (this.#passedMigrations.has(MIGRATION_KEY)) return

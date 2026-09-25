@@ -4,7 +4,10 @@ import { WALLET_STAKING_ADDR } from '../../consts/addresses'
 import { RPCProvider } from '../../interfaces/provider'
 import { withTimeout } from '../../utils/with-timeout'
 import { AccountOpStatus } from '../accountOp/types'
-import { decodePendingWalletWithdrawals, PendingWalletWithdrawal } from './pendingWithdrawal'
+import {
+  getUniqueAccountWalletStakingLeaveLogs,
+  WalletStakingRelayerLog
+} from './pendingWithdrawal'
 
 import type { SubmittedAccountOp } from '../accountOp/submittedAccountOp'
 
@@ -22,10 +25,10 @@ export interface WalletStakingReceiptLog {
   data: string
 }
 
-/** Withdrawals (unstakes) found in one transaction. Amounts are strings, so that they can be sent to the UI. */
-export interface TxnPendingWalletWithdrawals {
+/** The account's WALLET staking leave logs found in one transaction, in the relayer's shape. */
+export interface TxnWalletStakingLeaveLogs {
   txnId: string
-  withdrawals: { shares: string; unlocksAt: string; maxTokens: string }[]
+  logs: WalletStakingRelayerLog[]
 }
 
 /** Checks if the text is a valid transaction id (a 32-byte hex hash). */
@@ -53,30 +56,33 @@ export const getWalletStakingLeaveTxnIds = (accountOps: SubmittedAccountOp[]): s
   return Array.from(new Set(txnIds))
 }
 
-/** Decodes the account's WALLET staking leave events from the logs of a transaction receipt. */
-export const decodePendingWalletWithdrawalsFromReceiptLogs = (
+/**
+ * Returns the account's WALLET staking leave logs from the logs of a transaction receipt, in the
+ * relayer's shape. Only logs that the staking contract emitted are trusted.
+ */
+export const getAccountLeaveLogsFromReceiptLogs = (
   logs: readonly WalletStakingReceiptLog[],
   accountAddr: string
-): PendingWalletWithdrawal[] => {
+): WalletStakingRelayerLog[] => {
   const stakingAddr = WALLET_STAKING_ADDR.toLowerCase()
   const stakingLogs = logs
     .filter(({ address }) => address.toLowerCase() === stakingAddr)
     .map(({ topics, data }) => ({ topics: [...topics], data }))
 
-  return decodePendingWalletWithdrawals(stakingLogs, accountAddr)
+  return getUniqueAccountWalletStakingLeaveLogs(stakingLogs, accountAddr).map(({ log }) => log)
 }
 
 /**
- * Reads the receipts of the transactions from the RPC and decodes the account's WALLET staking
- * leave events from them. It does not contact the relayer, so the account address stays private.
- * A transaction without a receipt (unknown or not mined yet) returns no withdrawals.
+ * Reads the receipts of the transactions from the RPC and returns the account's WALLET staking
+ * leave logs from them. It does not contact the relayer, so the account address stays private.
+ * A transaction without a receipt (unknown or not mined yet) returns no logs.
  */
-export const findPendingWalletWithdrawalsInTxns = async (
+export const findWalletStakingLeaveLogsInTxns = async (
   txnIds: string[],
   accountAddr: string,
   provider: RPCProvider
 ): Promise<{
-  results: TxnPendingWalletWithdrawals[]
+  results: TxnWalletStakingLeaveLogs[]
   failedTxnIds: string[]
   errors: Error[]
 }> => {
@@ -89,23 +95,15 @@ export const findPendingWalletWithdrawalsInTxns = async (
         timeoutMs: WALLET_STAKING_RECEIPT_RPC_TIMEOUT_MS,
         message: 'The transaction took too long to load.'
       })
-      const withdrawals = receipt
-        ? decodePendingWalletWithdrawalsFromReceiptLogs(receipt.logs, accountAddr)
-        : []
-
       return {
         txnId,
-        withdrawals: withdrawals.map(({ shares, unlocksAt, maxTokens }) => ({
-          shares: shares.toString(),
-          unlocksAt: unlocksAt.toString(),
-          maxTokens: maxTokens.toString()
-        }))
+        logs: receipt ? getAccountLeaveLogsFromReceiptLogs(receipt.logs, accountAddr) : []
       }
     })
   )
 
   return settledResults.reduce<{
-    results: TxnPendingWalletWithdrawals[]
+    results: TxnWalletStakingLeaveLogs[]
     failedTxnIds: string[]
     errors: Error[]
   }>(

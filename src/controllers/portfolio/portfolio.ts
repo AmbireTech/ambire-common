@@ -36,6 +36,7 @@ import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import { IVerificationController } from '../../interfaces/verification'
+import { IWalletTokenController } from '../../interfaces/walletToken'
 import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
@@ -221,7 +222,7 @@ export class PortfolioController
    */
   protected hints: HintsController
 
-  #walletToken: WalletTokenController
+  #walletToken: IWalletTokenController
 
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
@@ -275,7 +276,12 @@ export class PortfolioController
     featureFlags: IFeatureFlagsController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
     verification?: IVerificationController,
-    platform: Platform = 'default'
+    platform: Platform = 'default',
+    /**
+     * The MainController passes its registered instance. Without it (e.g. in tests), the portfolio
+     * creates its own, which doesn't know the transactions made from this device.
+     */
+    walletToken?: IWalletTokenController
   ) {
     super(eventEmitterRegistry)
 
@@ -294,8 +300,20 @@ export class PortfolioController
     this.#banner = banner
     this.#featureFlags = featureFlags
     this.hints = new HintsController(storage, accounts, keystore)
-    this.#walletToken = new WalletTokenController()
-    this.#walletToken.onError((error) => this.emitError(error))
+    if (walletToken) {
+      this.#walletToken = walletToken
+    } else {
+      const ownWalletToken = new WalletTokenController({
+        storage,
+        featureFlags,
+        providers,
+        callRelayer: this.#callRelayer,
+        getInternalAccountOps: async () => []
+      })
+      // Not registered in the event emitter registry, so its errors are reported through the portfolio
+      ownWalletToken.onError((error) => this.emitError(error))
+      this.#walletToken = ownWalletToken
+    }
     // Re-emit hints updates as portfolio updates so the re-exposed getters
     // (customTokens, tokenPreferences) reach the UI when they change.
     this.hints.onUpdate((forceEmit) => this.propagateUpdate(forceEmit))
