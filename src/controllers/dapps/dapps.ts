@@ -123,6 +123,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #recentDapps: RecentDappEntry[] = []
 
+  #disguisedAsMetaMaskDappIds: string[] = []
+
   dappToConnect: Dapp | null = null
 
   // Set while dappToConnect's status was derived from a dangerous frame context instead of the
@@ -309,6 +311,10 @@ export class DappsController extends EventEmitter implements IDappsController {
       .map((d) => this.#withTrustFlags(d))
   }
 
+  get disguisedAsMetaMaskDappIds(): string[] {
+    return this.#disguisedAsMetaMaskDappIds
+  }
+
   get categories(): string[] {
     return getDappCategories(this.dapps)
   }
@@ -317,11 +323,13 @@ export class DappsController extends EventEmitter implements IDappsController {
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    const [storedDapps, storedRecentDapps, storedTrending] = await Promise.all([
-      this.#storage.get('dappsV2', predefinedDapps),
-      this.#storage.get('recentDapps', [] as RecentDappEntry[]),
-      this.#storage.get('trending', { updatedAt: 0, tokens: [] as TrendingToken[] })
-    ])
+    const [storedDapps, storedRecentDapps, storedTrending, storedDisguisedAsMetaMaskDapps] =
+      await Promise.all([
+        this.#storage.get('dappsV2', predefinedDapps),
+        this.#storage.get('recentDapps', [] as RecentDappEntry[]),
+        this.#storage.get('trending', { updatedAt: 0, tokens: [] as TrendingToken[] }),
+        this.#storage.get('disguisedAsMetaMaskDapps', [] as string[])
+      ])
     // Normalize on read so a drifted record (e.g. isConnected: true but connectedSources: [])
     // can't show a dapp as connected in the UI while permission checks force a reconnect.
     // Ids are canonicalized as well: a record stored before trailing-dot normalization
@@ -355,6 +363,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       })
     }
     this.#recentDapps = storedRecentDapps
+    this.#disguisedAsMetaMaskDappIds = storedDisguisedAsMetaMaskDapps
     this.#trendingTokens = storedTrending.tokens
     this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
     this.#isReady = true
@@ -1294,6 +1303,27 @@ export class DappsController extends EventEmitter implements IDappsController {
     return this.#dapps.get(getDomainFromUrl(url)!)
   }
 
+  isDappDisguisedAsMetaMask(id: string) {
+    return this.#disguisedAsMetaMaskDappIds.includes(id)
+  }
+
+  async setDappDisguisedAsMetaMask(id: string, isDisguisedAsMetaMask: boolean, requestId?: string) {
+    await this.initialLoadPromise
+
+    const isCurrentlyDisguised = this.isDappDisguisedAsMetaMask(id)
+
+    if (isCurrentlyDisguised !== isDisguisedAsMetaMask) {
+      this.#disguisedAsMetaMaskDappIds = isDisguisedAsMetaMask
+        ? [...this.#disguisedAsMetaMaskDappIds, id]
+        : this.#disguisedAsMetaMaskDappIds.filter((dappId) => dappId !== id)
+
+      await this.#storage.set('disguisedAsMetaMaskDapps', this.#disguisedAsMetaMaskDappIds)
+      this.emitUpdate()
+    }
+
+    if (requestId) this.#ui.message.sendUiMessage({ requestId, ok: true })
+  }
+
   /**
    * Stamps a dApp handed to the UI with its trust flags, so no consumer has to resolve the hosting
    * rules on its own. Both flags are only ever meaningful for a dApp the hosting check flagged, so
@@ -1726,6 +1756,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       ...super.toJSON(),
       dapps,
       recentDapps: this.recentDapps,
+      disguisedAsMetaMaskDappIds: this.disguisedAsMetaMaskDappIds,
       categories: getDappCategories(dapps),
       dappToConnect: this.dappToConnect
         ? this.#withTrustFlags(this.dappToConnect, !!this.#dappToConnectContextStatus)
