@@ -9,6 +9,7 @@ import {
   DAPP_REJECTS_BEFORE_OFFERING_SILENCE,
   DAPP_SILENCE_DURATION
 } from '../../consts/safeguards/dappRequestSpam'
+import { SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE } from '../../consts/safe'
 import { Hex } from '../../interfaces/hex'
 import {
   BenzinUserRequest,
@@ -1281,6 +1282,118 @@ describe('RequestsController ', () => {
 
     expect(controller.userRequests).toEqual([])
     expect(reject).toHaveBeenCalledTimes(1)
+  })
+
+  test('builds a standalone Safe deployment request from Deploy settings', async () => {
+    const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const account = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
+    account.safeCreation!.setupData = '0x1234'
+    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    const getSafeDeploymentCallSpy = jest
+      .spyOn(safeLib, 'getSafeDeploymentCall')
+      .mockResolvedValue({
+        to: '0x1234567890123456789012345678901234567890',
+        value: 0n,
+        data: '0x1234'
+      })
+    const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
+
+    await expect(
+      controller.buildSafeDeploymentRequest(accountAddr, chainId, 'deploy-settings-request')
+    ).resolves.toBe(true)
+
+    expect(controller.userRequests).toHaveLength(1)
+    const deploymentRequest = controller.userRequests[0]
+    expect(deploymentRequest?.kind).toBe('calls')
+    if (deploymentRequest?.kind !== 'calls') throw new Error('Expected a calls request')
+    expect(deploymentRequest.meta).toMatchObject({
+      accountAddr,
+      chainId,
+      isSafeDeploy: true
+    })
+    expect(deploymentRequest.meta.safeDeployForRequestId).toBeUndefined()
+    expect(sendUiMessageSpy).toHaveBeenCalledWith({
+      requestId: 'deploy-settings-request',
+      ok: true,
+      res: { alreadyDeployed: false }
+    })
+
+    await controller.buildSafeDeploymentRequest(accountAddr, chainId)
+
+    expect(controller.userRequests).toHaveLength(1)
+    expect(deploymentRequest.signAccountOp.accountOp.calls).toHaveLength(1)
+    expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
+
+    deploymentRequest.signAccountOp.destroy()
+  })
+
+  test('does not build a Safe deployment request for a non-Safe account', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+    const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
+
+    await expect(
+      controller.buildSafeDeploymentRequest(accountAddr, 1n, 'deploy-settings-request')
+    ).resolves.toBe(false)
+
+    expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+    expect(controller.userRequests).toEqual([])
+    expect(sendUiMessageSpy).toHaveBeenCalledWith({
+      requestId: 'deploy-settings-request',
+      ok: false,
+      error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+    })
+  })
+
+  test('reports when a Safe deployment request cannot be prepared', async () => {
+    const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const account = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
+    account.safeCreation!.setupData = '0x1234'
+    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue(null)
+    const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
+
+    await expect(
+      controller.buildSafeDeploymentRequest(accountAddr, chainId, 'deploy-settings-request')
+    ).resolves.toBe(false)
+
+    expect(controller.userRequests).toEqual([])
+    expect(sendUiMessageSpy).toHaveBeenCalledWith({
+      requestId: 'deploy-settings-request',
+      ok: false,
+      error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+    })
+  })
+
+  test('does not build a deployment request when the Safe is already deployed', async () => {
+    const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+    const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
+
+    await expect(
+      controller.buildSafeDeploymentRequest(accountAddr, chainId, 'deploy-settings-request')
+    ).resolves.toBe(true)
+
+    expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+    expect(controller.userRequests).toEqual([])
+    expect(sendUiMessageSpy).toHaveBeenCalledWith({
+      requestId: 'deploy-settings-request',
+      ok: true,
+      res: { alreadyDeployed: true }
+    })
   })
 
   test('refreshes the confirmed Safe state before opening the request paired with its deployment', async () => {
