@@ -7,11 +7,14 @@ import { Network, NetworkInfo, NetworkInfoLoading, RelayerNetwork } from '../../
 import { RPCProvider } from '../../interfaces/provider'
 import { getRpcProvider } from '../../services/provider'
 import wait from '../../utils/wait'
+
+import type { Account, AccountOnchainState, AccountStates } from '../../interfaces/account'
 import {
   getFeaturesByNetworkProperties,
   getLoadingNetworkInfo,
   getNetworkInfo,
   getNetworksUpdatedWithRelayerNetworks,
+  getSupportedNetworks,
   getStateOverrideSupport,
   isNetworkInfoPending
 } from './networks'
@@ -541,6 +544,84 @@ const network: Network = {
   wrappedAddr: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
   disableEstimateGas: true
 }
+
+describe('getSupportedNetworks', () => {
+  const safeAccount: Account = {
+    addr: '0x1111111111111111111111111111111111111111',
+    associatedKeys: [],
+    initialPrivileges: [],
+    creation: null,
+    safeCreation: {
+      factoryAddr: '0x2222222222222222222222222222222222222222',
+      singleton: '0x3333333333333333333333333333333333333333',
+      saltNonce: '0x00',
+      setupData: '0x',
+      version: '1.4.1'
+    },
+    preferences: { label: 'Safe', pfp: '' }
+  }
+  const undeployedAccountState: AccountOnchainState = {
+    accountAddr: safeAccount.addr,
+    isDeployed: false,
+    eoaNonce: null,
+    nonce: 0n,
+    erc4337Nonce: 0n,
+    associatedKeys: [],
+    importedAccountKeys: [],
+    balance: 0n,
+    isEOA: false,
+    isErc4337Enabled: false,
+    isErc4337Nonce: false,
+    isV2: false,
+    currentBlock: 0n,
+    isSmarterEoa: false,
+    delegatedContract: null,
+    delegatedContractName: null,
+    threshold: 2,
+    updatedAt: 0
+  }
+  const accountStates: AccountStates = {
+    [safeAccount.addr]: {
+      '1': undeployedAccountState,
+      '2': { ...undeployedAccountState }
+    }
+  }
+
+  test('allows an undeployed Safe on the explicitly allowed chain only', () => {
+    const otherNetwork = { ...network, chainId: 2n, name: 'Other network' }
+
+    const supportedNetworks = getSupportedNetworks(
+      [network, otherNetwork],
+      accountStates,
+      safeAccount,
+      undefined,
+      network.chainId
+    )
+
+    expect(supportedNetworks[0]?.isNotSupported).toBeUndefined()
+    expect(supportedNetworks[1]).toMatchObject({
+      isNotSupported: true,
+      notSupportedReason: 'Safe account is not activated on this network'
+    })
+  })
+
+  test('keeps provider restrictions on the allowed undeployed Safe chain', () => {
+    const providerRestriction = 'Network is not supported by our service provider.'
+
+    const [supportedNetwork] = getSupportedNetworks(
+      [network],
+      accountStates,
+      safeAccount,
+      { chainIds: [], reason: providerRestriction },
+      network.chainId
+    )
+
+    expect(supportedNetwork).toMatchObject({
+      isNotSupported: true,
+      notSupportedReason: providerRestriction
+    })
+  })
+})
 
 const networksObj = predefinedNetworks.reduce<Record<string, Network>>((acc, n) => {
   acc[n.chainId.toString()] = network

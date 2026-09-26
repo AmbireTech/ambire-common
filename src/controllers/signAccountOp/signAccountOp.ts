@@ -87,7 +87,6 @@ import {
   getAccountOpNonce,
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
-import { getUnauthenticatedDapps } from '../../libs/dapps/helpers'
 import {
   AccountOpIdentifiedBy,
   getAccountOpRecipients,
@@ -101,6 +100,7 @@ import {
   broadcastTransaction,
   buildRawTransaction
 } from '../../libs/broadcast/broadcast'
+import { getUnauthenticatedDapps } from '../../libs/dapps/helpers'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
@@ -420,7 +420,7 @@ export class SignAccountOpController
   /**
    * Should this signAccountOp instance simulate the accountOp it's
    * preparing as well as estimate. Simulaton is required in the
-   * original signAccountOp but should be avoided in swap&bridge
+   * original signAccountOp but should be avoided in swap&bridge and Safe deployments.
    */
   #shouldSimulate: boolean
 
@@ -587,7 +587,7 @@ export class SignAccountOpController
       }),
       this.#featureFlags
     )
-    this.#shouldSimulate = shouldSimulate
+    this.#shouldSimulate = shouldSimulate && !this.#accountOp.meta?.isSafeDeploy
 
     this.#onBroadcastSuccess = onBroadcastSuccess
     if (onBroadcastFailed) this.#onBroadcastFailed = onBroadcastFailed
@@ -827,7 +827,7 @@ export class SignAccountOpController
   }
 
   #updateSafeEip712Data() {
-    if (!this.account.safeCreation) {
+    if (!this.account.safeCreation || this.accountOp.meta?.isSafeDeploy) {
       this.safeEip712Data = null
       return
     }
@@ -1291,6 +1291,7 @@ export class SignAccountOpController
     // In that case, on the application, we want the "Sign" button to be clickable/enabled,
     // and we have to check and expose the `SignAccountOp` controller's inner state to make this check possible.
     if (
+      !this.accountOp.meta?.isSafeDeploy &&
       this.accountKeyStoreKeys.length &&
       (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType)
     ) {
@@ -1399,17 +1400,25 @@ export class SignAccountOpController
         title: 'Insufficient funds to cover the fee.'
       })
 
-    // if the Safe txn is not deployed, display an error
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-    if (!!this.account.safeCreation && accountState && !accountState.isDeployed) {
+
+    if (
+      !!this.account.safeCreation &&
+      accountState &&
+      !accountState.isDeployed &&
+      !this.accountOp.meta?.isSafeDeploy
+    ) {
       errors.push({
-        title: `Safe not activated on ${this.#network.name}. Please activate it from Safe Global`
+        title: `Safe not deployed on ${this.#network.name}.`
       })
     }
 
     // It may occur, only if there are no available signer.
-    if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
+    if (
+      !this.accountOp.meta?.isSafeDeploy &&
+      (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
+    )
       errors.push({
         title: 'No keys available to sign this transaction.',
         code: 'NO_KEYS_AVAILABLE'
@@ -1557,6 +1566,7 @@ export class SignAccountOpController
     // Safe txn, signed, with a future nonce: display an error
     if (
       !!this.account.safeCreation &&
+      !this.accountOp.meta?.isSafeDeploy &&
       accountState &&
       this.accountOp.nonce &&
       this.accountOp.nonce !== accountState.nonce &&
@@ -2092,8 +2102,8 @@ export class SignAccountOpController
 
     if (
       this.isInitialized &&
-      this.accountOp.signingKeyAddr &&
-      this.accountOp.signingKeyType &&
+      (this.accountOp.meta?.isSafeDeploy ||
+        (this.accountOp.signingKeyAddr && this.accountOp.signingKeyType)) &&
       this.accountOp.gasFeePayment
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
@@ -3111,7 +3121,11 @@ export class SignAccountOpController
 
     this.#hwCleanup()
 
-    if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
+    const isSafeDeploy = !!this.accountOp.meta?.isSafeDeploy
+    const signingKeyAddr = this.accountOp.signingKeyAddr
+    const signingKeyType = this.accountOp.signingKeyType
+
+    if (!isSafeDeploy && (!signingKeyAddr || !signingKeyType)) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
@@ -3150,7 +3164,9 @@ export class SignAccountOpController
       this.accountOp.gasFeePayment.paidByKeyType !== 'internal' ||
       this.accountOp.signingKeyType !== 'internal'
     const isCollectingSafeSignature =
-      !!this.account.safeCreation && (this.accountOp.signed?.length || 0) < this.threshold
+      !!this.account.safeCreation &&
+      !isSafeDeploy &&
+      (this.accountOp.signed?.length || 0) < this.threshold
     const isImmediatelyWaitingForPaymaster =
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
       isUsingPaymaster &&
@@ -3193,8 +3209,11 @@ export class SignAccountOpController
     }
 
     try {
-      if (
+      if (isSafeDeploy) {
+        this.#updateAccountOp({ signature: '0x' })
+      } else if (
         this.account.safeCreation &&
+        !isSafeDeploy &&
         this.#accountOp.signed &&
         this.#accountOp.signed.length >= this.threshold &&
         broadcastOption !== BROADCAST_OPTIONS.byBundler
@@ -3202,6 +3221,7 @@ export class SignAccountOpController
         // all's good, proceed to broadcast
       } else if (
         this.account.safeCreation &&
+        !isSafeDeploy &&
         (this.#accountOp.signed?.length || 0) < this.threshold
       ) {
         // If the Safe txn is not already signed, fetch the latest nonce unless
@@ -3222,12 +3242,8 @@ export class SignAccountOpController
         const prevSignedSigs = getSigs(this.accountOp.signature)
         const nowSignedSigs: Hex[] = []
 
-        const safeSigner = await this.#keystore.getSigner(
-          this.accountOp.signingKeyAddr,
-          this.accountOp.signingKeyType
-        )
-        if (safeSigner.init)
-          safeSigner.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
+        const safeSigner = await this.#keystore.getSigner(signingKeyAddr!, signingKeyType!)
+        if (safeSigner.init) safeSigner.init(this.#externalSignerControllers[signingKeyType!])
 
         const { safeTxn, typedData, safeTxnHash, signingRequest } =
           this.#getSafeSigningData(accountState)
@@ -3241,8 +3257,8 @@ export class SignAccountOpController
 
         // all the signers that have signed
         const allSigners = this.accountOp.signed
-          ? this.accountOp.signed.concat([this.accountOp.signingKeyAddr])
-          : [this.accountOp.signingKeyAddr]
+          ? this.accountOp.signed.concat([signingKeyAddr!])
+          : [signingKeyAddr!]
 
         const isQuickBroadcast =
           this.threshold === 1 &&
@@ -3373,7 +3389,6 @@ export class SignAccountOpController
         }
         this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
-        const signer = await this.#getDefaultSigner()
         const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
 
         const paymaster = erc4337Estimation.paymaster
@@ -3395,6 +3410,7 @@ export class SignAccountOpController
         // sign the 7702 authorization if needed
         let eip7702Auth
         if (this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) {
+          const signer = await this.#getDefaultSigner()
           if (isExternalSignerInvolved)
             this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
           const contract = getContractImplementation(
@@ -3425,6 +3441,7 @@ export class SignAccountOpController
         }
 
         if (shouldSignDeployAuth) {
+          const signer = await this.#getDefaultSigner()
           const epActivatorTypedData = await getEntryPointAuthorization(
             this.account.addr,
             this.#network.chainId,
@@ -3506,6 +3523,7 @@ export class SignAccountOpController
 
         // safe accounts have their signature prepopulated
         if (!this.account.safeCreation) {
+          const signer = await this.#getDefaultSigner()
           // Which signature format a 7702 EOA needs is dictated by the delegator
           // it points to, not by the key type: the Ambire 7702 account validates
           // the Ambire4337AccountOp typed data in unprotected mode, while the
@@ -3635,8 +3653,7 @@ export class SignAccountOpController
       !accountOp ||
       !estimation ||
       !requestId ||
-      !accountOp.signingKeyAddr ||
-      !accountOp.signingKeyType ||
+      (!accountOp.meta?.isSafeDeploy && (!accountOp.signingKeyAddr || !accountOp.signingKeyType)) ||
       !accountOp.signature ||
       !bundlerSwitcher ||
       !accountOp.gasFeePayment
@@ -3704,7 +3721,7 @@ export class SignAccountOpController
     //   2. Device interaction runs inside #withHardwareWalletSigningRequest
     //      so the "confirm on your device" UI shows while the PQ1 waits
     //      for its physical confirmation.
-    if (accountOp.signingKeyType === 'pq1') {
+    if (accountOp.signingKeyType === 'pq1' && accountOp.signingKeyAddr) {
       try {
         const { gasFeePayment } = accountOp
         if (
@@ -4470,6 +4487,7 @@ export class SignAccountOpController
 
   get canBroadcast() {
     if (!this.account.safeCreation) return true
+    if (this.accountOp.meta?.isSafeDeploy) return true
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]

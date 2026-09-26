@@ -2059,7 +2059,11 @@ export class MainController extends EventEmitter implements IMainController {
     const accountOpRequest = this.requests.userRequests.find((r) => r.id === requestId)
     if (!accountOpRequest) return
 
-    const { signAccountOp, dappPromises } = accountOpRequest as CallsUserRequest
+    const {
+      signAccountOp,
+      dappPromises,
+      meta: accountOpRequestMeta
+    } = accountOpRequest as CallsUserRequest
     const network = this.networks.networks.find(
       (n) => n.chainId === signAccountOp.accountOp.chainId
     )
@@ -2071,6 +2075,9 @@ export class MainController extends EventEmitter implements IMainController {
       chainId: network.chainId,
       txnId: null,
       userOpHash: null
+    }
+    if (accountOpRequestMeta.safeDeployForRequestId) {
+      meta.safeDeployForRequestId = accountOpRequestMeta.safeDeployForRequestId
     }
 
     if (submittedAccountOp) {

@@ -76,6 +76,16 @@ const tokenFeeOption = {
   }
 } as FeePaymentOption
 
+const gasTankFeeOption = {
+  ...nativeFeeOption,
+  token: {
+    ...nativeFeeOption.token,
+    flags: {
+      onGasTank: true
+    }
+  }
+} as FeePaymentOption
+
 const accountOp = {
   calls: [{}]
 } as AccountOp
@@ -142,5 +152,25 @@ describe('custom gas price support', () => {
         accountOp
       )
     ).toEqual([nativeFeeOption, eoaNativeFeeOption, eoaTokenFeeOption])
+  })
+
+  test('Safe deployments only allow native fee payment by another EOA', () => {
+    const safe = new Safe(account, network, accountState, true)
+    const safeDeployAccountOp = {
+      ...accountOp,
+      meta: { isSafeDeploy: true }
+    } as AccountOp
+
+    expect(
+      safe.getAvailableFeeOptions(
+        {
+          bundlerEstimation: {
+            paymaster: { isUsable: () => true }
+          }
+        } as any,
+        [nativeFeeOption, eoaNativeFeeOption, tokenFeeOption, gasTankFeeOption],
+        safeDeployAccountOp
+      )
+    ).toEqual([eoaNativeFeeOption])
   })
 })

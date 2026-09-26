@@ -1,13 +1,31 @@
-import { concat, getAddress, getBytes, Interface, solidityPacked, ZeroAddress } from 'ethers'
+import {
+  AbiCoder,
+  concat,
+  getAddress,
+  getBytes,
+  getCreate2Address,
+  Interface,
+  keccak256,
+  solidityPacked,
+  ZeroAddress
+} from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
-import { getSafeAccountByOwner, normalizeSafeGlobalMessage, toCallsUserRequest } from './safe'
+import {
+  findDeployData,
+  getSafeAccountByOwner,
+  getSafeDeploymentCall,
+  hasCompleteSafeCreationData,
+  normalizeSafeGlobalMessage,
+  toCallsUserRequest
+} from './safe'
 
 import type { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
 import type { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 import type { Hex } from '../../interfaces/hex'
+import type { RPCProvider } from '../../interfaces/provider'
 
 const OWNER: Hex = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
 const OTHER_OWNER = '0x94b0080A00579C1307B0eF2C499AD98A8ce58e58'
@@ -76,6 +94,296 @@ const getSafeCreationInfo = (): SafeCreationInfoResponse => ({
 const createApi = (owners: string[] = [OWNER]) => ({
   getSafeCreationInfo: jest.fn(async () => getSafeCreationInfo()),
   getSafeInfo: jest.fn(async () => getSafeInfo(owners))
+})
+
+describe('Safe deployment data', () => {
+  const factoryAddr = '0x1234567890123456789012345678901234567890' as Hex
+  const singleton = '0x2345678901234567890123456789012345678901' as Hex
+  const setupData = '0x1234' as Hex
+  const saltNonce = `0x${'0'.repeat(63)}1` as Hex
+  const proxyCreationCode = '0x60006000' as Hex
+  const salt = keccak256(concat([keccak256(setupData), saltNonce]))
+  const bytecode = concat([proxyCreationCode, new AbiCoder().encode(['address'], [singleton])])
+  const safeAddr = getCreate2Address(factoryAddr, salt, keccak256(bytecode))
+  const account = {
+    addr: safeAddr,
+    associatedKeys: [OWNER],
+    initialPrivileges: [],
+    creation: null,
+    safeCreation: { factoryAddr, singleton, setupData, saltNonce, version: '1.4.1' },
+    preferences: { label: 'Safe', pfp: safeAddr }
+  }
+  const encodedProxyCreationCode = new AbiCoder().encode(['bytes'], [proxyCreationCode])
+  const deployTransactionData = new Interface([
+    'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
+  ]).encodeFunctionData('createProxyWithNonce', [singleton, setupData, saltNonce])
+  const deployTransactionHash = `0x${'2'.repeat(64)}` as Hex
+  const deploySafeCreationInfo: SafeCreationInfoResponse = {
+    ...getSafeCreationInfo(),
+    transactionHash: deployTransactionHash,
+    factoryAddress: factoryAddr,
+    singleton,
+    setupData,
+    saltNonce: '1'
+  }
+  const incompleteDeploySafeCreationInfo: SafeCreationInfoResponse = {
+    ...deploySafeCreationInfo,
+    setupData: '0x',
+    saltNonce: null
+  }
+  const encodedVersion = new AbiCoder().encode(['string'], ['1.4.1'])
+
+  test('returns complete Safe API creation data without fetching the deployment transaction', async () => {
+    const getSafeCreationInfo = jest.fn(async () => deploySafeCreationInfo)
+    const provider = {
+      getTransaction: jest.fn(),
+      call: jest.fn(async () => encodedVersion)
+    } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toEqual({
+      factoryAddr: getAddress(factoryAddr),
+      singleton: getAddress(singleton),
+      setupData,
+      saltNonce,
+      version: '1.4.1'
+    })
+    expect(getSafeCreationInfo).toHaveBeenCalledWith(safeAddr)
+    expect(provider.getTransaction).not.toHaveBeenCalled()
+  })
+
+  test('recovers and validates missing Safe deployment data from the indexed transaction', async () => {
+    const getSafeCreationInfo = jest.fn(async () => incompleteDeploySafeCreationInfo)
+    const provider = {
+      getTransaction: jest.fn(async () => ({
+        to: factoryAddr,
+        data: deployTransactionData
+      })),
+      call: jest
+        .fn()
+        .mockResolvedValueOnce(encodedVersion)
+        .mockResolvedValueOnce(encodedProxyCreationCode)
+    } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toEqual({
+      factoryAddr: getAddress(factoryAddr),
+      singleton: getAddress(singleton),
+      setupData,
+      saltNonce,
+      version: '1.4.1'
+    })
+    expect(provider.getTransaction).toHaveBeenCalledWith(deployTransactionHash)
+  })
+
+  test('recovers deployment data when the factory call is nested in other calldata', async () => {
+    const getSafeCreationInfo = jest.fn(async () => incompleteDeploySafeCreationInfo)
+    const nestedTransactionData = new Interface([
+      'function execute(bytes data)'
+    ]).encodeFunctionData('execute', [deployTransactionData])
+    const provider = {
+      getTransaction: jest.fn(async () => ({
+        to: OTHER_OWNER,
+        data: nestedTransactionData
+      })),
+      call: jest
+        .fn()
+        .mockResolvedValueOnce(encodedVersion)
+        .mockResolvedValueOnce(encodedProxyCreationCode)
+    } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toMatchObject({
+      factoryAddr: getAddress(factoryAddr),
+      singleton: getAddress(singleton),
+      setupData,
+      saltNonce
+    })
+  })
+
+  test('recovers a missing factory address from a direct deployment transaction', async () => {
+    const getSafeCreationInfo = jest.fn(async () => ({
+      ...incompleteDeploySafeCreationInfo,
+      factoryAddress: '0x'
+    }))
+    const provider = {
+      getTransaction: jest.fn(async () => ({
+        to: factoryAddr,
+        data: deployTransactionData
+      })),
+      call: jest
+        .fn()
+        .mockResolvedValueOnce(encodedVersion)
+        .mockResolvedValueOnce(encodedProxyCreationCode)
+    } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toEqual(account.safeCreation)
+  })
+
+  test('returns partial API data when the creation record has no deployment transaction', async () => {
+    const creationInfo = { ...incompleteDeploySafeCreationInfo, transactionHash: '' }
+    const getSafeCreationInfo = jest.fn(async () => creationInfo)
+    const provider = {
+      getTransaction: jest.fn(),
+      call: jest.fn(async () => encodedVersion)
+    } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toEqual({
+      factoryAddr,
+      singleton,
+      setupData: '0x',
+      saltNonce: '0x',
+      version: '1.4.1'
+    })
+    expect(provider.getTransaction).not.toHaveBeenCalled()
+  })
+
+  test('returns partial API data when the indexed deployment transaction is unavailable', async () => {
+    const getSafeCreationInfo = jest.fn(async () => incompleteDeploySafeCreationInfo)
+    const provider = {
+      getTransaction: jest.fn(async () => null),
+      call: jest.fn(async () => encodedVersion)
+    } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toMatchObject({ setupData: '0x', saltNonce: '0x', version: '1.4.1' })
+  })
+
+  test('returns partial API data when the indexed transaction does not include a deployment', async () => {
+    const getSafeCreationInfo = jest.fn(async () => incompleteDeploySafeCreationInfo)
+    const provider = {
+      getTransaction: jest.fn(async () => ({ to: factoryAddr, data: '0x1234' })),
+      call: jest.fn(async () => encodedVersion)
+    } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toMatchObject({ setupData: '0x', saltNonce: '0x', version: '1.4.1' })
+  })
+
+  test('does not replace partial API data with deployment data for a different Safe address', async () => {
+    const getSafeCreationInfo = jest.fn(async () => incompleteDeploySafeCreationInfo)
+    const provider = {
+      getTransaction: jest.fn(async () => ({
+        to: factoryAddr,
+        data: deployTransactionData
+      })),
+      call: jest
+        .fn()
+        .mockResolvedValueOnce(encodedVersion)
+        .mockResolvedValueOnce(encodedProxyCreationCode)
+    } as unknown as RPCProvider
+
+    await expect(
+      findDeployData(OTHER_OWNER, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toMatchObject({ setupData: '0x', saltNonce: '0x', version: '1.4.1' })
+  })
+
+  test('returns all-empty creation data when the Safe API request fails', async () => {
+    const getSafeCreationInfo = jest.fn(async () => {
+      throw new Error('Safe API unavailable')
+    })
+    const provider = {} as RPCProvider
+
+    await expect(
+      findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
+    ).resolves.toEqual({
+      factoryAddr: '0x',
+      singleton: '0x',
+      setupData: '0x',
+      saltNonce: '0x',
+      version: ''
+    })
+  })
+
+  test('treats a missing version or deployment field as incomplete creation data', () => {
+    expect(hasCompleteSafeCreationData(account.safeCreation)).toBe(true)
+    expect(hasCompleteSafeCreationData({ ...account.safeCreation, version: '' })).toBe(false)
+    expect(hasCompleteSafeCreationData({ ...account.safeCreation, setupData: '0x' })).toBe(false)
+    expect(hasCompleteSafeCreationData(undefined)).toBe(false)
+  })
+
+  test('builds the factory call when the saved creation data derives the account address', async () => {
+    const provider = {
+      call: jest.fn(async () => encodedProxyCreationCode),
+      getCode: jest.fn(async () => '0x6000')
+    } as unknown as RPCProvider
+
+    const call = await getSafeDeploymentCall(account, provider)
+
+    expect(call).toEqual({
+      to: factoryAddr,
+      value: 0n,
+      data: new Interface([
+        'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
+      ]).encodeFunctionData('createProxyWithNonce', [singleton, setupData, saltNonce])
+    })
+  })
+
+  test('returns null when the singleton is not deployed on the network', async () => {
+    const provider = {
+      call: jest.fn(async () => encodedProxyCreationCode),
+      getCode: jest.fn(async () => '0x')
+    } as unknown as RPCProvider
+
+    await expect(getSafeDeploymentCall(account, provider)).resolves.toBeNull()
+    expect(provider.getCode).toHaveBeenCalledWith(singleton)
+  })
+
+  test('returns null when the singleton deployment cannot be checked', async () => {
+    const provider = {
+      call: jest.fn(async () => encodedProxyCreationCode),
+      getCode: jest.fn(async () => {
+        throw new Error('singleton unavailable')
+      })
+    } as unknown as RPCProvider
+
+    await expect(getSafeDeploymentCall(account, provider)).resolves.toBeNull()
+  })
+
+  test('rejects saved creation data that derives a different account address', async () => {
+    const provider = {
+      call: jest.fn(async () => encodedProxyCreationCode)
+    } as unknown as RPCProvider
+
+    await expect(
+      getSafeDeploymentCall({ ...account, addr: OTHER_OWNER }, provider)
+    ).resolves.toBeNull()
+  })
+
+  test('returns null when the factory deployment data cannot be read on the network', async () => {
+    const provider = {
+      call: jest.fn(async () => {
+        throw new Error('factory unavailable')
+      })
+    } as unknown as RPCProvider
+
+    await expect(getSafeDeploymentCall(account, provider)).resolves.toBeNull()
+  })
+
+  test('returns null when the saved creation data is malformed', async () => {
+    const provider = {
+      call: jest.fn(async () => encodedProxyCreationCode)
+    } as unknown as RPCProvider
+
+    await expect(
+      getSafeDeploymentCall(
+        {
+          ...account,
+          safeCreation: { ...account.safeCreation, setupData: 'invalid-data' as Hex }
+        },
+        provider
+      )
+    ).resolves.toBeNull()
+  })
 })
 
 describe('toCallsUserRequest', () => {

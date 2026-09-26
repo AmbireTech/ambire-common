@@ -4,11 +4,12 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals'
 
 import { Hex } from '../../interfaces/hex'
 import { SafeAccountByOwner } from '../../interfaces/safe'
-import { getApiKit, getSafeAccountByOwner } from '../../libs/safe/safe'
+import { findDeployData, getApiKit, getSafeAccountByOwner } from '../../libs/safe/safe'
 import { SafeController } from './safe'
 
 jest.mock('../../libs/safe/safe', () => ({
   ...jest.requireActual('../../libs/safe/safe'),
+  findDeployData: jest.fn(),
   getApiKit: jest.fn(),
   getSafeAccountByOwner: jest.fn()
 }))
@@ -26,7 +27,7 @@ const createApi = ({ safes = [] }: { safes?: string[] }) => ({
   getSafesByOwner: jest.fn(async () => ({ safes }))
 })
 
-const createController = (chainIds: bigint[]) =>
+const createController = (chainIds: bigint[], providers = {}) =>
   new SafeController({
     accounts: {
       accounts: [],
@@ -37,12 +38,78 @@ const createController = (chainIds: bigint[]) =>
       initialLoadPromise: Promise.resolve(),
       networks: chainIds.map((chainId) => ({ chainId, name: `Network ${chainId.toString()}` }))
     } as any,
-    providers: { providers: {} } as any,
+    providers: { providers } as any,
     storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any
   })
 
 const getOwnerSearch = (controller: SafeController, owner = OWNER) =>
   controller.safeOwnerSearches[getAddress(owner) as Hex]
+
+describe('SafeController findSafe', () => {
+  beforeEach(() => {
+    jest.mocked(findDeployData).mockReset()
+    jest.mocked(getApiKit).mockReset()
+  })
+
+  it('uses recovered deployment data when importing a Safe', async () => {
+    const provider = { getCode: jest.fn(async () => '0x1234') }
+    const safeCreation = {
+      factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
+      singleton: '0x2345678901234567890123456789012345678901' as Hex,
+      setupData: '0x1234' as Hex,
+      saltNonce: `0x${'0'.repeat(63)}1` as Hex,
+      version: '1.4.1'
+    }
+    const getSafeInfo = jest.fn(async () => ({
+      address: SAFE_A,
+      owners: [OWNER],
+      version: '1.4.1'
+    }))
+    jest.mocked(getApiKit).mockReturnValue({ getSafeInfo } as any)
+    jest.mocked(findDeployData).mockResolvedValue(safeCreation)
+    const controller = createController([1n], { '1': provider })
+
+    await controller.findSafe(SAFE_A)
+
+    expect(findDeployData).toHaveBeenCalledWith(SAFE_A, 1n, provider)
+    expect(controller.safeInfo).toMatchObject({
+      ...safeCreation,
+      address: SAFE_A,
+      owners: [OWNER],
+      deployedOn: [1n]
+    })
+    expect(controller.importError).toBeUndefined()
+  })
+
+  it('keeps partial deployment data and falls back to the Safe info version', async () => {
+    const provider = { getCode: jest.fn(async () => '0x1234') }
+    const getSafeInfo = jest.fn(async () => ({
+      address: SAFE_A,
+      owners: [OWNER],
+      version: '1.4.1'
+    }))
+    jest.mocked(getApiKit).mockReturnValue({ getSafeInfo } as any)
+    jest.mocked(findDeployData).mockResolvedValue({
+      factoryAddr: '0x',
+      singleton: '0x',
+      setupData: '0x',
+      saltNonce: '0x',
+      version: ''
+    })
+    const controller = createController([1n], { '1': provider })
+
+    await controller.findSafe(SAFE_A)
+
+    expect(controller.safeInfo).toMatchObject({
+      factoryAddr: '0x',
+      singleton: '0x',
+      setupData: '0x',
+      saltNonce: '0x',
+      version: '1.4.1'
+    })
+    expect(controller.importError).toBeUndefined()
+  })
+})
 
 describe('SafeController findSafesByOwner', () => {
   beforeEach(() => {
