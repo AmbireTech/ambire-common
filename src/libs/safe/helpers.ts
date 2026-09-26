@@ -9,6 +9,8 @@ import { SafeTx } from '../../interfaces/safe'
 import { CallsUserRequest } from '../../interfaces/userRequest'
 import { AccountOp, getSignableCalls } from '../accountOp/accountOp'
 
+import type { Call } from '../accountOp/types'
+
 export const multiCallAbi = [
   { inputs: [], stateMutability: 'nonpayable', type: 'constructor' },
   {
@@ -22,6 +24,7 @@ export const multiCallAbi = [
 
 export const SAFE_CALL_OPERATION = 0
 export const SAFE_DELEGATE_CALL_OPERATION = 1
+const SAFE_ORIGIN_MAX_LENGTH = 200
 
 export function encodeCalls(op: AccountOp): {
   to: Hex
@@ -213,7 +216,7 @@ export function buildSafeMessageOrigin(
   if (!name && !url) return undefined
 
   const origin = JSON.stringify({ name, url })
-  if (origin.length > 200) return undefined
+  if (origin.length > SAFE_ORIGIN_MAX_LENGTH) return undefined
   return origin
 }
 
@@ -231,6 +234,74 @@ export function parseSafeMessageOrigin(origin?: string): { name?: string; url?: 
     return { name: origin }
   }
   return {}
+}
+
+/**
+ * Stores the catalogue dapp IDs for the calls in a Safe transaction. Calls from the same dapp are
+ * grouped to keep the payload below Safe's 200-character `origin` limit.
+ */
+export function buildSafeTransactionOrigin(calls: Call[]): string | undefined {
+  const callIndexesByDappId = new Map<string, number[]>()
+
+  calls.forEach((call, index) => {
+    if (!call.dapp?.id) return
+
+    const callIndexes = callIndexesByDappId.get(call.dapp.id) || []
+    callIndexes.push(index)
+    callIndexesByDappId.set(call.dapp.id, callIndexes)
+  })
+
+  if (!callIndexesByDappId.size) return undefined
+
+  const origin = JSON.stringify({
+    name: 'Ambire',
+    v: 1,
+    calls: Array.from(callIndexesByDappId.entries())
+  })
+
+  if (origin.length > SAFE_ORIGIN_MAX_LENGTH) return undefined
+  return origin
+}
+
+/**
+ * Returns the catalogue dapp ID reported for each call index in an Ambire Safe transaction.
+ * Invalid and foreign origin payloads are ignored.
+ */
+export function parseSafeTransactionOrigin(origin?: string): Map<number, string> {
+  const dappIdByCallIndex = new Map<number, string>()
+  if (!origin) return dappIdByCallIndex
+
+  try {
+    const parsed = JSON.parse(origin)
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      Array.isArray(parsed) ||
+      parsed.name !== 'Ambire' ||
+      parsed.v !== 1 ||
+      !Array.isArray(parsed.calls)
+    ) {
+      return dappIdByCallIndex
+    }
+
+    parsed.calls.forEach((entry: unknown) => {
+      if (!Array.isArray(entry) || entry.length !== 2) return
+
+      const [dappId, callIndexes] = entry
+      if (typeof dappId !== 'string' || !dappId || !Array.isArray(callIndexes)) return
+
+      callIndexes.forEach((callIndex: unknown) => {
+        if (typeof callIndex !== 'number' || !Number.isInteger(callIndex) || callIndex < 0) return
+        if (!dappIdByCallIndex.has(callIndex)) {
+          dappIdByCallIndex.set(callIndex, dappId)
+        }
+      })
+    })
+  } catch {
+    return dappIdByCallIndex
+  }
+
+  return dappIdByCallIndex
 }
 
 /**

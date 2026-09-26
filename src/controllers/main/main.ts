@@ -1904,7 +1904,9 @@ export class MainController extends EventEmitter implements IMainController {
           if (!res) continue
 
           // build txn requests
-          const txnRequest = toCallsUserRequest(safeAddr, res)
+          const txnRequest = toCallsUserRequest(safeAddr, res, (dappId) =>
+            this.dapps.getDapp(dappId)
+          )
           for (let i = 0; i < txnRequest.length; i++) {
             // build the requests only if the selected account hasn't changed
             if (this.selectedAccount?.account?.addr === safeAddr)
