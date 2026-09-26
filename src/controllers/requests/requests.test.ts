@@ -254,6 +254,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
   }
 
   return {
+    mainCtrl,
     selectedAccountCtrl: mainCtrl.selectedAccount,
     accountsCtrl: mainCtrl.accounts,
     dappsCtrl: mainCtrl.dapps,
@@ -270,6 +271,43 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
     autoLoginCtrl: mainCtrl.autoLogin,
     dappsCtrl: mainCtrl.dapps
   }
+}
+
+const prepareSafeDeploymentHandoff = async () => {
+  const testSetup = await prepareTest(false, true)
+  const { accountsCtrl, controller, getCallsRequest } = testSetup
+  const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+  const chainId = 1n
+  const transactionRequest = await getCallsRequest({ addr: accountAddr, chainId })
+  transactionRequest.id = 'safe-transaction-after-deploy'
+  transactionRequest.meta.safeDeployRequestId = 'safe-deploy-request'
+  transactionRequest.signAccountOp.pause()
+  accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.isDeployed = false
+
+  const submittedAccountOp = {
+    ...getActivityAccountOp(accountAddr, chainId, 0n),
+    meta: {
+      isSafeDeploy: true
+    }
+  }
+  const benzinRequest: BenzinUserRequest = {
+    id: 'safe-deploy-benzin',
+    kind: 'benzin',
+    meta: {
+      accountAddr,
+      chainId,
+      txnId: null,
+      userOpHash: null,
+      safeDeployForRequestId: transactionRequest.id,
+      submittedAccountOp
+    },
+    dappPromises: []
+  }
+
+  controller.userRequests = [benzinRequest, transactionRequest]
+  controller.currentUserRequest = benzinRequest
+
+  return { ...testSetup, accountAddr, benzinRequest, chainId, transactionRequest }
 }
 
 const DAPP_CONNECT_REQUEST: DappConnectRequest = {
@@ -1243,6 +1281,112 @@ describe('RequestsController ', () => {
 
     expect(controller.userRequests).toEqual([])
     expect(reject).toHaveBeenCalledTimes(1)
+  })
+
+  test('refreshes the confirmed Safe state before opening the request paired with its deployment', async () => {
+    const { accountsCtrl, accountAddr, benzinRequest, chainId, controller, transactionRequest } =
+      await prepareSafeDeploymentHandoff()
+    const updateAccountStateSpy = jest
+      .spyOn(accountsCtrl, 'updateAccountState')
+      .mockImplementation(async () => {
+        accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.isDeployed = true
+      })
+    const resumeSpy = jest.spyOn(transactionRequest.signAccountOp, 'resume')
+
+    await controller.resolveUserRequest({}, benzinRequest.id)
+
+    expect(updateAccountStateSpy).toHaveBeenCalledWith(accountAddr, 'latest', [chainId])
+    expect(transactionRequest.meta.safeDeployRequestId).toBeUndefined()
+    expect(controller.userRequests).toEqual([transactionRequest])
+    expect(controller.currentUserRequest).toBe(transactionRequest)
+    expect(resumeSpy).toHaveBeenCalledTimes(1)
+
+    transactionRequest.signAccountOp.destroy()
+  })
+
+  test('links the deployment Benzin request to the request waiting for the Safe', async () => {
+    const { controller, getCallsRequest, mainCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const deploymentRequest = await getCallsRequest({ addr: accountAddr, chainId })
+    deploymentRequest.id = 'safe-deploy-request'
+    deploymentRequest.meta.isSafeDeploy = true
+    deploymentRequest.meta.safeDeployForRequestId = 'request-after-safe-deploy'
+    controller.userRequests = [deploymentRequest]
+    jest.spyOn(controller, 'getSameNonceSafeRequests').mockReturnValue([])
+    const addUserRequestsSpy = jest
+      .spyOn(controller, 'addUserRequests')
+      .mockResolvedValue(undefined)
+    jest.spyOn(controller, 'removeUserRequests').mockResolvedValue(undefined)
+    jest.spyOn(deploymentRequest.signAccountOp, 'cleanupAfterBroadcast').mockReturnValue([])
+    const submittedAccountOp = {
+      ...getActivityAccountOp(accountAddr, chainId, 0n),
+      txnId: SAFE_TX_HASH,
+      meta: { isSafeDeploy: true }
+    }
+
+    await mainCtrl.resolveAccountOpRequest(submittedAccountOp, deploymentRequest.id)
+
+    expect(addUserRequestsSpy).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          kind: 'benzin',
+          meta: expect.objectContaining({
+            safeDeployForRequestId: 'request-after-safe-deploy'
+          })
+        })
+      ],
+      { position: 'first', skipFocus: true }
+    )
+
+    deploymentRequest.signAccountOp.destroy()
+  })
+
+  test('keeps Benzin open while the Safe deployment is not confirmed', async () => {
+    const { accountsCtrl, benzinRequest, controller, transactionRequest } =
+      await prepareSafeDeploymentHandoff()
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+    const emitErrorSpy = jest.spyOn(controller, 'emitError')
+    const resumeSpy = jest.spyOn(transactionRequest.signAccountOp, 'resume')
+
+    await controller.resolveUserRequest({}, benzinRequest.id)
+
+    expect(transactionRequest.meta.safeDeployRequestId).toBe('safe-deploy-request')
+    expect(controller.userRequests).toEqual([benzinRequest, transactionRequest])
+    expect(controller.currentUserRequest).toBe(benzinRequest)
+    expect(resumeSpy).not.toHaveBeenCalled()
+    expect(emitErrorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'expected',
+        message: expect.stringContaining("deployment hasn't been confirmed")
+      })
+    )
+
+    transactionRequest.signAccountOp.destroy()
+  })
+
+  test('does not open the paired request when refreshing the Safe state fails', async () => {
+    const { accountsCtrl, benzinRequest, controller, transactionRequest } =
+      await prepareSafeDeploymentHandoff()
+    jest
+      .spyOn(accountsCtrl, 'updateAccountState')
+      .mockRejectedValue(new Error('account state fetch failed'))
+    const emitErrorSpy = jest.spyOn(controller, 'emitError')
+    const resumeSpy = jest.spyOn(transactionRequest.signAccountOp, 'resume')
+
+    await controller.setCurrentUserRequestById(transactionRequest.id)
+
+    expect(transactionRequest.meta.safeDeployRequestId).toBe('safe-deploy-request')
+    expect(controller.currentUserRequest).toBe(benzinRequest)
+    expect(resumeSpy).not.toHaveBeenCalled()
+    expect(emitErrorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'major',
+        message: expect.stringContaining("couldn't check whether your Safe account")
+      })
+    )
+
+    transactionRequest.signAccountOp.destroy()
   })
 
   test('recovers and stores missing Safe deployment data before building the deployment', async () => {

@@ -129,6 +129,8 @@ const ONE_CLICK_WINDOW_SIZE = {
 
 const SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE =
   "This Safe account isn't deployed on this network, and it can't be deployed using its saved setup. Please deploy it through Safe Global before trying again."
+const SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE =
+  "The Safe account deployment hasn't been confirmed yet. Please wait a moment and try again."
 
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
@@ -696,7 +698,50 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.requestWindow.openWindowPromise
   }
 
+  async #confirmSafeDeploymentBeforeOpening(request: CallsUserRequest): Promise<boolean> {
+    if (!request.meta.safeDeployRequestId) return true
+
+    try {
+      await this.#accounts.updateAccountState(request.meta.accountAddr, 'latest', [
+        request.meta.chainId
+      ])
+
+      if (!this.userRequests.includes(request)) return false
+
+      const accountState =
+        this.#accounts.accountStates[request.meta.accountAddr]?.[request.meta.chainId.toString()]
+
+      if (!accountState?.isDeployed) {
+        this.emitError({
+          level: 'expected',
+          message: SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE,
+          error: new Error(
+            `Safe deployment not confirmed for ${request.meta.accountAddr} on chain ${request.meta.chainId.toString()}`
+          )
+        })
+        return false
+      }
+
+      request.meta.safeDeployRequestId = undefined
+      return true
+    } catch (error) {
+      this.emitError({
+        level: 'major',
+        message:
+          "We couldn't check whether your Safe account has finished deploying. Please wait a moment and try again.",
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+      return false
+    }
+  }
+
   async #setCurrentUserRequest(nextRequest: UserRequest | null, params?: OpenRequestWindowParams) {
+    if (
+      nextRequest?.kind === 'calls' &&
+      !(await this.#confirmSafeDeploymentBeforeOpening(nextRequest))
+    )
+      return
+
     // Pause the previously active signAccountOp request
     if (
       this.currentUserRequest &&
@@ -1179,6 +1224,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!userRequest) return // TODO: emit error
 
     const { kind, meta, dappPromises } = userRequest
+
+    if (kind === 'benzin' && meta.safeDeployForRequestId) {
+      const pairedRequest = this.userRequests.find(
+        (request): request is CallsUserRequest =>
+          request.kind === 'calls' && request.id === meta.safeDeployForRequestId
+      )
+
+      if (pairedRequest && !(await this.#confirmSafeDeploymentBeforeOpening(pairedRequest))) return
+    }
 
     getDappIdsFromUserRequest(userRequest).forEach((dappId) =>
       this.#dapps.clearDappRejections(dappId)

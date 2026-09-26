@@ -187,6 +187,7 @@ export interface BenzinUserRequest extends UserRequestBase<[]> {
     userOpHash: string | null
     accountAddr: string
     chainId: bigint
+    safeDeployForRequestId?: UserRequestBase['id']
   }
 }
 
