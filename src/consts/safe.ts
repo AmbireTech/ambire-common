@@ -10,6 +10,9 @@ export const SAFE_NETWORKS = [
 
 export const SAFE_API_TIMEOUT_MS = 15000
 
+export const SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE =
+  "This Safe account isn't deployed on this network, and it can't be deployed using its saved setup. Please deploy it through Safe Global before trying again."
+
 // Keep Safe Transaction Service requests below its bulk request limits.
 export const SAFE_API_BATCH_SIZE = 4
 
