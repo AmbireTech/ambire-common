@@ -130,6 +130,8 @@ const ONE_CLICK_WINDOW_SIZE = {
 const SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE =
   "The Safe account deployment hasn't been confirmed yet. Please wait a moment and try again."
 
+type SafeDeploymentRequestResult = { success: false } | { success: true; alreadyDeployed: boolean }
+
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
  * Prior to v2.66.0, all request logic resided in the MainController. To improve scalability, readability,
@@ -234,6 +236,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * built, keyed by what they collide on.
    */
   #dappRequestQueues = new Map<string, DappRequestQueueItem[]>()
+
+  #safeDeploymentRequestsInFlight = new Map<string, Promise<SafeDeploymentRequestResult>>()
 
   /**
    * Requests that have been built and are about to be added. Prevents opening and closing
@@ -1468,7 +1472,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   #replyToSafeDeploymentRequest(
     uiRequestId: string | undefined,
-    result: { success: false } | { success: true; alreadyDeployed: boolean }
+    result: SafeDeploymentRequestResult
   ) {
     if (!uiRequestId) return
 
@@ -1499,23 +1503,38 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   ) {
     await this.initialLoadPromise
 
+    const inFlightKey = `${accountAddr.toLowerCase()}:${chainId.toString()}`
+    let requestInFlight = this.#safeDeploymentRequestsInFlight.get(inFlightKey)
+
+    if (!requestInFlight) {
+      requestInFlight = this.#prepareSafeDeploymentRequest(accountAddr, chainId).finally(() => {
+        this.#safeDeploymentRequestsInFlight.delete(inFlightKey)
+      })
+      this.#safeDeploymentRequestsInFlight.set(inFlightKey, requestInFlight)
+    }
+
+    const result = await requestInFlight
+    this.#replyToSafeDeploymentRequest(uiRequestId, result)
+
+    return result.success
+  }
+
+  async #prepareSafeDeploymentRequest(
+    accountAddr: Account['addr'],
+    chainId: bigint
+  ): Promise<SafeDeploymentRequestResult> {
     try {
       let account = this.#accounts.accounts.find((candidate) => candidate.addr === accountAddr)
       const network = this.#networks.networks.find((candidate) => candidate.chainId === chainId)
       const provider = this.#providers.providers[chainId.toString()]
 
       if (!account?.safeCreation || !network || !provider) {
-        this.#replyToSafeDeploymentRequest(uiRequestId, { success: false })
-        return false
+        return { success: false }
       }
 
       const accountState = await this.#accounts.forceFetchPendingState(accountAddr, chainId)
       if (accountState.isDeployed) {
-        this.#replyToSafeDeploymentRequest(uiRequestId, {
-          success: true,
-          alreadyDeployed: true
-        })
-        return true
+        return { success: true, alreadyDeployed: true }
       }
 
       const existingDeploymentRequest = [
@@ -1535,11 +1554,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         ) {
           await this.#setCurrentUserRequest(existingDeploymentRequest)
         }
-        this.#replyToSafeDeploymentRequest(uiRequestId, {
-          success: true,
-          alreadyDeployed: false
-        })
-        return true
+        return { success: true, alreadyDeployed: false }
       }
 
       if (!hasCompleteSafeCreationData(account.safeCreation)) {
@@ -1551,14 +1566,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       if (!hasCompleteSafeCreationData(account.safeCreation)) {
-        this.#replyToSafeDeploymentRequest(uiRequestId, { success: false })
-        return false
+        return { success: false }
       }
 
       const deploymentCall = await getSafeDeploymentCall(account, provider)
       if (!deploymentCall) {
-        this.#replyToSafeDeploymentRequest(uiRequestId, { success: false })
-        return false
+        return { success: false }
       }
 
       const deploymentRequests = await this.#createOrUpdateCallsUserRequests({
@@ -1568,8 +1581,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const deploymentRequest = deploymentRequests[0]
 
       if (!deploymentRequest) {
-        this.#replyToSafeDeploymentRequest(uiRequestId, { success: false })
-        return false
+        return { success: false }
       }
 
       try {
@@ -1590,15 +1602,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       if (!wasAdded) {
         deploymentRequest.signAccountOp.destroy()
-        this.#replyToSafeDeploymentRequest(uiRequestId, { success: false })
-        return false
+        return { success: false }
       }
 
-      this.#replyToSafeDeploymentRequest(uiRequestId, {
-        success: true,
-        alreadyDeployed: false
-      })
-      return true
+      return { success: true, alreadyDeployed: false }
     } catch (error) {
       this.emitError({
         level: 'silent',
@@ -1606,8 +1613,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         error: error instanceof Error ? error : new Error(String(error)),
         sendCrashReport: true
       })
-      this.#replyToSafeDeploymentRequest(uiRequestId, { success: false })
-      return false
+      return { success: false }
     }
   }
 

@@ -1331,6 +1331,102 @@ describe('RequestsController ', () => {
     deploymentRequest.signAccountOp.destroy()
   })
 
+  test('coalesces concurrent Safe deployment requests for the same account and network', async () => {
+    const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const account = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
+    account.safeCreation!.setupData = '0x1234'
+    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
+    accountState.isDeployed = false
+    let releaseStateFetch!: () => void
+    let signalStateFetchStarted!: () => void
+    const stateFetchGate = new Promise<void>((resolve) => {
+      releaseStateFetch = resolve
+    })
+    const stateFetchStarted = new Promise<void>((resolve) => {
+      signalStateFetchStarted = resolve
+    })
+    const forceFetchPendingStateSpy = jest
+      .spyOn(accountsCtrl, 'forceFetchPendingState')
+      .mockImplementation(async () => {
+        signalStateFetchStarted()
+        await stateFetchGate
+        return accountState
+      })
+    const getSafeDeploymentCallSpy = jest
+      .spyOn(safeLib, 'getSafeDeploymentCall')
+      .mockResolvedValue({
+        to: '0x1234567890123456789012345678901234567890',
+        value: 0n,
+        data: '0x1234'
+      })
+    const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
+
+    const firstRequest = controller.buildSafeDeploymentRequest(
+      accountAddr,
+      chainId,
+      'first-deploy-settings-request'
+    )
+    const secondRequest = controller.buildSafeDeploymentRequest(
+      accountAddr,
+      chainId,
+      'second-deploy-settings-request'
+    )
+
+    await stateFetchStarted
+    expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(1)
+    releaseStateFetch()
+
+    await expect(Promise.all([firstRequest, secondRequest])).resolves.toEqual([true, true])
+
+    expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
+    expect(controller.userRequests).toHaveLength(1)
+    expect(sendUiMessageSpy).toHaveBeenCalledWith({
+      requestId: 'first-deploy-settings-request',
+      ok: true,
+      res: { alreadyDeployed: false }
+    })
+    expect(sendUiMessageSpy).toHaveBeenCalledWith({
+      requestId: 'second-deploy-settings-request',
+      ok: true,
+      res: { alreadyDeployed: false }
+    })
+
+    const deploymentRequest = controller.userRequests[0]
+    if (deploymentRequest?.kind !== 'calls') throw new Error('Expected a calls request')
+    deploymentRequest.signAccountOp.destroy()
+  })
+
+  test('allows retrying a Safe deployment request after preparation fails', async () => {
+    const { accountsCtrl, controller } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const account = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
+    account.safeCreation!.setupData = '0x1234'
+    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    const getSafeDeploymentCallSpy = jest
+      .spyOn(safeLib, 'getSafeDeploymentCall')
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        to: '0x1234567890123456789012345678901234567890',
+        value: 0n,
+        data: '0x1234'
+      })
+
+    await expect(controller.buildSafeDeploymentRequest(accountAddr, chainId)).resolves.toBe(false)
+    await expect(controller.buildSafeDeploymentRequest(accountAddr, chainId)).resolves.toBe(true)
+
+    expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(2)
+    expect(controller.userRequests).toHaveLength(1)
+
+    const deploymentRequest = controller.userRequests[0]
+    if (deploymentRequest?.kind !== 'calls') throw new Error('Expected a calls request')
+    deploymentRequest.signAccountOp.destroy()
+  })
+
   test('does not build a Safe deployment request for a non-Safe account', async () => {
     const { controller, uiCtrl } = await prepareTest()
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
