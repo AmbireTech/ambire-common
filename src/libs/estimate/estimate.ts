@@ -1,3 +1,5 @@
+import { Call } from '@/libs/accountOp/types'
+
 import { AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -114,9 +116,29 @@ export function getEstimationSummary(estimation: FullEstimation): FullEstimation
 }
 
 /**
+ * This extra gas limit is 20% as 10% might not be enough for swaps
+ */
+function getOverhead(gasLimit: bigint): bigint {
+  return gasLimit + gasLimit / 5n
+}
+
+/**
  * Push extra gas limit for EOA / EOA7702 accounts to avoid OOG.
- * This extra gas limit is 20% as 10% was might not be enough for swaps
+ * Also, push this extra gas limit if the accountOp isn't a single call with ETH send
+ * which is fixed to 21k and no extra gas limit is needed
+ */
+export function getGasLimitWithOverheadForSelfEOA(gasLimit: bigint, calls: Call[]): bigint {
+  if (calls && calls.length === 1) {
+    const call = calls[0]!
+    if (call.data === '0x' && call.value > 0n) return gasLimit
+  }
+
+  return getOverhead(gasLimit)
+}
+
+/**
+ * Push extra gas limit for EOA broadcast when the account is smart.
  */
 export function getGasLimitWithOverhead(gasLimit: bigint): bigint {
-  return gasLimit + gasLimit / 5n
+  return getOverhead(gasLimit)
 }
