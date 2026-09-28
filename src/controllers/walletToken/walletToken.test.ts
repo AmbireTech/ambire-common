@@ -196,6 +196,42 @@ describe('WalletTokenController pending withdrawals', () => {
     })
   })
 
+  test('waits for the stored feature flags, so an opted-out user never reaches the relayer', async () => {
+    let isLookupEnabled = true
+    let resolveFlagsLoad: () => void = () => {}
+    const featureFlags = {
+      initialLoadPromise: new Promise<void>((resolve) => {
+        resolveFlagsLoad = resolve
+      }),
+      // Before the stored flags load, the flag has its default value (on)
+      isFeatureEnabled: jest.fn(() => isLookupEnabled)
+    } as unknown as IFeatureFlagsController
+    const callRelayer = jest.fn<BindedRelayerCall>(async () => ({
+      success: true,
+      data: { logs: [] }
+    }))
+    const controller = new WalletTokenController({
+      storage: makeStorage() as unknown as IStorageController,
+      featureFlags,
+      providers: { providers: { '1': makeProvider({}) } } as unknown as IProvidersController,
+      callRelayer,
+      activity: { getInternalAccountOps: async () => [] } as unknown as IActivityController
+    })
+
+    const load = controller.loadPendingWithdrawals(ACCOUNT_ADDR)
+    // Lets the load run as far as it can while the stored flags are still loading
+    await new Promise((resolve) => {
+      setImmediate(resolve)
+    })
+    // The user's stored choice (opted out) arrives only now
+    isLookupEnabled = false
+    resolveFlagsLoad()
+    await load
+
+    expect(callRelayer).not.toHaveBeenCalled()
+    expect(controller.pendingWithdrawals[ACCOUNT_ADDR]?.status).toBe('loaded')
+  })
+
   test('uses the stored leave logs without the relayer and prunes withdrawn ones', async () => {
     const provider = makeProvider({ activeWithdrawals: [withdrawals[1]!] })
     const { controller, storage, callRelayer } = getWithdrawalsController({

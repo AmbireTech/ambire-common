@@ -217,6 +217,9 @@ export class WalletTokenController extends EventEmitter {
 
     try {
       await this.initialLoadPromise
+      // Until the stored flags load, the flag has its default (on), so reading it earlier could
+      // send the account address to the relayer although the user opted out
+      await this.#featureFlags.initialLoadPromise
       const provider = this.#getEthereumProvider()
       const foundLeaveLogs = this.#featureFlags.isFeatureEnabled('walletStakingWithdrawalsLookup')
         ? await this.#getRelayerLeaveLogs(accountAddr)
