@@ -527,6 +527,47 @@ describe('DappsController', () => {
       expect(controller.isDappInDefaultCatalog('')).toBe(false)
     })
 
+    test('a user-added dapp becomes a catalog entry once it joins the catalog', async () => {
+      // Connected before it was listed, so it was stored as a user-added app
+      const aaveConnectedBeforeListing = makeDapp({
+        id: 'aave.com',
+        name: 'Aave',
+        url: 'https://aave.com',
+        isCustom: true,
+        isConnected: true,
+        connectedSources: ['injected']
+      })
+      const stillUnlistedDapp = makeDapp({
+        id: 'custom-dapp.com',
+        name: 'Custom Dapp',
+        url: 'https://custom-dapp.com',
+        isCustom: true,
+        isConnected: true,
+        connectedSources: ['injected']
+      })
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [
+          ...predefinedDapps,
+          aaveConnectedBeforeListing,
+          stillUnlistedDapp
+        ])
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      expect(controller.getDapp('aave.com')!.isCustom).toBe(false)
+      expect(controller.isDappInDefaultCatalog('https://aave.com')).toBe(true)
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['injected'])
+
+      expect(controller.getDapp('custom-dapp.com')!.isCustom).toBe(true)
+      expect(controller.isDappInDefaultCatalog('https://custom-dapp.com')).toBe(false)
+
+      // Unlike a user-added app, a catalog app is kept after it gets disconnected
+      controller.updateDapp('aave.com', { connectedSources: [] })
+      expect(controller.getDapp('aave.com')).toBeDefined()
+    })
+
     test('should not return banner for verified dapps in the default catalog', async () => {
       const updateDomainsSpy = jest.spyOn(
         PhishingController.prototype,
