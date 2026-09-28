@@ -80,7 +80,15 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#migrateDomainsCacheToNames() // As of v6.14.0
       await this.#indexSentToHistoryFromAccountsOps() // As of the accountsOps → IDB release
     } catch (error) {
-      console.error('Storage migration error: ', error)
+      // Emitted rather than logged so it reaches Sentry. A migration that throws is never
+      // marked passed, so it retries on every startup — and the failure is invisible in the
+      // meantime, which for #indexSentToHistoryFromAccountsOps means hasAccountOpsSentTo
+      // silently misses known recipients and every one warns as first-time.
+      this.emitError({
+        level: 'silent',
+        message: 'Some of your saved data could not be updated to the latest format.',
+        error: error instanceof Error ? error : new Error('StorageController: migration failed')
+      })
     }
   }
 

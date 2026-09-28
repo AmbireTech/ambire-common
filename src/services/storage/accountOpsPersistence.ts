@@ -44,6 +44,16 @@ export class AccountOpsPersistence {
   // Only used with a partially-loading adapter; otherwise the cache is summed live.
   #totalOpsCount = new Map<string, number>()
 
+  /**
+   * How many ops of each `account:chain` group the cache already holds, so a re-render of the
+   * same page does not read it again. Infinity once a read came back short, which means the
+   * whole group is in memory and no depth can miss.
+   */
+  #loadedDepth = new Map<string, number>()
+
+  /** Stored count per `account:chain`, so a re-render does not re-count either. */
+  #chainCounts = new Map<string, number>()
+
   constructor({ storage, idb, getCache, onError }: AccountOpsPersistenceParams) {
     this.#storage = storage
     this.#getCache = getCache
@@ -64,14 +74,47 @@ export class AccountOpsPersistence {
   }
 
   /** Migrate if needed, then return the startup dataset. Bookkeeping is in finalizeInit(). */
-  async init(finalizedFor?: string): Promise<InternalAccountsOps> {
+  async init(fullWindowFor?: string): Promise<InternalAccountsOps> {
+    // Read before #migrate(), which can record a new one. Guarded: nothing in init() may
+    // reject — it runs behind the controller's #initialLoadPromise, so a throw here would
+    // break the controller for the whole session. A failed read just skips the recovery.
+    const previousBackend = await this.#readActiveBackend().catch(() => null)
     const migrated = await this.#migrate()
 
     // Reads AND writes must both go to the legacy key. Writing to IDB while reading the blob
     // would put a row in the empty store, making isEmpty() skip the retry forever.
     if (!migrated) this.#fallBackToKeyValue()
+    else await this.#recoverFallbackWrites(previousBackend)
 
-    return this.#loadStartupOps(finalizedFor)
+    return this.#loadStartupOps(fullWindowFor)
+  }
+
+  /**
+   * Re-merges the legacy key after a session that ran on key-value because IDB was
+   * unavailable.
+   *
+   * Such a session writes its ops into the legacy blob, and ensureMigrated() will not pick
+   * them up on the next run because the store is no longer empty — so without this they are
+   * simply lost. The merge is an upsert, so ops IDB already has are rewritten unchanged.
+   */
+  async #recoverFallbackWrites(previousBackend: StorageProps['activityStorageBackend'] | null) {
+    if (previousBackend !== 'keyValue' || this.#activeBackend !== 'idb') return
+
+    try {
+      const legacy = await this.#storage.get('accountsOps', {})
+      if (!Object.keys(legacy).length) return
+
+      await this.#adapter.mergeGroups(legacy)
+      // Row counts changed by an unknown amount, so nothing cached about them survives.
+      this.#chainCounts.clear()
+      this.#loadedDepth.clear()
+    } catch (error) {
+      this.#report(
+        'Transactions made while your history was unavailable could not be restored.',
+        error,
+        'recover fallback writes'
+      )
+    }
   }
 
   /** Bookkeeping nothing renders, so the caller can paint before paying for it. */
@@ -92,9 +135,16 @@ export class AccountOpsPersistence {
 
     await Promise.all(
       chainIds.map(async (chainId) => {
+        const key = `${accountAddr}:${chainId.toString()}`
+        // Already holding at least this many — syncFilteredAccountsOps re-renders every open
+        // session on every status update, so without this each one re-reads the same page.
+        if ((this.#loadedDepth.get(key) ?? 0) >= limit) return
+
         try {
           const ops = await this.#adapter.getRecentOps(accountAddr, limit, chainId)
           if (ops.length) this.#mergeIntoCache(accountAddr, chainId.toString(), ops)
+          // A short read means there was nothing more to give, so the group is now complete.
+          this.#loadedDepth.set(key, ops.length < limit ? Infinity : limit)
         } catch (error) {
           this.#report('Older transactions could not be loaded.', error, 'load a page')
         }
@@ -138,6 +188,16 @@ export class AccountOpsPersistence {
     // a count is already cached — otherwise getTotalOpsCount falls back to the cache sum.
     const cached = this.#totalOpsCount.get(accountAddr)
     if (delta && cached !== undefined) this.#totalOpsCount.set(accountAddr, cached + delta)
+
+    // The group gained a row, so both per-chain caches move with it.
+    const key = `${accountAddr}:${chainId.toString()}`
+    const cachedChainCount = this.#chainCounts.get(key)
+    if (delta && cachedChainCount !== undefined) {
+      this.#chainCounts.set(key, cachedChainCount + delta)
+    }
+    const depth = this.#loadedDepth.get(key)
+    if (delta && depth !== undefined && depth !== Infinity)
+      this.#loadedDepth.set(key, depth + delta)
   }
 
   async updateOps(ops: SubmittedAccountOp[]): Promise<void> {
@@ -151,6 +211,33 @@ export class AccountOpsPersistence {
   /** Drop an account's rows and every marker keyed to it. */
   async removeAccount(accountAddr: string): Promise<void> {
     this.#totalOpsCount.delete(accountAddr)
+
+    const prefix = `${accountAddr}:`
+    ;[...this.#loadedDepth.keys()].forEach((key) => {
+      if (key.startsWith(prefix)) this.#loadedDepth.delete(key)
+    })
+    ;[...this.#chainCounts.keys()].forEach((key) => {
+      if (key.startsWith(prefix)) this.#chainCounts.delete(key)
+    })
+
+    // Also dropped from the retained legacy copy, or #recoverFallbackWrites() would merge the
+    // removed account straight back in — the copy is frozen at migration time and still holds it.
+    try {
+      const legacy = await this.#storage.get('accountsOps', {})
+      const legacyKey = Object.keys(legacy).find(
+        (key) => key.toLowerCase() === accountAddr.toLowerCase()
+      )
+      if (legacyKey) {
+        delete legacy[legacyKey]
+        await this.#storage.set('accountsOps', legacy)
+      }
+    } catch (error) {
+      this.#report(
+        "The removed account's safety-net copy could not be cleared.",
+        error,
+        'clear legacy'
+      )
+    }
 
     try {
       await this.#adapter.deleteAccount(accountAddr)
@@ -204,9 +291,9 @@ export class AccountOpsPersistence {
     this.#adapter = new ActivityKeyValueStorage(this.#storage, this.#getCache)
   }
 
-  async #loadStartupOps(finalizedFor?: string): Promise<InternalAccountsOps> {
+  async #loadStartupOps(fullWindowFor?: string): Promise<InternalAccountsOps> {
     try {
-      return await this.#adapter.loadStartupOps(finalizedFor)
+      return await this.#adapter.loadStartupOps(fullWindowFor)
     } catch (error) {
       // Degrading to empty keeps the controller usable; the data is untouched on disk.
       this.#report('Your transaction history could not be loaded.', error, 'read startup ops')
@@ -224,7 +311,7 @@ export class AccountOpsPersistence {
     try {
       // Defaulted to null, not to the current backend — otherwise the comparison below is
       // always equal on a first run and the value never gets written.
-      const previous = await this.#storage.get('activityStorageBackend', null)
+      const previous = await this.#readActiveBackend()
 
       // Written to IndexedDB last session, key-value this one: the history is in a store this
       // session cannot open. The retained legacy blob keeps the wallet usable, but it is
@@ -286,7 +373,16 @@ export class AccountOpsPersistence {
   async countOps(accountAddr: string, chainIds: (bigint | string)[]): Promise<number> {
     try {
       const counts = await Promise.all(
-        chainIds.map((chainId) => this.#adapter.countOpsForAccount(accountAddr, chainId))
+        chainIds.map(async (chainId) => {
+          const key = `${accountAddr}:${chainId.toString()}`
+          const cached = this.#chainCounts.get(key)
+          if (cached !== undefined) return cached
+
+          const count = await this.#adapter.countOpsForAccount(accountAddr, chainId)
+          this.#chainCounts.set(key, count)
+
+          return count
+        })
       )
 
       return counts.reduce((total, count) => total + count, 0)
@@ -307,6 +403,10 @@ export class AccountOpsPersistence {
       // Leave the previous value; getTotalOpsCount falls back to the cache sum if unset.
       this.#report('The transaction count could not be refreshed.', error, 'count ops')
     }
+  }
+
+  #readActiveBackend(): Promise<StorageProps['activityStorageBackend'] | null> {
+    return this.#storage.get('activityStorageBackend', null)
   }
 
   #report(message: string, error: unknown, what: string): void {

@@ -7,7 +7,7 @@ import {
   ScoredAddressPoisoningMatch
 } from '@/libs/transfer/address-poisoning'
 import { AccountOpsPersistence } from '@/services/storage/accountOpsPersistence'
-import { MAX_OPS_PER_GROUP } from '@/services/storage/activityIdb'
+import { MAX_OPS_PER_GROUP, STARTUP_RECENT_OPS_LIMIT } from '@/services/storage/activityIdb'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
@@ -132,6 +132,15 @@ const normalizeTxnId = (txnId?: string | null) => txnId?.toLowerCase()
 const getInternalAccountOpTxnIds = (accountOp: SubmittedAccountOp) => {
   return [accountOp.txnId, ...accountOp.calls.map((call) => call.txnId)].filter(
     (txnId): txnId is string => !!txnId
+  )
+}
+
+/** Matches an internal op's own txnId or any of its per-call ones, case-insensitively. */
+const internalAccountOpHasTxnId = (accountOp: SubmittedAccountOp, txnId: string) => {
+  const normalizedTxnId = normalizeTxnId(txnId)
+
+  return getInternalAccountOpTxnIds(accountOp).some(
+    (internalTxnId) => normalizeTxnId(internalTxnId) === normalizedTxnId
   )
 }
 
@@ -357,6 +366,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.#selectedAccount.initialLoadPromise
 
     // Owns migration, fallback and the bounded read. Never rejects.
+    //
+    // The selected account gets the full window, every other account a shorter one rather
+    // than none: #accountsOps has SYNCHRONOUS readers that ask about other accounts —
+    // swapAndBridge, wallet_getCallsStatus, and the same-EOA-nonce check in status polling —
+    // so an empty window left them reading an empty history. onSelectedAccountChange tops the
+    // account up to the full window when the user switches.
     const [accountsOps, externalAccountOps, signedMessages, sentToHistory] = await Promise.all([
       this.#persistence.init(this.#selectedAccount.account?.addr),
       this.#storage.get('externalAccountOps', {}),
@@ -647,7 +662,16 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   /** Persist changed ops, sync filtered views, and emit an update. */
   private async persistAccountsOps(changedOps: SubmittedAccountOp[]) {
-    await this.#persistence.updateOps(changedOps)
+    // Ops belonging to an account that is no longer in memory are dropped: removeAccountData()
+    // deletes the account here first, and updateOps() is an upsert — so a status poll that
+    // resolves after a removal would otherwise re-create the rows the removal just deleted.
+    // The pre-IDB write serialized #accountsOps, which gave this for free.
+    const opsForLiveAccounts = changedOps.filter(
+      (op) => !!getAccountOpsAccountKey(this.#accountsOps, op.accountAddr)
+    )
+
+    if (opsForLiveAccounts.length) await this.#persistence.updateOps(opsForLiveAccounts)
+
     await this.syncFilteredAccountsOps()
     this.emitUpdate()
   }
@@ -842,6 +866,17 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // history size. External ops are not in that store, so they are still matched in memory.
     const hasExistingAccountOpWithTxnId = async () => {
       if (await this.#persistence.hasOpWithTxnId(accountAddr, txnId)) return true
+
+      // The stored index cannot see an op whose write is still in flight, nor one whose txnId
+      // the relayer filled in but that has not been persisted yet — both are in memory only,
+      // and both are exactly what the scanner races against.
+      const inMemoryInternalOps = getAccountOpsForAccountAndChain(
+        this.#accountsOps,
+        accountAddr,
+        chainIdString
+      )
+      if (inMemoryInternalOps.some((accountOp) => internalAccountOpHasTxnId(accountOp, txnId)))
+        return true
 
       const existingExternalAccountOps = getAccountOpsForAccountAndChain(
         this.#externalAccountOps,
@@ -1192,6 +1227,28 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const chainsToUpdate = new Set<Network['chainId']>()
     const portfoliosToUpdate: PortfoliosToUpdate = {}
     const updatedAccountsOps: SubmittedAccountOp[] = []
+
+    /**
+     * Adds an op to the batch once. updateOpStatus() mutates in place and hands back the SAME
+     * object, so a status change and a markMutated() on the same op would otherwise queue it
+     * twice — persisting the row twice and double-counting it in the returned result.
+     */
+    const queueUpdatedOp = (accountOp: SubmittedAccountOp) => {
+      if (!updatedAccountsOps.includes(accountOp)) updatedAccountsOps.push(accountOp)
+    }
+
+    /**
+     * Queues an op whose fields were mutated in place without its status changing.
+     *
+     * updateOpStatus() only returns an op when the STATUS changes, so a txnId learned while
+     * the op stays pending never reached persistAccountsOps() — the old whole-blob write saved
+     * it incidentally. Without this the txnId is lost on the next service-worker restart and
+     * the by-txn-id index never sees it.
+     */
+    const markMutated = (accountOp: SubmittedAccountOp) => {
+      queueUpdatedOp(accountOp)
+      shouldEmitUpdate = true
+    }
     const balanceChangesTasks: Array<{
       accountOp: SubmittedAccountOp
       network: Network
@@ -1247,7 +1304,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
               if (hasTimePassedSinceBroadcast(op, 5)) {
                 const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.BroadcastButStuck)
                 if (updatedOpIfAny) {
-                  updatedAccountsOps.push(updatedOpIfAny)
+                  queueUpdatedOp(updatedOpIfAny)
                 }
               }
             }
@@ -1259,7 +1316,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
             if (hasConfirmedOpWithSameEoaNonce) {
               const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.UnknownButPastNonce)
-              if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+              if (updatedOpIfAny) queueUpdatedOp(updatedOpIfAny)
               return
             }
 
@@ -1273,7 +1330,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
               )
               if (fetchTxnIdResult.status === 'rejected') {
                 const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.Rejected)
-                if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+                if (updatedOpIfAny) queueUpdatedOp(updatedOpIfAny)
                 return
               }
               if (fetchTxnIdResult.status === 'not_found') {
@@ -1284,6 +1341,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
               const txnId = fetchTxnIdResult.txnId as string
 
               accountOp.txnId = txnId
+              markMutated(accountOp)
               txIds.push(txnId)
             } else {
               const limit = !provider.batchMaxCount || provider.batchMaxCount > 1 ? 100 : 3
@@ -1319,6 +1377,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     )
 
                     accountOp.txnId = frontRanTxnId
+                    markMutated(accountOp)
 
                     receipt = await provider.getTransactionReceipt(frontRanTxnId)
                     if (!receipt) return
@@ -1354,7 +1413,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
                     receipt
                   )
-                  if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+                  if (updatedOpIfAny) queueUpdatedOp(updatedOpIfAny)
                   if (
                     updatedOpIfAny &&
                     (updatedOpIfAny.status === AccountOpStatus.Success ||
@@ -1528,6 +1587,31 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     await this.#storage.set('signedMessages', this.#signedMessages)
     this.emitUpdate()
+  }
+
+  /**
+   * Top the newly selected account up to the full startup window.
+   *
+   * Startup gives every non-selected account a shorter window (see
+   * STARTUP_RECENT_OPS_LIMIT_OTHER), so without this the account the user just switched to
+   * would render fewer finalized ops than one they started on. Awaited by selectAccount, so
+   * the switch does not resolve while the history is still short.
+   */
+  async onSelectedAccountChange(accountAddr: Account['addr']) {
+    await this.#initialLoadPromise
+
+    // Never rejects: it reports its own read failures and leaves the short window in place.
+    await this.#persistence.ensureRecentLoaded(
+      accountAddr,
+      STARTUP_RECENT_OPS_LIMIT,
+      this.#networks.networks.map(({ chainId }) => chainId)
+    )
+
+    await this.syncFilteredAccountsOps()
+
+    // forceEmitUpdate, not emitUpdate — this replaces the forceEmitUpdate selectAccount used
+    // to call here, which bypasses throttling and React batching so the FE getters refresh.
+    await this.forceEmitUpdate()
   }
 
   async removeAccountData(address: Account['addr']) {

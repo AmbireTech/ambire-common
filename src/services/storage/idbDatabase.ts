@@ -111,6 +111,20 @@ export function applyMigrations(
 
 let openPromise: Promise<AmbireIdbDatabase> | null = null
 
+/**
+ * How long to wait for the database to open before giving up on it.
+ *
+ * An open can hang indefinitely rather than fail: an upgrade blocked by a connection in
+ * another context that ignores `versionchange` never fires success OR error. Background init
+ * awaits this call and only falls back to key-value when it REJECTS, so without a deadline a
+ * blocked upgrade means the wallet never boots at all.
+ *
+ * Deliberately short. A healthy open is single-digit milliseconds, and the cost of giving up
+ * early is only the key-value fallback — which still works, and which the next call retries
+ * because a timeout clears the singleton. The cost of waiting is a wallet that looks frozen.
+ */
+const OPEN_TIMEOUT_MS = 1000
+
 export function openAmbireIdb(): Promise<AmbireIdbDatabase> {
   if (openPromise) return openPromise
 
@@ -155,6 +169,28 @@ export function openAmbireIdb(): Promise<AmbireIdbDatabase> {
     openPromise = null
     throw error
   })
+
+  // Rejecting on the deadline is what lets the caller fall back; an open that never settles
+  // would otherwise hang init forever. The timer is always cleared, so a slow-but-successful
+  // open does not leave it pending.
+  let timer: ReturnType<typeof setTimeout>
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(new Error(`[AmbireIdb] Opening the database timed out after ${OPEN_TIMEOUT_MS}ms`)),
+      OPEN_TIMEOUT_MS
+    )
+  })
+
+  // Assigned as ONE promise, not returned as a fresh .catch() per call — callers rely on
+  // repeated calls handing back the same object.
+  openPromise = Promise.race([openPromise, deadline])
+    .finally(() => clearTimeout(timer))
+    .catch((error) => {
+      // A timed-out open must not poison the singleton — the block may be gone by the next call.
+      openPromise = null
+      throw error
+    }) as Promise<AmbireIdbDatabase>
 
   return openPromise
 }

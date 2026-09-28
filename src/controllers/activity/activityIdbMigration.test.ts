@@ -695,10 +695,10 @@ describe('ActivityController — the recorded backend is read, not just written'
   })
 })
 
-describe('ActivityController — startup read is scoped to the selected account', () => {
+describe('ActivityController — the startup read covers every account', () => {
   const OTHER = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
 
-  /** makeController's stub has no selected account, which means "load finalized for all". */
+  /** The selected account gets a deeper window, but no account is left without one. */
   function makeControllerWithSelected(selectedAddr: string) {
     return new ActivityController(
       storage,
@@ -735,9 +735,11 @@ describe('ActivityController — startup read is scoped to the selected account'
     ])
   }
 
-  test('another account contributes its pending ops but not its finalized ones', async () => {
-    // Pending ops are needed wallet-wide: broadcastedButNotConfirmed decides which accounts
-    // get status polling. Finalized ops are only ever rendered for the viewed account.
+  test('a non-selected account has its finalized ops in memory, not just its pending ones', async () => {
+    // #accountsOps has SYNCHRONOUS readers that ask about accounts other than the selected
+    // one — swapAndBridge, wallet_getCallsStatus, and the same-EOA-nonce check in status
+    // polling. They cannot load on demand, and onSelectedAccountChange only deepens the
+    // account being switched TO, so an empty window here left them reading an empty history.
     await seedTwoAccounts()
 
     const controller = makeControllerWithSelected(ACC)
@@ -746,10 +748,10 @@ describe('ActivityController — startup read is scoped to the selected account'
     const otherIds = controller.getAccountOpsForAccount({ accountAddr: OTHER }).map((op) => op.id)
 
     expect(otherIds).toContain('other-pending')
-    expect(otherIds).not.toContain('other-final')
+    expect(otherIds).toContain('other-final')
   })
 
-  test('switching to that account loads its history on demand', async () => {
+  test('opening Activity for that account pages in the rest of its history', async () => {
     await seedTwoAccounts()
 
     const controller = makeControllerWithSelected(ACC)
@@ -787,6 +789,96 @@ describe('ActivityController — startup read is scoped to the selected account'
     // Bounded reads are cheap and idempotent, so they are not deduplicated — what matters is
     // that each one asks for a page, not the whole history.
     expect(spy.mock.calls.every(([, limit]) => limit <= 10)).toBe(true)
+  })
+})
+
+describe('ActivityController — the startup window is deeper for the selected account', () => {
+  const OTHER = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+
+  function makeControllerWithSelected(selectedAddr: string) {
+    return new ActivityController(
+      storage,
+      (() => {}) as any,
+      (() => {}) as any,
+      { ...alreadyLoaded, accounts: [{ addr: ACC }, { addr: OTHER }] } as any,
+      { ...alreadyLoaded, account: { addr: selectedAddr } } as any,
+      {} as any,
+      networksStub,
+      {} as any,
+      {} as any,
+      async () => {},
+      undefined,
+      db
+    )
+  }
+
+  /** 25 finalized ops each, so both windows (20 and 10) cut into the history. */
+  async function seedDeepHistories() {
+    const store = new ActivityIdbStorage(db)
+    const ops = (addr: string, prefix: string) =>
+      Array.from({ length: 25 }, (_, i) => ({
+        ...makeOp(`${prefix}-${i}`, 1000 + i),
+        accountAddr: addr
+      })) as any[]
+
+    await store.putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: ops(ACC, 'mine') },
+      { accountAddr: OTHER, chainId: CHAIN_1, ops: ops(OTHER, 'other') }
+    ])
+  }
+
+  const loadedCount = (controller: ActivityController, accountAddr: string) =>
+    controller.getAccountOpsForAccount({ accountAddr }).length
+
+  test('the selected account gets the full window, the other a shorter one', async () => {
+    await seedDeepHistories()
+
+    const controller = makeControllerWithSelected(ACC)
+    await awaitLoadOnly(controller)
+
+    expect(loadedCount(controller, ACC)).toBe(20)
+    expect(loadedCount(controller, OTHER)).toBe(10)
+  })
+
+  test('the shorter window still holds enough for the synchronous readers', async () => {
+    // swapAndBridge asks its sender for 10, which is the widest of the windows those readers
+    // use — so the non-selected account must carry at least that many.
+    await seedDeepHistories()
+
+    const controller = makeControllerWithSelected(ACC)
+    await awaitLoadOnly(controller)
+
+    const newestFirst = controller
+      .getAccountOpsForAccount({ accountAddr: OTHER })
+      .map((op) => op.id)
+
+    expect(newestFirst[0]).toBe('other-24')
+    expect(newestFirst).toHaveLength(10)
+  })
+
+  test('selecting the other account tops it up to the full window', async () => {
+    await seedDeepHistories()
+
+    const controller = makeControllerWithSelected(ACC)
+    await awaitLoadOnly(controller)
+    await controller.onSelectedAccountChange(OTHER)
+
+    expect(loadedCount(controller, OTHER)).toBe(20)
+  })
+
+  test('the top-up never rejects, so selectAccount cannot be broken by a failed read', async () => {
+    await seedDeepHistories()
+
+    const controller = makeControllerWithSelected(ACC)
+    await awaitLoadOnly(controller)
+
+    jest
+      .spyOn(ActivityIdbStorage.prototype, 'getRecentOps')
+      .mockRejectedValue(new Error('read failed'))
+
+    await expect(controller.onSelectedAccountChange(OTHER)).resolves.toBeUndefined()
+    // The short window survives, so the readers are no worse off than before the switch.
+    expect(loadedCount(controller, OTHER)).toBe(10)
   })
 })
 
@@ -1233,9 +1325,7 @@ describe('ActivityController — counts with a partly loaded history', () => {
 
     expect(controller.getTotalOpsCountForAccount(ACC)).toBe(60)
     // ...and it is genuinely more than the cache holds
-    expect(
-      controller.getAccountOpsForAccount({ accountAddr: ACC }).length
-    ).toBeLessThan(60)
+    expect(controller.getAccountOpsForAccount({ accountAddr: ACC }).length).toBeLessThan(60)
   })
 })
 

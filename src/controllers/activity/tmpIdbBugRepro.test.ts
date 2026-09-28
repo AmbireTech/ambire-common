@@ -112,10 +112,15 @@ const awaitLoad = (controller: ActivityController) => controller.findMessage(ACC
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Bug 1 — the startup window is scoped to the boot account and never re-scoped
-// loadStartupOps() loads finalized ops only for the account selected at boot (others get
-// pending only), and nothing reloads them on account switch. Sync readers of #accountsOps —
+// loadStartupOps() loaded finalized ops only for the account selected at boot (others got
+// pending only), and nothing reloaded them on account switch. Sync readers of #accountsOps —
 // nonce.ts, swapAndBridge, wallet_getCallsStatus, the same-EOA-nonce check in status
-// polling — then see an empty history for every other account until Activity is opened.
+// polling — then saw an empty history for every other account until Activity was opened.
+//
+// Fixed with a tiered window: the selected account gets STARTUP_RECENT_OPS_LIMIT, every other
+// account STARTUP_RECENT_OPS_LIMIT_OTHER, and onSelectedAccountChange tops an account up on
+// switch. These tests only prove the shorter window is non-empty — the tiering itself and the
+// top-up are covered in activityIdbMigration.test.ts, so do not migrate these three as-is.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe.each(BACKENDS)('Bug 1 — non-boot account history [%s]', (backend) => {

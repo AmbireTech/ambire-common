@@ -910,7 +910,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
-      this.activity.forceEmitUpdate(),
+      this.activity.onSelectedAccountChange(toAccountAddr),
       this.requests.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.swapAndBridge.forceEmitUpdate(),
