@@ -265,7 +265,9 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
     getCallsRequest,
     event: eventEmitter,
     getWindowId,
-    uiCtrl: mainCtrl.ui
+    uiCtrl: mainCtrl.ui,
+    autoLoginCtrl: mainCtrl.autoLogin,
+    dappsCtrl: mainCtrl.dapps
   }
 }
 
@@ -2342,5 +2344,77 @@ describe('RequestsController ', () => {
       expect(controller.userRequests.length).toBe(0)
       expect(controller.userRequestsWaitingAccountSwitch.length).toBe(0)
     })
+  })
+})
+
+describe('SIWE auto-login and signing authentication', () => {
+  // A valid ERC-4361 message for the dapp behind MOCK_SESSION
+  const SIWE_MESSAGE = [
+    'test-dapp.com wants you to sign in with your Ethereum account:',
+    '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+    '',
+    'Sign in to the test dapp.',
+    '',
+    'URI: https://test-dapp.com',
+    'Version: 1',
+    'Chain ID: 1',
+    'Nonce: 12345678',
+    'Issued At: 2024-01-01T00:00:00.000Z'
+  ].join('\n')
+
+  const buildSiweRequest = async (
+    controller: Awaited<ReturnType<typeof prepareTest>>['controller']
+  ) => {
+    const resolve = jest.fn()
+
+    await controller.build({
+      type: 'dappRequest',
+      params: {
+        request: {
+          method: 'personal_sign',
+          params: [SIWE_MESSAGE, '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'],
+          session: MOCK_SESSION
+        } as any,
+        dappPromise: { id: 'testID', resolve, reject: () => {}, session: MOCK_SESSION }
+      }
+    })
+
+    return resolve
+  }
+
+  test('does not sign on the user behalf for an app they have not confirmed for signing', async () => {
+    const { controller, autoLoginCtrl } = await prepareTest(true)
+
+    jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+    const autoLoginSpy = jest.spyOn(autoLoginCtrl, 'autoLogin')
+
+    const resolve = await buildSiweRequest(controller)
+
+    expect(autoLoginSpy).not.toHaveBeenCalled()
+    expect(resolve).not.toHaveBeenCalled()
+    // The request opens the sign message screen instead, which is where the confirmation is asked
+    expect(controller.userRequests.length).toBe(1)
+    expect(controller.userRequests[0]!.kind).toBe('siwe')
+
+    jest.restoreAllMocks()
+  })
+
+  test('signs on the user behalf once they have confirmed for that app', async () => {
+    const { controller, autoLoginCtrl, dappsCtrl } = await prepareTest(true)
+
+    dappsCtrl.updateDapp(MOCK_SESSION.id, { signingAuthenticated: true })
+
+    jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+    const autoLoginSpy = jest
+      .spyOn(autoLoginCtrl, 'autoLogin')
+      .mockResolvedValue({ signature: '0xdeadbeef' } as any)
+
+    const resolve = await buildSiweRequest(controller)
+
+    expect(autoLoginSpy).toHaveBeenCalled()
+    expect(resolve).toHaveBeenCalledWith({ hash: '0xdeadbeef' })
+    expect(controller.userRequests.length).toBe(0)
+
+    jest.restoreAllMocks()
   })
 })

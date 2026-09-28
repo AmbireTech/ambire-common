@@ -33,13 +33,11 @@ import { Storage } from '../../interfaces/storage'
 import { TypedMessageUserRequest } from '../../interfaces/userRequest'
 import { getRpcProvider } from '../../services/provider'
 import hexStringToUint8Array from '../../utils/hexStringToUint8Array'
-import { callToTuple, getSignableHash } from '../accountOp/accountOp'
 import { getAccountState } from '../accountState/accountState'
 import { KeystoreSigner } from '../keystoreSigner/keystoreSigner'
 import {
   adaptTypedMessageForMetaMaskSigUtil,
   doesEIP712MessageContainAddress,
-  getAmbireReadableTypedData,
   getAuthorizationHash,
   getEIP712Signature,
   getPlainTextSignature,
@@ -805,64 +803,6 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       )
     }
   })
-  test('Signing [V1 SA, V2 Signer]: signing an ambire operation', async () => {
-    const accountStates = await getAccountsInfo([smartAccount])
-    const v2AccountState = accountStates[smartAccount.addr]![polygonNetwork.chainId.toString()]!
-    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
-
-    const ambireReadableOperation = {
-      addr: v1Account.addr as Hex,
-      nonce: 0n,
-      chainId: 137n,
-      calls: [{ to: v2SmartAccAddr as Hex, value: 0n, data: '0x' as Hex }]
-    }
-    const typedData = getAmbireReadableTypedData(
-      polygonNetwork.chainId,
-      v2SmartAccAddr,
-      ambireReadableOperation
-    )
-    const hash = hexlify(
-      getSignableHash(
-        ambireReadableOperation.addr,
-        ambireReadableOperation.chainId,
-        ambireReadableOperation.nonce,
-        ambireReadableOperation.calls.map(callToTuple)
-      )
-    )
-    const eip712Sig = await getEIP712Signature(
-      typedData,
-      smartAccount,
-      v2AccountState,
-      signer,
-      polygonNetwork
-    )
-
-    expect(eip712Sig.signature.slice(-2)).toEqual('02')
-
-    const provider = getRpcProvider(polygonNetwork.rpcUrls, polygonNetwork.chainId)
-
-    // v2 account
-    const contractV2 = new Contract(v2SmartAccAddr, AmbireAccount.abi, provider) as any
-    const isValidSigforv2 = await contractV2.isValidSignature(
-      hash,
-      eip712Sig.signature.slice(0, 134)
-    )
-    expect(isValidSigforv2).toBe(contractSuccess)
-
-    // v1 account
-    const contract = new Contract(v1Account.addr, AmbireAccount.abi, provider) as any
-    const isValidSig = await contract.isValidSignature(hash, eip712Sig.signature)
-    expect(isValidSig).toBe(contractSuccess)
-
-    // verify message should pass
-    const res = await verifyMessage({
-      provider,
-      signer: v1Account.addr,
-      signature: eip712Sig.signature,
-      typedData
-    })
-    expect(res).toBe(true)
-  })
   test('Signing [V1 SA, V2 Signer]: signing a normal EIP-712 request', async () => {
     const accountStates = await getAccountsInfo([smartAccount])
     const v2AccountState = accountStates[smartAccount.addr]![polygonNetwork.chainId.toString()]!
@@ -917,34 +857,6 @@ describe('Sign Message, Keystore with key dedicatedToOneSA: true ', () => {
       message: 'test'
     })
     expect(res).toBe(true)
-  })
-
-  test('Signing [V1 SA, V2 Signer]: a request for an AmbireReadableOperation should revert if the execution address is the same (signing for the current wallet instead of a diff wallet)', async () => {
-    const accountStates = await getAccountsInfo([smartAccount])
-    const v2AccountState = accountStates[smartAccount.addr]![polygonNetwork.chainId.toString()]!
-    const signer = await keystore.getSigner(eoaSigner.keyPublicAddress, 'internal')
-
-    const ambireReadableOperation = {
-      addr: v2SmartAccAddr as Hex,
-      nonce: 0n,
-      chainId: 137n,
-      calls: [{ to: v1Account.addr as Hex, value: 0n, data: '0x' as Hex }]
-    }
-    const typedData = getAmbireReadableTypedData(
-      polygonNetwork.chainId,
-      v2SmartAccAddr,
-      ambireReadableOperation
-    )
-
-    try {
-      await getEIP712Signature(typedData, smartAccount, v2AccountState, signer, polygonNetwork)
-      console.log('No error was thrown, but it should have')
-      expect(true).toEqual(false)
-    } catch (e: any) {
-      expect(e.message).toBe(
-        'signature error: trying to sign an AmbireReadableOperation for the same address. Please contact support'
-      )
-    }
   })
   test('Signing [EOA]: authorization', async () => {
     const accountStates = await getAccountsInfo([eoaAccount])

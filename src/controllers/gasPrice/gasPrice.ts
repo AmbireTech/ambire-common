@@ -1,4 +1,5 @@
 import { ErrorRef } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { BaseAccount } from '../../libs/account/BaseAccount'
@@ -16,6 +17,8 @@ export class GasPriceController extends EventEmitter {
   #provider: RPCProvider
 
   #baseAccount: BaseAccount
+
+  #featureFlags: IFeatureFlagsController
 
   #getSignAccountOpState: () => {
     estimation: EstimationController
@@ -50,13 +53,15 @@ export class GasPriceController extends EventEmitter {
       estimation: EstimationController
       readyToSign: boolean
       stopRefetching: boolean
-    }
+    },
+    featureFlags: IFeatureFlagsController
   ) {
     super()
     this.#network = network
     this.#provider = provider
     this.#baseAccount = baseAccount
     this.#getSignAccountOpState = getSignAccountOpState
+    this.#featureFlags = featureFlags
   }
 
   setBaseAccount(baseAccount: BaseAccount) {
@@ -66,12 +71,16 @@ export class GasPriceController extends EventEmitter {
   async fetch(emitLevelOnFailure: ErrorRef['level'] = 'silent') {
     if (this.areGasPricesUsedFromBundlerEstimation) return
 
+    await this.#featureFlags.initialLoadPromise
+
     // give priority to the bundler as it's faster and more accurate
     // we ask the bundler only when the estimation is not supported by the account
     // it is counter intuitive but the logic if the account supports the bundler
     // estimate, it would fetch the gas price from the bundler estimation itself,
     // therefore not being required here
-    const availableBundlers = getAvailableBunlders(this.#network)
+    const availableBundlers = this.#featureFlags.isFeatureEnabled('erc4337')
+      ? getAvailableBunlders(this.#network)
+      : []
     if (availableBundlers.length && !this.#baseAccount.supportsBundlerEstimation()) {
       let timeoutId
       const bundlerGasPrices = await Promise.race([
@@ -104,6 +113,7 @@ export class GasPriceController extends EventEmitter {
     // fallback to our gas price fetch if:
     // * all bundlers on the networks are not working or there are no bundlers
     // * we're doing a bundler estimate so we'd have a fallback option
+    // * ERC-4337 is disabled
     const gasPriceData = await getGasPriceRecommendations(this.#provider, this.#network, -1, () => {
       return !this.#getSignAccountOpState().stopRefetching
     }).catch((e) => {

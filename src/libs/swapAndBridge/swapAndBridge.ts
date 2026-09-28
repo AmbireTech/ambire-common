@@ -25,6 +25,7 @@ import {
 import { SwapAmountWarning } from '../../consts/safeguards/swapAmountWarnings'
 import { getTokenUsdAmount } from '../../controllers/signAccountOp/helper'
 import { Account, AccountOnchainState } from '../../interfaces/account'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
@@ -161,12 +162,20 @@ const compareTokenSortKeys = (a: TokenSortKey, b: TokenSortKey) => {
 export const attemptToSortTokensByMarketCap = async ({
   fetch,
   chainId,
-  tokens
+  tokens,
+  featureFlags
 }: {
   fetch: Fetch
   chainId: number
   tokens: SwapAndBridgeToToken[]
+  featureFlags: Pick<IFeatureFlagsController, 'isFeatureEnabled'>
 }) => {
+  if (
+    !featureFlags.isFeatureEnabled('tokenPrices') ||
+    !featureFlags.isFeatureEnabled('tokenAndDefiAutoDiscovery')
+  )
+    return tokens
+
   try {
     const tokenAddressesByMarketCapRes = await fetch(
       `https://cena.ambire.com/api/v3/lists/byMarketCap/${chainId}`

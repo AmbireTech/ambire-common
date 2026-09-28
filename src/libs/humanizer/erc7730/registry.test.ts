@@ -1,16 +1,17 @@
+import { ethers } from 'ethers'
+
+import { describe, expect, jest, test } from '@jest/globals'
+
 import {
   getTestErc7730DescriptorForCall,
   getTestErc7730Descriptors,
   getTestErc7730Errors,
   getTestErc7730MessageDescriptor
 } from '../../../controllers/erc7730/testDescriptors'
-import { ethers } from 'ethers'
-
-import { describe, expect, jest, test } from '@jest/globals'
-
 import { AccountOp } from '../../accountOp/accountOp'
 import { resolveErc7730Call } from './registry'
 import { EMPTY_ERC7730_KNOWN } from './types'
+
 describe('ERC-7730 registry cache', () => {
   test('does not call the relayer again when a calldata descriptor is cached', async () => {
     const contractAddress = '0x1111111111111111111111111111111111111111'

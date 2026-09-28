@@ -5,10 +5,9 @@ import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 
 import { Hex } from '../../interfaces/hex'
 import { TypedMessageUserRequest } from '../../interfaces/userRequest'
-import { callToTuple, getSignableHash } from '../accountOp/accountOp'
 import { decodeError } from '../errorDecoder'
 import { getErrorCodeStringFromReason } from '../errorDecoder/helpers'
-import { adaptTypedMessageForMetaMaskSigUtil, AmbireReadableOperation } from './signMessage'
+import { adaptTypedMessageForMetaMaskSigUtil } from './signMessage'
 
 type Props = {
   provider: JsonRpcProvider
@@ -65,28 +64,13 @@ export async function verifyMessage({
     }
 
     try {
-      // the final digest for AmbireReadableOperation is the execute hash
-      // as it's wrapped in mode.standard and onchain gets transformed to
-      // an AmbireOperation
-      if ('AmbireReadableOperation' in typedData.types) {
-        const ambireReadableOperation = typedData.message as AmbireReadableOperation
-        finalDigest = hexlify(
-          getSignableHash(
-            ambireReadableOperation.addr,
-            ambireReadableOperation.chainId,
-            ambireReadableOperation.nonce,
-            ambireReadableOperation.calls.map(callToTuple)
-          )
+      // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
+      finalDigest = hexlify(
+        TypedDataUtils.eip712Hash(
+          adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
+          SignTypedDataVersion.V4
         )
-      } else {
-        // TODO: Hardcoded to V4, use the version from the typedData if we want to support other versions?
-        finalDigest = hexlify(
-          TypedDataUtils.eip712Hash(
-            adaptTypedMessageForMetaMaskSigUtil({ ...typedData }),
-            SignTypedDataVersion.V4
-          )
-        )
-      }
+      )
 
       if (!finalDigest) throw Error('Hashing the typedData returned no (falsy) result.')
     } catch (e: any) {

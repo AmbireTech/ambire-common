@@ -26,6 +26,7 @@ import {
   getDappRequestData,
   getDappVerificationTestDapps,
   loadingDapp,
+  makeDapp,
   suspiciousHostingDapp,
   verifiedDapp
 } from '../../../test/helpers/dapps'
@@ -594,7 +595,8 @@ const init = async (
     fetch,
     storage: storageCtrl,
     addressBook: addressBookCtrl,
-    ui: uiCtrl
+    ui: uiCtrl,
+    featureFlags: featureFlagsCtrl
   })
   if (options?.dapps) {
     await phishing.init()
@@ -672,6 +674,7 @@ const init = async (
     networksCtrl,
     portfolio,
     safe,
+    featureFlagsCtrl,
     () => Promise.resolve()
   )
   const estimationController = new EstimationController(
@@ -690,11 +693,17 @@ const init = async (
   estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
     ? estimationOrMock.ambireEstimation.feePaymentOptions
     : estimationOrMock.providerEstimation!.feePaymentOptions
-  const gasPriceController = new GasPriceController(network, provider, baseAccount, () => ({
-    estimation: estimationController,
-    readyToSign: true,
-    stopRefetching: false
-  }))
+  const gasPriceController = new GasPriceController(
+    network,
+    provider,
+    baseAccount,
+    () => ({
+      estimation: estimationController,
+      readyToSign: true,
+      stopRefetching: false
+    }),
+    featureFlagsCtrl
+  )
   gasPriceController.gasPrices = gasPricesOrMock
   const dappsControllerMock = {
     onUpdate: () => () => {},
@@ -714,7 +723,8 @@ const init = async (
       networks: networksCtrl,
       phishing,
       ui: uiCtrl,
-      selectedAccount: selectedAccountCtrl
+      selectedAccount: selectedAccountCtrl,
+      featureFlags: featureFlagsCtrl
     })
     await realDappsController.init()
 
@@ -732,6 +742,7 @@ const init = async (
   const erc7730 = new Erc7730Controller({
     storage: storageCtrl,
     callRelayer,
+    featureFlags: featureFlagsCtrl,
     ui: uiCtrl
   })
   const controller = new SignAccountOpTesterController({
@@ -3431,8 +3442,11 @@ describe('traceCall asset discovery', () => {
     const controller = await initTraceCall(onUpdateAfterTraceCallSuccess)
 
     const discovered = ['0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48']
-    const createAccessListDeferred = createDeferred<string[]>()
-    createAccessListCallSpy.mockReturnValue(createAccessListDeferred.promise)
+    const debugTraceCallDeferred = createDeferred<{
+      tokens: string[]
+      nfts: [string, bigint[]][]
+    }>()
+    debugTraceCallSpy.mockReturnValue(debugTraceCallDeferred.promise)
     addTokensToBeLearnedSpy.mockReturnValue(true)
 
     jest.useFakeTimers()
@@ -3443,32 +3457,86 @@ describe('traceCall asset discovery', () => {
 
     // A second request while one is in progress is a no-op (reentrancy guard).
     await (controller as any).traceCall()
-    expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
+    expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
 
     // Resolving discovery learns the assets, fires the success callback and
     // settles on Done.
-    createAccessListDeferred.resolve(discovered)
+    debugTraceCallDeferred.resolve({ tokens: discovered, nfts: [] })
     await traceCallPromise
 
     expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(discovered, 1n)
-    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
-      discovered.map((address) => [address, []]),
-      smartAccount.addr,
-      1n
-    )
+    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith([], smartAccount.addr, 1n)
+    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
     expect(onUpdateAfterTraceCallSuccess).toHaveBeenCalledTimes(1)
     expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
   })
 
-  test('falls back to debug_traceCall when the access list fails and skips the callback when nothing is learned', async () => {
+  test('prefers log-capable discovery and identifies a Uniswap v4 position NFT', async () => {
+    const controller = await initTraceCall()
+    const positionManager = '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e'
+    const mintedPositionId = 12345n
+    const discoveredAddresses = [
+      '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+      positionManager
+    ]
+
+    debugTraceCallSpy.mockResolvedValueOnce({
+      tokens: discoveredAddresses,
+      nfts: [[positionManager, [mintedPositionId]]]
+    })
+    addErc721sToBeLearnedSpy.mockReturnValueOnce(true)
+
+    await (controller as any).traceCall()
+
+    expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
+    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
+    expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(discoveredAddresses, 1n)
+    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
+      [[positionManager, [mintedPositionId]]],
+      smartAccount.addr,
+      1n
+    )
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+  })
+
+  test('uses access-list candidates when log-capable discovery methods are unavailable', async () => {
+    const controller = await initTraceCall()
+    const positionManager = '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e'
+
+    createAccessListCallSpy.mockResolvedValueOnce([positionManager])
+    debugTraceCallSpy.mockRejectedValueOnce(new Error('trace failed'))
+    ethSimulateV1Spy.mockRejectedValueOnce(new Error('simulate failed'))
+
+    await (controller as any).traceCall()
+
+    expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith([positionManager], 1n)
+    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
+      [[positionManager, []]],
+      smartAccount.addr,
+      1n
+    )
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+
+    controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+    jest.clearAllMocks()
+
+    await (controller as any).traceCall()
+
+    expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
+  })
+
+  test('uses debug_traceCall first and skips later methods when it succeeds', async () => {
     const onUpdateAfterTraceCallSuccess = jest.fn(async () => {})
     const controller = await initTraceCall(onUpdateAfterTraceCallSuccess)
 
     const emitErrorSpy = jest.fn()
     ;(controller as any).emitError = emitErrorSpy
 
-    getShouldUseAccessListCallSpy.mockReturnValue(true)
-    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
     debugTraceCallSpy.mockResolvedValueOnce({
       tokens: ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
       nfts: []
@@ -3476,11 +3544,10 @@ describe('traceCall asset discovery', () => {
 
     await (controller as any).traceCall()
 
-    // The access list failure is not emitted as an error (it would be reported to
-    // Sentry) because there is a retry/fallback mechanism; discovery falls back to
-    // debug_traceCall and no error is emitted once a fallback succeeds.
     expect(emitErrorSpy).not.toHaveBeenCalled()
     expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
+    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
     expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(
       ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
       1n
@@ -3490,14 +3557,12 @@ describe('traceCall asset discovery', () => {
     expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
   })
 
-  test('falls back to eth_simulateV1 when both the access list and debug trace fail', async () => {
+  test('falls back to eth_simulateV1 when debug trace fails', async () => {
     const controller = await initTraceCall()
 
     const emitErrorSpy = jest.fn()
     ;(controller as any).emitError = emitErrorSpy
 
-    getShouldUseAccessListCallSpy.mockReturnValue(true)
-    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
     debugTraceCallSpy.mockRejectedValueOnce(new Error('trace failed'))
     ethSimulateV1Spy.mockResolvedValueOnce({
       tokens: ['0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'],
@@ -3508,6 +3573,7 @@ describe('traceCall asset discovery', () => {
 
     expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
     expect(ethSimulateV1Spy).toHaveBeenCalledTimes(1)
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
     expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(
       ['0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'],
       1n
@@ -3517,16 +3583,14 @@ describe('traceCall asset discovery', () => {
       smartAccount.addr,
       1n
     )
-    // Neither the access list nor the debug_traceCall failures are emitted as
-    // errors, since eth_simulateV1 (the last fallback) succeeds.
+    // The debug_traceCall failure is not emitted as an error because
+    // eth_simulateV1 succeeds.
     expect(emitErrorSpy).not.toHaveBeenCalled()
     expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
   })
 
   test('tries the last successful method first on the next discovery', async () => {
     const controller = await initTraceCall()
-
-    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
 
     await (controller as any).traceCall()
 
@@ -3543,8 +3607,6 @@ describe('traceCall asset discovery', () => {
   test('falls back to the other methods when the cached method fails', async () => {
     const controller = await initTraceCall()
 
-    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
-
     await (controller as any).traceCall()
 
     controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
@@ -3554,10 +3616,10 @@ describe('traceCall asset discovery', () => {
     await (controller as any).traceCall()
 
     expect(debugTraceCallSpy.mock.invocationCallOrder[0]).toBeLessThan(
-      createAccessListCallSpy.mock.invocationCallOrder[0]!
+      ethSimulateV1Spy.mock.invocationCallOrder[0]!
     )
-    expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
-    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+    expect(ethSimulateV1Spy).toHaveBeenCalledTimes(1)
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
   })
 
   test('sets Failed and emits a silent error when discovery throws', async () => {
@@ -3590,6 +3652,10 @@ describe('traceCall asset discovery', () => {
       const controller = await initTraceCall()
 
       getShouldUseAccessListCallSpy.mockReturnValue(useAccessList)
+      if (useAccessList) {
+        debugTraceCallSpy.mockRejectedValue(new Error('trace failed'))
+        ethSimulateV1Spy.mockRejectedValue(new Error('simulate failed'))
+      }
 
       const deferredA = createDeferred<any>()
       const deferredB = createDeferred<any>()
@@ -3602,6 +3668,10 @@ describe('traceCall asset discovery', () => {
 
       armNextCall(deferredA)
       const runA = (controller as any).traceCall()
+      if (useAccessList) {
+        await wait(0)
+        expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
+      }
 
       // Supersede the in-flight run A with a newer run B.
       controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
@@ -3836,6 +3906,8 @@ describe('broadcasting a batch one transaction at a time', () => {
 
   const initBatch = async (overrides?: { callRelayer?: any }) => {
     const submittedAccountOps: any[] = []
+    const broadcastStatusesOnSuccess: SignAccountOpTesterController['broadcastStatus'][] = []
+    let broadcastingController: SignAccountOpTesterController | undefined
     const feePaymentOptions = [
       {
         paidBy: eoaAccount.addr,
@@ -3863,11 +3935,15 @@ describe('broadcasting a batch one transaction at a time', () => {
         callRelayer: overrides?.callRelayer || ((async () => ({})) as any),
         onBroadcastSuccess: async ({ submittedAccountOp }: any) => {
           submittedAccountOps.push(submittedAccountOp)
+          if (broadcastingController) {
+            broadcastStatusesOnSuccess.push(broadcastingController.broadcastStatus)
+          }
         }
       }
     )
+    broadcastingController = controller
 
-    return { controller, submittedAccountOps }
+    return { controller, submittedAccountOps, broadcastStatusesOnSuccess }
   }
 
   /**
@@ -3913,6 +3989,34 @@ describe('broadcasting a batch one transaction at a time', () => {
     expect(submittedAccountOps[0].calls).toHaveLength(3)
     expect(submittedAccountOps[0].identifiedBy.type).toBe('MultipleTxns')
     expect(getPartialBroadcastError(controller)).toBeUndefined()
+  })
+
+  test('stays in the loading broadcast status until the broadcast success handler finishes', async () => {
+    const { controller, submittedAccountOps, broadcastStatusesOnSuccess } = await initBatch()
+    mockBroadcastChain(null)
+
+    expect(controller.broadcastStatus).toBe('INITIAL')
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Closing the request of a signed Safe txn keeps its dashboard simulation only while the
+    // status is still loading. The success handler is where that request gets closed, so
+    // flipping the status before the handler finishes would drop the simulation of every
+    // broadcast Safe txn.
+    expect(submittedAccountOps).toHaveLength(1)
+    expect(broadcastStatusesOnSuccess).toEqual(['LOADING'])
+    expect(controller.broadcastStatus).toBe('INITIAL')
+  })
+
+  test('does not reach the broadcast success handler and leaves the loading status when nothing was sent', async () => {
+    const { controller, submittedAccountOps, broadcastStatusesOnSuccess } = await initBatch()
+    mockBroadcastChain(0)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(submittedAccountOps).toHaveLength(0)
+    expect(broadcastStatusesOnSuccess).toEqual([])
+    expect(controller.broadcastStatus).toBe('INITIAL')
   })
 
   test('keeps every call but reports only the hashes that went out', async () => {
@@ -4128,5 +4232,195 @@ describe('reestimation loop', () => {
     // Without clearing the stopped flag the interval shuts itself down again on its
     // first run, which is what made the retry button do nothing
     expect(estimate).toHaveBeenCalled()
+  })
+})
+
+describe('SignAccountOp signing authentication', () => {
+  const ALICE = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+  const BOB = '0x8f4B2F3e18a4E1Fc5c9d95e1eE5A9B37a55f6A67'
+  const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+
+  const dappA = makeDapp({ id: 'dapp-a.com', name: 'Dapp A', url: 'https://dapp-a.com' })
+  const dappB = makeDapp({ id: 'dapp-b.com', name: 'Dapp B', url: 'https://dapp-b.com' })
+
+  const initSigningAuth = async (
+    calls: AccountOp['calls'],
+    options?: { dapps?: Dapp[]; sentTo?: string[] }
+  ) => {
+    const accountOp = createEOAAccountOp(eoaAccount)
+    ;(accountOp.op.calls as any) = calls
+
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: parseEther('1'),
+          symbol: 'ETH',
+          name: 'Ether',
+          chainId: 1n,
+          decimals: 18,
+          priceIn: [],
+          marketDataIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+
+    const { controller } = await init(
+      eoaAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      },
+      false,
+      {
+        dapps: options?.dapps,
+        initialSetStorage: async (storageCtrl) => {
+          if (!options?.sentTo?.length) return
+
+          await storageCtrl.set('sentToHistory', {
+            domains: {},
+            recipients: {
+              [eoaAccount.addr]: Object.fromEntries(
+                options.sentTo.map((addr) => [getAddress(addr), Date.now()])
+              )
+            }
+          })
+        }
+      }
+    )
+
+    // The recipients are resolved from the activity, which is read asynchronously
+    await wait(1)
+
+    return controller
+  }
+
+  const erc20 = new Interface(['function transfer(address to, uint256 amount)'])
+
+  test('a recipient the account has never sent to has to be confirmed', async () => {
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x' }])
+
+    expect(controller.signingAuthRequirement).toEqual({
+      firstTimeRecipients: [ALICE],
+      unauthenticatedDapps: []
+    })
+  })
+
+  test('a recipient the account has already sent to does not have to be confirmed', async () => {
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x' }], {
+      sentTo: [ALICE]
+    })
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('reads the recipient of a token transfer, not the token', async () => {
+    const data = erc20.encodeFunctionData('transfer', [BOB, 1n]) as Hex
+    const controller = await initSigningAuth([{ to: USDC, value: 0n, data }])
+
+    expect(controller.signingAuthRequirement?.firstTimeRecipients).toEqual([BOB])
+  })
+
+  // Being added to the wallet does not mean the user meant to send there, and an attacker who
+  // gets an address saved must not be able to have the confirmation skipped because of it
+  test('an account added to the wallet is still a first time recipient', async () => {
+    const controller = await initSigningAuth([{ to: eoaAccount.addr, value: 1n, data: '0x' }])
+
+    expect(controller.signingAuthRequirement?.firstTimeRecipients).toEqual([eoaAccount.addr])
+  })
+
+  test('paying the fee collector is not a first contact', async () => {
+    const controller = await initSigningAuth([{ to: FEE_COLLECTOR, value: 1n, data: '0x' }])
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a contract interaction on its own needs no recipient confirmation', async () => {
+    const controller = await initSigningAuth([{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex }])
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a dapp that has not been authenticated for signing has to be confirmed', async () => {
+    const controller = await initSigningAuth(
+      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      { dapps: [dappA] }
+    )
+
+    expect(controller.signingAuthRequirement).toEqual({
+      firstTimeRecipients: [],
+      unauthenticatedDapps: [{ id: dappA.id, name: dappA.name }]
+    })
+  })
+
+  test('an already authenticated dapp does not have to be confirmed again', async () => {
+    const controller = await initSigningAuth(
+      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      { dapps: [{ ...dappA, signingAuthenticated: true }] }
+    )
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a batch lists every unauthenticated dapp once', async () => {
+    const controller = await initSigningAuth(
+      [
+        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA },
+        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappB },
+        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }
+      ],
+      { dapps: [dappA, dappB] }
+    )
+
+    expect(controller.signingAuthRequirement?.unauthenticatedDapps).toEqual([
+      { id: dappA.id, name: dappA.name },
+      { id: dappB.id, name: dappB.name }
+    ])
+  })
+
+  test('a dapp the catalog does not know is skipped, as the confirmation cannot be remembered', async () => {
+    const controller = await initSigningAuth(
+      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      { dapps: [dappB] }
+    )
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a first time recipient and an unauthenticated dapp are reported together', async () => {
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x', dapp: dappA }], {
+      dapps: [dappA]
+    })
+
+    expect(controller.signingAuthRequirement).toEqual({
+      firstTimeRecipients: [ALICE],
+      unauthenticatedDapps: [{ id: dappA.id, name: dappA.name }]
+    })
   })
 })

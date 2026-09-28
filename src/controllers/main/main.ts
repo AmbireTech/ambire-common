@@ -23,8 +23,8 @@ import { ContractNamesController } from '@/controllers/contractNames/contractNam
 import { DappsController } from '@/controllers/dapps/dapps'
 import { DebugController } from '@/controllers/debug/debug'
 import { DomainsController } from '@/controllers/domains/domains'
-import { Erc7730Controller } from '@/controllers/erc7730/erc7730'
 import { EmailVaultController } from '@/controllers/emailVault/emailVault'
+import { Erc7730Controller } from '@/controllers/erc7730/erc7730'
 import { EstimationStatus } from '@/controllers/estimation/types'
 import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '@/controllers/featureFlags/featureFlags'
@@ -60,8 +60,8 @@ import { IContractNamesController } from '@/interfaces/contractNames'
 import { IDappsController } from '@/interfaces/dapp'
 import { IDebugController } from '@/interfaces/debug'
 import { IDomainsController } from '@/interfaces/domains'
-import { IErc7730Controller } from '@/interfaces/erc7730'
 import { IEmailVaultController } from '@/interfaces/emailVault'
+import { IErc7730Controller } from '@/interfaces/erc7730'
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '@/interfaces/eventEmitter'
 import { IFeatureFlagsController } from '@/interfaces/featureFlags'
 import { Fetch } from '@/interfaces/fetch'
@@ -316,20 +316,23 @@ export class MainController extends EventEmitter implements IMainController {
       },
       onReady: async () => {
         await this.providers.init({ networks: this.networks.allNetworks })
-      }
+      },
+      featureFlags: this.featureFlags
     })
 
     this.providers = new ProvidersController({
       eventEmitterRegistry,
       storage: this.storage,
       getNetworks: () => this.networks.allNetworks,
+      featureFlags: this.featureFlags,
       sendUiMessage: this.ui.message.sendUiMessage
     })
     this.verification = new VerificationController({
       eventEmitterRegistry,
       networks: this.networks,
       fetch: this.fetch,
-      velcroUrl
+      velcroUrl,
+      featureFlags: this.featureFlags
     })
     this.accounts = new AccountsController(
       this.storage,
@@ -346,7 +349,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.#updateIsOffline.bind(this),
       relayerUrl,
       this.fetch,
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      this.featureFlags
     )
     this.autoLogin = new AutoLoginController(
       this.storage,
@@ -449,6 +453,7 @@ export class MainController extends EventEmitter implements IMainController {
       externalSignerControllers: this.#externalSignerControllers,
       relayerUrl,
       fetch: this.fetch,
+      featureFlags: this.featureFlags,
       sendUiMessage: this.ui.message.sendUiMessage,
       /**
        * callback that gets triggered as a finalization step of adding new
@@ -472,7 +477,8 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       storage: this.storage,
       addressBook: this.addressBook,
-      ui: this.ui
+      ui: this.ui,
+      featureFlags: this.featureFlags
     })
     this.dapps = new DappsController({
       eventEmitterRegistry,
@@ -482,12 +488,14 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       phishing: this.phishing,
       ui: this.ui,
-      selectedAccount: this.selectedAccount
+      selectedAccount: this.selectedAccount,
+      featureFlags: this.featureFlags
     })
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
     this.erc7730 = new Erc7730Controller({
       storage: this.storage,
       callRelayer: this.callRelayer,
+      featureFlags: this.featureFlags,
       providers: this.providers,
       ui: this.ui,
       eventEmitterRegistry
@@ -514,6 +522,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.networks,
       this.portfolio,
       this.safe,
+      this.featureFlags,
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       },
@@ -526,7 +535,11 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       eventEmitterRegistry
     })
-    const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
+    const LiFiProvider = new LiFiAPI({
+      fetch,
+      apiKey: liFiApiKey,
+      featureFlags: this.featureFlags
+    })
     const SocketProvider = new SocketV3API({ fetch, apiKey: bungeeApiKey })
     const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
     const CowSwapProvider = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
@@ -621,7 +634,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.contractNames = new ContractNamesController({
       eventEmitterRegistry,
-      fetch: this.fetch
+      fetch: this.fetch,
+      featureFlags: this.featureFlags
     })
 
     if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
@@ -746,6 +760,7 @@ export class MainController extends EventEmitter implements IMainController {
               externalSignerControllers: this.#externalSignerControllers,
               relayerUrl,
               fetch: this.fetch,
+              featureFlags: this.featureFlags,
               sendUiMessage: this.ui.message.sendUiMessage,
               onAddAccountsSuccessCallback: async () => {}
             }),

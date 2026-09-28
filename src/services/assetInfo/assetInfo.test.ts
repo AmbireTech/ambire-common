@@ -2,7 +2,7 @@ import fetch from 'node-fetch'
 
 import { expect, jest } from '@jest/globals'
 
-import { monitor } from '../../../test/helpers/requests'
+import { monitor, stopMonitoring } from '../../../test/helpers/requests'
 import { networks } from '../../consts/networks'
 import * as assetInfo from './assetInfo'
 
@@ -11,6 +11,7 @@ const USDC_ADDRESS = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
 const LOBSTER_ADDRESS = '0x026224A2940bFE258D0dbE947919B62fE321F042'
 const UNISWAP_ROUTER = '0xE592427A0AEce92De3Edee1F18E0157C05861564'
 const MONERIUM_ADDRESS = '0x3231Cb76718CDeF2155FC47b5286d82e6eDA273f'
+const isTokenPricesEnabled = () => true
 global.fetch = fetch as any
 
 describe('Asset info service', () => {
@@ -39,11 +40,26 @@ describe('Asset info service', () => {
 
     if (!networks[0]) throw Error('Networks array should have at least 1 element') // using err so ts knows networks[0] exists
     await Promise.all([
-      assetInfo.resolveAssetInfo(WETH_ADDRESS, networks[0], wethCallback),
-      assetInfo.resolveAssetInfo(USDC_ADDRESS, networks[0], usdcCallback),
-      assetInfo.resolveAssetInfo(UNISWAP_ROUTER, networks[0], uniswapCallback),
-      assetInfo.resolveAssetInfo(LOBSTER_ADDRESS, networks[0], lobsterCallback),
-      assetInfo.resolveAssetInfo(MONERIUM_ADDRESS, networks[0], moneriumCallback)
+      assetInfo.resolveAssetInfo(WETH_ADDRESS, networks[0], wethCallback, isTokenPricesEnabled),
+      assetInfo.resolveAssetInfo(USDC_ADDRESS, networks[0], usdcCallback, isTokenPricesEnabled),
+      assetInfo.resolveAssetInfo(
+        UNISWAP_ROUTER,
+        networks[0],
+        uniswapCallback,
+        isTokenPricesEnabled
+      ),
+      assetInfo.resolveAssetInfo(
+        LOBSTER_ADDRESS,
+        networks[0],
+        lobsterCallback,
+        isTokenPricesEnabled
+      ),
+      assetInfo.resolveAssetInfo(
+        MONERIUM_ADDRESS,
+        networks[0],
+        moneriumCallback,
+        isTokenPricesEnabled
+      )
     ])
     expect(wethCallback).toHaveBeenCalledTimes(1)
     expect(usdcCallback).toHaveBeenCalledTimes(1)
@@ -56,13 +72,37 @@ describe('Asset info service', () => {
     const interceptedRequests = monitor()
 
     if (!networks[0]) throw Error('Networks array should have at least 1 element') // using err so ts knows networks[0] exists
-    await Promise.all([
-      assetInfo.resolveAssetInfo(WETH_ADDRESS, networks[0], () => {}),
-      assetInfo.resolveAssetInfo(USDC_ADDRESS, networks[0], () => {}),
-      assetInfo.resolveAssetInfo(UNISWAP_ROUTER, networks[0], () => {}),
-      assetInfo.resolveAssetInfo(LOBSTER_ADDRESS, networks[0], () => {})
-    ])
+    try {
+      await Promise.all([
+        assetInfo.resolveAssetInfo(WETH_ADDRESS, networks[0], () => {}, isTokenPricesEnabled),
+        assetInfo.resolveAssetInfo(USDC_ADDRESS, networks[0], () => {}, isTokenPricesEnabled),
+        assetInfo.resolveAssetInfo(UNISWAP_ROUTER, networks[0], () => {}, isTokenPricesEnabled),
+        assetInfo.resolveAssetInfo(LOBSTER_ADDRESS, networks[0], () => {}, isTokenPricesEnabled)
+      ])
+    } finally {
+      stopMonitoring()
+    }
     const requests = interceptedRequests.filter((i) => i.url === networks[0]!.rpcUrls[0])
     expect(requests.length).toBe(1)
+  })
+
+  test('does not fetch token prices when they are disabled', async () => {
+    const interceptedRequests = monitor()
+    const callback = jest.fn()
+
+    if (!networks[0]) throw Error('Networks array should have at least 1 element')
+
+    try {
+      await assetInfo.resolveAssetInfo(WETH_ADDRESS, networks[0], callback, () => false)
+    } finally {
+      stopMonitoring()
+    }
+
+    const tokenPriceRequests = interceptedRequests.filter((request) =>
+      String(request.url).includes('cena.ambire.com/api/v3/simple/')
+    )
+
+    expect(callback).toHaveBeenCalledTimes(1)
+    expect(tokenPriceRequests).toEqual([])
   })
 })
