@@ -6,6 +6,7 @@ import { Token as LiFiToken } from '@lifi/types'
 import { SwapAndBridgeQuote } from '../../interfaces/swapAndBridge'
 import {
   calculateAmountWarnings,
+  enrichRouteWithOutputTokenPrice,
   getFeeTokenForSponsorship,
   getIsBridgeRoute,
   getSwapSponsorship
@@ -257,6 +258,44 @@ describe('swapAndBridge lib', () => {
           feePercent: 0.5
         })
       ).toBeUndefined()
+    })
+  })
+
+  describe('enrichRouteWithOutputTokenPrice', () => {
+    test('uses the fetched token price for warnings when the provider price is missing', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 1,
+        minAmountOut: 50,
+        toTokenDecimals: 6
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      selectedRoute.toAmount = parseUnits('50', 6).toString()
+      delete (selectedRoute.toToken as { priceUSD?: string }).priceUSD
+
+      expect(calculateAmountWarnings(selectedRoute, '100', '1', 18)).toBeNull()
+
+      const result = enrichRouteWithOutputTokenPrice(selectedRoute, 2)
+
+      expect(result.outputValueInUsd).toBe(95)
+      expect(result.toToken.priceUSD).toBe('2')
+      expect(calculateAmountWarnings(result, '100', '1', 18)).not.toBeNull()
+    })
+
+    test('does not change routes from providers that supply their own token price', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 95,
+        fromAmount: 1,
+        minAmountOut: 50
+      })
+      expect(selectedRoute).toBeDefined()
+      if (!selectedRoute) return
+
+      expect(enrichRouteWithOutputTokenPrice(selectedRoute, 2)).toBe(selectedRoute)
     })
   })
 

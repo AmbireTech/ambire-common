@@ -857,9 +857,36 @@ const getRouteOutputValuesForSorting = (
   }
 }
 
+/**
+ * Adds the Cena output-token price required by the warning calculations when the provider
+ * doesn't supply one, without changing the provider USD values displayed in the UI.
+ */
+const enrichRouteWithOutputTokenPrice = (
+  route: SwapAndBridgeRoute,
+  outputTokenPriceUSD?: number | null
+): SwapAndBridgeRoute => {
+  const providerOutputTokenPriceUSD = Number(route.toToken.priceUSD)
+  const cenaOutputTokenPriceUSD = Number(outputTokenPriceUSD)
+  const hasProviderOutputTokenPrice =
+    Number.isFinite(providerOutputTokenPriceUSD) && providerOutputTokenPriceUSD > 0
+  const hasCenaOutputTokenPrice =
+    Number.isFinite(cenaOutputTokenPriceUSD) && cenaOutputTokenPriceUSD > 0
+
+  if (hasProviderOutputTokenPrice || !hasCenaOutputTokenPrice) return route
+
+  return {
+    ...route,
+    toToken: {
+      ...route.toToken,
+      priceUSD: cenaOutputTokenPriceUSD.toString()
+    }
+  }
+}
+
 export {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
+  enrichRouteWithOutputTokenPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,

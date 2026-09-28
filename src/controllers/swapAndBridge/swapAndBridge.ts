@@ -78,6 +78,7 @@ import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
+  enrichRouteWithOutputTokenPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getBannedToTokenList,
@@ -185,6 +186,9 @@ export const sortSwapAndBridgeRoutes = (
     // Normalize the output with the shared token price for sorting, while preserving
     // each provider's reported gas-cost difference. This keeps the comparison fair
     // without changing the provider USD values displayed in the UI.
+    // Uniswap is very gas-efficient even when its rate is slightly worse. A slightly
+    // worse rate can still be preferable to paying a much larger transaction fee,
+    // which is why routes are sorted by their output value after gas.
     const aOutputValues = getRouteOutputValuesForSorting(r1, outputTokenPriceUSD)
     const bOutputValues = getRouteOutputValuesForSorting(r2, outputTokenPriceUSD)
     const aOutputValueAfterGasInUsd = aOutputValues.outputValueAfterGasInUsd
@@ -2246,6 +2250,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         ])
         // sort the routes by value and them by disabled, making disabled last
         quoteResult.routes = quoteResult.routes
+          .map((route) => enrichRouteWithOutputTokenPrice(route, toTokenPriceUSD))
           .filter((route) => {
             const hasNoRouteId = !route.routeId
 
