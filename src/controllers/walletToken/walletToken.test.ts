@@ -293,17 +293,24 @@ describe('WalletTokenController pending withdrawals', () => {
     )
   })
 
-  test('reports a relayer failure and does not overwrite the stored logs', async () => {
-    const storedLogs = [getLeaveLog(withdrawals[0]!)]
+  test('shows the stored withdrawals and reports the error when the relayer fails', async () => {
+    const provider = makeProvider({ activeWithdrawals: [withdrawals[0]!] })
     const { controller, storage, callRelayer, onError } = getWithdrawalsController({
-      storedLogs: { [ACCOUNT_KEY]: storedLogs }
+      storedLogs: { [ACCOUNT_KEY]: [getLeaveLog(withdrawals[0]!)] },
+      provider
     })
     callRelayer.mockRejectedValue(new Error('Relayer is down'))
 
     await controller.loadPendingWithdrawals(ACCOUNT_ADDR)
 
-    expect(controller.pendingWithdrawals[ACCOUNT_ADDR]?.status).toBe('error')
-    expect(storage.set).not.toHaveBeenCalled()
+    expect(controller.pendingWithdrawals[ACCOUNT_ADDR]).toMatchObject({
+      status: 'error',
+      latestWithdrawal: withdrawals[0],
+      totalShares: 10n
+    })
+    expect(storage.store.walletStakingLeaveLogs).toEqual({
+      [ACCOUNT_KEY]: [getLeaveLog(withdrawals[0]!)]
+    })
     expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({ message: 'Unable to load the pending $WALLET withdrawals.' })
     )

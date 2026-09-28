@@ -221,8 +221,18 @@ export class WalletTokenController extends EventEmitter {
       // send the account address to the relayer although the user opted out
       await this.#featureFlags.initialLoadPromise
       const provider = this.#getEthereumProvider()
+      // A relayer failure doesn't hide the withdrawals that are already stored
+      let hasRelayerFailed = false
       const foundLeaveLogs = this.#featureFlags.isFeatureEnabled('walletStakingWithdrawalsLookup')
-        ? await this.#getRelayerLeaveLogs(accountAddr)
+        ? await this.#getRelayerLeaveLogs(accountAddr).catch((error) => {
+            hasRelayerFailed = true
+            this.emitError({
+              level: 'silent',
+              message: 'Unable to load the pending $WALLET withdrawals.',
+              error: error instanceof Error ? error : new Error('Unable to load the leave logs.')
+            })
+            return []
+          })
         : await this.#getLocalTxnsLeaveLogs(accountAddr, provider)
       const leaveLogEntries = getUniqueAccountWalletStakingLeaveLogs(
         [...(this.#leaveLogs[accountKey] || []), ...foundLeaveLogs],
@@ -259,7 +269,7 @@ export class WalletTokenController extends EventEmitter {
       })
       const { latestWithdrawal, totalShares } = getPendingWalletWithdrawalSummary(activeWithdrawals)
       this.#setAccountPendingWithdrawals(accountAddr, {
-        status: commitmentErrors.length ? 'error' : 'loaded',
+        status: hasRelayerFailed || commitmentErrors.length ? 'error' : 'loaded',
         latestWithdrawal,
         totalShares,
         ...(getTxnIdLookupError && { txnIdLookupError: getTxnIdLookupError(activeWithdrawals) })
