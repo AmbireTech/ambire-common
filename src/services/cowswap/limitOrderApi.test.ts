@@ -54,7 +54,7 @@ const makeQuoteFetch = () =>
         receiver: request.receiver,
         sellAmount: request.sellAmountBeforeFee,
         buyAmount: '1100000000000000000',
-        validTo: request.validTo,
+        validTo: request.validTo || Math.floor(Date.now() / 1000) + request.validFor,
         appData: request.appData,
         appDataHash: request.appDataHash,
         feeAmount: '0',
@@ -75,6 +75,27 @@ const makeQuoteFetch = () =>
   })
 
 describe('LimitOrderAPI', () => {
+  it('gets a market quote before a limit price is selected', async () => {
+    const fetch = makeQuoteFetch()
+    const api = new LimitOrderAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+    const result = await api.getMarketQuote({
+      fromToken: makeFromToken(),
+      toToken: makeToToken(),
+      fromAmount: 2_000_000n,
+      owner: userAddress,
+      feePercent: 0.5
+    })
+
+    const quoteRequest = JSON.parse(fetch.mock.calls[0]![1]!.body)
+    const appData = JSON.parse(quoteRequest.appData)
+
+    expect(quoteRequest.validFor).toBe(30 * 60)
+    expect(quoteRequest.validTo).toBeUndefined()
+    expect(appData.metadata.orderClass).toEqual({ orderClass: 'market' })
+    expect(result.currentMarketBuyAmount).toBe('1094500000000000000')
+  })
+
   it('prepares a fill-or-kill limit order whose buy amount is the user net minimum', async () => {
     const fetch = makeQuoteFetch()
     const api = new LimitOrderAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
@@ -175,6 +196,43 @@ describe('LimitOrderAPI', () => {
           feeAmount: '0',
           kind: 'sell',
           partiallyFillable: true,
+          signingScheme: 'presign'
+        },
+        id: 7
+      })
+    })
+    const api = new LimitOrderAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+    await expect(
+      api.prepareOrder({
+        fromToken: makeFromToken(),
+        toToken: makeToToken(),
+        fromAmount: 2_000_000n,
+        targetBuyAmount: 1n,
+        owner: userAddress,
+        validTo: Math.floor(Date.now() / 1000) + 3600,
+        feePercent: 0.5
+      })
+    ).rejects.toThrow('unexpected details')
+  })
+
+  it('rejects a quote that changes the requested expiration', async () => {
+    const fetch = makeQuoteFetch()
+    fetch.mockImplementationOnce(async (_url: any, init: any) => {
+      const request = JSON.parse(init.body)
+      return makeResponse({
+        quote: {
+          sellToken: request.sellToken,
+          buyToken: request.buyToken,
+          receiver: request.receiver,
+          sellAmount: request.sellAmountBeforeFee,
+          buyAmount: '1',
+          validTo: request.validTo + 1,
+          appData: request.appData,
+          appDataHash: request.appDataHash,
+          feeAmount: '0',
+          kind: 'sell',
+          partiallyFillable: false,
           signingScheme: 'presign'
         },
         id: 7

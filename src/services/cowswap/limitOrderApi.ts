@@ -2,13 +2,18 @@ import { getAddress, keccak256, toUtf8Bytes, ZeroAddress } from 'ethers'
 
 import SwapAndBridgeProviderApiError from '@/classes/SwapAndBridgeProviderApiError'
 import { Fetch } from '@/interfaces/fetch'
-import { LimitOrderData, PreparedLimitOrder } from '@/interfaces/limitOrders'
-import { CowSwapOrderCreation, SwapAndBridgeToToken } from '@/interfaces/swapAndBridge'
+import { LimitOrderData, LimitOrderMarketQuote, PreparedLimitOrder } from '@/interfaces/limitOrders'
+import {
+  CowSwapOrderCreation,
+  CowSwapQuoteResponse,
+  SwapAndBridgeToToken
+} from '@/interfaces/swapAndBridge'
 import { TokenResult } from '@/libs/portfolio'
 import { getFeeExemptionReason } from '@/libs/swapAndBridge/fee'
 import { isNoFeeToken } from '@/libs/swapAndBridge/swapAndBridge'
 import { CowSwapClient } from '@/services/cowswap/client'
 import {
+  buildMarketOrderAppData,
   buildLimitOrderAppData,
   computeOrderUid,
   ethFlowInterface,
@@ -20,9 +25,36 @@ import {
 
 import {
   COWSWAP_ETH_FLOW_ADDRESS,
+  COWSWAP_ORDER_VALIDITY_SECONDS,
   COWSWAP_SETTLEMENT_ADDRESS,
   COWSWAP_VAULT_RELAYER_ADDRESS
 } from './constants'
+
+type MarketQuoteParams = {
+  fromToken: TokenResult
+  toToken: SwapAndBridgeToToken
+  fromAmount: bigint
+  owner: string
+  feePercent: number
+}
+
+type QuoteContextParams = MarketQuoteParams & {
+  orderClass: 'market' | 'limit'
+  validTo?: number
+}
+
+type MarketQuoteContext = LimitOrderMarketQuote & {
+  appDataHash: string
+  buyToken: string
+  chainId: number
+  feeBps?: number
+  fullAppData: string
+  isEthFlow: boolean
+  owner: string
+  quoteId: number
+  quotedOrder: CowSwapQuoteResponse['quote']
+  sellToken: string
+}
 
 export class LimitOrderAPI {
   #client: CowSwapClient
@@ -43,23 +75,15 @@ export class LimitOrderAPI {
     return this.#client.getToken({ address, chainId })
   }
 
-  async prepareOrder({
+  async #getMarketQuoteContext({
     fromToken,
     toToken,
     fromAmount,
-    targetBuyAmount,
     owner: ownerAddress,
-    validTo,
-    feePercent
-  }: {
-    fromToken: TokenResult
-    toToken: SwapAndBridgeToToken
-    fromAmount: bigint
-    targetBuyAmount: bigint
-    owner: string
-    validTo: number
-    feePercent: number
-  }): Promise<PreparedLimitOrder> {
+    feePercent,
+    orderClass,
+    validTo
+  }: QuoteContextParams): Promise<MarketQuoteContext> {
     const chainId = Number(fromToken.chainId)
     if (!this.getSupportedChains().some((chain) => chain.chainId === chainId)) {
       throw new SwapAndBridgeProviderApiError(
@@ -69,10 +93,15 @@ export class LimitOrderAPI {
     if (chainId !== toToken.chainId) {
       throw new SwapAndBridgeProviderApiError('Limit orders must use tokens on the same network.')
     }
-    if (fromAmount <= 0n || targetBuyAmount <= 0n) {
-      throw new SwapAndBridgeProviderApiError('Enter an amount and a limit price to continue.')
+    if (fromAmount <= 0n) {
+      throw new SwapAndBridgeProviderApiError('Enter an amount to continue.')
     }
-    if (!Number.isInteger(validTo) || validTo <= Math.floor(Date.now() / 1000)) {
+    if (
+      orderClass === 'limit' &&
+      (validTo === undefined ||
+        !Number.isInteger(validTo) ||
+        validTo <= Math.floor(Date.now() / 1000))
+    ) {
       throw new SwapAndBridgeProviderApiError('Choose a future expiration for the limit order.')
     }
 
@@ -95,7 +124,10 @@ export class LimitOrderAPI {
       isFeeExemptToken: isNoFeeToken(chainId, sellToken)
     })
     const feeBps = feePercent > 0 && !feeExemptionReason ? Math.round(feePercent * 100) : undefined
-    const { fullAppData, appDataHash } = buildLimitOrderAppData({ feeBps })
+    const { fullAppData, appDataHash } =
+      orderClass === 'market'
+        ? buildMarketOrderAppData({ feeBps, slippageBps: 0 })
+        : buildLimitOrderAppData({ feeBps })
     const quoteResponse = await this.#client.getQuote(chainId, {
       sellToken,
       buyToken,
@@ -103,7 +135,7 @@ export class LimitOrderAPI {
       from: owner,
       sellAmountBeforeFee: fromAmount.toString(),
       kind: 'sell',
-      validTo,
+      ...(orderClass === 'market' ? { validFor: COWSWAP_ORDER_VALIDITY_SECONDS } : { validTo }),
       appData: fullAppData,
       appDataHash,
       priceQuality: 'optimal',
@@ -129,7 +161,8 @@ export class LimitOrderAPI {
       !Number.isSafeInteger(quoteResponse.id) ||
       Number(quoteResponse.id) < 0 ||
       !Number.isSafeInteger(quotedOrder.validTo) ||
-      quotedOrder.validTo <= Math.floor(Date.now() / 1000)
+      quotedOrder.validTo <= Math.floor(Date.now() / 1000) ||
+      (orderClass === 'limit' && quotedOrder.validTo !== validTo)
     ) {
       throw new SwapAndBridgeProviderApiError(
         'Unable to prepare the limit order because CoW Swap returned unexpected details.'
@@ -162,15 +195,80 @@ export class LimitOrderAPI {
     const networkFeeInBuyToken = (quotedBuyAmount * networkFee) / quotedSellAmount
     const protocolFee = getProtocolFeeAmount(quotedBuyAmount, protocolFeeBps)
     const marketBuyAmountBeforeFees = quotedBuyAmount + networkFeeInBuyToken + protocolFee
-    const partnerFee = feeBps
-      ? (marketBuyAmountBeforeFees * BigInt(feeBps)) / 10000n
-      : 0n
+    const partnerFee = feeBps ? (marketBuyAmountBeforeFees * BigInt(feeBps)) / 10000n : 0n
     const currentMarketBuyAmount = quotedBuyAmount - partnerFee
     if (currentMarketBuyAmount <= 0n) {
       throw new SwapAndBridgeProviderApiError(
         'Unable to prepare the limit order because the expected receive amount is too low.'
       )
     }
+
+    return {
+      appDataHash,
+      buyToken,
+      chainId,
+      currentMarketBuyAmount: currentMarketBuyAmount.toString(),
+      feeBps,
+      feeExemptionReason,
+      feePercent: feeBps ? feeBps / 100 : 0,
+      fullAppData,
+      isEthFlow,
+      owner,
+      quoteId: Number(quoteResponse.id),
+      quotedOrder,
+      sellToken
+    }
+  }
+
+  async getMarketQuote(params: MarketQuoteParams): Promise<LimitOrderMarketQuote> {
+    const { currentMarketBuyAmount, feeExemptionReason, feePercent } =
+      await this.#getMarketQuoteContext({ ...params, orderClass: 'market' })
+
+    return { currentMarketBuyAmount, feeExemptionReason, feePercent }
+  }
+
+  async prepareOrder({
+    fromToken,
+    toToken,
+    fromAmount,
+    targetBuyAmount,
+    owner: ownerAddress,
+    validTo,
+    feePercent
+  }: {
+    fromToken: TokenResult
+    toToken: SwapAndBridgeToToken
+    fromAmount: bigint
+    targetBuyAmount: bigint
+    owner: string
+    validTo: number
+    feePercent: number
+  }): Promise<PreparedLimitOrder> {
+    if (targetBuyAmount <= 0n) {
+      throw new SwapAndBridgeProviderApiError('Enter an amount and a limit price to continue.')
+    }
+    const {
+      appDataHash,
+      buyToken,
+      chainId,
+      currentMarketBuyAmount,
+      feeBps,
+      feeExemptionReason,
+      fullAppData,
+      isEthFlow,
+      owner,
+      quoteId,
+      quotedOrder,
+      sellToken
+    } = await this.#getMarketQuoteContext({
+      fromToken,
+      toToken,
+      fromAmount,
+      owner: ownerAddress,
+      validTo,
+      feePercent,
+      orderClass: 'limit'
+    })
 
     const order: CowSwapOrderCreation = {
       sellToken,
@@ -191,7 +289,7 @@ export class LimitOrderAPI {
       signingScheme: isEthFlow ? 'eip1271' : 'presign',
       signature: '0x',
       from: owner,
-      quoteId: quoteResponse.id ?? null
+      quoteId
     }
     const orderUid = computeOrderUid({ chainId, order, owner, isEthFlow })
 
@@ -242,7 +340,7 @@ export class LimitOrderAPI {
 
     return {
       chainId,
-      currentMarketBuyAmount: currentMarketBuyAmount.toString(),
+      currentMarketBuyAmount,
       feeExemptionReason,
       feePercent: feeBps ? feeBps / 100 : 0,
       fromToken,

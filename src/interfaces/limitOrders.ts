@@ -29,6 +29,11 @@ export type PreparedLimitOrder = LimitOrderData & {
   userTx: SwapAndBridgeSendTxRequest
 }
 
+export type LimitOrderMarketQuote = Pick<
+  PreparedLimitOrder,
+  'currentMarketBuyAmount' | 'feePercent' | 'feeExemptionReason'
+>
+
 export type LimitOrderFormStatus =
   | 'EMPTY'
   | 'INVALID'

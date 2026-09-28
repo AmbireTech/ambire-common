@@ -12,6 +12,7 @@ import { ExternalSignerControllers, IKeystoreController } from '@/interfaces/key
 import {
   LimitOrderFormStatus,
   LimitOrderData,
+  LimitOrderMarketQuote,
   LimitOrderPlacementStatus,
   PreparedLimitOrder
 } from '@/interfaces/limitOrders'
@@ -89,7 +90,7 @@ const formatPrice = ({
     (buyAmount * 10n ** BigInt(sellDecimals + PRICE_DISPLAY_DECIMALS)) /
     (sellAmount * 10n ** BigInt(buyDecimals))
   const formatted = formatUnits(scaledPrice, PRICE_DISPLAY_DECIMALS)
-  const [whole, fraction = ''] = formatted.split('.')
+  const [whole = '0', fraction = ''] = formatted.split('.')
   let trimmedFraction = fraction
   while (trimmedFraction.endsWith('0')) trimmedFraction = trimmedFraction.slice(0, -1)
   return trimmedFraction ? `${whole}.${trimmedFraction}` : whole
@@ -149,6 +150,8 @@ export class LimitOrdersController extends EventEmitter {
 
   #placementInterval: RecurringTimeout
 
+  #isLimitPriceUserEdited = false
+
   sessionIds: string[] = []
 
   portfolioTokenList: TokenResult[] = []
@@ -166,6 +169,8 @@ export class LimitOrdersController extends EventEmitter {
   expirationSeconds = DEFAULT_EXPIRATION_SECONDS
 
   preparedOrder: PreparedLimitOrder | null = null
+
+  marketQuote: LimitOrderMarketQuote | null = null
 
   prepareOrderStatus: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR' = 'INITIAL'
 
@@ -348,8 +353,15 @@ export class LimitOrdersController extends EventEmitter {
       : ''
     if ('fromSelectedToken' in update) this.fromSelectedToken = update.fromSelectedToken || null
     if ('toSelectedToken' in update) this.toSelectedToken = update.toSelectedToken || null
-    if ('fromAmount' in update) this.fromAmount = sanitizeDecimalInput(update.fromAmount || '')
-    if ('limitPrice' in update) this.limitPrice = sanitizeDecimalInput(update.limitPrice || '')
+    if ('fromAmount' in update) {
+      this.fromAmount = sanitizeDecimalInput(update.fromAmount || '')
+      this.marketQuote = null
+      if (!this.#isLimitPriceUserEdited) this.limitPrice = ''
+    }
+    if ('limitPrice' in update) {
+      this.limitPrice = sanitizeDecimalInput(update.limitPrice || '')
+      this.#isLimitPriceUserEdited = true
+    }
     if ('expirationSeconds' in update && update.expirationSeconds) {
       this.expirationSeconds = update.expirationSeconds
     }
@@ -357,7 +369,14 @@ export class LimitOrdersController extends EventEmitter {
     const nextFromTokenId = this.fromSelectedToken
       ? `${this.fromSelectedToken.chainId}:${this.fromSelectedToken.address.toLowerCase()}`
       : ''
-    if (previousFromTokenId !== nextFromTokenId) {
+    const didFromTokenChange = previousFromTokenId !== nextFromTokenId
+    const didToTokenChange = 'toSelectedToken' in update
+    if (didFromTokenChange || didToTokenChange) {
+      this.limitPrice = ''
+      this.marketQuote = null
+      this.#isLimitPriceUserEdited = false
+    }
+    if (didFromTokenChange) {
       if (
         this.toSelectedToken &&
         this.fromSelectedToken &&
@@ -386,7 +405,8 @@ export class LimitOrdersController extends EventEmitter {
 
   #schedulePrepareOrder() {
     this.#clearPrepareOrderTimeout()
-    if (!this.canPrepareOrder) return
+    if (!this.canQuoteMarket) return
+    this.prepareOrderStatus = 'LOADING'
 
     this.#prepareOrderTimeout = setTimeout(() => {
       this.#prepareOrderTimeout = undefined
@@ -444,17 +464,21 @@ export class LimitOrdersController extends EventEmitter {
   }
 
   get receiveAmount() {
-    if (!this.toSelectedToken || !this.targetBuyAmount) return ''
+    if (!this.toSelectedToken) return ''
+    if (!this.preparedOrder && !this.#isLimitPriceUserEdited && this.marketQuote) {
+      return formatUnits(this.marketQuote.currentMarketBuyAmount, this.toSelectedToken.decimals)
+    }
+    if (!this.targetBuyAmount) return ''
     return formatUnits(this.targetBuyAmount, this.toSelectedToken.decimals)
   }
 
   get currentMarketPrice() {
-    if (!this.preparedOrder || !this.fromSelectedToken || !this.toSelectedToken) return ''
+    if (!this.marketQuote || !this.fromSelectedToken || !this.toSelectedToken) return ''
     let marketBuyAmount: bigint
     let sellAmount: bigint
     try {
-      marketBuyAmount = BigInt(this.preparedOrder.currentMarketBuyAmount)
-      sellAmount = BigInt(this.preparedOrder.order.sellAmount)
+      marketBuyAmount = BigInt(this.marketQuote.currentMarketBuyAmount)
+      sellAmount = parseUnits(this.fromAmount, this.fromSelectedToken.decimals)
     } catch {
       return ''
     }
@@ -475,24 +499,23 @@ export class LimitOrdersController extends EventEmitter {
     return ((limit - current) / current) * 100
   }
 
-  get displayedFeePercent() {
-    return this.preparedOrder?.feePercent ?? this.feePercent
-  }
-
-  get canPrepareOrder() {
+  get canQuoteMarket() {
     return (
       !!this.#selectedAccount.account &&
       !!this.fromSelectedToken &&
       !!this.toSelectedToken &&
-      !this.validateFromAmount.message &&
-      !this.validateLimitPrice.message &&
-      this.targetBuyAmount > 0n
+      !!this.fromAmount &&
+      !this.validateFromAmount.message
     )
+  }
+
+  get canPrepareOrder() {
+    return this.canQuoteMarket && !this.validateLimitPrice.message && this.targetBuyAmount > 0n
   }
 
   async prepareOrder() {
     if (!this.#featureFlags.isFeatureEnabled('limitOrders')) return
-    if (!this.canPrepareOrder || !this.#selectedAccount.account) return
+    if (!this.canQuoteMarket || !this.#selectedAccount.account) return
     const requestId = generateUuid()
     this.#prepareOrderId = requestId
     this.prepareOrderStatus = 'LOADING'
@@ -501,18 +524,42 @@ export class LimitOrdersController extends EventEmitter {
     try {
       const fromToken = this.fromSelectedToken!
       const toToken = this.toSelectedToken!
-      const preparedOrder = await this.#api.prepareOrder({
+      const quoteParams = {
         fromToken,
         toToken,
         fromAmount: parseUnits(this.fromAmount, fromToken.decimals),
-        targetBuyAmount: this.targetBuyAmount,
         owner: this.#selectedAccount.account.addr,
         validTo: Math.floor(Date.now() / 1000) + this.expirationSeconds,
         feePercent: this.feePercent
+      }
+
+      if (!this.canPrepareOrder) {
+        const marketQuote = await this.#api.getMarketQuote(quoteParams)
+        if (requestId !== this.#prepareOrderId) return
+
+        this.marketQuote = marketQuote
+        this.prepareOrderStatus = 'SUCCESS'
+        if (!this.#isLimitPriceUserEdited) {
+          this.limitPrice = formatPrice({
+            buyAmount: BigInt(marketQuote.currentMarketBuyAmount),
+            sellAmount: quoteParams.fromAmount,
+            buyDecimals: toToken.decimals,
+            sellDecimals: fromToken.decimals
+          })
+          this.#schedulePrepareOrder()
+        }
+        this.emitUpdate()
+        return
+      }
+
+      const preparedOrder = await this.#api.prepareOrder({
+        ...quoteParams,
+        targetBuyAmount: this.targetBuyAmount
       })
       if (requestId !== this.#prepareOrderId) return
 
       this.preparedOrder = preparedOrder
+      this.marketQuote = preparedOrder
       this.prepareOrderStatus = 'SUCCESS'
       await this.#initSignAccountOp(requestId)
     } catch (error: any) {
@@ -761,8 +808,10 @@ export class LimitOrdersController extends EventEmitter {
     this.destroySignAccountOp()
     this.fromAmount = ''
     this.limitPrice = ''
+    this.#isLimitPriceUserEdited = false
     this.toSelectedToken = null
     this.preparedOrder = null
+    this.marketQuote = null
     this.prepareOrderStatus = 'INITIAL'
     this.placementStatus = 'INITIAL'
     this.placementError = ''
@@ -774,7 +823,6 @@ export class LimitOrdersController extends EventEmitter {
       ...this,
       ...super.toJSON(),
       currentMarketPrice: this.currentMarketPrice,
-      displayedFeePercent: this.displayedFeePercent,
       formStatus: this.formStatus,
       marketPriceDifferencePercent: this.marketPriceDifferencePercent,
       maxFromAmount: this.maxFromAmount,
