@@ -234,19 +234,6 @@ export const getUniqueAccountWalletStakingLeaveLogs = (
   return Array.from(entriesById.values())
 }
 
-/** Builds the WALLET staking leave log of a withdrawal, in the shape that the relayer returns. */
-export const encodeWalletStakingLeaveLog = (
-  accountAddr: string,
-  { shares, unlocksAt, maxTokens }: PendingWalletWithdrawal
-): WalletStakingRelayerLog => {
-  const { topics, data } = walletStakingInterface.encodeEventLog(
-    walletStakingInterface.getEvent('LogLeave')!,
-    [accountAddr, shares, unlocksAt, maxTokens]
-  )
-
-  return { topics, data }
-}
-
 /** Calculates the commitment key stored by the WALLET staking contract. */
 export const getPendingWalletWithdrawalCommitmentId = (
   accountAddr: string,

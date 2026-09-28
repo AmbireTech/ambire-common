@@ -5,12 +5,7 @@ import { expect, jest } from '@jest/globals'
 import { WALLET_STAKING_ADDR } from '../../consts/addresses'
 import { RPCProvider } from '../../interfaces/provider'
 import { AccountOpStatus } from '../accountOp/types'
-import {
-  findWalletStakingLeaveLogsInTxns,
-  getAccountLeaveLogsFromReceiptLogs,
-  getWalletStakingLeaveTxnIds,
-  isValidWalletStakingTxnId
-} from './localWithdrawals'
+import { findWalletStakingLeaveLogsInTxns, getWalletStakingLeaveTxnIds } from './localWithdrawals'
 import { PendingWalletWithdrawal, walletStakingInterface } from './pendingWithdrawal'
 
 import type { SubmittedAccountOp } from '../accountOp/submittedAccountOp'
@@ -67,20 +62,6 @@ const getProvider = (receipts: Record<string, unknown>) =>
       return receipt ?? null
     })
   }) as unknown as RPCProvider
-
-describe('isValidWalletStakingTxnId', () => {
-  test('accepts 32-byte hex hashes, also with spaces around them', () => {
-    expect(isValidWalletStakingTxnId(TXN_ID_1)).toBe(true)
-    expect(isValidWalletStakingTxnId(`  ${TXN_ID_1.toUpperCase().replace('0X', '0x')} `)).toBe(true)
-  })
-
-  test('rejects addresses, short hashes and other text', () => {
-    expect(isValidWalletStakingTxnId(ACCOUNT)).toBe(false)
-    expect(isValidWalletStakingTxnId(TXN_ID_1.slice(0, -2))).toBe(false)
-    expect(isValidWalletStakingTxnId('a'.repeat(64))).toBe(false)
-    expect(isValidWalletStakingTxnId('')).toBe(false)
-  })
-})
 
 describe('getWalletStakingLeaveTxnIds', () => {
   test('returns only the unique ids of transactions that call leave on the staking contract', () => {
@@ -140,22 +121,6 @@ describe('getWalletStakingLeaveTxnIds', () => {
   })
 })
 
-describe('getAccountLeaveLogsFromReceiptLogs', () => {
-  test('returns only the leave logs of the account emitted by the staking contract', () => {
-    const logs = [
-      getLeaveLog(ACCOUNT, withdrawal),
-      getLeaveLog(OTHER_ACCOUNT, { ...withdrawal, shares: 20n }),
-      // The same event from another contract must not be trusted
-      getLeaveLog(ACCOUNT, { ...withdrawal, shares: 30n }, OTHER_CONTRACT),
-      { address: WALLET_STAKING_ADDR, topics: [`0x${'0'.repeat(64)}`], data: '0x' }
-    ]
-
-    expect(getAccountLeaveLogsFromReceiptLogs(logs, ACCOUNT.toUpperCase())).toEqual([
-      toRelayerLog(getLeaveLog(ACCOUNT, withdrawal))
-    ])
-  })
-})
-
 describe('findWalletStakingLeaveLogsInTxns', () => {
   test('reads each unique receipt once and returns the leave logs of each', async () => {
     const provider = getProvider({
@@ -188,8 +153,9 @@ describe('findWalletStakingLeaveLogsInTxns', () => {
       [TXN_ID_2]: new Error('RPC is down')
     })
 
+    const invalidTxnIds = ['not-a-txn-id', ACCOUNT, TXN_ID_1.slice(0, -2), 'a'.repeat(64)]
     const result = await findWalletStakingLeaveLogsInTxns(
-      [TXN_ID_1, TXN_ID_2, 'not-a-txn-id'],
+      [TXN_ID_1, TXN_ID_2, ...invalidTxnIds],
       ACCOUNT,
       provider
     )
@@ -198,20 +164,34 @@ describe('findWalletStakingLeaveLogsInTxns', () => {
     expect(result.results).toEqual([
       { txnId: TXN_ID_1, logs: [toRelayerLog(getLeaveLog(ACCOUNT, withdrawal))] }
     ])
-    expect(result.failedTxnIds).toEqual([TXN_ID_2, 'not-a-txn-id'])
+    expect(result.failedTxnIds).toEqual([TXN_ID_2, ...invalidTxnIds.map((id) => id.toLowerCase())])
     expect(result.errors.map(({ message }: Error) => message)).toEqual([
       'RPC is down',
-      'Invalid transaction id: not-a-txn-id'
+      ...invalidTxnIds.map((id) => `Invalid transaction id: ${id.toLowerCase()}`)
     ])
   })
 
-  test('does not return leave logs of another account from the same transaction', async () => {
+  test('returns only the leave logs of the account emitted by the staking contract', async () => {
     const provider = getProvider({
-      [TXN_ID_1]: { logs: [getLeaveLog(OTHER_ACCOUNT, withdrawal)] }
+      [TXN_ID_1]: {
+        logs: [
+          getLeaveLog(ACCOUNT, withdrawal),
+          getLeaveLog(OTHER_ACCOUNT, { ...withdrawal, shares: 20n }),
+          // The same event from another contract must not be trusted
+          getLeaveLog(ACCOUNT, { ...withdrawal, shares: 30n }, OTHER_CONTRACT),
+          { address: WALLET_STAKING_ADDR, topics: [`0x${'0'.repeat(64)}`], data: '0x' }
+        ]
+      }
     })
 
-    const result = await findWalletStakingLeaveLogsInTxns([TXN_ID_1], ACCOUNT, provider)
+    const result = await findWalletStakingLeaveLogsInTxns(
+      [TXN_ID_1],
+      ACCOUNT.toUpperCase(),
+      provider
+    )
 
-    expect(result.results).toEqual([{ txnId: TXN_ID_1, logs: [] }])
+    expect(result.results).toEqual([
+      { txnId: TXN_ID_1, logs: [toRelayerLog(getLeaveLog(ACCOUNT, withdrawal))] }
+    ])
   })
 })
