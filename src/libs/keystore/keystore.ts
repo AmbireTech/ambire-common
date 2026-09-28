@@ -102,8 +102,23 @@ export const encryptMainKeyWithSecret = async (
 }
 
 /**
+ * Thrown when a main key could not be unwrapped with the given secret - a wrong password, or a
+ * ciphertext that was tampered with. Anything else thrown by an unwrap is a platform failure.
+ */
+export class WrongSecretError extends Error {
+  /** What the platform's cipher actually threw, kept for the crash report. */
+  readonly thrown: unknown
+
+  constructor(thrown: unknown) {
+    super('keystore: could not decrypt the main key with this secret')
+    this.name = 'WrongSecretError'
+    this.thrown = thrown
+  }
+}
+
+/**
  * The counterpart of `encryptMainKeyWithSecret` - decrypts a main key that was wrapped with a secret.
- * Throws an `OperationError` if the secret is wrong (or the ciphertext was tampered with).
+ * Throws a `WrongSecretError` if the secret is wrong (or the ciphertext was tampered with).
  */
 export const decryptMainKeyWithSecret = async (
   secretKey: Uint8Array<ArrayBuffer>,
@@ -118,11 +133,18 @@ export const decryptMainKeyWithSecret = async (
     ['encrypt', 'decrypt']
   )
 
-  const decrypted = await crypto.subtle.decrypt(
-    { name: CIPHER, iv: new Uint8Array(getBytes(aesEncrypted.iv)), tagLength: 128 },
-    importedSecretKey,
-    new Uint8Array(getBytes(aesEncrypted.ciphertext))
-  )
+  // Only the cipher is wrapped, so a key import failing stays an unexpected platform failure
+  // rather than being reported to the user as a wrong password
+  let decrypted: ArrayBuffer
+  try {
+    decrypted = await crypto.subtle.decrypt(
+      { name: CIPHER, iv: new Uint8Array(getBytes(aesEncrypted.iv)), tagLength: 128 },
+      importedSecretKey,
+      new Uint8Array(getBytes(aesEncrypted.ciphertext))
+    )
+  } catch (error) {
+    throw new WrongSecretError(error)
+  }
 
   return crypto.subtle.importKey('raw', decrypted.slice(0, 32), { name: CIPHER }, true, [
     'encrypt',
@@ -236,7 +258,13 @@ export const decryptSyncedMainKeyWithSecret = async (
     ['decrypt']
   )
 
-  const decrypted = await decryptWithKey(importedSecretKey, aesEncrypted)
+  // As in `decryptMainKeyWithSecret`, only the cipher counts as a wrong secret
+  let decrypted: Uint8Array
+  try {
+    decrypted = await decryptWithKey(importedSecretKey, aesEncrypted)
+  } catch (error) {
+    throw new WrongSecretError(error)
+  }
 
   return crypto.subtle.importKey('raw', decrypted.slice(0, 32), { name: CIPHER }, false, [
     'decrypt'
