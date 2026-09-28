@@ -56,6 +56,21 @@ export class StorageController extends EventEmitter implements IStorageControlle
     await this.#storage.set('passedMigrations', [...this.#passedMigrations])
   }
 
+  /**
+   * Runs the storage migrations that are not recorded in `passedMigrations` yet.
+   *
+   * IMPORTANT: every migration must be safe to re-run. It can get skipped on a boot (an earlier
+   * one failed), or interrupted halfway, and then run on a later boot against data the controllers
+   * have been storing in the current shape in the meantime. So a migration must:
+   * - check the shape of each record, not only the `passedMigrations` flag, and migrate only the
+   *   records still in the legacy shape, leaving the rest untouched
+   * - merge into the stored value instead of replacing it, and store nothing when the legacy data
+   *   is missing (never write a default over the current data)
+   * - order its writes so an interrupted run can be completed by the next one (e.g. store last
+   *   whatever makes the legacy data impossible to recognize)
+   * - be covered by tests running it on already-migrated data (nothing changes) and on a mix of
+   *   legacy and current data (only the legacy records change)
+   */
   async #loadMigrations() {
     try {
       this.#passedMigrations = new Set(await this.#storage.get('passedMigrations', []))
