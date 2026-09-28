@@ -711,7 +711,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
 
     // Don't close the request window if there are still visible requests or if a request is being added
-    if (this.visibleUserRequests.length || this.#userRequestsBeingAdded) return
+    //
+    // but also filter signed safe requests from that pool
+    const visibleUserRequests = this.#selectedAccount.account?.safeCreation
+      ? this.visibleUserRequests.filter(
+          (r) => r.kind !== 'calls' || !r.signAccountOp.accountOp.signed?.length
+        )
+      : this.visibleUserRequests
+    if (visibleUserRequests.length || this.#userRequestsBeingAdded) return
 
     await this.closeRequestWindow()
   }
