@@ -16,7 +16,7 @@ import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
-import { SAFE_NETWORKS } from '../../consts/safe'
+import { SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE, SAFE_NETWORKS } from '../../consts/safe'
 import { MAX_DAPP_CALLS_PER_REQUEST } from '../../consts/safeguards/dappRequestSpam'
 import {
   Account,
@@ -127,10 +127,10 @@ const ONE_CLICK_WINDOW_SIZE = {
   height: 600
 }
 
-const SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE =
-  "This Safe account isn't deployed on this network, and it can't be deployed using its saved setup. Please deploy it through Safe Global before trying again."
 const SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE =
   "The Safe account deployment hasn't been confirmed yet. Please wait a moment and try again."
+
+type SafeDeploymentRequestResult = { success: false } | { success: true; alreadyDeployed: boolean }
 
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
@@ -236,6 +236,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * built, keyed by what they collide on.
    */
   #dappRequestQueues = new Map<string, DappRequestQueueItem[]>()
+
+  #safeDeploymentRequestsInFlight = new Map<string, Promise<SafeDeploymentRequestResult>>()
 
   /**
    * Requests that have been built and are about to be added. Prevents opening and closing
@@ -1465,6 +1467,153 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (type === 'onchainSafeRejection') {
       await this.#buildOnchainSafeRejection(params.requestId)
+    }
+  }
+
+  #replyToSafeDeploymentRequest(
+    uiRequestId: string | undefined,
+    result: SafeDeploymentRequestResult
+  ) {
+    if (!uiRequestId) return
+
+    this.#ui.message.sendUiMessage(
+      result.success
+        ? {
+            requestId: uiRequestId,
+            ok: true,
+            res: { alreadyDeployed: result.alreadyDeployed }
+          }
+        : {
+            requestId: uiRequestId,
+            ok: false,
+            error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+          }
+    )
+  }
+
+  /**
+   * Builds a standalone Safe deployment request from the account's saved creation data.
+   * Replies to the requesting UI so Deploy settings can show preparation failures in the
+   * affected network row instead of closing without an explanation.
+   */
+  async buildSafeDeploymentRequest(
+    accountAddr: Account['addr'],
+    chainId: bigint,
+    uiRequestId?: string
+  ) {
+    await this.initialLoadPromise
+
+    const inFlightKey = `${accountAddr.toLowerCase()}:${chainId.toString()}`
+    let requestInFlight = this.#safeDeploymentRequestsInFlight.get(inFlightKey)
+
+    if (!requestInFlight) {
+      requestInFlight = this.#prepareSafeDeploymentRequest(accountAddr, chainId).finally(() => {
+        this.#safeDeploymentRequestsInFlight.delete(inFlightKey)
+      })
+      this.#safeDeploymentRequestsInFlight.set(inFlightKey, requestInFlight)
+    }
+
+    const result = await requestInFlight
+    this.#replyToSafeDeploymentRequest(uiRequestId, result)
+
+    return result.success
+  }
+
+  async #prepareSafeDeploymentRequest(
+    accountAddr: Account['addr'],
+    chainId: bigint
+  ): Promise<SafeDeploymentRequestResult> {
+    try {
+      let account = this.#accounts.accounts.find((candidate) => candidate.addr === accountAddr)
+      const network = this.#networks.networks.find((candidate) => candidate.chainId === chainId)
+      const provider = this.#providers.providers[chainId.toString()]
+
+      if (!account?.safeCreation || !network || !provider) {
+        return { success: false }
+      }
+
+      const accountState = await this.#accounts.forceFetchPendingState(accountAddr, chainId)
+      if (accountState.isDeployed) {
+        return { success: true, alreadyDeployed: true }
+      }
+
+      const existingDeploymentRequest = [
+        ...this.userRequests,
+        ...this.userRequestsWaitingAccountSwitch
+      ].find(
+        (request): request is CallsUserRequest =>
+          request.kind === 'calls' &&
+          !!request.meta.isSafeDeploy &&
+          request.meta.accountAddr === accountAddr &&
+          request.meta.chainId === chainId
+      )
+      if (existingDeploymentRequest) {
+        if (
+          this.visibleUserRequests.includes(existingDeploymentRequest) &&
+          this.currentUserRequest?.id !== existingDeploymentRequest.id
+        ) {
+          await this.#setCurrentUserRequest(existingDeploymentRequest)
+        }
+        return { success: true, alreadyDeployed: false }
+      }
+
+      if (!hasCompleteSafeCreationData(account.safeCreation)) {
+        const safeCreation = await this.#recoverSafeCreation(
+          account,
+          this.#getPossibleSafeDeploymentSourceNetworks(accountAddr)
+        )
+        if (safeCreation) account = { ...account, safeCreation }
+      }
+
+      if (!hasCompleteSafeCreationData(account.safeCreation)) {
+        return { success: false }
+      }
+
+      const deploymentCall = await getSafeDeploymentCall(account, provider)
+      if (!deploymentCall) {
+        return { success: false }
+      }
+
+      const deploymentRequests = await this.#createOrUpdateCallsUserRequests({
+        calls: [deploymentCall],
+        meta: { accountAddr, chainId, isSafeDeploy: true }
+      })
+      const deploymentRequest = deploymentRequests[0]
+
+      if (!deploymentRequest) {
+        return { success: false }
+      }
+
+      try {
+        await this.addUserRequests(deploymentRequests, { allowAccountSwitch: true })
+      } catch (error) {
+        const wasQueued =
+          this.userRequests.some((request) => request.id === deploymentRequest.id) ||
+          this.userRequestsWaitingAccountSwitch.some(
+            (request) => request.id === deploymentRequest.id
+          )
+        if (!wasQueued) deploymentRequest.signAccountOp.destroy()
+        throw error
+      }
+
+      const wasAdded =
+        this.userRequests.some((request) => request.id === deploymentRequest.id) ||
+        this.userRequestsWaitingAccountSwitch.some((request) => request.id === deploymentRequest.id)
+
+      if (!wasAdded) {
+        deploymentRequest.signAccountOp.destroy()
+        return { success: false }
+      }
+
+      return { success: true, alreadyDeployed: false }
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE,
+        error: error instanceof Error ? error : new Error(String(error)),
+        sendCrashReport: true
+      })
+      return { success: false }
     }
   }
 
