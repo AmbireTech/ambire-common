@@ -2,6 +2,7 @@ import { Contract, formatUnits, WeiPerEther } from 'ethers'
 
 import { WALLET_STAKING_ADDR } from '../../consts/addresses'
 import { RPCProvider } from '../../interfaces/provider'
+import { TokenResult } from '../portfolio/interfaces'
 import formatDecimals from '../../utils/formatDecimals/formatDecimals'
 import { withTimeout } from '../../utils/with-timeout'
 
@@ -126,3 +127,105 @@ export class XWalletShareValueCache {
 }
 
 export const xWalletShareValueCache = new XWalletShareValueCache()
+
+type WalletTokenBalance = Pick<TokenResult, 'address' | 'amount' | 'amountPostSimulation'>
+
+export type XWalletLockedSharesGetter = (
+  provider: RPCProvider,
+  accountAddr: string
+) => Promise<bigint>
+
+export type WalletStakingShareValue = {
+  shareValue: bigint
+  updatedAt: number
+  /** Undefined while unknown - the per-account lookup is optional and may fail on its own. */
+  lockedShares?: bigint
+}
+
+/** An error of the share value lookup, in the shape that controllers emit. */
+export type WalletStakingShareValueError = { level: 'silent'; message: string; error: Error }
+
+/**
+ * The locked shares are a nice-to-have next to the conversion rate, so a failure here is
+ * reported and swallowed rather than dropping the share value the rest of the app relies on.
+ */
+const getLockedShares = async (
+  provider: RPCProvider,
+  lockedSharesGetter: XWalletLockedSharesGetter,
+  onError: (error: WalletStakingShareValueError) => void,
+  accountAddr?: string
+): Promise<bigint | undefined> => {
+  if (!accountAddr) return undefined
+
+  try {
+    return await lockedSharesGetter(provider, accountAddr)
+  } catch (error) {
+    onError({
+      level: 'silent',
+      message: 'Unable to load the locked xWALLET shares.',
+      error: error instanceof Error ? error : new Error('Unable to load the locked xWALLET shares.')
+    })
+
+    return undefined
+  }
+}
+
+/**
+ * Returns the xWALLET conversion rate (and the account's locked shares) when the portfolio
+ * contains an xWALLET balance. It never throws: failures are reported through `onError`.
+ */
+export const getWalletStakingShareValue = async ({
+  chainId,
+  tokens,
+  provider,
+  accountAddr,
+  onError,
+  shareValueCache = xWalletShareValueCache,
+  lockedSharesGetter = getXWalletLockedShares
+}: {
+  chainId: bigint
+  tokens: WalletTokenBalance[]
+  provider: RPCProvider
+  accountAddr?: string
+  onError: (error: WalletStakingShareValueError) => void
+  shareValueCache?: Pick<XWalletShareValueCache, 'get'>
+  lockedSharesGetter?: XWalletLockedSharesGetter
+}): Promise<WalletStakingShareValue | null> => {
+  if (chainId !== WALLET_STAKING_CHAIN_ID) return null
+
+  const hasXWalletBalance = tokens.some(
+    (token) =>
+      token.address.toLowerCase() === WALLET_STAKING_ADDR.toLowerCase() &&
+      (token.amount > 0n || (token.amountPostSimulation || 0n) > 0n)
+  )
+  if (!hasXWalletBalance) return null
+
+  try {
+    const { shareValue, updatedAt, refreshError } = await shareValueCache.get(provider)
+
+    if (refreshError) {
+      onError({
+        level: 'silent',
+        message: 'Unable to refresh the WALLET staking conversion rate.',
+        error: refreshError
+      })
+    }
+
+    return {
+      shareValue,
+      updatedAt,
+      lockedShares: await getLockedShares(provider, lockedSharesGetter, onError, accountAddr)
+    }
+  } catch (error) {
+    onError({
+      level: 'silent',
+      message: 'Unable to load the WALLET staking conversion rate.',
+      error:
+        error instanceof Error
+          ? error
+          : new Error('Unable to load the WALLET staking conversion rate.')
+    })
+
+    return null
+  }
+}
