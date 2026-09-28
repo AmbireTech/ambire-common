@@ -3,6 +3,7 @@ import { Interface, isHexString } from 'ethers'
 import { WALLET_STAKING_ADDR } from '../../consts/addresses'
 import { RPCProvider } from '../../interfaces/provider'
 import { withTimeout } from '../../utils/with-timeout'
+import { isIdentifiedByMultipleTxn } from '../accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../accountOp/types'
 import {
   getUniqueAccountWalletStakingLeaveLogs,
@@ -23,19 +24,20 @@ const WALLET_STAKING_LEAVE_SELECTOR = new Interface([
  */
 export const getWalletStakingLeaveTxnIds = (accountOps: SubmittedAccountOp[]): string[] => {
   const stakingAddr = WALLET_STAKING_ADDR.toLowerCase()
-  const txnIds = accountOps
-    .filter(
-      ({ txnId, status, calls }) =>
-        !!txnId &&
-        status !== AccountOpStatus.Failure &&
-        status !== AccountOpStatus.Rejected &&
-        calls.some(
-          ({ to, data }) =>
-            to?.toLowerCase() === stakingAddr &&
-            data.toLowerCase().startsWith(WALLET_STAKING_LEAVE_SELECTOR)
-        )
+  const txnIds = accountOps.flatMap(({ txnId, identifiedBy, status, calls }) => {
+    if (status === AccountOpStatus.Failure || status === AccountOpStatus.Rejected) return []
+
+    const leaveCall = calls.find(
+      ({ to, data }) =>
+        to?.toLowerCase() === stakingAddr &&
+        data.toLowerCase().startsWith(WALLET_STAKING_LEAVE_SELECTOR)
     )
-    .map(({ txnId }) => txnId!.toLowerCase())
+    // An EOA without 7702 sends each call of a batch as its own transaction, and the op's txnId is
+    // only the last one - so the leave event is in the leave call's own transaction
+    const leaveTxnId = isIdentifiedByMultipleTxn(identifiedBy) ? leaveCall?.txnId : txnId
+
+    return leaveCall && leaveTxnId ? [leaveTxnId.toLowerCase()] : []
+  })
 
   return Array.from(new Set(txnIds))
 }

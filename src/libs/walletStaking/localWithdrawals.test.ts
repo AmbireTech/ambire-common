@@ -43,12 +43,14 @@ const toRelayerLog = ({ topics, data }: { topics: string[]; data: string }) => (
 
 const getAccountOp = (
   txnId: string | undefined,
-  calls: { to: string; data: string }[],
-  status: AccountOpStatus = AccountOpStatus.Success
+  calls: { to: string; data: string; txnId?: string }[],
+  status: AccountOpStatus = AccountOpStatus.Success,
+  identifiedByType: 'Transaction' | 'MultipleTxns' = 'Transaction'
 ) =>
   ({
     txnId,
     status,
+    identifiedBy: { type: identifiedByType, identifier: txnId },
     calls: calls.map((call) => ({ ...call, value: 0n }))
   }) as unknown as SubmittedAccountOp
 
@@ -76,6 +78,34 @@ describe('getWalletStakingLeaveTxnIds', () => {
     ]
 
     expect(getWalletStakingLeaveTxnIds(accountOps)).toEqual([TXN_ID_1])
+  })
+
+  test('takes the transaction of the leave call when the calls were sent one by one', () => {
+    const accountOps = [
+      // The op's txnId is the last call's transaction, which has no leave event
+      getAccountOp(
+        TXN_ID_3,
+        [
+          { to: OTHER_CONTRACT, data: '0x', txnId: TXN_ID_1 },
+          { to: WALLET_STAKING_ADDR, data: LEAVE_DATA, txnId: TXN_ID_2 },
+          { to: OTHER_CONTRACT, data: '0x', txnId: TXN_ID_3 }
+        ],
+        AccountOpStatus.Success,
+        'MultipleTxns'
+      ),
+      // The leave call wasn't sent (the user rejected the rest of the batch)
+      getAccountOp(
+        TXN_ID_1,
+        [
+          { to: OTHER_CONTRACT, data: '0x', txnId: TXN_ID_1 },
+          { to: WALLET_STAKING_ADDR, data: LEAVE_DATA }
+        ],
+        AccountOpStatus.Success,
+        'MultipleTxns'
+      )
+    ]
+
+    expect(getWalletStakingLeaveTxnIds(accountOps)).toEqual([TXN_ID_2])
   })
 
   test('ignores failed, rejected and not yet sent transactions', () => {
