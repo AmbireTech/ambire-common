@@ -116,10 +116,11 @@ export function getEstimationSummary(estimation: FullEstimation): FullEstimation
 }
 
 /**
- * This extra gas limit is 20% as 10% might not be enough for swaps
+ * This extra gas limit is 12% as 10% might not be enough for swaps
+ * but 20% makes most actions look too expensive
  */
 function getOverhead(gasLimit: bigint): bigint {
-  return gasLimit + gasLimit / 5n
+  return gasLimit + gasLimit / 8n
 }
 
 /**
