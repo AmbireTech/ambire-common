@@ -6,7 +6,6 @@ import { Token as LiFiToken } from '@lifi/types'
 import { SwapAndBridgeQuote } from '../../interfaces/swapAndBridge'
 import {
   calculateAmountWarnings,
-  enrichRouteWithOutputUsdPrice,
   getFeeTokenForSponsorship,
   getIsBridgeRoute,
   getSwapSponsorship
@@ -258,43 +257,6 @@ describe('swapAndBridge lib', () => {
           feePercent: 0.5
         })
       ).toBeUndefined()
-    })
-  })
-
-  describe('enrichRouteWithOutputUsdPrice', () => {
-    test('uses the fetched output token price and preserves the provider gas cost', () => {
-      const selectedRoute = createMockRoute({
-        inputValueInUsd: 100,
-        outputValueInUsd: 95,
-        fromAmount: 1,
-        minAmountOut: 50,
-        toTokenDecimals: 6
-      })
-      expect(selectedRoute).toBeDefined()
-      if (!selectedRoute) return
-
-      selectedRoute.toAmount = parseUnits('50', 6).toString()
-      selectedRoute.outputValueAfterGasInUsd = 90
-
-      const result = enrichRouteWithOutputUsdPrice(selectedRoute, 2)
-
-      expect(result.outputValueInUsd).toBe(100)
-      expect(result.outputValueAfterGasInUsd).toBe(95)
-      expect(result.toToken.priceUSD).toBe('2')
-    })
-
-    test('keeps provider USD values when the fetched token price is unavailable', () => {
-      const selectedRoute = createMockRoute({
-        inputValueInUsd: 100,
-        outputValueInUsd: 95,
-        fromAmount: 1,
-        minAmountOut: 50
-      })
-      expect(selectedRoute).toBeDefined()
-      if (!selectedRoute) return
-
-      expect(enrichRouteWithOutputUsdPrice(selectedRoute)).toBe(selectedRoute)
-      expect(enrichRouteWithOutputUsdPrice(selectedRoute, null)).toBe(selectedRoute)
     })
   })
 

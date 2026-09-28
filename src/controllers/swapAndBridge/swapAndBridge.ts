@@ -78,13 +78,13 @@ import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
-  enrichRouteWithOutputUsdPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getBannedToTokenList,
   getFeeTokenForSponsorship,
   getIsBridgeRoute,
   getIsTokenEligibleForSwapAndBridge,
+  getRouteOutputValuesForSorting,
   getSwapAndBridgeCalls,
   getSwapSponsorship,
   isNoFeeToken,
@@ -140,7 +140,11 @@ type ToTokenMarketDataRecord = {
   data?: TokenDataCacheValue
 }
 
-export const sortSwapAndBridgeRoutes = (r1: SwapAndBridgeRoute, r2: SwapAndBridgeRoute) => {
+export const sortSwapAndBridgeRoutes = (
+  r1: SwapAndBridgeRoute,
+  r2: SwapAndBridgeRoute,
+  outputTokenPriceUSD?: number | null
+) => {
   const isBridge = r1.fromChainId !== r1.toChainId
 
   // the amount threshold in %. If below, we check the time as
@@ -178,13 +182,13 @@ export const sortSwapAndBridgeRoutes = (r1: SwapAndBridgeRoute, r2: SwapAndBridg
       if (bHasBungeeAutoRoute && !aHasBungeeAutoRoute) return -1
     }
 
-    // outputValueAfterGas is just as it name suggest: the value
-    // each provider returns after the gas calculations have been made.
-    // Uniswap is very efficient at this althouhg the rates might be slightly
-    // worse. But slightly worse rates are better than paying a massive
-    // transaction fee for the swap. That's why we're applying this sort
-    const aOutputValueAfterGasInUsd = r1.outputValueAfterGasInUsd
-    const bOutputValueAfterGasInUsd = r2.outputValueAfterGasInUsd
+    // Normalize the output with the shared token price for sorting, while preserving
+    // each provider's reported gas-cost difference. This keeps the comparison fair
+    // without changing the provider USD values displayed in the UI.
+    const aOutputValues = getRouteOutputValuesForSorting(r1, outputTokenPriceUSD)
+    const bOutputValues = getRouteOutputValuesForSorting(r2, outputTokenPriceUSD)
+    const aOutputValueAfterGasInUsd = aOutputValues.outputValueAfterGasInUsd
+    const bOutputValueAfterGasInUsd = bOutputValues.outputValueAfterGasInUsd
     if (
       aOutputValueAfterGasInUsd !== undefined &&
       bOutputValueAfterGasInUsd !== undefined &&
@@ -226,8 +230,8 @@ export const sortSwapAndBridgeRoutes = (r1: SwapAndBridgeRoute, r2: SwapAndBridg
       return sortByTime()
     }
 
-    const aUsd = Number(r1.outputValueInUsd ?? 0)
-    const bUsd = Number(r2.outputValueInUsd ?? 0)
+    const aUsd = Number(aOutputValues.outputValueInUsd ?? 0)
+    const bUsd = Number(bOutputValues.outputValueInUsd ?? 0)
     if (a > b) {
       // if it's not a bridge, just return the higher output route
       if (!isBridge) return -1
@@ -2242,7 +2246,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         ])
         // sort the routes by value and them by disabled, making disabled last
         quoteResult.routes = quoteResult.routes
-          .map((route) => enrichRouteWithOutputUsdPrice(route, toTokenPriceUSD))
           .filter((route) => {
             const hasNoRouteId = !route.routeId
 
@@ -2262,7 +2265,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
             return !hasNoRouteId
           })
-          .sort(sortSwapAndBridgeRoutes)
+          .sort((a, b) => sortSwapAndBridgeRoutes(a, b, toTokenPriceUSD))
           .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
         // select the first enabled route
         quoteResult.selectedRoute = quoteResult.routes.length ? quoteResult.routes[0] : undefined

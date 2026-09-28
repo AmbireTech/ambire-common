@@ -787,36 +787,6 @@ const getSwapSponsorship = ({
   // }
 }
 
-const enrichRouteWithOutputUsdPrice = (
-  route: SwapAndBridgeRoute,
-  outputTokenPriceUSD?: number | null
-): SwapAndBridgeRoute => {
-  if (!outputTokenPriceUSD) return route
-
-  const outputValueInUsd = Number(
-    safeTokenAmountAndNumberMultiplication(
-      BigInt(route.toAmount),
-      route.toToken.decimals,
-      outputTokenPriceUSD
-    )
-  )
-  const gasCostInUsd =
-    route.outputValueAfterGasInUsd === undefined
-      ? undefined
-      : route.outputValueInUsd - route.outputValueAfterGasInUsd
-
-  return {
-    ...route,
-    outputValueInUsd,
-    outputValueAfterGasInUsd:
-      gasCostInUsd === undefined ? undefined : outputValueInUsd - gasCostInUsd,
-    toToken: {
-      ...route.toToken,
-      priceUSD: outputTokenPriceUSD.toString()
-    }
-  }
-}
-
 const getFeeTokenForSponsorship = (
   fromSelectedToken: FromToken,
   quote?: SwapAndBridgeQuote | null,
@@ -853,16 +823,50 @@ const getFeeTokenForSponsorship = (
   }
 }
 
+/**
+ * Calculates route output values for sorting with a shared output-token price,
+ * without changing the provider values displayed in the UI.
+ */
+const getRouteOutputValuesForSorting = (
+  route: SwapAndBridgeRoute,
+  outputTokenPriceUSD?: number | null
+) => {
+  if (!outputTokenPriceUSD) {
+    return {
+      outputValueInUsd: route.outputValueInUsd,
+      outputValueAfterGasInUsd: route.outputValueAfterGasInUsd
+    }
+  }
+
+  const outputValueInUsd = Number(
+    safeTokenAmountAndNumberMultiplication(
+      BigInt(route.toAmount),
+      route.toToken.decimals,
+      outputTokenPriceUSD
+    )
+  )
+  const gasCostInUsd =
+    route.outputValueAfterGasInUsd === undefined
+      ? undefined
+      : route.outputValueInUsd - route.outputValueAfterGasInUsd
+
+  return {
+    outputValueInUsd,
+    outputValueAfterGasInUsd:
+      gasCostInUsd === undefined ? undefined : outputValueInUsd - gasCostInUsd
+  }
+}
+
 export {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
-  enrichRouteWithOutputUsdPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
   getBannedToTokenList,
   getFeeTokenForSponsorship,
   getLink,
+  getRouteOutputValuesForSorting,
   getSlippage,
   getSwapAndBridgeCalls,
   getSwapAndBridgeRequestParams,
