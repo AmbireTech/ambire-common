@@ -126,7 +126,11 @@ class FakeProtocol {
     throw new Error('prepareUnshield is not faked')
   }
 
+  // The real one syncs before every read, so the fake does too: a controller that also calls
+  // `sync()` itself is caught by the sync counts
   async notes() {
+    await this.sync()
+
     return (notesBySeed[this.seedId as string] || []).map((note) => ({
       label: note.label,
       assetAddress: 0n,
@@ -553,7 +557,7 @@ describe('PrivacyPoolsController', () => {
     })
   })
   describe('syncing on opening an account', () => {
-    it('reads only the networks not read in the last minute', async () => {
+    it('reads only the networks not read in the last 10 minutes', async () => {
       const { controller, selectedAccount } = await prepareTest()
       let clock = 1_000_000
       const now = jest.spyOn(Date, 'now').mockImplementation(() => clock)
@@ -564,7 +568,7 @@ describe('PrivacyPoolsController', () => {
         await releaseSync('seed-a')
         await firstOpening
 
-        clock += 59_000
+        clock += 599_000
         await controller.syncIfStale()
         expect(runningSyncs).toHaveLength(0)
 
@@ -981,9 +985,33 @@ describe('PrivacyPoolsController', () => {
       expect(runningSyncs).toHaveLength(0)
     })
 
-    it('syncs the account through the queue before proving', async () => {
+    it('leaves the sync before proving to the SDK when none is queued', async () => {
       const { controller, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-a')
+
+      await controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        amount: 10n ** 17n,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+
+      const [protocol] = protocols
+      expect(protocol?.syncCountWhenProving).toBe(0)
+      expect(runningSyncs).toHaveLength(0)
+      // Proving itself failed, which leaves the transfer failed with a sentence for the user
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error: 'The transfer could not be prepared. Please try again.'
+      })
+    })
+
+    it('waits for a queued sync to finish before proving, without adding one', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      const syncing = controller.syncChain('1')
+      await waitUntil(() => runningSyncs.length === 1)
 
       const preparing = controller.prepareWithdrawal({
         chainId: '1',
@@ -991,16 +1019,17 @@ describe('PrivacyPoolsController', () => {
         amount: 10n ** 17n,
         recipient: WITHDRAWAL_RECIPIENT
       })
+      await flush()
+      const [protocol] = protocols
+      expect(protocol?.syncCountWhenProving).toBeNull()
+
       await releaseSync('seed-a')
+      await syncing
       await preparing
 
-      const [protocol] = protocols
       expect(protocol?.syncCountWhenProving).toBe(1)
-      // Proving itself failed, which leaves the transfer failed with a sentence for the user
-      expect(controller.operation).toMatchObject({
-        status: 'failed',
-        error: 'The transfer could not be prepared. Please try again.'
-      })
+      expect(protocol?.syncCount).toBe(1)
+      expect(runningSyncs).toHaveLength(0)
     })
   })
   describe('prices', () => {

@@ -69,7 +69,7 @@ const DEPOSIT_CONFIRMATION_WINDOW_MS = 15 * 60 * 1000
 const PRICES_MAX_AGE_MS = 5 * 60 * 1000
 
 /** How recently a chain must have been read for opening the account not to read it again. */
-const SYNC_MAX_AGE_MS = 60 * 1000
+const SYNC_MAX_AGE_MS = 10 * 60 * 1000
 
 /** What an account op's final status means for the deposits in it, or null while it has none. */
 const getDepositOutcome = (status?: AccountOpStatus): 'success' | 'failed' | null => {
@@ -968,7 +968,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     try {
       const protocol = await this.#getProtocol(chainId, seedId)
 
-      await protocol.sync()
+      // `notes` is optional on the plugin interface - it exists only when the plugin declares a
+      // note type, which PPv1 does. Checked rather than asserted so a future SDK that drops it
+      // fails with this sentence instead of a TypeError.
+      if (!protocol.notes) throw new Error('privacyPools: plugin does not expose notes')
+
+      // Reading the notes is the sync: the plugin syncs before every read, and each of its syncs
+      // costs seconds even with no new blocks, so a `sync()` first would pay for it twice.
+      const notes = await protocol.notes()
       const syncDuration = Date.now() - startedAt
 
       // The history is persisted by now, whoever's phrase it was read for and whether or not the
@@ -978,13 +985,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
           isInitialSyncDone: true,
           initialSyncDuration: syncDuration
         })
-
-      // `notes` is optional on the plugin interface - it exists only when the plugin declares a
-      // note type, which PPv1 does. Checked rather than asserted so a future SDK that drops it
-      // fails with this sentence instead of a TypeError.
-      if (!protocol.notes) throw new Error('privacyPools: plugin does not expose notes')
-
-      const notes = await protocol.notes()
 
       // Locked while syncing: nothing derived from the phrase may be written back. Nor for an
       // account removed meanwhile, whose notes would otherwise outlive it.
@@ -1072,9 +1072,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * What opening the account on screen does: syncs every chain it has not read in the last minute,
-   * rather than every chain every time it is opened. Not wrapped in `withStatus`, for the reason
-   * `sync` is not.
+   * What opening the account on screen does: syncs every chain it has not read in the last 10
+   * minutes, rather than every chain every time it is opened. Not wrapped in `withStatus`, for the
+   * reason `sync` is not.
    *
    * Nothing is read until the account's recovery phrase is backed up. The first read of a network
    * takes minutes, and the phrase is the only way to recover the account - so the dashboard asks
@@ -1563,9 +1563,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     try {
       await this.#assertPoolIsSponsored(chainId, tokenAddress)
 
-      // The SDK syncs the chain before proving, so the sync goes through the queue first - where it
-      // cannot run beside another one - and leaves the SDK's own only the blocks since
-      await this.#queueSync(chainId, seedId)
+      // The SDK syncs the chain itself before proving, outside the queue, so it only waits here for
+      // a queued sync to finish rather than run beside it. Not a sync of its own first: the SDK's
+      // costs about the same even with no new blocks, so running both only doubles the wait.
+      await this.#syncQueue
 
       const protocol = await this.#getProtocol(chainId, seedId)
 
