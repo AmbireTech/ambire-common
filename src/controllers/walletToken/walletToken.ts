@@ -1,4 +1,4 @@
-import { Contract } from 'ethers'
+import { Contract, isHexString } from 'ethers'
 
 import { WALLET_STAKING_ADDR } from '../../consts/addresses'
 import { IActivityController } from '../../interfaces/activity'
@@ -9,8 +9,7 @@ import { IStorageController } from '../../interfaces/storage'
 import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
 import {
   findWalletStakingLeaveLogsInTxns,
-  getWalletStakingLeaveTxnIds,
-  isValidWalletStakingTxnId
+  getWalletStakingLeaveTxnIds
 } from '../../libs/walletStaking/localWithdrawals'
 import {
   getActivePendingWalletWithdrawals,
@@ -49,8 +48,6 @@ export interface AccountPendingWalletWithdrawals {
   isTxnIdLookupLoading: boolean
 }
 
-type LeaveLogsByAccount = { [accountAddr: string]: WalletStakingRelayerLog[] }
-
 /**
  * Loads the pending $WALLET withdrawals (unstakes) of each account. The xWALLET conversion rate
  * that the portfolio shows is loaded by the portfolio itself (`getWalletStakingShareValue`).
@@ -73,7 +70,7 @@ export class WalletTokenController extends EventEmitter {
   #activity: IActivityController
 
   /** The stored leave logs, keyed by the lowercase account address. */
-  #leaveLogs: LeaveLogsByAccount = {}
+  #leaveLogs: { [accountAddr: string]: WalletStakingRelayerLog[] } = {}
 
   #loadRequestIds = new Map<string, number>()
 
@@ -136,7 +133,7 @@ export class WalletTokenController extends EventEmitter {
    */
   async findPendingWithdrawalInTxn(accountAddr: string, txnId: string) {
     const normalizedTxnId = txnId.trim().toLowerCase()
-    if (!isValidWalletStakingTxnId(normalizedTxnId)) {
+    if (!isHexString(normalizedTxnId, 32)) {
       this.#setAccountPendingWithdrawals(accountAddr, { txnIdLookupError: 'invalid' })
       return
     }

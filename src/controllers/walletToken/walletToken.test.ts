@@ -11,15 +11,28 @@ import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
 import {
-  encodeWalletStakingLeaveLog,
   getPendingWalletWithdrawalCommitmentId,
   LOG_LEAVE_TOPIC,
   PendingWalletWithdrawal,
+  walletStakingInterface,
   WalletStakingRelayerLog
 } from '../../libs/walletStaking/pendingWithdrawal'
 import { WalletTokenController } from './walletToken'
 
 const ACCOUNT_ADDR = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+
+/** Builds a WALLET staking leave log in the shape that the relayer returns. */
+const encodeWalletStakingLeaveLog = (
+  accountAddr: string,
+  { shares, unlocksAt, maxTokens }: PendingWalletWithdrawal
+): WalletStakingRelayerLog => {
+  const { topics, data } = walletStakingInterface.encodeEventLog(
+    walletStakingInterface.getEvent('LogLeave')!,
+    [accountAddr, shares, unlocksAt, maxTokens]
+  )
+
+  return { topics, data }
+}
 const leaveInterface = new Interface(['function leave(uint256 shares, bool skipMint)'])
 const commitmentInterface = new Interface(['function commitments(bytes32) view returns (uint256)'])
 const TXN_ID = `0x${'a'.repeat(64)}`

@@ -4,7 +4,6 @@ import { expect } from '@jest/globals'
 
 import {
   decodePendingWalletWithdrawals,
-  encodeWalletStakingLeaveLog,
   formatPendingWalletWithdrawalDuration,
   getActivePendingWalletWithdrawals,
   getPendingWalletWithdrawalStorageKey,
@@ -16,8 +15,10 @@ import {
   LOG_LEAVE_TOPIC,
   parseCachedPendingWalletWithdrawal,
   parseWalletStakingRelayerLogsResponse,
+  PendingWalletWithdrawal,
   shouldUsePendingWalletWithdrawalMode,
-  walletStakingInterface
+  walletStakingInterface,
+  WalletStakingRelayerLog
 } from './pendingWithdrawal'
 
 const ACCOUNT = '0x0000000000000000000000000000000000000001'
@@ -26,6 +27,19 @@ const pendingWithdrawal = {
   shares: 10n,
   unlocksAt: 2_592_000n,
   maxTokens: 12n
+}
+
+/** Builds a WALLET staking leave log in the shape that the relayer returns. */
+const encodeWalletStakingLeaveLog = (
+  accountAddr: string,
+  { shares, unlocksAt, maxTokens }: PendingWalletWithdrawal
+): WalletStakingRelayerLog => {
+  const { topics, data } = walletStakingInterface.encodeEventLog(
+    walletStakingInterface.getEvent('LogLeave')!,
+    [accountAddr, shares, unlocksAt, maxTokens]
+  )
+
+  return { topics, data }
 }
 
 describe('pending WALLET withdrawal helpers', () => {
@@ -113,18 +127,6 @@ describe('pending WALLET withdrawal helpers', () => {
         ACCOUNT
       )
     ).toEqual([pendingWithdrawal])
-  })
-
-  test('encodes a leave log in the same shape as the contract event', () => {
-    const contractEvent = walletStakingInterface.encodeEventLog(
-      walletStakingInterface.getEvent('LogLeave')!,
-      [ACCOUNT, pendingWithdrawal.shares, pendingWithdrawal.unlocksAt, pendingWithdrawal.maxTokens]
-    )
-
-    expect(encodeWalletStakingLeaveLog(ACCOUNT, pendingWithdrawal)).toEqual({
-      topics: contractEvent.topics,
-      data: contractEvent.data
-    })
   })
 
   test('keeps one decodable leave log per withdrawal of the account', () => {
