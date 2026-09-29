@@ -1,5 +1,7 @@
 import { formatEther, getAddress, isAddress } from 'ethers'
 
+import { IUiController } from '@/interfaces/ui'
+
 import { STK_WALLET, UNI_V3_WALLET_WETH_POOL, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
@@ -25,6 +27,7 @@ import {
 } from '../../libs/banners/banners'
 import { AssetType } from '../../libs/defiPositions/types'
 import {
+  getDefiAppsErrors,
   getNetworksWithDeFiPositionsErrorErrors,
   getNetworksWithErrors,
   SelectedAccountBalanceError
@@ -39,6 +42,10 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // Portfolio recalculations fire back-to-back as per-network results stream in.
 // Throttle their UI emit so the state isn't serialized on every partial tick.
 const PORTFOLIO_UPDATE_THROTTLE_MS = 100
+
+// The constant is already checksummed, so an address matches it when the two agree
+// without regard to case - which needs no keccak hash of the address to find out.
+const AMBIRE_ACCOUNT_FACTORY_LOWERCASED = AMBIRE_ACCOUNT_FACTORY.toLowerCase()
 
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
   #storage: IStorageController
@@ -56,6 +63,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   #banner: IBannerController | null = null
 
   #domains: IDomainsController | null = null
+
+  #ui: IUiController | null = null
 
   account: Account | null = null
 
@@ -92,13 +101,15 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     storage,
     accounts,
     autoLogin,
-    banner
+    banner,
+    ui
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     storage: IStorageController
     accounts: IAccountsController
     autoLogin: IAutoLoginController
     banner: IBannerController
+    ui: IUiController
   }) {
     super(eventEmitterRegistry)
 
@@ -106,6 +117,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.#accounts = accounts
     this.#autoLogin = autoLogin
     this.#banner = banner
+    this.#ui = ui
 
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -249,6 +261,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.#isManualUpdate
     )
 
+    newSelectedAccountPortfolio.mobileInviteKey =
+      this.#portfolio.mobileInviteKeys[this.account.addr]
+
     // Try catch this just in case the relayer sends unexpected data or we have other errs in the calculations
     try {
       // Find stkWALLET or WALLET token in the latest portfolio state
@@ -298,16 +313,15 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         })
         .reduce((a, b) => (a === undefined || b === undefined ? undefined : a + b), 0)
 
-      const currentBalance = Object.entries(this.portfolio.balancePerNetwork)
-        .filter(([k]) =>
-          portfolioAccountState.projectedRewards?.result?.supportedChainIds
-            .map((n) => n.toString())
-            .includes(k)
-        )
-        .map(([, v]): number => v)
-        .reduce((a, b) => a + b, 0)
+      // there might not be supported chain ids, especially if providers are disabled
+      const supportedChainIds =
+        portfolioAccountState.projectedRewards?.result?.supportedChainIds?.map((n) => n.toString())
 
-      if (portfolioAccountState.projectedRewards) {
+      if (portfolioAccountState.projectedRewards && supportedChainIds) {
+        const currentBalance = Object.entries(this.portfolio.balancePerNetwork)
+          .filter(([chainId]) => supportedChainIds.includes(chainId))
+          .map(([, balance]): number => balance)
+          .reduce((total, balance) => total + balance, 0)
         const projectedRewardsData = getProjectedRewardsStatsAndToken(
           portfolioAccountState.projectedRewards,
           walletOrStkWalletTokenPrice,
@@ -341,7 +355,14 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }
 
     // Set the loading timestamp when the portfolio starts loading
-    if (!this.#portfolioLoadingTimeout && !newSelectedAccountPortfolio.isAllReady) {
+    if (
+      !this.#portfolioLoadingTimeout &&
+      !newSelectedAccountPortfolio.isAllReady &&
+      // Don't start the timeout until the user is on the dashboard
+      // to avoid showing the waiting too long warning on mobile when the
+      // loading has started before the user has navigated to the dashboard
+      this.#ui?.views.some((v) => v.currentRoute === 'dashboard')
+    ) {
       this.#portfolioLoadingTimeout = setTimeout(() => {
         this.portfolio.shouldShowPartialResult = true
         this.updateSelectedAccountPortfolio()
@@ -425,7 +446,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         portfolioState: this.portfolio.portfolioState,
         providers: this.#providers.providers,
         networksWithPositions: this.#portfolio.getNetworksWithDefiPositions(this.account.addr)
-      })
+      }),
+      ...getDefiAppsErrors(this.portfolio.portfolioState)
     ].sort((a, b) => {
       const order = { error: 0, warning: 1 } as const
       return order[a.type] - order[b.type]
@@ -443,7 +465,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     if (
       !this.account.creation ||
-      getAddress(this.account.creation.factoryAddr) === AMBIRE_ACCOUNT_FACTORY
+      this.account.creation.factoryAddr.toLowerCase() === AMBIRE_ACCOUNT_FACTORY_LOWERCASED
     )
       return []
 
@@ -540,7 +562,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     const banners: Banner[] = []
 
     // ENS expiry banner
-    const ownDomainEntry = this.#domains?.domains[getAddress(this.account.addr)]
+    const ownDomainEntry = this.#domains?.domains[this.account.addr]
     const ensExpiry = ownDomainEntry?.expiry
     const ensName = ownDomainEntry?.names?.ens
     if (ensExpiry && ensName) {

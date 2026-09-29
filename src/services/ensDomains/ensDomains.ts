@@ -65,6 +65,8 @@ async function resolveENSDomain({
   provider: RPCProvider
   domain: string
   options?: {
+    /** Whether to resolve the avatar record. Defaults to true. */
+    resolveAvatar?: boolean
     /** Universal resolver to query. Defaults to the ENS one. */
     universalResolverAddress?: string
     /**
@@ -83,11 +85,14 @@ async function resolveENSDomain({
 
   const client = getViemClientForProvider(provider)
   const universalResolverAddress = options?.universalResolverAddress ?? ENS_UNIVERSAL_RESOLVER
+  const skipAvatar = options?.resolveAvatar === false
   const skipExpiry = options?.expiry === null
 
   const [address, avatar, expiry] = await Promise.all([
     getEnsAddress(client, { name: normalizedDomainName, universalResolverAddress }),
-    viemGetEnsAvatar(client, { name: normalizedDomainName, universalResolverAddress }),
+    skipAvatar
+      ? Promise.resolve(null)
+      : viemGetEnsAvatar(client, { name: normalizedDomainName, universalResolverAddress }),
     skipExpiry
       ? Promise.resolve(null)
       : getEnsExpiry(provider, {

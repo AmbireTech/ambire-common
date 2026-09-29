@@ -122,6 +122,31 @@ describe('SelectedAccount Controller', () => {
     expect(selectedAccountCtrl.portfolio.totalBalance).toBeGreaterThan(0)
     expect(selectedAccountCtrl.portfolio.tokens.length).toBeGreaterThan(0)
   })
+  it('should update when projected rewards data is unavailable because privacy opt outs are disabled', async () => {
+    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
+
+    jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockReturnValue({
+      '1': {
+        isReady: true,
+        isLoading: false,
+        errors: [],
+        result: {
+          tokens: [],
+          total: { usd: 0 },
+          defiPositions: { positionsByProvider: [] }
+        }
+      },
+      projectedRewards: {
+        isReady: true,
+        isLoading: false,
+        errors: [],
+        result: {}
+      }
+    } as any)
+
+    expect(() => selectedAccountCtrl.updateSelectedAccountPortfolio()).not.toThrow()
+    expect(selectedAccountCtrl.portfolio.projectedRewardsStats).toBeNull()
+  })
   it('the portfolio controller state is not mutated when updating the selected account portfolio', async () => {
     // NOTE! THE TEST ACCOUNT MUST HAVE AAVE DEFI BORROW FOR THIS TEST
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
@@ -320,7 +345,7 @@ describe('SelectedAccount Controller', () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
       providersCtrl.updateProviderIsWorking(1n, false)
       jest.spyOn(portfolioCtrl, 'getNetworksWithAssets').mockImplementation(() => ({ '1': true }))
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
@@ -332,7 +357,7 @@ describe('SelectedAccount Controller', () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
       providersCtrl.updateProviderIsWorking(1n, false)
       jest.spyOn(portfolioCtrl, 'getNetworksWithAssets').mockImplementation(() => ({}))
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
@@ -350,7 +375,7 @@ describe('SelectedAccount Controller', () => {
       selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
       selectedAccountCtrl.portfolio.portfolioState['1']!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
@@ -371,7 +396,7 @@ describe('SelectedAccount Controller', () => {
       selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
       selectedAccountCtrl.portfolio.portfolioState['1']!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       // A portfolio error banner isn't displayed when there is an RPC error banner
       expect(
@@ -382,7 +407,7 @@ describe('SelectedAccount Controller', () => {
       ).not.toBeDefined()
 
       providersCtrl.updateProviderIsWorking(1n, true)
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       // The portfolio error banner is displayed when there isn't an RPC error banner
       expect(

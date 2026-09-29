@@ -1,16 +1,87 @@
 import { parseUnits } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 import { Token as LiFiToken } from '@lifi/types'
 
-import { SwapAndBridgeQuote } from '../../interfaces/swapAndBridge'
+import { defaultFeatureFlags, FeatureFlags } from '../../consts/featureFlags'
+import { Fetch } from '../../interfaces/fetch'
+import { SwapAndBridgeQuote, SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
+import { TokenResult } from '../portfolio'
 import {
+  attemptToSortTokensByMarketCap,
   calculateAmountWarnings,
   enrichRouteWithOutputUsdPrice,
   getFeeTokenForSponsorship,
   getIsBridgeRoute,
-  getSwapSponsorship
+  getIsIntentRoute,
+  getSwapSponsorship,
+  sortTokenListResponse
 } from './swapAndBridge'
+
+const makeFeatureFlags = (overrides: Partial<FeatureFlags> = {}) => {
+  const flags = { ...defaultFeatureFlags, ...overrides }
+
+  return {
+    isFeatureEnabled: (flag: keyof FeatureFlags) => flags[flag]
+  }
+}
+
+describe('attemptToSortTokensByMarketCap', () => {
+  const makeTokens = (): SwapAndBridgeToToken[] => [
+    {
+      address: '0x0000000000000000000000000000000000000001',
+      chainId: 1,
+      decimals: 18,
+      name: 'Token One',
+      symbol: 'ONE'
+    },
+    {
+      address: '0x0000000000000000000000000000000000000002',
+      chainId: 1,
+      decimals: 18,
+      name: 'Token Two',
+      symbol: 'TWO'
+    }
+  ]
+
+  test.each([
+    ['token prices', { tokenPrices: false }],
+    ['token auto discovery', { tokenAndDefiAutoDiscovery: false }]
+  ] as const)('does not make a request wn %s is disabled', async (_, disabledFlag) => {
+    const fetch = jest.fn()
+    const tokens = makeTokens()
+
+    const result = await attemptToSortTokensByMarketCap({
+      fetch: fetch as unknown as Fetch,
+      chainId: 1,
+      tokens,
+      featureFlags: makeFeatureFlags(disabledFlag)
+    })
+
+    expect(fetch).not.toHaveBeenCalled()
+    expect(result).toBe(tokens)
+  })
+
+  test('requests market cap data and sorts tokens when both options are enabled', async () => {
+    const tokens = makeTokens()
+    const higherPriorityToken = tokens[1]
+    const lowerPriorityToken = tokens[0]
+    const fetch = jest.fn(async () => ({
+      status: 200,
+      json: async () => ({ data: [higherPriorityToken.address, lowerPriorityToken.address] })
+    })) as unknown as Fetch
+
+    const result = await attemptToSortTokensByMarketCap({
+      fetch,
+      chainId: 1,
+      tokens,
+      featureFlags: makeFeatureFlags()
+    })
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(result).toEqual([higherPriorityToken, lowerPriorityToken])
+  })
+})
 
 // Helper function to create a mock route for testing
 const createMockRoute = ({
@@ -93,6 +164,93 @@ const createMockRoute = ({
   }
 }
 
+const createToToken = (address: string, symbol = address): SwapAndBridgeToToken => ({
+  address,
+  symbol,
+  name: symbol,
+  decimals: 18,
+  chainId: 1
+})
+
+const createPortfolioToken = ({
+  address,
+  balanceInUSD = 0,
+  isPending = false
+}: {
+  address: string
+  balanceInUSD?: number
+  isPending?: boolean
+}): TokenResult => ({
+  symbol: address,
+  name: address,
+  decimals: 18,
+  address,
+  chainId: 1n,
+  amount: parseUnits(balanceInUSD.toString(), 18),
+  // A token counts as pending when its post-simulation amount differs from its amount
+  ...(isPending ? { amountPostSimulation: 0n } : {}),
+  priceIn: [{ baseCurrency: 'usd', price: 1 }],
+  marketDataIn: [],
+  flags: {
+    onGasTank: false,
+    rewardsType: null,
+    canTopUpGasTank: true,
+    isFeeToken: true
+  }
+})
+
+describe('sortTokenListResponse', () => {
+  test('puts the tokens held in the portfolio first, highest balance first', () => {
+    const sorted = sortTokenListResponse(
+      [createToToken('0xa'), createToToken('0xb'), createToToken('0xc')],
+      [
+        createPortfolioToken({ address: '0xc', balanceInUSD: 5 }),
+        createPortfolioToken({ address: '0xa', balanceInUSD: 50 })
+      ]
+    )
+
+    expect(sorted.map((t) => t.address)).toEqual(['0xa', '0xc', '0xb'])
+  })
+
+  test('puts a pending token above a held token with a higher balance', () => {
+    const sorted = sortTokenListResponse(
+      [createToToken('0xa'), createToToken('0xb')],
+      [
+        createPortfolioToken({ address: '0xa', balanceInUSD: 50 }),
+        createPortfolioToken({ address: '0xb', balanceInUSD: 1, isPending: true })
+      ]
+    )
+
+    expect(sorted.map((t) => t.address)).toEqual(['0xb', '0xa'])
+  })
+
+  test('matches the portfolio regardless of address casing', () => {
+    const sorted = sortTokenListResponse(
+      [createToToken('0xAAA'), createToToken('0xBBB')],
+      [createPortfolioToken({ address: '0xbbb', balanceInUSD: 10 })]
+    )
+
+    expect(sorted.map((t) => t.address)).toEqual(['0xBBB', '0xAAA'])
+  })
+
+  test("keeps the service provider's order for tokens that are not in the portfolio", () => {
+    const providerOrder = ['0xd', '0xc', '0xb', '0xa']
+    const sorted = sortTokenListResponse(
+      providerOrder.map((a) => createToToken(a)),
+      []
+    )
+
+    expect(sorted.map((t) => t.address)).toEqual(providerOrder)
+  })
+
+  test('does not reorder the array it was given', () => {
+    const tokens = [createToToken('0xa'), createToToken('0xb')]
+    sortTokenListResponse(tokens, [createPortfolioToken({ address: '0xb', balanceInUSD: 10 })])
+
+    expect(tokens.map((t) => t.address)).toEqual(['0xa', '0xb'])
+  })
+})
+
 describe('swapAndBridge lib', () => {
   describe('getIsBridgeRoute', () => {
     test('should not treat same-chain routes as bridge routes', () => {
@@ -107,6 +265,36 @@ describe('swapAndBridge lib', () => {
       if (!selectedRoute) return
 
       expect(getIsBridgeRoute(selectedRoute)).toBe(false)
+    })
+  })
+
+  describe('getIsIntentRoute', () => {
+    test('treats same-network CoW Swap routes as intents', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 99,
+        fromAmount: 1,
+        minAmountOut: 99
+      })!
+      selectedRoute.fromChainId = 1
+      selectedRoute.toChainId = 1
+      selectedRoute.providerId = 'cowswap'
+
+      expect(getIsBridgeRoute(selectedRoute)).toBe(false)
+      expect(getIsIntentRoute(selectedRoute)).toBe(true)
+    })
+
+    test('does not treat regular same-network swaps as intents', () => {
+      const selectedRoute = createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 99,
+        fromAmount: 1,
+        minAmountOut: 99
+      })!
+      selectedRoute.fromChainId = 1
+      selectedRoute.toChainId = 1
+
+      expect(getIsIntentRoute(selectedRoute)).toBe(false)
     })
   })
 
@@ -254,7 +442,7 @@ describe('swapAndBridge lib', () => {
           feeTokenPriceInUsd: 1,
           feeTokenDecimals: 6,
           providerId: 'lifi',
-          isBridge: false,
+          isIntent: false,
           feePercent: 0.5
         })
       ).toBeUndefined()

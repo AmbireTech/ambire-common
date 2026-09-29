@@ -24,11 +24,16 @@ const borrowETHAbi = parseAbi([
   'function borrowETH(address lendingPool, uint256 amount, uint256 interesRateMode, uint16 referralCode)'
 ])
 
+const depositETHSelector = toFunctionSelector(depositETHAbi[0])
+const withdrawETHSelector = toFunctionSelector(withdrawETHAbi[0])
+const repayETHSelector = toFunctionSelector(repayETHAbi[0])
+const borrowETHSelector = toFunctionSelector(borrowETHAbi[0])
+
 export const aaveWethGatewayV2 = (): {
   [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualization[]
 } => {
   return {
-    [toFunctionSelector(depositETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    [depositETHSelector]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
       const { args } = decodeFunctionData({ abi: depositETHAbi, data: call.data })
       const [, onBehalfOf] = args
@@ -40,7 +45,7 @@ export const aaveWethGatewayV2 = (): {
         ...getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
       ]
     },
-    [toFunctionSelector(withdrawETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    [withdrawETHSelector]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
       const { args } = decodeFunctionData({ abi: withdrawETHAbi, data: call.data })
       const [, /* lendingPool */ amount, to] = args
@@ -52,7 +57,7 @@ export const aaveWethGatewayV2 = (): {
         ...getOnBehalfOf(to, accountOp.accountAddr)
       ]
     },
-    [toFunctionSelector(repayETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    [repayETHSelector]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
       const { args } = decodeFunctionData({ abi: repayETHAbi, data: call.data })
       const [, , , /* lendingPool */ /* amount */ /* rateMode */ onBehalfOf] = args
@@ -64,7 +69,7 @@ export const aaveWethGatewayV2 = (): {
         ...getOnBehalfOf(onBehalfOf, accountOp.accountAddr)
       ]
     },
-    [toFunctionSelector(borrowETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    [borrowETHSelector]: (accountOp: AccountOp, call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in aave module when !call.to')
       const { args } = decodeFunctionData({ abi: borrowETHAbi, data: call.data })
       const [, /* lendingPool */ amount] = args

@@ -24,6 +24,7 @@ import { DappsController } from '@/controllers/dapps/dapps'
 import { DebugController } from '@/controllers/debug/debug'
 import { DomainsController } from '@/controllers/domains/domains'
 import { EmailVaultController } from '@/controllers/emailVault/emailVault'
+import { Erc7730Controller } from '@/controllers/erc7730/erc7730'
 import { EstimationStatus } from '@/controllers/estimation/types'
 import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
 import { FeatureFlagsController } from '@/controllers/featureFlags/featureFlags'
@@ -48,6 +49,7 @@ import { TransferController } from '@/controllers/transfer/transfer'
 import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
 import { VerificationController } from '@/controllers/verification/verification'
+import { WalletTokenController } from '@/controllers/walletToken/walletToken'
 import { Account, IAccountsController } from '@/interfaces/account'
 import { IAccountPickerController } from '@/interfaces/accountPicker'
 import { IActivityController } from '@/interfaces/activity'
@@ -60,6 +62,7 @@ import { IDappsController } from '@/interfaces/dapp'
 import { IDebugController } from '@/interfaces/debug'
 import { IDomainsController } from '@/interfaces/domains'
 import { IEmailVaultController } from '@/interfaces/emailVault'
+import { IErc7730Controller } from '@/interfaces/erc7730'
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '@/interfaces/eventEmitter'
 import { IFeatureFlagsController } from '@/interfaces/featureFlags'
 import { Fetch } from '@/interfaces/fetch'
@@ -92,6 +95,7 @@ import { ITransfersScannerController } from '@/interfaces/transferScanner'
 import { isExtensionOverlayView, IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
+import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
 import {
@@ -112,6 +116,7 @@ import { getAccountKeysCount } from '@/libs/keys/keys'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
+import { CowSwapAPI } from '@/services/cowswap/api'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketV3API } from '@/services/socketv3/api'
@@ -195,9 +200,13 @@ export class MainController extends EventEmitter implements IMainController {
 
   domains: IDomainsController
 
+  erc7730: IErc7730Controller
+
   contractNames: IContractNamesController
 
   contractInfo: IContractInfoController
+
+  walletToken: IWalletTokenController
 
   autoLogin: IAutoLoginController
 
@@ -240,6 +249,7 @@ export class MainController extends EventEmitter implements IMainController {
     relayerUrl,
     velcroUrl,
     liFiApiKey,
+    cowSwapApiKey,
     bungeeApiKey,
     uniswapApiKey,
     featureFlags,
@@ -256,6 +266,7 @@ export class MainController extends EventEmitter implements IMainController {
     relayerUrl: string
     velcroUrl: string
     liFiApiKey: string
+    cowSwapApiKey: string
     bungeeApiKey: string
     uniswapApiKey: string
     featureFlags: Partial<FeatureFlags>
@@ -312,20 +323,23 @@ export class MainController extends EventEmitter implements IMainController {
       },
       onReady: async () => {
         await this.providers.init({ networks: this.networks.allNetworks })
-      }
+      },
+      featureFlags: this.featureFlags
     })
 
     this.providers = new ProvidersController({
       eventEmitterRegistry,
       storage: this.storage,
       getNetworks: () => this.networks.allNetworks,
+      featureFlags: this.featureFlags,
       sendUiMessage: this.ui.message.sendUiMessage
     })
     this.verification = new VerificationController({
       eventEmitterRegistry,
       networks: this.networks,
       fetch: this.fetch,
-      velcroUrl
+      velcroUrl,
+      featureFlags: this.featureFlags
     })
     this.accounts = new AccountsController(
       this.storage,
@@ -342,7 +356,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.#updateIsOffline.bind(this),
       relayerUrl,
       this.fetch,
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      this.featureFlags
     )
     this.autoLogin = new AutoLoginController(
       this.storage,
@@ -409,7 +424,8 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       accounts: this.accounts,
       autoLogin: this.autoLogin,
-      banner: this.banner
+      banner: this.banner,
+      ui: this.ui
     })
 
     this.portfolio = new PortfolioController(
@@ -424,7 +440,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.banner,
       this.featureFlags,
       eventEmitterRegistry,
-      this.verification
+      this.verification,
+      platform
     )
     if (this.featureFlags.isFeatureEnabled('withEmailVaultController')) {
       this.emailVault = new EmailVaultController(
@@ -445,6 +462,7 @@ export class MainController extends EventEmitter implements IMainController {
       externalSignerControllers: this.#externalSignerControllers,
       relayerUrl,
       fetch: this.fetch,
+      featureFlags: this.featureFlags,
       sendUiMessage: this.ui.message.sendUiMessage,
       /**
        * callback that gets triggered as a finalization step of adding new
@@ -468,7 +486,8 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       storage: this.storage,
       addressBook: this.addressBook,
-      ui: this.ui
+      ui: this.ui,
+      featureFlags: this.featureFlags
     })
     this.dapps = new DappsController({
       eventEmitterRegistry,
@@ -478,9 +497,18 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       phishing: this.phishing,
       ui: this.ui,
-      selectedAccount: this.selectedAccount
+      selectedAccount: this.selectedAccount,
+      featureFlags: this.featureFlags
     })
     this.callRelayer = relayerCall.bind({ url: relayerUrl, fetch: this.fetch })
+    this.erc7730 = new Erc7730Controller({
+      storage: this.storage,
+      callRelayer: this.callRelayer,
+      featureFlags: this.featureFlags,
+      providers: this.providers,
+      ui: this.ui,
+      eventEmitterRegistry
+    })
     this.signMessage = new SignMessageController(
       this.keystore,
       this.providers,
@@ -490,7 +518,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite,
       eventEmitterRegistry,
       this.dapps,
-      this.callRelayer
+      this.erc7730
     )
 
     this.activity = new ActivityController(
@@ -503,12 +531,21 @@ export class MainController extends EventEmitter implements IMainController {
       this.networks,
       this.portfolio,
       this.safe,
+      this.featureFlags,
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       },
       eventEmitterRegistry,
       idb
     )
+    this.walletToken = new WalletTokenController({
+      eventEmitterRegistry,
+      storage: this.storage,
+      featureFlags: this.featureFlags,
+      providers: this.providers,
+      callRelayer: this.callRelayer,
+      activity: this.activity
+    })
     this.transferScanner = new TransfersScannerController({
       activity: this.activity,
       networks: this.networks,
@@ -516,9 +553,14 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       eventEmitterRegistry
     })
-    const LiFiProvider = new LiFiAPI({ fetch, apiKey: liFiApiKey })
+    const LiFiProvider = new LiFiAPI({
+      fetch,
+      apiKey: liFiApiKey,
+      featureFlags: this.featureFlags
+    })
     const SocketProvider = new SocketV3API({ fetch, apiKey: bungeeApiKey })
     const UniswapProvider = new UniswapAPI({ fetch, apiKey: uniswapApiKey })
+    const CowSwapProvider = new CowSwapAPI({ fetch, apiKey: cowSwapApiKey })
     this.swapAndBridge = new SwapAndBridgeController({
       eventEmitterRegistry,
       callRelayer: this.callRelayer,
@@ -536,8 +578,9 @@ export class MainController extends EventEmitter implements IMainController {
       featureFlags: this.featureFlags,
       phishing: this.phishing,
       dapps: this.dapps,
+      erc7730: this.erc7730,
       swapProvider: new SwapProviderParallelExecutor(
-        [LiFiProvider, SocketProvider, UniswapProvider],
+        [LiFiProvider, SocketProvider, UniswapProvider, CowSwapProvider],
         () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) })),
         () => this.swapAndBridge?.getDisabledSwapProviderIds() ?? []
       ),
@@ -594,6 +637,7 @@ export class MainController extends EventEmitter implements IMainController {
       relayerUrl,
       this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
+      this.erc7730,
       eventEmitterRegistry
     )
     this.domains = new DomainsController({
@@ -608,7 +652,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.contractNames = new ContractNamesController({
       eventEmitterRegistry,
-      fetch: this.fetch
+      fetch: this.fetch,
+      featureFlags: this.featureFlags
     })
 
     if (this.featureFlags.isFeatureEnabled('withTransactionManagerController')) {
@@ -640,6 +685,7 @@ export class MainController extends EventEmitter implements IMainController {
       activity: this.activity,
       phishing: this.phishing,
       dapps: this.dapps,
+      erc7730: this.erc7730,
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers,
@@ -732,6 +778,7 @@ export class MainController extends EventEmitter implements IMainController {
               externalSignerControllers: this.#externalSignerControllers,
               relayerUrl,
               fetch: this.fetch,
+              featureFlags: this.featureFlags,
               sendUiMessage: this.ui.message.sendUiMessage,
               onAddAccountsSuccessCallback: async () => {}
             }),
@@ -877,7 +924,9 @@ export class MainController extends EventEmitter implements IMainController {
     // call closeRequestWindow while still on the currently selected account to allow proper
     // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
     if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
-      await this.requests.closeRequestWindow()
+      // Switching accounts is the user acting on the wallet, not refusing the apps that
+      // happened to be waiting, so it must not count towards the spam detection.
+      await this.requests.closeRequestWindow({ isUserInitiated: false })
     }
     const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
       ({ kind }) => kind === 'swapAndBridge'
@@ -1991,7 +2040,10 @@ export class MainController extends EventEmitter implements IMainController {
     ) as CallsUserRequest | undefined
 
     if (userRequest) {
-      await this.requests.rejectCalls({ activeRouteIds: [activeRouteId] })
+      await this.requests.rejectCalls({
+        activeRouteIds: [activeRouteId],
+        isUserInitiated: false
+      })
     } else {
       this.swapAndBridge.removeActiveRoute(activeRouteId)
     }

@@ -29,18 +29,21 @@ export const clearDiscoverTxnTokensCache = () => discoveryMethodCache.clear()
 /**
  * Goal: discover tokens that are interacting with the account during a txn
  * To do this, we use 3 methods:
- * - eth_createAccessList
  * - debug_traceCall
  * - eth_simulateV1
- * The end product of each method is the same. However, different methods
- * are supported on different chains depending on the chain configs and RPC.
+ * - eth_createAccessList
+ * The end product of each method is similar. However, an access list can only
+ * identify NFT contract addresses, while the other methods can also identify
+ * token IDs from transfer logs. Different methods are supported on different
+ * chains depending on the chain configs and RPC.
  * Also, some accounts require state overrides which may not be supported
  * on the specific chain. That's why we have 3 methods and rely on 1
- * having the exact support we need. Each method is called one by one until
- * we hit a success or all methods have failed.
+ * having the exact support we need. The log-capable methods are preferred so
+ * non-enumerable NFT token IDs can be discovered. Access-list discovery is the
+ * best-effort fallback.
  * We also have a memory cache. It's simple: record the method that succeeded
  * for chain-account. The next time discoverTxnTokens is called, it will start
- * from the method that was successful.
+ * from the successful log-capable method.
  */
 export async function discoverTxnTokens({
   account,
@@ -66,14 +69,16 @@ export async function discoverTxnTokens({
     eth_simulateV1: () => ethSimulateV1(baseAccount, accountOp, network, accountState)
   }
   const availableMethods: DiscoveryMethod[] = [
-    ...(shouldUseAccessList ? (['eth_createAccessList'] as const) : []),
     'debug_traceCall',
-    'eth_simulateV1'
+    'eth_simulateV1',
+    ...(shouldUseAccessList ? (['eth_createAccessList'] as const) : [])
   ]
   const cacheKey = `${network.chainId}-${account.addr}`
   const cachedMethod = discoveryMethodCache.get(cacheKey)
   const orderedMethods =
-    cachedMethod && availableMethods.includes(cachedMethod)
+    cachedMethod &&
+    cachedMethod !== 'eth_createAccessList' &&
+    availableMethods.includes(cachedMethod)
       ? [cachedMethod, ...availableMethods.filter((method) => method !== cachedMethod)]
       : availableMethods
 
@@ -85,7 +90,8 @@ export async function discoverTxnTokens({
 
     try {
       discoveredAssets = await methodCalls[method]()
-      discoveryMethodCache.set(cacheKey, method)
+      if (method === 'eth_createAccessList') discoveryMethodCache.delete(cacheKey)
+      else discoveryMethodCache.set(cacheKey, method)
       break
     } catch (error) {
       lastError = error

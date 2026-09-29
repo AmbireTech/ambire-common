@@ -3,6 +3,7 @@ import { getAddress, isAddress } from 'ethers'
 import { IContractNamesController } from '../../interfaces/contractNames'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import wait from '../../utils/wait'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
@@ -52,6 +53,8 @@ export class ContractNamesController extends EventEmitter implements IContractNa
 
   #fetch: Fetch
 
+  #featureFlags?: IFeatureFlagsController
+
   #lastTimeScheduledFetch: number = 0
 
   #contractNames: ContractNames = {}
@@ -61,15 +64,18 @@ export class ContractNamesController extends EventEmitter implements IContractNa
   constructor({
     eventEmitterRegistry,
     fetch,
+    featureFlags,
     debounceTime = 100
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
+    featureFlags?: IFeatureFlagsController
     debounceTime?: number
   }) {
     super(eventEmitterRegistry)
 
     this.#fetch = fetch
+    this.#featureFlags = featureFlags
     this.#debounceTime = debounceTime
   }
 
@@ -87,9 +93,21 @@ export class ContractNamesController extends EventEmitter implements IContractNa
   }
 
   async #batchFetchNames(): Promise<void> {
+    await this.#featureFlags?.initialLoadPromise
+
     // using a second variable to avoid race conditions in `contractsPendingToBeFetched`
     const contractsToFetch = this.#contractsPendingToBeFetched
     this.#contractsPendingToBeFetched = []
+
+    if (this.#featureFlags?.isFeatureEnabled('apiForFunctionSelectors') === false) {
+      contractsToFetch.forEach(({ address }) => {
+        const contractName = this.#contractNames[address]
+        if (contractName) contractName.isLoading = false
+      })
+      this.emitUpdate()
+      return
+    }
+
     this.emitUpdate()
 
     const url = `https://cena.ambire.com/api/v3/contracts/multiple?addresses=${contractsToFetch.map(
@@ -186,6 +204,8 @@ export class ContractNamesController extends EventEmitter implements IContractNa
   }
 
   getName(_address: string, chainId: bigint) {
+    if (this.#featureFlags?.isFeatureEnabled('apiForFunctionSelectors') === false) return
+
     if (!isAddress(_address))
       return this.emitError({
         message: 'Non address passed to ContractNamesController.getName',
