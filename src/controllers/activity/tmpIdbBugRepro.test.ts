@@ -48,7 +48,7 @@ function makeOp(
     id,
     accountAddr,
     chainId: 1n,
-    calls: [{ to: RECIPIENT, value: 0n, data: '0x' }],
+    calls: [{ to: RECIPIENT, value: 1n, data: '0x' }],
     gasFeePayment: null,
     status: AccountOpStatus.Success,
     timestamp,
@@ -102,6 +102,7 @@ function makeController(
     { networks: [{ chainId: 1n }] } as any,
     { addTokensToBeLearned: () => {} } as any,
     {} as any,
+    { isFeatureEnabled: () => undefined } as any, // featureFlags
     async () => {},
     undefined,
     backend === 'idb' ? db : undefined

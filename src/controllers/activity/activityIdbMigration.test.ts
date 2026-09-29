@@ -60,7 +60,9 @@ function makeOp(id: string, timestamp: number, status = AccountOpStatus.Success)
 function makeOpTo(id: string, timestamp: number, to: string) {
   return {
     ...makeOp(id, timestamp),
-    calls: [{ to, value: 0n, data: '0x' }]
+    // Non-zero: v2's getRecipientFromCall counts a plain transfer as sending to someone only
+    // when it moves value, so a 0-value call with no data has no recipient at all.
+    calls: [{ to, value: 1n, data: '0x' }]
   }
 }
 
@@ -93,6 +95,7 @@ function makeController(storage: IStorageController, idb?: AmbireIdbDatabase, pr
     networksStub, // networks
     {} as any, // portfolio
     {} as any, // safe
+    { isFeatureEnabled: () => undefined } as any, // featureFlags
     async () => {},
     undefined, // eventEmitterRegistry
     idb
@@ -803,6 +806,7 @@ describe('ActivityController — the startup read covers every account', () => {
       networksStub,
       {} as any,
       {} as any,
+      { isFeatureEnabled: () => undefined } as any, // featureFlags
       async () => {},
       undefined,
       db
@@ -899,6 +903,7 @@ describe('ActivityController — the startup window is deeper for the selected a
       networksStub,
       {} as any,
       {} as any,
+      { isFeatureEnabled: () => undefined } as any, // featureFlags
       async () => {},
       undefined,
       db
@@ -1127,7 +1132,7 @@ describe('ActivityController — paginated reads', () => {
     const internalMultiTxn = {
       ...makeOp('internal-multi-txn', 1),
       txnId: undefined,
-      calls: [{ to: PROBE_ADDRESS, value: 0n, data: '0x', txnId }]
+      calls: [{ to: PROBE_ADDRESS, value: 1n, data: '0x', txnId }]
     }
     await new ActivityIdbStorage(db).putMultiple([
       {
@@ -1298,11 +1303,11 @@ describe('ActivityController — total transaction count', () => {
         '1': [
           {
             ...makeOpTo('newer', 9000, NEW_ADDR),
-            calls: [{ to: NEW_ADDR, value: 0n, data: '0x', recipientDomain: 'alice.eth' }]
+            calls: [{ to: NEW_ADDR, value: 1n, data: '0x', recipientDomain: 'alice.eth' }]
           },
           {
             ...makeOpTo('older', 1000, OLD_ADDR),
-            calls: [{ to: OLD_ADDR, value: 0n, data: '0x', recipientDomain: 'alice.eth' }]
+            calls: [{ to: OLD_ADDR, value: 1n, data: '0x', recipientDomain: 'alice.eth' }]
           }
         ]
       }
