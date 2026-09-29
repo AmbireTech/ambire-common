@@ -1,6 +1,8 @@
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
+import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
+import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { Storage } from '../../interfaces/storage'
 import { StorageController } from './storage'
 
@@ -334,6 +336,73 @@ describe('StorageController', () => {
       expect(counting.setCount()).toBe(1)
       expect(passed).toContain(MIGRATION_KEY)
       expect(await storageCtrl.get('dappsV2', [])).toEqual([withId])
+    })
+  })
+
+  describe('migrateAccountPreferencesToAccounts', () => {
+    const MIGRATION_KEY = 'migrateAccountPreferencesToAccounts'
+    const ADDR_WITH_PREFS = '0x6ACAE5921ab897535D3989C7ba45c262D120dc16'
+    const ADDR_WITHOUT_PREFS = '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'
+    // Accounts as stored before v4.25.0 - without `preferences`
+    const legacyAccounts = [
+      { addr: ADDR_WITH_PREFS, associatedKeys: [], initialPrivileges: [], creation: null },
+      { addr: ADDR_WITHOUT_PREFS, associatedKeys: [], initialPrivileges: [], creation: null }
+    ]
+    const legacyAccountPreferences = {
+      [ADDR_WITH_PREFS]: { label: 'My main account', pfp: ADDR_WITH_PREFS }
+    }
+
+    const produceLegacyStore = async () => {
+      const memStorage: Storage = produceMemoryStore()
+      await memStorage.set('accounts', legacyAccounts as any)
+      await memStorage.set('accountPreferences', legacyAccountPreferences)
+      return memStorage
+    }
+
+    test('moves the legacy preferences onto the accounts and removes `accountPreferences`', async () => {
+      const storageCtrl = new StorageController(await produceLegacyStore())
+
+      const accounts = await storageCtrl.get('accounts', [])
+      expect(accounts.find((a) => a.addr === ADDR_WITH_PREFS)?.preferences).toEqual(
+        legacyAccountPreferences[ADDR_WITH_PREFS]
+      )
+      expect(await storageCtrl.get('accountPreferences')).toBeUndefined()
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+
+    test('falls back to the default label and pfp for an account without legacy preferences', async () => {
+      const storageCtrl = new StorageController(await produceLegacyStore())
+
+      const accounts = await storageCtrl.get('accounts', [])
+      expect(accounts.find((a) => a.addr === ADDR_WITHOUT_PREFS)?.preferences).toEqual({
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: ADDR_WITHOUT_PREFS
+      })
+    })
+
+    test('does not block the migrations that come after it', async () => {
+      const memStorage = await produceLegacyStore()
+      // Seeds stored as plain strings, as before v4.33.0
+      await memStorage.set('keystoreSeeds', ['encrypted-seed'] as any)
+
+      const storageCtrl = new StorageController(memStorage)
+
+      expect(await storageCtrl.get('passedMigrations', [])).toEqual(ALL_MIGRATION_KEYS)
+      expect(await storageCtrl.get('keystoreSeeds', [])).toEqual([
+        { seed: 'encrypted-seed', hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE }
+      ])
+    })
+
+    test('leaves the accounts untouched when there are no legacy preferences', async () => {
+      const memStorage: Storage = produceMemoryStore()
+      const accounts = [
+        { ...legacyAccounts[0], preferences: { label: 'Already migrated', pfp: ADDR_WITH_PREFS } }
+      ]
+      await memStorage.set('accounts', accounts as any)
+
+      const storageCtrl = new StorageController(memStorage)
+
+      expect(await storageCtrl.get('accounts', [])).toEqual(accounts)
     })
   })
 
