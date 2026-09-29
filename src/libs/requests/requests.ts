@@ -109,3 +109,13 @@ export const sumTopUps = (userRequests: UserRequest[]): bigint | undefined => {
       .reduce((a, b) => a! + b!, 0n) ?? undefined
   )
 }
+
+/**
+ * True for a Safe transaction that at least one owner has already signed. Such a transaction
+ * waits in the Safe queue for the other owners, so the wallet should open it only when the
+ * user picks it.
+ */
+export const isSignedSafeCallsRequest = (request: UserRequest): boolean =>
+  request.kind === 'calls' &&
+  !!request.signAccountOp.account.safeCreation &&
+  !!request.signAccountOp.accountOp.signed?.length
