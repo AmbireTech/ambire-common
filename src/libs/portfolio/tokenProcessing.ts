@@ -148,33 +148,52 @@ const INVISIBLE_CHARS: ReadonlySet<string> = new Set([
 const removeInvisibleChars = (str: string): string =>
   [...str].filter((char) => !INVISIBLE_CHARS.has(char)).join('')
 
-const isAsciiLetter = (char: string) => {
-  const upperChar = char.toUpperCase()
-  return upperChar >= 'A' && upperChar <= 'Z'
-}
-
 const isAsciiDigit = (char: string) => char >= '0' && char <= '9'
 
+/** Separators that written amounts use between digit groups, e.g. "1,000.50" or "1.000,50". */
+const NUMBER_SEPARATORS: ReadonlySet<string> = new Set(['.', ','])
+
 /**
- * Many real tokens write their ticker with a "$" prefix, e.g. "$PEPE" or "$DG".
- * Such a symbol is "$" followed only by ASCII letters and digits, with at least one letter,
- * and the part after the "$" is not a fiat currency code (so "$USD" is not a ticker).
+ * Returns true when the text reads as a plain amount, e.g. "1000", "1.000", "1,000",
+ * "1.000,1" or "1,000.0". It must start and end with a digit, and a separator must be
+ * followed by a digit (so "1..0", ".5" and "5." are not amounts).
  */
-const isDollarPrefixedTicker = (symbol: string): boolean => {
-  if (!symbol.startsWith('$')) return false
+const isNumberLike = (text: string): boolean => {
+  const chars = [...text]
+  if (!chars.length) return false
+  if (!isAsciiDigit(chars[0]!) || !isAsciiDigit(chars[chars.length - 1]!)) return false
 
-  const ticker = symbol.slice(1)
-  const tickerChars = [...ticker]
-  if (!tickerChars.some(isAsciiLetter)) return false
-  if (!tickerChars.every((char) => isAsciiLetter(char) || isAsciiDigit(char))) return false
-
-  return !FIAT_CURRENCY_CODES.has(ticker.toUpperCase())
+  return chars.every(
+    (char, index) =>
+      isAsciiDigit(char) || (NUMBER_SEPARATORS.has(char) && isAsciiDigit(chars[index + 1] ?? ''))
+  )
 }
 
 /**
- * Returns true when a token symbol looks like real money: it contains a fiat currency sign
- * (e.g. "$", "€100", "$ Claim") or it is exactly a fiat currency code (e.g. "USD").
- * A "$"-prefixed ticker such as "$PEPE" is not flagged, because many real tokens use it.
+ * Returns true when the symbol is a fiat currency sign alone ("$", "€"), or a sign as the
+ * first or last character with an amount as the rest ("$100", "1.000€", "$ 1,000.50").
+ * A sign next to text, e.g. "$PEPE" or "US$", is not flagged, because real tokens use it.
+ */
+const isFiatSignWithAmount = (symbol: string): boolean => {
+  const chars = [...symbol]
+  if (!chars.length) return false
+
+  const firstChar = chars[0]!
+  const lastChar = chars[chars.length - 1]!
+  if (chars.length === 1) return FIAT_CURRENCY_SIGNS.has(firstChar)
+
+  const isSignThenAmount =
+    FIAT_CURRENCY_SIGNS.has(firstChar) && isNumberLike(chars.slice(1).join('').trim())
+  const isAmountThenSign =
+    FIAT_CURRENCY_SIGNS.has(lastChar) && isNumberLike(chars.slice(0, -1).join('').trim())
+
+  return isSignThenAmount || isAmountThenSign
+}
+
+/**
+ * Returns true when a token symbol looks like real money: it is exactly a fiat currency
+ * code (e.g. "USD"), a fiat currency sign alone (e.g. "$"), or a sign before or after an
+ * amount (e.g. "$100", "1.000€").
  * Checks the raw symbol, because `removeNonLatinChars` drops most currency signs.
  * NFKC folds look-alike variants such as the full-width "＄" into their plain form.
  */
@@ -182,17 +201,12 @@ export const isFiatLikeSymbol = (symbol: string): boolean => {
   if (!symbol) return false
 
   const normalizedSymbol = symbol.normalize('NFKC').trim()
-  // Hidden characters (e.g. "U\u200BSD") must not hide a fiat currency code. Only invisible
-  // characters are removed, so a visible sign such as the "₮" in "USD₮" still counts.
-  const symbolWithoutHiddenChars = removeInvisibleChars(normalizedSymbol).trim().toUpperCase()
-  if (FIAT_CURRENCY_CODES.has(symbolWithoutHiddenChars)) return true
-  if (isDollarPrefixedTicker(normalizedSymbol)) return false
+  // Hidden characters (e.g. "U\u200BSD" or "$\u200B100") must not hide a fiat-like symbol.
+  // Only invisible characters are removed, so a visible sign such as the "₮" in "USD₮" still counts.
+  const symbolWithoutHiddenChars = removeInvisibleChars(normalizedSymbol).trim()
+  if (FIAT_CURRENCY_CODES.has(symbolWithoutHiddenChars.toUpperCase())) return true
 
-  for (const char of normalizedSymbol) {
-    if (FIAT_CURRENCY_SIGNS.has(char)) return true
-  }
-
-  return false
+  return isFiatSignWithAmount(symbolWithoutHiddenChars)
 }
 
 /**

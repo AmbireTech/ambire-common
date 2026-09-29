@@ -99,13 +99,39 @@ describe('isFiatLikeSymbol', () => {
     expect(isFiatLikeSymbol('¥')).toBe(true)
   })
 
-  it('flags a fiat currency sign together with an amount or other text', () => {
+  it('flags a fiat currency sign as the first character, followed by an amount', () => {
     expect(isFiatLikeSymbol('$100')).toBe(true)
-    expect(isFiatLikeSymbol('100$')).toBe(true)
     expect(isFiatLikeSymbol('€500')).toBe(true)
-    expect(isFiatLikeSymbol('$ Claim at scam.xyz')).toBe(true)
-    expect(isFiatLikeSymbol('$1,000.00')).toBe(true)
-    expect(isFiatLikeSymbol('US$')).toBe(true)
+    expect(isFiatLikeSymbol('$1000')).toBe(true)
+    expect(isFiatLikeSymbol('$1.000')).toBe(true)
+    expect(isFiatLikeSymbol('$1,000')).toBe(true)
+    expect(isFiatLikeSymbol('€1.000,1')).toBe(true)
+    expect(isFiatLikeSymbol('$1,000.0')).toBe(true)
+    expect(isFiatLikeSymbol('$ 1,000')).toBe(true)
+  })
+
+  it('flags a fiat currency sign as the last character, after an amount', () => {
+    expect(isFiatLikeSymbol('100$')).toBe(true)
+    expect(isFiatLikeSymbol('1.000€')).toBe(true)
+    expect(isFiatLikeSymbol('1,000.0£')).toBe(true)
+    expect(isFiatLikeSymbol('1000 €')).toBe(true)
+  })
+
+  it('does not flag a fiat currency sign next to text or in the middle', () => {
+    expect(isFiatLikeSymbol('$ Claim at scam.xyz')).toBe(false)
+    expect(isFiatLikeSymbol('US$')).toBe(false)
+    expect(isFiatLikeSymbol('$USD')).toBe(false)
+    expect(isFiatLikeSymbol('1$0')).toBe(false)
+    expect(isFiatLikeSymbol('$100$')).toBe(false)
+    expect(isFiatLikeSymbol('$$')).toBe(false)
+  })
+
+  it('does not flag a fiat currency sign with something that is not a plain amount', () => {
+    expect(isFiatLikeSymbol('$1..0')).toBe(false)
+    expect(isFiatLikeSymbol('$.5')).toBe(false)
+    expect(isFiatLikeSymbol('$5.')).toBe(false)
+    expect(isFiatLikeSymbol('$-100')).toBe(false)
+    expect(isFiatLikeSymbol('$100K')).toBe(false)
   })
 
   it('flags a symbol that is exactly a fiat currency code, in any case', () => {
@@ -118,14 +144,12 @@ describe('isFiatLikeSymbol', () => {
     // full-width dollar sign and full-width letters fold to their plain form
     expect(isFiatLikeSymbol('＄')).toBe(true)
     expect(isFiatLikeSymbol('ＵＳＤ')).toBe(true)
-    // zero-width space inside the code
+    expect(isFiatLikeSymbol('＄１００')).toBe(true)
+    // zero-width space inside the code or the amount
     expect(isFiatLikeSymbol('U\u200bSD')).toBe(true)
     expect(isFiatLikeSymbol('\ufeffEUR\u200d')).toBe(true)
-  })
-
-  it('flags a "$" prefix in front of a fiat currency code', () => {
-    expect(isFiatLikeSymbol('$USD')).toBe(true)
-    expect(isFiatLikeSymbol('$eur')).toBe(true)
+    expect(isFiatLikeSymbol('$\u200b100')).toBe(true)
+    expect(isFiatLikeSymbol('\u200b$')).toBe(true)
   })
 
   it('does not flag "$"-prefixed tickers used by real tokens', () => {
