@@ -185,12 +185,17 @@ const isAmountLike = (text: string): boolean => {
   return isNumberLike(chars.slice(0, -1).join('').trimEnd())
 }
 
+/** Returns true when the text is an amount ("100", "1.5M") or a fiat currency code ("USD"). */
+const isAmountOrFiatCode = (text: string): boolean =>
+  isAmountLike(text) || FIAT_CURRENCY_CODES.has(text.toUpperCase())
+
 /**
  * Returns true when the symbol is a fiat currency sign alone ("$", "€"), or a sign as the
- * first or last character with an amount as the rest ("$100", "1.000€", "$ 1,000.50", "$100K").
- * A sign next to text, e.g. "$PEPE" or "US$", is not flagged, because real tokens use it.
+ * first or last character with an amount or a fiat currency code as the rest ("$100",
+ * "1.000€", "$ 1,000.50", "$100K", "$USD", "EUR€").
+ * A sign next to other text, e.g. "$PEPE" or "US$", is not flagged, because real tokens use it.
  */
-const isFiatSignWithAmount = (symbol: string): boolean => {
+const isFiatSignWithAmountOrCode = (symbol: string): boolean => {
   const chars = [...symbol]
   if (!chars.length) return false
 
@@ -198,18 +203,18 @@ const isFiatSignWithAmount = (symbol: string): boolean => {
   const lastChar = chars[chars.length - 1]!
   if (chars.length === 1) return FIAT_CURRENCY_SIGNS.has(firstChar)
 
-  const isSignThenAmount =
-    FIAT_CURRENCY_SIGNS.has(firstChar) && isAmountLike(chars.slice(1).join('').trim())
-  const isAmountThenSign =
-    FIAT_CURRENCY_SIGNS.has(lastChar) && isAmountLike(chars.slice(0, -1).join('').trim())
+  const isSignThenAmountOrCode =
+    FIAT_CURRENCY_SIGNS.has(firstChar) && isAmountOrFiatCode(chars.slice(1).join('').trim())
+  const isAmountOrCodeThenSign =
+    FIAT_CURRENCY_SIGNS.has(lastChar) && isAmountOrFiatCode(chars.slice(0, -1).join('').trim())
 
-  return isSignThenAmount || isAmountThenSign
+  return isSignThenAmountOrCode || isAmountOrCodeThenSign
 }
 
 /**
  * Returns true when a token symbol looks like real money: it is exactly a fiat currency
  * code (e.g. "USD"), a fiat currency sign alone (e.g. "$"), or a sign before or after an
- * amount (e.g. "$100", "1.000€", "$100K").
+ * amount or a fiat currency code (e.g. "$100", "1.000€", "$100K", "$USD").
  * Checks the raw symbol, because `removeNonLatinChars` drops most currency signs.
  * NFKC folds look-alike variants such as the full-width "＄" into their plain form.
  */
@@ -222,7 +227,7 @@ export const isFiatLikeSymbol = (symbol: string): boolean => {
   const symbolWithoutHiddenChars = removeInvisibleChars(normalizedSymbol).trim()
   if (FIAT_CURRENCY_CODES.has(symbolWithoutHiddenChars.toUpperCase())) return true
 
-  return isFiatSignWithAmount(symbolWithoutHiddenChars)
+  return isFiatSignWithAmountOrCode(symbolWithoutHiddenChars)
 }
 
 /**
