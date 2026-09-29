@@ -695,6 +695,99 @@ describe('ActivityController — the recorded backend is read, not just written'
   })
 })
 
+describe('ActivityController — recovering writes made on the key-value fallback', () => {
+  /**
+   * Sets up the state #recoverFallbackWrites exists for: IDB already holds history, the last
+   * session ran on key-value, and the legacy blob is the frozen migration copy plus whatever
+   * that session wrote.
+   */
+  async function seedAfterFallbackSession(legacy: unknown, stored: any[]) {
+    await storage.set('activityStorageBackend', 'keyValue')
+    await new ActivityIdbStorage(db).putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: stored }
+    ])
+    await seedLegacyOps(legacy)
+  }
+
+  const storedIds = async () =>
+    ((await new ActivityIdbStorage(db).getOpsForAccountAndChain(ACC, CHAIN_1)) ?? []).map(
+      (op) => op.id
+    )
+
+  test('an op written only on the fallback is folded back in', async () => {
+    await seedAfterFallbackSession(legacyBlob([makeOp('idb-1', 1000), makeOp('kv-only', 2000)]), [
+      makeOp('idb-1', 1000)
+    ])
+
+    await awaitLoadOnly(makeController(storage, db))
+
+    expect(await storedIds()).toEqual(expect.arrayContaining(['idb-1', 'kv-only']))
+  })
+
+  test('BUG-GUARD: the frozen blob does not wipe rows IDB gained after the migration', async () => {
+    // The blob is a snapshot from migration time, so it knows nothing about idb-new. A write
+    // that clears the group before inserting — as putMultiple does — would delete it.
+    await seedAfterFallbackSession(legacyBlob([makeOp('idb-1', 1000)]), [
+      makeOp('idb-1', 1000),
+      makeOp('idb-new', 3000)
+    ])
+
+    await awaitLoadOnly(makeController(storage, db))
+
+    expect(await storedIds()).toContain('idb-new')
+  })
+
+  test('BUG-GUARD: a stale pending copy does not un-confirm an op IDB has finalized', async () => {
+    await seedAfterFallbackSession(
+      legacyBlob([makeOp('op-1', 1000, AccountOpStatus.BroadcastedButNotConfirmed)]),
+      [makeOp('op-1', 1000, AccountOpStatus.Success)]
+    )
+
+    await awaitLoadOnly(makeController(storage, db))
+
+    const ops = (await new ActivityIdbStorage(db).getOpsForAccountAndChain(ACC, CHAIN_1)) ?? []
+    expect(ops.find((op) => op.id === 'op-1')?.status).toBe(AccountOpStatus.Success)
+  })
+
+  test('a status the fallback session saw finalize IS carried over', async () => {
+    // The mirror case: the fallback session is the one that watched it confirm, so its copy
+    // is the newer of the two and the stored pending row must give way.
+    await seedAfterFallbackSession(legacyBlob([makeOp('op-1', 1000, AccountOpStatus.Success)]), [
+      makeOp('op-1', 1000, AccountOpStatus.BroadcastedButNotConfirmed)
+    ])
+
+    await awaitLoadOnly(makeController(storage, db))
+
+    const ops = (await new ActivityIdbStorage(db).getOpsForAccountAndChain(ACC, CHAIN_1)) ?? []
+    expect(ops.find((op) => op.id === 'op-1')?.status).toBe(AccountOpStatus.Success)
+  })
+
+  test('the merged group still respects the per-chain cap', async () => {
+    const stored = Array.from({ length: MAX_OPS_PER_GROUP }, (_, i) => makeOp(`idb-${i}`, i + 1))
+    await seedAfterFallbackSession(legacyBlob([makeOp('kv-newest', 999999)]), stored)
+
+    await awaitLoadOnly(makeController(storage, db))
+
+    const ids = await storedIds()
+    expect(ids).toHaveLength(MAX_OPS_PER_GROUP)
+    expect(ids).toContain('kv-newest')
+    // The oldest stored row is the one that made room.
+    expect(ids).not.toContain('idb-0')
+  })
+
+  test('nothing is recovered when the last session already ran on IDB', async () => {
+    await storage.set('activityStorageBackend', 'idb')
+    await new ActivityIdbStorage(db).putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: [makeOp('idb-1', 1000)] }
+    ])
+    await seedLegacyOps(legacyBlob([makeOp('stale-only', 500)]))
+
+    await awaitLoadOnly(makeController(storage, db))
+
+    expect(await storedIds()).not.toContain('stale-only')
+  })
+})
+
 describe('ActivityController — the startup read covers every account', () => {
   const OTHER = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
 

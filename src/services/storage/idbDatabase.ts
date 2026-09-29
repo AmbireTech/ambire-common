@@ -119,16 +119,21 @@ let openPromise: Promise<AmbireIdbDatabase> | null = null
  * awaits this call and only falls back to key-value when it REJECTS, so without a deadline a
  * blocked upgrade means the wallet never boots at all.
  *
- * Deliberately short. A healthy open is single-digit milliseconds, and the cost of giving up
- * early is only the key-value fallback — which still works, and which the next call retries
- * because a timeout clears the singleton. The cost of waiting is a wallet that looks frozen.
+ * Deliberately short. A healthy open is single-digit milliseconds, and the cost of waiting is
+ * a wallet that looks frozen.
+ *
+ * The cost of giving up early is higher than it looks, though: background.ts opens ONCE and
+ * passes undefined on failure, so nothing retries within the session even though a timeout
+ * clears the singleton. One slow open — cold browser start, busy disk — puts the whole
+ * service-worker lifetime on key-value, where history renders from the blob frozen at
+ * migration time.
  */
 const OPEN_TIMEOUT_MS = 1000
 
 export function openAmbireIdb(): Promise<AmbireIdbDatabase> {
   if (openPromise) return openPromise
 
-  openPromise = openDB<AmbireIdbSchema>(AMBIRE_IDB_SCHEMA.dbName, AMBIRE_IDB_SCHEMA.dbVersion, {
+  const rawOpen = openDB<AmbireIdbSchema>(AMBIRE_IDB_SCHEMA.dbName, AMBIRE_IDB_SCHEMA.dbVersion, {
     upgrade(db, oldVersion, newVersion, tx) {
       const targetVersion = newVersion ?? AMBIRE_IDB_SCHEMA.dbVersion
       console.log(
@@ -164,7 +169,9 @@ export function openAmbireIdb(): Promise<AmbireIdbDatabase> {
       console.warn('[AmbireIdb] Connection was terminated by the browser — dropping the cache')
       openPromise = null
     }
-  }).catch((error) => {
+  })
+
+  openPromise = rawOpen.catch((error) => {
     // Allow a subsequent openAmbireIdb() call to retry after a transient failure.
     openPromise = null
     throw error
@@ -189,6 +196,13 @@ export function openAmbireIdb(): Promise<AmbireIdbDatabase> {
     .catch((error) => {
       // A timed-out open must not poison the singleton — the block may be gone by the next call.
       openPromise = null
+
+      // The open that lost the race is still running, and losing does not cancel it. Nothing
+      // holds the connection it eventually yields, and blocking() can no longer reach it
+      // because the singleton is gone — so it would stay open for the life of the context and
+      // block every later upgrade. Close it as soon as it lands.
+      rawOpen.then((db) => db.close()).catch(() => {})
+
       throw error
     }) as Promise<AmbireIdbDatabase>
 

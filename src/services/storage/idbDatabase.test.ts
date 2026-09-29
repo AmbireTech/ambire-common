@@ -42,6 +42,48 @@ describe('openAmbireIdb', () => {
     }
   })
 
+  test('an open that lands after the deadline is closed, not left holding the database', async () => {
+    // Losing the race does not cancel the open. The connection it goes on to produce is
+    // reachable by nothing — blocking() cannot find it once the singleton is cleared — so if
+    // it is not closed here it holds the database for the life of the context and every later
+    // upgrade is blocked by it. That is what this asserts, via the consequence.
+    const openRaw = (version: number) =>
+      new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(AMBIRE_IDB_SCHEMA.dbName, version)
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => reject(request.error)
+      })
+
+    const shippedVersion = AMBIRE_IDB_SCHEMA.dbVersion
+    // A connection from another context that ignores versionchange — the standard way an
+    // upgrade gets blocked, and the only realistic way to make an open miss the deadline.
+    const otherContext = await openRaw(shippedVersion)
+
+    AMBIRE_IDB_SCHEMA.dbVersion = shippedVersion + 1
+    resetAmbireIdbForTesting()
+    try {
+      await expect(openAmbireIdb()).rejects.toThrow(/timed out/)
+
+      // The blocker goes away, so the abandoned open can finish and take its connection.
+      otherContext.close()
+      await new Promise((resolve) => {
+        setTimeout(resolve, 300)
+      })
+
+      AMBIRE_IDB_SCHEMA.dbVersion = shippedVersion + 2
+      resetAmbireIdbForTesting()
+
+      await expect(openAmbireIdb()).resolves.toBeDefined()
+    } finally {
+      AMBIRE_IDB_SCHEMA.dbVersion = shippedVersion
+      try {
+        otherContext.close()
+      } catch {
+        // Already closed above on the happy path.
+      }
+    }
+  }, 20000)
+
   test('returns the same promise on repeated calls (singleton)', async () => {
     const p1 = openAmbireIdb()
     const p2 = openAmbireIdb()

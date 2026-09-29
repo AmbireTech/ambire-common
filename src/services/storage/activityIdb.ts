@@ -33,6 +33,10 @@ export const MAX_OPS_PER_GROUP = 1000
 // that start with a given prefix, without matching the prefix itself as a key.
 const RANGE_HIGH = '\uffff'
 
+/** Not yet final: still broadcast or queued, so a later write can still change its status. */
+const isPendingStatus = (status: AccountOpStatus | undefined) =>
+  status === AccountOpStatus.BroadcastedButNotConfirmed || status === AccountOpStatus.Pending
+
 /** An op carrying every field the IDB row and its indexes require. */
 type StorableOp = (SubmittedAccountOp | SubmittedAccountOpLike) & {
   id: string
@@ -130,9 +134,74 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
    * repopulated" — one row written after a wipe looks migrated. Accepted deliberately; see
    * the IndexedDB section in src/controllers/AGENTS.md.
    */
-  /** Upsert, so groups already in the store keep everything this payload does not mention. */
-  mergeGroups(ops: InternalAccountsOps): Promise<void> {
-    return this.migrateFromStorage(ops)
+  /**
+   * Fold a legacy payload back in WITHOUT overwriting what IDB already holds.
+   *
+   * Deliberately not putMultiple(): that clears each (account, chain) range before inserting,
+   * so a stale legacy copy — frozen at migration time — would wipe every row written to IDB
+   * since, taking confirmed ops back to pending. A plain upsert is no better, because the
+   * stale copy would still overwrite newer rows.
+   *
+   * So only ops IDB does not have are inserted. An op both sides hold is left alone, unless
+   * IDB has it pending and the payload has it finalized — the fallback session may have been
+   * the one that saw it confirm. MAX_OPS_PER_GROUP is enforced on the merged result, oldest
+   * first, so recovery cannot grow a group past the cap.
+   */
+  async mergeGroups(ops: InternalAccountsOps): Promise<void> {
+    const tx = await this.#openTx('readwrite')
+    const store = tx.objectStore(this.#storeName)
+
+    try {
+      for (const [accountAddr, chainMap] of Object.entries(ops)) {
+        for (const [chainIdStr, groupOps] of Object.entries(chainMap ?? {})) {
+          const incoming = this.#dedupeOpsById(groupOps ?? [])
+          if (!incoming.length) continue
+
+          const range = IDBKeyRange.bound(
+            [accountAddr, chainIdStr, ''],
+            [accountAddr, chainIdStr, RANGE_HIGH]
+          )
+
+          const existingRows: IdbAccountOpRow[] = await store.getAll(range)
+          const existingById = new Map(existingRows.map((row) => [row.id, row]))
+
+          const toWrite = incoming.filter((op) => {
+            const stored = existingById.get(op.id)
+            if (!stored) return true
+
+            // Both sides have it: the stored row wins, unless the payload saw it finalize.
+            return isPendingStatus(stored.status) && !isPendingStatus(op.status)
+          })
+          if (!toWrite.length) continue
+
+          // Newest survive the cap, counting the rows already stored and the ones being added.
+          const survivors = new Map<string, number>(
+            existingRows.map((row) => [row.id, row.timestamp])
+          )
+          toWrite.forEach((op) => survivors.set(op.id, op.timestamp))
+          const kept = new Set(
+            Array.from(survivors.entries())
+              .sort(([, a], [, b]) => b - a)
+              .slice(0, MAX_OPS_PER_GROUP)
+              .map(([id]) => id)
+          )
+
+          for (const op of toWrite) {
+            if (kept.has(op.id)) store.put(this.#opToRow(accountAddr, chainIdStr, op))
+          }
+          for (const row of existingRows) {
+            if (!kept.has(row.id)) store.delete([accountAddr, chainIdStr, row.id])
+          }
+        }
+      }
+    } catch (error) {
+      // Same reason as putMultiple: a half-applied recovery is worse than none.
+      tx.abort()
+      tx.done.catch(() => {})
+      throw error
+    }
+
+    await tx.done
   }
 
   async ensureMigrated(

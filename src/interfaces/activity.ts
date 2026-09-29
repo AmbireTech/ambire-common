@@ -62,8 +62,9 @@ export interface IActivityOpsBackend {
   countOpsForAccount(accountAddr: string, chainId?: bigint | string): Promise<number>
 
   /**
-   * Upserts whole groups, leaving anything not mentioned alone. Used to fold back ops written
-   * while the controller was on its key-value fallback.
+   * Folds back ops written while the controller was on its key-value fallback, inserting only
+   * what the backend does not already hold. Never overwrites a stored op, except to carry over
+   * a finalized status onto one the backend still has pending.
    */
   mergeGroups(ops: InternalAccountsOps): Promise<void>
 
