@@ -370,6 +370,14 @@ describe('Activity Controller ', () => {
 
     test('setAccountOpBalanceChanges stores an empty array after 3 failures', async () => {
       const { controller, sessionId } = await prepareTest()
+      const nftBalanceChanges = [
+        {
+          address: '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e',
+          tokenId: 12345n,
+          chainId: SUBMITTED_ACCOUNT_OP.chainId,
+          balanceChange: 1n
+        }
+      ]
 
       await controller.addAccountOp(SUBMITTED_ACCOUNT_OP)
 
@@ -377,19 +385,24 @@ describe('Activity Controller ', () => {
         SUBMITTED_ACCOUNT_OP.identifiedBy,
         SUBMITTED_ACCOUNT_OP.accountAddr,
         SUBMITTED_ACCOUNT_OP.chainId,
-        new Error('balance changes failed')
+        new Error('balance changes failed'),
+        nftBalanceChanges
       )
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
       expect(
         controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
       ).toBe(1)
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBe(undefined)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.nftBalanceChanges).toEqual(
+        nftBalanceChanges
+      )
 
       await controller.setAccountOpBalanceChanges(
         SUBMITTED_ACCOUNT_OP.identifiedBy,
         SUBMITTED_ACCOUNT_OP.accountAddr,
         SUBMITTED_ACCOUNT_OP.chainId,
-        new Error('balance changes failed')
+        new Error('balance changes failed'),
+        nftBalanceChanges
       )
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
       expect(
@@ -401,7 +414,8 @@ describe('Activity Controller ', () => {
         SUBMITTED_ACCOUNT_OP.identifiedBy,
         SUBMITTED_ACCOUNT_OP.accountAddr,
         SUBMITTED_ACCOUNT_OP.chainId,
-        new Error('balance changes failed')
+        new Error('balance changes failed'),
+        nftBalanceChanges
       )
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toEqual([])
       expect(
@@ -410,6 +424,9 @@ describe('Activity Controller ', () => {
       const balanceChanges = controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges
       expect(balanceChanges).not.toBe(undefined)
       expect(balanceChanges?.length).toBe(0)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.nftBalanceChanges).toEqual(
+        nftBalanceChanges
+      )
     })
 
     test('Pagination and filtration handled correctly', async () => {

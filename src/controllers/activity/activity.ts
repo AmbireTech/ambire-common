@@ -921,6 +921,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
         getNftBalanceChangesFromReceipts(submittedAccountOpLike, [receipt])
       ])
       submittedAccountOpLike.nftBalanceChanges = nftBalanceChanges
+      this.#portfolio.addErc721sToBeLearned(getNftsToLearn(nftBalanceChanges), accountAddr, chainId)
       if (shouldLearnTokens) {
         const tokensWithAPrice = await new ScamFilter({
           fetch: this.#fetch,
@@ -928,11 +929,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
           isTokenPricesEnabled: () => this.#featureFlags.isFeatureEnabled('tokenPrices') !== false
         }).filterTokensWithoutAPrice(foundTokens)
         this.#portfolio.addTokensToBeLearned(tokensWithAPrice, chainId)
-        this.#portfolio.addErc721sToBeLearned(
-          getNftsToLearn(nftBalanceChanges),
-          accountAddr,
-          chainId
-        )
       }
       const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens)
 
@@ -1075,7 +1071,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
           accountOp.identifiedBy,
           accountOp.accountAddr,
           accountOp.chainId,
-          new Error('no receipts found')
+          new Error('no receipts found'),
+          nftBalanceChanges
         )
 
         return
