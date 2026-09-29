@@ -186,6 +186,13 @@ describe('isFiatLikeSymbol', () => {
     expect(isFiatLikeSymbol('₿')).toBe(false)
   })
 
+  it('does not flag fiat codes that real tokens use as their symbol', () => {
+    // KROWN, Caduceus Protocol and PLEARN
+    expect(isFiatLikeSymbol('KRW')).toBe(false)
+    expect(isFiatLikeSymbol('CAD')).toBe(false)
+    expect(isFiatLikeSymbol('PLN')).toBe(false)
+  })
+
   it('does not flag an empty symbol', () => {
     expect(isFiatLikeSymbol('')).toBe(false)
     expect(isFiatLikeSymbol('   ')).toBe(false)

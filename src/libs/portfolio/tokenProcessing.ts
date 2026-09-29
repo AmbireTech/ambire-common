@@ -91,7 +91,8 @@ export const FIAT_CURRENCY_SIGNS: ReadonlySet<string> = new Set([
 
 /**
  * ISO 4217 codes of widely used fiat currencies. A token whose whole symbol is one of them
- * pretends to be that currency.
+ * pretends to be that currency. KRW, CAD and PLN are left out on purpose, because real tokens
+ * (KROWN, Caduceus Protocol, PLEARN) use them as their symbol.
  */
 export const FIAT_CURRENCY_CODES: ReadonlySet<string> = new Set([
   'USD',
@@ -100,13 +101,11 @@ export const FIAT_CURRENCY_CODES: ReadonlySet<string> = new Set([
   'JPY',
   'CNY',
   'CHF',
-  'CAD',
   'AUD',
   'NZD',
   'HKD',
   'SGD',
   'INR',
-  'KRW',
   'RUB',
   'TRY',
   'BRL',
@@ -115,7 +114,6 @@ export const FIAT_CURRENCY_CODES: ReadonlySet<string> = new Set([
   'SEK',
   'NOK',
   'DKK',
-  'PLN',
   'UAH',
   'AED'
 ])
