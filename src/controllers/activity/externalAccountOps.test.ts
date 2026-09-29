@@ -73,6 +73,7 @@ const createController = (
     { networks: [{ chainId }], isInitialized: true } as any,
     {
       addTokensToBeLearned: jest.fn(),
+      addErc721sToBeLearned: jest.fn(),
       getTokenBalancesOnBlock: jest.fn(async () => [
         [
           '0x',
