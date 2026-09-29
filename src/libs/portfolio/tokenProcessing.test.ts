@@ -110,6 +110,17 @@ describe('isFiatLikeSymbol', () => {
     expect(isFiatLikeSymbol('$ 1,000')).toBe(true)
   })
 
+  it('flags a fiat currency sign next to an amount with a size suffix', () => {
+    expect(isFiatLikeSymbol('$100K')).toBe(true)
+    expect(isFiatLikeSymbol('$100k')).toBe(true)
+    expect(isFiatLikeSymbol('$1.5M')).toBe(true)
+    expect(isFiatLikeSymbol('€2B')).toBe(true)
+    expect(isFiatLikeSymbol('$1T')).toBe(true)
+    expect(isFiatLikeSymbol('$ 100 K')).toBe(true)
+    expect(isFiatLikeSymbol('100K$')).toBe(true)
+    expect(isFiatLikeSymbol('1,5M €')).toBe(true)
+  })
+
   it('flags a fiat currency sign as the last character, after an amount', () => {
     expect(isFiatLikeSymbol('100$')).toBe(true)
     expect(isFiatLikeSymbol('1.000€')).toBe(true)
@@ -131,7 +142,11 @@ describe('isFiatLikeSymbol', () => {
     expect(isFiatLikeSymbol('$.5')).toBe(false)
     expect(isFiatLikeSymbol('$5.')).toBe(false)
     expect(isFiatLikeSymbol('$-100')).toBe(false)
-    expect(isFiatLikeSymbol('$100K')).toBe(false)
+    expect(isFiatLikeSymbol('$100KK')).toBe(false)
+    expect(isFiatLikeSymbol('$100X')).toBe(false)
+    expect(isFiatLikeSymbol('$K')).toBe(false)
+    expect(isFiatLikeSymbol('$.5M')).toBe(false)
+    expect(isFiatLikeSymbol('$KM')).toBe(false)
   })
 
   it('flags a symbol that is exactly a fiat currency code, in any case', () => {

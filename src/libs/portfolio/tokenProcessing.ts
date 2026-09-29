@@ -170,8 +170,26 @@ const isNumberLike = (text: string): boolean => {
 }
 
 /**
+ * Short size suffixes that written amounts use, e.g. "100K", "1.5M", "2B" or "1T"
+ * (thousand, million, billion, trillion). Compared in uppercase, so "100k" also counts.
+ */
+const AMOUNT_SUFFIXES: ReadonlySet<string> = new Set(['K', 'M', 'B', 'T'])
+
+/**
+ * Returns true when the text reads as an amount: a plain number (see `isNumberLike`),
+ * optionally followed by one size suffix, e.g. "100", "100K", "1.5M" or "2 B".
+ */
+const isAmountLike = (text: string): boolean => {
+  const chars = [...text]
+  const lastChar = chars[chars.length - 1]
+  if (!lastChar || !AMOUNT_SUFFIXES.has(lastChar.toUpperCase())) return isNumberLike(text)
+
+  return isNumberLike(chars.slice(0, -1).join('').trimEnd())
+}
+
+/**
  * Returns true when the symbol is a fiat currency sign alone ("$", "€"), or a sign as the
- * first or last character with an amount as the rest ("$100", "1.000€", "$ 1,000.50").
+ * first or last character with an amount as the rest ("$100", "1.000€", "$ 1,000.50", "$100K").
  * A sign next to text, e.g. "$PEPE" or "US$", is not flagged, because real tokens use it.
  */
 const isFiatSignWithAmount = (symbol: string): boolean => {
@@ -183,9 +201,9 @@ const isFiatSignWithAmount = (symbol: string): boolean => {
   if (chars.length === 1) return FIAT_CURRENCY_SIGNS.has(firstChar)
 
   const isSignThenAmount =
-    FIAT_CURRENCY_SIGNS.has(firstChar) && isNumberLike(chars.slice(1).join('').trim())
+    FIAT_CURRENCY_SIGNS.has(firstChar) && isAmountLike(chars.slice(1).join('').trim())
   const isAmountThenSign =
-    FIAT_CURRENCY_SIGNS.has(lastChar) && isNumberLike(chars.slice(0, -1).join('').trim())
+    FIAT_CURRENCY_SIGNS.has(lastChar) && isAmountLike(chars.slice(0, -1).join('').trim())
 
   return isSignThenAmount || isAmountThenSign
 }
@@ -193,7 +211,7 @@ const isFiatSignWithAmount = (symbol: string): boolean => {
 /**
  * Returns true when a token symbol looks like real money: it is exactly a fiat currency
  * code (e.g. "USD"), a fiat currency sign alone (e.g. "$"), or a sign before or after an
- * amount (e.g. "$100", "1.000€").
+ * amount (e.g. "$100", "1.000€", "$100K").
  * Checks the raw symbol, because `removeNonLatinChars` drops most currency signs.
  * NFKC folds look-alike variants such as the full-width "＄" into their plain form.
  */
