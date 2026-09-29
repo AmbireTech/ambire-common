@@ -120,6 +120,7 @@ describe('isFiatLikeSymbol', () => {
     expect(isFiatLikeSymbol('ＵＳＤ')).toBe(true)
     // zero-width space inside the code
     expect(isFiatLikeSymbol('U\u200bSD')).toBe(true)
+    expect(isFiatLikeSymbol('\ufeffEUR\u200d')).toBe(true)
   })
 
   it('flags a "$" prefix in front of a fiat currency code', () => {
@@ -140,6 +141,9 @@ describe('isFiatLikeSymbol', () => {
     expect(isFiatLikeSymbol('USDT')).toBe(false)
     expect(isFiatLikeSymbol('EURC')).toBe(false)
     expect(isFiatLikeSymbol('USD₮0')).toBe(false)
+    // a visible non-ASCII character is not removed, so it does not reveal a fiat code
+    expect(isFiatLikeSymbol('USD₮')).toBe(false)
+    expect(isFiatLikeSymbol('ЕUR')).toBe(false)
     expect(isFiatLikeSymbol('₿')).toBe(false)
   })
 

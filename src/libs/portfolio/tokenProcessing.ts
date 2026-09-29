@@ -120,6 +120,34 @@ export const FIAT_CURRENCY_CODES: ReadonlySet<string> = new Set([
   'AED'
 ])
 
+/**
+ * Characters that take no visible space. Scam symbols put them inside a word (e.g. "U\u200BSD")
+ * so that it looks the same but does not match an exact comparison.
+ */
+const INVISIBLE_CHARS: ReadonlySet<string> = new Set([
+  '\u00AD', // soft hyphen
+  '\u034F', // combining grapheme joiner
+  '\u180E', // Mongolian vowel separator
+  '\u200B', // zero-width space
+  '\u200C', // zero-width non-joiner
+  '\u200D', // zero-width joiner
+  '\u200E', // left-to-right mark
+  '\u200F', // right-to-left mark
+  '\u2060', // word joiner
+  '\u2061', // function application
+  '\u2062', // invisible times
+  '\u2063', // invisible separator
+  '\u2064', // invisible plus
+  '\uFEFF' // zero-width no-break space
+])
+
+/**
+ * Removes only invisible characters. Unlike `removeNonLatinChars`, it keeps visible
+ * non-ASCII characters, so "USD₮" stays "USD₮" and does not become "USD".
+ */
+const removeInvisibleChars = (str: string): string =>
+  [...str].filter((char) => !INVISIBLE_CHARS.has(char)).join('')
+
 const isAsciiLetter = (char: string) => {
   const upperChar = char.toUpperCase()
   return upperChar >= 'A' && upperChar <= 'Z'
@@ -154,8 +182,9 @@ export const isFiatLikeSymbol = (symbol: string): boolean => {
   if (!symbol) return false
 
   const normalizedSymbol = symbol.normalize('NFKC').trim()
-  // Hidden characters (e.g. "U\u200BSD") must not hide a fiat currency code
-  const symbolWithoutHiddenChars = removeNonLatinChars(normalizedSymbol).trim().toUpperCase()
+  // Hidden characters (e.g. "U\u200BSD") must not hide a fiat currency code. Only invisible
+  // characters are removed, so a visible sign such as the "₮" in "USD₮" still counts.
+  const symbolWithoutHiddenChars = removeInvisibleChars(normalizedSymbol).trim().toUpperCase()
   if (FIAT_CURRENCY_CODES.has(symbolWithoutHiddenChars)) return true
   if (isDollarPrefixedTicker(normalizedSymbol)) return false
 
