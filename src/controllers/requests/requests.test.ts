@@ -265,7 +265,9 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
     getCallsRequest,
     event: eventEmitter,
     getWindowId,
-    uiCtrl: mainCtrl.ui
+    uiCtrl: mainCtrl.ui,
+    autoLoginCtrl: mainCtrl.autoLogin,
+    dappsCtrl: mainCtrl.dapps
   }
 }
 
@@ -477,6 +479,127 @@ describe('RequestsController ', () => {
 
     expect(controller.currentUserRequest).toBe(signedRequest)
     signedRequest.signAccountOp.destroy()
+  })
+  test('closes the request window after rejecting a transaction while a signed Safe transaction waits in the queue', async () => {
+    const { controller, getCallsRequest, uiCtrl } = await prepareTest(false, true)
+    const rejectedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    rejectedRequest.id = 'rejected-request'
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [signedRequest]
+    await controller.addUserRequests([rejectedRequest])
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+    const createNotification = jest.spyOn(uiCtrl.notification, 'create')
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['signed-request'])
+    // The Safe transaction was already waiting, so the user is not told it was just queued
+    expect(createNotification).not.toHaveBeenCalled()
+    signedRequest.signAccountOp.destroy()
+  })
+  test('counts only transactions outside the Safe queue when the request window closes', async () => {
+    const { controller, getCallsRequest, uiCtrl } = await prepareTest(false, true)
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const unsignedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    signedRequest.id = 'signed-request'
+    unsignedRequest.id = 'unsigned-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [signedRequest]
+    await controller.addUserRequests([unsignedRequest])
+    const createNotification = jest.spyOn(uiCtrl.notification, 'create')
+
+    await controller.closeRequestWindow()
+
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['signed-request', 'unsigned-request'])
+    expect(createNotification.mock.calls).toEqual([
+      [
+        {
+          title: 'Transaction queued',
+          message: 'Queued pending transactions are available on your Dashboard.'
+        }
+      ]
+    ])
+    signedRequest.signAccountOp.destroy()
+    unsignedRequest.signAccountOp.destroy()
+  })
+  test('does not reopen the request window for a signed Safe transaction that arrives while it closes', async () => {
+    const { controller, getCallsRequest, uiCtrl } = await prepareTest(false, true)
+    const closedRequest = { ...DAPP_CONNECT_REQUEST, id: 'closed-request' }
+    const arrivedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    arrivedRequest.id = 'arrived-request'
+    updateAccountOp(arrivedRequest, { signed: [SAFE_OWNER] })
+    await controller.addUserRequests([closedRequest])
+    const openRequestView = jest.spyOn(uiCtrl.requestView, 'open')
+    // A slow close
+    jest.spyOn(uiCtrl.requestView, 'close').mockImplementation(async () => {
+      controller.userRequests.push(arrivedRequest)
+    })
+
+    await controller.closeRequestWindow()
+
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(openRequestView).not.toHaveBeenCalled()
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['arrived-request'])
+    arrivedRequest.signAccountOp.destroy()
+  })
+  test('does not simulate a signed Safe transaction that is added to the queue', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    // @ts-expect-error makeMainController turns simulation off for every test, so turn it back on
+    controller.shouldSimulateAccountOps = true
+    const simulateAccountOp = jest
+      .spyOn(portfolioCtrl, 'simulateAccountOp')
+      .mockResolvedValue(undefined)
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+
+    await controller.addUserRequests([signedRequest], { executionType: 'queue' })
+
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['signed-request'])
+    expect(simulateAccountOp).not.toHaveBeenCalled()
+    signedRequest.signAccountOp.destroy()
+  })
+  test('simulates an unsigned Safe transaction that is added to the queue', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    // @ts-expect-error makeMainController turns simulation off for every test, so turn it back on
+    controller.shouldSimulateAccountOps = true
+    const simulateAccountOp = jest
+      .spyOn(portfolioCtrl, 'simulateAccountOp')
+      .mockResolvedValue(undefined)
+    const unsignedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    unsignedRequest.id = 'unsigned-request'
+
+    await controller.addUserRequests([unsignedRequest], { executionType: 'queue' })
+
+    expect(simulateAccountOp.mock.calls).toEqual([[unsignedRequest.signAccountOp.accountOp]])
+    unsignedRequest.signAccountOp.destroy()
   })
   test('build dapp request', async () => {
     const { controller } = await prepareTest()
@@ -1912,10 +2035,9 @@ describe('RequestsController ', () => {
 
       // Twice, because one rejection is never enough to offer silencing anyway
       for (let i = 0; i < DAPP_REJECTS_BEFORE_OFFERING_SILENCE; i++) {
-        // eslint-disable-next-line no-await-in-loop
         await buildDappRequest(controller, { resolve: () => {}, reject: () => {} })
         // What `selectAccount` does - the user acted on the wallet, not on the app
-        // eslint-disable-next-line no-await-in-loop
+
         await controller.closeRequestWindow({ isUserInitiated: false })
       }
 
@@ -1923,9 +2045,8 @@ describe('RequestsController ', () => {
 
       // The same close, but this time it really is the user turning the app away
       for (let i = 0; i < DAPP_REJECTS_BEFORE_OFFERING_SILENCE; i++) {
-        // eslint-disable-next-line no-await-in-loop
         await buildDappRequest(controller, { resolve: () => {}, reject: () => {} })
-        // eslint-disable-next-line no-await-in-loop
+
         await controller.closeRequestWindow()
       }
 
@@ -2342,5 +2463,77 @@ describe('RequestsController ', () => {
       expect(controller.userRequests.length).toBe(0)
       expect(controller.userRequestsWaitingAccountSwitch.length).toBe(0)
     })
+  })
+})
+
+describe('SIWE auto-login and signing authentication', () => {
+  // A valid ERC-4361 message for the dapp behind MOCK_SESSION
+  const SIWE_MESSAGE = [
+    'test-dapp.com wants you to sign in with your Ethereum account:',
+    '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+    '',
+    'Sign in to the test dapp.',
+    '',
+    'URI: https://test-dapp.com',
+    'Version: 1',
+    'Chain ID: 1',
+    'Nonce: 12345678',
+    'Issued At: 2024-01-01T00:00:00.000Z'
+  ].join('\n')
+
+  const buildSiweRequest = async (
+    controller: Awaited<ReturnType<typeof prepareTest>>['controller']
+  ) => {
+    const resolve = jest.fn()
+
+    await controller.build({
+      type: 'dappRequest',
+      params: {
+        request: {
+          method: 'personal_sign',
+          params: [SIWE_MESSAGE, '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'],
+          session: MOCK_SESSION
+        } as any,
+        dappPromise: { id: 'testID', resolve, reject: () => {}, session: MOCK_SESSION }
+      }
+    })
+
+    return resolve
+  }
+
+  test('does not sign on the user behalf for an app they have not confirmed for signing', async () => {
+    const { controller, autoLoginCtrl } = await prepareTest(true)
+
+    jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+    const autoLoginSpy = jest.spyOn(autoLoginCtrl, 'autoLogin')
+
+    const resolve = await buildSiweRequest(controller)
+
+    expect(autoLoginSpy).not.toHaveBeenCalled()
+    expect(resolve).not.toHaveBeenCalled()
+    // The request opens the sign message screen instead, which is where the confirmation is asked
+    expect(controller.userRequests.length).toBe(1)
+    expect(controller.userRequests[0]!.kind).toBe('siwe')
+
+    jest.restoreAllMocks()
+  })
+
+  test('signs on the user behalf once they have confirmed for that app', async () => {
+    const { controller, autoLoginCtrl, dappsCtrl } = await prepareTest(true)
+
+    dappsCtrl.updateDapp(MOCK_SESSION.id, { signingAuthenticated: true })
+
+    jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+    const autoLoginSpy = jest
+      .spyOn(autoLoginCtrl, 'autoLogin')
+      .mockResolvedValue({ signature: '0xdeadbeef' } as any)
+
+    const resolve = await buildSiweRequest(controller)
+
+    expect(autoLoginSpy).toHaveBeenCalled()
+    expect(resolve).toHaveBeenCalledWith({ hash: '0xdeadbeef' })
+    expect(controller.userRequests.length).toBe(0)
+
+    jest.restoreAllMocks()
   })
 })

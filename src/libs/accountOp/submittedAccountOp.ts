@@ -1,4 +1,5 @@
-import { Interface, isAddress, toBeHex, TransactionReceipt, ZeroAddress } from 'ethers'
+import { getAddress, toBeHex, TransactionReceipt, ZeroAddress } from 'ethers'
+import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { BUNDLER } from '../../consts/bundlers'
 import { Hex } from '../../interfaces/hex'
@@ -432,65 +433,94 @@ export function updateOpStatus(
   return opReference
 }
 
-const transferIface = new Interface(['function transfer(address,uint256)'])
+// `transferFrom(address,address,uint256)` is shared by ERC20 and ERC721, so one entry covers both
+const transferAbi = parseAbi(['function transfer(address to, uint256 amountOrTokenId)'])
+const transferFromAbi = parseAbi([
+  'function transferFrom(address from, address to, uint256 amountOrTokenId)'
+])
+const safeTransferFromAbi = parseAbi([
+  'function safeTransferFrom(address from, address to, uint256 tokenId)'
+])
+const safeTransferFromWithDataAbi = parseAbi([
+  'function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)'
+])
 
 /**
- * Returns all addresses that the SubmittedAccountOp has calls sent to.
+ * Which decoded argument holds the recipient, per function that moves funds to someone else.
+ * Everything not listed here is a contract interaction rather than a send.
+ */
+const RECIPIENT_ARG_INDEX_BY_SELECTOR: Record<string, { abi: any; index: number; args: number }> = {
+  [toFunctionSelector(transferAbi[0])]: { abi: transferAbi, index: 0, args: 2 },
+  [toFunctionSelector(transferFromAbi[0])]: { abi: transferFromAbi, index: 1, args: 3 },
+  [toFunctionSelector(safeTransferFromAbi[0])]: { abi: safeTransferFromAbi, index: 1, args: 3 },
+  [toFunctionSelector(safeTransferFromWithDataAbi[0])]: {
+    abi: safeTransferFromWithDataAbi,
+    index: 1,
+    args: 3
+  }
+}
+
+const getRecipientFromCall = (call: Call): string | null => {
+  const data = (call.data || '0x') as Hex
+
+  // A plain value transfer - the call target is the recipient
+  if (data === '0x') return call.value > 0n && call.to ? call.to : null
+
+  const decoder = RECIPIENT_ARG_INDEX_BY_SELECTOR[data.slice(0, 10)]
+  if (!decoder) return null
+
+  try {
+    // Some tokens send shorter calldata than the ABI expects, the same way the humanizer pads it
+    const expectedLength = 2 + 8 + decoder.args * 64
+    const { args } = decodeFunctionData({
+      abi: decoder.abi,
+      data: data.padEnd(expectedLength, '0') as Hex
+    })
+
+    return (args[decoder.index] as string) || null
+  } catch {
+    // Not actually the function the selector suggests, so there is no recipient to read
+    return null
+  }
+}
+
+/**
+ * Returns the addresses an account op sends funds to - native transfers plus ERC20/ERC721
+ * `transfer`, `transferFrom` and both `safeTransferFrom` overloads - checksummed, deduplicated
+ * and in call order. Contract interactions are left out: calling a contract is not sending to it.
  *
- * @param whitelist Optional list of addresses to filter the results.
+ * @param whitelist Optional list of addresses to filter the results (case-insensitive).
  */
 export function getAccountOpRecipients(
-  op: SubmittedAccountOp,
+  op: Pick<AccountOp, 'calls'>,
   whitelist?: string[]
 ): {
   address: string
   domain?: string
 }[] {
-  const sentTo = new Set<string>()
-  const domainMap = new Map<string, string>()
+  const domainByRecipient = new Map<string, string | undefined>()
   const lowercaseWhitelist = whitelist?.map((addr) => addr.toLowerCase())
-  const setDomain = (address: string, domain?: string) => {
-    const normalized = domain?.toLowerCase()?.trim()
-    if (normalized) {
-      domainMap.set(address, normalized)
-    }
-  }
 
   op.calls.forEach((call) => {
-    // 1) Direct call.to match
-    if (call.to && isAddress(call.to)) {
-      if (!lowercaseWhitelist || lowercaseWhitelist.includes(call.to.toLowerCase())) {
-        sentTo.add(call.to)
-        setDomain(call.to, call.recipientDomain)
-      }
+    const recipient = getRecipientFromCall(call)
+    if (!recipient) return
+
+    let address: string
+    try {
+      address = getAddress(recipient)
+    } catch {
+      // A malformed address can never have been sent to, so it is not a recipient
+      return
     }
 
-    // 2) If this is an ERC-20 transfer(address,uint256), decode the recipient from call.data
-    const data = (call as Call).data as string | undefined
+    if (lowercaseWhitelist && !lowercaseWhitelist.includes(address.toLowerCase())) return
 
-    if (!data || typeof data !== 'string' || data.length < 10) return
-
-    const selector = transferIface.getFunction('transfer')?.selector
-    if (selector && data.startsWith(selector)) {
-      try {
-        const decoded = transferIface.decodeFunctionData('transfer', data)
-        const recipient = decoded[0] as string
-        if (isAddress(recipient)) {
-          if (lowercaseWhitelist && !lowercaseWhitelist.includes(recipient.toLowerCase())) return
-
-          sentTo.add(recipient)
-          setDomain(recipient, call.recipientDomain)
-        }
-      } catch {
-        // ignore decode errors and continue
-      }
-    }
+    const domain = call.recipientDomain?.toLowerCase()?.trim()
+    if (domain || !domainByRecipient.has(address))
+      domainByRecipient.set(address, domain || undefined)
   })
 
-  return Array.from(sentTo).map((address) => ({
-    address,
-    domain: domainMap.get(address)
-  }))
+  return Array.from(domainByRecipient, ([address, domain]) => ({ address, domain }))
 }
 
 /**

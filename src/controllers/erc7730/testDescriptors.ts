@@ -8,6 +8,7 @@ import {
   Erc7730ResolvedDescriptor
 } from '../../libs/humanizer/erc7730/types'
 import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { Erc7730Controller } from './erc7730'
 
 const controllersByRelayer = new WeakMap<object, Erc7730Controller>()
@@ -46,6 +47,7 @@ const getTestController = (callRelayer: BindedRelayerCall, provider?: any): Erc7
   const controller = new Erc7730Controller({
     storage: makeMemoryStorage(),
     callRelayer,
+    featureFlags: new FeatureFlagsController({}, makeMemoryStorage()),
     providers: makeProvidersStub(provider),
     ui: makeUiStub()
   })

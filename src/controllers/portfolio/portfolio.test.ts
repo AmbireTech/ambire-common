@@ -1085,6 +1085,70 @@ describe('Portfolio Controller ', () => {
       expect(getSimulatedCollection(controller)?.amountPostSimulation).toBe(0n)
     })
 
+    test('discardSimulation skips the refresh for a non-Safe account without a stored simulation', async () => {
+      const { controller } = await prepareTest({ skipAccountStateFetch: false })
+      const accountOp = await getAccountOp()
+
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      const stateBefore = getEthereumPortfolioState(controller)
+      expect(stateBefore.accountOps).toBeUndefined()
+
+      const updatePortfolioStateSpy = jest.spyOn(controller as any, 'updatePortfolioState')
+
+      await controller.discardSimulation(accountOp['1']!)
+
+      const stateAfter = getEthereumPortfolioState(controller)
+
+      expect(updatePortfolioStateSpy).not.toHaveBeenCalled()
+      expect(stateAfter.result?.updateStarted).toBe(stateBefore.result?.updateStarted)
+    })
+
+    test('discardSimulation refreshes a Safe account without a stored simulation', async () => {
+      const safeAccount: Account = {
+        ...account,
+        creation: null,
+        safeCreation: {
+          factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
+          singleton: '0x29fcB43b46531BcA003ddC8FCB67FFE91900C762',
+          saltNonce: '0x00',
+          setupData: '0x',
+          version: '1.4.1'
+        }
+      }
+      const { controller } = await prepareTest({
+        skipAccountStateFetch: false,
+        initialSetStorage: async (storageCtrl) => {
+          await storageCtrl.set('accounts', [safeAccount, account2])
+        }
+      })
+      const accountOp = await getAccountOp()
+
+      await controller.updateSelectedAccount(safeAccount.addr, [ethereum])
+
+      const stateBefore = getEthereumPortfolioState(controller)
+      expect(stateBefore.accountOps).toBeUndefined()
+      expect(stateBefore.result?.updateStarted).toBeDefined()
+
+      const updatePortfolioStateSpy = jest.spyOn(controller as any, 'updatePortfolioState')
+
+      await controller.discardSimulation(accountOp['1']!)
+
+      const stateAfter = getEthereumPortfolioState(controller)
+      const [, updatedNetwork, , updatedPortfolioProps] = updatePortfolioStateSpy.mock.calls[0] as [
+        Account,
+        Network,
+        Portfolio | null,
+        Partial<GetOptions>
+      ]
+
+      expect(updatePortfolioStateSpy).toHaveBeenCalledTimes(1)
+      expect(updatedNetwork.chainId).toBe(ethereum.chainId)
+      expect(updatedPortfolioProps.simulation).toBeUndefined()
+      expect(stateAfter.result?.updateStarted).toBeGreaterThan(stateBefore.result?.updateStarted!)
+      expect(stateAfter.accountOps).toBeUndefined()
+    })
+
     test('discardSimulation does not affect a different account op, even if they are called together', async () => {
       const { controller } = await prepareTest({ skipAccountStateFetch: false })
       const ethereum = networks.find((network) => network.chainId === 1n)!
@@ -3776,6 +3840,51 @@ describe('Portfolio Controller ', () => {
 
     afterEach(() => {
       jest.restoreAllMocks()
+    })
+
+    test('should not fetch blacklist when the scam and phishing checker is disabled', async () => {
+      const blacklistFetch = jest.fn(() =>
+        Promise.resolve(createJsonResponse(mockBlacklistResponse))
+      )
+      const fetchOverride = createBlacklistFetchOverride(blacklistFetch)
+
+      const { storageCtrl } = await prepareTest({
+        fetchOverride,
+        featureFlags: { scamAndPhishingChecker: false },
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
+      })
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(false)
+      expect(blacklistFetch).not.toHaveBeenCalled()
+      expect(await storageCtrl.get('tokenBlacklist', null)).toBeNull()
+    })
+
+    test('should not refresh a stale cached blacklist when the checker is disabled', async () => {
+      const staleCachedBlacklist = {
+        blacklistAddrs: { '1': [getAddress(mockBlacklistResponse.blacklistAddrs['1'][0]!)] },
+        blacklistBySymbols: ['claim'],
+        updatedAt: Date.now() - BLACKLIST_UPDATE_INTERVAL - 60 * 1000
+      }
+      const blacklistFetch = jest.fn(() =>
+        Promise.resolve(createJsonResponse(mockBlacklistResponse))
+      )
+      const fetchOverride = createBlacklistFetchOverride(blacklistFetch)
+
+      const { controller } = await prepareTest({
+        fetchOverride,
+        featureFlags: { scamAndPhishingChecker: false },
+        initialSetStorage: async (storageCtrlInner) => {
+          await storageCtrlInner.set('tokenBlacklist', staleCachedBlacklist)
+        },
+        skipBlacklistFetch: false,
+        awaitInitialLoad: false
+      })
+
+      expect(wasBlacklistFetched(fetchOverride)).toBe(false)
+      expect(blacklistFetch).not.toHaveBeenCalled()
+      // @ts-expect-error test - access private getter
+      expect(controller.blacklist).toEqual({ ...staleCachedBlacklist, isLoading: false })
     })
 
     test('should fetch blacklist from API successfully', async () => {

@@ -18,6 +18,7 @@ type ScamFilterOptions = {
   fetch: Fetch
   network: Network
   timeout?: number
+  isTokenPricesEnabled?: () => boolean
 }
 
 type TokenPriceCheck = {
@@ -39,10 +40,18 @@ export class ScamFilter {
 
   #timeout: number
 
-  constructor({ fetch, network, timeout = DEFAULT_TIMEOUT }: ScamFilterOptions) {
+  #isTokenPricesEnabled: () => boolean
+
+  constructor({
+    fetch,
+    network,
+    timeout = DEFAULT_TIMEOUT,
+    isTokenPricesEnabled = () => true
+  }: ScamFilterOptions) {
     this.#fetch = fetch
     this.#network = network
     this.#timeout = timeout
+    this.#isTokenPricesEnabled = isTokenPricesEnabled
   }
 
   async #fetchCenaPriceResponse(url: string): Promise<CenaPriceResponse> {
@@ -111,6 +120,8 @@ export class ScamFilter {
   }
 
   async filterTokensWithoutAPrice(tokenAddresses: string[]): Promise<string[]> {
+    if (!this.#isTokenPricesEnabled()) return tokenAddresses
+
     const tokenPriceChecks = tokenAddresses.reduce<TokenPriceCheck[]>((acc, originalAddress) => {
       try {
         const normalizedAddress = getAddress(originalAddress)

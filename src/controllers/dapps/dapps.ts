@@ -33,6 +33,7 @@ import {
 } from '../../interfaces/dapp'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
@@ -109,6 +110,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #ui: IUiController
 
+  #featureFlags: IFeatureFlagsController
+
   dappSessions: { [sessionId: string]: Session } = {}
 
   #dapps = new Map<string, Dapp>()
@@ -125,6 +128,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   // Set while dappToConnect's status was derived from a dangerous frame context instead of the
   // dApp's own hosting. The user's trust covers the hosting only, so it must not silence this.
   #dappToConnectContextStatus: BlacklistedStatus | undefined
+
+  #dappToConnectSession: Session | undefined
 
   isReadyToDisplayDapps: boolean = true
 
@@ -179,7 +184,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     networks,
     phishing,
     ui,
-    selectedAccount
+    selectedAccount,
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -189,6 +195,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     phishing: IPhishingController
     ui: IUiController
     selectedAccount: ISelectedAccountController
+    featureFlags: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
 
@@ -199,6 +206,7 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#phishing = phishing
     this.#ui = ui
     this.#selectedAccount = selectedAccount
+    this.#featureFlags = featureFlags
 
     this.#phishing.onUpdate(() => {
       if (!this.#phishing.shouldSyncDapps) return
@@ -320,7 +328,16 @@ export class DappsController extends EventEmitter implements IDappsController {
     // ("my-dapp.vercel.app.") is unreachable by any lookup, so it would linger as an orphan
     // entry in the UI while its permissions can never be resolved again.
     this.#dapps = new Map()
+    // A record without an id is unreachable by any lookup, and letting it throw here would leave
+    // the controller loading forever. `migrateDappsAddMissingIds` repairs such records, so any
+    // that still show up are skipped and reported.
+    let skippedDappsWithoutIdCount = 0
     storedDapps.forEach((dapp) => {
+      if (!dapp.id) {
+        skippedDappsWithoutIdCount += 1
+        return
+      }
+
       const id = normalizeHostname(dapp.id)
       // The canonical record wins over its trailing-dot duplicate - it is the one every lookup
       // resolves to, and its permissions are the ones the user reviewed for it.
@@ -328,6 +345,15 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
     })
+    if (skippedDappsWithoutIdCount) {
+      this.emitError({
+        level: 'silent',
+        message: 'Some saved apps could not be loaded.',
+        error: new Error(
+          `DappsController: skipped ${skippedDappsWithoutIdCount} stored dapp(s) without an id`
+        )
+      })
+    }
     this.#recentDapps = storedRecentDapps
     this.#trendingTokens = storedTrending.tokens
     this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
@@ -596,10 +622,14 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   /**
    * Fetches, normalizes and persists the trending tokens. Throws on a failed fetch or a
-   * malformed response so the caller can react (e.g. back off its retry cadence). The update
-   * interval and its lifecycle are owned by the ContinuousUpdatesController.
+   * malformed response so the caller can react (e.g. back off its retry cadence). Returns without
+   * fetching when swap and bridge token info is disabled. The update interval and its lifecycle are
+   * owned by the ContinuousUpdatesController.
    */
   async updateTrendingTokens() {
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#featureFlags.isFeatureEnabled('swapAndBridgeTokenInfo')) return
+
     await this.initialLoadPromise
 
     const res = await fetchWithTimeout(this.#fetch, TRENDING_TOKENS_URL, {}, 30000)
@@ -1336,6 +1366,53 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (shouldPersistDapps) await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
   }
 
+  async #updateDappToConnectSecurityCheck(dapp: Dapp, session: Session) {
+    await this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
+      const intrinsicStatus = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
+
+      // Check whether the dApp is embedded in a dangerous top-level document
+      // (e.g. a phishing page hosting the dApp in an iframe). Context status is
+      // not stored in #dapps so the dApp's global status stays uncontaminated.
+      const contextStatus = this.#getFrameContextStatus(session)
+      // BLACKLISTED on the dApp itself always wins over any session context status.
+      const effectiveStatus =
+        intrinsicStatus === 'BLACKLISTED' ? 'BLACKLISTED' : (contextStatus ?? intrinsicStatus)
+
+      if (this.dappToConnect && this.dappToConnect.id === dapp.id) {
+        this.dappToConnect.blacklisted = effectiveStatus
+        // Remembered so the trust flags can tell a warning about the dApp's own hosting -
+        // which the user may silence - apart from one about the document embedding it.
+        this.#dappToConnectContextStatus = contextStatus
+      }
+
+      // Update #dapps with intrinsic status only — never the context-derived one.
+      const existingDapp = this.#dapps.get(dapp.id)
+      if (existingDapp && existingDapp.blacklisted !== intrinsicStatus) {
+        this.#dapps.set(dapp.id, { ...existingDapp, blacklisted: intrinsicStatus })
+      }
+
+      this.emitUpdate()
+    })
+  }
+
+  /** Enables scam checking and immediately refreshes the pending connection request. */
+  async enableScamCheckerAndRefreshDappToConnect() {
+    const dapp = this.dappToConnect
+    const session = this.#dappToConnectSession
+
+    if (dapp) {
+      dapp.blacklisted = 'LOADING'
+      this.#dappToConnectContextStatus = undefined
+      this.emitUpdate()
+    }
+
+    await this.#featureFlags.setFeatureFlag('scamAndPhishingChecker', true)
+
+    if (!dapp || !session || this.dappToConnect?.id !== dapp.id) return
+
+    await this.#updateDappToConnectSecurityCheck(dapp, session)
+  }
+
   async setDappToConnectIfNeeded(currentRequest: UserRequest | null) {
     try {
       if (currentRequest && currentRequest.kind === 'dappConnect') {
@@ -1354,37 +1431,13 @@ export class DappsController extends EventEmitter implements IDappsController {
           // Don't persist the preferences after the dapp has been disconnected
           delete this.dappToConnect.accountPreferences
           this.#dappToConnectContextStatus = undefined
+          this.#dappToConnectSession = dappPromises[0].session
           this.emitUpdate()
 
           const session = dappPromises[0].session
 
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
-            const intrinsicStatus = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
-
-            // Check whether the dApp is embedded in a dangerous top-level document
-            // (e.g. a phishing page hosting the dApp in an iframe). Context status is
-            // not stored in #dapps so the dApp's global status stays uncontaminated.
-            const contextStatus = this.#getFrameContextStatus(session)
-            // BLACKLISTED on the dApp itself always wins over any session context status.
-            const effectiveStatus =
-              intrinsicStatus === 'BLACKLISTED' ? 'BLACKLISTED' : (contextStatus ?? intrinsicStatus)
-
-            if (this.dappToConnect && this.dappToConnect.id === dapp.id) {
-              this.dappToConnect.blacklisted = effectiveStatus
-              // Remembered so the trust flags can tell a warning about the dApp's own hosting -
-              // which the user may silence - apart from one about the document embedding it.
-              this.#dappToConnectContextStatus = contextStatus
-            }
-
-            // Update #dapps with intrinsic status only — never the context-derived one.
-            const existingDapp = this.#dapps.get(dapp.id)
-            if (existingDapp && existingDapp.blacklisted !== intrinsicStatus) {
-              this.#dapps.set(dapp.id, { ...existingDapp, blacklisted: intrinsicStatus })
-            }
-
-            this.emitUpdate()
-          })
+          this.#updateDappToConnectSecurityCheck(dapp, session)
         }
 
         return
@@ -1393,6 +1446,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (this.dappToConnect) {
         this.dappToConnect = null
         this.#dappToConnectContextStatus = undefined
+        this.#dappToConnectSession = undefined
         this.emitUpdate()
       }
     } catch (err: any) {
@@ -1495,7 +1549,8 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   /**
-   * Returns the highest-priority dApp verification banner for the provided dApp URLs, or `null` if none apply.
+   * Returns the highest-priority dApp verification banner for the provided dApp URLs, or `null` if
+   * the scam checker is disabled or no banner applies.
    *
    * Priority order:
    * 1) dApp is blacklisted (`BLACKLISTED`)
@@ -1514,6 +1569,8 @@ export class DappsController extends EventEmitter implements IDappsController {
       sessionId
     }: { includeDappNamesInText?: boolean; sessionId?: string } = {}
   ): DappVerificationBanner | null {
+    if (!this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) return null
+
     const validDappUrls = dappUrls
       .map((url) => url?.toLowerCase())
       .filter((url): url is string => !!url)
