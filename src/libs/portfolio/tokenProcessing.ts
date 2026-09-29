@@ -174,14 +174,14 @@ type SuspicionRule = (address: string, symbol: string, chainId: bigint) => Suspe
 
 /**
  * The suspicion checks, in order of priority. The first reason found is used.
- * To add a new kind of suspicious token, add a rule here and a matching `SuspectedType`.
+ * To add a new kind of suspicious token, add a rule here.
  */
 const SUSPICION_RULES: SuspicionRule[] = [
   // Same-symbol spoofing on same chain (different address)
   (address, symbol, chainId) =>
     isSuspectedRegardsKnownAddresses(address, symbol, chainId) ? 'suspected' : null,
   // Symbol that pretends to be real money
-  (_address, symbol) => (isFiatLikeSymbol(symbol) ? 'fiat-symbol' : null)
+  (_address, symbol) => (isFiatLikeSymbol(symbol) ? 'suspected' : null)
 ]
 
 export const isSuspectedToken = (

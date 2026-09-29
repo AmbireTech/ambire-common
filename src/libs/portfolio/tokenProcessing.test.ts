@@ -150,17 +150,17 @@ describe('isFiatLikeSymbol', () => {
 })
 
 describe('isSuspectedToken fiat symbols', () => {
-  it('returns "fiat-symbol" for an unknown token with a fiat-like symbol', () => {
-    expect(isSuspectedToken(NOT_A_FEE_TOKEN, '$', 1n)).toBe('fiat-symbol')
-    expect(isSuspectedToken(NOT_A_FEE_TOKEN, 'USD', 1n)).toBe('fiat-symbol')
-    expect(isSuspectedToken(NOT_A_FEE_TOKEN, '€500', 1n)).toBe('fiat-symbol')
+  it('returns "suspected" for an unknown token with a fiat-like symbol', () => {
+    expect(isSuspectedToken(NOT_A_FEE_TOKEN, '$', 1n)).toBe('suspected')
+    expect(isSuspectedToken(NOT_A_FEE_TOKEN, 'USD', 1n)).toBe('suspected')
+    expect(isSuspectedToken(NOT_A_FEE_TOKEN, '€500', 1n)).toBe('suspected')
   })
 
   it('trusts a known token on its own chain before the fiat rule runs', () => {
     expect(isSuspectedToken(USDT_ETHEREUM, 'USD', 1n)).toBeNull()
   })
 
-  it('keeps "suspected" for a same-symbol spoof, as that rule runs first', () => {
+  it('still returns "suspected" for a same-symbol spoof', () => {
     expect(isSuspectedToken(NOT_A_FEE_TOKEN, 'USDC', 1n)).toBe('suspected')
   })
 
@@ -170,9 +170,9 @@ describe('isSuspectedToken fiat symbols', () => {
 })
 
 describe('getFlags fiat symbols', () => {
-  it('sets suspectedType to "fiat-symbol" only for tokens in a simulation', () => {
+  it('sets suspectedType for a fiat-like symbol only for tokens in a simulation', () => {
     expect(getFlags({}, '1', 1n, NOT_A_FEE_TOKEN, 'Dollar', '$', true).suspectedType).toBe(
-      'fiat-symbol'
+      'suspected'
     )
     expect(getFlags({}, '1', 1n, NOT_A_FEE_TOKEN, 'Dollar', '$').suspectedType).toBeNull()
   })

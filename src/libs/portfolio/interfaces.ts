@@ -27,7 +27,7 @@ export type DeploylessContractOptions = {
 export type TokenError = string | '0x'
 
 export type AccountAssetsState = { [chainId: string]: boolean }
-export type SuspectedType = 'suspected' | 'fiat-symbol' | null
+export type SuspectedType = 'suspected' | null
 
 export type ExchangeInfo = {
   id: string
