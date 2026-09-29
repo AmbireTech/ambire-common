@@ -185,15 +185,52 @@ const isAmountLike = (text: string): boolean => {
   return isNumberLike(chars.slice(0, -1).join('').trimEnd())
 }
 
-/** Returns true when the text is an amount ("100", "1.5M") or a fiat currency code ("USD"). */
-const isAmountOrFiatCode = (text: string): boolean =>
-  isAmountLike(text) || FIAT_CURRENCY_CODES.has(text.toUpperCase())
+/** Length of every code in `FIAT_CURRENCY_CODES`. All ISO 4217 codes have 3 letters. */
+const FIAT_CURRENCY_CODE_LENGTH = 3
+
+const isFiatCode = (text: string): boolean => FIAT_CURRENCY_CODES.has(text.toUpperCase())
+
+/**
+ * Returns true when the word is an amount joined to a fiat currency code, with no space
+ * between them, e.g. "100USD", "1.5MUSD" or "USD100".
+ */
+const isAmountWithFiatCode = (word: string): boolean => {
+  const chars = [...word]
+  if (chars.length <= FIAT_CURRENCY_CODE_LENGTH) return false
+
+  const leadingText = chars.slice(0, FIAT_CURRENCY_CODE_LENGTH).join('')
+  const textAfterLeadingText = chars.slice(FIAT_CURRENCY_CODE_LENGTH).join('')
+  const trailingText = chars.slice(-FIAT_CURRENCY_CODE_LENGTH).join('')
+  const textBeforeTrailingText = chars.slice(0, -FIAT_CURRENCY_CODE_LENGTH).join('')
+
+  return (
+    (isFiatCode(leadingText) && isAmountLike(textAfterLeadingText)) ||
+    (isFiatCode(trailingText) && isAmountLike(textBeforeTrailingText))
+  )
+}
+
+/**
+ * Returns true when the word is an amount ("100", "1.5M"), a fiat currency code ("USD"),
+ * or an amount joined to a fiat currency code ("100USD", "USD100").
+ */
+const isAmountOrFiatCode = (word: string): boolean =>
+  isAmountLike(word) || isFiatCode(word) || isAmountWithFiatCode(word)
+
+/** Splits the text into its words. Any whitespace character separates two words. */
+const splitIntoWords = (text: string): string[] =>
+  [...text]
+    .map((char) => (char.trim() ? char : ' '))
+    .join('')
+    .split(' ')
+    .filter(Boolean)
 
 /**
  * Returns true when the symbol is a fiat currency sign alone ("$", "€"), or a sign as the
- * first or last character with an amount or a fiat currency code as the rest ("$100",
- * "1.000€", "$ 1,000.50", "$100K", "$USD", "EUR€").
- * A sign next to other text, e.g. "$PEPE" or "US$", is not flagged, because real tokens use it.
+ * first or last character next to a word that is an amount, a fiat currency code, or both.
+ * Only the word next to the sign is checked, so text after it does not hide the amount:
+ * "$100", "1.000€", "$ 1,000.50", "$1 000", "$100K", "$USD", "EUR€", "$100 USD",
+ * "$100 PEPE" and "EUR 100€" are all flagged.
+ * A sign joined to other text, e.g. "$PEPE" or "US$", is not flagged, because real tokens use it.
  */
 const isFiatSignWithAmountOrCode = (symbol: string): boolean => {
   const chars = [...symbol]
@@ -203,10 +240,15 @@ const isFiatSignWithAmountOrCode = (symbol: string): boolean => {
   const lastChar = chars[chars.length - 1]!
   if (chars.length === 1) return FIAT_CURRENCY_SIGNS.has(firstChar)
 
+  const wordsAfterFirstChar = splitIntoWords(chars.slice(1).join(''))
+  const wordsBeforeLastChar = splitIntoWords(chars.slice(0, -1).join(''))
+  const firstWordAfterSign = wordsAfterFirstChar[0] ?? ''
+  const lastWordBeforeSign = wordsBeforeLastChar[wordsBeforeLastChar.length - 1] ?? ''
+
   const isSignThenAmountOrCode =
-    FIAT_CURRENCY_SIGNS.has(firstChar) && isAmountOrFiatCode(chars.slice(1).join('').trim())
+    FIAT_CURRENCY_SIGNS.has(firstChar) && isAmountOrFiatCode(firstWordAfterSign)
   const isAmountOrCodeThenSign =
-    FIAT_CURRENCY_SIGNS.has(lastChar) && isAmountOrFiatCode(chars.slice(0, -1).join('').trim())
+    FIAT_CURRENCY_SIGNS.has(lastChar) && isAmountOrFiatCode(lastWordBeforeSign)
 
   return isSignThenAmountOrCode || isAmountOrCodeThenSign
 }
@@ -214,7 +256,8 @@ const isFiatSignWithAmountOrCode = (symbol: string): boolean => {
 /**
  * Returns true when a token symbol looks like real money: it is exactly a fiat currency
  * code (e.g. "USD"), a fiat currency sign alone (e.g. "$"), or a sign before or after an
- * amount or a fiat currency code (e.g. "$100", "1.000€", "$100K", "$USD").
+ * amount, a fiat currency code, or both, with any text after them (e.g. "$100", "1.000€",
+ * "$100K", "$USD", "$100 USD", "$100 PEPE").
  * Checks the raw symbol, because `removeNonLatinChars` drops most currency signs.
  * NFKC folds look-alike variants such as the full-width "＄" into their plain form.
  */

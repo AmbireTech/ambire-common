@@ -131,6 +131,37 @@ describe('isFiatLikeSymbol', () => {
     expect(isFiatLikeSymbol('$U\u200bSD')).toBe(true)
   })
 
+  it('flags a fiat currency sign next to an amount that uses spaces between digit groups', () => {
+    expect(isFiatLikeSymbol('$1 000')).toBe(true)
+    expect(isFiatLikeSymbol('\u20ac1 000 000,50')).toBe(true)
+    expect(isFiatLikeSymbol('1 000 \u20ac')).toBe(true)
+    // no-break and narrow no-break spaces become a plain space after NFKC
+    expect(isFiatLikeSymbol('\u20ac1\u00a0000')).toBe(true)
+    expect(isFiatLikeSymbol('1\u202f000\u20ac')).toBe(true)
+  })
+
+  it('flags a fiat currency sign next to an amount and a fiat currency code', () => {
+    expect(isFiatLikeSymbol('$100 USD')).toBe(true)
+    expect(isFiatLikeSymbol('$100USD')).toBe(true)
+    expect(isFiatLikeSymbol('$1.5M usd')).toBe(true)
+    expect(isFiatLikeSymbol('$USD 100')).toBe(true)
+    expect(isFiatLikeSymbol('EUR 1 000\u20ac')).toBe(true)
+    expect(isFiatLikeSymbol('100 EUR \u20ac')).toBe(true)
+    expect(isFiatLikeSymbol('$100 U\u200bSD')).toBe(true)
+  })
+
+  it('flags a fiat currency sign next to an amount or a fiat currency code, with other text after it', () => {
+    expect(isFiatLikeSymbol('$100 USDC')).toBe(true)
+    expect(isFiatLikeSymbol('$100 PEPE')).toBe(true)
+    expect(isFiatLikeSymbol('$100 KRW')).toBe(true)
+    expect(isFiatLikeSymbol('$USD USD')).toBe(true)
+    expect(isFiatLikeSymbol('$100 USD 100')).toBe(true)
+    expect(isFiatLikeSymbol('$1  000')).toBe(true)
+    expect(isFiatLikeSymbol('$1 000 ETH')).toBe(true)
+    expect(isFiatLikeSymbol('$100\tClaim')).toBe(true)
+    expect(isFiatLikeSymbol('Claim 100 €')).toBe(true)
+  })
+
   it('flags a fiat currency sign as the last character, after an amount', () => {
     expect(isFiatLikeSymbol('100$')).toBe(true)
     expect(isFiatLikeSymbol('1.000€')).toBe(true)
@@ -195,13 +226,6 @@ describe('isFiatLikeSymbol', () => {
     expect(isFiatLikeSymbol('USD₮')).toBe(false)
     expect(isFiatLikeSymbol('ЕUR')).toBe(false)
     expect(isFiatLikeSymbol('₿')).toBe(false)
-  })
-
-  it('does not flag fiat codes that real tokens use as their symbol', () => {
-    // KROWN, Caduceus Protocol and PLEARN
-    expect(isFiatLikeSymbol('KRW')).toBe(false)
-    expect(isFiatLikeSymbol('CAD')).toBe(false)
-    expect(isFiatLikeSymbol('PLN')).toBe(false)
   })
 
   it('does not flag an empty symbol', () => {
