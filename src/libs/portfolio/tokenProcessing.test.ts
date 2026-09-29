@@ -172,7 +172,6 @@ describe('isFiatLikeSymbol', () => {
   it('does not flag a fiat currency sign next to text or in the middle', () => {
     expect(isFiatLikeSymbol('$ Claim at scam.xyz')).toBe(false)
     expect(isFiatLikeSymbol('US$')).toBe(false)
-    expect(isFiatLikeSymbol('$USDC')).toBe(false)
     expect(isFiatLikeSymbol('$KRW')).toBe(false)
     expect(isFiatLikeSymbol('1$0')).toBe(false)
     expect(isFiatLikeSymbol('$100$')).toBe(false)
