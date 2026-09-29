@@ -3,7 +3,7 @@ import { ZeroAddress } from 'ethers'
 import { describe, expect, it } from '@jest/globals'
 
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { getFeeToken, getFlags } from './tokenProcessing'
+import { getFeeToken, getFlags, isFiatLikeSymbol, isSuspectedToken } from './tokenProcessing'
 
 const USDT_ETHEREUM = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
 const WETH_OPTIMISM = '0x4200000000000000000000000000000000000006'
@@ -88,5 +88,92 @@ describe('getFlags fee token flags', () => {
     expect(flags.onGasTank).toBe(true)
     expect(flags.canTopUpGasTank).toBe(true)
     expect(flags.isFeeToken).toBe(true)
+  })
+})
+
+describe('isFiatLikeSymbol', () => {
+  it('flags a symbol that is only a fiat currency sign', () => {
+    expect(isFiatLikeSymbol('$')).toBe(true)
+    expect(isFiatLikeSymbol('€')).toBe(true)
+    expect(isFiatLikeSymbol('£')).toBe(true)
+    expect(isFiatLikeSymbol('¥')).toBe(true)
+  })
+
+  it('flags a fiat currency sign together with an amount or other text', () => {
+    expect(isFiatLikeSymbol('$100')).toBe(true)
+    expect(isFiatLikeSymbol('100$')).toBe(true)
+    expect(isFiatLikeSymbol('€500')).toBe(true)
+    expect(isFiatLikeSymbol('$ Claim at scam.xyz')).toBe(true)
+    expect(isFiatLikeSymbol('$1,000.00')).toBe(true)
+    expect(isFiatLikeSymbol('US$')).toBe(true)
+  })
+
+  it('flags a symbol that is exactly a fiat currency code, in any case', () => {
+    expect(isFiatLikeSymbol('USD')).toBe(true)
+    expect(isFiatLikeSymbol('eur')).toBe(true)
+    expect(isFiatLikeSymbol(' GBP ')).toBe(true)
+  })
+
+  it('flags look-alike and hidden-character variants', () => {
+    // full-width dollar sign and full-width letters fold to their plain form
+    expect(isFiatLikeSymbol('＄')).toBe(true)
+    expect(isFiatLikeSymbol('ＵＳＤ')).toBe(true)
+    // zero-width space inside the code
+    expect(isFiatLikeSymbol('U\u200bSD')).toBe(true)
+  })
+
+  it('flags a "$" prefix in front of a fiat currency code', () => {
+    expect(isFiatLikeSymbol('$USD')).toBe(true)
+    expect(isFiatLikeSymbol('$eur')).toBe(true)
+  })
+
+  it('does not flag "$"-prefixed tickers used by real tokens', () => {
+    expect(isFiatLikeSymbol('$PEPE')).toBe(false)
+    expect(isFiatLikeSymbol('$DG')).toBe(false)
+    expect(isFiatLikeSymbol('$ZKP')).toBe(false)
+    expect(isFiatLikeSymbol('$PEPE2')).toBe(false)
+  })
+
+  it('does not flag regular symbols, stablecoins or crypto signs', () => {
+    expect(isFiatLikeSymbol('ETH')).toBe(false)
+    expect(isFiatLikeSymbol('USDC')).toBe(false)
+    expect(isFiatLikeSymbol('USDT')).toBe(false)
+    expect(isFiatLikeSymbol('EURC')).toBe(false)
+    expect(isFiatLikeSymbol('USD₮0')).toBe(false)
+    expect(isFiatLikeSymbol('₿')).toBe(false)
+  })
+
+  it('does not flag an empty symbol', () => {
+    expect(isFiatLikeSymbol('')).toBe(false)
+    expect(isFiatLikeSymbol('   ')).toBe(false)
+  })
+})
+
+describe('isSuspectedToken fiat symbols', () => {
+  it('returns "fiat-symbol" for an unknown token with a fiat-like symbol', () => {
+    expect(isSuspectedToken(NOT_A_FEE_TOKEN, '$', 1n)).toBe('fiat-symbol')
+    expect(isSuspectedToken(NOT_A_FEE_TOKEN, 'USD', 1n)).toBe('fiat-symbol')
+    expect(isSuspectedToken(NOT_A_FEE_TOKEN, '€500', 1n)).toBe('fiat-symbol')
+  })
+
+  it('trusts a known token on its own chain before the fiat rule runs', () => {
+    expect(isSuspectedToken(USDT_ETHEREUM, 'USD', 1n)).toBeNull()
+  })
+
+  it('keeps "suspected" for a same-symbol spoof, as that rule runs first', () => {
+    expect(isSuspectedToken(NOT_A_FEE_TOKEN, 'USDC', 1n)).toBe('suspected')
+  })
+
+  it('returns null for an unknown token with a regular symbol', () => {
+    expect(isSuspectedToken(NOT_A_FEE_TOKEN, 'RND', 1n)).toBeNull()
+  })
+})
+
+describe('getFlags fiat symbols', () => {
+  it('sets suspectedType to "fiat-symbol" only for tokens in a simulation', () => {
+    expect(getFlags({}, '1', 1n, NOT_A_FEE_TOKEN, 'Dollar', '$', true).suspectedType).toBe(
+      'fiat-symbol'
+    )
+    expect(getFlags({}, '1', 1n, NOT_A_FEE_TOKEN, 'Dollar', '$').suspectedType).toBeNull()
   })
 })

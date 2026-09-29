@@ -60,6 +60,130 @@ export const isSuspectedRegardsKnownAddresses = (
   })
 }
 
+/**
+ * Signs of real-world (fiat) currencies. Scam tokens put them in their symbol, e.g. "$" or
+ * "€500", so that a received amount looks like cash. Crypto signs such as "₿" are left out
+ * on purpose.
+ */
+export const FIAT_CURRENCY_SIGNS: ReadonlySet<string> = new Set([
+  '$',
+  '¢',
+  '£',
+  '¥',
+  '€',
+  '₹',
+  '₽',
+  '₩',
+  '₺',
+  '₴',
+  '₦',
+  '₱',
+  '₪',
+  '₫',
+  '₡',
+  '₲',
+  '₵',
+  '₸',
+  '₼',
+  '฿',
+  '﷼'
+])
+
+/**
+ * ISO 4217 codes of widely used fiat currencies. A token whose whole symbol is one of them
+ * pretends to be that currency.
+ */
+export const FIAT_CURRENCY_CODES: ReadonlySet<string> = new Set([
+  'USD',
+  'EUR',
+  'GBP',
+  'JPY',
+  'CNY',
+  'CHF',
+  'CAD',
+  'AUD',
+  'NZD',
+  'HKD',
+  'SGD',
+  'INR',
+  'KRW',
+  'RUB',
+  'TRY',
+  'BRL',
+  'MXN',
+  'ZAR',
+  'SEK',
+  'NOK',
+  'DKK',
+  'PLN',
+  'UAH',
+  'AED'
+])
+
+const isAsciiLetter = (char: string) => {
+  const upperChar = char.toUpperCase()
+  return upperChar >= 'A' && upperChar <= 'Z'
+}
+
+const isAsciiDigit = (char: string) => char >= '0' && char <= '9'
+
+/**
+ * Many real tokens write their ticker with a "$" prefix, e.g. "$PEPE" or "$DG".
+ * Such a symbol is "$" followed only by ASCII letters and digits, with at least one letter,
+ * and the part after the "$" is not a fiat currency code (so "$USD" is not a ticker).
+ */
+const isDollarPrefixedTicker = (symbol: string): boolean => {
+  if (!symbol.startsWith('$')) return false
+
+  const ticker = symbol.slice(1)
+  const tickerChars = [...ticker]
+  if (!tickerChars.some(isAsciiLetter)) return false
+  if (!tickerChars.every((char) => isAsciiLetter(char) || isAsciiDigit(char))) return false
+
+  return !FIAT_CURRENCY_CODES.has(ticker.toUpperCase())
+}
+
+/**
+ * Returns true when a token symbol looks like real money: it contains a fiat currency sign
+ * (e.g. "$", "€100", "$ Claim") or it is exactly a fiat currency code (e.g. "USD").
+ * A "$"-prefixed ticker such as "$PEPE" is not flagged, because many real tokens use it.
+ * Checks the raw symbol, because `removeNonLatinChars` drops most currency signs.
+ * NFKC folds look-alike variants such as the full-width "＄" into their plain form.
+ */
+export const isFiatLikeSymbol = (symbol: string): boolean => {
+  if (!symbol) return false
+
+  const normalizedSymbol = symbol.normalize('NFKC').trim()
+  // Hidden characters (e.g. "U\u200BSD") must not hide a fiat currency code
+  const symbolWithoutHiddenChars = removeNonLatinChars(normalizedSymbol).trim().toUpperCase()
+  if (FIAT_CURRENCY_CODES.has(symbolWithoutHiddenChars)) return true
+  if (isDollarPrefixedTicker(normalizedSymbol)) return false
+
+  for (const char of normalizedSymbol) {
+    if (FIAT_CURRENCY_SIGNS.has(char)) return true
+  }
+
+  return false
+}
+
+/**
+ * A single check that can mark a not-trusted token as suspected.
+ * Returns the reason when the token matches the rule, otherwise null.
+ */
+type SuspicionRule = (address: string, symbol: string, chainId: bigint) => SuspectedType
+
+/**
+ * The suspicion checks, in order of priority. The first reason found is used.
+ * To add a new kind of suspicious token, add a rule here and a matching `SuspectedType`.
+ */
+const SUSPICION_RULES: SuspicionRule[] = [
+  // Same-symbol spoofing on same chain (different address)
+  (address, symbol, chainId) =>
+    isSuspectedRegardsKnownAddresses(address, symbol, chainId) ? 'suspected' : null,
+  // Symbol that pretends to be real money
+  (_address, symbol) => (isFiatLikeSymbol(symbol) ? 'fiat-symbol' : null)
+]
+
 export const isSuspectedToken = (
   address: string,
   symbol: string,
@@ -76,8 +200,11 @@ export const isSuspectedToken = (
     return null // trusted
   }
 
-  // 3) Same-symbol spoofing on same chain (different address)
-  if (isSuspectedRegardsKnownAddresses(address, symbol, chainId)) return 'suspected'
+  // 3) Run the suspicion rules in order and return the first reason found
+  for (const rule of SUSPICION_RULES) {
+    const reason = rule(address, symbol, chainId)
+    if (reason) return reason
+  }
 
   // 4) Not flagged
   return null
