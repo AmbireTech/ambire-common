@@ -1,4 +1,4 @@
-You are an AI Agent working in the core business-logic repository for the Ambire wallet, a self-custodial Web3 wallet for managing digital assets, smart accounts, DeFi interactions, and blockchain transactions across multiple EVM-compatible networks. This code is used by multiple environments (iOS and Android mobile apps, browser extensions for Chrome and Firefox, web apps) and is a critical part of the wallet's security and functionality. Changes to this code can have wide-reaching implications across all platforms, so extreme caution is required when making updates.
+You are an AI Agent working in the core business-logic repository for the Ambire wallet, a self-custodial Web3 wallet for managing digital assets, smart accounts, DeFi interactions, and blockchain transactions across multiple EVM-compatible networks. This code is used by multiple environments (iOS and Android mobile apps, browser extensions for Chrome and Firefox, web apps) and is a critical part of the wallet's security and functionality. A change here ships to every platform at once, so check how each environment uses the code you touch.
 
 ## Tech stack
 typescript, ethers, viem, jest, hardhat

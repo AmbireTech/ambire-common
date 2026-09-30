@@ -328,7 +328,16 @@ export class DappsController extends EventEmitter implements IDappsController {
     // ("my-dapp.vercel.app.") is unreachable by any lookup, so it would linger as an orphan
     // entry in the UI while its permissions can never be resolved again.
     this.#dapps = new Map()
+    // A record without an id is unreachable by any lookup, and letting it throw here would leave
+    // the controller loading forever. `migrateDappsAddMissingIds` repairs such records, so any
+    // that still show up are skipped and reported.
+    let skippedDappsWithoutIdCount = 0
     storedDapps.forEach((dapp) => {
+      if (!dapp.id) {
+        skippedDappsWithoutIdCount += 1
+        return
+      }
+
       const id = normalizeHostname(dapp.id)
       // The canonical record wins over its trailing-dot duplicate - it is the one every lookup
       // resolves to, and its permissions are the ones the user reviewed for it.
@@ -336,6 +345,15 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
     })
+    if (skippedDappsWithoutIdCount) {
+      this.emitError({
+        level: 'silent',
+        message: 'Some saved apps could not be loaded.',
+        error: new Error(
+          `DappsController: skipped ${skippedDappsWithoutIdCount} stored dapp(s) without an id`
+        )
+      })
+    }
     this.#recentDapps = storedRecentDapps
     this.#trendingTokens = storedTrending.tokens
     this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
@@ -479,7 +497,9 @@ export class DappsController extends EventEmitter implements IDappsController {
         isConnected: prevSources.length > 0,
         connectedSources: prevSources,
         isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(dapp.url)!),
-        isCustom: !!prevStoredDapp?.isCustom,
+        // Always false, even if the user connected to the app before it was listed - it's part of
+        // the catalog now, so it should be treated (and verified) like any other catalog app.
+        isCustom: false,
         chainId: prevStoredDapp?.chainId || 1,
         favorite: !!prevStoredDapp?.favorite,
         isTrustedByUser: !!prevStoredDapp?.isTrustedByUser,

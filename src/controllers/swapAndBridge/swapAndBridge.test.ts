@@ -615,6 +615,24 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromChainId).toEqual(10)
     expect(swapAndBridgeController.toChainId).toEqual(10)
   })
+  test('should only require portfolio token prices when token prices are enabled', async () => {
+    const controller = buildSwapAndBridgeController()
+    const tokensWithoutPrices = PORTFOLIO_TOKENS.map((token) => ({ ...token, priceIn: [] }))
+
+    try {
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
+      await controller.updatePortfolioTokenList(tokensWithoutPrices)
+      expect(controller.portfolioTokenList).toEqual([])
+
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', false)
+      await controller.updatePortfolioTokenList(tokensWithoutPrices)
+
+      expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
+      expect(controller.fromSelectedToken).not.toBeNull()
+    } finally {
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
+    }
+  })
   test('should expose the wrap exemption before a quote is available', () => {
     const network = networksCtrl.networks.find(({ chainId }) => chainId === 10n)
     if (!network?.wrappedAddr)
@@ -900,13 +918,15 @@ describe('SwapAndBridge Controller', () => {
     const prevToChainId = swapAndBridgeController.toChainId
     const prevFromSelectedTokenAddress = swapAndBridgeController.fromSelectedToken?.address
     const prevToSelectedTokenAddress = swapAndBridgeController.toSelectedToken?.address
-    const fiatBefore = swapAndBridgeController.fromAmountInFiat
     await swapAndBridgeController.switchFromAndToTokens()
     expect(swapAndBridgeController.fromChainId).toEqual(prevToChainId)
     expect(swapAndBridgeController.toChainId).toEqual(prevFromChainId)
     expect(swapAndBridgeController.toSelectedToken?.address).toEqual(prevFromSelectedTokenAddress)
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(prevToSelectedTokenAddress)
-    expect(swapAndBridgeController.fromAmountInFiat).toEqual(fiatBefore)
+    // The switched-in token has fewer decimals, so the carried over amount rounds down to
+    // nothing - the fiat amount has to follow it instead of keeping the previous token's value
+    expect(Number(swapAndBridgeController.fromAmount)).toBeLessThan(1e-8)
+    expect(Number(swapAndBridgeController.fromAmountInFiat)).toBe(0)
     await swapAndBridgeController.switchFromAndToTokens()
     expect(swapAndBridgeController.fromChainId).toEqual(prevFromChainId)
     expect(swapAndBridgeController.toChainId).toEqual(prevToChainId)
@@ -1429,6 +1449,17 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController.updateForm({ fromAmount: '0.99785' }) // USDT price in USD
     expect(swapAndBridgeController.fromAmount).toEqual('1.0')
     expect(swapAndBridgeController.validateFromAmount.severity).toEqual('success')
+  })
+  test('should clear the fiat amount when the amount is cleared to zero', () => {
+    swapAndBridgeController.updateForm({ fromSelectedToken: PORTFOLIO_TOKENS[0] })
+    swapAndBridgeController.updateForm({ fromAmountFieldMode: 'token' })
+
+    swapAndBridgeController.updateForm({ fromAmount: '1' })
+    expect(Number(swapAndBridgeController.fromAmountInFiat)).toBeGreaterThan(0)
+
+    // The amount field turns a cleared input into a '0', so the fiat amount has to follow it
+    swapAndBridgeController.updateForm({ fromAmount: '0' })
+    expect(Number(swapAndBridgeController.fromAmountInFiat)).toBe(0)
   })
   test('should unload screen', () => {
     swapAndBridgeController.unloadScreen('1')

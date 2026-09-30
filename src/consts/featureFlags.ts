@@ -42,6 +42,14 @@ export interface FeatureFlags {
    * blind-signed). When enabled, those reports are sent.
    */
   ledgerSigningReports: boolean
+  /**
+   * Find the pending $WALLET withdrawals (unstakes) of the account through
+   * Ambire's relayer logs. Requires sending the account address to the relayer,
+   * so the user can opt out of it. When disabled, the withdrawals are found
+   * only from the locally known transactions and from transaction ids that
+   * the user enters.
+   */
+  walletStakingWithdrawalsLookup: boolean
   /** Resolve Namoshi names (.btc, .citrea) on Citrea. */
   namoshiDomains: boolean
   /** Resolve GNS names (.gwei) on Ethereum. */
@@ -66,6 +74,7 @@ export const defaultFeatureFlags: FeatureFlags = {
   keepEnsProfilesUpToDate: false,
   swapAndBridgeTokenInfo: true,
   ledgerSigningReports: false,
+  walletStakingWithdrawalsLookup: true,
   // @TODO: Introduce a setting and flip to false
   namoshiDomains: true,
   gnsDomains: true

@@ -89,6 +89,237 @@ export const isSuspectedRegardsKnownAddresses = (
   )
 }
 
+/**
+ * Signs of real-world (fiat) currencies. Scam tokens put them in their symbol, e.g. "$" or
+ * "€500", so that a received amount looks like cash. Crypto signs such as "₿" are left out
+ * on purpose.
+ */
+export const FIAT_CURRENCY_SIGNS: ReadonlySet<string> = new Set([
+  '$',
+  '¢',
+  '£',
+  '¥',
+  '€',
+  '₹',
+  '₽',
+  '₩',
+  '₺',
+  '₴',
+  '₦',
+  '₱',
+  '₪',
+  '₫',
+  '₡',
+  '₲',
+  '₵',
+  '₸',
+  '₼',
+  '฿',
+  '﷼'
+])
+
+/**
+ * ISO 4217 codes of widely used fiat currencies. A token whose whole symbol is one of them
+ * pretends to be that currency. KRW, CAD and PLN are left out on purpose, because real tokens
+ * (KROWN, Caduceus Protocol, PLEARN) use them as their symbol.
+ */
+export const FIAT_CURRENCY_CODES: ReadonlySet<string> = new Set([
+  'USD',
+  'EUR',
+  'GBP',
+  'JPY',
+  'CNY',
+  'CHF',
+  'AUD',
+  'NZD',
+  'HKD',
+  'SGD',
+  'INR',
+  'RUB',
+  'TRY',
+  'BRL',
+  'MXN',
+  'ZAR',
+  'SEK',
+  'NOK',
+  'DKK',
+  'UAH',
+  'AED'
+])
+
+/**
+ * Characters that take no visible space. Scam symbols put them inside a word (e.g. "U\u200BSD")
+ * so that it looks the same but does not match an exact comparison.
+ */
+const INVISIBLE_CHARS: ReadonlySet<string> = new Set([
+  '\u00AD', // soft hyphen
+  '\u034F', // combining grapheme joiner
+  '\u180E', // Mongolian vowel separator
+  '\u200B', // zero-width space
+  '\u200C', // zero-width non-joiner
+  '\u200D', // zero-width joiner
+  '\u200E', // left-to-right mark
+  '\u200F', // right-to-left mark
+  '\u2060', // word joiner
+  '\u2061', // function application
+  '\u2062', // invisible times
+  '\u2063', // invisible separator
+  '\u2064', // invisible plus
+  '\uFEFF' // zero-width no-break space
+])
+
+/**
+ * Removes only invisible characters. Unlike `removeNonLatinChars`, it keeps visible
+ * non-ASCII characters, so "USD₮" stays "USD₮" and does not become "USD".
+ */
+const removeInvisibleChars = (str: string): string =>
+  [...str].filter((char) => !INVISIBLE_CHARS.has(char)).join('')
+
+const isAsciiDigit = (char: string) => char >= '0' && char <= '9'
+
+/** Separators that written amounts use between digit groups, e.g. "1,000.50" or "1.000,50". */
+const NUMBER_SEPARATORS: ReadonlySet<string> = new Set(['.', ','])
+
+/**
+ * Returns true when the text reads as a plain amount, e.g. "1000", "1.000", "1,000",
+ * "1.000,1" or "1,000.0". It must start and end with a digit, and a separator must be
+ * followed by a digit (so "1..0", ".5" and "5." are not amounts).
+ */
+const isNumberLike = (text: string): boolean => {
+  const chars = [...text]
+  if (!chars.length) return false
+  if (!isAsciiDigit(chars[0]!) || !isAsciiDigit(chars[chars.length - 1]!)) return false
+
+  return chars.every(
+    (char, index) =>
+      isAsciiDigit(char) || (NUMBER_SEPARATORS.has(char) && isAsciiDigit(chars[index + 1] ?? ''))
+  )
+}
+
+/**
+ * Short size suffixes that written amounts use, e.g. "100K", "1.5M", "2B" or "1T"
+ * (thousand, million, billion, trillion). Compared in uppercase, so "100k" also counts.
+ */
+const AMOUNT_SUFFIXES: ReadonlySet<string> = new Set(['K', 'M', 'B', 'T'])
+
+/**
+ * Returns true when the text reads as an amount: a plain number (see `isNumberLike`),
+ * optionally followed by one size suffix, e.g. "100", "100K", "1.5M" or "2 B".
+ */
+const isAmountLike = (text: string): boolean => {
+  const chars = [...text]
+  const lastChar = chars[chars.length - 1]
+  if (!lastChar || !AMOUNT_SUFFIXES.has(lastChar.toUpperCase())) return isNumberLike(text)
+
+  return isNumberLike(chars.slice(0, -1).join('').trimEnd())
+}
+
+/** Length of every code in `FIAT_CURRENCY_CODES`. All ISO 4217 codes have 3 letters. */
+const FIAT_CURRENCY_CODE_LENGTH = 3
+
+const isFiatCode = (text: string): boolean => FIAT_CURRENCY_CODES.has(text.toUpperCase())
+
+/**
+ * Returns true when the word is an amount joined to a fiat currency code, with no space
+ * between them, e.g. "100USD", "1.5MUSD" or "USD100".
+ */
+const isAmountWithFiatCode = (word: string): boolean => {
+  const chars = [...word]
+  if (chars.length <= FIAT_CURRENCY_CODE_LENGTH) return false
+
+  const leadingText = chars.slice(0, FIAT_CURRENCY_CODE_LENGTH).join('')
+  const textAfterLeadingText = chars.slice(FIAT_CURRENCY_CODE_LENGTH).join('')
+  const trailingText = chars.slice(-FIAT_CURRENCY_CODE_LENGTH).join('')
+  const textBeforeTrailingText = chars.slice(0, -FIAT_CURRENCY_CODE_LENGTH).join('')
+
+  return (
+    (isFiatCode(leadingText) && isAmountLike(textAfterLeadingText)) ||
+    (isFiatCode(trailingText) && isAmountLike(textBeforeTrailingText))
+  )
+}
+
+/**
+ * Returns true when the word is an amount ("100", "1.5M"), a fiat currency code ("USD"),
+ * or an amount joined to a fiat currency code ("100USD", "USD100").
+ */
+const isAmountOrFiatCode = (word: string): boolean =>
+  isAmountLike(word) || isFiatCode(word) || isAmountWithFiatCode(word)
+
+/** Splits the text into its words. Any whitespace character separates two words. */
+const splitIntoWords = (text: string): string[] =>
+  [...text]
+    .map((char) => (char.trim() ? char : ' '))
+    .join('')
+    .split(' ')
+    .filter(Boolean)
+
+/**
+ * Returns true when the symbol is a fiat currency sign alone ("$", "€"), or a sign as the
+ * first or last character next to a word that is an amount, a fiat currency code, or both.
+ * Only the word next to the sign is checked, so text after it does not hide the amount:
+ * "$100", "1.000€", "$ 1,000.50", "$1 000", "$100K", "$USD", "EUR€", "$100 USD",
+ * "$100 PEPE" and "EUR 100€" are all flagged.
+ * A sign joined to other text, e.g. "$PEPE" or "US$", is not flagged, because real tokens use it.
+ */
+const isFiatSignWithAmountOrCode = (symbol: string): boolean => {
+  const chars = [...symbol]
+  if (!chars.length) return false
+
+  const firstChar = chars[0]!
+  const lastChar = chars[chars.length - 1]!
+  if (chars.length === 1) return FIAT_CURRENCY_SIGNS.has(firstChar)
+
+  const wordsAfterFirstChar = splitIntoWords(chars.slice(1).join(''))
+  const wordsBeforeLastChar = splitIntoWords(chars.slice(0, -1).join(''))
+  const firstWordAfterSign = wordsAfterFirstChar[0] ?? ''
+  const lastWordBeforeSign = wordsBeforeLastChar[wordsBeforeLastChar.length - 1] ?? ''
+
+  const isSignThenAmountOrCode =
+    FIAT_CURRENCY_SIGNS.has(firstChar) && isAmountOrFiatCode(firstWordAfterSign)
+  const isAmountOrCodeThenSign =
+    FIAT_CURRENCY_SIGNS.has(lastChar) && isAmountOrFiatCode(lastWordBeforeSign)
+
+  return isSignThenAmountOrCode || isAmountOrCodeThenSign
+}
+
+/**
+ * Returns true when a token symbol looks like real money: it is exactly a fiat currency
+ * code (e.g. "USD"), a fiat currency sign alone (e.g. "$"), or a sign before or after an
+ * amount, a fiat currency code, or both, with any text after them (e.g. "$100", "1.000€",
+ * "$100K", "$USD", "$100 USD", "$100 PEPE").
+ * Checks the raw symbol, because `removeNonLatinChars` drops most currency signs.
+ * NFKC folds look-alike variants such as the full-width "＄" into their plain form.
+ */
+export const isFiatLikeSymbol = (symbol: string): boolean => {
+  if (!symbol) return false
+
+  const normalizedSymbol = symbol.normalize('NFKC').trim()
+  // Hidden characters (e.g. "U\u200BSD" or "$\u200B100") must not hide a fiat-like symbol.
+  // Only invisible characters are removed, so a visible sign such as the "₮" in "USD₮" still counts.
+  const symbolWithoutHiddenChars = removeInvisibleChars(normalizedSymbol).trim()
+  if (FIAT_CURRENCY_CODES.has(symbolWithoutHiddenChars.toUpperCase())) return true
+
+  return isFiatSignWithAmountOrCode(symbolWithoutHiddenChars)
+}
+
+/**
+ * A single check that can mark a not-trusted token as suspected.
+ * Returns the reason when the token matches the rule, otherwise null.
+ */
+type SuspicionRule = (address: string, symbol: string, chainId: bigint) => SuspectedType
+
+/**
+ * The suspicion checks, in order of priority. The first reason found is used.
+ * To add a new kind of suspicious token, add a rule here.
+ */
+const SUSPICION_RULES: SuspicionRule[] = [
+  // Same-symbol spoofing on same chain (different address)
+  (address, symbol, chainId) =>
+    isSuspectedRegardsKnownAddresses(address, symbol, chainId) ? 'suspected' : null,
+  // Symbol that pretends to be real money
+  (_address, symbol) => (isFiatLikeSymbol(symbol) ? 'suspected' : null)
+]
+
 export const isSuspectedToken = (
   address: string,
   symbol: string,
@@ -105,8 +336,11 @@ export const isSuspectedToken = (
     return null // trusted
   }
 
-  // 3) Same-symbol spoofing on same chain (different address)
-  if (isSuspectedRegardsKnownAddresses(address, symbol, chainId)) return 'suspected'
+  // 3) Run the suspicion rules in order and return the first reason found
+  for (const rule of SUSPICION_RULES) {
+    const reason = rule(address, symbol, chainId)
+    if (reason) return reason
+  }
 
   // 4) Not flagged
   return null

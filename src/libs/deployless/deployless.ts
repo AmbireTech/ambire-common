@@ -5,6 +5,7 @@ import {
   decodeFunctionResult,
   encodeAbiParameters,
   encodeFunctionData,
+  isHex,
   numberToHex
 } from 'viem'
 
@@ -44,6 +45,10 @@ function toRpcQuantity(value: string, field: string): string {
     throw new Error(`${field} is not a valid amount: ${value}`, { cause: error })
   }
 }
+
+/** Error message for when the network answers a call with no data or with data that isn't hex. */
+export const INVALID_CALL_RESPONSE_ERROR_MESSAGE =
+  'The network returned an empty or invalid response'
 
 export enum DeploylessMode {
   Detect,
@@ -310,6 +315,7 @@ export class Deployless {
     const callPromise = this.getCallPromise(callData, opts)
     const timeoutMs =
       opts.mode === DeploylessMode.Predeployed ? 40000 : this.isProviderInvictus ? 15000 : 20000
+    let timeoutId: NodeJS.Timeout | undefined
 
     // The ethers' providers retry failed calls every 1 second, making numerous attempts before finally resolving the promise.
     // To prevent prolonged retries, we use Promise.race to set a timeout. This way, the callPromise will either resolve
@@ -319,7 +325,7 @@ export class Deployless {
         callPromise,
         new Promise<string>((_resolve, reject) => {
           // Custom providers may take longer to respond, so we set a longer timeout for them.
-          setTimeout(
+          timeoutId = setTimeout(
             () =>
               reject(
                 new Error(
@@ -333,10 +339,20 @@ export class Deployless {
       this.providerUrl
     )
 
+    if (timeoutId) clearTimeout(timeoutId)
+
+    // `send` resolves with the raw RPC result, which some RPCs return as null
+    if (typeof returnDataRaw !== 'string' || !isHex(returnDataRaw)) {
+      throw new ProviderError({
+        originalError: new Error(INVALID_CALL_RESPONSE_ERROR_MESSAGE),
+        providerUrl: this.providerUrl
+      })
+    }
+
     return decodeFunctionResult({
       abi: this.abi,
       functionName: methodName,
-      data: returnDataRaw as `0x${string}`
+      data: returnDataRaw
     })
   }
 }

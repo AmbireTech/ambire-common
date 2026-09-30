@@ -105,10 +105,10 @@ import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { getFlags } from '../../libs/portfolio/tokenProcessing'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
+import { getWalletStakingShareValue } from '../../libs/walletStaking/shareValue'
 import batcher from '../../utils/batcher'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
-import { WalletTokenController } from '../walletToken/walletToken'
 
 const EXTERNAL_API_HINTS_TTL = {
   dynamic: 15 * 60 * 1000,
@@ -221,8 +221,6 @@ export class PortfolioController
    */
   protected hints: HintsController
 
-  #walletToken: WalletTokenController
-
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
@@ -294,8 +292,6 @@ export class PortfolioController
     this.#banner = banner
     this.#featureFlags = featureFlags
     this.hints = new HintsController(storage, accounts, keystore)
-    this.#walletToken = new WalletTokenController()
-    this.#walletToken.onError((error) => this.emitError(error))
     // Re-emit hints updates as portfolio updates so the re-exposed getters
     // (customTokens, tokenPreferences) reach the UI when they change.
     this.hints.onUpdate((forceEmit) => this.propagateUpdate(forceEmit))
@@ -1893,13 +1889,13 @@ export class PortfolioController
       this.emitUpdate()
 
       if (verifiedState) {
-        void this.#walletToken
-          .getWalletStakingShareValue({
-            chainId: network.chainId,
-            tokens: combinedTokens,
-            provider: portfolioLib.provider,
-            accountAddr: account.addr
-          })
+        void getWalletStakingShareValue({
+          chainId: network.chainId,
+          tokens: combinedTokens,
+          provider: portfolioLib.provider,
+          accountAddr: account.addr,
+          onError: (error) => this.emitError(error)
+        })
           .then((walletStaking) => {
             if (
               !walletStaking ||
@@ -2255,8 +2251,11 @@ export class PortfolioController
 
           // Read and filter the latest simulation inside the queue so an older confirmed
           // AccountOp cannot discard a newer simulation that was already queued before it.
+          // Safe accounts are refreshed even without a matching simulation, because signed
+          // Safe txns are intentionally not simulated while waiting in the Safe queue.
           if (
             accountOpIdsToDiscardOnNetwork &&
+            !selectedAccount.safeCreation &&
             !simulatedAccountOps?.some((op) => accountOpIdsToDiscardSet.has(op.id))
           )
             return
@@ -2267,7 +2266,7 @@ export class PortfolioController
           // When a new txn comes, pendingToBeConfirmed simulations will be dropped
           // and that's fine as you care about the simulation of your current txn
           const accountOpsToSimulate = accountOpIdsToDiscardOnNetwork
-            ? simulatedAccountOps!.filter((op) => !accountOpIdsToDiscardSet.has(op.id))
+            ? simulatedAccountOps?.filter((op) => !accountOpIdsToDiscardSet.has(op.id))
             : currentAccountOps || simulatedAccountOps
 
           // Even if maxDataAgeMs is set to a non-zero value, we want to force an update when the AccountOps change.

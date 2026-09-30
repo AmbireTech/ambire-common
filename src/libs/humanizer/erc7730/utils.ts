@@ -2,7 +2,7 @@ import { isAddress, isHexString } from 'ethers'
 
 import { Message } from '../../../interfaces/userRequest'
 import { Call } from '../../accountOp/types'
-import { decodeMultiSend } from '../../safe/helpers'
+import { decodeMultiSend, SuccessfullyDecoded } from '../../safe/helpers'
 import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
 import { SAFE_TX_PRIMARY_TYPE } from './consts'
 
@@ -65,11 +65,13 @@ export const getSafeTxCallsFromMessage = (message: Message): Call[] | null => {
     const transactionsHex = multiSendDecoded[0]
     if (typeof transactionsHex !== 'string') return null
 
-    return decodeMultiSend(transactionsHex).map((transaction) => ({
-      to: transaction.to,
-      data: transaction.data,
-      value: transaction.value
-    }))
+    return decodeMultiSend(transactionsHex)
+      .filter((transaction): transaction is SuccessfullyDecoded => transaction.success)
+      .map((transaction) => ({
+        to: transaction.to,
+        data: transaction.data,
+        value: transaction.value
+      }))
   } catch {
     return null
   }

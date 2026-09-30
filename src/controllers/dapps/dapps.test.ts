@@ -600,6 +600,47 @@ describe('DappsController', () => {
       expect(controller.isDappInDefaultCatalog('')).toBe(false)
     })
 
+    test('a user-added dapp becomes a catalog entry once it joins the catalog', async () => {
+      // Connected before it was listed, so it was stored as a user-added app
+      const aaveConnectedBeforeListing = makeDapp({
+        id: 'aave.com',
+        name: 'Aave',
+        url: 'https://aave.com',
+        isCustom: true,
+        isConnected: true,
+        connectedSources: ['injected']
+      })
+      const stillUnlistedDapp = makeDapp({
+        id: 'custom-dapp.com',
+        name: 'Custom Dapp',
+        url: 'https://custom-dapp.com',
+        isCustom: true,
+        isConnected: true,
+        connectedSources: ['injected']
+      })
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [
+          ...predefinedDapps,
+          aaveConnectedBeforeListing,
+          stillUnlistedDapp
+        ])
+        await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+      })
+      await controller.fetchAndUpdatePromise
+
+      expect(controller.getDapp('aave.com')!.isCustom).toBe(false)
+      expect(controller.isDappInDefaultCatalog('https://aave.com')).toBe(true)
+      expect(controller.getDapp('aave.com')!.connectedSources).toEqual(['injected'])
+
+      expect(controller.getDapp('custom-dapp.com')!.isCustom).toBe(true)
+      expect(controller.isDappInDefaultCatalog('https://custom-dapp.com')).toBe(false)
+
+      // Unlike a user-added app, a catalog app is kept after it gets disconnected
+      controller.updateDapp('aave.com', { connectedSources: [] })
+      expect(controller.getDapp('aave.com')).toBeDefined()
+    })
+
     test('should not return banner for verified dapps in the default catalog', async () => {
       const updateDomainsSpy = jest.spyOn(
         PhishingController.prototype,
@@ -2207,6 +2248,45 @@ describe('DappsController', () => {
       expect(stored.connectedSources).toEqual(['injected'])
       expect(stored.isConnected).toBe(true)
       expect(controller.hasPermission('legacy-dapp.com', 'injected')).toBe(true)
+    })
+
+    // Stored after the storage migrations ran, so this is a record the missing-ids migration
+    // never saw. It used to make #load throw and leave the controller loading forever.
+    test('skips and reports a stored dapp without an id instead of failing the load', async () => {
+      const valid = makeDapp({
+        id: 'valid-dapp.com',
+        name: 'Valid Dapp',
+        url: 'https://valid-dapp.com',
+        isCustom: true
+      })
+      const withoutId: Partial<Dapp> = makeDapp({
+        id: 'id-less-dapp.com',
+        name: 'Id-less Dapp',
+        url: 'https://id-less-dapp.com',
+        isCustom: true,
+        isConnected: true,
+        connectedSources: ['injected']
+      })
+      delete withoutId.id
+
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [withoutId as Dapp, valid])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.initialLoadPromise
+
+      expect(controller.isReady).toBe(true)
+      expect(controller.getDapp('valid-dapp.com')!.name).toBe('Valid Dapp')
+      expect(controller.dapps.every((d) => !!d.id)).toBe(true)
+      expect(controller.dapps.some((d) => d.name === 'Id-less Dapp')).toBe(false)
+      expect(controller.hasPermission('id-less-dapp.com')).toBe(false)
+
+      const loadErrors = controller.emittedErrors.filter((e) =>
+        e.error?.message.includes('without an id')
+      )
+      expect(loadErrors).toHaveLength(1)
+      expect(loadErrors[0]!.level).toBe('silent')
+      expect(loadErrors[0]!.error!.message).toContain('skipped 1 stored dapp(s)')
     })
 
     test('disconnectDappSource removes only the targeted source', async () => {
