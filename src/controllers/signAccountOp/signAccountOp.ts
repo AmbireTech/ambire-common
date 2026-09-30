@@ -11,7 +11,10 @@ import {
 } from 'ethers'
 import { maxUint256 } from 'viem'
 
-import { getGasLimitWithOverhead } from '@/libs/estimate/estimate'
+import {
+  getGasLimitWithOverhead,
+  getGasLimitWithOverheadForSelfEOA
+} from '@/libs/estimate/estimate'
 import { isNative } from '@/libs/portfolio/helpers'
 import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
@@ -2600,7 +2603,7 @@ export class SignAccountOpController
           broadcastOption === BROADCAST_OPTIONS.bySelf ||
           broadcastOption === BROADCAST_OPTIONS.bySelf7702
         ) {
-          simulatedGasLimit = getGasLimitWithOverhead(gasUsed)
+          simulatedGasLimit = getGasLimitWithOverheadForSelfEOA(gasUsed, this.accountOp.calls)
           gasPrice = BigInt(increasedPrices.maxFeePerGas)
           maxPriorityFeePerGas = BigInt(increasedPrices.maxPriorityFeePerGas)
           amountGasPrice = BigInt(receivedPrices.maxFeePerGas)
