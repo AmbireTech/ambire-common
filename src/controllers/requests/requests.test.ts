@@ -1785,6 +1785,47 @@ describe('RequestsController ', () => {
       callsRequests[0]!.signAccountOp.destroy()
     })
 
+    test.each([
+      ['a smart account', false],
+      ['an EOA', true]
+    ])(
+      'focuses a transaction on another chain over the one already open, for %s',
+      async (_, isEOA) => {
+        const { controller, dappsCtrl, accountsCtrl } = await prepareTest(true)
+        if (isEOA) accountsCtrl.accounts.find((a) => a.addr === ACCOUNT_ADDR)!.creation = null
+        const [onMainnet, onBase] = makeRejectMocks(2)
+
+        await sendTransaction(controller, onMainnet!)
+        dappsCtrl.updateDapp(MOCK_SESSION.id, { chainId: 8453 })
+        await sendTransaction(controller, onBase!)
+
+        const callsRequests = controller.userRequests.filter(
+          (r) => r.kind === 'calls'
+        ) as CallsUserRequest[]
+        expect(callsRequests.map((r) => r.meta.chainId)).toEqual([1n, 8453n])
+        expect(controller.currentUserRequest).toBe(callsRequests[1])
+
+        callsRequests.forEach((r) => r.signAccountOp.destroy())
+      }
+    )
+
+    test.each([
+      ['a smart account', false],
+      ['an EOA', true]
+    ])('focuses a message request over the transaction already open, for %s', async (_, isEOA) => {
+      const { controller, accountsCtrl } = await prepareTest(true)
+      if (isEOA) accountsCtrl.accounts.find((a) => a.addr === ACCOUNT_ADDR)!.creation = null
+      const [transaction, message] = makeRejectMocks(2)
+
+      await sendTransaction(controller, transaction!)
+      await signTypedData(controller, message!)
+
+      expect(controller.currentUserRequest?.kind).toBe('typedMessage')
+
+      const callsRequest = controller.userRequests.find((r) => r.kind === 'calls')
+      ;(callsRequest as CallsUserRequest).signAccountOp.destroy()
+    })
+
     test('a malformed transaction in the batch costs only the app that sent it', async () => {
       const { controller, uiCtrl } = await prepareTest(true)
       const sideEffects = watchSideEffects(uiCtrl)

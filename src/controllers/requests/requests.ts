@@ -65,7 +65,6 @@ import {
   TypedMessageUserRequest,
   UserRequest
 } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getAccountOpNonce, isSafeRejectionCall } from '../../libs/accountOp/accountOp'
 import {
@@ -1988,10 +1987,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!isASignOperationRequestedForAnotherAccount) {
       await this.addUserRequests([userRequest], {
         position,
-        executionType:
-          position === 'first' || isSmartAccount(this.#selectedAccount.account)
-            ? 'open-request-window'
-            : 'queue-but-open-request-window'
+        // A new request always takes focus, so the one the app just sent is what the user sees
+        executionType: 'open-request-window'
       })
       return
     }
