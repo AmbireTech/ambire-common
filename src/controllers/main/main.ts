@@ -1517,10 +1517,21 @@ export class MainController extends EventEmitter implements IMainController {
     const updatedAccountsOpsByAccount =
       await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
 
+    const failedSafeDeployRequestRemovals: Promise<void>[] = []
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+
+          if (op.status === AccountOpStatus.Failure && op.meta?.isSafeDeploy) {
+            failedSafeDeployRequestRemovals.push(
+              this.requests.rejectSameChainNotSignedSafeRequest(
+                op.accountAddr,
+                op.chainId,
+                'The Safe account deployment failed, so this transaction cannot be completed.'
+              )
+            )
+          }
 
           // we scan for logs only if Success & a dapp interaction has been made
           // because only a dapp interaction might have a receiving txn after;
@@ -1546,6 +1557,7 @@ export class MainController extends EventEmitter implements IMainController {
         })
       }
     )
+    await Promise.all(failedSafeDeployRequestRemovals)
 
     Object.entries(updatedAccountsOpsByAccount).forEach(
       async ([
@@ -2071,11 +2083,7 @@ export class MainController extends EventEmitter implements IMainController {
     const accountOpRequest = this.requests.userRequests.find((r) => r.id === requestId)
     if (!accountOpRequest) return
 
-    const {
-      signAccountOp,
-      dappPromises,
-      meta: accountOpRequestMeta
-    } = accountOpRequest as CallsUserRequest
+    const { signAccountOp, dappPromises } = accountOpRequest as CallsUserRequest
     const network = this.networks.networks.find(
       (n) => n.chainId === signAccountOp.accountOp.chainId
     )
@@ -2088,10 +2096,6 @@ export class MainController extends EventEmitter implements IMainController {
       txnId: null,
       userOpHash: null
     }
-    if (accountOpRequestMeta.safeDeployForRequestId) {
-      meta.safeDeployForRequestId = accountOpRequestMeta.safeDeployForRequestId
-    }
-
     if (submittedAccountOp) {
       meta.txnId = submittedAccountOp.txnId
       meta.identifiedBy = submittedAccountOp.identifiedBy

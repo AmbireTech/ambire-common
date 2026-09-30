@@ -475,6 +475,43 @@ describe('Main Controller ', () => {
       expect(scheduleUpdateSpy).not.toHaveBeenCalled()
     })
 
+    test('removes the safs of the Safe on the same chain when an internal deployment fails', async () => {
+      const mainCtrl = await setupController()
+      const rejectSafRequestsSpy = jest
+        .spyOn(mainCtrl.requests, 'rejectSafRequests')
+        .mockResolvedValue(undefined)
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'safe-deploy-op', calls: [] } as any] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: false,
+          chainsToUpdate: [],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [
+            {
+              id: 'safe-deploy-op',
+              accountAddr: senderAccount,
+              chainId: 1n,
+              status: AccountOpStatus.Failure,
+              calls: [],
+              meta: { isSafeDeploy: true }
+            } as any
+          ]
+        }
+      })
+      await mainCtrl.updateAccountsOpsStatuses()
+
+      expect(rejectSafRequestsSpy).toHaveBeenCalledWith(
+        senderAccount,
+        1n,
+        'The Safe account deployment failed, so this transaction cannot be completed.'
+      )
+    })
+
     test('should update account state for account address and discard finalized simulations', async () => {
       const mainCtrl = await setupController()
 
