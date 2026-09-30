@@ -818,36 +818,6 @@ const getSwapSponsorship = ({
   // }
 }
 
-const enrichRouteWithOutputUsdPrice = (
-  route: SwapAndBridgeRoute,
-  outputTokenPriceUSD?: number | null
-): SwapAndBridgeRoute => {
-  if (!outputTokenPriceUSD) return route
-
-  const outputValueInUsd = Number(
-    safeTokenAmountAndNumberMultiplication(
-      BigInt(route.toAmount),
-      route.toToken.decimals,
-      outputTokenPriceUSD
-    )
-  )
-  const gasCostInUsd =
-    route.outputValueAfterGasInUsd === undefined
-      ? undefined
-      : route.outputValueInUsd - route.outputValueAfterGasInUsd
-
-  return {
-    ...route,
-    outputValueInUsd,
-    outputValueAfterGasInUsd:
-      gasCostInUsd === undefined ? undefined : outputValueInUsd - gasCostInUsd,
-    toToken: {
-      ...route.toToken,
-      priceUSD: outputTokenPriceUSD.toString()
-    }
-  }
-}
-
 const getFeeTokenForSponsorship = (
   fromSelectedToken: FromToken,
   quote?: SwapAndBridgeQuote | null,
@@ -884,16 +854,77 @@ const getFeeTokenForSponsorship = (
   }
 }
 
+/**
+ * Calculates route output values for sorting with a shared output-token price,
+ * without changing the provider values displayed in the UI.
+ */
+const getRouteOutputValuesForSorting = (
+  route: SwapAndBridgeRoute,
+  outputTokenPriceUSD?: number | null
+) => {
+  if (!outputTokenPriceUSD) {
+    return {
+      outputValueInUsd: route.outputValueInUsd,
+      outputValueAfterGasInUsd: route.outputValueAfterGasInUsd
+    }
+  }
+
+  const outputValueInUsd = Number(
+    safeTokenAmountAndNumberMultiplication(
+      BigInt(route.toAmount),
+      route.toToken.decimals,
+      outputTokenPriceUSD
+    )
+  )
+  const gasCostInUsd =
+    route.outputValueAfterGasInUsd === undefined
+      ? undefined
+      : route.outputValueInUsd - route.outputValueAfterGasInUsd
+
+  return {
+    outputValueInUsd,
+    outputValueAfterGasInUsd:
+      gasCostInUsd === undefined ? undefined : outputValueInUsd - gasCostInUsd
+  }
+}
+
+/**
+ * Adds the Cena output-token price required by the warning calculations when the provider
+ * doesn't supply one, without changing the provider USD values displayed in the UI.
+ */
+const enrichRouteWithOutputTokenPrice = (
+  route: SwapAndBridgeRoute,
+  outputTokenPriceUSD?: number | null
+): SwapAndBridgeRoute => {
+  const providerOutputTokenPriceUSD = Number(route.toToken.priceUSD)
+  const cenaOutputTokenPriceUSD = Number(outputTokenPriceUSD)
+  const hasProviderOutputTokenPrice =
+    Number.isFinite(providerOutputTokenPriceUSD) && providerOutputTokenPriceUSD > 0
+  const hasCenaOutputTokenPrice =
+    Number.isFinite(cenaOutputTokenPriceUSD) && cenaOutputTokenPriceUSD > 0
+
+  if (hasProviderOutputTokenPrice || !hasCenaOutputTokenPrice) return route
+
+  return {
+    ...route,
+    toToken: {
+      ...route.toToken,
+      priceUSD: cenaOutputTokenPriceUSD.toString()
+    }
+  }
+}
+
 export {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
-  enrichRouteWithOutputUsdPrice,
+  enrichRouteWithOutputTokenPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getActiveRoutesUpdateInterval,
   getBannedToTokenList,
   getFeeTokenForSponsorship,
   getLink,
+  getRouteOutputValuesForSorting,
   getSlippage,
   getSwapAndBridgeCalls,
   getSwapAndBridgeRequestParams,
