@@ -4,6 +4,7 @@ import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import { beforeEach, describe, expect, jest, test } from '@jest/globals'
 
 import {
+  PHISHING_BUCKET_COUNT,
   PhishingDelta,
   PhishingIdbStorage,
   PhishingKeyValueStorage,
@@ -76,6 +77,13 @@ function recordingDb(target: AmbireIdbDatabase) {
   return { db: proxy as AmbireIdbDatabase, touched }
 }
 
+/** Every entry a list holds, flattened out of its buckets and sorted for a stable assertion. */
+async function storedEntries(storeName: 'phishingDomains' | 'phishingAddresses') {
+  const buckets = await db.getAll(storeName)
+
+  return buckets.flatMap((bucket) => bucket.entries).sort()
+}
+
 let db: AmbireIdbDatabase
 
 beforeEach(async () => {
@@ -96,13 +104,22 @@ describe('PhishingIdbStorage — layout', () => {
     expect(db.objectStoreNames.contains('phishingMeta')).toBe(true)
   })
 
-  test('one row per entry, keyed by the entry itself', async () => {
+  test('entries are spread across buckets, not stored one per row', async () => {
     await new PhishingIdbStorage(db).replaceAll(makeSnapshot())
 
-    // The key IS the domain, so no index and no record read is needed to look one up
-    expect(await db.getAllKeys('phishingDomains')).toEqual(['phishing.example.com', 'scam.io'])
-    expect(await db.count('phishingDomains')).toBe(2)
-    expect(await db.count('phishingAddresses')).toBe(1)
+    // What matters is that a row holds many entries: the production list is ~450k domains, and
+    // a row costs the same whether it holds one entry or a thousand.
+    expect(await storedEntries('phishingDomains')).toEqual(['phishing.example.com', 'scam.io'])
+    expect(await db.count('phishingDomains')).toBeLessThanOrEqual(2)
+    expect(await db.count('phishingDomains')).toBeGreaterThan(0)
+  })
+
+  test('a full list writes far fewer rows than it has entries', async () => {
+    const domains = Array.from({ length: 5000 }, (_, i) => `scam-${i}.example`)
+    await new PhishingIdbStorage(db).replaceAll(makeSnapshot({ domains }))
+
+    expect(await storedEntries('phishingDomains')).toHaveLength(5000)
+    expect(await db.count('phishingDomains')).toBeLessThanOrEqual(PHISHING_BUCKET_COUNT)
   })
 
   test('an empty store reports the default checkpoint rather than throwing', async () => {
@@ -149,7 +166,8 @@ describe('PhishingIdbStorage — reads on demand', () => {
     const recorder = recordingDb(db)
     await new PhishingIdbStorage(recorder.db).hasDomain('scam.io')
 
-    expect(recorder.touched).toEqual(['getKey(phishingDomains)'])
+    // One read of one bucket — the hash says which, so nothing is scanned.
+    expect(recorder.touched).toEqual(['get(phishingDomains)'])
   })
 })
 
@@ -169,7 +187,7 @@ describe('PhishingIdbStorage — writes touch only what changed', () => {
       { version: 8, updatedAt: 2000 }
     )
 
-    expect(await db.getAllKeys('phishingDomains')).toEqual([
+    expect(await storedEntries('phishingDomains')).toEqual([
       'new-scam.example',
       'phishing.example.com'
     ])
@@ -199,7 +217,7 @@ describe('PhishingIdbStorage — writes touch only what changed', () => {
         updatedAt: 2000
       })
     ).resolves.toBeUndefined()
-    expect(await db.count('phishingDomains')).toBe(2)
+    expect(await storedEntries('phishingDomains')).toEqual(['phishing.example.com', 'scam.io'])
   })
 
   test('a delta lowercases added addresses, so the stored form stays canonical', async () => {
@@ -211,7 +229,7 @@ describe('PhishingIdbStorage — writes touch only what changed', () => {
       updatedAt: 2000
     })
 
-    expect(await db.getAllKeys('phishingAddresses')).toEqual([ADDR_B])
+    expect(await storedEntries('phishingAddresses')).toEqual([ADDR_B])
   })
 
   test('a delta removes an address regardless of the casing it names', async () => {
@@ -233,7 +251,7 @@ describe('PhishingIdbStorage — writes touch only what changed', () => {
       makeSnapshot({ version: 9, domains: ['only-this.example'], addresses: [ADDR_B] })
     )
 
-    expect(await db.getAllKeys('phishingDomains')).toEqual(['only-this.example'])
+    expect(await storedEntries('phishingDomains')).toEqual(['only-this.example'])
     expect(await store.hasDomain('scam.io')).toBe(false)
     expect(await store.hasAddress(ADDR_A)).toBe(false)
   })

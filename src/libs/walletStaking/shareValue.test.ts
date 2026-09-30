@@ -2,13 +2,18 @@ import { Interface, parseUnits } from 'ethers'
 
 import { expect, jest } from '@jest/globals'
 
+import { WALLET_STAKING_ADDR } from '../../consts/addresses'
 import { RPCProvider } from '../../interfaces/provider'
 import {
   getWalletAmountFromXWallet,
+  getWalletStakingShareValue,
   getXWalletConversionText,
+  WalletStakingShareValueError,
   X_WALLET_SHARE_VALUE_RPC_TIMEOUT_MS,
   X_WALLET_SHARE_VALUE_CACHE_TTL,
-  XWalletShareValueCache
+  XWalletLockedSharesGetter,
+  XWalletShareValueCache,
+  XWalletShareValueResult
 } from './shareValue'
 
 const shareValueInterface = new Interface(['function shareValue() view returns (uint256)'])
@@ -132,5 +137,178 @@ describe('xWALLET conversion', () => {
     expect(getXWalletConversionText(xWalletAmount, walletAmount)).toBe(
       '0.00047 xWALLET = 0.01 WALLET'
     )
+  })
+})
+
+const ETHEREUM_CHAIN_ID = 1n
+const OTHER_CHAIN_ID = 137n
+const ACCOUNT_ADDR = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+const provider = {} as RPCProvider
+const shareValueResult: XWalletShareValueResult = { shareValue: 2n, updatedAt: 1 }
+const getToken = ({
+  address = WALLET_STAKING_ADDR,
+  amount = 0n,
+  amountPostSimulation = 0n
+}: {
+  address?: string
+  amount?: bigint
+  amountPostSimulation?: bigint
+} = {}) => ({ address, amount, amountPostSimulation })
+
+const getShareValueLookup = () => {
+  const get = jest.fn<(provider: RPCProvider) => Promise<XWalletShareValueResult>>()
+  const getLockedShares = jest.fn<XWalletLockedSharesGetter>()
+  const onError = jest.fn<(error: WalletStakingShareValueError) => void>()
+  const lookup = (params: Omit<Parameters<typeof getWalletStakingShareValue>[0], 'onError'>) =>
+    getWalletStakingShareValue({
+      ...params,
+      onError,
+      shareValueCache: { get } as Pick<XWalletShareValueCache, 'get'>,
+      lockedSharesGetter: getLockedShares
+    })
+
+  return { lookup, get, getLockedShares, onError }
+}
+
+describe('getWalletStakingShareValue', () => {
+  afterEach(() => jest.restoreAllMocks())
+
+  test('loads the xWALLET share value for current and simulated balances', async () => {
+    const { lookup, get } = getShareValueLookup()
+    get.mockResolvedValue(shareValueResult)
+
+    await expect(
+      lookup({
+        chainId: ETHEREUM_CHAIN_ID,
+        tokens: [getToken({ amount: 1n })],
+        provider
+      })
+    ).resolves.toEqual(shareValueResult)
+    await expect(
+      lookup({
+        chainId: ETHEREUM_CHAIN_ID,
+        tokens: [getToken({ amountPostSimulation: 1n })],
+        provider
+      })
+    ).resolves.toEqual(shareValueResult)
+
+    expect(get).toHaveBeenCalledTimes(2)
+    expect(get).toHaveBeenNthCalledWith(1, provider)
+  })
+
+  test('skips the lookup outside Ethereum or without an xWALLET balance', async () => {
+    const { lookup, get } = getShareValueLookup()
+
+    await expect(
+      lookup({
+        chainId: OTHER_CHAIN_ID,
+        tokens: [getToken({ amount: 1n })],
+        provider
+      })
+    ).resolves.toBeNull()
+    await expect(
+      lookup({
+        chainId: ETHEREUM_CHAIN_ID,
+        tokens: [getToken({ address: '0x0000000000000000000000000000000000000001', amount: 1n })],
+        provider
+      })
+    ).resolves.toBeNull()
+    await expect(
+      lookup({
+        chainId: ETHEREUM_CHAIN_ID,
+        tokens: [getToken()],
+        provider
+      })
+    ).resolves.toBeNull()
+
+    expect(get).not.toHaveBeenCalled()
+  })
+
+  test('returns stale data and reports its refresh failure', async () => {
+    const { lookup, get, onError } = getShareValueLookup()
+    const refreshError = new Error('provider unavailable')
+    get.mockResolvedValue({ ...shareValueResult, refreshError })
+
+    await expect(
+      lookup({
+        chainId: ETHEREUM_CHAIN_ID,
+        tokens: [getToken({ amount: 1n })],
+        provider
+      })
+    ).resolves.toEqual(shareValueResult)
+    expect(onError).toHaveBeenCalledWith({
+      level: 'silent',
+      message: 'Unable to refresh the WALLET staking conversion rate.',
+      error: refreshError
+    })
+  })
+
+  test('normalizes a failed lookup, reports it and returns no result', async () => {
+    const { lookup, get, onError } = getShareValueLookup()
+    get.mockRejectedValue('provider unavailable')
+
+    await expect(
+      lookup({
+        chainId: ETHEREUM_CHAIN_ID,
+        tokens: [getToken({ amount: 1n })],
+        provider
+      })
+    ).resolves.toBeNull()
+    expect(onError).toHaveBeenCalledWith({
+      level: 'silent',
+      message: 'Unable to load the WALLET staking conversion rate.',
+      error: new Error('Unable to load the WALLET staking conversion rate.')
+    })
+  })
+
+  test('loads the locked shares for the account alongside the share value', async () => {
+    const { lookup, get, getLockedShares } = getShareValueLookup()
+    get.mockResolvedValue(shareValueResult)
+    getLockedShares.mockResolvedValue(5n)
+
+    await expect(
+      lookup({
+        chainId: ETHEREUM_CHAIN_ID,
+        tokens: [getToken({ amount: 10n })],
+        provider,
+        accountAddr: ACCOUNT_ADDR
+      })
+    ).resolves.toEqual({ ...shareValueResult, lockedShares: 5n })
+    expect(getLockedShares).toHaveBeenCalledWith(provider, ACCOUNT_ADDR)
+  })
+
+  test('skips the locked shares lookup without an account', async () => {
+    const { lookup, get, getLockedShares } = getShareValueLookup()
+    get.mockResolvedValue(shareValueResult)
+
+    await expect(
+      lookup({
+        chainId: ETHEREUM_CHAIN_ID,
+        tokens: [getToken({ amount: 10n })],
+        provider
+      })
+    ).resolves.toEqual(shareValueResult)
+    expect(getLockedShares).not.toHaveBeenCalled()
+  })
+
+  test('keeps the share value and reports a failed locked shares lookup', async () => {
+    const { lookup, get, getLockedShares, onError } = getShareValueLookup()
+    const lockedSharesError = new Error('provider unavailable')
+    get.mockResolvedValue(shareValueResult)
+    getLockedShares.mockRejectedValue(lockedSharesError)
+
+    await expect(
+      lookup({
+        chainId: ETHEREUM_CHAIN_ID,
+        tokens: [getToken({ amount: 10n })],
+        provider,
+        accountAddr: ACCOUNT_ADDR
+      })
+    ).resolves.toEqual({ ...shareValueResult, lockedShares: undefined })
+    expect(onError).toHaveBeenCalledWith({
+      level: 'silent',
+      message: 'Unable to load the locked xWALLET shares.',
+      error: lockedSharesError
+    })
   })
 })

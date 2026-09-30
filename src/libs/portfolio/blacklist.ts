@@ -22,6 +22,10 @@ export const STATIC_BLACKLIST: Omit<TokenBlacklist, 'updatedAt'> = {
     '1': [
       '0x3231Cb76718CDeF2155FC47b5286d82e6eDA273f' // EURe - Duplicate
     ],
+    // Arc Mainnet
+    '5042': [
+      '0x3600000000000000000000000000000000000000' // USDC ERC-20 interface - Duplicate of native USDC
+    ],
     // Hyper EVM
     '999': [
       '0x94e8396e0869c9F2200760aF0621aFd240E1CF38' // wstHYPE - Excluded because it's a duplicate of stHYPE

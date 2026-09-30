@@ -13,6 +13,7 @@ import {
 import { isNameExpiryStale } from '../expiry'
 import {
   ForwardResolution,
+  ForwardResolutionOptions,
   NameResolver,
   NameServiceId,
   NetworkMode,
@@ -85,7 +86,11 @@ export abstract class EnsCompatibleResolver implements NameResolver {
     return ctx.getProvider(this.chainId[ctx.networkMode])
   }
 
-  async resolve(domain: string, ctx: ResolveContext): Promise<ForwardResolution | null> {
+  async resolve(
+    domain: string,
+    ctx: ResolveContext,
+    options?: ForwardResolutionOptions
+  ): Promise<ForwardResolution | null> {
     const provider = this.providerFor(ctx)
     if (!provider) return null
 
@@ -93,6 +98,7 @@ export abstract class EnsCompatibleResolver implements NameResolver {
       provider,
       domain,
       options: {
+        resolveAvatar: options?.resolveAvatar,
         universalResolverAddress: this.universalResolver,
         expiry: this.expiryConfig
           ? {

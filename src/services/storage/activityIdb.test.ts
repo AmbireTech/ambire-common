@@ -697,6 +697,37 @@ describe('ActivityIdbStorage', () => {
       expect(result[ACC_A]?.['1']).toHaveLength(20)
     })
 
+    test('gives a named account 20 finalized ops and every other account 10', async () => {
+      const store = new ActivityIdbStorage(db)
+      const ops = (accountAddr: string) =>
+        Array.from({ length: 25 }, (_, i) =>
+          makeOp(`op-${i}`, accountAddr, CHAIN_1, AccountOpStatus.Success, i * 100)
+        )
+      await store.putMultiple([
+        { accountAddr: ACC_A, chainId: CHAIN_1, ops: ops(ACC_A) },
+        { accountAddr: ACC_B, chainId: CHAIN_1, ops: ops(ACC_B) }
+      ])
+
+      const result = await store.loadStartupOps(ACC_A)
+
+      expect(result[ACC_A]?.['1']).toHaveLength(20)
+      expect(result[ACC_B]?.['1']).toHaveLength(10)
+    })
+
+    test('the shorter window still returns the newest ops, not an arbitrary slice', async () => {
+      const store = new ActivityIdbStorage(db)
+      const ops = Array.from({ length: 25 }, (_, i) =>
+        makeOp(`op-${i}`, ACC_B, CHAIN_1, AccountOpStatus.Success, i * 100)
+      )
+      await store.putMultiple([{ accountAddr: ACC_B, chainId: CHAIN_1, ops }])
+
+      const result = await store.loadStartupOps(ACC_A)
+
+      expect(result[ACC_B]?.['1']?.map((op) => op.id)).toEqual(
+        Array.from({ length: 10 }, (_, i) => `op-${24 - i}`)
+      )
+    })
+
     test('always includes pending ops even when the finalized limit is already reached', async () => {
       const store = new ActivityIdbStorage(db)
       const finalized = Array.from({ length: 20 }, (_, i) =>

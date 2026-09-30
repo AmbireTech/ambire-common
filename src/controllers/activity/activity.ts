@@ -7,13 +7,14 @@ import {
   ScoredAddressPoisoningMatch
 } from '@/libs/transfer/address-poisoning'
 import { AccountOpsPersistence } from '@/services/storage/accountOpsPersistence'
-import { MAX_OPS_PER_GROUP } from '@/services/storage/activityIdb'
+import { MAX_OPS_PER_GROUP, STARTUP_RECENT_OPS_LIMIT } from '@/services/storage/activityIdb'
 import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 
 import { Account, AccountId, IAccountsController } from '../../interfaces/account'
 import { IActivityController, InternalAccountsOps } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -124,6 +125,8 @@ const getPreviousBlockNumber = (blockNumber: number) => (blockNumber > 0 ? block
 
 const normalizeTxnId = (txnId?: string | null) => txnId?.toLowerCase()
 
+const ACCOUNT_OP_PENDING_TIMEOUT_MINS = 30
+
 /**
  * Take all txnIds from the account op
  * - normal case: accountOp.txnId
@@ -132,6 +135,15 @@ const normalizeTxnId = (txnId?: string | null) => txnId?.toLowerCase()
 const getInternalAccountOpTxnIds = (accountOp: SubmittedAccountOp) => {
   return [accountOp.txnId, ...accountOp.calls.map((call) => call.txnId)].filter(
     (txnId): txnId is string => !!txnId
+  )
+}
+
+/** Matches an internal op's own txnId or any of its per-call ones, case-insensitively. */
+const internalAccountOpHasTxnId = (accountOp: SubmittedAccountOp, txnId: string) => {
+  const normalizedTxnId = normalizeTxnId(txnId)
+
+  return getInternalAccountOpTxnIds(accountOp).some(
+    (internalTxnId) => normalizeTxnId(internalTxnId) === normalizedTxnId
   )
 }
 
@@ -287,6 +299,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #safe: ISafeController
 
+  #featureFlags: IFeatureFlagsController
+
   #onContractsDeployed: (network: Network) => Promise<void>
 
   #callRelayer: Function
@@ -323,6 +337,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     networks: INetworksController,
     portfolio: IPortfolioController,
     safe: ISafeController,
+    featureFlags: IFeatureFlagsController,
     onContractsDeployed: (network: Network) => Promise<void>,
     eventEmitterRegistry?: IEventEmitterRegistryController,
     idb?: AmbireIdbDatabase
@@ -346,6 +361,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.#networks = networks
     this.#portfolio = portfolio
     this.#safe = safe
+    this.#featureFlags = featureFlags
     this.#onContractsDeployed = onContractsDeployed
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -357,6 +373,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await this.#selectedAccount.initialLoadPromise
 
     // Owns migration, fallback and the bounded read. Never rejects.
+    //
+    // The selected account gets the full window, every other account a shorter one rather
+    // than none: #accountsOps has SYNCHRONOUS readers that ask about other accounts —
+    // swapAndBridge, wallet_getCallsStatus, and the same-EOA-nonce check in status polling —
+    // so an empty window left them reading an empty history. onSelectedAccountChange tops the
+    // account up to the full window when the user switches.
     const [accountsOps, externalAccountOps, signedMessages, sentToHistory] = await Promise.all([
       this.#persistence.init(this.#selectedAccount.account?.addr),
       this.#storage.get('externalAccountOps', {}),
@@ -647,7 +669,16 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   /** Persist changed ops, sync filtered views, and emit an update. */
   private async persistAccountsOps(changedOps: SubmittedAccountOp[]) {
-    await this.#persistence.updateOps(changedOps)
+    // Ops belonging to an account that is no longer in memory are dropped: removeAccountData()
+    // deletes the account here first, and updateOps() is an upsert — so a status poll that
+    // resolves after a removal would otherwise re-create the rows the removal just deleted.
+    // The pre-IDB write serialized #accountsOps, which gave this for free.
+    const opsForLiveAccounts = changedOps.filter(
+      (op) => !!getAccountOpsAccountKey(this.#accountsOps, op.accountAddr)
+    )
+
+    if (opsForLiveAccounts.length) await this.#persistence.updateOps(opsForLiveAccounts)
+
     await this.syncFilteredAccountsOps()
     this.emitUpdate()
   }
@@ -735,6 +766,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
     })
 
     await Promise.all(promises)
+  }
+
+  /** Returns the account ops that the account submitted from this device on one network. */
+  async getInternalAccountOps(accountAddr: string, chainId: bigint): Promise<SubmittedAccountOp[]> {
+    await this.#initialLoadPromise
+
+    return this.#accountsOps[accountAddr]?.[chainId.toString()] || []
   }
 
   removeNetworkData(chainId: bigint) {
@@ -843,6 +881,17 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const hasExistingAccountOpWithTxnId = async () => {
       if (await this.#persistence.hasOpWithTxnId(accountAddr, txnId)) return true
 
+      // The stored index cannot see an op whose write is still in flight, nor one whose txnId
+      // the relayer filled in but that has not been persisted yet — both are in memory only,
+      // and both are exactly what the scanner races against.
+      const inMemoryInternalOps = getAccountOpsForAccountAndChain(
+        this.#accountsOps,
+        accountAddr,
+        chainIdString
+      )
+      if (inMemoryInternalOps.some((accountOp) => internalAccountOpHasTxnId(accountOp, txnId)))
+        return true
+
       const existingExternalAccountOps = getAccountOpsForAccountAndChain(
         this.#externalAccountOps,
         accountAddr,
@@ -910,8 +959,11 @@ export class ActivityController extends EventEmitter implements IActivityControl
         chainId
       )
       if (shouldLearnTokens) {
-        const scamFilter = new ScamFilter({ fetch: this.#fetch, network })
-        const tokensWithAPrice = await scamFilter.filterTokensWithoutAPrice(foundTokens)
+        const tokensWithAPrice = await new ScamFilter({
+          fetch: this.#fetch,
+          network,
+          isTokenPricesEnabled: () => this.#featureFlags.isFeatureEnabled('tokenPrices') !== false
+        }).filterTokensWithoutAPrice(foundTokens)
         this.#portfolio.addTokensToBeLearned(tokensWithAPrice, chainId)
       }
       const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens)
@@ -1192,6 +1244,28 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const chainsToUpdate = new Set<Network['chainId']>()
     const portfoliosToUpdate: PortfoliosToUpdate = {}
     const updatedAccountsOps: SubmittedAccountOp[] = []
+
+    /**
+     * Adds an op to the batch once. updateOpStatus() mutates in place and hands back the SAME
+     * object, so a status change and a markMutated() on the same op would otherwise queue it
+     * twice — persisting the row twice and double-counting it in the returned result.
+     */
+    const queueUpdatedOp = (accountOp: SubmittedAccountOp) => {
+      if (!updatedAccountsOps.includes(accountOp)) updatedAccountsOps.push(accountOp)
+    }
+
+    /**
+     * Queues an op whose fields were mutated in place without its status changing.
+     *
+     * updateOpStatus() only returns an op when the STATUS changes, so a txnId learned while
+     * the op stays pending never reached persistAccountsOps() — the old whole-blob write saved
+     * it incidentally. Without this the txnId is lost on the next service-worker restart and
+     * the by-txn-id index never sees it.
+     */
+    const markMutated = (accountOp: SubmittedAccountOp) => {
+      queueUpdatedOp(accountOp)
+      shouldEmitUpdate = true
+    }
     const balanceChangesTasks: Array<{
       accountOp: SubmittedAccountOp
       network: Network
@@ -1208,24 +1282,53 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // implementation is in background.ts
     let newestOpTimestamp: number = 0
 
+    const declareStuckIfExpired = (accountOp: SubmittedAccountOp) => {
+      if (
+        accountOp.status !== AccountOpStatus.BroadcastedButNotConfirmed ||
+        !hasTimePassedSinceBroadcast(accountOp, ACCOUNT_OP_PENDING_TIMEOUT_MINS)
+      )
+        return
+
+      if (isIdentifiedByMultipleTxn(accountOp.identifiedBy)) {
+        accountOp.calls.forEach((call) => {
+          if (call.status === AccountOpStatus.BroadcastedButNotConfirmed)
+            call.status = AccountOpStatus.BroadcastButStuck
+        })
+        accountOp.status = AccountOpStatus.BroadcastButStuck
+        queueUpdatedOp(accountOp)
+      } else {
+        const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.BroadcastButStuck)
+        if (updatedOpIfAny) queueUpdatedOp(updatedOpIfAny)
+      }
+
+      shouldEmitUpdate = true
+    }
+
     // Limit the number of iterations to optimize the performance on accounts with large transaction history
     const MAX_OPS_TO_ITERATE_PER_CHAIN = 50
 
     await Promise.all(
       Object.keys(this.#accountsOps[accountAddr]).map(async (keyAsChainId) => {
-        const network = this.#networks.networks.find((n) => n.chainId.toString() === keyAsChainId)
-        if (!network) return
-        const provider = this.#providers.providers[network.chainId.toString()]
-        if (!provider) return
-
-        const allOps = this.#accountsOps[accountAddr]![network.chainId.toString()]
+        const allOps = this.#accountsOps[accountAddr]![keyAsChainId]
 
         if (!allOps || !allOps.length) return
 
-        const recentOps = Array.isArray(allOps) ? allOps.slice(0, MAX_OPS_TO_ITERATE_PER_CHAIN) : []
-        const opsToUpdate = recentOps.filter(
-          (op) => op.status === AccountOpStatus.BroadcastedButNotConfirmed
-        )
+        const opsToUpdate = allOps
+          .filter((op) => op.status === AccountOpStatus.BroadcastedButNotConfirmed)
+          .slice(0, MAX_OPS_TO_ITERATE_PER_CHAIN)
+
+        // user might have turned off his network
+        const network = this.#networks.networks.find((n) => n.chainId.toString() === keyAsChainId)
+        if (!network) {
+          opsToUpdate.forEach(declareStuckIfExpired)
+          return
+        }
+        const provider = this.#providers.providers[network.chainId.toString()]
+        if (!provider) {
+          opsToUpdate.forEach(declareStuckIfExpired)
+          return
+        }
+
         const confirmedOps = allOps.filter(
           (op) => op.status === AccountOpStatus.Success || op.status === AccountOpStatus.Failure
         )
@@ -1243,59 +1346,51 @@ export class ActivityController extends EventEmitter implements IActivityControl
               newestOpTimestamp = accountOp.timestamp
             }
 
-            const declareStuckIfFiveMinsPassed = async (op: SubmittedAccountOp) => {
-              if (hasTimePassedSinceBroadcast(op, 5)) {
-                const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.BroadcastButStuck)
-                if (updatedOpIfAny) {
-                  updatedAccountsOps.push(updatedOpIfAny)
-                }
-              }
-            }
-
-            const hasConfirmedOpWithSameEoaNonce =
-              accountOp.eoaNonce !== null &&
-              typeof accountOp.eoaNonce !== 'undefined' &&
-              confirmedOps.some((op) => op !== accountOp && op.eoaNonce === accountOp.eoaNonce)
-
-            if (hasConfirmedOpWithSameEoaNonce) {
-              const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.UnknownButPastNonce)
-              if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-              return
-            }
-
-            const txIds = []
-            if (accountOp.identifiedBy.type !== 'MultipleTxns') {
-              const fetchTxnIdResult = await fetchTxnId(
-                accountOp.identifiedBy,
-                network,
-                this.#callRelayer,
-                accountOp
-              )
-              if (fetchTxnIdResult.status === 'rejected') {
-                const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.Rejected)
-                if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
-                return
-              }
-              if (fetchTxnIdResult.status === 'not_found') {
-                await declareStuckIfFiveMinsPassed(accountOp)
-                return
-              }
-
-              const txnId = fetchTxnIdResult.txnId as string
-
-              accountOp.txnId = txnId
-              txIds.push(txnId)
-            } else {
-              const limit = !provider.batchMaxCount || provider.batchMaxCount > 1 ? 100 : 3
-              txIds.push(
-                ...accountOp.calls
-                  .filter((call) => !!call.status && call.txnId)
-                  .map((call) => call.txnId)
-                  .slice(0, limit)
-              )
-            }
-
             try {
+              const hasConfirmedOpWithSameEoaNonce =
+                accountOp.eoaNonce !== null &&
+                typeof accountOp.eoaNonce !== 'undefined' &&
+                confirmedOps.some((op) => op !== accountOp && op.eoaNonce === accountOp.eoaNonce)
+
+              if (hasConfirmedOpWithSameEoaNonce) {
+                const updatedOpIfAny = updateOpStatus(
+                  accountOp,
+                  AccountOpStatus.UnknownButPastNonce
+                )
+                if (updatedOpIfAny) queueUpdatedOp(updatedOpIfAny)
+                return
+              }
+
+              const txIds = []
+              if (accountOp.identifiedBy.type !== 'MultipleTxns') {
+                const fetchTxnIdResult = await fetchTxnId(
+                  accountOp.identifiedBy,
+                  network,
+                  this.#callRelayer,
+                  accountOp
+                )
+                if (fetchTxnIdResult.status === 'rejected') {
+                  const updatedOpIfAny = updateOpStatus(accountOp, AccountOpStatus.Rejected)
+                  if (updatedOpIfAny) queueUpdatedOp(updatedOpIfAny)
+                  return
+                }
+                if (fetchTxnIdResult.status === 'not_found') return
+
+                const txnId = fetchTxnIdResult.txnId as string
+
+                accountOp.txnId = txnId
+                markMutated(accountOp)
+                txIds.push(txnId)
+              } else {
+                const limit = !provider.batchMaxCount || provider.batchMaxCount > 1 ? 100 : 3
+                txIds.push(
+                  ...accountOp.calls
+                    .filter((call) => !!call.status && call.txnId)
+                    .map((call) => call.txnId)
+                    .slice(0, limit)
+                )
+              }
+
               const receipts = await Promise.all(
                 // no catch, throw an error if one promise doesn't complete
                 txIds.map((txnId) => (txnId ? provider.getTransactionReceipt(txnId) : null))
@@ -1319,6 +1414,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     )
 
                     accountOp.txnId = frontRanTxnId
+                    markMutated(accountOp)
 
                     receipt = await provider.getTransactionReceipt(frontRanTxnId)
                     if (!receipt) return
@@ -1354,7 +1450,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     isSuccess ? AccountOpStatus.Success : AccountOpStatus.Failure,
                     receipt
                   )
-                  if (updatedOpIfAny) updatedAccountsOps.push(updatedOpIfAny)
+                  if (updatedOpIfAny) queueUpdatedOp(updatedOpIfAny)
                   if (
                     updatedOpIfAny &&
                     (updatedOpIfAny.status === AccountOpStatus.Success ||
@@ -1403,21 +1499,25 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 }
 
                 // if there's no receipt, confirm there's a txn
-                // if there's no txn and 15 minutes have passed, declare it a failure
+                // if it remains unresolved for 30 minutes, declare it stuck
 
                 const txn = txnId ? await provider.getTransaction(txnId) : null
 
                 if (txn) continue
-                await declareStuckIfFiveMinsPassed(accountOp)
               }
-            } catch {
+            } catch (error) {
               this.emitError({
                 level: 'silent',
                 message: `Failed to determine transaction status on network with id ${accountOp.chainId} for ${accountOp.txnId}.`,
-                error: new Error(
-                  `activity: failed to get transaction receipt for ${accountOp.txnId}`
-                )
+                error:
+                  error instanceof Error
+                    ? error
+                    : new Error(
+                        `activity: failed to get transaction receipt for ${accountOp.txnId}`
+                      )
               })
+            } finally {
+              declareStuckIfExpired(accountOp)
             }
 
             if (shouldScheduleBalanceChangesTask && typeof lastReceiptBlockNumber !== 'undefined') {
@@ -1528,6 +1628,31 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     await this.#storage.set('signedMessages', this.#signedMessages)
     this.emitUpdate()
+  }
+
+  /**
+   * Top the newly selected account up to the full startup window.
+   *
+   * Startup gives every non-selected account a shorter window (see
+   * STARTUP_RECENT_OPS_LIMIT_OTHER), so without this the account the user just switched to
+   * would render fewer finalized ops than one they started on. Awaited by selectAccount, so
+   * the switch does not resolve while the history is still short.
+   */
+  async onSelectedAccountChange(accountAddr: Account['addr']) {
+    await this.#initialLoadPromise
+
+    // Never rejects: it reports its own read failures and leaves the short window in place.
+    await this.#persistence.ensureRecentLoaded(
+      accountAddr,
+      STARTUP_RECENT_OPS_LIMIT,
+      this.#networks.networks.map(({ chainId }) => chainId)
+    )
+
+    await this.syncFilteredAccountsOps()
+
+    // forceEmitUpdate, not emitUpdate — this replaces the forceEmitUpdate selectAccount used
+    // to call here, which bypasses throttling and React batching so the FE getters refresh.
+    await this.forceEmitUpdate()
   }
 
   async removeAccountData(address: Account['addr']) {

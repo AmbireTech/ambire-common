@@ -10,8 +10,18 @@ import {
 } from './idbDatabase'
 import { IdbAccountOpRow } from './idbSchema'
 
-// Finalized ops loaded per (account, chainId) at startup; pending ops load in full on top.
-const STARTUP_RECENT_OPS_LIMIT = 20
+// Finalized ops loaded per (account, chainId) at startup for the selected account; pending ops
+// load in full on top.
+export const STARTUP_RECENT_OPS_LIMIT = 20
+/**
+ * Finalized ops loaded per (account, chainId) at startup for every OTHER account. Not zero,
+ * because several readers ask about accounts the user is not viewing and none of them can wait
+ * on a read: swapAndBridge matches a route's userTxHash against its sender's last 10 ops,
+ * wallet_getCallsStatus serves whichever account the dapp is pinned to, and status polling
+ * compares EOA nonces against confirmed ops for every account with something pending. Ten
+ * matches the widest of those windows.
+ */
+const STARTUP_RECENT_OPS_LIMIT_OTHER = 10
 /**
  * Hard cap on ops per (account, chainId) group. Enforced twice and the two MUST agree — the
  * controller trims memory, putSingleOp guards the rows — or memory drops ops that storage
@@ -21,7 +31,11 @@ export const MAX_OPS_PER_GROUP = 1000
 
 // The highest BMP Unicode character — used as a range upper bound to select all keys
 // that start with a given prefix, without matching the prefix itself as a key.
-const RANGE_HIGH = '￿'
+const RANGE_HIGH = '\uffff'
+
+/** Not yet final: still broadcast or queued, so a later write can still change its status. */
+const isPendingStatus = (status: AccountOpStatus | undefined) =>
+  status === AccountOpStatus.BroadcastedButNotConfirmed || status === AccountOpStatus.Pending
 
 /** An op carrying every field the IDB row and its indexes require. */
 type StorableOp = (SubmittedAccountOp | SubmittedAccountOpLike) & {
@@ -120,6 +134,76 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
    * repopulated" — one row written after a wipe looks migrated. Accepted deliberately; see
    * the IndexedDB section in src/controllers/AGENTS.md.
    */
+  /**
+   * Fold a legacy payload back in WITHOUT overwriting what IDB already holds.
+   *
+   * Deliberately not putMultiple(): that clears each (account, chain) range before inserting,
+   * so a stale legacy copy — frozen at migration time — would wipe every row written to IDB
+   * since, taking confirmed ops back to pending. A plain upsert is no better, because the
+   * stale copy would still overwrite newer rows.
+   *
+   * So only ops IDB does not have are inserted. An op both sides hold is left alone, unless
+   * IDB has it pending and the payload has it finalized — the fallback session may have been
+   * the one that saw it confirm. MAX_OPS_PER_GROUP is enforced on the merged result, oldest
+   * first, so recovery cannot grow a group past the cap.
+   */
+  async mergeGroups(ops: InternalAccountsOps): Promise<void> {
+    const tx = await this.#openTx('readwrite')
+    const store = tx.objectStore(this.#storeName)
+
+    try {
+      for (const [accountAddr, chainMap] of Object.entries(ops)) {
+        for (const [chainIdStr, groupOps] of Object.entries(chainMap ?? {})) {
+          const incoming = this.#dedupeOpsById(groupOps ?? [])
+          if (!incoming.length) continue
+
+          const range = IDBKeyRange.bound(
+            [accountAddr, chainIdStr, ''],
+            [accountAddr, chainIdStr, RANGE_HIGH]
+          )
+
+          const existingRows: IdbAccountOpRow[] = await store.getAll(range)
+          const existingById = new Map(existingRows.map((row) => [row.id, row]))
+
+          const toWrite = incoming.filter((op) => {
+            const stored = existingById.get(op.id)
+            if (!stored) return true
+
+            // Both sides have it: the stored row wins, unless the payload saw it finalize.
+            return isPendingStatus(stored.status) && !isPendingStatus(op.status)
+          })
+          if (!toWrite.length) continue
+
+          // Newest survive the cap, counting the rows already stored and the ones being added.
+          const survivors = new Map<string, number>(
+            existingRows.map((row) => [row.id, row.timestamp])
+          )
+          toWrite.forEach((op) => survivors.set(op.id, op.timestamp))
+          const kept = new Set(
+            Array.from(survivors.entries())
+              .sort(([, a], [, b]) => b - a)
+              .slice(0, MAX_OPS_PER_GROUP)
+              .map(([id]) => id)
+          )
+
+          for (const op of toWrite) {
+            if (kept.has(op.id)) store.put(this.#opToRow(accountAddr, chainIdStr, op))
+          }
+          for (const row of existingRows) {
+            if (!kept.has(row.id)) store.delete([accountAddr, chainIdStr, row.id])
+          }
+        }
+      }
+    } catch (error) {
+      // Same reason as putMultiple: a half-applied recovery is worse than none.
+      tx.abort()
+      tx.done.catch(() => {})
+      throw error
+    }
+
+    await tx.done
+  }
+
   async ensureMigrated(
     getStoredOps: () => Promise<InternalAccountsOps>,
     removeStoredOps: () => Promise<void>
@@ -133,20 +217,22 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
   }
 
   /**
-   * Load minimal startup dataset: all pending ops for every account, plus up to
-   * STARTUP_RECENT_OPS_LIMIT finalized ops per chain for `finalizedFor` only.
+   * Load minimal startup dataset: all pending ops for every account, plus a finalized window
+   * per chain — STARTUP_RECENT_OPS_LIMIT for `fullWindowFor`, STARTUP_RECENT_OPS_LIMIT_OTHER
+   * for everyone else. Omit `fullWindowFor` to give every account the full window.
    *
    * Pending ops are needed wallet-wide — broadcastedButNotConfirmed drives which accounts get
    * status polling, and the pending/failed banners are built per account. Finalized ops are
-   * only ever rendered for the account being viewed, so fetching them for every account costs
-   * (accounts x chains x 20) deserialized rows that nothing reads. Omit `finalizedFor` to get
-   * the finalized slice for every account.
+   * mostly rendered for the account being viewed, so the full window for every account costs
+   * (accounts x chains x 20) deserialized rows that nothing reads — but the shorter window
+   * cannot be zero, because the readers listed on STARTUP_RECENT_OPS_LIMIT_OTHER ask about
+   * accounts that are not selected and are all synchronous.
    *
    * Two transactions: a key-only cursor enumerates the (account, chainId) groups, then all
    * per-group queries run in parallel inside one transaction. Every per-group request is fired
    * before any await resolves, keeping the tx open.
    */
-  async loadStartupOps(finalizedFor?: string): Promise<InternalAccountsOps> {
+  async loadStartupOps(fullWindowFor?: string): Promise<InternalAccountsOps> {
     // Step 1: enumerate (accountAddr, chainId) groups — key-only cursor, O(N_groups) reads
     const groups: [string, string][] = []
     {
@@ -182,18 +268,19 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
             [accountAddr, chainId, Number.MAX_SAFE_INTEGER]
           )
 
-          const wantsFinalized = !finalizedFor || accountAddr === finalizedFor
+          const finalizedLimit =
+            !fullWindowFor || accountAddr === fullWindowFor
+              ? STARTUP_RECENT_OPS_LIMIT
+              : STARTUP_RECENT_OPS_LIMIT_OTHER
 
           // Run timestamp cursor + 2 pending getAlls in parallel for this group.
           // The getAlls are fired synchronously (before any await), the cursor IIFE
           // fires its first request synchronously too — all 3 are pending at once.
           const [, pendingBroadcasted, pendingQueued] = await Promise.all([
             (async () => {
-              if (!wantsFinalized) return
-
               let finalizedCount = 0
               let cur = await tsIndex.openCursor(tsRange, 'prev')
-              while (cur && finalizedCount < STARTUP_RECENT_OPS_LIMIT) {
+              while (cur && finalizedCount < finalizedLimit) {
                 const row = cur.value
                 const isPending =
                   row.status === AccountOpStatus.BroadcastedButNotConfirmed ||
@@ -426,7 +513,7 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
     const keys = await tx
       .objectStore(this.#storeName)
       .index('by-txn-id')
-      .getAllKeys(IDBKeyRange.only(txnId))
+      .getAllKeys(IDBKeyRange.only(txnId.toLowerCase()))
 
     return keys.some((key) => String(key[0]).toLowerCase() === accountAddr.toLowerCase())
   }
@@ -521,9 +608,11 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
     }
 
     // Its own txnId plus one per call, so the MultipleTxns shape is matchable too.
-    const txnIds = [op.txnId, ...(op.calls ?? []).map((call) => call.txnId)].filter(
-      (id): id is string => !!id
-    )
+    // Lowercased on write to match normalizeTxnId() in the controller — the index does exact
+    // key matching, so a hash stored mixed-case would never match a lowercase lookup.
+    const txnIds = [op.txnId, ...(op.calls ?? []).map((call) => call.txnId)]
+      .filter((id): id is string => !!id)
+      .map((id) => id.toLowerCase())
 
     return {
       accountAddr,
@@ -561,10 +650,13 @@ export class ActivityKeyValueStorage implements IActivityOpsBackend {
   }
 
   // Migration is not needed for storage — data is already in storage.
+  // Never reached: recovery only runs when the live backend is IDB.
+  async mergeGroups(_ops: InternalAccountsOps): Promise<void> {}
+
   async ensureMigrated(_g: () => Promise<InternalAccountsOps>, _r: () => Promise<void>) {}
 
   // The blob is read whole, so there is no per-account slice to skip.
-  async loadStartupOps(_finalizedFor?: string): Promise<InternalAccountsOps> {
+  async loadStartupOps(_fullWindowFor?: string): Promise<InternalAccountsOps> {
     return this.#storage.get('accountsOps', {})
   }
 
@@ -618,9 +710,14 @@ export class ActivityKeyValueStorage implements IActivityOpsBackend {
     const key = Object.keys(ops).find((k) => k.toLowerCase() === accountAddr.toLowerCase())
     if (!key) return false
 
+    // Compared case-insensitively, same as the IDB backend and normalizeTxnId().
+    const wanted = txnId.toLowerCase()
+
     return Object.values(ops[key] ?? {}).some((group) =>
       (group ?? []).some((op) =>
-        [op.txnId, ...(op.calls ?? []).map((call) => call.txnId)].some((id) => id === txnId)
+        [op.txnId, ...(op.calls ?? []).map((call) => call.txnId)].some(
+          (id) => id?.toLowerCase() === wanted
+        )
       )
     )
   }

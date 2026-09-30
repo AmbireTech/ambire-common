@@ -54,13 +54,14 @@ export interface IdbAccountOpRow {
  * One blocklisted domain per row. The domain IS the key, so a lookup is a primary-key point
  * read and an update touches only the rows the server's delta named.
  */
-export interface IdbPhishingDomainRow {
-  domain: string
-}
-
-/** One blocklisted address per row, lowercased on write so lookups need no normalization. */
-export interface IdbPhishingAddressRow {
-  address: string
+export interface IdbPhishingBucketRow {
+  /** Which bucket this is — the hash of every entry inside it, modulo PHISHING_BUCKET_COUNT. */
+  id: number
+  /**
+   * The entries that hash here. Addresses are lowercased on write so lookups need no
+   * normalization; domains arrive already lowercased from the relayer.
+   */
+  entries: string[]
 }
 
 /**
@@ -95,12 +96,12 @@ export interface AmbireIdbSchema extends DBSchema {
     }
   }
   phishingDomains: {
-    key: string
-    value: IdbPhishingDomainRow
+    key: number
+    value: IdbPhishingBucketRow
   }
   phishingAddresses: {
-    key: string
-    value: IdbPhishingAddressRow
+    key: number
+    value: IdbPhishingBucketRow
   }
   phishingMeta: {
     key: string
@@ -167,12 +168,17 @@ export const AMBIRE_IDB_SCHEMA: IdbSchema = {
     {
       // Row per domain rather than one blob: the server sends add/remove deltas, so an update
       // writes only what changed, and a lookup is a primary-key point read.
+      // Bucketed, not one row per entry: the list is ~450k domains, and a row costs the same
+      // whether it holds one entry or a thousand. One row per entry made the first full write
+      // ~95s of blocked main thread, long enough for the browser to kill the service worker
+      // before the transaction — and so the version checkpoint — ever committed, which left
+      // every wake-up re-fetching and re-writing the whole list.
       storeName: 'phishingDomains',
-      keyPath: 'domain'
+      keyPath: 'id'
     },
     {
       storeName: 'phishingAddresses',
-      keyPath: 'address'
+      keyPath: 'id'
     },
     {
       // Version checkpoint only. Written in the same transaction as the rows it describes, so
@@ -189,7 +195,7 @@ export const AMBIRE_IDB_SCHEMA: IdbSchema = {
       fromVersion: 0,
       toVersion: 1,
       description:
-        'Initial schema: accountsOps with timestamp, status and txnId indexes; phishing domain, address and meta stores'
+        'Initial schema: accountsOps with timestamp, status and txnId indexes; bucketed phishing domain and address stores, plus meta'
     }
   ]
 }

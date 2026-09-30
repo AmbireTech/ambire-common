@@ -30,10 +30,11 @@ export interface IActivityOpsBackend {
   ): Promise<void>
 
   /**
-   * Pending ops for every account, plus the finalized window for `finalizedFor` only —
-   * finalized ops are only rendered for the account being viewed. Key-value reads everything.
+   * Pending ops for every account, plus a finalized window per chain — the full one for
+   * `fullWindowFor`, a shorter one for every other account, which several synchronous readers
+   * still depend on. Key-value reads everything.
    */
-  loadStartupOps(finalizedFor?: string): Promise<InternalAccountsOps>
+  loadStartupOps(fullWindowFor?: string): Promise<InternalAccountsOps>
 
   /** Write one new op, and delete the op the in-memory trim evicted (if any). */
   /** @returns the net change in stored rows, so callers can keep a count without re-reading. */
@@ -59,6 +60,13 @@ export interface IActivityOpsBackend {
    * startup read is a window, so in-memory lengths are not a total.
    */
   countOpsForAccount(accountAddr: string, chainId?: bigint | string): Promise<number>
+
+  /**
+   * Folds back ops written while the controller was on its key-value fallback, inserting only
+   * what the backend does not already hold. Never overwrites a stored op, except to carry over
+   * a finalized status onto one the backend still has pending.
+   */
+  mergeGroups(ops: InternalAccountsOps): Promise<void>
 
   /** Whether the account already stores an op carrying this txnId, including per-call ones. */
   hasOpWithTxnId(accountAddr: string, txnId: string): Promise<boolean>

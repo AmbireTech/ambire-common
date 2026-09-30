@@ -20,7 +20,7 @@ const validate = (overrides: {
   isRecipientAddressFirstTimeSend?: boolean
   isRecipientAddressUnknown?: boolean
   isDomain?: boolean
-  isRecipientAddressBlacklisted?: boolean
+  isRecipientAddressBlacklisted?: boolean | null
 }) =>
   validateSendTransferAddress(
     RECIPIENT,
@@ -38,7 +38,9 @@ const validate = (overrides: {
     null,
     null,
     overrides.recipientDomainAddressChange ?? null,
-    overrides.isRecipientAddressBlacklisted ?? false
+    overrides.isRecipientAddressBlacklisted === undefined
+      ? false
+      : overrides.isRecipientAddressBlacklisted
   )
 
 describe('validateSendTransferAddress - recipient domain address change', () => {
@@ -90,5 +92,29 @@ describe('validateSendTransferAddress - blacklisted recipient', () => {
     const result = validate({ isRecipientAddressBlacklisted: false })
 
     expect(result.message).not.toBe(BLACKLISTED_MESSAGE)
+  })
+
+  it('says the check has not answered yet rather than reassuring the user', () => {
+    // The list loads in the background, so an address entered before it is ready cannot be
+    // judged. Falling through to the messages below would show a reassuring one and then flip
+    // to the scam error once the answer lands.
+    const result = validate({ isRecipientAddressBlacklisted: null })
+
+    expect(result.severity).toBe('warning')
+    expect(result.message).toContain("couldn't check this address")
+  })
+
+  it('still lets a wallet that never reached the list be used', () => {
+    // A warning, not an error: an error keeps the form disabled, which would strand a first
+    // run with no network.
+    const result = validate({ isRecipientAddressBlacklisted: null })
+
+    expect(result.severity).not.toBe('error')
+  })
+
+  it('a confirmed hit still outranks the unanswered state', () => {
+    const result = validate({ isRecipientAddressBlacklisted: true })
+
+    expect(result.message).toBe(BLACKLISTED_MESSAGE)
   })
 })

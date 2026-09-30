@@ -60,7 +60,9 @@ function makeOp(id: string, timestamp: number, status = AccountOpStatus.Success)
 function makeOpTo(id: string, timestamp: number, to: string) {
   return {
     ...makeOp(id, timestamp),
-    calls: [{ to, value: 0n, data: '0x' }]
+    // Non-zero: v2's getRecipientFromCall counts a plain transfer as sending to someone only
+    // when it moves value, so a 0-value call with no data has no recipient at all.
+    calls: [{ to, value: 1n, data: '0x' }]
   }
 }
 
@@ -93,6 +95,7 @@ function makeController(storage: IStorageController, idb?: AmbireIdbDatabase, pr
     networksStub, // networks
     {} as any, // portfolio
     {} as any, // safe
+    { isFeatureEnabled: () => undefined } as any, // featureFlags
     async () => {},
     undefined, // eventEmitterRegistry
     idb
@@ -695,10 +698,103 @@ describe('ActivityController — the recorded backend is read, not just written'
   })
 })
 
-describe('ActivityController — startup read is scoped to the selected account', () => {
+describe('ActivityController — recovering writes made on the key-value fallback', () => {
+  /**
+   * Sets up the state #recoverFallbackWrites exists for: IDB already holds history, the last
+   * session ran on key-value, and the legacy blob is the frozen migration copy plus whatever
+   * that session wrote.
+   */
+  async function seedAfterFallbackSession(legacy: unknown, stored: any[]) {
+    await storage.set('activityStorageBackend', 'keyValue')
+    await new ActivityIdbStorage(db).putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: stored }
+    ])
+    await seedLegacyOps(legacy)
+  }
+
+  const storedIds = async () =>
+    ((await new ActivityIdbStorage(db).getOpsForAccountAndChain(ACC, CHAIN_1)) ?? []).map(
+      (op) => op.id
+    )
+
+  test('an op written only on the fallback is folded back in', async () => {
+    await seedAfterFallbackSession(legacyBlob([makeOp('idb-1', 1000), makeOp('kv-only', 2000)]), [
+      makeOp('idb-1', 1000)
+    ])
+
+    await awaitLoadOnly(makeController(storage, db))
+
+    expect(await storedIds()).toEqual(expect.arrayContaining(['idb-1', 'kv-only']))
+  })
+
+  test('BUG-GUARD: the frozen blob does not wipe rows IDB gained after the migration', async () => {
+    // The blob is a snapshot from migration time, so it knows nothing about idb-new. A write
+    // that clears the group before inserting — as putMultiple does — would delete it.
+    await seedAfterFallbackSession(legacyBlob([makeOp('idb-1', 1000)]), [
+      makeOp('idb-1', 1000),
+      makeOp('idb-new', 3000)
+    ])
+
+    await awaitLoadOnly(makeController(storage, db))
+
+    expect(await storedIds()).toContain('idb-new')
+  })
+
+  test('BUG-GUARD: a stale pending copy does not un-confirm an op IDB has finalized', async () => {
+    await seedAfterFallbackSession(
+      legacyBlob([makeOp('op-1', 1000, AccountOpStatus.BroadcastedButNotConfirmed)]),
+      [makeOp('op-1', 1000, AccountOpStatus.Success)]
+    )
+
+    await awaitLoadOnly(makeController(storage, db))
+
+    const ops = (await new ActivityIdbStorage(db).getOpsForAccountAndChain(ACC, CHAIN_1)) ?? []
+    expect(ops.find((op) => op.id === 'op-1')?.status).toBe(AccountOpStatus.Success)
+  })
+
+  test('a status the fallback session saw finalize IS carried over', async () => {
+    // The mirror case: the fallback session is the one that watched it confirm, so its copy
+    // is the newer of the two and the stored pending row must give way.
+    await seedAfterFallbackSession(legacyBlob([makeOp('op-1', 1000, AccountOpStatus.Success)]), [
+      makeOp('op-1', 1000, AccountOpStatus.BroadcastedButNotConfirmed)
+    ])
+
+    await awaitLoadOnly(makeController(storage, db))
+
+    const ops = (await new ActivityIdbStorage(db).getOpsForAccountAndChain(ACC, CHAIN_1)) ?? []
+    expect(ops.find((op) => op.id === 'op-1')?.status).toBe(AccountOpStatus.Success)
+  })
+
+  test('the merged group still respects the per-chain cap', async () => {
+    const stored = Array.from({ length: MAX_OPS_PER_GROUP }, (_, i) => makeOp(`idb-${i}`, i + 1))
+    await seedAfterFallbackSession(legacyBlob([makeOp('kv-newest', 999999)]), stored)
+
+    await awaitLoadOnly(makeController(storage, db))
+
+    const ids = await storedIds()
+    expect(ids).toHaveLength(MAX_OPS_PER_GROUP)
+    expect(ids).toContain('kv-newest')
+    // The oldest stored row is the one that made room.
+    expect(ids).not.toContain('idb-0')
+  })
+
+  test('nothing is recovered when the last session already ran on IDB', async () => {
+    await storage.set('activityStorageBackend', 'idb')
+    await new ActivityIdbStorage(db).putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: [makeOp('idb-1', 1000)] }
+    ])
+    await seedLegacyOps(legacyBlob([makeOp('stale-only', 500)]))
+
+    await awaitLoadOnly(makeController(storage, db))
+
+    expect(await storedIds()).not.toContain('stale-only')
+  })
+})
+
+describe('ActivityController — the startup read covers every account', () => {
   const OTHER = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
 
-  /** makeController's stub has no selected account, which means "load finalized for all". */
+  /** The selected account gets a deeper window, but no account is left without one. */
   function makeControllerWithSelected(selectedAddr: string) {
     return new ActivityController(
       storage,
@@ -710,6 +806,7 @@ describe('ActivityController — startup read is scoped to the selected account'
       networksStub,
       {} as any,
       {} as any,
+      { isFeatureEnabled: () => undefined } as any, // featureFlags
       async () => {},
       undefined,
       db
@@ -735,9 +832,11 @@ describe('ActivityController — startup read is scoped to the selected account'
     ])
   }
 
-  test('another account contributes its pending ops but not its finalized ones', async () => {
-    // Pending ops are needed wallet-wide: broadcastedButNotConfirmed decides which accounts
-    // get status polling. Finalized ops are only ever rendered for the viewed account.
+  test('a non-selected account has its finalized ops in memory, not just its pending ones', async () => {
+    // #accountsOps has SYNCHRONOUS readers that ask about accounts other than the selected
+    // one — swapAndBridge, wallet_getCallsStatus, and the same-EOA-nonce check in status
+    // polling. They cannot load on demand, and onSelectedAccountChange only deepens the
+    // account being switched TO, so an empty window here left them reading an empty history.
     await seedTwoAccounts()
 
     const controller = makeControllerWithSelected(ACC)
@@ -746,10 +845,10 @@ describe('ActivityController — startup read is scoped to the selected account'
     const otherIds = controller.getAccountOpsForAccount({ accountAddr: OTHER }).map((op) => op.id)
 
     expect(otherIds).toContain('other-pending')
-    expect(otherIds).not.toContain('other-final')
+    expect(otherIds).toContain('other-final')
   })
 
-  test('switching to that account loads its history on demand', async () => {
+  test('opening Activity for that account pages in the rest of its history', async () => {
     await seedTwoAccounts()
 
     const controller = makeControllerWithSelected(ACC)
@@ -787,6 +886,97 @@ describe('ActivityController — startup read is scoped to the selected account'
     // Bounded reads are cheap and idempotent, so they are not deduplicated — what matters is
     // that each one asks for a page, not the whole history.
     expect(spy.mock.calls.every(([, limit]) => limit <= 10)).toBe(true)
+  })
+})
+
+describe('ActivityController — the startup window is deeper for the selected account', () => {
+  const OTHER = '0xa07D75aacEFd11b425AF7181958F0F85c312f143'
+
+  function makeControllerWithSelected(selectedAddr: string) {
+    return new ActivityController(
+      storage,
+      (() => {}) as any,
+      (() => {}) as any,
+      { ...alreadyLoaded, accounts: [{ addr: ACC }, { addr: OTHER }] } as any,
+      { ...alreadyLoaded, account: { addr: selectedAddr } } as any,
+      {} as any,
+      networksStub,
+      {} as any,
+      {} as any,
+      { isFeatureEnabled: () => undefined } as any, // featureFlags
+      async () => {},
+      undefined,
+      db
+    )
+  }
+
+  /** 25 finalized ops each, so both windows (20 and 10) cut into the history. */
+  async function seedDeepHistories() {
+    const store = new ActivityIdbStorage(db)
+    const ops = (addr: string, prefix: string) =>
+      Array.from({ length: 25 }, (_, i) => ({
+        ...makeOp(`${prefix}-${i}`, 1000 + i),
+        accountAddr: addr
+      })) as any[]
+
+    await store.putMultiple([
+      { accountAddr: ACC, chainId: CHAIN_1, ops: ops(ACC, 'mine') },
+      { accountAddr: OTHER, chainId: CHAIN_1, ops: ops(OTHER, 'other') }
+    ])
+  }
+
+  const loadedCount = (controller: ActivityController, accountAddr: string) =>
+    controller.getAccountOpsForAccount({ accountAddr }).length
+
+  test('the selected account gets the full window, the other a shorter one', async () => {
+    await seedDeepHistories()
+
+    const controller = makeControllerWithSelected(ACC)
+    await awaitLoadOnly(controller)
+
+    expect(loadedCount(controller, ACC)).toBe(20)
+    expect(loadedCount(controller, OTHER)).toBe(10)
+  })
+
+  test('the shorter window still holds enough for the synchronous readers', async () => {
+    // swapAndBridge asks its sender for 10, which is the widest of the windows those readers
+    // use — so the non-selected account must carry at least that many.
+    await seedDeepHistories()
+
+    const controller = makeControllerWithSelected(ACC)
+    await awaitLoadOnly(controller)
+
+    const newestFirst = controller
+      .getAccountOpsForAccount({ accountAddr: OTHER })
+      .map((op) => op.id)
+
+    expect(newestFirst[0]).toBe('other-24')
+    expect(newestFirst).toHaveLength(10)
+  })
+
+  test('selecting the other account tops it up to the full window', async () => {
+    await seedDeepHistories()
+
+    const controller = makeControllerWithSelected(ACC)
+    await awaitLoadOnly(controller)
+    await controller.onSelectedAccountChange(OTHER)
+
+    expect(loadedCount(controller, OTHER)).toBe(20)
+  })
+
+  test('the top-up never rejects, so selectAccount cannot be broken by a failed read', async () => {
+    await seedDeepHistories()
+
+    const controller = makeControllerWithSelected(ACC)
+    await awaitLoadOnly(controller)
+
+    jest
+      .spyOn(ActivityIdbStorage.prototype, 'getRecentOps')
+      .mockRejectedValue(new Error('read failed'))
+
+    await expect(controller.onSelectedAccountChange(OTHER)).resolves.toBeUndefined()
+    // The short window survives, so the readers are no worse off than before the switch.
+    expect(loadedCount(controller, OTHER)).toBe(10)
   })
 })
 
@@ -942,7 +1132,7 @@ describe('ActivityController — paginated reads', () => {
     const internalMultiTxn = {
       ...makeOp('internal-multi-txn', 1),
       txnId: undefined,
-      calls: [{ to: PROBE_ADDRESS, value: 0n, data: '0x', txnId }]
+      calls: [{ to: PROBE_ADDRESS, value: 1n, data: '0x', txnId }]
     }
     await new ActivityIdbStorage(db).putMultiple([
       {
@@ -1113,11 +1303,11 @@ describe('ActivityController — total transaction count', () => {
         '1': [
           {
             ...makeOpTo('newer', 9000, NEW_ADDR),
-            calls: [{ to: NEW_ADDR, value: 0n, data: '0x', recipientDomain: 'alice.eth' }]
+            calls: [{ to: NEW_ADDR, value: 1n, data: '0x', recipientDomain: 'alice.eth' }]
           },
           {
             ...makeOpTo('older', 1000, OLD_ADDR),
-            calls: [{ to: OLD_ADDR, value: 0n, data: '0x', recipientDomain: 'alice.eth' }]
+            calls: [{ to: OLD_ADDR, value: 1n, data: '0x', recipientDomain: 'alice.eth' }]
           }
         ]
       }
@@ -1233,9 +1423,7 @@ describe('ActivityController — counts with a partly loaded history', () => {
 
     expect(controller.getTotalOpsCountForAccount(ACC)).toBe(60)
     // ...and it is genuinely more than the cache holds
-    expect(
-      controller.getAccountOpsForAccount({ accountAddr: ACC }).length
-    ).toBeLessThan(60)
+    expect(controller.getAccountOpsForAccount({ accountAddr: ACC }).length).toBeLessThan(60)
   })
 })
 

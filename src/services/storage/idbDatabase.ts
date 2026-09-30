@@ -111,10 +111,29 @@ export function applyMigrations(
 
 let openPromise: Promise<AmbireIdbDatabase> | null = null
 
+/**
+ * How long to wait for the database to open before giving up on it.
+ *
+ * An open can hang indefinitely rather than fail: an upgrade blocked by a connection in
+ * another context that ignores `versionchange` never fires success OR error. Background init
+ * awaits this call and only falls back to key-value when it REJECTS, so without a deadline a
+ * blocked upgrade means the wallet never boots at all.
+ *
+ * Deliberately short. A healthy open is single-digit milliseconds, and the cost of waiting is
+ * a wallet that looks frozen.
+ *
+ * The cost of giving up early is higher than it looks, though: background.ts opens ONCE and
+ * passes undefined on failure, so nothing retries within the session even though a timeout
+ * clears the singleton. One slow open — cold browser start, busy disk — puts the whole
+ * service-worker lifetime on key-value, where history renders from the blob frozen at
+ * migration time.
+ */
+const OPEN_TIMEOUT_MS = 1000
+
 export function openAmbireIdb(): Promise<AmbireIdbDatabase> {
   if (openPromise) return openPromise
 
-  openPromise = openDB<AmbireIdbSchema>(AMBIRE_IDB_SCHEMA.dbName, AMBIRE_IDB_SCHEMA.dbVersion, {
+  const rawOpen = openDB<AmbireIdbSchema>(AMBIRE_IDB_SCHEMA.dbName, AMBIRE_IDB_SCHEMA.dbVersion, {
     upgrade(db, oldVersion, newVersion, tx) {
       const targetVersion = newVersion ?? AMBIRE_IDB_SCHEMA.dbVersion
       console.log(
@@ -150,11 +169,42 @@ export function openAmbireIdb(): Promise<AmbireIdbDatabase> {
       console.warn('[AmbireIdb] Connection was terminated by the browser — dropping the cache')
       openPromise = null
     }
-  }).catch((error) => {
+  })
+
+  openPromise = rawOpen.catch((error) => {
     // Allow a subsequent openAmbireIdb() call to retry after a transient failure.
     openPromise = null
     throw error
   })
+
+  // Rejecting on the deadline is what lets the caller fall back; an open that never settles
+  // would otherwise hang init forever. The timer is always cleared, so a slow-but-successful
+  // open does not leave it pending.
+  let timer: ReturnType<typeof setTimeout>
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(new Error(`[AmbireIdb] Opening the database timed out after ${OPEN_TIMEOUT_MS}ms`)),
+      OPEN_TIMEOUT_MS
+    )
+  })
+
+  // Assigned as ONE promise, not returned as a fresh .catch() per call — callers rely on
+  // repeated calls handing back the same object.
+  openPromise = Promise.race([openPromise, deadline])
+    .finally(() => clearTimeout(timer))
+    .catch((error) => {
+      // A timed-out open must not poison the singleton — the block may be gone by the next call.
+      openPromise = null
+
+      // The open that lost the race is still running, and losing does not cancel it. Nothing
+      // holds the connection it eventually yields, and blocking() can no longer reach it
+      // because the singleton is gone — so it would stay open for the life of the context and
+      // block every later upgrade. Close it as soon as it lands.
+      rawOpen.then((db) => db.close()).catch(() => {})
+
+      throw error
+    }) as Promise<AmbireIdbDatabase>
 
   return openPromise
 }

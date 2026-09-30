@@ -13,11 +13,15 @@ const mintVestingAbi = parseAbi([
   'function mintVesting(address recipient, uint256 end, uint256 amountPerSecond)'
 ])
 
+const claimSelector = toFunctionSelector(claimAbi[0])
+const claimWithRootUpdateSelector = toFunctionSelector(claimWithRootUpdateAbi[0])
+const mintVestingSelector = toFunctionSelector(mintVestingAbi[0])
+
 export const WALLETSupplyControllerMapping = (): {
   [key: string]: (arg1: HexIrCall) => HumanizerVisualization[]
 } => {
   return {
-    [toFunctionSelector(claimAbi[0])]: (call: HexIrCall): HumanizerVisualization[] => {
+    [claimSelector]: (call: HexIrCall): HumanizerVisualization[] => {
       const { args } = decodeFunctionData({ abi: claimAbi, data: call.data })
       const [, , toBurnBps, stakingPool] = args
       const burnPercentage = Number(toBurnBps) / 100
@@ -30,9 +34,7 @@ export const WALLETSupplyControllerMapping = (): {
           ]
         : [getAction('Claim rewards'), getLabel('in'), getToken(stakingPool, 0n)]
     },
-    [toFunctionSelector(claimWithRootUpdateAbi[0])]: (
-      call: HexIrCall
-    ): HumanizerVisualization[] => {
+    [claimWithRootUpdateSelector]: (call: HexIrCall): HumanizerVisualization[] => {
       const { args } = decodeFunctionData({ abi: claimWithRootUpdateAbi, data: call.data })
       const [, , toBurnBps, stakingPool] = args
       const burnPercentage = Number(toBurnBps) / 100
@@ -46,7 +48,7 @@ export const WALLETSupplyControllerMapping = (): {
           ]
         : [getAction('Claim rewards'), getLabel('in'), getToken(stakingPool, 0n)]
     },
-    [toFunctionSelector(mintVestingAbi[0])]: (): HumanizerVisualization[] => {
+    [mintVestingSelector]: (): HumanizerVisualization[] => {
       return [getAction('Claim vested tokens')]
     }
   }
