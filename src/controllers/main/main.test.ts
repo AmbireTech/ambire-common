@@ -478,7 +478,7 @@ describe('Main Controller ', () => {
     test('removes the safs of the Safe on the same chain when an internal deployment fails', async () => {
       const mainCtrl = await setupController()
       const rejectSafRequestsSpy = jest
-        .spyOn(mainCtrl.requests, 'rejectSafRequests')
+        .spyOn(mainCtrl.requests, 'rejectSameChainNotSignedSafeRequest')
         .mockResolvedValue(undefined)
 
       jest
