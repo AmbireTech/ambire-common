@@ -19,6 +19,7 @@ import SafeApiKit from '@safe-global/api-kit'
 import SafeAbi from '../../../contracts/compiled/Safe.json'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { Hex } from '../../interfaces/hex'
+import { Key } from '../../interfaces/keystore'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeAccountByOwner, SafeTx } from '../../interfaces/safe'
 import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
@@ -563,6 +564,19 @@ export function getImportedSignersThatHaveNotSigned(
   importedOwners: string[]
 ): string[] {
   return importedOwners.filter((o) => !signed.includes(o))
+}
+
+/**
+ * Whether the imported owners of a Safe can reach its threshold with hot (keystore held) keys
+ * alone. Any hardware wallet or card among them confirms on the device, so it is `false` then.
+ */
+export function canHotOwnersMeetSafeThreshold(
+  importedOwners: Pick<Key, 'type'>[],
+  threshold: number
+): boolean {
+  return (
+    importedOwners.length >= threshold && importedOwners.every(({ type }) => type === 'internal')
+  )
 }
 
 export function getSigs(signature?: string | null): Hex[] {

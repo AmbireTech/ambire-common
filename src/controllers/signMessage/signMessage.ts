@@ -34,6 +34,7 @@ import { buildSafeMessageOrigin } from '../../libs/safe/helpers'
 import {
   addMessage,
   addMessageSignature,
+  canHotOwnersMeetSafeThreshold,
   getImportedSignersThatHaveNotSigned,
   sortSigs
 } from '../../libs/safe/safe'
@@ -803,10 +804,21 @@ export class SignMessageController
   /**
    * Why this message needs the password/biometrics confirmation, or `null` when it does not. Only
    * a dapp the catalog knows can require it - elsewhere the confirmation cannot be remembered.
+   * A Safe needs it only when its hot owners can meet the threshold on their own.
    */
   get signingAuthRequirement(): SigningAuthRequirement | null {
     const dapps = this.#dapps
     if (!dapps || !this.dapp?.url) return null
+
+    if (this.#account?.safeCreation && this.messageToSign) {
+      const accountState =
+        this.#accounts.accountStates[this.#account.addr]?.[this.messageToSign.chainId.toString()]
+      if (
+        !accountState ||
+        !canHotOwnersMeetSafeThreshold(accountState.importedAccountKeys, accountState.threshold)
+      )
+        return null
+    }
 
     // Looked up by dapp id, which is what dapps are stored under - looking up by the registrable
     // domain silently found nothing for every dapp on a subdomain

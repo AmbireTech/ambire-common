@@ -25,6 +25,7 @@ import { Dapp, DappProviderRequest, IDappsController } from '../../interfaces/da
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
+import { Platform } from '../../interfaces/platform'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -130,6 +131,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #portfolio: IPortfolioController
 
   #featureFlags: IFeatureFlagsController
+
+  #platform: Platform
 
   #externalSignerControllers: Partial<{
     internal: ExternalSignerController
@@ -272,6 +275,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     callRelayer,
     portfolio,
     featureFlags,
+    platform,
     externalSignerControllers,
     activity,
     phishing,
@@ -303,6 +307,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     callRelayer: BindedRelayerCall
     portfolio: IPortfolioController
     featureFlags: IFeatureFlagsController
+    platform: Platform
     externalSignerControllers: Partial<{
       internal: ExternalSignerController
       trezor: ExternalSignerController
@@ -341,6 +346,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#callRelayer = callRelayer
     this.#portfolio = portfolio
     this.#featureFlags = featureFlags
+    this.#platform = platform
     this.#externalSignerControllers = externalSignerControllers
     this.#activity = activity
     this.#phishing = phishing
@@ -1818,7 +1824,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       try {
         autoLoginStatus = this.#autoLogin.getAutoLoginStatus(parsedSiwe)
 
-        if (autoLoginStatus === 'active' && dapp?.signingAuthenticated) {
+        // The signing authentication is mobile only, so elsewhere no app is ever confirmed for
+        const isSigningAuthRequired =
+          this.#platform === 'mobile-android' || this.#platform === 'mobile-ios'
+        if (
+          autoLoginStatus === 'active' &&
+          (!isSigningAuthRequired || dapp?.signingAuthenticated)
+        ) {
           // Sign and respond
           const signedMessage = await this.#autoLogin.autoLogin({
             message: rawMessage as `0x${string}`,

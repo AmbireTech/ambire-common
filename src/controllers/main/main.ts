@@ -685,6 +685,7 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       storage: this.storage,
       featureFlags: this.featureFlags,
+      platform,
       signAccountOpPreference: this.signAccountOpPreference,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,

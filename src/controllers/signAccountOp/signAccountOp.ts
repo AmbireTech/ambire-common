@@ -127,6 +127,7 @@ import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
 import { getSafeTxn } from '../../libs/safe/helpers'
 import {
+  canHotOwnersMeetSafeThreshold,
   confirm,
   getAlreadySignedOwners,
   getImportedSignersThatHaveNotSigned,
@@ -688,8 +689,15 @@ export class SignAccountOpController
   /**
    * Why this account op needs the password/biometrics confirmation, or `null` when it does not.
    * Read live for the dapps, whose stored flag can change while the request is on screen.
+   * A Safe needs it only when its hot owners can meet the threshold on their own.
    */
   get signingAuthRequirement(): SigningAuthRequirement | null {
+    if (
+      this.account.safeCreation &&
+      !canHotOwnersMeetSafeThreshold(this.accountKeyStoreKeys, this.threshold)
+    )
+      return null
+
     const unauthenticatedDapps = getUnauthenticatedDapps(
       this.#accountOp.calls.map((call) =>
         call.dapp?.id ? this.#dapps.getDapp(call.dapp.id) : undefined

@@ -400,6 +400,7 @@ requestsCtrl = new RequestsController({
   providers: providersCtrl,
   storage: storageCtrl,
   featureFlags: featureFlagsCtrl,
+  platform: 'browser-webkit',
   signAccountOpPreference,
   selectedAccount: selectedAccountCtrl,
   keystore,
