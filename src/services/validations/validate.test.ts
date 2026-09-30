@@ -10,6 +10,8 @@ const CHANGED_MESSAGE =
   'This name now resolves to a different address than the last time you sent to it. Verify the new recipient before proceeding.'
 const BLACKLISTED_MESSAGE =
   'This address is known for stealing funds. Anything you send to it will be lost.'
+const VIEW_ONLY_MESSAGE =
+  "This account is view-only in Ambire, so you can't move funds out of it from here. Make sure you can access it before you send."
 
 const networks: Network[] = []
 const accountStates: AccountStates = {}
@@ -21,6 +23,8 @@ const validate = (overrides: {
   isRecipientAddressUnknown?: boolean
   isDomain?: boolean
   isRecipientAddressBlacklisted?: boolean
+  lastRecipientTransactionDate?: Date | null
+  isRecipientAddressViewOnly?: boolean
 }) =>
   validateSendTransferAddress(
     RECIPIENT,
@@ -35,10 +39,11 @@ const validate = (overrides: {
     undefined,
     undefined,
     overrides.isRecipientAddressFirstTimeSend ?? false,
-    null,
+    overrides.lastRecipientTransactionDate ?? null,
     null,
     overrides.recipientDomainAddressChange ?? null,
-    overrides.isRecipientAddressBlacklisted ?? false
+    overrides.isRecipientAddressBlacklisted ?? false,
+    overrides.isRecipientAddressViewOnly ?? false
   )
 
 describe('validateSendTransferAddress - recipient domain address change', () => {
@@ -90,5 +95,40 @@ describe('validateSendTransferAddress - blacklisted recipient', () => {
     const result = validate({ isRecipientAddressBlacklisted: false })
 
     expect(result.message).not.toBe(BLACKLISTED_MESSAGE)
+  })
+})
+
+describe('validateSendTransferAddress - view-only recipient', () => {
+  it('warns instead of showing the last transaction as a success', () => {
+    const result = validate({
+      isRecipientAddressViewOnly: true,
+      isRecipientAddressFirstTimeSend: true,
+      lastRecipientTransactionDate: new Date()
+    })
+
+    // The transfer form requires hold-to-proceed for view-only recipients, so the message
+    // must not be a success message.
+    expect(result.severity).toBe('warning')
+    expect(result.message).toBe(VIEW_ONLY_MESSAGE)
+  })
+
+  it('does not take priority over the blacklisted recipient error', () => {
+    const result = validate({
+      isRecipientAddressViewOnly: true,
+      isRecipientAddressBlacklisted: true
+    })
+
+    expect(result.message).toBe(BLACKLISTED_MESSAGE)
+  })
+
+  it('does not warn when the recipient is not view-only', () => {
+    const result = validate({
+      isRecipientAddressViewOnly: false,
+      isRecipientAddressFirstTimeSend: true,
+      lastRecipientTransactionDate: new Date()
+    })
+
+    expect(result.message).not.toBe(VIEW_ONLY_MESSAGE)
+    expect(result.severity).toBe('success')
   })
 })
