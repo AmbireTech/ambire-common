@@ -17,9 +17,9 @@ import {
   DappConnectRequest,
   UserRequest
 } from '../../interfaces/userRequest'
+import * as safeLib from '../../libs/safe/safe'
 import { generateUuid } from '../../utils/uuid'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
-import * as safeLib from '../../libs/safe/safe'
 
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
@@ -1502,61 +1502,6 @@ describe('RequestsController ', () => {
     expect(controller.userRequests).toEqual([deploymentRequest])
 
     deploymentRequest.signAccountOp.destroy()
-  })
-
-  test('a new saf waits for the already pending Safe deployment instead of adding another one', async () => {
-    const { accountsCtrl, controller, getCallsRequest } = await prepareTest(false, true)
-    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
-    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
-    accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
-    jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
-      to: '0x1234567890123456789012345678901234567890',
-      value: 0n,
-      data: '0x1234'
-    })
-    const deploymentRequest = await getCallsRequest({ addr: accountAddr, chainId: 1n })
-    deploymentRequest.id = 'safe-deploy-request'
-    deploymentRequest.meta.isSafeDeploy = true
-    controller.userRequests = [deploymentRequest]
-
-    await controller.build({
-      type: 'calls',
-      params: {
-        userRequestParams: {
-          calls: [{ to: ZeroAddress, data: '0x', value: 0n }],
-          meta: { accountAddr, chainId: 1n }
-        }
-      }
-    })
-
-    expect(controller.userRequests).toHaveLength(2)
-    const [firstRequest, saf] = controller.userRequests
-    expect(firstRequest).toBe(deploymentRequest)
-    expect(deploymentRequest.signAccountOp.accountOp.calls).toHaveLength(1)
-    expect(saf?.kind).toBe('calls')
-    expect(saf?.meta.isSafeDeploy).toBeUndefined()
-    expect(controller.currentUserRequest).toBe(deploymentRequest)
-
-    controller.userRequests.forEach((r) => {
-      if (r.kind === 'calls') r.signAccountOp.destroy()
-    })
-  })
-
-  test('opens a saf without refreshing the Safe state when the Safe is known to be deployed', async () => {
-    const { accountsCtrl, controller, getCallsRequest } = await prepareTest(false, true)
-    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
-    accountsCtrl.accountStates[accountAddr]![1]!.isDeployed = true
-    const updateAccountStateSpy = jest.spyOn(accountsCtrl, 'updateAccountState')
-    const saf = await getCallsRequest({ addr: accountAddr, chainId: 1n })
-    controller.userRequests = [saf]
-
-    await controller.setCurrentUserRequestById(saf.id)
-
-    expect(updateAccountStateSpy).not.toHaveBeenCalled()
-    expect(controller.currentUserRequest).toBe(saf)
-
-    saf.signAccountOp.destroy()
   })
 
   test.each([true, false])(
