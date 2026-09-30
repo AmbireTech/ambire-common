@@ -1404,6 +1404,47 @@ describe('RequestsController ', () => {
     expect(reject).toHaveBeenCalledTimes(1)
   })
 
+  test.each([true, false])(
+    'does not build a Safe deployment for a 7702 EOA when setDelegation is %s',
+    async (setDelegation) => {
+      const { accountsCtrl, controller } = await prepareTest(false)
+      const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
+      account.creation = null
+      account.safeCreation = undefined
+
+      Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
+        state.isDeployed = false
+      })
+      accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
+      const accountState = accountsCtrl.accountStates[accountAddr]![1]!
+      accountState.isSmarterEoa = true
+      accountState.delegatedContract = '0x1234567890123456789012345678901234567890'
+      jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+      const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
+      const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+
+      await controller.build({
+        type: 'calls',
+        params: {
+          userRequestParams: {
+            calls: [{ to: ZeroAddress, data: '0x', value: 0n }],
+            meta: { accountAddr, chainId: 1n, setDelegation }
+          }
+        }
+      })
+
+      expect(findDeployDataSpy).not.toHaveBeenCalled()
+      expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+      expect(controller.userRequests).toHaveLength(1)
+      expect(controller.userRequests[0]?.meta.isSafeDeploy).toBeUndefined()
+
+      if (controller.userRequests[0]?.kind === 'calls') {
+        controller.userRequests[0].signAccountOp.destroy()
+      }
+    }
+  )
+
   test('refreshes the confirmed Safe state before opening the request paired with its deployment', async () => {
     const { accountsCtrl, accountAddr, benzinRequest, chainId, controller, transactionRequest } =
       await prepareSafeDeploymentHandoff()
@@ -1510,11 +1551,17 @@ describe('RequestsController ', () => {
     transactionRequest.signAccountOp.destroy()
   })
 
-  test('recovers and stores missing Safe deployment data before building the deployment', async () => {
+  test('recovers and stores incomplete Safe deployment data before building the deployment', async () => {
     const { accountsCtrl, controller, storageCtrl } = await prepareTest(true, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
-    account.safeCreation = undefined
+    account.safeCreation = {
+      factoryAddr: '0x',
+      singleton: '0x',
+      saltNonce: '0x',
+      setupData: '0x',
+      version: ''
+    }
 
     Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
       state.isDeployed = false
@@ -1572,11 +1619,17 @@ describe('RequestsController ', () => {
     )
   })
 
-  test('rejects a Safe deployment when missing creation data cannot be recovered', async () => {
+  test('rejects a Safe deployment when incomplete creation data cannot be recovered', async () => {
     const { accountsCtrl, controller } = await prepareTest(true, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
-    account.safeCreation = undefined
+    account.safeCreation = {
+      factoryAddr: '0x',
+      singleton: '0x',
+      saltNonce: '0x',
+      setupData: '0x',
+      version: ''
+    }
 
     Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
       state.isDeployed = false
@@ -1591,7 +1644,9 @@ describe('RequestsController ', () => {
       saltNonce: '0x',
       version: ''
     })
-    const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+    const getSafeDeploymentCallSpy = jest
+      .spyOn(safeLib, 'getSafeDeploymentCall')
+      .mockResolvedValue(null)
     const reject = jest.fn()
 
     await controller.build({
@@ -1612,7 +1667,7 @@ describe('RequestsController ', () => {
     })
 
     expect(controller.userRequests).toEqual([])
-    expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+    expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
     expect(reject).toHaveBeenCalledWith(
       expect.objectContaining({
         message: expect.stringContaining("can't be deployed using its saved setup")

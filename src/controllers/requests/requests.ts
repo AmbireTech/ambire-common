@@ -2712,9 +2712,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const safeDeploymentSourceNetworks = this.#getPossibleSafeDeploymentSourceNetworks(
         account.addr
       )
-      const isSafeAccount =
-        !!account.safeCreation ||
-        (account.creation === null && safeDeploymentSourceNetworks.length > 0)
+      const isSafeAccount = !!account.safeCreation
 
       // safe account, not deployed and this isn't the deploy txn
       if (isSafeAccount && !accountState.isDeployed && !meta.isSafeDeploy) {
