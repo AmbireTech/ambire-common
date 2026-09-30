@@ -10,7 +10,7 @@ import { TokenResult } from '../portfolio'
 import {
   attemptToSortTokensByMarketCap,
   calculateAmountWarnings,
-  enrichRouteWithOutputUsdPrice,
+  enrichRouteWithOutputTokenPrice,
   getFeeTokenForSponsorship,
   getIsBridgeRoute,
   getIsIntentRoute,
@@ -449,8 +449,8 @@ describe('swapAndBridge lib', () => {
     })
   })
 
-  describe('enrichRouteWithOutputUsdPrice', () => {
-    test('uses the fetched output token price and preserves the provider gas cost', () => {
+  describe('enrichRouteWithOutputTokenPrice', () => {
+    test('uses the fetched token price for warnings when the provider price is missing', () => {
       const selectedRoute = createMockRoute({
         inputValueInUsd: 100,
         outputValueInUsd: 95,
@@ -462,16 +462,18 @@ describe('swapAndBridge lib', () => {
       if (!selectedRoute) return
 
       selectedRoute.toAmount = parseUnits('50', 6).toString()
-      selectedRoute.outputValueAfterGasInUsd = 90
+      delete (selectedRoute.toToken as { priceUSD?: string }).priceUSD
 
-      const result = enrichRouteWithOutputUsdPrice(selectedRoute, 2)
+      expect(calculateAmountWarnings(selectedRoute, '100', '1', 18)).toBeNull()
 
-      expect(result.outputValueInUsd).toBe(100)
-      expect(result.outputValueAfterGasInUsd).toBe(95)
+      const result = enrichRouteWithOutputTokenPrice(selectedRoute, 2)
+
+      expect(result.outputValueInUsd).toBe(95)
       expect(result.toToken.priceUSD).toBe('2')
+      expect(calculateAmountWarnings(result, '100', '1', 18)).not.toBeNull()
     })
 
-    test('keeps provider USD values when the fetched token price is unavailable', () => {
+    test('does not change routes from providers that supply their own token price', () => {
       const selectedRoute = createMockRoute({
         inputValueInUsd: 100,
         outputValueInUsd: 95,
@@ -481,8 +483,7 @@ describe('swapAndBridge lib', () => {
       expect(selectedRoute).toBeDefined()
       if (!selectedRoute) return
 
-      expect(enrichRouteWithOutputUsdPrice(selectedRoute)).toBe(selectedRoute)
-      expect(enrichRouteWithOutputUsdPrice(selectedRoute, null)).toBe(selectedRoute)
+      expect(enrichRouteWithOutputTokenPrice(selectedRoute, 2)).toBe(selectedRoute)
     })
   })
 

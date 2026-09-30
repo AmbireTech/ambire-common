@@ -3,7 +3,13 @@ import { ZeroAddress } from 'ethers'
 import { describe, expect, it } from '@jest/globals'
 
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
-import { getFeeToken, getFlags, isSuspectedRegardsKnownAddresses } from './tokenProcessing'
+import {
+  getFeeToken,
+  getFlags,
+  isFiatLikeSymbol,
+  isSuspectedRegardsKnownAddresses,
+  isSuspectedToken
+} from './tokenProcessing'
 
 const USDT_ETHEREUM = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
 const WETH_OPTIMISM = '0x4200000000000000000000000000000000000006'
@@ -126,5 +132,176 @@ describe('getFlags fee token flags', () => {
     expect(flags.onGasTank).toBe(true)
     expect(flags.canTopUpGasTank).toBe(true)
     expect(flags.isFeeToken).toBe(true)
+  })
+})
+
+describe('isFiatLikeSymbol', () => {
+  it('flags a symbol that is only a fiat currency sign', () => {
+    expect(isFiatLikeSymbol('$')).toBe(true)
+    expect(isFiatLikeSymbol('€')).toBe(true)
+    expect(isFiatLikeSymbol('£')).toBe(true)
+    expect(isFiatLikeSymbol('¥')).toBe(true)
+  })
+
+  it('flags a fiat currency sign as the first character, followed by an amount', () => {
+    expect(isFiatLikeSymbol('$100')).toBe(true)
+    expect(isFiatLikeSymbol('€500')).toBe(true)
+    expect(isFiatLikeSymbol('$1000')).toBe(true)
+    expect(isFiatLikeSymbol('$1.000')).toBe(true)
+    expect(isFiatLikeSymbol('$1,000')).toBe(true)
+    expect(isFiatLikeSymbol('€1.000,1')).toBe(true)
+    expect(isFiatLikeSymbol('$1,000.0')).toBe(true)
+    expect(isFiatLikeSymbol('$ 1,000')).toBe(true)
+  })
+
+  it('flags a fiat currency sign next to an amount with a size suffix', () => {
+    expect(isFiatLikeSymbol('$100K')).toBe(true)
+    expect(isFiatLikeSymbol('$100k')).toBe(true)
+    expect(isFiatLikeSymbol('$1.5M')).toBe(true)
+    expect(isFiatLikeSymbol('€2B')).toBe(true)
+    expect(isFiatLikeSymbol('$1T')).toBe(true)
+    expect(isFiatLikeSymbol('$ 100 K')).toBe(true)
+    expect(isFiatLikeSymbol('100K$')).toBe(true)
+    expect(isFiatLikeSymbol('1,5M €')).toBe(true)
+  })
+
+  it('flags a fiat currency sign next to a fiat currency code', () => {
+    expect(isFiatLikeSymbol('$USD')).toBe(true)
+    expect(isFiatLikeSymbol('$usd')).toBe(true)
+    expect(isFiatLikeSymbol('USD$')).toBe(true)
+    expect(isFiatLikeSymbol('€EUR')).toBe(true)
+    expect(isFiatLikeSymbol('$ EUR')).toBe(true)
+    expect(isFiatLikeSymbol('GBP £')).toBe(true)
+    expect(isFiatLikeSymbol('$U\u200bSD')).toBe(true)
+  })
+
+  it('flags a fiat currency sign next to an amount that uses spaces between digit groups', () => {
+    expect(isFiatLikeSymbol('$1 000')).toBe(true)
+    expect(isFiatLikeSymbol('\u20ac1 000 000,50')).toBe(true)
+    expect(isFiatLikeSymbol('1 000 \u20ac')).toBe(true)
+    // no-break and narrow no-break spaces become a plain space after NFKC
+    expect(isFiatLikeSymbol('\u20ac1\u00a0000')).toBe(true)
+    expect(isFiatLikeSymbol('1\u202f000\u20ac')).toBe(true)
+  })
+
+  it('flags a fiat currency sign next to an amount and a fiat currency code', () => {
+    expect(isFiatLikeSymbol('$100 USD')).toBe(true)
+    expect(isFiatLikeSymbol('$100USD')).toBe(true)
+    expect(isFiatLikeSymbol('$1.5M usd')).toBe(true)
+    expect(isFiatLikeSymbol('$USD 100')).toBe(true)
+    expect(isFiatLikeSymbol('EUR 1 000\u20ac')).toBe(true)
+    expect(isFiatLikeSymbol('100 EUR \u20ac')).toBe(true)
+    expect(isFiatLikeSymbol('$100 U\u200bSD')).toBe(true)
+  })
+
+  it('flags a fiat currency sign next to an amount or a fiat currency code, with other text after it', () => {
+    expect(isFiatLikeSymbol('$100 USDC')).toBe(true)
+    expect(isFiatLikeSymbol('$100 PEPE')).toBe(true)
+    expect(isFiatLikeSymbol('$100 KRW')).toBe(true)
+    expect(isFiatLikeSymbol('$USD USD')).toBe(true)
+    expect(isFiatLikeSymbol('$100 USD 100')).toBe(true)
+    expect(isFiatLikeSymbol('$1  000')).toBe(true)
+    expect(isFiatLikeSymbol('$1 000 ETH')).toBe(true)
+    expect(isFiatLikeSymbol('$100\tClaim')).toBe(true)
+    expect(isFiatLikeSymbol('Claim 100 €')).toBe(true)
+  })
+
+  it('flags a fiat currency sign as the last character, after an amount', () => {
+    expect(isFiatLikeSymbol('100$')).toBe(true)
+    expect(isFiatLikeSymbol('1.000€')).toBe(true)
+    expect(isFiatLikeSymbol('1,000.0£')).toBe(true)
+    expect(isFiatLikeSymbol('1000 €')).toBe(true)
+  })
+
+  it('does not flag a fiat currency sign next to text or in the middle', () => {
+    expect(isFiatLikeSymbol('$ Claim at scam.xyz')).toBe(false)
+    expect(isFiatLikeSymbol('US$')).toBe(false)
+    expect(isFiatLikeSymbol('$KRW')).toBe(false)
+    expect(isFiatLikeSymbol('1$0')).toBe(false)
+    expect(isFiatLikeSymbol('$100$')).toBe(false)
+    expect(isFiatLikeSymbol('$$')).toBe(false)
+  })
+
+  it('does not flag a fiat currency sign with something that is not a plain amount', () => {
+    expect(isFiatLikeSymbol('$1..0')).toBe(false)
+    expect(isFiatLikeSymbol('$.5')).toBe(false)
+    expect(isFiatLikeSymbol('$5.')).toBe(false)
+    expect(isFiatLikeSymbol('$-100')).toBe(false)
+    expect(isFiatLikeSymbol('$100KK')).toBe(false)
+    expect(isFiatLikeSymbol('$100X')).toBe(false)
+    expect(isFiatLikeSymbol('$K')).toBe(false)
+    expect(isFiatLikeSymbol('$.5M')).toBe(false)
+    expect(isFiatLikeSymbol('$KM')).toBe(false)
+  })
+
+  it('flags a symbol that is exactly a fiat currency code, in any case', () => {
+    expect(isFiatLikeSymbol('USD')).toBe(true)
+    expect(isFiatLikeSymbol('eur')).toBe(true)
+    expect(isFiatLikeSymbol(' GBP ')).toBe(true)
+  })
+
+  it('flags look-alike and hidden-character variants', () => {
+    // full-width dollar sign and full-width letters fold to their plain form
+    expect(isFiatLikeSymbol('＄')).toBe(true)
+    expect(isFiatLikeSymbol('ＵＳＤ')).toBe(true)
+    expect(isFiatLikeSymbol('＄１００')).toBe(true)
+    // zero-width space inside the code or the amount
+    expect(isFiatLikeSymbol('U\u200bSD')).toBe(true)
+    expect(isFiatLikeSymbol('\ufeffEUR\u200d')).toBe(true)
+    expect(isFiatLikeSymbol('$\u200b100')).toBe(true)
+    expect(isFiatLikeSymbol('\u200b$')).toBe(true)
+  })
+
+  it('does not flag "$"-prefixed tickers used by real tokens', () => {
+    expect(isFiatLikeSymbol('$PEPE')).toBe(false)
+    expect(isFiatLikeSymbol('$DG')).toBe(false)
+    expect(isFiatLikeSymbol('$ZKP')).toBe(false)
+    expect(isFiatLikeSymbol('$PEPE2')).toBe(false)
+  })
+
+  it('does not flag regular symbols, stablecoins or crypto signs', () => {
+    expect(isFiatLikeSymbol('ETH')).toBe(false)
+    expect(isFiatLikeSymbol('USDC')).toBe(false)
+    expect(isFiatLikeSymbol('USDT')).toBe(false)
+    expect(isFiatLikeSymbol('EURC')).toBe(false)
+    expect(isFiatLikeSymbol('USD₮0')).toBe(false)
+    // a visible non-ASCII character is not removed, so it does not reveal a fiat code
+    expect(isFiatLikeSymbol('USD₮')).toBe(false)
+    expect(isFiatLikeSymbol('ЕUR')).toBe(false)
+    expect(isFiatLikeSymbol('₿')).toBe(false)
+  })
+
+  it('does not flag an empty symbol', () => {
+    expect(isFiatLikeSymbol('')).toBe(false)
+    expect(isFiatLikeSymbol('   ')).toBe(false)
+  })
+})
+
+describe('isSuspectedToken fiat symbols', () => {
+  it('returns "suspected" for an unknown token with a fiat-like symbol', () => {
+    expect(isSuspectedToken(NOT_A_FEE_TOKEN, '$', 1n)).toBe('suspected')
+    expect(isSuspectedToken(NOT_A_FEE_TOKEN, 'USD', 1n)).toBe('suspected')
+    expect(isSuspectedToken(NOT_A_FEE_TOKEN, '€500', 1n)).toBe('suspected')
+  })
+
+  it('trusts a known token on its own chain before the fiat rule runs', () => {
+    expect(isSuspectedToken(USDT_ETHEREUM, 'USD', 1n)).toBeNull()
+  })
+
+  it('still returns "suspected" for a same-symbol spoof', () => {
+    expect(isSuspectedToken(NOT_A_FEE_TOKEN, 'USDC', 1n)).toBe('suspected')
+  })
+
+  it('returns null for an unknown token with a regular symbol', () => {
+    expect(isSuspectedToken(NOT_A_FEE_TOKEN, 'RND', 1n)).toBeNull()
+  })
+})
+
+describe('getFlags fiat symbols', () => {
+  it('sets suspectedType for a fiat-like symbol only for tokens in a simulation', () => {
+    expect(getFlags({}, '1', 1n, NOT_A_FEE_TOKEN, 'Dollar', '$', true).suspectedType).toBe(
+      'suspected'
+    )
+    expect(getFlags({}, '1', 1n, NOT_A_FEE_TOKEN, 'Dollar', '$').suspectedType).toBeNull()
   })
 })
