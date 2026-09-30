@@ -182,6 +182,8 @@ let runningSyncs: RunningSync[] = []
 let notesBySeed: { [seedId: string]: { label: bigint; amount: bigint; approved: boolean }[] } = {}
 /** What `prepareUnshield` returns, or null for it to fail like proving did. */
 let preparedWithdrawal: ReturnType<typeof buildPreparedWithdrawal> | null = null
+/** What `prepareUnshield` throws instead, when set - the SDK's thunks throw plain objects, not `Error`s. */
+let prepareUnshieldFailure: unknown = null
 /** How the node answers `eth_simulateV1`. */
 let simulateWithdrawal: () => Promise<unknown> = async () => successfulSimulation()
 let rpcNoStateOverride = false
@@ -239,6 +241,7 @@ class FakeProtocol {
   // would, for tests that check what happens before one is asked for
   async prepareUnshield() {
     this.syncCountWhenProving = this.syncCount
+    if (prepareUnshieldFailure) throw prepareUnshieldFailure
     if (preparedWithdrawal) return preparedWithdrawal
 
     throw new Error('prepareUnshield is not faked')
@@ -410,6 +413,7 @@ describe('PrivacyPoolsController', () => {
     fakeFetch.mockClear()
     preparedDepositTarget = ETHEREUM_ENTRYPOINT
     preparedWithdrawal = null
+    prepareUnshieldFailure = null
     simulateWithdrawal = async () => successfulSimulation()
     rpcNoStateOverride = false
     notesBySeed = {
@@ -600,6 +604,30 @@ describe('PrivacyPoolsController', () => {
       await secondA
 
       expect(protocols.filter((protocol) => protocol.seedId === 'seed-a')).toHaveLength(2)
+    })
+
+    it('tells the most one transfer can send apart from the whole approved balance', async () => {
+      notesBySeed['seed-a'] = [
+        { label: 1n, amount: 10n, approved: true },
+        { label: 2n, amount: 30n, approved: true },
+        { label: 3n, amount: 50n, approved: false }
+      ]
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+
+      // A transfer spends one note, so the pending one does not count even though it is larger
+      expect(controller.balances['1']).toEqual([
+        expect.objectContaining({
+          approvedAmount: 40n,
+          maxWithdrawAmount: 30n,
+          pendingAmount: 50n,
+          totalAmount: 90n
+        })
+      ])
     })
 
     it('keeps notes across account switches without syncing again', async () => {
@@ -1181,6 +1209,55 @@ describe('PrivacyPoolsController', () => {
 
       return test
     }
+
+    /** How the SDK's `unwrapResult` rethrows a thunk's failure: serialized, not an `Error`. */
+    const toThunkFailure = (message: string) => ({
+      name: 'Error',
+      message,
+      stack: `Error: ${message}\n    at paymasterWithdrawThunk`
+    })
+
+    const prepareFailingWithdrawal = async () => {
+      const test = await prepareTest()
+      test.selectedAccount.select('seed-a')
+
+      await test.controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        amount: WITHDRAWAL_AMOUNT,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+
+      return test
+    }
+
+    it('explains a fee above the amount, although the SDK throws it from a thunk', async () => {
+      prepareUnshieldFailure = toThunkFailure(
+        'Withdrawal amount too small to cover the sponsored gas fee'
+      )
+
+      const { controller } = await prepareFailingWithdrawal()
+
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error:
+          'This amount is too small to cover the network fee for sending it. Please try a larger amount.'
+      })
+    })
+
+    it('keeps what the SDK said about a failure it cannot explain to the user', async () => {
+      prepareUnshieldFailure = toThunkFailure('Leaf not found in the leaves array.')
+
+      const { controller } = await prepareFailingWithdrawal()
+
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error: 'The transfer could not be prepared. Please try again.'
+      })
+      const emitted = controller.emittedErrors.at(-1)
+      expect(emitted?.level).toBe('major')
+      expect(emitted?.error.message).toBe('Leaf not found in the leaves array.')
+    })
 
     it('shows what a proved transfer costs by running it, next to the most it can cost', async () => {
       const { controller, providers } = await prepareSignedWithdrawal()

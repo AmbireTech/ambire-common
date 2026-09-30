@@ -56,6 +56,7 @@ import { encodePrivacyPoolsDeposit, readPrivacyPoolsDeposit } from '../../libs/p
 import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
 import { fetchPrivacyPoolsPrices } from '../../libs/privacyPools/prices'
 import { readPaymasterWithdrawal } from '../../libs/privacyPools/paymasterWithdrawal'
+import { toPrivacyPoolsSdkError } from '../../libs/privacyPools/sdkError'
 import {
   PrivacyPoolsSerializedUserOperation,
   estimatePaymasterWithdrawalFee
@@ -125,23 +126,24 @@ type PreparedPaymasterWithdrawal = Extract<
 
 /**
  * What the SDK throws when the paymaster's gas fee would exceed the withdrawn amount. Matched by
- * its exact wording because the SDK throws a plain `Error` with no code to tell it apart.
+ * its exact wording because the SDK throws a plain `Error` with no code to tell it apart - and from
+ * inside a thunk, so it arrives as a plain object; see `toPrivacyPoolsSdkError`.
  */
 const FEE_ABOVE_AMOUNT_SDK_MESSAGE = 'Withdrawal amount too small to cover the sponsored gas fee'
 
 /**
  * Turns the one SDK failure a user can act on into a sentence they can read. Everything else is
- * passed through, and shown as the generic fallback.
+ * passed through as an `Error` with the SDK's message, and shown as the generic fallback.
  */
-const toReadableWithdrawalError = (error: any) => {
-  if (!(error instanceof Error) || !error.message.includes(FEE_ABOVE_AMOUNT_SDK_MESSAGE))
-    return error
+const toReadableWithdrawalError = (error: unknown) => {
+  const sdkError = toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
+  if (!sdkError.message.includes(FEE_ABOVE_AMOUNT_SDK_MESSAGE)) return sdkError
 
   return new EmittableError({
     message:
       'This amount is too small to cover the network fee for sending it. Please try a larger amount.',
     level: 'expected',
-    error
+    error: sdkError
   })
 }
 
@@ -567,12 +569,17 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
             decimals: asset?.decimals ?? 0,
             isNative: asset?.isNative ?? isPrivacyPoolsNativeAsset(key),
             approvedAmount: 0n,
+            maxWithdrawAmount: 0n,
             pendingAmount: 0n,
             totalAmount: 0n
           }
 
-          if (note.approval === 'approved') entry.approvedAmount += note.amount
-          else entry.pendingAmount += note.amount
+          if (note.approval === 'approved') {
+            entry.approvedAmount += note.amount
+            if (note.amount > entry.maxWithdrawAmount) entry.maxWithdrawAmount = note.amount
+          } else {
+            entry.pendingAmount += note.amount
+          }
 
           entry.totalAmount += note.amount
           byToken.set(key, entry)
@@ -1812,7 +1819,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.emitError({
       message,
       level: 'major',
-      error: error instanceof Error ? error : new Error('privacyPools: withdrawal failed')
+      error: toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
     })
 
     return message

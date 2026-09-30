@@ -11,6 +11,7 @@ const getBalance = (overrides: Partial<PrivacyPoolsTokenBalance>): PrivacyPoolsT
   decimals: 18,
   isNative: true,
   approvedAmount: 0n,
+  maxWithdrawAmount: 0n,
   pendingAmount: 0n,
   totalAmount: 0n,
   ...overrides

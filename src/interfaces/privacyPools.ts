@@ -124,6 +124,11 @@ export type PrivacyPoolsTokenBalance = {
   decimals: number
   isNative: boolean
   approvedAmount: bigint
+  /**
+   * The most one withdrawal can send: the largest approved note. A withdrawal spends a single note,
+   * so `approvedAmount` spread over several notes cannot all go out at once.
+   */
+  maxWithdrawAmount: bigint
   pendingAmount: bigint
   totalAmount: bigint
 }
