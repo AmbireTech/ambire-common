@@ -324,6 +324,144 @@ describe('KeystoreController', () => {
     ).toEqual(1)
   })
 
+  test('should safely migrate a verified Trezor key to OneKey', async () => {
+    const migrationStorageCtrl = new StorageController(produceMemoryStore())
+    const migrationKeystore = new KeystoreController(
+      'default',
+      migrationStorageCtrl,
+      keystoreSigners,
+      uiCtrl
+    )
+    await migrationKeystore.addSecret('password', pass, '', false)
+    const addr = '0x1111111111111111111111111111111111111111'
+    const createdAt = new Date().getTime()
+    await migrationKeystore.addKeysExternallyStored([
+      {
+        addr,
+        type: 'trezor',
+        dedicatedToOneSA: true,
+        label: 'Trezor Key 7',
+        meta: {
+          deviceId: 'trezor-device',
+          deviceModel: 'Trezor Model T',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 7,
+          createdAt
+        }
+      },
+      {
+        addr: '0x4444444444444444444444444444444444444444',
+        type: 'trezor',
+        dedicatedToOneSA: false,
+        label: 'Trezor Key 8',
+        meta: {
+          deviceId: 'trezor-device',
+          deviceModel: 'Trezor Model T',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 8,
+          createdAt
+        }
+      }
+    ])
+
+    const migrated = await migrationKeystore.migrateExternalKeyType(addr, 'trezor', 'onekey', {
+      deviceId: 'onekey-device',
+      deviceModel: 'OneKey Pro'
+    })
+
+    expect(migrated).toEqual(
+      expect.objectContaining({
+        addr,
+        type: 'onekey',
+        label: 'OneKey Key 7',
+        dedicatedToOneSA: true,
+        meta: expect.objectContaining({
+          deviceId: 'onekey-device',
+          deviceModel: 'OneKey Pro',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 7,
+          createdAt
+        })
+      })
+    )
+    expect(migrationKeystore.keys.some((key) => key.addr === addr && key.type === 'trezor')).toBe(
+      false
+    )
+    expect(
+      migrationKeystore.keys.some(
+        (key) =>
+          key.addr === '0x4444444444444444444444444444444444444444' &&
+          key.type === 'onekey'
+      )
+    ).toBe(true)
+  })
+
+  test('should deduplicate an existing OneKey target during migration', async () => {
+    const migrationStorageCtrl = new StorageController(produceMemoryStore())
+    const migrationKeystore = new KeystoreController(
+      'default',
+      migrationStorageCtrl,
+      keystoreSigners,
+      uiCtrl
+    )
+    await migrationKeystore.addSecret('password', pass, '', false)
+    const addr = '0x2222222222222222222222222222222222222222'
+    const baseMeta = {
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      index: 2,
+      createdAt: new Date().getTime()
+    }
+    await migrationKeystore.addKeysExternallyStored([
+      {
+        addr,
+        type: 'trezor',
+        dedicatedToOneSA: false,
+        label: 'Trezor Key 2',
+        meta: { ...baseMeta, deviceId: 'trezor-device', deviceModel: 'Trezor' }
+      },
+      {
+        addr,
+        type: 'onekey',
+        dedicatedToOneSA: false,
+        label: 'OneKey Key 2',
+        meta: { ...baseMeta, deviceId: 'old-device', deviceModel: 'OneKey' }
+      }
+    ])
+
+    await migrationKeystore.migrateExternalKeyType(addr, 'trezor', 'onekey', {
+      deviceId: 'current-device',
+      deviceModel: 'OneKey Pro'
+    })
+    await migrationKeystore.migrateExternalKeyType(addr, 'trezor', 'onekey', {
+      deviceId: 'current-device',
+      deviceModel: 'OneKey Pro'
+    })
+
+    expect(
+      migrationKeystore.keys.filter((key) => key.addr === addr && key.type === 'onekey')
+    ).toHaveLength(1)
+    expect(migrationKeystore.keys.some((key) => key.addr === addr && key.type === 'trezor')).toBe(
+      false
+    )
+  })
+
+  test('should refuse to migrate a key that does not exist', async () => {
+    const migrationKeystore = new KeystoreController(
+      'default',
+      new StorageController(produceMemoryStore()),
+      keystoreSigners,
+      uiCtrl
+    )
+    await expect(
+      migrationKeystore.migrateExternalKeyType(
+        '0x3333333333333333333333333333333333333333',
+        'trezor',
+        'onekey',
+        { deviceId: 'onekey-device', deviceModel: 'OneKey Pro' }
+      )
+    ).rejects.toThrow('external key to migrate was not found')
+  })
+
   test('should change keystore password', async () => {
     await keystore.changeKeystorePassword(`${pass}1`, pass)
 

@@ -46,6 +46,7 @@ export interface ExternalSignerController {
   isInitiated?: boolean // Trezor specific
   initialLoadPromise?: Promise<void> // Trezor specific
   retrieveAddresses?: (paths: string[]) => Promise<string[]> // Ledger specific
+  connect?: (preferredDeviceId?: string) => Promise<void> // OneKey specific
   // TODO: Refine the rest of the props
   isWebHID?: boolean // Ledger specific
   singerEth?: any // Ledger specific
@@ -209,7 +210,7 @@ export type NfcWalletType = 'keycard' // We can add more supported NFC (tap-to-s
 
 export type ExternalKey = {
   addr: Account['addr']
-  type: 'trezor' | 'ledger' | 'lattice' | 'qr' | 'nfc' | 'pq1'
+  type: 'trezor' | 'onekey' | 'ledger' | 'lattice' | 'qr' | 'nfc' | 'pq1'
   label: string
   dedicatedToOneSA: boolean
   meta: {
