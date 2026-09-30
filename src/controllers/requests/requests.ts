@@ -130,9 +130,9 @@ const ONE_CLICK_WINDOW_SIZE = {
 }
 
 const SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE =
-  "This Safe account isn't deployed on this network, and it can't be deployed using its saved setup. Please deploy it through Safe Global before trying again."
+  "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
 const SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE =
-  "The Safe account deployment hasn't been confirmed yet. Please wait a moment and try again."
+  'Your Safe account is still being activated on this network. Wait a moment, then try again.'
 
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
@@ -751,7 +751,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.emitError({
         level: 'major',
         message:
-          "We couldn't check whether your Safe account has finished deploying. Please wait a moment and try again.",
+          "We couldn't check if your Safe account is active on this network. Wait a moment, then try again.",
         error: error instanceof Error ? error : new Error(String(error))
       })
       return false

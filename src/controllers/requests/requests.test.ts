@@ -1631,7 +1631,28 @@ describe('RequestsController ', () => {
     expect(emitErrorSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         level: 'expected',
-        message: expect.stringContaining("deployment hasn't been confirmed")
+        message:
+          'Your Safe account is still being activated on this network. Wait a moment, then try again.'
+      })
+    )
+
+    transactionRequest.signAccountOp.destroy()
+  })
+
+  test('keeps Benzin open when the paired request is selected while activation is pending', async () => {
+    const { accountsCtrl, benzinRequest, controller, transactionRequest } =
+      await prepareSafeDeploymentHandoff()
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+    const emitErrorSpy = jest.spyOn(controller, 'emitError')
+
+    await controller.setCurrentUserRequestById(transactionRequest.id)
+
+    expect(controller.currentUserRequest).toBe(benzinRequest)
+    expect(emitErrorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'expected',
+        message:
+          'Your Safe account is still being activated on this network. Wait a moment, then try again.'
       })
     )
 
@@ -1654,10 +1675,38 @@ describe('RequestsController ', () => {
     expect(emitErrorSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         level: 'major',
-        message: expect.stringContaining("couldn't check whether your Safe account")
+        message:
+          "We couldn't check if your Safe account is active on this network. Wait a moment, then try again."
       })
     )
 
+    transactionRequest.signAccountOp.destroy()
+  })
+
+  test('opens the Safe activation request when the paired request is selected before signing', async () => {
+    const { accountsCtrl, controller, getCallsRequest } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.isDeployed = false
+    const activationRequest = await getCallsRequest({ addr: accountAddr, chainId })
+    activationRequest.id = 'safe-activation-request'
+    activationRequest.meta.isSafeDeploy = true
+    const transactionRequest = await getCallsRequest({ addr: accountAddr, chainId })
+    transactionRequest.id = 'safe-transaction-after-activation'
+    const emitErrorSpy = jest.spyOn(controller, 'emitError')
+    controller.userRequests = [activationRequest, transactionRequest]
+    controller.currentUserRequest = activationRequest
+
+    await controller.setCurrentUserRequestById(transactionRequest.id)
+
+    expect(controller.currentUserRequest).toBe(activationRequest)
+    expect(emitErrorSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'expected',
+        message: 'Activate your Safe account on this network first. Then you can continue.'
+      })
+    )
+    activationRequest.signAccountOp.destroy()
     transactionRequest.signAccountOp.destroy()
   })
 
@@ -1780,7 +1829,8 @@ describe('RequestsController ', () => {
     expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
     expect(reject).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining("can't be deployed using its saved setup")
+        message:
+          "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
       })
     )
   })
@@ -1821,7 +1871,8 @@ describe('RequestsController ', () => {
     expect(controller.userRequests).toEqual([])
     expect(reject).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining("can't be deployed using its saved setup")
+        message:
+          "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
       })
     )
   })

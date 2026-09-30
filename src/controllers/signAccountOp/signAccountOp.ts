@@ -1413,7 +1413,7 @@ export class SignAccountOpController
       !this.accountOp.meta?.isSafeDeploy
     ) {
       errors.push({
-        title: `Safe not deployed on ${this.#network.name}.`
+        title: `Your Safe account isn't active on ${this.#network.name} yet. Activate it first, then try again.`
       })
     }
 
