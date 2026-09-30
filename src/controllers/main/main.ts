@@ -49,6 +49,7 @@ import { TransferController } from '@/controllers/transfer/transfer'
 import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
 import { VerificationController } from '@/controllers/verification/verification'
+import { WalletTokenController } from '@/controllers/walletToken/walletToken'
 import { Account, IAccountsController } from '@/interfaces/account'
 import { IAccountPickerController } from '@/interfaces/accountPicker'
 import { IActivityController } from '@/interfaces/activity'
@@ -93,6 +94,7 @@ import { ITransfersScannerController } from '@/interfaces/transferScanner'
 import { isExtensionOverlayView, IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
+import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
 import {
@@ -202,6 +204,8 @@ export class MainController extends EventEmitter implements IMainController {
   contractNames: IContractNamesController
 
   contractInfo: IContractInfoController
+
+  walletToken: IWalletTokenController
 
   autoLogin: IAutoLoginController
 
@@ -528,6 +532,14 @@ export class MainController extends EventEmitter implements IMainController {
       },
       eventEmitterRegistry
     )
+    this.walletToken = new WalletTokenController({
+      eventEmitterRegistry,
+      storage: this.storage,
+      featureFlags: this.featureFlags,
+      providers: this.providers,
+      callRelayer: this.callRelayer,
+      activity: this.activity
+    })
     this.transferScanner = new TransfersScannerController({
       activity: this.activity,
       networks: this.networks,

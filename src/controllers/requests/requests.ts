@@ -88,6 +88,7 @@ import {
   buildSwitchAccountUserRequest,
   dappRequestMethodToRequestKind,
   getCallsUserRequestsByNetwork,
+  isSignedSafeCallsRequest,
   isSignRequest,
   messageOnNewRequest
 } from '../../libs/requests/requests'
@@ -423,6 +424,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#signAccountOpPreference.initialLoadPromise
   }
 
+  /**
+   * The requests that belong to the selected account, which is what the UI lists and what the
+   * user can open by picking one. It includes signed Safe transactions waiting in the Safe
+   * queue, so use `#autoTriggerUserRequests` to decide what the wallet opens (automatically) or keeps the
+   * request window open for on its own.
+   */
   get visibleUserRequests(): UserRequest[] {
     return this.userRequests.filter((r) => {
       if (r.kind === 'calls') {
@@ -445,6 +452,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       return true
     })
+  }
+
+  /**
+   * The visible requests the wallet may open, or keep the request window open for, without
+   * the user picking them. Signed Safe transactions are left out because they wait in the
+   * Safe queue and open only when the user picks one.
+   */
+  get #autoTriggerUserRequests(): UserRequest[] {
+    return this.visibleUserRequests.filter((r) => !isSignedSafeCallsRequest(r))
   }
 
   async addUserRequests(
@@ -678,11 +694,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       // we don't perform a dashboard simulation on partially signed Safe txns
       // until they are opened on the SignAccountOp screen
-      if (
-        !!curR.signAccountOp.account.safeCreation &&
-        (curR.signAccountOp.accountOp.signed || []).length > 0
-      )
-        return
+      if (isSignedSafeCallsRequest(curR)) return
 
       this.#portfolio
         .simulateAccountOp(curR.signAccountOp.accountOp)
@@ -773,8 +785,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    // Don't close the request window if there are still visible requests or if a request is being added
-    if (this.visibleUserRequests.length || this.#userRequestsBeingAdded) return
+    // Don't close the request window if there are still requests to open automatically or if a
+    // request is being added. Signed Safe transactions don't count, as they open only when picked.
+    if (this.#autoTriggerUserRequests.length || this.#userRequestsBeingAdded) return
 
     await this.closeRequestWindow()
   }
@@ -953,7 +966,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.requestWindow.pendingMessage = null
       await this.#setCurrentUserRequest(null)
 
-      const callsCount = this.visibleUserRequests.reduce((acc, request) => {
+      // Signed Safe transactions were already waiting in the queue, so they don't count as new
+      const callsCount = this.#autoTriggerUserRequests.reduce((acc, request) => {
         if (request.kind !== 'calls') return acc
 
         return acc + (request.signAccountOp.accountOp.calls?.length || 0)
@@ -998,7 +1012,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // firing a follow-up right after the previous one resolved, e.g. connect then SIWE).
       // It survived the rejection above, but `#setCurrentUserRequest(null)` cleared it as the
       // current request, so reopen the view with it instead of leaving it without a view.
-      const requestArrivedWhileClosing = this.visibleUserRequests.find(
+      const requestArrivedWhileClosing = this.#autoTriggerUserRequests.find(
         (r) => !requestIdsSnapshotAtClose.has(r.id)
       )
 
@@ -1199,15 +1213,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!this.visibleUserRequests.length) {
       await this.#setCurrentUserRequest(null)
     } else if (shouldOpenNextRequest) {
-      const shouldSkipSignedSafeCalls =
-        (didRemoveSkipQueueRequest || shouldSkipSafeQueueRequests) &&
-        !!this.#selectedAccount.account?.safeCreation
-      const nextRequest = this.visibleUserRequests.find(
-        (request) =>
-          !shouldSkipSignedSafeCalls ||
-          request.kind !== 'calls' ||
-          !request.signAccountOp.accountOp.signed?.length
-      )
+      const shouldSkipSignedSafeCalls = didRemoveSkipQueueRequest || shouldSkipSafeQueueRequests
+      const nextRequest = shouldSkipSignedSafeCalls
+        ? this.#autoTriggerUserRequests[0]
+        : this.visibleUserRequests[0]
 
       await this.#setCurrentUserRequest(nextRequest || null, {
         skipFocus: true

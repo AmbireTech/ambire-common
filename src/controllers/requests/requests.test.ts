@@ -519,6 +519,127 @@ describe('RequestsController ', () => {
     expect(controller.currentUserRequest).toBe(signedRequest)
     signedRequest.signAccountOp.destroy()
   })
+  test('closes the request window after rejecting a transaction while a signed Safe transaction waits in the queue', async () => {
+    const { controller, getCallsRequest, uiCtrl } = await prepareTest(false, true)
+    const rejectedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    rejectedRequest.id = 'rejected-request'
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [signedRequest]
+    await controller.addUserRequests([rejectedRequest])
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+    const createNotification = jest.spyOn(uiCtrl.notification, 'create')
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['signed-request'])
+    // The Safe transaction was already waiting, so the user is not told it was just queued
+    expect(createNotification).not.toHaveBeenCalled()
+    signedRequest.signAccountOp.destroy()
+  })
+  test('counts only transactions outside the Safe queue when the request window closes', async () => {
+    const { controller, getCallsRequest, uiCtrl } = await prepareTest(false, true)
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const unsignedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    signedRequest.id = 'signed-request'
+    unsignedRequest.id = 'unsigned-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [signedRequest]
+    await controller.addUserRequests([unsignedRequest])
+    const createNotification = jest.spyOn(uiCtrl.notification, 'create')
+
+    await controller.closeRequestWindow()
+
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['signed-request', 'unsigned-request'])
+    expect(createNotification.mock.calls).toEqual([
+      [
+        {
+          title: 'Transaction queued',
+          message: 'Queued pending transactions are available on your Dashboard.'
+        }
+      ]
+    ])
+    signedRequest.signAccountOp.destroy()
+    unsignedRequest.signAccountOp.destroy()
+  })
+  test('does not reopen the request window for a signed Safe transaction that arrives while it closes', async () => {
+    const { controller, getCallsRequest, uiCtrl } = await prepareTest(false, true)
+    const closedRequest = { ...DAPP_CONNECT_REQUEST, id: 'closed-request' }
+    const arrivedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    arrivedRequest.id = 'arrived-request'
+    updateAccountOp(arrivedRequest, { signed: [SAFE_OWNER] })
+    await controller.addUserRequests([closedRequest])
+    const openRequestView = jest.spyOn(uiCtrl.requestView, 'open')
+    // A slow close
+    jest.spyOn(uiCtrl.requestView, 'close').mockImplementation(async () => {
+      controller.userRequests.push(arrivedRequest)
+    })
+
+    await controller.closeRequestWindow()
+
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(openRequestView).not.toHaveBeenCalled()
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['arrived-request'])
+    arrivedRequest.signAccountOp.destroy()
+  })
+  test('does not simulate a signed Safe transaction that is added to the queue', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    // @ts-expect-error makeMainController turns simulation off for every test, so turn it back on
+    controller.shouldSimulateAccountOps = true
+    const simulateAccountOp = jest
+      .spyOn(portfolioCtrl, 'simulateAccountOp')
+      .mockResolvedValue(undefined)
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+
+    await controller.addUserRequests([signedRequest], { executionType: 'queue' })
+
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['signed-request'])
+    expect(simulateAccountOp).not.toHaveBeenCalled()
+    signedRequest.signAccountOp.destroy()
+  })
+  test('simulates an unsigned Safe transaction that is added to the queue', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    // @ts-expect-error makeMainController turns simulation off for every test, so turn it back on
+    controller.shouldSimulateAccountOps = true
+    const simulateAccountOp = jest
+      .spyOn(portfolioCtrl, 'simulateAccountOp')
+      .mockResolvedValue(undefined)
+    const unsignedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    unsignedRequest.id = 'unsigned-request'
+
+    await controller.addUserRequests([unsignedRequest], { executionType: 'queue' })
+
+    expect(simulateAccountOp.mock.calls).toEqual([[unsignedRequest.signAccountOp.accountOp]])
+    unsignedRequest.signAccountOp.destroy()
+  })
   test('build dapp request', async () => {
     const { controller } = await prepareTest()
 
