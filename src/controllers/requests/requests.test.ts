@@ -1339,9 +1339,16 @@ describe('RequestsController ', () => {
   test('queues a validated Safe deployment before an app transaction on an undeployed network', async () => {
     const { accountsCtrl, controller, portfolioCtrl } = await prepareTest(true, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
+    // Complete creation data, so the Safe can be deployed without recovering anything first
+    account.safeCreation = {
+      ...account.safeCreation!,
+      setupData: '0x1234'
+    }
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
     jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -1369,6 +1376,7 @@ describe('RequestsController ', () => {
       }
     })
 
+    expect(findDeployDataSpy).not.toHaveBeenCalled()
     const [deploymentRequest, transactionRequest] = controller.userRequests
     expect(deploymentRequest?.kind).toBe('calls')
     expect(transactionRequest?.kind).toBe('calls')
@@ -1701,16 +1709,15 @@ describe('RequestsController ', () => {
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
-    jest.spyOn(safeLib, 'findDeployData').mockResolvedValue({
+    const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData').mockResolvedValue({
       factoryAddr: '0x',
       singleton: '0x',
       setupData: '0x',
       saltNonce: '0x',
       version: ''
     })
-    const getSafeDeploymentCallSpy = jest
-      .spyOn(safeLib, 'getSafeDeploymentCall')
-      .mockResolvedValue(null)
+    const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+    const updateSafeCreationSpy = jest.spyOn(accountsCtrl, 'updateSafeCreation')
     const reject = jest.fn()
 
     await controller.build({
@@ -1731,7 +1738,12 @@ describe('RequestsController ', () => {
     })
 
     expect(controller.userRequests).toEqual([])
-    expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
+    // Recovery is tried from the network the Safe is deployed on, but its data is still incomplete
+    expect(findDeployDataSpy).toHaveBeenCalledTimes(1)
+    expect(findDeployDataSpy).toHaveBeenCalledWith(accountAddr, 10n, expect.anything())
+    expect(updateSafeCreationSpy).not.toHaveBeenCalled()
+    expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+    expect(reject).toHaveBeenCalledTimes(1)
     expect(reject).toHaveBeenCalledWith(
       expect.objectContaining({
         message:
