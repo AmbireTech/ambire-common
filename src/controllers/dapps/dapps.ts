@@ -506,7 +506,9 @@ export class DappsController extends EventEmitter implements IDappsController {
         isConnected: prevSources.length > 0,
         connectedSources: prevSources,
         isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(dapp.url)!),
-        isCustom: !!prevStoredDapp?.isCustom,
+        // Always false, even if the user connected to the app before it was listed - it's part of
+        // the catalog now, so it should be treated (and verified) like any other catalog app.
+        isCustom: false,
         chainId: prevStoredDapp?.chainId || 1,
         favorite: !!prevStoredDapp?.favorite,
         isTrustedByUser: !!prevStoredDapp?.isTrustedByUser,
