@@ -9,6 +9,7 @@ import {
 } from '../../consts/intervals'
 import { IAddressBookController } from '../../interfaces/addressBook'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
@@ -16,144 +17,10 @@ import { IUiController } from '../../interfaces/ui'
 import { getDappIdFromUrl, getNormalizedHostnameFromUrl } from '../../libs/dapps/helpers'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { SUSPICIOUS_HOSTING_DOMAINS } from './suspiciousHostingDomains'
 
 const SCAMCHECKER_BASE_URL = 'https://cena.ambire.com/api/v3/scamchecker'
 const PHISHING_ACTIVE_VIEW_TYPES = new Set(['request-window', 'popup', 'tab'])
-
-/**
- * Shared hosting platforms that legitimate DeFi protocols do not use as a primary domain.
- * Phishing attacks exploit these platforms because their well-known parent domain (e.g.
- * google.com, vercel.app) makes the URL appear trustworthy and bypasses most phishing filters.
- *
- * Attack example:
- *   A user searches for "Uniswap" — a sponsored search result points to
- *   sites.google.com/uniswap, a convincing fake hosted on Google Sites.
- *   The page embeds a wallet connector that requests a signature, stealing funds.
- *
- * HOW IT WORKS
- *
- * Two independent checks feed into getDappVerificationBanner():
- *
- * 1. Intrinsic status — the dApp's own domain, resolved by getDomainBlacklistedStatus().
- *    Priority: BLACKLISTED (phishing DB) > SUSPICIOUS_HOSTING (this list) > VERIFIED.
- *    Both lookups are string comparisons, so they run on the canonical hostname produced by
- *    getNormalizedHostnameFromUrl()/getDappIdFromUrl() — never on a raw URL hostname, which keeps
- *    the trailing dot of a fully-qualified host and would miss every entry in both lists.
- *
- * 2. Frame context — if a dApp is loaded as an iframe inside a tab whose top-level document is
- *    on a SUSPICIOUS_HOSTING or BLACKLISTED domain, #getFrameContextStatus() returns
- *    SUSPICIOUS_HOSTING. The top-frame origin is reported by the browser with every request, so
- *    it cannot be spoofed by the page. This is only used for the banner — never written to
- *    #dapps or storage, so the dApp's global status is not contaminated for unrelated sessions.
- *
- * Final priority in getDappVerificationBanner():
- *   dApp intrinsic BLACKLISTED  >  context SUSPICIOUS_HOSTING  >  dApp intrinsic SUSPICIOUS_HOSTING  >  VERIFIED
- *
- * Examples:
- *   Scenario                                                                     Result
- *   sites.google.com dApp (BLACKLISTED in phishing DB)                          intrinsic=BLACKLISTED → BLACKLISTED
- *   my-dapp.vercel.app (in this list, not in phishing DB)                       intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
- *   ipfs.io dApp opened directly                                                intrinsic=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
- *   app.uniswap.org iframe inside a sites.google.com tab                        intrinsic=VERIFIED, context=SUSPICIOUS_HOSTING → SUSPICIOUS_HOSTING (warning)
- *   app.uniswap.org opened directly (it is the tab's top frame)                 intrinsic=VERIFIED, context=undefined → VERIFIED
- *   app.uniswap.org iframe in sites.google.com, but uniswap is BLACKLISTED      intrinsic=BLACKLISTED wins → BLACKLISTED
- */
-/**
- * The non-Google entries below are derived from an analysis of the eth-phishing-detect
- * blocklist, ranked by how many blocked phishing
- * entries are hosted on each shared platform. Only platforms that can serve an arbitrary
- * JS wallet connector (the actual eth_requestAccounts attack vector) and that legitimate
- * DeFi protocols never use as a primary domain are included.
- *
- * Deliberately EXCLUDED despite appearing in the report, to avoid false positives on
- * legitimate traffic and because they cannot host a wallet connector:
- *   - typeform.com, zendesk.com — form/support builders; cannot run a custom connector.
- *   - medium.com — publishing platform; no custom JS.
- *   - netlify.com — Netlify's own corporate site (the user-hosting suffix netlify.app IS listed).
- *   - s3.amazonaws.com, cloudfront.net — object storage / CDN that fronts large amounts of
- *     legitimate dApp assets; low blocklist share, high false-positive risk.
- *   - translate.goog — Google Translate proxy; would flag legitimate translated browsing.
- *   - page.link — Firebase Dynamic Links (deprecated redirect service), not a host.
- */
-export const SUSPICIOUS_HOSTING_DOMAINS = [
-  // Google ecosystem
-  'sites.google.com',
-  'docs.google.com',
-  'drive.google.com',
-  'forms.google.com',
-  'sheets.google.com',
-  'slides.google.com',
-
-  // JAMstack / static hosting
-  'vercel.app',
-  'netlify.app',
-  'bitballoon.com', // Netlify legacy
-  'pages.dev',
-  'r2.dev', // Cloudflare R2 (public buckets serving static sites)
-  'workers.dev', // Cloudflare Workers
-  'github.io', // GitHub Pages
-  'gitlab.io', // GitLab Pages
-  'surge.sh',
-
-  // Firebase
-  'firebaseapp.com',
-  'web.app',
-
-  // Cloud app / PaaS hosts
-  'azurewebsites.net',
-  'onrender.com',
-  'herokuapp.com',
-  'railway.app',
-  'glitch.me',
-  'repl.co',
-  'replit.app',
-  'csb.app', // CodeSandbox
-
-  // Docs hosting
-  'gitbook.io',
-
-  // Website builders
-  'webflow.io',
-  'mystrikingly.com',
-  'b12sites.com',
-  'weebly.com',
-  'weeblysite.com',
-  'godaddysites.com',
-  'umso.co',
-  'jimdosite.com',
-  'tilda.ws',
-  'square.site',
-  'flazio.com',
-
-  // Website / managed hosts
-  'pantheonsite.io',
-  'plesk.page',
-
-  // Free web hosts
-  '42web.io',
-  'cprapid.com',
-  '000webhostapp.com',
-
-  // Blogging platforms
-  'blogspot.com',
-  'wordpress.com',
-
-  // Dynamic DNS (abuse-prone, no legitimate DeFi usage)
-  'us.to',
-  'duia.us',
-  'mooo.com',
-
-  // IPFS / decentralized gateways
-  'ipfs.io',
-  'dweb.link',
-  'cf-ipfs.com',
-  'on-fleek.app',
-  'fleek.co',
-  'mypinata.cloud',
-  '4everland.app',
-  'w3s.link',
-  'eth.link'
-]
 
 function isSuspiciousHostingDomain(url: string): boolean {
   // The canonical hostname, so a fully-qualified host ("my-dapp.vercel.app.") is matched against
@@ -161,7 +28,60 @@ function isSuspiciousHostingDomain(url: string): boolean {
   const hostname = getNormalizedHostnameFromUrl(url)
   if (hostname === null) return false
 
-  return SUSPICIOUS_HOSTING_DOMAINS.some((d) => hostname === d || hostname.endsWith(`.${d}`))
+  return SUSPICIOUS_HOSTING_DOMAINS.some(
+    ({ hostSuffix }) => hostname === hostSuffix || hostname.endsWith(`.${hostSuffix}`)
+  )
+}
+
+/**
+ * Whether the user may mark the dApp at `url` as trusted, silencing the suspicious-hosting warning
+ * for it. True only for a dApp on its own subdomain of a platform that hands out one per app: the
+ * hostname is then a boundary the browser enforces, so the trust cannot reach anything else
+ * published on the platform.
+ */
+export function canBeTrustedByUser(url: string): boolean {
+  const hostname = getNormalizedHostnameFromUrl(url)
+  if (hostname === null) return false
+
+  // The leading dot demands a label to the left of the suffix, which is the whole point: it tells
+  // one app under the platform apart from the platform's own hostname. "my-dapp.vercel.app" passes,
+  // a bare "ipfs.io" does not. Note that isAppPerSubdomain alone does not cover this - a platform
+  // that hands out subdomains ("<cid>.ipfs.dweb.link") usually serves by path as well, and a dApp
+  // id is only the hostname, so every app on "ipfs.io/ipfs/<cid>" collapses to the same "ipfs.io".
+  // Offering the trust action there would let one tap silence the warning for the whole platform.
+  // Scoping the trust by path instead would not help: pages on a shared hostname are same-origin,
+  // so one of them can drive a trusted one it embeds or opens.
+  return SUSPICIOUS_HOSTING_DOMAINS.some(
+    ({ hostSuffix, isAppPerSubdomain }) => isAppPerSubdomain && hostname.endsWith(`.${hostSuffix}`)
+  )
+}
+
+type PhishingDeltaEntry = { op: 'add' | 'remove'; domain?: string; address?: string }
+
+/**
+ * Whether a phishing delta entry is an add/remove operation carrying `key` as a string. Entries
+ * that are not are dropped by the relayer's own bugs, so they must never reach the local lists.
+ */
+function isValidDeltaEntry(entry: any, key: 'domain' | 'address'): entry is PhishingDeltaEntry {
+  return !!entry && (entry.op === 'add' || entry.op === 'remove') && typeof entry[key] === 'string'
+}
+
+/**
+ * Reads the `domains` and `addresses` lists out of a relayer phishing response. A missing list is
+ * an empty one, but a list of the wrong type means the response is not what we asked for, and
+ * applying it would either throw somewhere deeper or quietly corrupt the local lists.
+ */
+function getListsFromPhishingResponse(
+  payload: any,
+  url: string
+): { domains: any[]; addresses: any[] } {
+  const domains = payload?.domains ?? []
+  const addresses = payload?.addresses ?? []
+
+  if (!Array.isArray(domains) || !Array.isArray(addresses))
+    throw new Error(`Phishing response does not hold domain and address lists (url: ${url})`)
+
+  return { domains, addresses }
 }
 
 export class PhishingController extends EventEmitter implements IPhishingController {
@@ -172,6 +92,10 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   #addressBook: IAddressBookController
 
   #ui: IUiController
+
+  #featureFlags: IFeatureFlagsController
+
+  #isScamAndPhishingCheckerEnabled: boolean
 
   #domains = new Set<string>()
 
@@ -214,13 +138,15 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     fetch,
     storage,
     addressBook,
-    ui
+    ui,
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     fetch: Fetch
     storage: IStorageController
     addressBook: IAddressBookController
     ui: IUiController
+    featureFlags: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
 
@@ -228,6 +154,9 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#storage = storage
     this.#addressBook = addressBook
     this.#ui = ui
+    this.#featureFlags = featureFlags
+    this.#isScamAndPhishingCheckerEnabled =
+      this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')
 
     this.#updatePhishingInterval = new RecurringTimeout(
       async () => this.continuouslyUpdatePhishing(),
@@ -242,11 +171,23 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
       const shouldSwitchToActiveUpdateInterval =
         isActiveViewType && !isAlreadyUsingActiveUpdateInterval
-      if (shouldSwitchToActiveUpdateInterval)
-        this.#updatePhishingInterval.restart({
-          timeout: PHISHING_ACTIVE_UPDATE_INTERVAL,
-          runImmediately: true
-        })
+      if (
+        !this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker') ||
+        !shouldSwitchToActiveUpdateInterval
+      )
+        return
+
+      // We must ensure the controller is ready for the update, otherwise there will be
+      // a nasty race condition
+      if (!this.isReady) {
+        this.#updatePhishingInterval.updateTimeout({ timeout: PHISHING_ACTIVE_UPDATE_INTERVAL })
+        return
+      }
+
+      this.#updatePhishingInterval.restart({
+        timeout: PHISHING_ACTIVE_UPDATE_INTERVAL,
+        runImmediately: true
+      })
     })
     this.#ui.uiEvent.on('removeView', () => {
       const hasAtLeastOneActiveViewOpen = this.#ui.views.some((view) =>
@@ -254,9 +195,42 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       )
 
       const shouldSwitchToInactiveUpdateInterval = !hasAtLeastOneActiveViewOpen
-      if (shouldSwitchToInactiveUpdateInterval)
-        this.#updatePhishingInterval.restart({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
+      if (
+        !this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker') ||
+        !shouldSwitchToInactiveUpdateInterval
+      )
+        return
+
+      if (!this.isReady) {
+        this.#updatePhishingInterval.updateTimeout({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
+        return
+      }
+
+      this.#updatePhishingInterval.restart({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
     })
+
+    this.#featureFlags.onUpdate(() => {
+      const isEnabled = this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')
+      if (isEnabled === this.#isScamAndPhishingCheckerEnabled) return
+
+      this.#isScamAndPhishingCheckerEnabled = isEnabled
+      if (!isEnabled) {
+        this.#updatePhishingInterval.stop()
+        return
+      }
+
+      if (!this.isReady) return
+
+      const hasAtLeastOneActiveViewOpen = this.#ui.views.some((view) =>
+        PHISHING_ACTIVE_VIEW_TYPES.has(view.type)
+      )
+      this.#updatePhishingInterval.restart({
+        timeout: hasAtLeastOneActiveViewOpen
+          ? PHISHING_ACTIVE_UPDATE_INTERVAL
+          : PHISHING_INACTIVE_UPDATE_INTERVAL,
+        runImmediately: true
+      })
+    }, 'phishing')
   }
 
   /**
@@ -273,6 +247,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   }
 
   async #load() {
+    await this.#featureFlags.initialLoadPromise
+
     const phishing = await this.#storage.get('phishing', {
       version: 0,
       updatedAt: 0,
@@ -284,7 +260,9 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#updatedAt = phishing.updatedAt
     this.#domains = new Set(phishing.domains)
     this.#addresses = new Set(phishing.addresses)
-    this.updatePhishingInterval.start({ runImmediately: true })
+    if (this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) {
+      this.updatePhishingInterval.start({ runImmediately: true })
+    }
 
     this.isReady = true
     this.emitUpdate()
@@ -296,6 +274,12 @@ export class PhishingController extends EventEmitter implements IPhishingControl
    * 2) switches to the failed-retry interval when the fetch/update flow throws
    */
   async continuouslyUpdatePhishing() {
+    if (!this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) return
+
+    // The update decides between a full snapshot and a delta based on the version, so it must not
+    // run before the version is read from storage. init() starts the interval once it is.
+    if (!this.isReady) return
+
     if (this.#continuouslyUpdatePhishingPromise) {
       await this.#continuouslyUpdatePhishingPromise
 
@@ -354,34 +338,50 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     }
 
     const phishing = await res.json()
+    const { domains, addresses } = getListsFromPhishingResponse(phishing, res.url)
 
     if (this.#version) {
       // Incremental update: apply add/remove operations on top of local sets.
-      this.#version = phishing.toVersion || 0
-      ;(phishing.domains || []).forEach(
-        ({ op, domain }: { op: 'add' | 'remove'; domain: string }) => {
-          if (op === 'add') this.#domains.add(domain)
-          if (op === 'remove') this.#domains.delete(domain)
-        }
-      )
-      ;(phishing.addresses || []).forEach(
-        ({ op, address }: { op: 'add' | 'remove'; address: string }) => {
-          // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup,
-          // regardless of the casing the relayer used.
-          const normalizedAddress = address.toLowerCase()
-          if (op === 'add') this.#addresses.add(normalizedAddress)
-          if (op === 'remove') this.#addresses.delete(normalizedAddress)
-        }
-      )
+      // Validated before anything is applied, and the version is only moved forward once the whole
+      // delta is in. A partly applied delta whose checkpoint had moved would drop those entries for
+      // good, since no later delta repeats them.
+      const invalidEntryCount =
+        domains.filter((entry) => !isValidDeltaEntry(entry, 'domain')).length +
+        addresses.filter((entry) => !isValidDeltaEntry(entry, 'address')).length
+      if (invalidEntryCount)
+        throw new Error(
+          `Phishing delta holds ${invalidEntryCount} malformed entries (url: ${res.url})`
+        )
+      if (typeof phishing.toVersion !== 'number')
+        throw new Error(`Phishing delta has no version to move to (url: ${res.url})`)
+
+      domains.forEach(({ op, domain }: PhishingDeltaEntry) => {
+        if (op === 'add') this.#domains.add(domain!)
+        if (op === 'remove') this.#domains.delete(domain!)
+      })
+      addresses.forEach(({ op, address }: PhishingDeltaEntry) => {
+        // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup,
+        // regardless of the casing the relayer used.
+        const normalizedAddress = address!.toLowerCase()
+        if (op === 'add') this.#addresses.add(normalizedAddress)
+        if (op === 'remove') this.#addresses.delete(normalizedAddress)
+      })
+
+      this.#version = phishing.toVersion
     } else {
       // Initial/full update: replace local sets with the server snapshot.
-      this.#version = phishing.version || 0
-      this.#domains = new Set(phishing.domains || [])
+      if (typeof phishing.version !== 'number')
+        throw new Error(`Phishing snapshot has no version (url: ${res.url})`)
+      if (domains.some((domain) => typeof domain !== 'string'))
+        throw new Error(`Phishing snapshot holds domains that are not strings (url: ${res.url})`)
+      if (addresses.some((address) => typeof address !== 'string'))
+        throw new Error(`Phishing snapshot holds addresses that are not strings (url: ${res.url})`)
+
+      this.#version = phishing.version
+      this.#domains = new Set<string>(domains)
       // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup, regardless
       // of the casing the relayer used.
-      this.#addresses = new Set(
-        (phishing.addresses || []).map((address: string) => address.toLowerCase())
-      )
+      this.#addresses = new Set<string>(addresses.map((address: string) => address.toLowerCase()))
     }
 
     this.#shouldSyncDapps = true
@@ -645,6 +645,17 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     urls: string[],
     callback: (res: { [dappId: string]: BlacklistedStatus }) => void
   ) {
+    if (!this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) {
+      if (!urls.length) return
+
+      const statuses: { [dappId: string]: BlacklistedStatus } = {}
+      urls.forEach((url) => {
+        statuses[getDappIdFromUrl(url)] = 'FAILED_TO_GET'
+      })
+      callback(statuses)
+      return
+    }
+
     try {
       await this.#fetchAndSetDomainsBlacklistedStatus(urls, callback)
     } catch (err: any) {
@@ -660,6 +671,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     urls: string[],
     callback: (res: { [dappId: string]: BlacklistedStatus }) => void
   ) {
+    if (!this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) return
+
     try {
       await this.#fetchAndSetAddressesBlacklistedStatus(urls, callback)
     } catch (err: any) {

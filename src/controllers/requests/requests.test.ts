@@ -5,6 +5,10 @@ import { describe, expect, test } from '@jest/globals'
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
+import {
+  DAPP_REJECTS_BEFORE_OFFERING_SILENCE,
+  DAPP_SILENCE_DURATION
+} from '../../consts/safeguards/dappRequestSpam'
 import { Hex } from '../../interfaces/hex'
 import {
   BenzinUserRequest,
@@ -21,6 +25,7 @@ import type { AccountOp } from '../../libs/accountOp/accountOp'
 import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 
 const MOCK_SESSION = new Session({ tabId: 1, url: 'https://test-dApp.com' })
+const NOW = 1_700_000_000_000
 const SAFE_TX_HASH = `0x${'1'.repeat(64)}` as Hex
 const SAFE_SIGNATURE =
   '0x05404ea5dfa13ddd921cda3f587af6927cc127ee174b57c9891491bfc1f0d3d005f649f8a1fc9147405f064507bae08816638cfc441c4d0dc4eb6640e16621991b'
@@ -176,6 +181,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
     const signAccountOp = new SignAccountOpController({
       type: 'default',
       callRelayer: mainCtrl.callRelayer,
+      erc7730: mainCtrl.erc7730,
       accounts: mainCtrl.accounts,
       networks: mainCtrl.networks,
       keystore: mainCtrl.keystore,
@@ -203,6 +209,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
         calls: [
           {
             id: 'testID',
+            dappPromiseId: 'testID',
             to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
             value: BigInt(0),
             data: '0xa9059cbb000000000000000000000000e5a4dad2ea987215460379ab285df87136e83bea00000000000000000000000000000000000000000000000000000000005040aa'
@@ -248,6 +255,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
   return {
     selectedAccountCtrl: mainCtrl.selectedAccount,
     accountsCtrl: mainCtrl.accounts,
+    dappsCtrl: mainCtrl.dapps,
     portfolioCtrl: mainCtrl.portfolio,
     storageCtrl: mainCtrl.storage,
     safeCtrl: mainCtrl.safe,
@@ -257,7 +265,9 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
     getCallsRequest,
     event: eventEmitter,
     getWindowId,
-    uiCtrl: mainCtrl.ui
+    uiCtrl: mainCtrl.ui,
+    autoLoginCtrl: mainCtrl.autoLogin,
+    dappsCtrl: mainCtrl.dapps
   }
 }
 
@@ -469,6 +479,127 @@ describe('RequestsController ', () => {
 
     expect(controller.currentUserRequest).toBe(signedRequest)
     signedRequest.signAccountOp.destroy()
+  })
+  test('closes the request window after rejecting a transaction while a signed Safe transaction waits in the queue', async () => {
+    const { controller, getCallsRequest, uiCtrl } = await prepareTest(false, true)
+    const rejectedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    rejectedRequest.id = 'rejected-request'
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [signedRequest]
+    await controller.addUserRequests([rejectedRequest])
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+    const createNotification = jest.spyOn(uiCtrl.notification, 'create')
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['signed-request'])
+    // The Safe transaction was already waiting, so the user is not told it was just queued
+    expect(createNotification).not.toHaveBeenCalled()
+    signedRequest.signAccountOp.destroy()
+  })
+  test('counts only transactions outside the Safe queue when the request window closes', async () => {
+    const { controller, getCallsRequest, uiCtrl } = await prepareTest(false, true)
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const unsignedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    signedRequest.id = 'signed-request'
+    unsignedRequest.id = 'unsigned-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [signedRequest]
+    await controller.addUserRequests([unsignedRequest])
+    const createNotification = jest.spyOn(uiCtrl.notification, 'create')
+
+    await controller.closeRequestWindow()
+
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['signed-request', 'unsigned-request'])
+    expect(createNotification.mock.calls).toEqual([
+      [
+        {
+          title: 'Transaction queued',
+          message: 'Queued pending transactions are available on your Dashboard.'
+        }
+      ]
+    ])
+    signedRequest.signAccountOp.destroy()
+    unsignedRequest.signAccountOp.destroy()
+  })
+  test('does not reopen the request window for a signed Safe transaction that arrives while it closes', async () => {
+    const { controller, getCallsRequest, uiCtrl } = await prepareTest(false, true)
+    const closedRequest = { ...DAPP_CONNECT_REQUEST, id: 'closed-request' }
+    const arrivedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    arrivedRequest.id = 'arrived-request'
+    updateAccountOp(arrivedRequest, { signed: [SAFE_OWNER] })
+    await controller.addUserRequests([closedRequest])
+    const openRequestView = jest.spyOn(uiCtrl.requestView, 'open')
+    // A slow close
+    jest.spyOn(uiCtrl.requestView, 'close').mockImplementation(async () => {
+      controller.userRequests.push(arrivedRequest)
+    })
+
+    await controller.closeRequestWindow()
+
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(openRequestView).not.toHaveBeenCalled()
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['arrived-request'])
+    arrivedRequest.signAccountOp.destroy()
+  })
+  test('does not simulate a signed Safe transaction that is added to the queue', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    // @ts-expect-error makeMainController turns simulation off for every test, so turn it back on
+    controller.shouldSimulateAccountOps = true
+    const simulateAccountOp = jest
+      .spyOn(portfolioCtrl, 'simulateAccountOp')
+      .mockResolvedValue(undefined)
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+
+    await controller.addUserRequests([signedRequest], { executionType: 'queue' })
+
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['signed-request'])
+    expect(simulateAccountOp).not.toHaveBeenCalled()
+    signedRequest.signAccountOp.destroy()
+  })
+  test('simulates an unsigned Safe transaction that is added to the queue', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    // @ts-expect-error makeMainController turns simulation off for every test, so turn it back on
+    controller.shouldSimulateAccountOps = true
+    const simulateAccountOp = jest
+      .spyOn(portfolioCtrl, 'simulateAccountOp')
+      .mockResolvedValue(undefined)
+    const unsignedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    unsignedRequest.id = 'unsigned-request'
+
+    await controller.addUserRequests([unsignedRequest], { executionType: 'queue' })
+
+    expect(simulateAccountOp.mock.calls).toEqual([[unsignedRequest.signAccountOp.accountOp]])
+    unsignedRequest.signAccountOp.destroy()
   })
   test('build dapp request', async () => {
     const { controller } = await prepareTest()
@@ -1513,6 +1644,525 @@ describe('RequestsController ', () => {
     expect(controller.toJSON()).toBeDefined()
   })
 
+  describe('concurrent dapp requests', () => {
+    const ACCOUNT_ADDR = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const FROM = ACCOUNT_ADDR
+    const TO = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+    const OTHER_DAPP_SESSION = new Session({ tabId: 3, url: 'https://another-dApp.com' })
+
+    const TYPED_DATA = {
+      types: {
+        EIP712Domain: [
+          { name: 'name', type: 'string' },
+          { name: 'version', type: 'string' },
+          { name: 'chainId', type: 'uint256' }
+        ],
+        Mail: [{ name: 'contents', type: 'string' }]
+      },
+      primaryType: 'Mail',
+      domain: { name: 'Test Mail', version: '1', chainId: 1 },
+      message: { contents: 'Hello!' }
+    }
+
+    const sendTransaction = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      dappPromise: { id: string; reject: (err: any) => void },
+      session = MOCK_SESSION,
+      callOverrides: { data?: string } = {}
+    ) =>
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'eth_sendTransaction',
+            params: [{ from: FROM, to: TO, value: '0x0', data: '0x', ...callOverrides }],
+            session
+          },
+          dappPromise: { resolve: () => {}, session, ...dappPromise }
+        }
+      })
+
+    const signTypedData = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      dappPromise: { id: string; reject: (err: any) => void }
+    ) =>
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'eth_signTypedData_v4',
+            params: [FROM, JSON.stringify(TYPED_DATA)],
+            session: MOCK_SESSION
+          },
+          dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...dappPromise }
+        }
+      })
+
+    const makeRejectMocks = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({ id: `promise-${index}`, reject: jest.fn() }))
+
+    /**
+     * What building the batch actually cost, rather than only what it ended up with. The end
+     * state looked right even when every request was built on its own, so the counts are the
+     * part worth asserting.
+     */
+    const watchSideEffects = (uiCtrl: Awaited<ReturnType<typeof prepareTest>>['uiCtrl']) => {
+      const open = jest.spyOn(uiCtrl.requestView, 'open')
+      const close = jest.spyOn(uiCtrl.requestView, 'close')
+      const updateAccountOpCalls = jest.spyOn(SignAccountOpController.prototype, 'update')
+
+      return {
+        openCount: () => open.mock.calls.length,
+        closeCount: () => close.mock.calls.length,
+        /** How many times the batch on screen was rebuilt, which is one estimation each. */
+        callsUpdateCount: () =>
+          updateAccountOpCalls.mock.calls.filter((args) => !!args[0]?.accountOpData?.calls).length
+      }
+    }
+
+    test('collects transactions fired at once into a single batch, keeping every promise', async () => {
+      const { controller, uiCtrl } = await prepareTest(true)
+      const sideEffects = watchSideEffects(uiCtrl)
+      const promises = makeRejectMocks(10)
+
+      await Promise.all(promises.map((promise) => sendTransaction(controller, promise)))
+
+      const callsRequests = controller.userRequests.filter(
+        (r) => r.kind === 'calls'
+      ) as CallsUserRequest[]
+
+      expect(callsRequests).toHaveLength(1)
+      expect(callsRequests[0]!.signAccountOp.accountOp.calls).toHaveLength(10)
+      // The promise of every transaction has to be on the batch - one that isn't would leave
+      // the app waiting on an answer that never comes
+      expect(callsRequests[0]!.dappPromises).toHaveLength(10)
+
+      // One window for the ten of them, and it is never torn down on the way
+      expect(sideEffects.openCount()).toBe(1)
+      expect(sideEffects.closeCount()).toBe(0)
+      // The first transaction opens the batch and the nine that pile up behind it join in one
+      // go. Ten separate merges would mean ten estimations of a batch that is still growing.
+      expect(sideEffects.callsUpdateCount()).toBe(1)
+
+      await controller.rejectUserRequests('User rejected', [callsRequests[0]!.id])
+
+      promises.forEach(({ reject }) => expect(reject).toHaveBeenCalled())
+      expect(controller.userRequests).toHaveLength(0)
+    })
+
+    test('collects transactions from two apps on the same chain into one batch', async () => {
+      const { controller, uiCtrl, dappsCtrl } = await prepareTest(true)
+      await dappsCtrl.addDapp(
+        makeDapp({
+          id: OTHER_DAPP_SESSION.id,
+          name: 'Another Dapp',
+          url: OTHER_DAPP_SESSION.origin,
+          chainId: 1,
+          chainIds: [1]
+        })
+      )
+      const sideEffects = watchSideEffects(uiCtrl)
+      const [ours, theirs] = makeRejectMocks(2)
+
+      await Promise.all([
+        sendTransaction(controller, ours!),
+        sendTransaction(controller, theirs!, OTHER_DAPP_SESSION)
+      ])
+
+      const callsRequests = controller.userRequests.filter(
+        (r) => r.kind === 'calls'
+      ) as CallsUserRequest[]
+
+      expect(callsRequests).toHaveLength(1)
+      expect(callsRequests[0]!.signAccountOp.accountOp.calls).toHaveLength(2)
+      // Both apps are waiting on this one batch, so both promises have to be on it
+      expect(callsRequests[0]!.dappPromises.map((p) => p.session.id).sort()).toEqual(
+        [MOCK_SESSION.id, OTHER_DAPP_SESSION.id].sort()
+      )
+      expect(sideEffects.openCount()).toBe(1)
+      expect(sideEffects.closeCount()).toBe(0)
+
+      callsRequests[0]!.signAccountOp.destroy()
+    })
+
+    test('a malformed transaction in the batch costs only the app that sent it', async () => {
+      const { controller, uiCtrl } = await prepareTest(true)
+      const sideEffects = watchSideEffects(uiCtrl)
+      const promises = makeRejectMocks(10)
+      const malformed = promises[4]!
+
+      const outcomes = await Promise.allSettled(
+        promises.map((promise) =>
+          // Odd-length hex data, which is rejected while the batch is being normalized
+          sendTransaction(controller, promise, MOCK_SESSION, {
+            data: promise === malformed ? '0xabc' : '0x'
+          })
+        )
+      )
+
+      const callsRequests = controller.userRequests.filter(
+        (r) => r.kind === 'calls'
+      ) as CallsUserRequest[]
+
+      expect(callsRequests).toHaveLength(1)
+      // The nine good ones are unaffected by the one that isn't
+      expect(callsRequests[0]!.signAccountOp.accountOp.calls).toHaveLength(9)
+      expect(callsRequests[0]!.dappPromises).toHaveLength(9)
+
+      // Only the app that sent the bad payload is turned away, and it is told what was wrong
+      const rejected = outcomes.filter((outcome) => outcome.status === 'rejected')
+      expect(rejected).toHaveLength(1)
+      expect((rejected[0] as PromiseRejectedResult).reason.message).toContain('hex data')
+      expect(outcomes.indexOf(rejected[0]!)).toBe(promises.indexOf(malformed))
+
+      expect(sideEffects.openCount()).toBe(1)
+      expect(sideEffects.closeCount()).toBe(0)
+
+      callsRequests[0]!.signAccountOp.destroy()
+    })
+
+    test('a transaction with no parameters does not take its batch down with it', async () => {
+      const { controller } = await prepareTest(true)
+      const sendRaw = (dappPromise: { id: string; reject: (err: any) => void }, params: any[]) =>
+        controller.build({
+          type: 'dappRequest',
+          params: {
+            request: { method: 'eth_sendTransaction', params, session: MOCK_SESSION },
+            dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...dappPromise }
+          }
+        })
+
+      const [noParams, noFrom] = makeRejectMocks(2) as [
+        { id: string; reject: jest.Mock },
+        { id: string; reject: jest.Mock }
+      ]
+
+      // Neither payload yields a `from`, so both land on the same queue and are built together
+      const outcomes = await Promise.allSettled([
+        sendRaw(noParams, []),
+        sendRaw(noFrom, [{ to: TO, value: '0x0', data: '0x' }])
+      ])
+
+      expect(outcomes.map((o) => o.status)).toEqual(['rejected', 'rejected'])
+
+      const [noParamsReason, noFromReason] = outcomes.map(
+        (o) => (o as PromiseRejectedResult).reason
+      )
+
+      // The empty payload is answered with what was wrong, not with a TypeError from reading it
+      expect(noParamsReason.message).toContain('no parameters')
+      // ...and the other app is told about its own payload rather than inheriting that failure
+      expect(noFromReason.message).not.toBe(noParamsReason.message)
+
+      expect(controller.userRequests.filter((r) => r.kind === 'calls')).toHaveLength(0)
+    })
+
+    test('every transaction turned away for one already signing is answered', async () => {
+      const { controller, getCallsRequest } = await prepareTest()
+      const inProgress = await getCallsRequest({ addr: FROM, chainId: 1n })
+
+      await controller.addUserRequests([inProgress])
+
+      // A signing/broadcasting run is under way for this account and chain
+      ;(inProgress.signAccountOp as any).signAndBroadcastPromise = new Promise(() => {})
+
+      const second = await getCallsRequest({ addr: FROM, chainId: 1n })
+      const third = await getCallsRequest({ addr: FROM, chainId: 1n })
+      const rejectSecond = jest.fn()
+      const rejectThird = jest.fn()
+      second.dappPromises[0]!.reject = rejectSecond
+      third.dappPromises[0]!.reject = rejectThird
+
+      await controller.addUserRequests([second, third])
+
+      // Answering only the first leaves every app behind it waiting on a promise nobody settles
+      expect(rejectSecond).toHaveBeenCalled()
+      expect(rejectThird).toHaveBeenCalled()
+
+      inProgress.signAccountOp.destroy()
+      second.signAccountOp.destroy()
+      third.signAccountOp.destroy()
+    })
+
+    test('supersedes every message fired at once down to exactly one', async () => {
+      const { controller, uiCtrl } = await prepareTest(true)
+      const sideEffects = watchSideEffects(uiCtrl)
+      const promises = makeRejectMocks(10)
+
+      await Promise.all(promises.map((promise) => signTypedData(controller, promise)))
+
+      expect(controller.userRequests.filter((r) => r.kind === 'typedMessage')).toHaveLength(1)
+      // Nine were replaced and told so; the survivor is still waiting on the user
+      expect(promises.filter(({ reject }) => reject.mock.calls.length)).toHaveLength(9)
+
+      // The nine are turned away before they are ever added, so the window is opened once for
+      // the survivor instead of being opened and closed around each one in turn
+      expect(sideEffects.openCount()).toBe(1)
+      expect(sideEffects.closeCount()).toBe(0)
+    })
+
+    test('a superseded message does not count against the app', async () => {
+      const { controller, dappsCtrl } = await prepareTest(true)
+      const promises = makeRejectMocks(10)
+
+      await Promise.all(promises.map((promise) => signTypedData(controller, promise)))
+
+      // Superseding is the wallet's own doing, not the user refusing the app, so none of the
+      // nine may push it towards being treated as a spammer
+      expect(dappsCtrl.shouldOfferToSilenceDapp(MOCK_SESSION.id)).toBe(false)
+    })
+
+    test('a message and a transaction fired at once do not hold each other up', async () => {
+      const { controller } = await prepareTest(true)
+      const [transaction, message] = makeRejectMocks(2)
+
+      await Promise.all([
+        sendTransaction(controller, transaction!),
+        signTypedData(controller, message!)
+      ])
+
+      expect(controller.userRequests.filter((r) => r.kind === 'calls')).toHaveLength(1)
+      expect(controller.userRequests.filter((r) => r.kind === 'typedMessage')).toHaveLength(1)
+      expect(transaction!.reject).not.toHaveBeenCalled()
+      expect(message!.reject).not.toHaveBeenCalled()
+
+      const callsRequest = controller.userRequests.find(
+        (r) => r.kind === 'calls'
+      ) as CallsUserRequest
+      callsRequest.signAccountOp.destroy()
+    })
+
+    test('one request that cannot be prepared does not abandon the others', async () => {
+      const { controller, accountsCtrl, getCallsRequest } = await prepareTest()
+      const unfetchable = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 10n })
+      const fine = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 1n })
+      const rejectUnfetchable = jest.fn()
+      const rejectFine = jest.fn()
+      unfetchable.dappPromises[0]!.reject = rejectUnfetchable
+      fine.dappPromises[0]!.reject = rejectFine
+
+      // No cached state to fall back on and nothing to fetch, so this one cannot be prepared
+      delete accountsCtrl.accountStates[ACCOUNT_ADDR]!['10']
+      jest
+        .spyOn(accountsCtrl, 'forceFetchPendingState')
+        .mockImplementation(async (_addr: string, chainId: bigint) =>
+          chainId === 10n
+            ? undefined
+            : accountsCtrl.accountStates[ACCOUNT_ADDR]![chainId.toString()]
+        )
+
+      await controller.addUserRequests([unfetchable, fine])
+
+      // Abandoning the rest of the batch would leave their apps waiting on promises nobody
+      // will ever settle
+      expect(controller.userRequests.map((r) => r.id)).toEqual([fine.id])
+      expect(rejectUnfetchable).toHaveBeenCalled()
+      expect(rejectFine).not.toHaveBeenCalled()
+
+      unfetchable.signAccountOp.destroy()
+      fine.signAccountOp.destroy()
+    })
+  })
+
+  describe('app request spam', () => {
+    const ACCOUNT_ADDR = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const OTHER_SESSION = new Session({ tabId: 2, url: 'https://other-dApp.com' })
+
+    const buildDappRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      dappPromise: { resolve: () => void; reject: (err: any) => void }
+    ) =>
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'personal_sign',
+            params: ['0x48656c6c6f', ACCOUNT_ADDR],
+            session: MOCK_SESSION
+          },
+          dappPromise: { id: 'testID', session: MOCK_SESSION, ...dappPromise }
+        }
+      })
+
+    test("counts one rejection however many of the app's requests it clears", async () => {
+      const { controller, dappsCtrl, getCallsRequest } = await prepareTest()
+      const first = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 1n })
+      const second = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 10n })
+      first.id = 'first-request'
+      second.id = 'second-request'
+      controller.userRequests = [first, second]
+
+      // What closing the request window does - one user action, two requests from one app
+      await controller.rejectUserRequests('User rejected', [first.id, second.id])
+
+      expect(dappsCtrl.shouldOfferToSilenceDapp(MOCK_SESSION.id)).toBe(false)
+    })
+
+    test('counts a rejection against every app with something in a shared batch', async () => {
+      const { controller, dappsCtrl, getCallsRequest } = await prepareTest()
+      const request = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 1n })
+      request.dappPromises = [
+        { id: 'a', resolve: () => {}, reject: () => {}, session: MOCK_SESSION, meta: {} },
+        { id: 'b', resolve: () => {}, reject: () => {}, session: OTHER_SESSION, meta: {} }
+      ]
+      controller.userRequests = [request]
+
+      await controller.rejectUserRequests('User rejected', [request.id])
+      await controller.addUserRequests([request])
+      await controller.rejectUserRequests('User rejected', [request.id])
+
+      expect(dappsCtrl.shouldOfferToSilenceDapp(MOCK_SESSION.id)).toBe(true)
+      expect(dappsCtrl.shouldOfferToSilenceDapp(OTHER_SESSION.id)).toBe(true)
+    })
+
+    test('does not count a rejection the wallet made on its own behalf', async () => {
+      const { controller, dappsCtrl, getCallsRequest } = await prepareTest()
+      const first = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 1n })
+      const second = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 10n })
+      first.id = 'first-request'
+      second.id = 'second-request'
+      controller.userRequests = [first, second]
+
+      await controller.rejectUserRequests('Superseded', [first.id], { isUserInitiated: false })
+      await controller.rejectUserRequests('Superseded', [second.id], { isUserInitiated: false })
+
+      expect(dappsCtrl.shouldOfferToSilenceDapp(MOCK_SESSION.id)).toBe(false)
+    })
+
+    test('does not count the requests the wallet drops when it closes the view itself', async () => {
+      const { controller, dappsCtrl } = await prepareTest()
+      await dappsCtrl.addDapp(TEST_DAPP)
+
+      // Twice, because one rejection is never enough to offer silencing anyway
+      for (let i = 0; i < DAPP_REJECTS_BEFORE_OFFERING_SILENCE; i++) {
+        await buildDappRequest(controller, { resolve: () => {}, reject: () => {} })
+        // What `selectAccount` does - the user acted on the wallet, not on the app
+
+        await controller.closeRequestWindow({ isUserInitiated: false })
+      }
+
+      expect(dappsCtrl.shouldOfferToSilenceDapp(MOCK_SESSION.id)).toBe(false)
+
+      // The same close, but this time it really is the user turning the app away
+      for (let i = 0; i < DAPP_REJECTS_BEFORE_OFFERING_SILENCE; i++) {
+        await buildDappRequest(controller, { resolve: () => {}, reject: () => {} })
+
+        await controller.closeRequestWindow()
+      }
+
+      expect(dappsCtrl.shouldOfferToSilenceDapp(MOCK_SESSION.id)).toBe(true)
+    })
+
+    test('one approved request clears what was held against the app', async () => {
+      const { controller, dappsCtrl, getCallsRequest } = await prepareTest()
+      const rejected = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 1n })
+      const resolved = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 10n })
+      rejected.id = 'rejected-request'
+      resolved.id = 'resolved-request'
+      controller.userRequests = [rejected, resolved]
+
+      await controller.rejectUserRequests('User rejected', [rejected.id])
+      await controller.resolveUserRequest(null, resolved.id)
+
+      expect(dappsCtrl.shouldOfferToSilenceDapp(MOCK_SESSION.id)).toBe(false)
+    })
+
+    test("reports how many of the app's requests are queued behind the open one", async () => {
+      const { controller, getCallsRequest } = await prepareTest()
+      const first = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 1n })
+      const second = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 10n })
+      first.id = 'first-request'
+      second.id = 'second-request'
+      controller.userRequests = [first, second]
+      await controller.setCurrentUserRequestById(first.id, { skipFocus: true })
+
+      expect(controller.currentRequestRejectOptions).toEqual({
+        dappRequestsCount: 2,
+        canSilenceDapp: false
+      })
+
+      first.signAccountOp.destroy()
+      second.signAccountOp.destroy()
+    })
+
+    test('has no reject options for a request the wallet raised itself', async () => {
+      const { controller, getCallsRequest } = await prepareTest()
+      const request = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 1n })
+      request.dappPromises = []
+      controller.userRequests = [request]
+      await controller.setCurrentUserRequestById(request.id, { skipFocus: true })
+
+      expect(controller.currentRequestRejectOptions).toBe(null)
+
+      request.signAccountOp.destroy()
+    })
+
+    test("rejecting everything from the app leaves another app's request alone", async () => {
+      const { controller, getCallsRequest } = await prepareTest()
+      const fromDapp = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 1n })
+      const fromOtherDapp = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 10n })
+      fromDapp.id = 'from-dapp'
+      fromOtherDapp.id = 'from-other-dapp'
+      fromOtherDapp.dappPromises = [
+        { id: 'b', resolve: () => {}, reject: () => {}, session: OTHER_SESSION, meta: {} }
+      ]
+      controller.userRequests = [fromDapp, fromOtherDapp]
+      await controller.setCurrentUserRequestById(fromDapp.id, { skipFocus: true })
+
+      await controller.rejectAllRequestsFromCurrentDapp('User rejected')
+
+      expect(controller.userRequests.map((r) => r.id)).toEqual(['from-other-dapp'])
+
+      fromOtherDapp.signAccountOp.destroy()
+    })
+
+    test('silencing turns away what the app sends next, without an error toast', async () => {
+      const { controller, dappsCtrl, event, getCallsRequest } = await prepareTest()
+      await dappsCtrl.addDapp(TEST_DAPP)
+      const request = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 1n })
+      controller.userRequests = [request]
+      await controller.setCurrentUserRequestById(request.id, { skipFocus: true })
+
+      await controller.rejectAllRequestsFromCurrentDapp('User rejected', {
+        shouldSilenceDapp: true
+      })
+      expect(dappsCtrl.isDappSilenced(MOCK_SESSION.id)).toBe(true)
+
+      const errorMock = jest.fn()
+      event.on('error', errorMock)
+      const rejectMock = jest.fn()
+      await buildDappRequest(controller, { resolve: () => {}, reject: rejectMock })
+
+      expect(rejectMock).toHaveBeenCalled()
+      expect(errorMock).not.toHaveBeenCalled()
+      expect(controller.userRequests).toHaveLength(0)
+    })
+
+    test('lets the app through again once it has not been silenced for a minute', async () => {
+      const { controller, dappsCtrl, getCallsRequest } = await prepareTest()
+      await dappsCtrl.addDapp(TEST_DAPP)
+      const request = await getCallsRequest({ addr: ACCOUNT_ADDR, chainId: 1n })
+      controller.userRequests = [request]
+      await controller.setCurrentUserRequestById(request.id, { skipFocus: true })
+
+      const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(NOW)
+      await controller.rejectAllRequestsFromCurrentDapp('User rejected', {
+        shouldSilenceDapp: true
+      })
+
+      nowSpy.mockReturnValue(NOW + DAPP_SILENCE_DURATION)
+      expect(dappsCtrl.isDappSilenced(MOCK_SESSION.id)).toBe(false)
+
+      const rejectMock = jest.fn()
+      await buildDappRequest(controller, { resolve: () => {}, reject: rejectMock })
+
+      expect(rejectMock).not.toHaveBeenCalled()
+      expect(controller.userRequests.some((r) => r.kind === 'message')).toBe(true)
+
+      nowSpy.mockRestore()
+    })
+  })
+
   describe('call data and "to" field validation', () => {
     const FROM = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const VALID_TO = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
@@ -1813,5 +2463,77 @@ describe('RequestsController ', () => {
       expect(controller.userRequests.length).toBe(0)
       expect(controller.userRequestsWaitingAccountSwitch.length).toBe(0)
     })
+  })
+})
+
+describe('SIWE auto-login and signing authentication', () => {
+  // A valid ERC-4361 message for the dapp behind MOCK_SESSION
+  const SIWE_MESSAGE = [
+    'test-dapp.com wants you to sign in with your Ethereum account:',
+    '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+    '',
+    'Sign in to the test dapp.',
+    '',
+    'URI: https://test-dapp.com',
+    'Version: 1',
+    'Chain ID: 1',
+    'Nonce: 12345678',
+    'Issued At: 2024-01-01T00:00:00.000Z'
+  ].join('\n')
+
+  const buildSiweRequest = async (
+    controller: Awaited<ReturnType<typeof prepareTest>>['controller']
+  ) => {
+    const resolve = jest.fn()
+
+    await controller.build({
+      type: 'dappRequest',
+      params: {
+        request: {
+          method: 'personal_sign',
+          params: [SIWE_MESSAGE, '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'],
+          session: MOCK_SESSION
+        } as any,
+        dappPromise: { id: 'testID', resolve, reject: () => {}, session: MOCK_SESSION }
+      }
+    })
+
+    return resolve
+  }
+
+  test('does not sign on the user behalf for an app they have not confirmed for signing', async () => {
+    const { controller, autoLoginCtrl } = await prepareTest(true)
+
+    jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+    const autoLoginSpy = jest.spyOn(autoLoginCtrl, 'autoLogin')
+
+    const resolve = await buildSiweRequest(controller)
+
+    expect(autoLoginSpy).not.toHaveBeenCalled()
+    expect(resolve).not.toHaveBeenCalled()
+    // The request opens the sign message screen instead, which is where the confirmation is asked
+    expect(controller.userRequests.length).toBe(1)
+    expect(controller.userRequests[0]!.kind).toBe('siwe')
+
+    jest.restoreAllMocks()
+  })
+
+  test('signs on the user behalf once they have confirmed for that app', async () => {
+    const { controller, autoLoginCtrl, dappsCtrl } = await prepareTest(true)
+
+    dappsCtrl.updateDapp(MOCK_SESSION.id, { signingAuthenticated: true })
+
+    jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+    const autoLoginSpy = jest
+      .spyOn(autoLoginCtrl, 'autoLogin')
+      .mockResolvedValue({ signature: '0xdeadbeef' } as any)
+
+    const resolve = await buildSiweRequest(controller)
+
+    expect(autoLoginSpy).toHaveBeenCalled()
+    expect(resolve).toHaveBeenCalledWith({ hash: '0xdeadbeef' })
+    expect(controller.userRequests.length).toBe(0)
+
+    jest.restoreAllMocks()
   })
 })

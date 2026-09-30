@@ -8,6 +8,7 @@ import {
   hexlify,
   Interface,
   isHexString,
+  JsonRpcProvider,
   keccak256,
   toBeHex,
   toNumber,
@@ -27,7 +28,6 @@ import { Network } from '../../interfaces/network'
 import { SafeTx } from '../../interfaces/safe'
 import { EIP7702Signature } from '../../interfaces/signatures'
 import { PlainTextMessageUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
-import isSameAddr from '../../utils/isSameAddr'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
 import {
   AccountOp,
@@ -62,13 +62,30 @@ export const EIP_1271_NOT_SUPPORTED_BY = [
 export const AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE =
   'Signing an AmbireOperation is not allowed'
 
-export const isAmbireOperationTypedData = (typedData: {
-  primaryType: string
-  types: Record<string, unknown>
-}) => {
-  if ('AmbireReadableOperation' in typedData.types) return false
+/**
+ * Check if the typedData's intention is to target the current account
+ */
+export const isCallToSelfOrAmbireOp = (
+  typedData: {
+    primaryType: string
+    types: Record<string, unknown>
+    domain: TypedDataDomain
+  },
+  account?: Account | null
+) => {
+  const isAmbireOp =
+    typedData.primaryType === 'AmbireOperation' || 'AmbireOperation' in typedData.types
+  const isAmbire4337Op =
+    typedData.primaryType === 'Ambire4337AccountOp' || 'Ambire4337AccountOp' in typedData.types
+  const isAmbireExecuteOp =
+    typedData.primaryType === 'AmbireExecuteAccountOp' ||
+    'AmbireExecuteAccountOp' in typedData.types
 
-  return typedData.primaryType === 'AmbireOperation' || 'AmbireOperation' in typedData.types
+  const verifyingContract = typedData.domain.verifyingContract
+  const isVerifyingContractSameAsAccount =
+    verifyingContract && account && verifyingContract.toLowerCase() === account.addr.toLowerCase()
+
+  return isAmbireOp || isAmbire4337Op || isAmbireExecuteOp || isVerifyingContractSameAsAccount
 }
 
 /**
@@ -97,14 +114,6 @@ export const wrapStandard = (signature: string) => {
 export const wrapWallet = (signature: string, walletAddr: string) => {
   const wallet32bytes = `${stripHexPrefix(toBeHex(0, 12))}${stripHexPrefix(walletAddr)}`
   return `${signature}${wallet32bytes}02`
-}
-
-// allow v1 accounts to have v2 signers
-export interface AmbireReadableOperation {
-  addr: Hex
-  chainId: bigint
-  nonce: bigint
-  calls: { to: Hex; value: bigint; data: Hex }[]
 }
 
 type WithHardwareWalletSigningRequest = <T>(
@@ -147,62 +156,6 @@ export const adaptTypedMessageForMetaMaskSigUtil = (
           (typedMessage.domain.salt as unknown as ArrayBuffer)
         : undefined
     }
-  }
-}
-
-export const getAmbireReadableTypedData = (
-  chainId: bigint,
-  verifyingAddr: string,
-  v1Execute: AmbireReadableOperation
-): TypedMessageUserRequest['meta']['params'] => {
-  const domain: TypedDataDomain = {
-    name: 'Ambire',
-    version: '1',
-    chainId: chainId.toString(),
-    verifyingContract: verifyingAddr,
-    salt: toBeHex(0, 32)
-  }
-  const types = {
-    EIP712Domain: [
-      {
-        name: 'name',
-        type: 'string'
-      },
-      {
-        name: 'version',
-        type: 'string'
-      },
-      {
-        name: 'chainId',
-        type: 'uint256'
-      },
-      {
-        name: 'verifyingContract',
-        type: 'address'
-      },
-      {
-        name: 'salt',
-        type: 'bytes32'
-      }
-    ],
-    Calls: [
-      { name: 'to', type: 'address' },
-      { name: 'value', type: 'uint256' },
-      { name: 'data', type: 'bytes' }
-    ],
-    AmbireReadableOperation: [
-      { name: 'account', type: 'address' },
-      { name: 'chainId', type: 'uint256' },
-      { name: 'nonce', type: 'uint256' },
-      { name: 'calls', type: 'Calls[]' }
-    ]
-  }
-
-  return {
-    domain,
-    types,
-    message: v1Execute,
-    primaryType: 'AmbireOperation'
   }
 }
 
@@ -364,13 +317,16 @@ export async function getExecuteSignature(
   network: Network,
   accountOp: AccountOp,
   accountState: AccountOnchainState,
-  signer: KeystoreSignerInterface
+  signer: KeystoreSignerInterface,
+  provider?: JsonRpcProvider
 ) {
+  const ctx = provider ? { chainId: network.chainId, provider } : undefined
+
   // if we're authorizing calls for a v1 contract, we do a sign message
   // on the hash of the calls
   if (!accountState.isV2) {
     const message = hexlify(accountOpSignableHash(accountOp, network.chainId))
-    return wrapStandard(await signer.signMessage(message))
+    return wrapStandard(await signer.signMessage(message, ctx))
   }
 
   // txns for v2 contracts are always eip-712 so we put the hash of the calls
@@ -380,7 +336,7 @@ export async function getExecuteSignature(
     accountState.accountAddr,
     hexlify(accountOpSignableHash(accountOp, network.chainId))
   )
-  return wrapStandard(await signer.signTypedData(typedData))
+  return wrapStandard(await signer.signTypedData(typedData, ctx))
 }
 
 export async function getPlainTextSignature(
@@ -390,9 +346,11 @@ export async function getPlainTextSignature(
   accountState: AccountOnchainState,
   signer: KeystoreSignerInterface,
   isOG = false,
-  withHardwareWalletSigningRequest?: WithHardwareWalletSigningRequest
+  withHardwareWalletSigningRequest?: WithHardwareWalletSigningRequest,
+  provider?: JsonRpcProvider
 ): Promise<{ signature: Hex; hash?: Hex }> {
   const dedicatedToOneSA = signer.key.dedicatedToOneSA
+  const ctx = provider ? { chainId: network.chainId, provider } : undefined
 
   if (!!account.safeCreation) {
     // Safe always signs a typed data, even if plain sig
@@ -400,7 +358,7 @@ export async function getPlainTextSignature(
     return {
       signature: (await signWithHardwareWalletSigningRequest(
         { type: 'eip-712', data: typedData },
-        () => signer.signTypedData(typedData),
+        () => signer.signTypedData(typedData, ctx),
         withHardwareWalletSigningRequest
       )) as Hex,
       hash: getEIP712Hash(typedData)
@@ -411,7 +369,7 @@ export async function getPlainTextSignature(
     return {
       signature: (await signWithHardwareWalletSigningRequest(
         { type: 'message', data: { message: messageHex } },
-        () => signer.signMessage(messageHex),
+        () => signer.signMessage(messageHex, ctx),
         withHardwareWalletSigningRequest
       )) as Hex
     }
@@ -443,7 +401,7 @@ export async function getPlainTextSignature(
       signature: wrapUnprotected(
         await signWithHardwareWalletSigningRequest(
           { type: 'message', data: { message: messageHex } },
-          () => signer.signMessage(messageHex),
+          () => signer.signMessage(messageHex, ctx),
           withHardwareWalletSigningRequest
         )
       ) as Hex
@@ -456,7 +414,7 @@ export async function getPlainTextSignature(
       signature: wrapUnprotected(
         await signWithHardwareWalletSigningRequest(
           { type: 'message', data: { message: messageHex } },
-          () => signer.signMessage(messageHex),
+          () => signer.signMessage(messageHex, ctx),
           withHardwareWalletSigningRequest
         )
       ) as Hex
@@ -474,7 +432,7 @@ export async function getPlainTextSignature(
     signature: wrapStandard(
       await signWithHardwareWalletSigningRequest(
         { type: 'eip-712', data: typedData },
-        () => signer.signTypedData(typedData),
+        () => signer.signTypedData(typedData, ctx),
         withHardwareWalletSigningRequest
       )
     ) as Hex
@@ -489,8 +447,10 @@ export async function getEIP712Signature(
   network: Network,
   isOG = false,
   withHardwareWalletSigningRequest?: WithHardwareWalletSigningRequest,
-  allowAmbireOperation = false
+  allowAmbireOperation = false,
+  provider?: JsonRpcProvider
 ): Promise<{ signature: Hex; hash?: Hex }> {
+  const ctx = provider ? { chainId: network.chainId, provider } : undefined
   if (!message.types.EIP712Domain) {
     throw new Error(
       'Ambire only supports signing EIP712 typed data messages. Please try again with a valid EIP712 message.'
@@ -508,7 +468,7 @@ export async function getEIP712Signature(
     return {
       signature: (await signWithHardwareWalletSigningRequest(
         { type: 'eip-712', data: typedData },
-        () => signer.signTypedData(typedData),
+        () => signer.signTypedData(typedData, ctx),
         withHardwareWalletSigningRequest
       )) as Hex,
       hash: getEIP712Hash(typedData)
@@ -519,12 +479,12 @@ export async function getEIP712Signature(
     return {
       signature: (await signWithHardwareWalletSigningRequest(
         { type: 'eip-712', data: message },
-        () => signer.signTypedData(message),
+        () => signer.signTypedData(message, ctx),
         withHardwareWalletSigningRequest
       )) as Hex
     }
 
-  if (isAmbireOperationTypedData(message) && !allowAmbireOperation) {
+  if (isCallToSelfOrAmbireOp(message, account) && !allowAmbireOperation) {
     throw new Error(AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE)
   }
 
@@ -552,7 +512,7 @@ export async function getEIP712Signature(
       signature: wrapUnprotected(
         await signWithHardwareWalletSigningRequest(
           { type: 'eip-712', data: message },
-          () => signer.signTypedData(message),
+          () => signer.signTypedData(message, ctx),
           withHardwareWalletSigningRequest
         )
       ) as Hex
@@ -568,38 +528,11 @@ export async function getEIP712Signature(
     )
   }
 
-  if ('AmbireReadableOperation' in message.types) {
-    const ambireReadableOperation = message.message as AmbireReadableOperation
-    if (isSameAddr(ambireReadableOperation.addr, account.addr)) {
-      throw new Error(
-        'signature error: trying to sign an AmbireReadableOperation for the same address. Please contact support'
-      )
-    }
-
-    const hash = hexlify(
-      getSignableHash(
-        ambireReadableOperation.addr,
-        ambireReadableOperation.chainId,
-        ambireReadableOperation.nonce,
-        ambireReadableOperation.calls.map(callToTuple)
-      )
-    )
-    const ambireOperation = getTypedData(ambireReadableOperation.chainId, account.addr, hash)
-    const signature = wrapStandard(
-      await signWithHardwareWalletSigningRequest(
-        { type: 'eip-712', data: ambireOperation },
-        () => signer.signTypedData(ambireOperation),
-        withHardwareWalletSigningRequest
-      )
-    )
-    return { signature: wrapWallet(signature, account.addr) as Hex }
-  }
-
   return {
     signature: wrapUnprotected(
       await signWithHardwareWalletSigningRequest(
         { type: 'eip-712', data: message },
-        () => signer.signTypedData(message),
+        () => signer.signTypedData(message, ctx),
         withHardwareWalletSigningRequest
       )
     ) as Hex

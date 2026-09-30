@@ -176,8 +176,12 @@ describe('contractInfo', () => {
       { overrides: { fetch: fetchSpy } }
     )
 
-    void featureFlags.setFeatureFlag('apiForFunctionSelectors', false)
+    await featureFlags.setFeatureFlag('apiForFunctionSelectors', false)
+    const onUpdate = jest.fn()
+    const unsubscribe = contractInfo.onUpdate(onUpdate)
+
     void contractInfo.getSelector('0x23b872dd')
+    expect(onUpdate).not.toHaveBeenCalled()
     expect(contractInfo.selectors['0x23b872dd']?.status).toBe('success')
     expect((contractInfo.selectors['0x23b872dd'] as any).data).toMatchObject([
       { signature: 'transferFrom(address,address,uint256)' }
@@ -185,6 +189,8 @@ describe('contractInfo', () => {
     await wait(3000)
     expect(fetchSourcifyCounter).toBe(0)
     expect(contractInfo.selectors['0x23b872dd']?.status).toBe('success')
+
+    unsubscribe()
   })
 
   test('Should not fetch selectors when apiForFunctionSelectors feature flag is disabled', async () => {
@@ -198,6 +204,24 @@ describe('contractInfo', () => {
     await wait(3000)
     expect(fetchSourcifyCounter).toBe(0)
     expect(contractInfo.selectors['0x23b872dd']?.status).toBe('fetching-disabled')
+  })
+
+  test('BUG: Should not emit repeated updates for a selector when fetching is disabled', async () => {
+    const {
+      mainCtrl: { contractInfo, featureFlags }
+    } = await makeMainController(undefined, { overrides: { fetch: fetchSpy } })
+
+    await featureFlags.setFeatureFlag('apiForFunctionSelectors', false)
+    const onUpdate = jest.fn()
+    const unsubscribe = contractInfo.onUpdate(onUpdate)
+
+    void contractInfo.getSelector('0x23b872dd')
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+
+    void contractInfo.getSelector('0x23b872dd')
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+
+    unsubscribe()
   })
 
   test('Should not re-fetch a selector with a fresh updatedAt', async () => {

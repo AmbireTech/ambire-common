@@ -24,3 +24,8 @@ export type AddressPoisoningMatch = {
   matchedPrefixCharsCount: number
   matchedSuffixCharsCount: number
 }
+
+export type AmountAdjustmentInfo = {
+  feeAmount: string
+  tokenSymbol: string
+}

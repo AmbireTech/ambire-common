@@ -8,7 +8,7 @@ import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { PositionCountOnDisabledNetworks } from '../defiPositions/types'
 import { HumanizerVisualization } from '../humanizer/interfaces'
-import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
+import { getIsBridgeRoute, getIsIntentRoute } from '../swapAndBridge/swapAndBridge'
 
 export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
   banners.filter((banner) => {
@@ -17,7 +17,7 @@ export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: Ac
     return banner.meta.accountAddr === selectedAccount
   })
 
-export const getBridgeBanners = (
+export const getIntentBanners = (
   activeRoutes: SwapAndBridgeActiveRoute[],
   callsUserRequests: CallsUserRequest[],
   accountAddr: AccountId
@@ -34,7 +34,7 @@ export const getBridgeBanners = (
   }
 
   const filteredRoutes = activeRoutes.filter((route) => {
-    if (!route.route || !getIsBridgeRoute(route.route)) return false
+    if (!route.route || !getIsIntentRoute(route.route)) return false
     if (route.routeStatus !== 'ready' && route.routeStatus !== 'waiting-approval-to-resolve')
       return true
     return !isRouteTurnedIntoAccountOp(route)
@@ -45,7 +45,9 @@ export const getBridgeBanners = (
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
   const refundedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'refunded')
   const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes, ...refundedRoutes]
-  const actionWordUppercase = 'Bridge'
+  const onlyBridges = filteredRoutes.every((route) => route.route && getIsBridgeRoute(route.route))
+  const onlySwaps = filteredRoutes.every((route) => route.route && !getIsBridgeRoute(route.route))
+  const actionWordUppercase = onlyBridges ? 'Bridge' : onlySwaps ? 'Swap' : 'Transaction'
   const actionWordLower = actionWordUppercase.toLowerCase()
 
   let title = ''
