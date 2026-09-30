@@ -9,6 +9,7 @@ import {
   DAPP_REJECTS_BEFORE_OFFERING_SILENCE,
   DAPP_SILENCE_DURATION
 } from '../../consts/safeguards/dappRequestSpam'
+import { AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import {
   BenzinUserRequest,
@@ -268,8 +269,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
     event: eventEmitter,
     getWindowId,
     uiCtrl: mainCtrl.ui,
-    autoLoginCtrl: mainCtrl.autoLogin,
-    dappsCtrl: mainCtrl.dapps
+    autoLoginCtrl: mainCtrl.autoLogin
   }
 }
 
@@ -1424,7 +1424,11 @@ describe('RequestsController ', () => {
       nonSafeRequest
     ]
 
-    await controller.rejectSafRequests(safeAccountAddr, 1n, 'Safe deployment failed')
+    await controller.rejectSameChainNotSignedSafeRequest(
+      safeAccountAddr,
+      1n,
+      'Safe deployment failed'
+    )
 
     expect(controller.userRequests).toEqual([
       signedSafeRequest,
@@ -1620,7 +1624,8 @@ describe('RequestsController ', () => {
     const { accountsCtrl, benzinRequest, controller, transactionRequest } =
       await prepareSafeDeploymentHandoff()
     jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
-    const emitErrorSpy = jest.spyOn(controller, 'emitError')
+    const onError = jest.fn()
+    controller.onError(onError)
     const resumeSpy = jest.spyOn(transactionRequest.signAccountOp, 'resume')
 
     await controller.resolveUserRequest({}, benzinRequest.id)
@@ -1628,7 +1633,7 @@ describe('RequestsController ', () => {
     expect(controller.userRequests).toEqual([benzinRequest, transactionRequest])
     expect(controller.currentUserRequest).toBe(benzinRequest)
     expect(resumeSpy).not.toHaveBeenCalled()
-    expect(emitErrorSpy).toHaveBeenCalledWith(
+    expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({
         level: 'expected',
         message:
@@ -1639,40 +1644,22 @@ describe('RequestsController ', () => {
     transactionRequest.signAccountOp.destroy()
   })
 
-  test('keeps Benzin open when the paired request is selected while activation is pending', async () => {
-    const { accountsCtrl, benzinRequest, controller, transactionRequest } =
-      await prepareSafeDeploymentHandoff()
-    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
-    const emitErrorSpy = jest.spyOn(controller, 'emitError')
-
-    await controller.setCurrentUserRequestById(transactionRequest.id)
-
-    expect(controller.currentUserRequest).toBe(benzinRequest)
-    expect(emitErrorSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        level: 'expected',
-        message:
-          'Your Safe account is still being activated on this network. Wait a moment, then try again.'
-      })
-    )
-
-    transactionRequest.signAccountOp.destroy()
-  })
-
-  test('does not open the paired request when refreshing the Safe state fails', async () => {
+  test('keeps Benzin open when refreshing the Safe state after its deployment fails', async () => {
     const { accountsCtrl, benzinRequest, controller, transactionRequest } =
       await prepareSafeDeploymentHandoff()
     jest
       .spyOn(accountsCtrl, 'updateAccountState')
       .mockRejectedValue(new Error('account state fetch failed'))
-    const emitErrorSpy = jest.spyOn(controller, 'emitError')
+    const onError = jest.fn()
+    controller.onError(onError)
     const resumeSpy = jest.spyOn(transactionRequest.signAccountOp, 'resume')
 
-    await controller.setCurrentUserRequestById(transactionRequest.id)
+    await controller.resolveUserRequest({}, benzinRequest.id)
 
+    expect(controller.userRequests).toEqual([benzinRequest, transactionRequest])
     expect(controller.currentUserRequest).toBe(benzinRequest)
     expect(resumeSpy).not.toHaveBeenCalled()
-    expect(emitErrorSpy).toHaveBeenCalledWith(
+    expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({
         level: 'major',
         message:
@@ -1680,33 +1667,6 @@ describe('RequestsController ', () => {
       })
     )
 
-    transactionRequest.signAccountOp.destroy()
-  })
-
-  test('opens the Safe activation request when the paired request is selected before signing', async () => {
-    const { accountsCtrl, controller, getCallsRequest } = await prepareTest(false, true)
-    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
-    const chainId = 1n
-    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.isDeployed = false
-    const activationRequest = await getCallsRequest({ addr: accountAddr, chainId })
-    activationRequest.id = 'safe-activation-request'
-    activationRequest.meta.isSafeDeploy = true
-    const transactionRequest = await getCallsRequest({ addr: accountAddr, chainId })
-    transactionRequest.id = 'safe-transaction-after-activation'
-    const emitErrorSpy = jest.spyOn(controller, 'emitError')
-    controller.userRequests = [activationRequest, transactionRequest]
-    controller.currentUserRequest = activationRequest
-
-    await controller.setCurrentUserRequestById(transactionRequest.id)
-
-    expect(controller.currentUserRequest).toBe(activationRequest)
-    expect(emitErrorSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        level: 'expected',
-        message: 'Activate your Safe account on this network first. Then you can continue.'
-      })
-    )
-    activationRequest.signAccountOp.destroy()
     transactionRequest.signAccountOp.destroy()
   })
 
@@ -2556,9 +2516,11 @@ describe('RequestsController ', () => {
       jest
         .spyOn(accountsCtrl, 'forceFetchPendingState')
         .mockImplementation(async (_addr: string, chainId: bigint) =>
+          // The real method reads the state from a map, so it resolves with `undefined` when
+          // nothing was fetched, even though its signature doesn't say so
           chainId === 10n
-            ? undefined
-            : accountsCtrl.accountStates[ACCOUNT_ADDR]![chainId.toString()]
+            ? (undefined as unknown as AccountOnchainState)
+            : accountsCtrl.accountStates[ACCOUNT_ADDR]![chainId.toString()]!
         )
 
       await controller.addUserRequests([unfetchable, fine])

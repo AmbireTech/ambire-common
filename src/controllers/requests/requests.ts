@@ -2757,10 +2757,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const safeDeploymentSourceNetworks = this.#getPossibleSafeDeploymentSourceNetworks(
         account.addr
       )
-      const isSafeAccount = !!account.safeCreation
 
-      // safe account, not deployed and this isn't the deploy txn
-      if (isSafeAccount && !accountState.isDeployed && !meta.isSafeDeploy) {
+      if (!!account.safeCreation && !accountState.isDeployed && !meta.isSafeDeploy) {
         // if a property needed for the deploy is missing, we search for it
         if (!hasCompleteSafeCreationData(account.safeCreation)) {
           const safeCreation = await this.#recoverSafeCreation(
@@ -2770,11 +2768,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           if (safeCreation) account = { ...account, safeCreation }
         }
 
-        if (!account.safeCreation) {
+        // if we still don't have the data after a recovery, declare an error
+        if (!hasCompleteSafeCreationData(account.safeCreation)) {
           this.emitError({
             level: 'expected',
             message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE,
-            error: new Error(`Safe deployment data could not be recovered for ${account.addr}`)
+            error: new Error(
+              `Safe deployment data does not derive account ${account.addr} on chain ${meta.chainId.toString()}`
+            )
           })
           dappPromises.forEach((promise) => {
             promise.reject(
