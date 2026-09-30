@@ -36,6 +36,13 @@ export interface FeatureFlags {
    */
   swapAndBridgeTokenInfo: boolean
   /**
+   * Off by default for privacy: Ledger's signing kit reports every transaction
+   * and typed data signed with a Ledger device to Ledger (network, contract or
+   * recipient address, device model/firmware, app versions and whether it was
+   * blind-signed). When enabled, those reports are sent.
+   */
+  ledgerSigningReports: boolean
+  /**
    * Find the pending $WALLET withdrawals (unstakes) of the account through
    * Ambire's relayer logs. Requires sending the account address to the relayer,
    * so the user can opt out of it. When disabled, the withdrawals are found
@@ -66,6 +73,7 @@ export const defaultFeatureFlags: FeatureFlags = {
   eip7702: true,
   keepEnsProfilesUpToDate: false,
   swapAndBridgeTokenInfo: true,
+  ledgerSigningReports: false,
   walletStakingWithdrawalsLookup: true,
   // @TODO: Introduce a setting and flip to false
   namoshiDomains: true,
