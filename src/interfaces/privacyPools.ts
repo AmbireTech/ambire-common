@@ -185,14 +185,26 @@ export type PrivacyPoolsIdentityChainState = Pick<
 /**
  * What a prepared withdrawal costs, after we have checked it against what we asked for.
  *
- * Decoded out of the signed userOp's `paymasterData` - the bytes the paymaster and the pool will
- * actually act on - rather than taken from the SDK's word. See `readPaymasterWithdrawal`.
+ * The fee is decoded out of the signed userOp's `paymasterData` - the bytes the paymaster and the
+ * pool will actually act on - rather than taken from the SDK's word. See `readPaymasterWithdrawal`.
+ * What it is expected to actually cost comes from running that userOp on top of the latest block.
+ * See `estimatePaymasterWithdrawalFee`.
  */
 export type PrivacyPoolsQuote = {
-  /** The gas fee the paymaster keeps, in the withdrawn token's units. */
+  /**
+   * The most the transfer can cost, in the withdrawn token's units: the fee locked into the proof,
+   * which the paymaster takes out of the amount. What it does not spend on gas, it refunds to the
+   * recipient in the same transaction.
+   */
   feeAmount: bigint
-  /** What the recipient actually receives, after the fee. */
+  /** What the recipient receives at the least - the amount minus `feeAmount`. */
   amountAfterFee: bigint
+  /**
+   * What the transfer is expected to actually cost, in the same units: `feeAmount` minus the
+   * refund. Null when the transfer could not be run first, which leaves `feeAmount` as all that is
+   * known.
+   */
+  expectedFeeAmount: bigint | null
 }
 
 /**

@@ -36,6 +36,7 @@ import {
   PrivacyPoolsChainSyncState,
   PrivacyPoolsIdentityChainState,
   PrivacyPoolsOperation,
+  PrivacyPoolsPaymasterConfig,
   PrivacyPoolsTokenBalance,
   PrivacyPoolsUnavailableReason
 } from '../../interfaces/privacyPools'
@@ -55,8 +56,13 @@ import { encodePrivacyPoolsDeposit, readPrivacyPoolsDeposit } from '../../libs/p
 import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
 import { fetchPrivacyPoolsPrices } from '../../libs/privacyPools/prices'
 import { readPaymasterWithdrawal } from '../../libs/privacyPools/paymasterWithdrawal'
+import {
+  PrivacyPoolsSerializedUserOperation,
+  estimatePaymasterWithdrawalFee
+} from '../../libs/privacyPools/estimateWithdrawal'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import { generateUuid } from '../../utils/uuid'
+import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 /**
@@ -70,6 +76,12 @@ const PRICES_MAX_AGE_MS = 5 * 60 * 1000
 
 /** How recently a chain must have been read for opening the account not to read it again. */
 const SYNC_MAX_AGE_MS = 10 * 60 * 1000
+
+/**
+ * How long a proved withdrawal waits for its fee estimation before it is shown with only the most
+ * it can cost. See `#getExpectedWithdrawalFee`.
+ */
+const WITHDRAWAL_ESTIMATION_TIMEOUT_MS = 8 * 1000
 
 /** What an account op's final status means for the deposits in it, or null while it has none. */
 const getDepositOutcome = (status?: AccountOpStatus): 'success' | 'failed' | null => {
@@ -1592,10 +1604,19 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         amount
       })
 
+      const expectedFeeAmount = await this.#getExpectedWithdrawalFee({
+        chainId,
+        userOperation: privateOp.withdrawal.userOperation,
+        paymaster,
+        recipient,
+        tokenAddress,
+        fee
+      })
+
       const isStillCurrent = this.#updateOperation({
         ...operation,
         phase: 'ready',
-        quote: { feeAmount: fee, amountAfterFee: amount - fee }
+        quote: { feeAmount: fee, amountAfterFee: amount - fee, expectedFeeAmount }
       })
       // A proof that finished after a lock must not be kept for a withdrawal nobody can see.
       if (isStillCurrent) this.#pendingWithdrawal = privateOp
@@ -1608,6 +1629,66 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
 
     this.emitUpdate()
+  }
+
+  /**
+   * What a proved withdrawal is expected to actually cost, by running it first - see
+   * `estimatePaymasterWithdrawalFee`. Null when it cannot be run.
+   *
+   * Best effort: the fee locked into the proof is already the most the user can be charged, so a
+   * node that cannot simulate, or answers too slowly, leaves that on screen instead of holding up
+   * the confirmation. A simulation that says the withdrawal would fail does not fail it here - the
+   * bundler checks it again before accepting it.
+   */
+  async #getExpectedWithdrawalFee({
+    chainId,
+    userOperation,
+    paymaster,
+    recipient,
+    tokenAddress,
+    fee
+  }: AssetRef & {
+    chainId: string
+    userOperation: PrivacyPoolsSerializedUserOperation
+    paymaster: PrivacyPoolsPaymasterConfig
+    recipient: string
+    fee: bigint
+  }): Promise<bigint | null> {
+    const network = this.#networks.networks.find((n) => n.chainId.toString() === chainId)
+    // The sender only has code to run through a state override
+    if (!network || network.rpcNoStateOverride) return null
+
+    try {
+      const { expectedFee } = await withTimeout(
+        () =>
+          estimatePaymasterWithdrawalFee({
+            provider: this.#getProvider(chainId),
+            userOperation,
+            entryPointAddress: paymaster.entryPointAddress,
+            paymasterAddress: paymaster.paymasterAddress,
+            recipient,
+            tokenAddress,
+            fee
+          }),
+        {
+          timeoutMs: WITHDRAWAL_ESTIMATION_TIMEOUT_MS,
+          message: 'privacyPools: the withdrawal fee estimation timed out'
+        }
+      )
+
+      return expectedFee
+    } catch (error: any) {
+      this.emitError({
+        message: 'Could not work out the exact network fee, so the most it can cost is shown.',
+        level: 'silent',
+        error:
+          error instanceof Error
+            ? error
+            : new Error('privacyPools: withdrawal fee estimation failed')
+      })
+
+      return null
+    }
   }
 
   /**

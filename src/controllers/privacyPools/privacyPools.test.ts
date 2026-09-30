@@ -1,4 +1,4 @@
-import { Interface } from 'ethers'
+import { AbiCoder, Interface, toBeHex, ZeroHash } from 'ethers'
 
 import { expect, jest } from '@jest/globals'
 
@@ -58,6 +58,117 @@ const ERC20_INTERFACE = new Interface([
 const MINIMUM_DEPOSIT = 10n ** 16n
 const MINIMUM_USDC_DEPOSIT = 10n ** 6n
 
+const ETHEREUM_PAYMASTER = getPrivacyPoolsChainConfig(1n)!.paymaster!
+const WITHDRAWAL_AMOUNT = 10n ** 17n
+const WITHDRAWAL_FEE = 2n * 10n ** 15n
+const WITHDRAWAL_REFUND = 12n * 10n ** 14n
+/** Where `eth_simulateV1` reports native transfers when asked to trace them. */
+const SIMULATED_NATIVE_TRANSFERS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
+
+const SIMULATION_LOGS_INTERFACE = new Interface([
+  'event Transfer(address indexed from, address indexed to, uint256 value)',
+  'event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)'
+])
+
+/**
+ * A proved withdrawal the way the SDK hands it over, with the fee, recipient and amount encoded
+ * where `readPaymasterWithdrawal` checks them. The proof itself is never verified off chain.
+ */
+const buildPreparedWithdrawal = () => {
+  const coder = AbiCoder.defaultAbiCoder()
+  const adapter = ETHEREUM_PAYMASTER.poolAdapters[ETHEREUM_ETH_POOL]!
+  const feeData = coder.encode(
+    ['tuple(address recipient, address feeRecipient, uint256 fee)'],
+    [
+      {
+        recipient: WITHDRAWAL_RECIPIENT,
+        feeRecipient: ETHEREUM_PAYMASTER.paymasterAddress,
+        fee: WITHDRAWAL_FEE
+      }
+    ]
+  )
+  const adapterData = coder.encode(
+    [
+      'tuple(tuple(address processooor, bytes data) withdrawal, tuple(uint256[2] pA, uint256[2][2] pB, uint256[2] pC, uint256[8] pubSignals) proof)'
+    ],
+    [
+      {
+        withdrawal: { processooor: adapter, data: feeData },
+        proof: {
+          pA: [1n, 2n],
+          pB: [
+            [3n, 4n],
+            [5n, 6n]
+          ],
+          pC: [7n, 8n],
+          pubSignals: [11n, 12n, WITHDRAWAL_AMOUNT, 14n, 15n, 16n, 17n, 18n]
+        }
+      }
+    ]
+  )
+
+  return {
+    mode: 'paymaster',
+    withdrawal: {
+      poolAddress: BigInt(ETHEREUM_ETH_POOL),
+      paymasterAddress: ETHEREUM_PAYMASTER.paymasterAddress,
+      entryPointAddress: ETHEREUM_PAYMASTER.entryPointAddress,
+      userOperation: {
+        sender: '0xA3a4D83896ec4b595668fA3d5430157cd235F720',
+        nonce: '0x0',
+        callData: '0x',
+        callGasLimit: '0x0',
+        verificationGasLimit: toBeHex(50_000n),
+        preVerificationGas: toBeHex(100_000n),
+        maxFeePerGas: toBeHex(10n ** 9n),
+        maxPriorityFeePerGas: toBeHex(10n ** 8n),
+        paymaster: ETHEREUM_PAYMASTER.paymasterAddress,
+        paymasterVerificationGasLimit: toBeHex(1_200_000n),
+        paymasterPostOpGasLimit: toBeHex(50_000n),
+        paymasterData: coder.encode(
+          ['tuple(address adapter, bytes adapterData)'],
+          [{ adapter, adapterData }]
+        ),
+        signature: `0x${'11'.repeat(65)}`,
+        eip7702Auth: { address: '0xe6Cae83BdE06E4c305530e199D7217f42808555B' }
+      }
+    }
+  }
+}
+
+/** What a node answers when it runs that withdrawal and the paymaster refunds part of the fee. */
+const successfulSimulation = () => [
+  {
+    calls: [
+      {
+        status: '0x1',
+        logs: [
+          {
+            address: SIMULATED_NATIVE_TRANSFERS,
+            ...SIMULATION_LOGS_INTERFACE.encodeEventLog('Transfer', [
+              ETHEREUM_PAYMASTER.paymasterAddress,
+              WITHDRAWAL_RECIPIENT,
+              WITHDRAWAL_REFUND
+            ])
+          },
+          {
+            address: ETHEREUM_PAYMASTER.entryPointAddress,
+            ...SIMULATION_LOGS_INTERFACE.encodeEventLog('UserOperationEvent', [
+              ZeroHash,
+              '0xA3a4D83896ec4b595668fA3d5430157cd235F720',
+              ETHEREUM_PAYMASTER.paymasterAddress,
+              0n,
+              true,
+              1n,
+              1n
+            ])
+          }
+        ]
+      }
+    ]
+  }
+]
+
 /** How many deposits each phrase has on chain - what its next precommitment follows from. */
 let depositCountBySeed: { [seedId: string]: number } = {}
 let allowance = 0n
@@ -69,6 +180,11 @@ const getPrecommitment = (seedId: string) =>
 const protocols: FakeProtocol[] = []
 let runningSyncs: RunningSync[] = []
 let notesBySeed: { [seedId: string]: { label: bigint; amount: bigint; approved: boolean }[] } = {}
+/** What `prepareUnshield` returns, or null for it to fail like proving did. */
+let preparedWithdrawal: ReturnType<typeof buildPreparedWithdrawal> | null = null
+/** How the node answers `eth_simulateV1`. */
+let simulateWithdrawal: () => Promise<unknown> = async () => successfulSimulation()
+let rpcNoStateOverride = false
 
 class FakeProtocol {
   host: any
@@ -119,10 +235,12 @@ class FakeProtocol {
     }
   }
 
-  // Proving is not faked: a withdrawal the controller would accept needs a signed userOp, and what
-  // the tests check is what happens before one is asked for
+  // Proving is not faked: unless a test hands it a signed withdrawal, this fails the way proving
+  // would, for tests that check what happens before one is asked for
   async prepareUnshield() {
     this.syncCountWhenProving = this.syncCount
+    if (preparedWithdrawal) return preparedWithdrawal
+
     throw new Error('prepareUnshield is not faked')
   }
 
@@ -183,7 +301,9 @@ class FakeSelectedAccount extends EventEmitter {
 class FakeNetworks extends EventEmitter {
   initialLoadPromise = Promise.resolve()
 
-  networks = [{ chainId: 1n, nativeAssetId: 'ethereum', platformId: 'ethereum' }]
+  networks = [
+    { chainId: 1n, nativeAssetId: 'ethereum', platformId: 'ethereum', rpcNoStateOverride }
+  ]
 }
 
 /** Answers the price service like it would: ETH by its id, tokens by their lowercase address. */
@@ -215,7 +335,18 @@ const fakeProviderCall = async ({ data }: { to: string; data: string }) => {
 class FakeProviders extends EventEmitter {
   initialLoadPromise = Promise.resolve()
 
-  providers = { '1': { getNetwork: async () => ({ chainId: 1n }), call: fakeProviderCall } }
+  providers = {
+    '1': {
+      getNetwork: async () => ({ chainId: 1n }),
+      call: fakeProviderCall,
+      getBlock: async () => ({ baseFeePerGas: 10n ** 8n }),
+      send: jest.fn(async (method: string) => {
+        if (method === 'eth_simulateV1') return simulateWithdrawal()
+
+        throw new Error(`FakeProviders: ${method} is not faked`)
+      })
+    }
+  }
 }
 
 const flush = () =>
@@ -252,12 +383,13 @@ const prepareTest = async ({
 
   const keystore = new FakeKeystore()
   const selectedAccount = new FakeSelectedAccount()
+  const providers = new FakeProviders()
   const onAccountsRemoved = jest.fn<(seedIds: string[]) => Promise<void>>(async () => {})
 
   const controller = new PrivacyPoolsController({
     keystore: keystore as unknown as IKeystoreController,
     networks: new FakeNetworks() as unknown as INetworksController,
-    providers: new FakeProviders() as unknown as IProvidersController,
+    providers: providers as unknown as IProvidersController,
     selectedAccount: selectedAccount as unknown as ISelectedAccountController,
     storage,
     fetch: fakeFetch as any,
@@ -266,7 +398,7 @@ const prepareTest = async ({
   })
   await controller.initialLoadPromise
 
-  return { controller, keystore, selectedAccount, storage, onAccountsRemoved }
+  return { controller, keystore, selectedAccount, providers, storage, onAccountsRemoved }
 }
 
 describe('PrivacyPoolsController', () => {
@@ -277,6 +409,9 @@ describe('PrivacyPoolsController', () => {
     allowance = 0n
     fakeFetch.mockClear()
     preparedDepositTarget = ETHEREUM_ENTRYPOINT
+    preparedWithdrawal = null
+    simulateWithdrawal = async () => successfulSimulation()
+    rpcNoStateOverride = false
     notesBySeed = {
       'seed-a': [{ label: 1n, amount: 10n, approved: true }],
       'seed-b': [{ label: 2n, amount: 20n, approved: false }]
@@ -1030,6 +1165,78 @@ describe('PrivacyPoolsController', () => {
       expect(protocol?.syncCountWhenProving).toBe(1)
       expect(protocol?.syncCount).toBe(1)
       expect(runningSyncs).toHaveLength(0)
+    })
+
+    const prepareSignedWithdrawal = async () => {
+      preparedWithdrawal = buildPreparedWithdrawal()
+      const test = await prepareTest()
+      test.selectedAccount.select('seed-a')
+
+      await test.controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        amount: WITHDRAWAL_AMOUNT,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+
+      return test
+    }
+
+    it('shows what a proved transfer costs by running it, next to the most it can cost', async () => {
+      const { controller, providers } = await prepareSignedWithdrawal()
+
+      expect(controller.operation).toMatchObject({
+        status: 'pending',
+        phase: 'ready',
+        quote: {
+          feeAmount: WITHDRAWAL_FEE,
+          amountAfterFee: WITHDRAWAL_AMOUNT - WITHDRAWAL_FEE,
+          expectedFeeAmount: WITHDRAWAL_FEE - WITHDRAWAL_REFUND
+        }
+      })
+      // Run as the bundler will submit it: through the paymaster's entry point
+      const [method, [params]] = providers.providers['1'].send.mock.calls[0] as [string, any[]]
+      expect(method).toBe('eth_simulateV1')
+      expect(params.blockStateCalls[0].calls[0].to).toBe(ETHEREUM_PAYMASTER.entryPointAddress)
+    })
+
+    it('shows only the most a transfer can cost when the node cannot run it', async () => {
+      simulateWithdrawal = async () => {
+        throw new Error('the method eth_simulateV1 does not exist/is not available')
+      }
+
+      const { controller } = await prepareSignedWithdrawal()
+
+      // Still ready to send: the fee in the proof is a limit the user can confirm
+      expect(controller.operation).toMatchObject({
+        status: 'pending',
+        phase: 'ready',
+        quote: { feeAmount: WITHDRAWAL_FEE, expectedFeeAmount: null }
+      })
+      expect(controller.emittedErrors.at(-1)).toMatchObject({ level: 'silent' })
+    })
+
+    it('does not fail a transfer the simulation says would revert, leaving that to the bundler', async () => {
+      simulateWithdrawal = async () => [{ calls: [{ status: '0x0', logs: [] }] }]
+
+      const { controller } = await prepareSignedWithdrawal()
+
+      expect(controller.operation).toMatchObject({
+        phase: 'ready',
+        quote: { feeAmount: WITHDRAWAL_FEE, expectedFeeAmount: null }
+      })
+    })
+
+    it('does not try to run a transfer on a node without state overrides', async () => {
+      rpcNoStateOverride = true
+
+      const { controller, providers } = await prepareSignedWithdrawal()
+
+      expect(controller.operation).toMatchObject({
+        phase: 'ready',
+        quote: { expectedFeeAmount: null }
+      })
+      expect(providers.providers['1'].send).not.toHaveBeenCalled()
     })
   })
   describe('prices', () => {
