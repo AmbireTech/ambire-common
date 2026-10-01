@@ -1,6 +1,8 @@
 import { describe, expect, test } from '@jest/globals'
 
+import { EXTREME_SWAP_CONFIRMATION_PHRASES } from '../../consts/safeguards/extremeSwapLoss'
 import {
+  getRandomExtremeSwapConfirmationPhrase,
   getSwapEstimatedLossUsd,
   isExtremeSwapLoss,
   normalizeConfirmationPhraseInput
@@ -17,7 +19,17 @@ describe('extremeSwapLoss safeguards', () => {
     expect(isExtremeSwapLoss(10_001)).toBe(true)
   })
 
-  test('should trim surrounding whitespace from confirmation phrase input', () => {
-    expect(normalizeConfirmationPhraseInput('  hello world  ')).toBe('hello world')
+  test('should trim and uppercase the confirmation phrase input', () => {
+    expect(normalizeConfirmationPhraseInput("  i'll lose money  ")).toBe("I'LL LOSE MONEY")
+  })
+
+  test('should eventually pick every configured confirmation phrase', () => {
+    const picked = new Set<string>()
+
+    for (let i = 0; i < 100; i++) {
+      picked.add(getRandomExtremeSwapConfirmationPhrase())
+    }
+
+    expect([...picked].sort()).toEqual([...EXTREME_SWAP_CONFIRMATION_PHRASES].sort())
   })
 })

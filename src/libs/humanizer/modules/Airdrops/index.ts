@@ -19,16 +19,19 @@ const distributors: { [distributor: string]: string } = {
 }
 const WTC_TOKEN_ADDRESS = '0xeF4461891DfB3AC8572cCf7C794664A8DD927945'
 
+const claimTokensSelector = toFunctionSelector(claimTokensAbi[0])
+const claimSelector = toFunctionSelector(claimAbi[0])
+
 export const airdropsModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const matcher = {
-    [toFunctionSelector(claimTokensAbi[0])]: (call: HexIrCall): IrCall => {
+    [claimTokensSelector]: (call: HexIrCall): IrCall => {
       if (call.to !== '0x4ee97a759AACa2EdF9c1445223b6Cd17c2eD3fb4') return call
       const { args } = decodeFunctionData({ abi: claimTokensAbi, data: call.data })
       const [, amount] = args
       const fullVisualization = [getAction('Claim'), getToken(WTC_TOKEN_ADDRESS, amount)]
       return { ...call, fullVisualization }
     },
-    [toFunctionSelector(claimAbi[0])]: (call: HexIrCall) => {
+    [claimSelector]: (call: HexIrCall) => {
       const { args } = decodeFunctionData({ abi: claimAbi, data: call.data })
       const [, , amount] = args
       if (!call.to) return call

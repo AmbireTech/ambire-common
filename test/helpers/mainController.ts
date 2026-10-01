@@ -52,6 +52,7 @@ export interface MakeMainControllerOpts {
     platform?: Platform
     featureFlags?: Partial<FeatureFlags>
     liFiApiKey?: string
+    cowSwapApiKey?: string
     bungeeApiKey?: string
     uniswapApiKey?: string
     externalSignerControllers?: ExternalSignerControllers
@@ -162,6 +163,7 @@ export const makeMainController = async (
     relayerUrl: overrides.relayerUrl ?? relayerUrl,
     velcroUrl: overrides.velcroUrl ?? velcroUrl,
     liFiApiKey: overrides.liFiApiKey ?? '',
+    cowSwapApiKey: overrides.cowSwapApiKey ?? '',
     bungeeApiKey: overrides.bungeeApiKey ?? '',
     uniswapApiKey: overrides.uniswapApiKey ?? '',
     featureFlags,

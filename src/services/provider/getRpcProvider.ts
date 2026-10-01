@@ -1,9 +1,10 @@
-import { JsonRpcApiProviderOptions, JsonRpcProvider, Network } from 'ethers'
+import { JsonRpcApiProviderOptions, Network } from 'ethers'
 import { createPublicClient, custom } from 'viem'
 
 import { Network as NetworkInterface } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import getRootDomain from '../../utils/getRootDomain'
+import { FetchJsonRpcProvider } from './fetchJsonRpcProvider'
 
 import type { PublicClient } from 'viem'
 
@@ -55,11 +56,11 @@ const getRpcProvider = (
     const staticNetwork = Network.from(Number(chainId))
 
     if (staticNetwork) {
-      return new JsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork, ...providerOptions })
+      return new FetchJsonRpcProvider(rpcUrl, staticNetwork, { staticNetwork, ...providerOptions })
     }
   }
 
-  return new JsonRpcProvider(rpcUrl, undefined, providerOptions)
+  return new FetchJsonRpcProvider(rpcUrl, undefined, providerOptions)
 }
 
 const getProviderConnectionUrl = (network: NetworkInterface) => {

@@ -12,6 +12,7 @@ import {
 } from '@lifi/types'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   ProviderQuoteParams,
@@ -224,6 +225,8 @@ export class LiFiAPI implements SwapProvider {
 
   #fetch: Fetch
 
+  #featureFlags: Pick<IFeatureFlagsController, 'isFeatureEnabled'>
+
   #baseUrl = 'https://li.quest/v1'
 
   #headers: RequestInitWithCustomHeaders['headers']
@@ -246,8 +249,17 @@ export class LiFiAPI implements SwapProvider {
    */
   #apiKeyActivatedTimestamp?: number
 
-  constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
+  constructor({
+    fetch,
+    apiKey,
+    featureFlags
+  }: {
+    fetch: Fetch
+    apiKey: string
+    featureFlags: Pick<IFeatureFlagsController, 'isFeatureEnabled'>
+  }) {
     this.#fetch = fetch
+    this.#featureFlags = featureFlags
 
     this.#headers = {
       Accept: 'application/json',
@@ -418,7 +430,8 @@ export class LiFiAPI implements SwapProvider {
     const sortedTokens = await attemptToSortTokensByMarketCap({
       fetch: this.#fetch,
       chainId: toChainId,
-      tokens
+      tokens,
+      featureFlags: this.#featureFlags
     })
 
     const withCustomTokens = addCustomTokensIfNeeded({ chainId: toChainId, tokens: sortedTokens })

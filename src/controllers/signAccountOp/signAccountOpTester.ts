@@ -1,10 +1,12 @@
 import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IDappsController } from '../../interfaces/dapp'
+import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import { UserRequest } from '../../interfaces/userRequest'
@@ -20,11 +22,13 @@ export class SignAccountOpTesterController extends SignAccountOpController {
   constructor(props: {
     type?: SignAccountOpType
     callRelayer: BindedRelayerCall
+    erc7730: IErc7730Controller
     accounts: IAccountsController
     networks: INetworksController
     keystore: IKeystoreController
     portfolio: IPortfolioController
     featureFlags: IFeatureFlagsController
+    platform: Platform
     signAccountOpPreference: SignAccountOpPreferenceController
     externalSignerControllers: ExternalSignerControllers
     account: Account

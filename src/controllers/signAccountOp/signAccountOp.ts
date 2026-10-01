@@ -27,7 +27,8 @@ import {
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { SINGLETON } from '../../consts/deploy'
+import { PIMLICO } from '../../consts/bundlers'
+import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
@@ -45,6 +46,7 @@ import { Account, AccountOnchainState, IAccountsController } from '../../interfa
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
+import { IErc7730Controller } from '../../interfaces/erc7730'
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
@@ -57,6 +59,7 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
@@ -70,6 +73,7 @@ import {
   TraceCallDiscoveryStatus,
   Warning
 } from '../../interfaces/signAccountOp'
+import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import { UserRequest } from '../../interfaces/userRequest'
 import { getContractImplementation } from '../../libs/7702/7702'
 import {
@@ -87,8 +91,10 @@ import {
   getAccountOpNonce,
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
+import { getUnauthenticatedDapps, isSigningAuthPlatform } from '../../libs/dapps/helpers'
 import {
   AccountOpIdentifiedBy,
+  getAccountOpRecipients,
   getSubmittedAccountOpNonce,
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
@@ -109,7 +115,8 @@ import {
   FullEstimationSummary
 } from '../../libs/estimate/interfaces'
 import { calculateFeeAmount } from '../../libs/fees/fees'
-import { fetchErc7730DescriptorsForAccountOp, humanizeAccountOp } from '../../libs/humanizer'
+import { humanizeAccountOp } from '../../libs/humanizer'
+import { Erc7730CallDescriptors } from '../../libs/humanizer/erc7730/types'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import {
   flattenHumanizerVisualizations,
@@ -121,6 +128,7 @@ import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
 import { getSafeTxn } from '../../libs/safe/helpers'
 import {
+  canHotOwnersMeetSafeThreshold,
   confirm,
   getAlreadySignedOwners,
   getImportedSignersThatHaveNotSigned,
@@ -174,6 +182,7 @@ import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
+  getSafeGasRefundWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
@@ -189,6 +198,18 @@ import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
 // Re-exporting for backwards compatibility with existing importers
 export { FeeSpeed, noStateUpdateStatuses, SigningStatus }
 export type { SpeedCalc, Status }
+
+/**
+ * How many reestimates run at the normal interval before the loop slows down,
+ * assuming the user left the request open without acting on it.
+ */
+const REESTIMATES_BEFORE_SLOWING_DOWN = 10
+
+/** Each slowed-down reestimate waits this much longer than the previous one. */
+const SLOWED_DOWN_REESTIMATE_STEP = 10000
+
+/** After this many reestimates the loop gives up and stops refetching. */
+export const MAX_REESTIMATES = 20
 
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
@@ -226,6 +247,8 @@ export class SignAccountOpController
 
   #callRelayer: BindedRelayerCall
 
+  #erc7730: IErc7730Controller
+
   #accounts: IAccountsController
 
   #keystore: IKeystoreController
@@ -233,6 +256,8 @@ export class SignAccountOpController
   #portfolio: IPortfolioController
 
   #featureFlags: IFeatureFlagsController
+
+  #platform: Platform
 
   #signAccountOpPreference: SignAccountOpPreferenceController
 
@@ -295,6 +320,13 @@ export class SignAccountOpController
   selectedOption: FeePaymentOption | undefined = undefined
 
   status: Status | null = null
+
+  /**
+   * The recipients of this account op the account has never sent to before, together with the
+   * account op they were resolved for. Resolved asynchronously from the activity, so it is cached
+   * here instead of read on every access.
+   */
+  #firstTimeRecipients: { accountOpId: string; recipients: string[] } | null = null
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR' = 'INITIAL'
 
@@ -438,11 +470,13 @@ export class SignAccountOpController
     eventEmitterRegistry,
     type,
     callRelayer,
+    erc7730,
     accounts,
     networks,
     keystore,
     portfolio,
     featureFlags,
+    platform,
     signAccountOpPreference,
     externalSignerControllers,
     account,
@@ -461,11 +495,13 @@ export class SignAccountOpController
     eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
     callRelayer: BindedRelayerCall
+    erc7730: IErc7730Controller
     accounts: IAccountsController
     networks: INetworksController
     keystore: IKeystoreController
     portfolio: IPortfolioController
     featureFlags: IFeatureFlagsController
+    platform: Platform
     signAccountOpPreference: SignAccountOpPreferenceController
     externalSignerControllers: ExternalSignerControllers
     account: Account
@@ -484,10 +520,12 @@ export class SignAccountOpController
     super(eventEmitterRegistry, false)
     this.#type = type || 'default'
     this.#callRelayer = callRelayer
+    this.#erc7730 = erc7730
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#featureFlags = featureFlags
+    this.#platform = platform
     this.#signAccountOpPreference = signAccountOpPreference
     this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
     this.selectedFeeSpeed =
@@ -548,11 +586,17 @@ export class SignAccountOpController
       this.#featureFlags
     )
     this.#onUpdateAfterTraceCallSuccess = onUpdateAfterTraceCallSuccess
-    this.gasPrice = new GasPriceController(network, provider, this.baseAccount, () => ({
-      estimation: this.estimation,
-      readyToSign: this.readyToSign,
-      stopRefetching: this.#stopRefetching
-    }))
+    this.gasPrice = new GasPriceController(
+      network,
+      provider,
+      this.baseAccount,
+      () => ({
+        estimation: this.estimation,
+        readyToSign: this.readyToSign,
+        stopRefetching: this.#stopRefetching
+      }),
+      this.#featureFlags
+    )
     this.#shouldSimulate = shouldSimulate
 
     this.#onBroadcastSuccess = onBroadcastSuccess
@@ -604,6 +648,83 @@ export class SignAccountOpController
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
     }
     this.#updateSafeEip712Data()
+
+    if (hasUpdatedCalls) void this.#updateFirstTimeRecipients()
+  }
+
+  /**
+   * Which recipients of this account op have never been sent to. A saved contact or an added
+   * account still counts; only the fee collector is left out, as the app picks it, not the user.
+   */
+  async #updateFirstTimeRecipients() {
+    // Only the signing authentication reads them, so elsewhere the activity lookups are skipped
+    if (!isSigningAuthPlatform(this.#platform)) return
+
+    const accountOpId = this.#accountOp.id
+    const recipients = getAccountOpRecipients(this.#accountOp)
+      .map(({ address }) => address)
+      .filter((recipient) => recipient.toLowerCase() !== FEE_COLLECTOR.toLowerCase())
+
+    try {
+      const sentToResults = await Promise.all(
+        recipients.map((recipient) =>
+          this.#activity.hasAccountOpsSentTo(recipient, this.account.addr)
+        )
+      )
+
+      // The calls may have changed while the activity was being read, in which case this result
+      // describes an account op that is no longer on screen
+      if (accountOpId !== this.#accountOp.id) return
+
+      this.#firstTimeRecipients = {
+        accountOpId,
+        recipients: recipients.filter((_, index) => !sentToResults[index]!.found)
+      }
+      this.emitUpdate()
+    } catch (error) {
+      // Leaving the cache untouched means the recipients are not reported as first time ones,
+      // so the user is not blocked - but this should never happen, hence the report
+      this.emitError({
+        level: 'silent',
+        message: 'Could not check whether this account has sent to these addresses before.',
+        error:
+          error instanceof Error
+            ? error
+            : new Error('signAccountOp: reading the sent to history failed')
+      })
+    }
+  }
+
+  /**
+   * Why this account op needs the password/biometrics confirmation, or `null` when it does not.
+   * Read live for the dapps, whose stored flag can change while the request is on screen.
+   * Mobile only. A Safe needs it only when its hot owners can meet the threshold on their own.
+   */
+  get signingAuthRequirement(): SigningAuthRequirement | null {
+    if (!isSigningAuthPlatform(this.#platform)) return null
+
+    if (
+      this.account.safeCreation &&
+      !canHotOwnersMeetSafeThreshold(this.accountKeyStoreKeys, this.threshold)
+    )
+      return null
+
+    const unauthenticatedDapps = getUnauthenticatedDapps(
+      this.#accountOp.calls.map((call) =>
+        call.dapp?.id ? this.#dapps.getDapp(call.dapp.id) : undefined
+      )
+    )
+
+    // The cache belongs to a previous version of the calls until the activity read finishes,
+    // so it must not be reported against the calls currently on screen
+    const firstTimeRecipients =
+      this.#firstTimeRecipients?.accountOpId === this.#accountOp.id
+        ? this.#firstTimeRecipients.recipients
+        : []
+
+    if (!firstTimeRecipients.length && !unauthenticatedDapps.length) return null
+
+    return { firstTimeRecipients, unauthenticatedDapps }
   }
 
   #rebuildBaseAccount() {
@@ -916,6 +1037,7 @@ export class SignAccountOpController
     this.#setDefaults()
     this.humanize()
     this.learnTokens()
+    void this.#updateFirstTimeRecipients()
 
     let lastEstimationStatus: EstimationStatus | null = null
 
@@ -1030,10 +1152,7 @@ export class SignAccountOpController
     return true
   }
 
-  #setErc7730Humanization(
-    humanizationId: number,
-    erc7730Descriptors: Awaited<ReturnType<typeof fetchErc7730DescriptorsForAccountOp>>
-  ) {
+  #setErc7730Humanization(humanizationId: number, erc7730Descriptors: Erc7730CallDescriptors) {
     if (
       !this.isCurrentHumanization(humanizationId) ||
       this.humanizationId !== humanizationId ||
@@ -1063,11 +1182,7 @@ export class SignAccountOpController
   async #applyDescriptorFirstHumanization(humanizationId: number) {
     await this.applyDescriptorFirstHumanization({
       humanizationId,
-      fetchDescriptor: () =>
-        fetchErc7730DescriptorsForAccountOp(this.accountOp, {
-          callRelayer: this.#callRelayer,
-          provider: this.provider
-        }),
+      fetchDescriptor: () => this.#erc7730.getDescriptorsForAccountOp(this.accountOp),
       applyDescriptorHumanization: (erc7730Descriptors, currentHumanizationId) =>
         this.#setErc7730Humanization(currentHumanizationId, erc7730Descriptors),
       applyFallbackHumanization: (currentHumanizationId) =>
@@ -1502,7 +1617,8 @@ export class SignAccountOpController
       const feeTokenHasPrice = this.feeSpeeds[identifier]?.every((speed) => !!speed.amountUsd)
       const feeTokenPriceUnavailableWarning = getFeeTokenPriceUnavailableWarning(
         !!this.hasSpeeds(identifier),
-        !!feeTokenHasPrice
+        !!feeTokenHasPrice,
+        this.#featureFlags.isFeatureEnabled('tokenPrices')
       )
 
       // push the warning only if the txn is not sponsored
@@ -1592,7 +1708,9 @@ export class SignAccountOpController
     // the time as the user might just have closed the popup of the extension
     // in a ready-to-estimate state, resulting in meaningless requests
     const waitTime =
-      this.#reestimateCounter < 10 ? ESTIMATE_UPDATE_INTERVAL : 10000 * this.#reestimateCounter
+      this.#reestimateCounter < REESTIMATES_BEFORE_SLOWING_DOWN
+        ? ESTIMATE_UPDATE_INTERVAL
+        : SLOWED_DOWN_REESTIMATE_STEP * this.#reestimateCounter
 
     // Update the timeout for the next run
     this.#simulateAndEstimateOrSimulateInterval.updateTimeout({ timeout: waitTime })
@@ -1601,10 +1719,15 @@ export class SignAccountOpController
       ? this.#simulateAndEstimate()
       : this.estimation.estimate(this.accountOp))
 
-    if (this.#reestimateCounter >= 20) {
-      this.#simulateAndEstimateOrSimulateInterval.stop()
-      this.#gasPriceInterval.stop()
-      this.#stopRefetching = true
+    // Asking again cannot change the outcome, so there is nothing left to wait
+    // for. Changing the calls or hitting retry starts the loop over.
+    if (this.estimation.hasPermanentFailure()) {
+      this.#stopIntervals()
+      return
+    }
+
+    if (this.#reestimateCounter >= MAX_REESTIMATES) {
+      this.#stopIntervals()
     }
 
     this.#reestimateCounter += 1
@@ -1642,7 +1765,10 @@ export class SignAccountOpController
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async retry(method: 'simulate' | 'estimate') {
     this.bundlerSwitcher.cleanUp()
-    this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+    // Resuming instead of only restarting the interval, because refetching may
+    // have been stopped by the give-up counter. A restart alone would be undone
+    // by the interval's own #stopRefetching check on its first run.
+    this.#resumeIntervals({ haveCallsChanged: true })
   }
 
   async enableErc4337AndReestimate() {
@@ -1954,8 +2080,8 @@ export class SignAccountOpController
 
     if (isInTheMiddleOfSigning || isDone) return
 
-    // if we have an estimation error, set the state so and return
-    if (this.estimation.error) {
+    // Set to EstimationError if not retrying
+    if (this.estimation.error && !this.estimation.isRetryingFailure()) {
       this.status = { type: SigningStatus.EstimationError }
       this.emitUpdate()
       return
@@ -3128,7 +3254,10 @@ export class SignAccountOpController
         const { safeTxn, typedData, safeTxnHash, signingRequest } =
           this.#getSafeSigningData(accountState)
         const signature = (await this.#withHardwareWalletSigningRequest(signingRequest, () =>
-          safeSigner.signTypedData(typedData)
+          safeSigner.signTypedData(typedData, {
+            chainId: this.#network.chainId,
+            provider: this.provider
+          })
         )) as Hex
         nowSignedSigs.push(signature)
 
@@ -3218,7 +3347,14 @@ export class SignAccountOpController
                 accountState,
                 network: this.#network
               }),
-              () => getExecuteSignature(this.#network, this.accountOp, accountState, signer)
+              () =>
+                getExecuteSignature(
+                  this.#network,
+                  this.accountOp,
+                  accountState,
+                  signer,
+                  this.provider
+                )
             )
           })
         }
@@ -3327,7 +3463,8 @@ export class SignAccountOpController
                 this.#network,
                 false,
                 undefined,
-                true
+                true,
+                this.provider
               )
           )
           if (!this.accountOp.meta) {
@@ -3391,8 +3528,17 @@ export class SignAccountOpController
 
         // safe accounts have their signature prepopulated
         if (!this.account.safeCreation) {
-          const isHotEOA = accountState.isEOA && this.accountOp.signingKeyType === 'internal'
-          if (!isHotEOA) {
+          // Which signature format a 7702 EOA needs is dictated by the delegator
+          // it points to, not by the key type: the Ambire 7702 account validates
+          // the Ambire4337AccountOp typed data in unprotected mode, while the
+          // GridPlus one expects the standard AmbireOperation wrapping that smart
+          // accounts use. Getting this wrong fails the userOp with AA24.
+          const delegator =
+            accountState.delegatedContract ??
+            getContractImplementation(this.#network.chainId, this.accountKeyStoreKeys)
+          const signsAsAmbire7702Eoa =
+            accountState.isEOA && delegator.toLowerCase() === EIP_7702_AMBIRE_ACCOUNT.toLowerCase()
+          if (!signsAsAmbire7702Eoa) {
             const typedData = getTypedData(
               this.#network.chainId,
               this.accountOp.accountAddr,
@@ -3400,7 +3546,10 @@ export class SignAccountOpController
             )
             const signature = wrapStandard(
               await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-                signer.signTypedData(typedData)
+                signer.signTypedData(typedData, {
+                  chainId: this.#network.chainId,
+                  provider: this.provider
+                })
               )
             )
             userOperation.signature = signature
@@ -3414,7 +3563,10 @@ export class SignAccountOpController
             )
             const signature = wrapUnprotected(
               await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-                signer.signTypedData(typedData)
+                signer.signTypedData(typedData, {
+                  chainId: this.#network.chainId,
+                  provider: this.provider
+                })
               )
             )
             userOperation.signature = signature
@@ -3444,7 +3596,14 @@ export class SignAccountOpController
               accountState,
               network: this.#network
             }),
-            () => getExecuteSignature(this.#network, this.accountOp, accountState, signer)
+            () =>
+              getExecuteSignature(
+                this.#network,
+                this.accountOp,
+                accountState,
+                signer,
+                this.provider
+              )
           )
         })
       }
@@ -3554,7 +3713,77 @@ export class SignAccountOpController
       BROADCAST_OPTIONS.delegation
     ]
 
-    if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
+    // PQ1 is a smart-contract-only signer that cannot produce a raw EOA
+    // transaction. The signer packages the calls into a 4337 UserOperation,
+    // signs on-device and submits via its own bundler (Pimlico). We
+    // short-circuit the entire EOA + bundler tree below, but keep two of
+    // its invariants:
+    //   1. The user-approved `gasFeePayment` binds the broadcast — the fee
+    //      fields of the UserOp are taken from it, and fee options the
+    //      4337 pipeline cannot honor (gas tank, another payer, a non-
+    //      native fee token) are refused up front instead of silently
+    //      charging the wallet's native balance a different amount.
+    //   2. Device interaction runs inside #withHardwareWalletSigningRequest
+    //      so the "confirm on your device" UI shows while the PQ1 waits
+    //      for its physical confirmation.
+    if (accountOp.signingKeyType === 'pq1') {
+      try {
+        const { gasFeePayment } = accountOp
+        if (
+          gasFeePayment.isGasTank ||
+          gasFeePayment.paidBy !== accountOp.accountAddr ||
+          gasFeePayment.inToken !== ZeroAddress
+        ) {
+          return this.throwBroadcastAccountOp({
+            message:
+              'PQ1 accounts pay gas with the native token from the account itself. Please select the native-token fee option paid by this account and try again.',
+            accountState
+          })
+        }
+        const signer = await this.#keystore.getSigner(
+          accountOp.signingKeyAddr,
+          accountOp.signingKeyType
+        )
+        if (signer.init) {
+          signer.init(this.#externalSignerControllers[accountOp.signingKeyType])
+        }
+        if (!signer.broadcastAccountOp) {
+          return this.throwBroadcastAccountOp({
+            message: `Signer for key type ${accountOp.signingKeyType} does not implement broadcastAccountOp`,
+            accountState
+          })
+        }
+        const calls = accountOp.calls.map((c) => ({ to: c.to, value: c.value, data: c.data }))
+        const { userOpHash, nonce } = await this.#withHardwareWalletSigningRequest(
+          getRawTransactionSigningRequest({
+            chainId: accountOp.chainId,
+            from: accountOp.accountAddr,
+            calls
+          }),
+          () =>
+            signer.broadcastAccountOp!({
+              chainId: accountOp.chainId,
+              provider: this.provider!,
+              calls,
+              gasFeePayment: {
+                gasPrice: gasFeePayment.gasPrice,
+                maxPriorityFeePerGas: gasFeePayment.maxPriorityFeePerGas
+              }
+            })
+        )
+        // Identified the same way as any other bundler broadcast: the
+        // ActivityController resolves the tx hash and reads per-op success
+        // from the UserOperationEvent log (so a UserOp whose inner
+        // execution reverted is correctly reported as failed, and a
+        // slow-but-included op is not misreported as a failed broadcast).
+        transactionRes = {
+          nonce: Number(nonce),
+          identifiedBy: { type: 'UserOperation', identifier: userOpHash, bundler: PIMLICO }
+        }
+      } catch (error: any) {
+        return this.throwBroadcastAccountOp({ error, accountState })
+      }
+    } else if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
       const multipleTxnsBroadcastRes = []
       const senderAddr =
         accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
@@ -3784,14 +4013,7 @@ export class SignAccountOpController
         message: 'No transaction response received after being broadcasted.'
       })
 
-    const clearSigningHumanization = hasErc7730Humanization(this.humanization)
-      ? this.humanization
-      : null
     const submittedAccountOpMeta = { ...accountOp.meta }
-    delete submittedAccountOpMeta.clearSigningHumanization
-    if (clearSigningHumanization) {
-      submittedAccountOpMeta.clearSigningHumanization = clearSigningHumanization
-    }
 
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,
@@ -4224,6 +4446,16 @@ export class SignAccountOpController
       })
     }
 
+    const safeGasRefundWarning = getSafeGasRefundWarning(this.accountOp)
+    if (safeGasRefundWarning) {
+      banners.push({
+        id: safeGasRefundWarning.id,
+        type: 'warning',
+        title: safeGasRefundWarning.title,
+        text: safeGasRefundWarning.text || safeGasRefundWarning.title
+      })
+    }
+
     return banners
   }
 
@@ -4307,7 +4539,8 @@ export class SignAccountOpController
       hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
       safeEip712Data: this.safeEip712Data,
       gasFeeChangedConfirmationRequired: this.gasFeeChangedConfirmationRequired,
-      previousFee: this.previousFee
+      previousFee: this.previousFee,
+      signingAuthRequirement: this.signingAuthRequirement
     }
   }
 }
