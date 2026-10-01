@@ -568,15 +568,13 @@ export function getImportedSignersThatHaveNotSigned(
 
 /**
  * Whether the imported owners of a Safe can reach its threshold with hot (keystore held) keys
- * alone. Any hardware wallet or card among them confirms on the device, so it is `false` then.
+ * alone. Hardware wallets and cards confirm on the device, so they do not count towards it.
  */
 export function canHotOwnersMeetSafeThreshold(
   importedOwners: Pick<Key, 'type'>[],
   threshold: number
 ): boolean {
-  return (
-    importedOwners.length >= threshold && importedOwners.every(({ type }) => type === 'internal')
-  )
+  return importedOwners.filter(({ type }) => type === 'internal').length >= threshold
 }
 
 export function getSigs(signature?: string | null): Hex[] {

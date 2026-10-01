@@ -263,13 +263,22 @@ describe('canHotOwnersMeetSafeThreshold', () => {
     expect(canHotOwnersMeetSafeThreshold([{ type: 'internal' }], 2)).toBe(false)
   })
 
-  test('is false when any imported owner is a hardware wallet or card', () => {
+  test('is true when the hot owners meet the threshold next to a hardware wallet or card', () => {
     expect(
       canHotOwnersMeetSafeThreshold(
         [{ type: 'internal' }, { type: 'internal' }, { type: 'ledger' }],
         2
       )
-    ).toBe(false)
-    expect(canHotOwnersMeetSafeThreshold([{ type: 'internal' }, { type: 'nfc' }], 1)).toBe(false)
+    ).toBe(true)
+    expect(canHotOwnersMeetSafeThreshold([{ type: 'internal' }, { type: 'nfc' }], 1)).toBe(true)
+  })
+
+  test('is false when the threshold needs a hardware wallet or card', () => {
+    expect(canHotOwnersMeetSafeThreshold([{ type: 'internal' }, { type: 'ledger' }], 2)).toBe(false)
+    expect(canHotOwnersMeetSafeThreshold([{ type: 'trezor' }, { type: 'nfc' }], 1)).toBe(false)
+  })
+
+  test('is false when there are no imported owners', () => {
+    expect(canHotOwnersMeetSafeThreshold([], 1)).toBe(false)
   })
 })
