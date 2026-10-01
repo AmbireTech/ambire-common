@@ -110,6 +110,31 @@ describe('PhishingController', () => {
     })
   })
 
+  describe('lookups when the feature is turned off', () => {
+    test('a domain reads as verified rather than "cannot check", so no permanent warning shows', async () => {
+      // With the flag off the list is never fetched, so #hasStoredList stays false forever.
+      // Returning undefined would map to a "couldn't check" warning that never clears — the
+      // feature is deliberately disabled, so nothing should be flagged.
+      const { controller, mainCtrl } = await prepareTest(['foourmemez.com'], [], true)
+      await controller.init()
+      await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+
+      // Even a domain that IS on the list reads as verified once the check is off.
+      expect(await controller.resolveDomainBlacklistedStatus('https://foourmemez.com')).toBe(
+        'VERIFIED'
+      )
+    })
+
+    test('an address reads as verified rather than "cannot check"', async () => {
+      const address = '0xb674f3fd5f43464db0448a57529eaf37f04ccea5'
+      const { controller, mainCtrl } = await prepareTest([], [address], true)
+      await controller.init()
+      await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+
+      expect(await controller.resolveAddressBlacklistedStatus(address)).toBe('VERIFIED')
+    })
+  })
+
   describe('lookups racing the initial load', () => {
     test('a blocklisted domain is reported as such even when the load is still in flight', async () => {
       // The lookups do not await init() themselves through any caller — background init() is

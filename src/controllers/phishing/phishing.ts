@@ -725,6 +725,11 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const dappId = getDappIdFromUrl(url)
     if (!dappId) return undefined
 
+    // Feature turned off: there is no check to run, so nothing is flagged. A settled VERIFIED,
+    // not undefined — undefined means "still loading" to callers and would show a permanent
+    // "couldn't check" warning for a feature the user disabled, since the list never loads.
+    if (!this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) return 'VERIFIED'
+
     // Cheap to wait on: #load() reads only the version checkpoint, never the entries. Without
     // it a lookup landing mid-load sees #hasStoredList still false and reports "cannot say"
     // for a domain that IS on the list — background init() is fire-and-forget, so this window
@@ -752,6 +757,9 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   /** Whether an address is on the list. Undefined means "cannot say", never "safe". */
   async resolveAddressBlacklistedStatus(address: string): Promise<BlacklistedStatus | undefined> {
+    // Feature off: settled VERIFIED, not undefined — see resolveDomainBlacklistedStatus.
+    if (!this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) return 'VERIFIED'
+
     // See resolveDomainBlacklistedStatus — the same mid-load window applies here.
     await this.initialLoadPromise
 
