@@ -150,7 +150,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     const [safeInfo, safeCreation]: [SafeInfoResponse | Error, SafeAccountCreation] =
       await Promise.all([
         apiKit.getSafeInfo(safeAddr).catch((e) => e),
-        findDeployData(safeAddr, deployedOn.chainId, provider).catch((e) => e)
+        findDeployData(safeAddr, deployedOn.chainId, provider)
       ])
     if (safeInfo instanceof Error) {
       this.importError = {

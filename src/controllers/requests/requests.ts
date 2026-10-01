@@ -2744,10 +2744,24 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       if (!!account.safeCreation && !accountState.isDeployed && !meta.isSafeDeploy) {
         // if a property needed for the deploy is missing, we search for it
         if (!hasCompleteSafeCreationData(account.safeCreation)) {
-          const safeCreation = await this.#recoverSafeCreation(
-            account,
-            safeDeploymentSourceNetworks
-          )
+          let safeCreation: SafeAccountCreation | null
+          try {
+            safeCreation = await this.#recoverSafeCreation(account, safeDeploymentSourceNetworks)
+          } catch (error) {
+            this.emitError({
+              level: 'major',
+              message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE,
+              error: error instanceof Error ? error : new Error(String(error))
+            })
+            dappPromises.forEach((promise) => {
+              promise.reject(
+                ethErrors.rpc.transactionRejected({
+                  message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+                })
+              )
+            })
+            return []
+          }
           if (safeCreation) account = { ...account, safeCreation }
         }
 
@@ -2930,6 +2944,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
         if (!safeDeploymentRequest) {
           callUserRequest.signAccountOp.destroy()
+          dappPromises.forEach((promise) => {
+            promise.reject(
+              ethErrors.rpc.transactionRejected({
+                message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+              })
+            )
+          })
           return []
         }
 
