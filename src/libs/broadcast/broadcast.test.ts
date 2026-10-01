@@ -20,8 +20,7 @@ const account = {
     factoryAddr: '0x4e1dcf7ad4e460cfd30791ccc4f9c8a4f820ec67',
     singleton: '0x29fcb43b46531bca003ddc8fcb67ffe91900c762',
     saltNonce: '0x00',
-    setupData: '0x',
-    version: '1.4.1'
+    setupData: '0x'
   },
   preferences: {
     label: 'Safe',

@@ -555,8 +555,7 @@ describe('getSupportedNetworks', () => {
       factoryAddr: '0x2222222222222222222222222222222222222222',
       singleton: '0x3333333333333333333333333333333333333333',
       saltNonce: '0x00',
-      setupData: '0x',
-      version: '1.4.1'
+      setupData: '0x'
     },
     preferences: { label: 'Safe', pfp: '' }
   }
@@ -578,6 +577,7 @@ describe('getSupportedNetworks', () => {
     delegatedContract: null,
     delegatedContractName: null,
     threshold: 2,
+    safeVersion: '1.4.1',
     updatedAt: 0
   }
   const accountStates: AccountStates = {

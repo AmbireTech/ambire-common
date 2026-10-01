@@ -139,8 +139,7 @@ const prepareTest = async (
       factoryAddr: selectedAccount.addr as Hex,
       singleton: selectedAccount.addr as Hex,
       saltNonce: '0x00',
-      setupData: '0x',
-      version: '1.4.1'
+      setupData: '0x'
     }
   }
 
@@ -166,6 +165,7 @@ const prepareTest = async (
         delegatedContract: null,
         delegatedContractName: null,
         threshold: 1,
+        safeVersion: '1.4.1',
         updatedAt: 0
       } as any
     }
@@ -1638,8 +1638,7 @@ describe('RequestsController ', () => {
       factoryAddr: '0x',
       singleton: '0x',
       saltNonce: '0x',
-      setupData: '0x',
-      version: ''
+      setupData: '0x'
     }
 
     Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
@@ -1653,8 +1652,7 @@ describe('RequestsController ', () => {
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
       singleton: '0x2345678901234567890123456789012345678901' as Hex,
       saltNonce: `0x${'0'.repeat(63)}1` as Hex,
-      setupData: '0x1234' as Hex,
-      version: '1.4.1'
+      setupData: '0x1234' as Hex
     }
     const findDeployDataSpy = jest
       .spyOn(safeLib, 'findDeployData')
@@ -1706,8 +1704,7 @@ describe('RequestsController ', () => {
       factoryAddr: '0x',
       singleton: '0x',
       saltNonce: '0x',
-      setupData: '0x',
-      version: ''
+      setupData: '0x'
     }
 
     Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
@@ -1720,8 +1717,7 @@ describe('RequestsController ', () => {
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
       singleton: '0x2345678901234567890123456789012345678901' as Hex,
       saltNonce: `0x${'0'.repeat(63)}1` as Hex,
-      setupData: '0x1234' as Hex,
-      version: '1.4.1'
+      setupData: '0x1234' as Hex
     })
     const storageError = new Error('storage unavailable')
     jest.spyOn(accountsCtrl, 'updateSafeCreation').mockRejectedValue(storageError)
@@ -1774,8 +1770,7 @@ describe('RequestsController ', () => {
       factoryAddr: '0x',
       singleton: '0x',
       saltNonce: '0x',
-      setupData: '0x',
-      version: ''
+      setupData: '0x'
     }
 
     Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
@@ -1788,8 +1783,7 @@ describe('RequestsController ', () => {
       factoryAddr: '0x',
       singleton: '0x',
       setupData: '0x',
-      saltNonce: '0x',
-      version: ''
+      saltNonce: '0x'
     })
     const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
     const updateSafeCreationSpy = jest.spyOn(accountsCtrl, 'updateSafeCreation')

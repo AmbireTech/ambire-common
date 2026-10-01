@@ -207,6 +207,7 @@ describe('AccountState', () => {
     expect(eoa7702.isErc4337Enabled).toBeTruthy()
     expect(eoa7702.associatedKeys[0]).toBe('0xD8293ad21678c6F09Da139b4B62D38e514a03B78')
     expect(eoa7702.threshold).toBe(0)
+    expect(eoa7702.safeVersion).toBeNull()
   })
   test('should fetch the account state for a Safe account', async () => {
     const safeAcc: Account = {
@@ -219,8 +220,7 @@ describe('AccountState', () => {
         singleton: '0x41675C099F32341bf84BFc5382aF534df5C7461a',
         setupData:
           '0xb63e800d00000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000bd89a1ce4dde368ffab0ec35506eece0b1ffdc540000000000000000000000000000000000000000000000000000000000000160000000000000000000000000fd0732dc9e303f09fcef3a7388ad10a83459ec99000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005afe7a11e70000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000a04d21b7ae298d8e4a61a507de2b7ceafd90ba010000000000000000000000005d8dd39a360e5d5219f965695f9c0290862ca24a0000000000000000000000000000000000000000000000000000000000000024fe51f64300000000000000000000000029fcb43b46531bca003ddc8fcb67ffe91900c76200000000000000000000000000000000000000000000000000000000',
-        saltNonce: '0x0000000000000000000000000000000000000000000000000000000000000000',
-        version: '1.4.1'
+        saltNonce: '0x0000000000000000000000000000000000000000000000000000000000000000'
       },
       preferences: {
         label: DEFAULT_ACCOUNT_LABEL,
@@ -251,5 +251,75 @@ describe('AccountState', () => {
     expect(safe.associatedKeys[2]).toBe(correctAssociatedKeys[2])
     expect(safe.nonce).toBeGreaterThan(0)
     expect(safe.threshold).toBe(2)
+    // read from the deployed proxy, which delegates to its current singleton
+    expect(safe.safeVersion).toBe('1.4.1')
+  })
+  test('should read the Safe version from the singleton for a Safe that is not deployed', async () => {
+    const undeployedSafeAddr = ethers.Wallet.createRandom().address
+    const undeployedSafe: Account = {
+      addr: undeployedSafeAddr,
+      associatedKeys: [],
+      initialPrivileges: [],
+      creation: null,
+      safeCreation: {
+        factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
+        // Safe v1.4.1 singleton
+        singleton: '0x41675C099F32341bf84BFc5382aF534df5C7461a',
+        setupData: '0x',
+        saltNonce: '0x0000000000000000000000000000000000000000000000000000000000000000'
+      },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: undeployedSafeAddr
+      }
+    }
+
+    const optimismProvider = getRpcProvider(optimism.rpcUrls, optimism.chainId)
+    const [state] = await getAccountState(optimismProvider, optimism, [undeployedSafe], [])
+
+    expect(state!.isDeployed).toBeFalsy()
+    expect(state!.safeVersion).toBe('1.4.1')
+  })
+  test('should not fail the account state call when the Safe version cannot be read', async () => {
+    const undeployedSafeAddr = ethers.Wallet.createRandom().address
+    const incompleteCreationSafe: Account = {
+      addr: undeployedSafeAddr,
+      associatedKeys: [],
+      initialPrivileges: [],
+      creation: null,
+      // incomplete creation data is stored with '0x' placeholders
+      safeCreation: { factoryAddr: '0x', singleton: '0x', setupData: '0x', saltNonce: '0x' },
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: undeployedSafeAddr
+      }
+    }
+    const nonSafeSingletonAddr = ethers.Wallet.createRandom().address
+    const singletonWithoutVersionSafe: Account = {
+      ...incompleteCreationSafe,
+      addr: nonSafeSingletonAddr,
+      safeCreation: {
+        factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
+        // the Safe proxy factory has code but no VERSION()
+        singleton: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
+        setupData: '0x',
+        saltNonce: '0x0000000000000000000000000000000000000000000000000000000000000000'
+      },
+      preferences: { label: DEFAULT_ACCOUNT_LABEL, pfp: nonSafeSingletonAddr }
+    }
+
+    const optimismProvider = getRpcProvider(optimism.rpcUrls, optimism.chainId)
+    const state = await getAccountState(
+      optimismProvider,
+      optimism,
+      [incompleteCreationSafe, singletonWithoutVersionSafe],
+      []
+    )
+
+    expect(state.length).toBe(2)
+    expect(state[0]!.isDeployed).toBeFalsy()
+    expect(state[0]!.safeVersion).toBeNull()
+    expect(state[1]!.isDeployed).toBeFalsy()
+    expect(state[1]!.safeVersion).toBeNull()
   })
 })

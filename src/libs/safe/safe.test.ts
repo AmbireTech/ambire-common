@@ -111,7 +111,7 @@ describe('Safe deployment data', () => {
     associatedKeys: [OWNER],
     initialPrivileges: [],
     creation: null,
-    safeCreation: { factoryAddr, singleton, setupData, saltNonce, version: '1.4.1' },
+    safeCreation: { factoryAddr, singleton, setupData, saltNonce },
     preferences: { label: 'Safe', pfp: safeAddr }
   }
   const encodedProxyCreationCode = new AbiCoder().encode(['bytes'], [proxyCreationCode])
@@ -132,13 +132,12 @@ describe('Safe deployment data', () => {
     setupData: '0x',
     saltNonce: null
   }
-  const encodedVersion = new AbiCoder().encode(['string'], ['1.4.1'])
 
   test('returns complete Safe API creation data without fetching the deployment transaction', async () => {
     const getSafeCreationInfo = jest.fn(async () => deploySafeCreationInfo)
     const provider = {
       getTransaction: jest.fn(),
-      call: jest.fn(async () => encodedVersion)
+      call: jest.fn()
     } as unknown as RPCProvider
 
     await expect(
@@ -147,11 +146,12 @@ describe('Safe deployment data', () => {
       factoryAddr: getAddress(factoryAddr),
       singleton: getAddress(singleton),
       setupData,
-      saltNonce,
-      version: '1.4.1'
+      saltNonce
     })
     expect(getSafeCreationInfo).toHaveBeenCalledWith(safeAddr)
     expect(provider.getTransaction).not.toHaveBeenCalled()
+    // the Safe version is chain specific and comes from the account state, not the creation data
+    expect(provider.call).not.toHaveBeenCalled()
   })
 
   test('recovers and validates missing Safe deployment data from the indexed transaction', async () => {
@@ -161,10 +161,7 @@ describe('Safe deployment data', () => {
         to: factoryAddr,
         data: deployTransactionData
       })),
-      call: jest
-        .fn()
-        .mockResolvedValueOnce(encodedVersion)
-        .mockResolvedValueOnce(encodedProxyCreationCode)
+      call: jest.fn(async () => encodedProxyCreationCode)
     } as unknown as RPCProvider
 
     await expect(
@@ -173,8 +170,7 @@ describe('Safe deployment data', () => {
       factoryAddr: getAddress(factoryAddr),
       singleton: getAddress(singleton),
       setupData,
-      saltNonce,
-      version: '1.4.1'
+      saltNonce
     })
     expect(provider.getTransaction).toHaveBeenCalledWith(deployTransactionHash)
   })
@@ -189,10 +185,7 @@ describe('Safe deployment data', () => {
         to: OTHER_OWNER,
         data: nestedTransactionData
       })),
-      call: jest
-        .fn()
-        .mockResolvedValueOnce(encodedVersion)
-        .mockResolvedValueOnce(encodedProxyCreationCode)
+      call: jest.fn(async () => encodedProxyCreationCode)
     } as unknown as RPCProvider
 
     await expect(
@@ -215,10 +208,7 @@ describe('Safe deployment data', () => {
         to: factoryAddr,
         data: deployTransactionData
       })),
-      call: jest
-        .fn()
-        .mockResolvedValueOnce(encodedVersion)
-        .mockResolvedValueOnce(encodedProxyCreationCode)
+      call: jest.fn(async () => encodedProxyCreationCode)
     } as unknown as RPCProvider
 
     await expect(
@@ -231,7 +221,7 @@ describe('Safe deployment data', () => {
     const getSafeCreationInfo = jest.fn(async () => creationInfo)
     const provider = {
       getTransaction: jest.fn(),
-      call: jest.fn(async () => encodedVersion)
+      call: jest.fn()
     } as unknown as RPCProvider
 
     await expect(
@@ -240,8 +230,7 @@ describe('Safe deployment data', () => {
       factoryAddr,
       singleton,
       setupData: '0x',
-      saltNonce: '0x',
-      version: '1.4.1'
+      saltNonce: '0x'
     })
     expect(provider.getTransaction).not.toHaveBeenCalled()
   })
@@ -250,24 +239,24 @@ describe('Safe deployment data', () => {
     const getSafeCreationInfo = jest.fn(async () => incompleteDeploySafeCreationInfo)
     const provider = {
       getTransaction: jest.fn(async () => null),
-      call: jest.fn(async () => encodedVersion)
+      call: jest.fn()
     } as unknown as RPCProvider
 
     await expect(
       findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
-    ).resolves.toMatchObject({ setupData: '0x', saltNonce: '0x', version: '1.4.1' })
+    ).resolves.toMatchObject({ setupData: '0x', saltNonce: '0x' })
   })
 
   test('returns partial API data when the indexed transaction does not include a deployment', async () => {
     const getSafeCreationInfo = jest.fn(async () => incompleteDeploySafeCreationInfo)
     const provider = {
       getTransaction: jest.fn(async () => ({ to: factoryAddr, data: '0x1234' })),
-      call: jest.fn(async () => encodedVersion)
+      call: jest.fn()
     } as unknown as RPCProvider
 
     await expect(
       findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
-    ).resolves.toMatchObject({ setupData: '0x', saltNonce: '0x', version: '1.4.1' })
+    ).resolves.toMatchObject({ setupData: '0x', saltNonce: '0x' })
   })
 
   test('does not replace partial API data with deployment data for a different Safe address', async () => {
@@ -277,15 +266,12 @@ describe('Safe deployment data', () => {
         to: factoryAddr,
         data: deployTransactionData
       })),
-      call: jest
-        .fn()
-        .mockResolvedValueOnce(encodedVersion)
-        .mockResolvedValueOnce(encodedProxyCreationCode)
+      call: jest.fn(async () => encodedProxyCreationCode)
     } as unknown as RPCProvider
 
     await expect(
       findDeployData(OTHER_OWNER, 1n, provider, () => ({ getSafeCreationInfo }))
-    ).resolves.toMatchObject({ setupData: '0x', saltNonce: '0x', version: '1.4.1' })
+    ).resolves.toMatchObject({ setupData: '0x', saltNonce: '0x' })
   })
 
   test('returns all-empty creation data when the Safe API request fails', async () => {
@@ -300,14 +286,12 @@ describe('Safe deployment data', () => {
       factoryAddr: '0x',
       singleton: '0x',
       setupData: '0x',
-      saltNonce: '0x',
-      version: ''
+      saltNonce: '0x'
     })
   })
 
-  test('treats a missing version or deployment field as incomplete creation data', () => {
+  test('treats a missing deployment field as incomplete creation data', () => {
     expect(hasCompleteSafeCreationData(account.safeCreation)).toBe(true)
-    expect(hasCompleteSafeCreationData({ ...account.safeCreation, version: '' })).toBe(false)
     expect(hasCompleteSafeCreationData({ ...account.safeCreation, setupData: '0x' })).toBe(false)
     expect(hasCompleteSafeCreationData(undefined)).toBe(false)
   })

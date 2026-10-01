@@ -11,6 +11,7 @@ interface Safe {
     function nonce() external view returns (uint);
     function getOwners() external view returns (address[] memory);
     function getThreshold() external view returns (uint256);
+    function VERSION() external view returns (string memory);
 }
 
 bytes32 constant ENTRY_POINT_MARKER = 0x0000000000000000000000000000000000000000000000000000000000007171;
@@ -22,6 +23,9 @@ struct AccountInput {
     bytes factoryCalldata;
     address erc4337EntryPoint;
     bool isSafe;
+    // the singleton the Safe proxy is (or will be) deployed with;
+    // used to read the version of an undeployed Safe
+    address safeSingleton;
 }
 
 struct AccountInfo {
@@ -36,6 +40,8 @@ struct AccountInfo {
     bool isErc4337Enabled;
     uint currentBlock;
     uint threshold;
+    // empty for non-Safe accounts or when the version cannot be read
+    string safeVersion;
 }
 
 contract AmbireAccountState {
@@ -121,5 +127,19 @@ contract AmbireAccountState {
             safeRes.threshold = safeAccount.getThreshold();
             safeRes.currentBlock = block.number;
         }
+
+        // a deployed Safe proxy delegates VERSION() to its current singleton, while an
+        // undeployed Safe will be deployed with the singleton from its creation data
+        address versionSource = safeRes.isDeployed ? account.addr : account.safeSingleton;
+        if (versionSource.code.length == 0) return safeRes;
+        try this.getSafeVersion(versionSource) returns (string memory version) {
+            safeRes.safeVersion = version;
+        } catch (bytes memory) {}
+    }
+
+    // wrapped in an external call so that a malformed VERSION() response
+    // fails only this call instead of reverting the whole accounts state batch
+    function getSafeVersion(address safe) external view returns (string memory) {
+        return Safe(safe).VERSION();
     }
 }

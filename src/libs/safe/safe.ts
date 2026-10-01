@@ -125,8 +125,7 @@ export async function getSafeAccountByOwner(
             setupData: safeCreationInfo.setupData as Hex,
             saltNonce: safeCreationInfo.saltNonce
               ? (toBeHex(BigInt(safeCreationInfo.saltNonce), 32) as Hex)
-              : (toBeHex(0, 32) as Hex),
-            version: safeInfo.version
+              : (toBeHex(0, 32) as Hex)
           },
           preferences: {
             label: 'Safe',
@@ -164,7 +163,7 @@ export async function getCalculatedSafeAddress(
 }
 
 async function getCalculatedSafeAddressFromCreation(
-  creation: Pick<SafeAccountCreation, 'factoryAddr' | 'singleton' | 'setupData' | 'saltNonce'>,
+  creation: SafeAccountCreation,
   provider: RPCProvider
 ): Promise<Hex | null> {
   const salt = keccak256(
@@ -209,8 +208,7 @@ export function hasCompleteSafeCreationData(
     creation.setupData &&
     creation.setupData !== '0x' &&
     creation.saltNonce &&
-    creation.saltNonce !== '0x' &&
-    creation.version
+    creation.saltNonce !== '0x'
   )
 }
 
@@ -219,26 +217,14 @@ function getEmptySafeCreationData(): SafeAccountCreation {
     factoryAddr: '0x',
     singleton: '0x',
     setupData: '0x',
-    saltNonce: '0x',
-    version: ''
-  }
-}
-
-async function getSafeVersion(safeAddr: string, provider: RPCProvider): Promise<string> {
-  try {
-    const safe = new Contract(safeAddr, SafeAbi, provider)
-    const version = await (safe as any).VERSION()
-    return typeof version === 'string' ? version : ''
-  } catch (error) {
-    console.error(`failed to retrieve Safe version for ${safeAddr}`, error)
-    return ''
+    saltNonce: '0x'
   }
 }
 
 function decodeSafeDeploymentData(
   transactionData: string,
   factoryAddr: Hex
-): Pick<SafeAccountCreation, 'factoryAddr' | 'singleton' | 'setupData' | 'saltNonce'>[] {
+): SafeAccountCreation[] {
   const normalizedTransactionData = transactionData.toLowerCase()
   const deploymentData = []
   let selectorIndex = normalizedTransactionData.indexOf(safeProxyFactorySelector)
@@ -295,8 +281,7 @@ export async function findDeployData(
       saltNonce:
         creationInfo.saltNonce !== null && creationInfo.saltNonce !== undefined
           ? (toBeHex(BigInt(creationInfo.saltNonce), 32) as Hex)
-          : '0x',
-      version: await getSafeVersion(safeAddr, provider)
+          : '0x'
     }
 
     if (hasCompleteSafeCreationData(safeCreation)) return safeCreation
@@ -322,7 +307,7 @@ export async function findDeployData(
       const calculatedAddress = await getCalculatedSafeAddressFromCreation(candidate, provider)
       if (calculatedAddress?.toLowerCase() !== safeAddr.toLowerCase()) continue
 
-      return { ...candidate, version: safeCreation.version }
+      return candidate
     }
   } catch (error) {
     console.error(`failed to find Safe deployment data for ${safeAddr}`, error)

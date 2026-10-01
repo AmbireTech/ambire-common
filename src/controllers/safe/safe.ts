@@ -73,7 +73,6 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   safeInfo?: SafeAccountCreation & {
     deployedOn: bigint[]
-    version: string
     address: Hex
     owners: Hex[]
     // does the safe need special conditions to send/sign txns
@@ -162,7 +161,6 @@ export class SafeController extends EventEmitter implements ISafeController {
 
     this.safeInfo = {
       ...safeCreation,
-      version: safeCreation.version || safeInfo.version,
       address: safeInfo.address as Hex,
       owners: safeInfo.owners as Hex[],
       deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId),

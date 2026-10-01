@@ -131,8 +131,7 @@ describe('Main Controller ', () => {
         factoryAddr: '0x1',
         singleton: '0x1',
         saltNonce: '0x00',
-        setupData: '0x',
-        version: '1.4.1'
+        setupData: '0x'
       }
     }
 
@@ -154,6 +153,7 @@ describe('Main Controller ', () => {
       delegatedContract: null,
       delegatedContractName: null,
       threshold: 2,
+      safeVersion: '1.4.1',
       updatedAt: 0
     }
     const getAccountStatesSpy = jest

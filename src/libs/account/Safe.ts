@@ -240,11 +240,12 @@ export class Safe extends BaseAccount {
 
   /**
    * Final commitment Safe data can differ according to the Safe v.
+   * The version is chain specific, so it's taken from the account state.
    * We encapsulate the logic here
    */
   getTxnTypedData(safeTx: SafeTx) {
-    const safeCreation = this.account.safeCreation!
-    if (safeCreation.version.startsWith('1.1.') || safeCreation.version.startsWith('1.2'))
+    const safeVersion = this.accountState.safeVersion ?? ''
+    if (safeVersion.startsWith('1.1.') || safeVersion.startsWith('1.2'))
       return getSafeV1TypedData(this.account.addr as Hex, safeTx)
 
     return getSafeTypedData(this.network.chainId, this.account.addr as Hex, safeTx)

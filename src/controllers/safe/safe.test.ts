@@ -57,8 +57,7 @@ describe('SafeController findSafe', () => {
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
       singleton: '0x2345678901234567890123456789012345678901' as Hex,
       setupData: '0x1234' as Hex,
-      saltNonce: `0x${'0'.repeat(63)}1` as Hex,
-      version: '1.4.1'
+      saltNonce: `0x${'0'.repeat(63)}1` as Hex
     }
     const getSafeInfo = jest.fn(async () => ({
       address: SAFE_A,
@@ -81,7 +80,7 @@ describe('SafeController findSafe', () => {
     expect(controller.importError).toBeUndefined()
   })
 
-  it('keeps partial deployment data and falls back to the Safe info version', async () => {
+  it('keeps partial deployment data', async () => {
     const provider = { getCode: jest.fn(async () => '0x1234') }
     const getSafeInfo = jest.fn(async () => ({
       address: SAFE_A,
@@ -93,8 +92,7 @@ describe('SafeController findSafe', () => {
       factoryAddr: '0x',
       singleton: '0x',
       setupData: '0x',
-      saltNonce: '0x',
-      version: ''
+      saltNonce: '0x'
     })
     const controller = createController([1n], { '1': provider })
 
@@ -104,9 +102,10 @@ describe('SafeController findSafe', () => {
       factoryAddr: '0x',
       singleton: '0x',
       setupData: '0x',
-      saltNonce: '0x',
-      version: '1.4.1'
+      saltNonce: '0x'
     })
+    // the Safe version is chain specific, so it's read in the account state instead
+    expect(controller.safeInfo).not.toHaveProperty('version')
     expect(controller.importError).toBeUndefined()
   })
 })
