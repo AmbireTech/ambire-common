@@ -4544,14 +4544,6 @@ describe('Call data decoding', () => {
     }
   }
 
-  const describeHumanization = (humanization: SignAccountOpController['humanization']) =>
-    humanization.map((call) => ({
-      selector: selectorOf(call.data),
-      isFallback: call.isFallback,
-      isDecodingCall: call.isDecodingCall,
-      decodedSignature: call.decodedCall?.signature
-    }))
-
   const initWithCalls = async (
     calls: AccountOp['calls'],
     options: {
@@ -4641,8 +4633,6 @@ describe('Call data decoding', () => {
       'the plain view is shown'
     )
     const fallbackHumanization = controller.humanization
-    console.log('[requests]', JSON.stringify(api.requests))
-    console.log('[plain view]', describeHumanization(fallbackHumanization))
     // No descriptor was found, and the held selectors don't hold the plain view back
     expect(Date.now() - startedAt).toBeLessThan(ERC7730_DESCRIPTOR_WAIT_MS)
     expect(fallbackHumanization[0]!.decodedCall?.signature).toBe(DEPOSIT_SIGNATURE)
@@ -4669,7 +4659,6 @@ describe('Call data decoding', () => {
     await waitForHumanization(controller)
 
     const firstEmittedCalls = emittedHumanizations.find((humanization) => humanization.length)
-    console.log('[first emitted calls]', describeHumanization(firstEmittedCalls!))
     expect(firstEmittedCalls![0]!.isFallback).toBe(true)
     expect(emittedHumanizations.flat().some((call) => call.isDecodingCall)).toBe(false)
     expect(firstEmittedCalls![0]!.decodedCall?.signature).toBe(DEPOSIT_SIGNATURE)
@@ -4693,7 +4682,6 @@ describe('Call data decoding', () => {
     await waitUntil(() => api.requests.length === 1, 'the top level selector is requested')
     expect(api.requests[0]!.prefixes).toEqual([prefixOf(selectorOf(depositCall.data))])
     await waitForHumanization(controller)
-    console.log('[shown while the selector is held]', describeHumanization(controller.humanization))
     expect(controller.humanization[0]!.isFallback).toBe(true)
     expect(controller.humanization[0]!.isDecodingCall).toBe(true)
     expect(controller.humanization[0]!.decodedCall).toBeUndefined()
@@ -4710,8 +4698,6 @@ describe('Call data decoding', () => {
       () => !controller.humanization[0]!.isDecodingCall,
       'the call stops loading once all of its selectors arrive'
     )
-    console.log('[requests]', JSON.stringify(api.requests))
-    console.log('[after the selectors]', describeHumanization(controller.humanization))
     expect(controller.humanization[0]!.decodedCall?.signature).toBe(DEPOSIT_SIGNATURE)
     expect(
       (getNestedTransfer(controller.humanization[0]!.decodedCall) as DecodedCall).signature
@@ -4737,7 +4723,6 @@ describe('Call data decoding', () => {
     )
     await jest.advanceTimersByTimeAsync(LATE_RESULT_SETTLE_MS)
 
-    console.log('[after the late result]', describeHumanization(controller.humanization))
     expect(controller.humanization[1]!.decodedCall!.signature).toBe(CLAIM_SIGNATURE)
     expect(controller.humanization[1]!.isDecodingCall).toBeUndefined()
     expect(controller.humanization).not.toBe(fallbackHumanization)
@@ -4754,7 +4739,6 @@ describe('Call data decoding', () => {
 
     await advanceUntil(() => !controller.humanization[1]!.isDecodingCall, 'the call stops loading')
     const afterDeadlineHumanization = controller.humanization
-    console.log('[after the deadline]', describeHumanization(afterDeadlineHumanization))
     expect(Date.now() - startedAt).toBeGreaterThanOrEqual(SELECTOR_LOADING_DEADLINE_MS)
     expect(api.heldResponses.length).toBeGreaterThan(0)
     expect(afterDeadlineHumanization[1]!.decodedCall).toBeUndefined()
@@ -4767,7 +4751,6 @@ describe('Call data decoding', () => {
     await advanceUntil(() => decodeCallData.mock.calls.length > 0, 'the calls are decoded again')
     await jest.advanceTimersByTimeAsync(LATE_RESULT_SETTLE_MS)
 
-    console.log('[after the late result]', describeHumanization(controller.humanization))
     expect(controller.humanization).toBe(afterDeadlineHumanization)
     expect([...emittedHumanizations].filter((h) => h !== afterDeadlineHumanization)).toEqual([])
 
@@ -4778,7 +4761,6 @@ describe('Call data decoding', () => {
     const { api, controller } = await showWithHeldSelectors(claimCall)
 
     await advanceUntil(() => !controller.humanization[1]!.isDecodingCall, 'the call stops loading')
-    console.log('[after the deadline]', describeHumanization(controller.humanization))
     expect(controller.humanization[1]!.decodedCall).toBeUndefined()
 
     api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
@@ -4787,7 +4769,6 @@ describe('Call data decoding', () => {
       'the late result is attached'
     )
 
-    console.log('[after the late result]', describeHumanization(controller.humanization))
     expect(controller.humanization[1]!.decodedCall!.signature).toBe(CLAIM_SIGNATURE)
     expect(controller.humanization[1]!.isDecodingCall).toBeUndefined()
 
@@ -4808,7 +4789,6 @@ describe('Call data decoding', () => {
     controller.update({ accountOpData: { calls: [claimCall] } })
     await waitForHumanization(controller)
     const newerHumanization = controller.humanization
-    console.log('[newer humanization]', describeHumanization(newerHumanization))
     expect(newerHumanization[0]!.decodedCall!.signature).toBe(CLAIM_SIGNATURE)
     expect(newerHumanization[0]!.isDecodingCall).toBeUndefined()
 
@@ -4824,8 +4804,6 @@ describe('Call data decoding', () => {
     )
     await wait(200)
 
-    console.log('[requests]', JSON.stringify(api.requests))
-    console.log('[decoded datas]', JSON.stringify(decodeCallData.mock.calls.map(([data]) => data)))
     expect(decodeCallData).not.toHaveBeenCalledWith(claimCall.data)
     expect(controller.humanization).toBe(newerHumanization)
 
@@ -4860,8 +4838,6 @@ describe('Call data decoding', () => {
         typeof getNestedTransfer(controller.humanization[0]!.decodedCall) === 'object',
       'all five calls and the nested call are decoded'
     )
-    console.log('[requests]', JSON.stringify(api.requests))
-    console.log('[decoded calls]', describeHumanization(controller.humanization))
 
     const requestedPrefixes = api.requests.flatMap(({ prefixes }) => prefixes)
     expect(requestedPrefixes).toHaveLength(new Set(requestedPrefixes).size)
@@ -4902,7 +4878,6 @@ describe('Call data decoding', () => {
     first.controller.pause()
     second.releaseHumanization()
     await waitUntil(() => api.requests.length === 2, 'the second request asks for its selector')
-    console.log('[requests]', JSON.stringify(api.requests))
     expect(api.requests[1]!.prefixes).toEqual([prefixOf(selectorOf(claimCall.data))])
 
     const firstEmits: SignAccountOpController['humanization'][] = []
@@ -4930,14 +4905,12 @@ describe('Call data decoding', () => {
 
     firstEmits.length = 0
     first.controller.resume()
-    console.log('[first after resume]', describeHumanization(firstEmits.at(-1)!))
     expect(firstEmits.at(-1)![0]!.decodedCall!.signature).toBe(DEPOSIT_SIGNATURE)
     expect((getNestedTransfer(firstEmits.at(-1)![0]!.decodedCall) as DecodedCall).signature).toBe(
       TRANSFER_SIGNATURE
     )
 
     await wait(200)
-    console.log('[requests]', JSON.stringify(api.requests))
     const nestedTransferRequests = api.requests.filter(({ prefixes }) =>
       prefixes.includes(prefixOf(selectorOf(transferData)))
     )
@@ -4972,7 +4945,6 @@ describe('Call data decoding', () => {
     await waitUntil(() => api.requests.length === 1, 'the selector is requested')
     await waitForHumanization(controller)
     const erc7730Humanization = controller.humanization
-    console.log('[shown while the selector is held]', describeHumanization(erc7730Humanization))
     expect(api.heldResponses).toHaveLength(1)
     expect(hasErc7730Humanization(erc7730Humanization)).toBe(true)
     expect(erc7730Humanization[0]!.decodedCall).toBeUndefined()
@@ -5004,7 +4976,6 @@ describe('Call data decoding', () => {
     releaseHumanization()
     await wait(200)
 
-    console.log('[after destroy]', describeHumanization(controller.humanization))
     expect(controller.humanization).toHaveLength(0)
     expect(learnTokens).not.toHaveBeenCalled()
   })
@@ -5022,7 +4993,6 @@ describe('Call data decoding', () => {
     // Past the loading deadline too, so that timer can't change anything either
     await jest.advanceTimersByTimeAsync(SELECTOR_LOADING_DEADLINE_MS)
 
-    console.log('[after destroy]', describeHumanization(controller.humanization))
     expect(controller.humanization).toBe(fallbackHumanization)
     expect(controller.humanization[1]!.decodedCall).toBeUndefined()
   })

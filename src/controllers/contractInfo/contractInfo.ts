@@ -21,8 +21,6 @@ export const SELECTOR_RETRY_FETCH_TIMEOUT_MS = 10 * 1000
 /** How long a call is shown as loading while its selectors are fetched, before giving up on it. */
 export const SELECTOR_LOADING_DEADLINE_MS = 5 * 1000
 
-const SAVED_SELECTOR_STATUSES: string[] = ['success', 'error', 'not-found']
-
 // The ContractInfoController is responsible for getting function selectors for contracts
 export class ContractInfoController extends EventEmitter implements IContractInfoController {
   #fetch: Fetch
@@ -77,15 +75,7 @@ export class ContractInfoController extends EventEmitter implements IContractInf
   }
 
   async #load() {
-    const storedSelectors: Selectors = await this.#storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
-    // Older versions saved a data-less 'fetching-disabled' entry for every selector seen while
-    // fetching was off. That status no longer exists, so a kept entry would never count as expired
-    // and its selector would never be fetched.
-    this.#selectors = Object.fromEntries(
-      Object.entries(storedSelectors).filter(([, entry]) =>
-        SAVED_SELECTOR_STATUSES.includes(entry.status)
-      )
-    )
+    this.#selectors = await this.#storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
   }
 
   async #storeSelectorsInStorage() {

@@ -110,7 +110,6 @@ describe('ContractInfoController', () => {
     await contractInfo.fetchSelectors([EXECUTE_SELECTOR, APPROVE_SELECTOR])
 
     const serializedState = JSON.stringify(contractInfo)
-    console.log('[serialized state]', serializedState)
     expect(onUpdate).not.toHaveBeenCalled()
     expect(serializedState).not.toContain(TRANSFER_SELECTOR)
     expect(serializedState).not.toContain(EXECUTE_SELECTOR)
@@ -154,7 +153,6 @@ describe('ContractInfoController', () => {
 
     await contractInfo.fetchSelectorsForCallDatas([executeData])
 
-    console.log('[requests]', JSON.stringify(api.requests))
     expect(api.requests).toHaveLength(1)
     expect(api.requests[0]!.prefixes.sort()).toEqual(
       [
@@ -172,7 +170,6 @@ describe('ContractInfoController', () => {
 
     await contractInfo.fetchSelectorsForCallDatas([executeData])
 
-    console.log('[requests]', JSON.stringify(api.requests))
     expect(api.requests).toHaveLength(2)
     expect(api.requests[0]!.prefixes).toEqual([
       EXECUTE_SELECTOR.slice(0, SELECTOR_PRIVACY_PREFIX_LENGTH)
@@ -199,7 +196,6 @@ describe('ContractInfoController', () => {
       contractInfo.fetchSelectorsForCallDatas([transferData, executeData])
     ])
 
-    console.log('[requests]', JSON.stringify(api.requests))
     expect(api.requests).toHaveLength(2)
     expect(api.requests.flatMap(({ prefixes }) => prefixes).sort()).toEqual(
       [EXECUTE_SELECTOR, TRANSFER_SELECTOR, APPROVE_SELECTOR]
@@ -217,7 +213,6 @@ describe('ContractInfoController', () => {
     await contractInfo.fetchSelectorsForCallDatas([executeData])
 
     const storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
-    console.log('[stored after fetch]', JSON.stringify(storedSelectors))
     expect(api.requests).toHaveLength(1)
     expect(storedSelectors[EXECUTE_SELECTOR]?.status).toBe('not-found')
     expect(contractInfo.decodeCallData(executeData)).toBeNull()
@@ -231,7 +226,6 @@ describe('ContractInfoController', () => {
     await contractInfo.fetchSelectorsForCallDatas([executeData])
 
     const storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
-    console.log('[stored after failure]', JSON.stringify(storedSelectors))
     // The first try and its retry, and nothing more while the error is fresh
     expect(api.requests).toHaveLength(2)
     expect(storedSelectors[EXECUTE_SELECTOR]?.status).toBe('error')
@@ -396,7 +390,6 @@ describe('ContractInfoController', () => {
     await expect(contractInfo.fetchSelectors([TRANSFER_SELECTOR])).resolves.toBeUndefined()
 
     const storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
-    console.log('[stored after failure]', JSON.stringify(storedSelectors[TRANSFER_SELECTOR]))
     expect(api.requests).toHaveLength(2)
     expect(onError).toHaveBeenCalled()
     expect(storedSelectors[TRANSFER_SELECTOR]).toMatchObject({
@@ -441,31 +434,6 @@ describe('ContractInfoController', () => {
 
     expect(api.requests).toHaveLength(1)
     expect(contractInfo.decodeCallData(transferData)?.signature).toBe(TRANSFER_SIGNATURE)
-  })
-
-  test('drops the data-less entries older versions saved while fetching was disabled', async () => {
-    const api = makeSelectorsApi()
-    const { contractInfo, storage } = await makeController({
-      fetch: api.fetch,
-      savedSelectors: {
-        [TRANSFER_SELECTOR]: { status: 'fetching-disabled', updatedAt: Date.now() },
-        [APPROVE_SELECTOR]: successEntry(APPROVE_SIGNATURE)
-      }
-    })
-
-    await contractInfo.fetchSelectorsForCallDatas([transferData])
-    expect(api.requests).toHaveLength(1)
-
-    const storedSelectors: Record<string, { status: string }> = await storage.get(
-      FUNCTION_SELECTORS_STORAGE_KEY,
-      {}
-    )
-    console.log('[stored after load]', JSON.stringify(storedSelectors))
-    expect(Object.values(storedSelectors).map(({ status }) => status)).not.toContain(
-      'fetching-disabled'
-    )
-    expect(storedSelectors[TRANSFER_SELECTOR]?.status).toBe('success')
-    expect(storedSelectors[APPROVE_SELECTOR]?.status).toBe('success')
   })
 
   test('replies to the UI with the decoded calls in order, null for the ones it cannot decode, without fetching', async () => {

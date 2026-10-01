@@ -34,7 +34,6 @@ const makeSelectorsApi = (
     const prefixes = new URL(url).searchParams.get('selectors')!.split(',')
     requests.push({ prefixes })
     attempts += 1
-    console.log(`[selectors api] request #${attempts} for ${prefixes.join(',')}`)
 
     if (attempts <= failingAttempts) throw new Error('Network error')
 

@@ -308,10 +308,6 @@ describe('withDecodedCalls', () => {
 
     const decodedCalls = withDecodedCalls(calls, getDecodedCall, () => false)
 
-    console.log(
-      '[decoded]',
-      decodedCalls.map(({ data, decodedCall }) => [data, decodedCall?.signature])
-    )
     expect(getDecodedCall.mock.calls).toEqual([[TRANSFER_DATA], [UNKNOWN_DATA]])
     expect(decodedCalls.map(({ decodedCall }) => decodedCall)).toEqual([
       decodedTransfer,
@@ -338,10 +334,6 @@ describe('withDecodedCalls', () => {
     const pendingDatas = new Set([TRANSFER_DATA, PENDING_DATA])
 
     const whileDecoding = withDecodedCalls(calls, getDecodedCall, (data) => pendingDatas.has(data))
-    console.log(
-      '[while decoding]',
-      whileDecoding.map(({ data, isDecodingCall }) => [data, isDecodingCall])
-    )
     expect(whileDecoding.map(({ isDecodingCall }) => isDecodingCall)).toEqual([
       undefined,
       true,
@@ -356,10 +348,6 @@ describe('withDecodedCalls', () => {
 
     pendingDatas.clear()
     const afterDecoding = withDecodedCalls(whileDecoding, getDecodedCall, () => false)
-    console.log(
-      '[after decoding]',
-      afterDecoding.map(({ data, isDecodingCall }) => [data, isDecodingCall])
-    )
     expect(afterDecoding).not.toBe(whileDecoding)
     expect(afterDecoding[1]!.isDecodingCall).toBeUndefined()
     expect(afterDecoding[1]!.decodedCall).toBeUndefined()

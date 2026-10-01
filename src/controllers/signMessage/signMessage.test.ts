@@ -542,7 +542,6 @@ describe('SignMessageController', () => {
       setTimeout(resolve, 0)
     })
 
-    console.log('[after reset]', JSON.stringify(signMessageController.humanizedMessage))
     expect(callRelayer).toHaveBeenCalledWith(
       '/v2/erc7730/fetch-descriptor',
       'POST',
