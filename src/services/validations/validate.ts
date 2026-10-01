@@ -141,7 +141,8 @@ const validateSendTransferAddress = (
   lastRecipientTransactionDate?: Date | null,
   addressPoisoningMatch?: AddressPoisoningMatch | null,
   recipientDomainAddressChange?: { previousAddress: string } | null,
-  isRecipientAddressBlacklisted?: boolean
+  /** null means the scam-list check has not answered yet — NOT that the address is clean. */
+  isRecipientAddressBlacklisted?: boolean | null
 ): Validation => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
@@ -158,6 +159,19 @@ const validateSendTransferAddress = (
     return {
       message: 'This address is known for stealing funds. Anything you send to it will be lost.',
       severity: 'error'
+    }
+  }
+
+  // Not yet answered, which is not the same as clean: the scam list loads in the background and
+  // a check made before it is ready knows nothing about the address. Saying so beats falling
+  // through to the checks below, which would show a reassuring message and then flip to the
+  // error above once the answer lands. A warning rather than an error, because a wallet that
+  // has never reached the list (a first run offline) must still be usable.
+  if (isRecipientAddressBlacklisted === null) {
+    return {
+      message:
+        "We couldn't check this address against our list of known scams yet. Make sure you trust it before sending.",
+      severity: 'warning'
     }
   }
 
