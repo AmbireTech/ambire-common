@@ -32,6 +32,7 @@ import {
 } from '../../consts/swapAndBridge'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
+import { IContractInfoController } from '../../interfaces/contractInfo'
 import { IDappsController } from '../../interfaces/dapp'
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
@@ -431,6 +432,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #erc7730: IErc7730Controller
 
+  #contractInfo: IContractInfoController
+
   /**
    * A possibly outdated instance of the SignAccountOpController. Please always
    * read the public getter `signAccountOpController` to get the up-to-date
@@ -497,6 +500,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     phishing,
     dapps,
     erc7730,
+    contractInfo,
     portfolioUpdate,
     relayerUrl,
     isCurrentSignAccountOpThrowingAnEstimationError,
@@ -524,6 +528,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     phishing: IPhishingController
     dapps: IDappsController
     erc7730: IErc7730Controller
+    contractInfo: IContractInfoController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
     isCurrentSignAccountOpThrowingAnEstimationError?: Function
@@ -555,6 +560,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#phishing = phishing
     this.#dapps = dapps
     this.#erc7730 = erc7730
+    this.#contractInfo = contractInfo
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
     this.#getVisibleUserRequests = getVisibleUserRequests
@@ -3381,6 +3387,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       phishing: this.#phishing,
       dapps: this.#dapps,
       erc7730: this.#erc7730,
+      contractInfo: this.#contractInfo,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,

@@ -1,421 +1,505 @@
+import { Interface } from 'ethers'
+
 import { Selectors } from '@/interfaces/contractInfo'
-import wait from '@/utils/wait'
-import { expect } from '@jest/globals'
-import { makeMainController } from '@test/helpers/mainController'
+import { IUiController } from '@/interfaces/ui'
+import { CALLDATA_SELECTOR_HEX_LENGTH } from '@/libs/decodeCall'
+import { describe, expect, jest, test } from '@jest/globals'
 
-import { FUNCTION_SELECTORS_STORAGE_KEY, SELECTOR_SUCCESS_DEADLINE_MS } from './contractInfo'
+import { produceMemoryStore } from '../../../test/helpers'
+import {
+  makeSelectorsApi as makeSelectorsApiWithSignatures,
+  waitUntil
+} from '../../../test/helpers/contractInfo'
+import { FeatureFlagsController } from '../featureFlags/featureFlags'
+import { StorageController } from '../storage/storage'
+import {
+  ContractInfoController,
+  FUNCTION_SELECTORS_STORAGE_KEY,
+  SELECTOR_ERROR_DEADLINE_MS,
+  SELECTOR_FETCH_DEBOUNCE_MS,
+  SELECTOR_SUCCESS_DEADLINE_MS
+} from './contractInfo'
 
-const CENA_SELECTORS_URL = 'https://cena.ambire.com/api/v3/contracts/selectors'
+const CENA_URL = 'https://cena.test'
+const REAL_CENA_URL = 'https://cena.ambire.com'
+const SELECTOR_PRIVACY_PREFIX_LENGTH = 6
 
-let fetchSpy: any
-const PREDEFINED_SELECTORS: Selectors = {
-  '0x23b872dd': {
-    data: [
-      {
-        signature: 'transferFrom(address,address,uint256)'
-      },
-      {
-        signature: '__$_$__$$$$$__$$_$$$_$$__$$___$$(address,address,uint256)'
-      },
-      {
-        signature: 'seaportCallback4878572495(address,address,uint256)'
-      },
-      {
-        signature:
-          'func_801zDya(address,address,uint256,((address,uint256),uint256,uint256),bytes32,bytes)'
-      },
-      {
-        signature: 'func_60iHVgK(address,address,uint256,uint256,address)'
-      },
-      {
-        signature: 'gasprice_bit_ether(int128)'
-      },
-      {
-        signature: 'watch_tg_invmru_faebe36(bool,bool,bool)'
-      },
-      {
-        signature: 'func_nZHTch(address,address,uint256,((address,uint256),uint256,uint256),bytes)'
-      },
-      {
-        signature: 'func_chVsN(address,address,uint256,address,uint256,uint256,uint256,bytes)'
-      }
-    ],
-    updatedAt: 0,
-    status: 'success'
-  },
-  '0xa9059cbb': {
-    data: [
-      {
-        signature: 'transfer(address,uint256)'
-      },
-      {
-        signature: '_____$_$__$___$$$___$$___$__$$(address,uint256)'
-      },
-      {
-        signature: 'join_tg_invmru_haha_fd06787(address,bool)'
-      },
-      {
-        signature: 'func_2093253501(bytes)'
-      },
-      {
-        signature: 'transfer(bytes4[9],bytes5[6],int48[11])'
-      },
-      {
-        signature: 'many_msg_babbage(bytes1)'
-      },
-      {
-        signature: 'workMyDirefulOwner(uint256,uint256)'
-      },
-      {
-        signature: 'fakeTransfer_4570999670(bytes)'
-      },
-      {
-        signature: 'transfer3112631958((address,uint256,bytes)[])'
-      },
-      {
-        signature: 'z75000129682300((address,uint256,bytes)[])'
-      },
-      {
-        signature: 'z81250554928297((address,bytes)[])'
-      }
-    ],
-    status: 'success',
-    updatedAt: 0
-  }
+const RECIPIENT = '0x742d35CC6634C0532925a3b844bc1E4C23a39E18'
+const TOKEN = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+const TRANSFER_SIGNATURE = 'transfer(address,uint256)'
+const APPROVE_SIGNATURE = 'approve(address,uint256)'
+const EXECUTE_SIGNATURE = 'execute((address,uint256,bytes)[])'
+const MINT_SELECTOR = '0x40c10f19'
+
+const transferData = new Interface([`function ${TRANSFER_SIGNATURE}`]).encodeFunctionData(
+  'transfer',
+  [RECIPIENT, 1000n]
+)
+const approveData = new Interface([`function ${APPROVE_SIGNATURE}`]).encodeFunctionData('approve', [
+  RECIPIENT,
+  5n
+])
+const executeData = new Interface([`function ${EXECUTE_SIGNATURE}`]).encodeFunctionData('execute', [
+  [
+    [TOKEN, 0n, transferData],
+    [TOKEN, 0n, approveData]
+  ]
+])
+
+const selectorOf = (data: string) => data.slice(0, CALLDATA_SELECTOR_HEX_LENGTH)
+
+const TRANSFER_SELECTOR = selectorOf(transferData)
+const APPROVE_SELECTOR = selectorOf(approveData)
+const EXECUTE_SELECTOR = selectorOf(executeData)
+
+const API_SIGNATURES: Record<string, string[]> = {
+  [TRANSFER_SELECTOR]: [TRANSFER_SIGNATURE],
+  [APPROVE_SELECTOR]: [APPROVE_SIGNATURE],
+  [EXECUTE_SELECTOR]: [EXECUTE_SIGNATURE]
 }
-let fetchSourcifyCounter = 0
-beforeEach(async () => {
-  const realFetch = global.fetch
-  fetchSpy = jest.spyOn(global, 'fetch').mockImplementation((...args): any => {
-    if ((args[0] as string).includes(CENA_SELECTORS_URL)) fetchSourcifyCounter += 1
-    return realFetch(...args)
-  })
+
+const makeSelectorsApi = (options?: Parameters<typeof makeSelectorsApiWithSignatures>[1]) =>
+  makeSelectorsApiWithSignatures(API_SIGNATURES, options)
+
+const makeController = async ({
+  fetch,
+  savedSelectors,
+  isFetchingEnabled = true,
+  sendUiMessage = jest.fn(),
+  cenaUrl = CENA_URL
+}: {
+  fetch: any
+  savedSelectors?: Record<string, unknown>
+  isFetchingEnabled?: boolean
+  sendUiMessage?: jest.Mock
+  cenaUrl?: string
+}) => {
+  const storage = new StorageController(produceMemoryStore())
+  if (savedSelectors) await storage.set(FUNCTION_SELECTORS_STORAGE_KEY, savedSelectors as Selectors)
+
+  const featureFlags = new FeatureFlagsController(
+    { apiForFunctionSelectors: isFetchingEnabled },
+    storage
+  )
+  await featureFlags.initialLoadPromise
+
+  const ui = { message: { sendUiMessage } } as unknown as IUiController
+  const contractInfo = new ContractInfoController({ fetch, storage, featureFlags, ui, cenaUrl })
+  await contractInfo.initialLoadPromise
+
+  return { contractInfo, storage, featureFlags, sendUiMessage }
+}
+
+const successEntry = (signature: string, updatedAt = Date.now()) => ({
+  status: 'success',
+  data: [{ signature }],
+  updatedAt
 })
 
-afterEach(() => {
-  fetchSourcifyCounter = 0
-  fetchSpy.mockRestore()
-})
-
-describe('contractInfo', () => {
-  test('Should read selectors from storage', async () => {
-    const {
-      mainCtrl: { contractInfo }
-    } = await makeMainController(
-      async (storage) => {
-        await storage.set('functionSelectors', {
-          '0x095ea7b3': {
-            status: 'success',
-            data: [{ signature: 'approve(address,uint256)' }],
-            updatedAt: Date.now()
-          }
-        })
-      },
-      { overrides: { fetch: fetchSpy } }
-    )
-    expect(contractInfo.selectors?.['0x095ea7b3']).toMatchObject({
-      status: 'success',
-      data: [{ signature: 'approve(address,uint256)' }]
+describe('ContractInfoController', () => {
+  test('never emits updates, and keeps the selectors out of its serialized state', async () => {
+    const api = makeSelectorsApi()
+    const { contractInfo } = await makeController({
+      fetch: api.fetch,
+      savedSelectors: { [TRANSFER_SELECTOR]: successEntry(TRANSFER_SIGNATURE) }
     })
-  })
-  test('Should debounce when in quick succession', async () => {
-    const {
-      mainCtrl: { contractInfo }
-    } = await makeMainController(undefined, { overrides: { fetch: fetchSpy } })
-    void contractInfo.getSelector('0x23b872dd')
-    void contractInfo.getSelector('0xa9059cbb')
-    expect(contractInfo.selectors?.['0x23b872dd']?.status).toBe('loading')
-    expect(contractInfo.selectors?.['0xa9059cbb']?.status).toBe('loading')
-    await wait(3000)
-    expect(fetchSourcifyCounter).toBe(1)
-    expect(contractInfo.selectors?.['0x23b872dd']?.status).toBe('success')
-    expect((contractInfo.selectors?.['0x23b872dd'] as any).data).toMatchObject(
-      (PREDEFINED_SELECTORS['0x23b872dd'] as any).data
-    )
-    expect(contractInfo.selectors?.['0x23b872dd']?.updatedAt).toBeTruthy()
-
-    expect(contractInfo.selectors?.['0xa9059cbb']?.status).toBe('success')
-    expect((contractInfo.selectors?.['0xa9059cbb'] as any).data).toMatchObject(
-      (PREDEFINED_SELECTORS['0xa9059cbb'] as any).data
-    )
-    expect(contractInfo.selectors?.['0xa9059cbb']?.updatedAt).toBeTruthy()
-
-    // should not double fetch
-    void contractInfo.getSelector('0x23b872dd')
-    await wait(3000)
-    expect(fetchSourcifyCounter).toBe(1)
-  })
-
-  test('Should store selectors in storage correctly', async () => {
-    const {
-      mainCtrl: { contractInfo, storage }
-    } = await makeMainController()
-
-    void contractInfo.getSelector('0x40c10f19')
-    await wait(3000)
-    const storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
-    expect((storedSelectors['0x40c10f19'] as any).data).toMatchObject([
-      { signature: 'mint(address,uint256)' },
-      { signature: 'cat642998653(address,uint256)' }
-    ])
-    expect(storedSelectors['0x40c10f19']!.status).toBe('success')
-  })
-  test('Should not override an existing selector when fetching is disabled', async () => {
-    const {
-      mainCtrl: { contractInfo, featureFlags }
-    } = await makeMainController(
-      async (storage) => {
-        await storage.set(FUNCTION_SELECTORS_STORAGE_KEY, {
-          '0x23b872dd': {
-            status: 'success',
-            data: [{ signature: 'transferFrom(address,address,uint256)' }],
-            updatedAt: Date.now()
-          }
-        })
-      },
-      { overrides: { fetch: fetchSpy } }
-    )
-
-    await featureFlags.setFeatureFlag('apiForFunctionSelectors', false)
     const onUpdate = jest.fn()
-    const unsubscribe = contractInfo.onUpdate(onUpdate)
+    contractInfo.onUpdate(onUpdate)
 
-    void contractInfo.getSelector('0x23b872dd')
+    contractInfo.decodeCallData(executeData)
+    await contractInfo.fetchSelectors([EXECUTE_SELECTOR, APPROVE_SELECTOR])
+
+    const serializedState = JSON.stringify(contractInfo)
+    console.log('[serialized state]', serializedState)
     expect(onUpdate).not.toHaveBeenCalled()
-    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('success')
-    expect((contractInfo.selectors['0x23b872dd'] as any).data).toMatchObject([
-      { signature: 'transferFrom(address,address,uint256)' }
+    expect(serializedState).not.toContain(TRANSFER_SELECTOR)
+    expect(serializedState).not.toContain(EXECUTE_SELECTOR)
+  })
+
+  test('decodes from saved selectors without fetching anything', async () => {
+    const api = makeSelectorsApi()
+    const { contractInfo } = await makeController({
+      fetch: api.fetch,
+      savedSelectors: {
+        [EXECUTE_SELECTOR]: successEntry(EXECUTE_SIGNATURE),
+        [TRANSFER_SELECTOR]: successEntry(TRANSFER_SIGNATURE),
+        [APPROVE_SELECTOR]: successEntry(APPROVE_SIGNATURE)
+      }
+    })
+
+    const decodedCall = contractInfo.decodeCallData(executeData)
+    await contractInfo.fetchSelectorsForCallDatas([executeData])
+
+    expect(decodedCall?.signature).toBe(EXECUTE_SIGNATURE)
+    expect((decodedCall?.args[0]?.val as any)[0].val[2].val.signature).toBe(TRANSFER_SIGNATURE)
+    expect(api.fetch).not.toHaveBeenCalled()
+  })
+
+  test('fetches the never fetched and expired selectors of the call datas, but not fresh ones', async () => {
+    const api = makeSelectorsApi()
+    const { contractInfo } = await makeController({
+      fetch: api.fetch,
+      savedSelectors: {
+        // expired, but its old signature is still used to decode
+        [EXECUTE_SELECTOR]: successEntry(
+          EXECUTE_SIGNATURE,
+          Date.now() - SELECTOR_SUCCESS_DEADLINE_MS - 1
+        ),
+        [TRANSFER_SELECTOR]: { status: 'not-found', updatedAt: Date.now() }
+      }
+    })
+
+    // The expired signature is still used to decode, so the nested selectors are known up front
+    expect(contractInfo.decodeCallData(executeData)?.signature).toBe(EXECUTE_SIGNATURE)
+
+    await contractInfo.fetchSelectorsForCallDatas([executeData])
+
+    console.log('[requests]', JSON.stringify(api.requests))
+    expect(api.requests).toHaveLength(1)
+    expect(api.requests[0]!.prefixes.sort()).toEqual(
+      [
+        APPROVE_SELECTOR.slice(0, SELECTOR_PRIVACY_PREFIX_LENGTH),
+        EXECUTE_SELECTOR.slice(0, SELECTOR_PRIVACY_PREFIX_LENGTH)
+      ].sort()
+    )
+  })
+
+  test('fetches the selectors of the call datas in rounds until the nested calls decode too', async () => {
+    const api = makeSelectorsApi()
+    const { contractInfo } = await makeController({ fetch: api.fetch })
+
+    expect(contractInfo.decodeCallData(executeData)).toBeNull()
+
+    await contractInfo.fetchSelectorsForCallDatas([executeData])
+
+    console.log('[requests]', JSON.stringify(api.requests))
+    expect(api.requests).toHaveLength(2)
+    expect(api.requests[0]!.prefixes).toEqual([
+      EXECUTE_SELECTOR.slice(0, SELECTOR_PRIVACY_PREFIX_LENGTH)
     ])
-    await wait(3000)
-    expect(fetchSourcifyCounter).toBe(0)
-    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('success')
-
-    unsubscribe()
-  })
-
-  test('Should not fetch selectors when apiForFunctionSelectors feature flag is disabled', async () => {
-    const {
-      mainCtrl: { contractInfo, featureFlags }
-    } = await makeMainController(undefined, { overrides: { fetch: fetchSpy } })
-
-    void featureFlags.setFeatureFlag('apiForFunctionSelectors', false)
-    void contractInfo.getSelector('0x23b872dd')
-    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('fetching-disabled')
-    await wait(3000)
-    expect(fetchSourcifyCounter).toBe(0)
-    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('fetching-disabled')
-  })
-
-  test('BUG: Should not emit repeated updates for a selector when fetching is disabled', async () => {
-    const {
-      mainCtrl: { contractInfo, featureFlags }
-    } = await makeMainController(undefined, { overrides: { fetch: fetchSpy } })
-
-    await featureFlags.setFeatureFlag('apiForFunctionSelectors', false)
-    const onUpdate = jest.fn()
-    const unsubscribe = contractInfo.onUpdate(onUpdate)
-
-    void contractInfo.getSelector('0x23b872dd')
-    expect(onUpdate).toHaveBeenCalledTimes(1)
-
-    void contractInfo.getSelector('0x23b872dd')
-    expect(onUpdate).toHaveBeenCalledTimes(1)
-
-    unsubscribe()
-  })
-
-  test('Should not re-fetch a selector with a fresh updatedAt', async () => {
-    let cenaCalls = 0
-    const trackingFetch = (url: any, ...args: any[]) => {
-      if ((url as string).includes(CENA_SELECTORS_URL)) cenaCalls++
-      return fetchSpy(url, ...args)
-    }
-
-    const {
-      mainCtrl: { contractInfo }
-    } = await makeMainController(
-      async (storage) => {
-        await storage.set(FUNCTION_SELECTORS_STORAGE_KEY, {
-          '0x23b872dd': {
-            status: 'success',
-            data: [{ signature: 'transferFrom(address,address,uint256)' }],
-            updatedAt: Date.now()
-          }
-        })
-      },
-      { overrides: { fetch: trackingFetch } }
+    expect(api.requests[1]!.prefixes.sort()).toEqual(
+      [
+        TRANSFER_SELECTOR.slice(0, SELECTOR_PRIVACY_PREFIX_LENGTH),
+        APPROVE_SELECTOR.slice(0, SELECTOR_PRIVACY_PREFIX_LENGTH)
+      ].sort()
     )
-
-    void contractInfo.getSelector('0x23b872dd')
-    await wait(200)
-    expect(cenaCalls).toBe(0)
-    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('success')
+    const decodedCall = contractInfo.decodeCallData(executeData)
+    expect(decodedCall?.signature).toBe(EXECUTE_SIGNATURE)
+    const [transferCall, approveCall] = decodedCall?.args[0]?.val as any[]
+    expect(transferCall.val[2].val.signature).toBe(TRANSFER_SIGNATURE)
+    expect(approveCall.val[2].val.signature).toBe(APPROVE_SIGNATURE)
   })
 
-  test('Should fetch successfully, respect fetching-disabled when flag is off, then re-fetch when flag is re-enabled', async () => {
-    let cenaCalls = 0
-    const trackingFetch = (url: any, ...args: any[]) => {
-      if ((url as string).includes(CENA_SELECTORS_URL)) cenaCalls++
-      return fetchSpy(url, ...args)
-    }
+  test('shares the requests of concurrent call data fetches that need the same selectors', async () => {
+    const api = makeSelectorsApi()
+    const { contractInfo } = await makeController({ fetch: api.fetch })
 
-    const {
-      mainCtrl: { contractInfo, featureFlags }
-    } = await makeMainController(undefined, { overrides: { fetch: trackingFetch } })
+    await Promise.all([
+      contractInfo.fetchSelectorsForCallDatas([executeData]),
+      contractInfo.fetchSelectorsForCallDatas([transferData, executeData])
+    ])
 
-    // Step 1: fetch successfully with flag enabled (default)
-    void contractInfo.getSelector('0x23b872dd')
-    await wait(3000)
-    expect(cenaCalls).toBe(1)
-    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('success')
-    expect((contractInfo.selectors['0x23b872dd'] as any).data).toMatchObject(
-      (PREDEFINED_SELECTORS['0x23b872dd'] as any).data
+    console.log('[requests]', JSON.stringify(api.requests))
+    expect(api.requests).toHaveLength(2)
+    expect(api.requests.flatMap(({ prefixes }) => prefixes).sort()).toEqual(
+      [EXECUTE_SELECTOR, TRANSFER_SELECTOR, APPROVE_SELECTOR]
+        .map((selector) => selector.slice(0, SELECTOR_PRIVACY_PREFIX_LENGTH))
+        .sort()
     )
+    expect(contractInfo.decodeCallData(transferData)?.signature).toBe(TRANSFER_SIGNATURE)
+    expect(contractInfo.decodeCallData(executeData)?.signature).toBe(EXECUTE_SIGNATURE)
+  })
 
-    // Step 2: disable the feature flag
-    await featureFlags.setFeatureFlag('apiForFunctionSelectors', false)
+  test('stops fetching the selectors of the call datas when the API has no signature for them', async () => {
+    const api = makeSelectorsApiWithSignatures({})
+    const { contractInfo, storage } = await makeController({ fetch: api.fetch })
 
-    // Step 3: attempt to fetch a new selector while flag is disabled — no network call, status marked as fetching-disabled
-    void contractInfo.getSelector('0xa9059cbb')
-    expect(contractInfo.selectors['0xa9059cbb']?.status).toBe('fetching-disabled')
+    await contractInfo.fetchSelectorsForCallDatas([executeData])
 
-    await wait(3000)
-    expect(cenaCalls).toBe(1)
-    expect(contractInfo.selectors['0xa9059cbb']?.status).toBe('fetching-disabled')
+    const storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
+    console.log('[stored after fetch]', JSON.stringify(storedSelectors))
+    expect(api.requests).toHaveLength(1)
+    expect(storedSelectors[EXECUTE_SELECTOR]?.status).toBe('not-found')
+    expect(contractInfo.decodeCallData(executeData)).toBeNull()
+  })
 
-    // Step 4: re-enable the feature flag
+  test('resolves the call data fetch when the API keeps failing, saving the selectors as errors without fetching in a loop', async () => {
+    const api = makeSelectorsApi({ failingAttempts: Infinity })
+    const { contractInfo, storage } = await makeController({ fetch: api.fetch })
+
+    await expect(contractInfo.fetchSelectorsForCallDatas([executeData])).resolves.toBeUndefined()
+    await contractInfo.fetchSelectorsForCallDatas([executeData])
+
+    const storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
+    console.log('[stored after failure]', JSON.stringify(storedSelectors))
+    // The first try and its retry, and nothing more while the error is fresh
+    expect(api.requests).toHaveLength(2)
+    expect(storedSelectors[EXECUTE_SELECTOR]?.status).toBe('error')
+    expect(contractInfo.decodeCallData(executeData)).toBeNull()
+  })
+
+  test('sends selectors asked for close together in one request', async () => {
+    const api = makeSelectorsApi()
+    const { contractInfo } = await makeController({ fetch: api.fetch })
+
+    const firstFetch = contractInfo.fetchSelectors([TRANSFER_SELECTOR])
+    const secondFetch = contractInfo.fetchSelectors([APPROVE_SELECTOR, TRANSFER_SELECTOR])
+    await Promise.all([firstFetch, secondFetch])
+
+    expect(api.requests).toHaveLength(1)
+    expect(api.requests[0]!.prefixes.sort()).toEqual(
+      [
+        TRANSFER_SELECTOR.slice(0, SELECTOR_PRIVACY_PREFIX_LENGTH),
+        APPROVE_SELECTOR.slice(0, SELECTOR_PRIVACY_PREFIX_LENGTH)
+      ].sort()
+    )
+    expect(contractInfo.decodeCallData(transferData)?.signature).toBe(TRANSFER_SIGNATURE)
+    expect(contractInfo.decodeCallData(approveData)?.signature).toBe(APPROVE_SIGNATURE)
+  })
+
+  test('waits on the running request for a selector that is already being fetched', async () => {
+    const api = makeSelectorsApi({ holdResponses: true })
+    const { contractInfo } = await makeController({ fetch: api.fetch })
+
+    let isFirstFetchDone = false
+    let isSecondFetchDone = false
+    const firstFetch = contractInfo.fetchSelectors([TRANSFER_SELECTOR]).then(() => {
+      isFirstFetchDone = true
+    })
+    await waitUntil(() => api.heldResponses.length === 1, 'the first request is in flight')
+
+    const secondFetch = contractInfo.fetchSelectors([TRANSFER_SELECTOR]).then(() => {
+      isSecondFetchDone = true
+    })
+    await new Promise((resolve) => {
+      setTimeout(resolve, SELECTOR_FETCH_DEBOUNCE_MS * 2)
+    })
+    expect(api.requests).toHaveLength(1)
+    expect(isFirstFetchDone).toBe(false)
+    expect(isSecondFetchDone).toBe(false)
+
+    api.heldResponses[0]!.resolve()
+    await Promise.all([firstFetch, secondFetch])
+    expect(api.requests).toHaveLength(1)
+    expect(contractInfo.decodeCallData(transferData)?.signature).toBe(TRANSFER_SIGNATURE)
+  })
+
+  test('fetches a selector asked for during a running request in the next request, without waiting for the first', async () => {
+    const api = makeSelectorsApi({ holdResponses: true })
+    const { contractInfo } = await makeController({ fetch: api.fetch })
+
+    let isTransferFetchDone = false
+    const transferFetch = contractInfo.fetchSelectors([TRANSFER_SELECTOR]).then(() => {
+      isTransferFetchDone = true
+    })
+    await waitUntil(() => api.heldResponses.length === 1, 'the first request is in flight')
+
+    const approveFetch = contractInfo.fetchSelectors([APPROVE_SELECTOR])
+    await waitUntil(() => api.heldResponses.length === 2, 'the second request is in flight')
+    expect(api.requests[1]!.prefixes).toEqual([
+      APPROVE_SELECTOR.slice(0, SELECTOR_PRIVACY_PREFIX_LENGTH)
+    ])
+
+    api.heldResponses[1]!.resolve()
+    await approveFetch
+    expect(isTransferFetchDone).toBe(false)
+    expect(contractInfo.decodeCallData(approveData)?.signature).toBe(APPROVE_SIGNATURE)
+    expect(contractInfo.decodeCallData(transferData)).toBeNull()
+
+    api.heldResponses[0]!.resolve()
+    await transferFetch
+    expect(contractInfo.decodeCallData(transferData)?.signature).toBe(TRANSFER_SIGNATURE)
+  })
+
+  test('does not fetch a selector again while its saved result is fresh', async () => {
+    const api = makeSelectorsApi()
+    const { contractInfo } = await makeController({
+      fetch: api.fetch,
+      savedSelectors: {
+        [TRANSFER_SELECTOR]: successEntry(TRANSFER_SIGNATURE),
+        [APPROVE_SELECTOR]: { status: 'not-found', updatedAt: Date.now() },
+        [EXECUTE_SELECTOR]: { status: 'error', error: 'Network error', updatedAt: Date.now() }
+      }
+    })
+
+    await contractInfo.fetchSelectors([TRANSFER_SELECTOR, APPROVE_SELECTOR, EXECUTE_SELECTOR])
+
+    expect(api.fetch).not.toHaveBeenCalled()
+  })
+
+  test('fetches again once the saved error or success has expired', async () => {
+    const api = makeSelectorsApi()
+    const { contractInfo } = await makeController({
+      fetch: api.fetch,
+      savedSelectors: {
+        [TRANSFER_SELECTOR]: successEntry(
+          TRANSFER_SIGNATURE,
+          Date.now() - SELECTOR_SUCCESS_DEADLINE_MS - 1
+        ),
+        [APPROVE_SELECTOR]: {
+          status: 'error',
+          error: 'Network error',
+          updatedAt: Date.now() - SELECTOR_ERROR_DEADLINE_MS - 1
+        }
+      }
+    })
+
+    await contractInfo.fetchSelectors([TRANSFER_SELECTOR, APPROVE_SELECTOR])
+
+    expect(api.requests).toHaveLength(1)
+    expect(contractInfo.decodeCallData(transferData)?.signature).toBe(TRANSFER_SIGNATURE)
+    expect(contractInfo.decodeCallData(approveData)?.signature).toBe(APPROVE_SIGNATURE)
+
+    await contractInfo.fetchSelectorsForCallDatas([transferData, approveData])
+    expect(api.requests).toHaveLength(1)
+  })
+
+  test('saves a selector the API has no signature for as not found, and does not ask again', async () => {
+    const api = makeSelectorsApi()
+    const unknownSelector = '0xbeeeeeee'
+    const { contractInfo, storage } = await makeController({ fetch: api.fetch })
+
+    await contractInfo.fetchSelectors([unknownSelector])
+    await contractInfo.fetchSelectors([unknownSelector])
+
+    const storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
+    expect(storedSelectors[unknownSelector]?.status).toBe('not-found')
+    expect(api.requests).toHaveLength(1)
+    await contractInfo.fetchSelectorsForCallDatas([`${unknownSelector}00`])
+    expect(api.requests).toHaveLength(1)
+  })
+
+  test('retries once after a failed request and succeeds', async () => {
+    const api = makeSelectorsApi({ failingAttempts: 1 })
+    const { contractInfo } = await makeController({ fetch: api.fetch })
+
+    await contractInfo.fetchSelectors([TRANSFER_SELECTOR])
+
+    expect(api.requests).toHaveLength(2)
+    expect(contractInfo.decodeCallData(transferData)?.signature).toBe(TRANSFER_SIGNATURE)
+  })
+
+  test('saves a failed fetch as an error that keeps the old signatures, resolves instead of rejecting, and does not ask again while the error is fresh', async () => {
+    const api = makeSelectorsApi({ failingAttempts: Infinity })
+    const { contractInfo, storage } = await makeController({
+      fetch: api.fetch,
+      savedSelectors: {
+        [TRANSFER_SELECTOR]: successEntry(
+          TRANSFER_SIGNATURE,
+          Date.now() - SELECTOR_SUCCESS_DEADLINE_MS - 1
+        )
+      }
+    })
+    const onError = jest.fn()
+    contractInfo.onError(onError)
+
+    await expect(contractInfo.fetchSelectors([TRANSFER_SELECTOR])).resolves.toBeUndefined()
+
+    const storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
+    console.log('[stored after failure]', JSON.stringify(storedSelectors[TRANSFER_SELECTOR]))
+    expect(api.requests).toHaveLength(2)
+    expect(onError).toHaveBeenCalled()
+    expect(storedSelectors[TRANSFER_SELECTOR]).toMatchObject({
+      status: 'error',
+      data: [{ signature: TRANSFER_SIGNATURE }]
+    })
+    expect(contractInfo.decodeCallData(transferData)?.signature).toBe(TRANSFER_SIGNATURE)
+
+    await contractInfo.fetchSelectors([TRANSFER_SELECTOR])
+    await contractInfo.fetchSelectorsForCallDatas([transferData])
+    expect(api.requests).toHaveLength(2)
+  })
+
+  test('with fetching disabled, fetches nothing and still decodes saved selectors', async () => {
+    const api = makeSelectorsApi()
+    const { contractInfo } = await makeController({
+      fetch: api.fetch,
+      isFetchingEnabled: false,
+      savedSelectors: { [TRANSFER_SELECTOR]: successEntry(TRANSFER_SIGNATURE) }
+    })
+
+    expect(contractInfo.decodeCallData(executeData)).toBeNull()
+    await contractInfo.fetchSelectors([EXECUTE_SELECTOR])
+    await contractInfo.fetchSelectorsForCallDatas([executeData])
+
+    expect(api.fetch).not.toHaveBeenCalled()
+    expect(contractInfo.decodeCallData(transferData)?.signature).toBe(TRANSFER_SIGNATURE)
+  })
+
+  test('fetches again once fetching is enabled again', async () => {
+    const api = makeSelectorsApi()
+    const { contractInfo, featureFlags } = await makeController({
+      fetch: api.fetch,
+      isFetchingEnabled: false
+    })
+
+    await contractInfo.fetchSelectors([TRANSFER_SELECTOR])
+    expect(api.fetch).not.toHaveBeenCalled()
+
     await featureFlags.setFeatureFlag('apiForFunctionSelectors', true)
+    await contractInfo.fetchSelectorsForCallDatas([transferData])
 
-    // Step 5: call getSelector for the previously-disabled selector — it should now be fetched
-    void contractInfo.getSelector('0xa9059cbb')
-    expect(contractInfo.selectors['0xa9059cbb']?.status).toBe('loading')
-
-    await wait(3000)
-    expect(cenaCalls).toBe(2)
-    expect(contractInfo.selectors['0xa9059cbb']?.status).toBe('success')
-    expect((contractInfo.selectors['0xa9059cbb'] as any).data).toMatchObject(
-      (PREDEFINED_SELECTORS['0xa9059cbb'] as any).data
-    )
+    expect(api.requests).toHaveLength(1)
+    expect(contractInfo.decodeCallData(transferData)?.signature).toBe(TRANSFER_SIGNATURE)
   })
 
-  test('Should preserve data after expired cache + failed refetch, and skip reattempt while error is recent', async () => {
-    let cenaCalls = 0
-    const failingFetch = (url: any, ...args: any[]) => {
-      if ((url as string).includes(CENA_SELECTORS_URL)) {
-        cenaCalls++
-        return Promise.reject(new Error('Network error'))
+  test('drops the data-less entries older versions saved while fetching was disabled', async () => {
+    const api = makeSelectorsApi()
+    const { contractInfo, storage } = await makeController({
+      fetch: api.fetch,
+      savedSelectors: {
+        [TRANSFER_SELECTOR]: { status: 'fetching-disabled', updatedAt: Date.now() },
+        [APPROVE_SELECTOR]: successEntry(APPROVE_SIGNATURE)
       }
-      return fetchSpy(url, ...args)
-    }
+    })
 
-    const {
-      mainCtrl: { contractInfo }
-    } = await makeMainController(
-      async (storage) => {
-        await storage.set(FUNCTION_SELECTORS_STORAGE_KEY, {
-          '0x23b872dd': {
-            status: 'success',
-            data: [{ signature: 'transferFrom(address,address,uint256)' }],
-            updatedAt: Date.now() - SELECTOR_SUCCESS_DEADLINE_MS - 1
-          }
-        })
-      },
-      { overrides: { fetch: failingFetch } }
+    await contractInfo.fetchSelectorsForCallDatas([transferData])
+    expect(api.requests).toHaveLength(1)
+
+    const storedSelectors: Record<string, { status: string }> = await storage.get(
+      FUNCTION_SELECTORS_STORAGE_KEY,
+      {}
     )
-
-    // Cache is expired — triggers a fetch that fails
-    void contractInfo.getSelector('0x23b872dd')
-    await wait(0)
-    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('loading')
-    expect((contractInfo.selectors['0x23b872dd'] as any).data).toBeTruthy()
-    await wait(3000)
-    expect(cenaCalls).toBe(2)
-    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('error')
-
-    // Old data is preserved despite the fetch failure
-    expect((contractInfo.selectors['0x23b872dd'] as any).data).toMatchObject([
-      { signature: 'transferFrom(address,address,uint256)' }
-    ])
-
-    // Error is recent — should not reattempt
-    void contractInfo.getSelector('0x23b872dd')
-    await wait(3000)
-    expect(cenaCalls).toBe(2)
-    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('error')
-    expect((contractInfo.selectors['0x23b872dd'] as any).data).toMatchObject([
-      { signature: 'transferFrom(address,address,uint256)' }
-    ])
+    console.log('[stored after load]', JSON.stringify(storedSelectors))
+    expect(Object.values(storedSelectors).map(({ status }) => status)).not.toContain(
+      'fetching-disabled'
+    )
+    expect(storedSelectors[TRANSFER_SELECTOR]?.status).toBe('success')
+    expect(storedSelectors[APPROVE_SELECTOR]?.status).toBe('success')
   })
 
-  test('Should retry with longer timeout after first attempt fails and succeed on second attempt', async () => {
-    let callCount = 0
-    const retryFetch = (url: any, ...args: any[]) => {
-      if ((url as string).includes(CENA_SELECTORS_URL)) {
-        callCount++
-        if (callCount === 1) return Promise.reject(new Error('Network error'))
-      }
-      return fetchSpy(url, ...args)
-    }
+  test('replies to the UI with the decoded calls in order, null for the ones it cannot decode, without fetching', async () => {
+    const api = makeSelectorsApi()
+    const { contractInfo, sendUiMessage } = await makeController({
+      fetch: api.fetch,
+      savedSelectors: { [TRANSFER_SELECTOR]: successEntry(TRANSFER_SIGNATURE) }
+    })
 
-    const {
-      mainCtrl: { contractInfo }
-    } = await makeMainController(undefined, { overrides: { fetch: retryFetch } })
+    await contractInfo.decodeCallsForUi([approveData, transferData, '0x'], 'request-1')
 
-    void contractInfo.getSelector('0x23b872dd')
-    await wait(3000)
-    expect(callCount).toBe(2)
-    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('success')
-    expect((contractInfo.selectors['0x23b872dd'] as any).data).toMatchObject(
-      (PREDEFINED_SELECTORS['0x23b872dd'] as any).data
-    )
+    expect(sendUiMessage).toHaveBeenCalledTimes(1)
+    const [message] = sendUiMessage.mock.calls[0] as [any]
+    expect(message.requestId).toBe('request-1')
+    expect(message.ok).toBe(true)
+    expect(message.res).toHaveLength(3)
+    expect(message.res[0]).toBeNull()
+    expect(message.res[1].signature).toBe(TRANSFER_SIGNATURE)
+    expect(message.res[2]).toBeNull()
+    expect(api.fetch).not.toHaveBeenCalled()
   })
 
-  test('Should set status to not-found when API returns no signatures, and not reattempt while cache is fresh', async () => {
-    // 0xbeeeeeee is a selector that does not exist in the cena database
-    const selector = '0xbeeeeeee'
+  test('fetches real selectors from the API and saves them to storage', async () => {
+    const { contractInfo, storage } = await makeController({
+      fetch: global.fetch,
+      cenaUrl: REAL_CENA_URL
+    })
 
-    const {
-      mainCtrl: { contractInfo }
-    } = await makeMainController(undefined, { overrides: { fetch: fetchSpy } })
+    await contractInfo.fetchSelectors([MINT_SELECTOR])
 
-    void contractInfo.getSelector(selector)
-    await wait(3000)
-    expect(fetchSourcifyCounter).toBe(1)
-    expect(contractInfo.selectors[selector]?.status).toBe('not-found')
-
-    // not-found result is cached — should not reattempt
-    void contractInfo.getSelector(selector)
-    await wait(3000)
-    expect(fetchSourcifyCounter).toBe(1)
-    expect(contractInfo.selectors[selector]?.status).toBe('not-found')
-  })
-
-  test('Should re-fetch a selector whose updatedAt is older than SELECTOR_SUCCESS_DEADLINE_MS', async () => {
-    let cenaCalls = 0
-    const trackingFetch = (url: any, ...args: any[]) => {
-      if ((url as string).includes(CENA_SELECTORS_URL)) cenaCalls++
-      return fetchSpy(url, ...args)
-    }
-
-    const {
-      mainCtrl: { contractInfo }
-    } = await makeMainController(
-      async (storage) => {
-        await storage.set(FUNCTION_SELECTORS_STORAGE_KEY, {
-          '0x23b872dd': {
-            status: 'success',
-            data: [{ signature: 'transferFrom(address,address,uint256)' }],
-            updatedAt: Date.now() - SELECTOR_SUCCESS_DEADLINE_MS - 1
-          }
-        })
-      },
-      { overrides: { fetch: trackingFetch } }
+    const storedSelectors = await storage.get(FUNCTION_SELECTORS_STORAGE_KEY, {})
+    expect(storedSelectors[MINT_SELECTOR]?.status).toBe('success')
+    expect((storedSelectors[MINT_SELECTOR] as any).data).toEqual(
+      expect.arrayContaining([{ signature: 'mint(address,uint256)' }])
     )
-
-    void contractInfo.getSelector('0x23b872dd')
-    await wait(3000)
-    expect(cenaCalls).toBe(1)
-    expect(contractInfo.selectors['0x23b872dd']?.status).toBe('success')
-    expect(contractInfo.selectors['0x23b872dd']?.updatedAt).toBeGreaterThan(Date.now() - 10000)
   })
 })

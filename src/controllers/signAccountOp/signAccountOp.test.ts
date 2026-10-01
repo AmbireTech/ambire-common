@@ -19,6 +19,7 @@ import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-u
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { makeSelectorsApi, waitUntil } from '../../../test/helpers/contractInfo'
 import {
   blacklistedDapp,
   customDapp,
@@ -40,6 +41,8 @@ import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
+import { DecodedCall } from '../../interfaces/decodeCall'
+import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, ExternalSignerControllers } from '../../interfaces/keystore'
 import { IProvidersController } from '../../interfaces/provider'
@@ -48,11 +51,13 @@ import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import * as broadcastLib from '../../libs/broadcast/broadcast'
+import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../libs/decodeCall'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
+import { ERC7730_DESCRIPTOR_WAIT_MS } from '../../libs/humanizer/erc7730/consts'
 import { HumanizerWarning } from '../../libs/humanizer/interfaces'
-import { UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
+import { hasErc7730Humanization, UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
 import { AccountState } from '../../libs/portfolio/interfaces'
@@ -77,6 +82,11 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
+import {
+  ContractInfoController,
+  FUNCTION_SELECTORS_STORAGE_KEY,
+  SELECTOR_LOADING_DEADLINE_MS
+} from '../contractInfo/contractInfo'
 import { DappsController } from '../dapps/dapps'
 import { Erc7730Controller } from '../erc7730/erc7730'
 import { EstimationController } from '../estimation/estimation'
@@ -467,6 +477,9 @@ const init = async (
     externalSignerControllers?: ExternalSignerControllers
     onBroadcastSuccess?: (params: any) => Promise<void>
     featureFlags?: Partial<FeatureFlags>
+    contractInfoFetch?: Fetch
+    // Lets several controllers share one, like the requests of a real wallet do
+    contractInfo?: ContractInfoController
     /**
      * Pause the controller the moment it is built, before its estimate and gas price intervals
      * get to run. For tests that drive those intervals themselves.
@@ -571,7 +584,11 @@ const init = async (
   await networksCtrl.initialLoadPromise
   await providersCtrl.initialLoadPromise
 
-  const featureFlagsCtrl = new FeatureFlagsController(options?.featureFlags || {}, storageCtrl)
+  // Only the tests that pass a selectors API fetch selectors, so the rest never wait on the real one
+  const featureFlagsCtrl = new FeatureFlagsController(
+    { apiForFunctionSelectors: !!options?.contractInfoFetch, ...options?.featureFlags },
+    storageCtrl
+  )
   const portfolio = new PortfolioController(
     storageCtrl,
     fetch,
@@ -745,10 +762,20 @@ const init = async (
     featureFlags: featureFlagsCtrl,
     ui: uiCtrl
   })
+  const contractInfo =
+    options?.contractInfo ||
+    new ContractInfoController({
+      fetch: options?.contractInfoFetch || fetch,
+      storage: storageCtrl,
+      featureFlags: featureFlagsCtrl,
+      ui: uiCtrl
+    })
+  await contractInfo.initialLoadPromise
   const controller = new SignAccountOpTesterController({
     type: options?.type,
     callRelayer: options?.callRelayer as BindedRelayerCall,
     erc7730,
+    contractInfo,
     accounts: accountsCtrl,
     networks: networksCtrl,
     keystore,
@@ -779,7 +806,7 @@ const init = async (
   // have already started their immediate run.
   if (options?.pauseOnInit) controller.pause()
 
-  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl, portfolio }
+  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl, portfolio, contractInfo }
 }
 
 const initDappVerificationBannerTest = async (
@@ -789,13 +816,19 @@ const initDappVerificationBannerTest = async (
     calls,
     callRelayer,
     dappSessionId,
-    sessions
+    sessions,
+    contractInfoFetch,
+    contractInfo,
+    initialSetStorage
   }: {
     isPermit2?: boolean
     calls?: AccountOp['calls']
     callRelayer?: BindedRelayerCall
     dappSessionId?: string
     sessions?: Session[]
+    contractInfoFetch?: Fetch
+    contractInfo?: ContractInfoController
+    initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
   } = {}
 ) => {
   const accountOp = createEOAAccountOp(eoaAccount)
@@ -874,7 +907,14 @@ const initDappVerificationBannerTest = async (
       }
     },
     false,
-    { dapps: getDappVerificationTestDapps(), callRelayer, sessions }
+    {
+      dapps: getDappVerificationTestDapps(),
+      callRelayer,
+      sessions,
+      contractInfoFetch,
+      contractInfo,
+      initialSetStorage
+    }
   )
 }
 
@@ -4422,5 +4462,551 @@ describe('SignAccountOp signing authentication', () => {
       firstTimeRecipients: [ALICE],
       unauthenticatedDapps: [{ id: dappA.id, name: dappA.name }]
     })
+  })
+})
+
+describe('Call data decoding', () => {
+  const VAULT_CONTRACT = '0x3333333333333333333333333333333333333333'
+  const RECIPIENT = '0x742d35CC6634C0532925a3b844bc1E4C23a39E18'
+  const TRANSFER_SIGNATURE = 'transfer(address,uint256)'
+  const DEPOSIT_SIGNATURE = 'depositToVault(uint256,bytes)'
+  const CLAIM_SIGNATURE = 'claimRewardsFor(address)'
+  const STAKE_SIGNATURE = 'stakeInPool(uint256)'
+  const HARVEST_SIGNATURE = 'harvestAll(uint256[])'
+  const REBALANCE_SIGNATURE = 'rebalanceVault(uint256,uint256)'
+
+  const encode = (signature: string, args: unknown[]) =>
+    new Interface([`function ${signature}`]).encodeFunctionData(signature.split('(')[0]!, args)
+  const selectorOf = (data: string) => data.slice(0, CALLDATA_SELECTOR_HEX_LENGTH)
+  const prefixOf = (selector: string) => selector.slice(0, 6)
+
+  const transferData = encode(TRANSFER_SIGNATURE, [RECIPIENT, 1000n])
+  const toCall = (data: string) => ({ to: VAULT_CONTRACT, value: 0n, data })
+  const depositCall = toCall(encode(DEPOSIT_SIGNATURE, [5n, transferData]))
+  const claimCall = toCall(encode(CLAIM_SIGNATURE, [RECIPIENT]))
+  const stakeCall = toCall(encode(STAKE_SIGNATURE, [7n]))
+  const harvestCall = toCall(encode(HARVEST_SIGNATURE, [[1n, 2n]]))
+  const rebalanceCall = toCall(encode(REBALANCE_SIGNATURE, [3n, 4n]))
+
+  const API_SIGNATURES = Object.fromEntries(
+    [
+      [transferData, TRANSFER_SIGNATURE],
+      [depositCall.data, DEPOSIT_SIGNATURE],
+      [claimCall.data, CLAIM_SIGNATURE],
+      [stakeCall.data, STAKE_SIGNATURE],
+      [harvestCall.data, HARVEST_SIGNATURE],
+      [rebalanceCall.data, REBALANCE_SIGNATURE]
+    ].map(([data, signature]) => [selectorOf(data!), [signature!]])
+  )
+
+  const ERC7730_REGISTRY_PATH = 'registry/test/vault.json'
+
+  // Holds the ERC-7730 lookup until the test lets it through, so the test decides when the
+  // humanization lands. Without `erc7730Descriptor` no descriptors are found, so every call falls
+  // back to the default view.
+  const makeErc7730Relayer = (erc7730Descriptor?: { contract: string; display: unknown }) => {
+    const descriptorLookup = createDeferred<void>()
+    const callRelayer = jest.fn(async (path: string) => {
+      if (path === '/v2/erc7730/account-op') {
+        await descriptorLookup.promise
+        const data = erc7730Descriptor
+          ? { [`eip155:1:${erc7730Descriptor.contract}`]: ERC7730_REGISTRY_PATH }
+          : {}
+        return { success: true, data, errorState: [] }
+      }
+      if (erc7730Descriptor && path === '/v2/erc7730/fetch-descriptor') {
+        return { success: true, display: erc7730Descriptor.display }
+      }
+
+      throw new Error(`Unexpected relayer call: ${path}`)
+    })
+
+    return {
+      callRelayer: callRelayer as unknown as BindedRelayerCall,
+      releaseHumanization: () => descriptorLookup.resolve()
+    }
+  }
+
+  const describeHumanization = (humanization: SignAccountOpController['humanization']) =>
+    humanization.map((call) => ({
+      selector: selectorOf(call.data),
+      isFallback: call.isFallback,
+      isDecodingCall: call.isDecodingCall,
+      decodedSignature: call.decodedCall?.signature
+    }))
+
+  const initWithCalls = async (
+    calls: AccountOp['calls'],
+    options: {
+      contractInfoFetch?: Fetch
+      contractInfo?: ContractInfoController
+      savedSignatures?: Record<string, string>
+      erc7730Descriptor?: Parameters<typeof makeErc7730Relayer>[0]
+    } = {}
+  ) => {
+    const relayer = makeErc7730Relayer(options.erc7730Descriptor)
+    const { controller, contractInfo } = await initDappVerificationBannerTest(customDapp, {
+      calls,
+      callRelayer: relayer.callRelayer,
+      contractInfoFetch: options.contractInfoFetch,
+      contractInfo: options.contractInfo,
+      initialSetStorage: options.savedSignatures
+        ? async (storageCtrl) => {
+            await storageCtrl.set(
+              FUNCTION_SELECTORS_STORAGE_KEY,
+              Object.fromEntries(
+                Object.entries(options.savedSignatures!).map(([selector, signature]) => [
+                  selector,
+                  { status: 'success', data: [{ signature }], updatedAt: Date.now() }
+                ])
+              )
+            )
+          }
+        : undefined
+    })
+
+    return { controller, contractInfo, releaseHumanization: relayer.releaseHumanization }
+  }
+
+  const waitForHumanization = (controller: SignAccountOpController) =>
+    waitUntil(
+      () => !controller.isHumanizing && controller.humanization.length > 0,
+      'the calls are humanized'
+    )
+
+  const getNestedTransfer = (decodedCall: DecodedCall | undefined) =>
+    decodedCall?.args[1]?.val as DecodedCall | string | undefined
+
+  const FAKE_CLOCK_STEP_MS = 10
+  const FAKE_CLOCK_LIMIT_MS = 30 * 1000
+  const LATE_RESULT_SETTLE_MS = 1000
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  /**
+   * Moves the fake clock forward in small steps until `condition` holds, letting pending promises
+   * settle between steps. Throws with `description` when it doesn't hold in FAKE_CLOCK_LIMIT_MS.
+   */
+  const advanceUntil = async (condition: () => boolean, description: string) => {
+    for (let elapsedMs = 0; !condition(); elapsedMs += FAKE_CLOCK_STEP_MS) {
+      if (elapsedMs > FAKE_CLOCK_LIMIT_MS) throw new Error(`Timed out waiting until ${description}`)
+
+      await jest.advanceTimersByTimeAsync(FAKE_CLOCK_STEP_MS)
+    }
+  }
+
+  /**
+   * Adds `lateCall` next to an already decoded deposit call, on the fake clock, with the selector
+   * API held, and waits until the plain view is shown with `lateCall` loading. The selector
+   * responses are still held when it returns.
+   */
+  const showWithHeldSelectors = async (lateCall: AccountOp['calls'][number]) => {
+    const api = makeSelectorsApi(API_SIGNATURES, { holdResponses: true })
+    const { controller, contractInfo, releaseHumanization } = await initWithCalls([depositCall], {
+      contractInfoFetch: api.fetch,
+      savedSignatures: {
+        [selectorOf(depositCall.data)]: DEPOSIT_SIGNATURE,
+        [selectorOf(transferData)]: TRANSFER_SIGNATURE
+      }
+    })
+    releaseHumanization()
+    await waitForHumanization(controller)
+    expect(api.fetch).not.toHaveBeenCalled()
+
+    jest.useFakeTimers()
+    const startedAt = Date.now()
+    controller.update({ accountOpData: { calls: [depositCall, lateCall] } })
+    await advanceUntil(() => api.requests.length > 0, 'the selector of the new call is requested')
+    await advanceUntil(
+      () => !controller.isHumanizing && controller.humanization.length === 2,
+      'the plain view is shown'
+    )
+    const fallbackHumanization = controller.humanization
+    console.log('[requests]', JSON.stringify(api.requests))
+    console.log('[plain view]', describeHumanization(fallbackHumanization))
+    // No descriptor was found, and the held selectors don't hold the plain view back
+    expect(Date.now() - startedAt).toBeLessThan(ERC7730_DESCRIPTOR_WAIT_MS)
+    expect(fallbackHumanization[0]!.decodedCall?.signature).toBe(DEPOSIT_SIGNATURE)
+    expect(fallbackHumanization[0]!.isDecodingCall).toBeUndefined()
+    expect(fallbackHumanization[1]!.decodedCall).toBeUndefined()
+    expect(fallbackHumanization[1]!.isDecodingCall).toBe(true)
+
+    return { api, controller, contractInfo, fallbackHumanization, startedAt }
+  }
+
+  test('the first humanization it emits already has the calls decoded from saved selectors', async () => {
+    const api = makeSelectorsApi(API_SIGNATURES)
+    const { controller, releaseHumanization } = await initWithCalls([depositCall], {
+      contractInfoFetch: api.fetch,
+      savedSignatures: {
+        [selectorOf(depositCall.data)]: DEPOSIT_SIGNATURE,
+        [selectorOf(transferData)]: TRANSFER_SIGNATURE
+      }
+    })
+    const emittedHumanizations: SignAccountOpController['humanization'][] = []
+    controller.onUpdate(() => emittedHumanizations.push(controller.humanization))
+
+    releaseHumanization()
+    await waitForHumanization(controller)
+
+    const firstEmittedCalls = emittedHumanizations.find((humanization) => humanization.length)
+    console.log('[first emitted calls]', describeHumanization(firstEmittedCalls!))
+    expect(firstEmittedCalls![0]!.isFallback).toBe(true)
+    expect(emittedHumanizations.flat().some((call) => call.isDecodingCall)).toBe(false)
+    expect(firstEmittedCalls![0]!.decodedCall?.signature).toBe(DEPOSIT_SIGNATURE)
+    expect((getNestedTransfer(firstEmittedCalls![0]!.decodedCall) as DecodedCall).signature).toBe(
+      TRANSFER_SIGNATURE
+    )
+    expect(api.fetch).not.toHaveBeenCalled()
+
+    controller.destroy()
+  })
+
+  test('shows the plain view without waiting for selectors it has not saved, with the call loading until all of them arrive', async () => {
+    const api = makeSelectorsApi(API_SIGNATURES, { holdResponses: true })
+    const { controller, releaseHumanization } = await initWithCalls([depositCall], {
+      contractInfoFetch: api.fetch
+    })
+    const emittedHumanizations: SignAccountOpController['humanization'][] = []
+    controller.onUpdate(() => emittedHumanizations.push(controller.humanization))
+    releaseHumanization()
+
+    await waitUntil(() => api.requests.length === 1, 'the top level selector is requested')
+    expect(api.requests[0]!.prefixes).toEqual([prefixOf(selectorOf(depositCall.data))])
+    await waitForHumanization(controller)
+    console.log('[shown while the selector is held]', describeHumanization(controller.humanization))
+    expect(controller.humanization[0]!.isFallback).toBe(true)
+    expect(controller.humanization[0]!.isDecodingCall).toBe(true)
+    expect(controller.humanization[0]!.decodedCall).toBeUndefined()
+    api.heldResponses[0]!.resolve()
+
+    await waitUntil(() => api.requests.length === 2, 'the nested selector is requested')
+    expect(api.requests[1]!.prefixes).toEqual([prefixOf(selectorOf(transferData))])
+    // Still loading, since the nested call can't be decoded yet
+    expect(controller.humanization[0]!.isDecodingCall).toBe(true)
+    const emitsBeforeNestedSelector = emittedHumanizations.length
+    api.heldResponses[1]!.resolve()
+
+    await waitUntil(
+      () => !controller.humanization[0]!.isDecodingCall,
+      'the call stops loading once all of its selectors arrive'
+    )
+    console.log('[requests]', JSON.stringify(api.requests))
+    console.log('[after the selectors]', describeHumanization(controller.humanization))
+    expect(controller.humanization[0]!.decodedCall?.signature).toBe(DEPOSIT_SIGNATURE)
+    expect(
+      (getNestedTransfer(controller.humanization[0]!.decodedCall) as DecodedCall).signature
+    ).toBe(TRANSFER_SIGNATURE)
+    // Decoded and no longer loading in the same update
+    expect(emittedHumanizations.length - emitsBeforeNestedSelector).toBe(1)
+
+    await wait(200)
+    expect(api.requests).toHaveLength(2)
+
+    controller.destroy()
+  })
+
+  test('decodes a call again when its selector arrives after the plain view is shown, emitting the change once', async () => {
+    const { api, controller, fallbackHumanization } = await showWithHeldSelectors(claimCall)
+    const emittedHumanizations = new Set<SignAccountOpController['humanization']>()
+    controller.onUpdate(() => emittedHumanizations.add(controller.humanization))
+
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    await advanceUntil(
+      () => !!controller.humanization[1]!.decodedCall,
+      'the late result is attached'
+    )
+    await jest.advanceTimersByTimeAsync(LATE_RESULT_SETTLE_MS)
+
+    console.log('[after the late result]', describeHumanization(controller.humanization))
+    expect(controller.humanization[1]!.decodedCall!.signature).toBe(CLAIM_SIGNATURE)
+    expect(controller.humanization[1]!.isDecodingCall).toBeUndefined()
+    expect(controller.humanization).not.toBe(fallbackHumanization)
+    // The call that was already decoded is kept as it is
+    expect(controller.humanization[0]).toBe(fallbackHumanization[0])
+    expect([...emittedHumanizations]).toEqual([controller.humanization])
+
+    controller.destroy()
+  })
+
+  test('stops showing a call as loading after the loading deadline, and does not emit when its selector then turns out to be unknown', async () => {
+    const unknownCall = toCall(`0xdeadbeef${'00'.repeat(32)}`)
+    const { api, controller, contractInfo, startedAt } = await showWithHeldSelectors(unknownCall)
+
+    await advanceUntil(() => !controller.humanization[1]!.isDecodingCall, 'the call stops loading')
+    const afterDeadlineHumanization = controller.humanization
+    console.log('[after the deadline]', describeHumanization(afterDeadlineHumanization))
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(SELECTOR_LOADING_DEADLINE_MS)
+    expect(api.heldResponses.length).toBeGreaterThan(0)
+    expect(afterDeadlineHumanization[1]!.decodedCall).toBeUndefined()
+
+    const emittedHumanizations = new Set<SignAccountOpController['humanization']>()
+    controller.onUpdate(() => emittedHumanizations.add(controller.humanization))
+    const decodeCallData = jest.spyOn(contractInfo, 'decodeCallData')
+
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    await advanceUntil(() => decodeCallData.mock.calls.length > 0, 'the calls are decoded again')
+    await jest.advanceTimersByTimeAsync(LATE_RESULT_SETTLE_MS)
+
+    console.log('[after the late result]', describeHumanization(controller.humanization))
+    expect(controller.humanization).toBe(afterDeadlineHumanization)
+    expect([...emittedHumanizations].filter((h) => h !== afterDeadlineHumanization)).toEqual([])
+
+    controller.destroy()
+  })
+
+  test('decodes a call whose selector arrives after the loading deadline', async () => {
+    const { api, controller } = await showWithHeldSelectors(claimCall)
+
+    await advanceUntil(() => !controller.humanization[1]!.isDecodingCall, 'the call stops loading')
+    console.log('[after the deadline]', describeHumanization(controller.humanization))
+    expect(controller.humanization[1]!.decodedCall).toBeUndefined()
+
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    await advanceUntil(
+      () => !!controller.humanization[1]!.decodedCall,
+      'the late result is attached'
+    )
+
+    console.log('[after the late result]', describeHumanization(controller.humanization))
+    expect(controller.humanization[1]!.decodedCall!.signature).toBe(CLAIM_SIGNATURE)
+    expect(controller.humanization[1]!.isDecodingCall).toBeUndefined()
+
+    controller.destroy()
+  })
+
+  test('a newer humanization ignores the selectors an older one was still waiting for', async () => {
+    const api = makeSelectorsApi(API_SIGNATURES, { holdResponses: true })
+    const { controller, contractInfo, releaseHumanization } = await initWithCalls([depositCall], {
+      contractInfoFetch: api.fetch,
+      savedSignatures: { [selectorOf(claimCall.data)]: CLAIM_SIGNATURE }
+    })
+    releaseHumanization()
+    await waitUntil(() => api.requests.length === 1, 'the deposit selector is requested')
+    await waitForHumanization(controller)
+    expect(controller.humanization[0]!.isDecodingCall).toBe(true)
+
+    controller.update({ accountOpData: { calls: [claimCall] } })
+    await waitForHumanization(controller)
+    const newerHumanization = controller.humanization
+    console.log('[newer humanization]', describeHumanization(newerHumanization))
+    expect(newerHumanization[0]!.decodedCall!.signature).toBe(CLAIM_SIGNATURE)
+    expect(newerHumanization[0]!.isDecodingCall).toBeUndefined()
+
+    const decodeCallData = jest.spyOn(contractInfo, 'decodeCallData')
+    api.heldResponses[0]!.resolve()
+    await waitUntil(() => api.requests.length === 2, 'the nested selector is requested')
+    api.heldResponses[1]!.resolve()
+    await waitUntil(
+      () =>
+        typeof getNestedTransfer(contractInfo.decodeCallData(depositCall.data) || undefined) ===
+        'object',
+      'the older calls can be fully decoded'
+    )
+    await wait(200)
+
+    console.log('[requests]', JSON.stringify(api.requests))
+    console.log('[decoded datas]', JSON.stringify(decodeCallData.mock.calls.map(([data]) => data)))
+    expect(decodeCallData).not.toHaveBeenCalledWith(claimCall.data)
+    expect(controller.humanization).toBe(newerHumanization)
+
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    controller.destroy()
+  })
+
+  test('calls arriving in the same tick, across ticks and a second later are each fetched once and all decoded', async () => {
+    const api = makeSelectorsApi(API_SIGNATURES)
+    const { controller, releaseHumanization } = await initWithCalls([depositCall], {
+      contractInfoFetch: api.fetch
+    })
+
+    // Same tick as the first call
+    controller.update({ accountOpData: { calls: [depositCall, claimCall] } })
+    controller.update({ accountOpData: { calls: [depositCall, claimCall, stakeCall] } })
+    releaseHumanization()
+
+    await wait(1000)
+    controller.update({
+      accountOpData: { calls: [depositCall, claimCall, stakeCall, harvestCall] }
+    })
+    await wait(0)
+    controller.update({
+      accountOpData: { calls: [depositCall, claimCall, stakeCall, harvestCall, rebalanceCall] }
+    })
+
+    await waitUntil(
+      () =>
+        controller.humanization.length === 5 &&
+        controller.humanization.every((call) => !!call.decodedCall) &&
+        typeof getNestedTransfer(controller.humanization[0]!.decodedCall) === 'object',
+      'all five calls and the nested call are decoded'
+    )
+    console.log('[requests]', JSON.stringify(api.requests))
+    console.log('[decoded calls]', describeHumanization(controller.humanization))
+
+    const requestedPrefixes = api.requests.flatMap(({ prefixes }) => prefixes)
+    expect(requestedPrefixes).toHaveLength(new Set(requestedPrefixes).size)
+    expect(requestedPrefixes.sort()).toEqual(Object.keys(API_SIGNATURES).map(prefixOf).sort())
+    expect(api.requests[0]!.prefixes.sort()).toEqual(
+      [depositCall, claimCall, stakeCall].map(({ data }) => prefixOf(selectorOf(data))).sort()
+    )
+    expect(api.requests).toHaveLength(3)
+    expect(controller.humanization.map((call) => call.decodedCall!.signature)).toEqual([
+      DEPOSIT_SIGNATURE,
+      CLAIM_SIGNATURE,
+      STAKE_SIGNATURE,
+      HARVEST_SIGNATURE,
+      REBALANCE_SIGNATURE
+    ])
+
+    controller.destroy()
+  })
+
+  test('a request switched away from keeps decoding in the background, and shows it once switched back to', async () => {
+    const api = makeSelectorsApi(API_SIGNATURES, { holdResponses: true })
+    const sharedStorage = new StorageController(produceMemoryStore())
+    const sharedContractInfo = new ContractInfoController({
+      fetch: api.fetch,
+      storage: sharedStorage,
+      featureFlags: new FeatureFlagsController({}, sharedStorage),
+      ui: uiCtrl
+    })
+
+    const first = await initWithCalls([depositCall], { contractInfo: sharedContractInfo })
+    first.releaseHumanization()
+    await waitUntil(() => api.requests.length === 1, 'the first request asks for its selector')
+
+    const second = await initWithCalls([depositCall, claimCall], {
+      contractInfo: sharedContractInfo
+    })
+    // Switching to the second request, as RequestsController does
+    first.controller.pause()
+    second.releaseHumanization()
+    await waitUntil(() => api.requests.length === 2, 'the second request asks for its selector')
+    console.log('[requests]', JSON.stringify(api.requests))
+    expect(api.requests[1]!.prefixes).toEqual([prefixOf(selectorOf(claimCall.data))])
+
+    const firstEmits: SignAccountOpController['humanization'][] = []
+    first.controller.onUpdate(() => firstEmits.push(first.controller.humanization))
+
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    await waitUntil(
+      () =>
+        api.requests.some(({ prefixes }) => prefixes.includes(prefixOf(selectorOf(transferData)))),
+      'the nested selector is requested'
+    )
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    await waitUntil(
+      () =>
+        !second.controller.isHumanizing &&
+        second.controller.humanization.length === 2 &&
+        second.controller.humanization.every((call) => !!call.decodedCall),
+      'the second request is decoded'
+    )
+    await waitUntil(
+      () => !first.controller.isHumanizing && !!first.controller.humanization[0]?.decodedCall,
+      'the paused request is decoded'
+    )
+    expect(first.controller.isInRegistry()).toBe(false)
+
+    firstEmits.length = 0
+    first.controller.resume()
+    console.log('[first after resume]', describeHumanization(firstEmits.at(-1)!))
+    expect(firstEmits.at(-1)![0]!.decodedCall!.signature).toBe(DEPOSIT_SIGNATURE)
+    expect((getNestedTransfer(firstEmits.at(-1)![0]!.decodedCall) as DecodedCall).signature).toBe(
+      TRANSFER_SIGNATURE
+    )
+
+    await wait(200)
+    console.log('[requests]', JSON.stringify(api.requests))
+    const nestedTransferRequests = api.requests.filter(({ prefixes }) =>
+      prefixes.includes(prefixOf(selectorOf(transferData)))
+    )
+    expect(nestedTransferRequests).toHaveLength(1)
+    const depositRequests = api.requests.filter(({ prefixes }) =>
+      prefixes.includes(prefixOf(selectorOf(depositCall.data)))
+    )
+    expect(depositRequests).toHaveLength(1)
+
+    first.controller.destroy()
+    second.controller.destroy()
+  })
+
+  test('shows a call with an ERC-7730 descriptor without waiting for its selectors, and decodes it once they arrive', async () => {
+    const api = makeSelectorsApi(API_SIGNATURES, { holdResponses: true })
+    const { controller, releaseHumanization } = await initWithCalls([stakeCall], {
+      contractInfoFetch: api.fetch,
+      erc7730Descriptor: {
+        contract: VAULT_CONTRACT,
+        display: {
+          formats: {
+            'stakeInPool(uint256 amount)': {
+              intent: 'Stake in the pool',
+              fields: [{ path: '#.amount', label: 'Amount', format: 'raw', visible: 'always' }]
+            }
+          }
+        }
+      }
+    })
+    releaseHumanization()
+
+    await waitUntil(() => api.requests.length === 1, 'the selector is requested')
+    await waitForHumanization(controller)
+    const erc7730Humanization = controller.humanization
+    console.log('[shown while the selector is held]', describeHumanization(erc7730Humanization))
+    expect(api.heldResponses).toHaveLength(1)
+    expect(hasErc7730Humanization(erc7730Humanization)).toBe(true)
+    expect(erc7730Humanization[0]!.decodedCall).toBeUndefined()
+
+    api.heldResponses[0]!.resolve()
+    await waitUntil(
+      () => !!controller.humanization[0]!.decodedCall,
+      'the call is decoded for its parsed data'
+    )
+    expect(controller.humanization[0]!.decodedCall!.signature).toBe(STAKE_SIGNATURE)
+    expect(controller.humanization[0]!.fullVisualization).toBe(
+      erc7730Humanization[0]!.fullVisualization
+    )
+
+    controller.destroy()
+  })
+
+  test('applies nothing from a humanization that was still in progress when it was destroyed', async () => {
+    const { controller, releaseHumanization } = await initWithCalls([depositCall], {
+      savedSignatures: {
+        [selectorOf(depositCall.data)]: DEPOSIT_SIGNATURE,
+        [selectorOf(transferData)]: TRANSFER_SIGNATURE
+      }
+    })
+    const learnTokens = jest.spyOn(controller, 'learnTokens')
+    expect(controller.isHumanizing).toBe(true)
+
+    controller.destroy()
+    releaseHumanization()
+    await wait(200)
+
+    console.log('[after destroy]', describeHumanization(controller.humanization))
+    expect(controller.humanization).toHaveLength(0)
+    expect(learnTokens).not.toHaveBeenCalled()
+  })
+
+  test('leaves the humanization untouched when selectors arrive after it is destroyed', async () => {
+    const { api, controller, contractInfo, fallbackHumanization } =
+      await showWithHeldSelectors(claimCall)
+
+    controller.destroy()
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    await advanceUntil(
+      () => contractInfo.decodeCallData(claimCall.data)?.signature === CLAIM_SIGNATURE,
+      'the late selector is saved'
+    )
+    // Past the loading deadline too, so that timer can't change anything either
+    await jest.advanceTimersByTimeAsync(SELECTOR_LOADING_DEADLINE_MS)
+
+    console.log('[after destroy]', describeHumanization(controller.humanization))
+    expect(controller.humanization).toBe(fallbackHumanization)
+    expect(controller.humanization[1]!.decodedCall).toBeUndefined()
   })
 })

@@ -1,5 +1,6 @@
 import { Account, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
+import { IContractInfoController } from '../../interfaces/contractInfo'
 import { IDappsController } from '../../interfaces/dapp'
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
@@ -22,6 +23,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     type?: SignAccountOpType
     callRelayer: BindedRelayerCall
     erc7730: IErc7730Controller
+    contractInfo: IContractInfoController
     accounts: IAccountsController
     networks: INetworksController
     keystore: IKeystoreController

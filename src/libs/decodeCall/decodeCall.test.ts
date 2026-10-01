@@ -1,6 +1,14 @@
 import { Interface } from 'ethers'
 
-import { decodeCall } from './'
+import { DecodedCall } from '@/interfaces/decodeCall'
+
+import { IrCall } from '../humanizer/interfaces'
+import {
+  CALLDATA_SELECTOR_HEX_LENGTH,
+  decodeCall,
+  decodeCallDataRecursively,
+  withDecodedCalls
+} from './'
 
 describe('decodeCall', () => {
   test('should decode a complex function', () => {
@@ -114,5 +122,248 @@ describe('decodeCall', () => {
       },
       { key: 'string', val: 'test string' }
     ])
+  })
+})
+
+const RECIPIENT = '0x742d35CC6634C0532925a3b844bc1E4C23a39E18'
+const TOKEN = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+const TRANSFER_SIGNATURE = 'transfer(address,uint256)'
+const APPROVE_SIGNATURE = 'approve(address,uint256)'
+const EXECUTE_SIGNATURE = 'execute((address,uint256,bytes)[])'
+const MULTICALL_SIGNATURE = 'multicall(bytes[])'
+
+const transferIface = new Interface([`function ${TRANSFER_SIGNATURE}`])
+const approveIface = new Interface([`function ${APPROVE_SIGNATURE}`])
+const executeIface = new Interface([`function ${EXECUTE_SIGNATURE}`])
+const multicallIface = new Interface([`function ${MULTICALL_SIGNATURE}`])
+
+const transferData = transferIface.encodeFunctionData('transfer', [RECIPIENT, 1000n])
+const approveData = approveIface.encodeFunctionData('approve', [RECIPIENT, 5n])
+const executeData = executeIface.encodeFunctionData('execute', [
+  [
+    [TOKEN, 0n, transferData],
+    [TOKEN, 0n, approveData]
+  ]
+])
+const multicallData = multicallIface.encodeFunctionData('multicall', [[executeData]])
+
+const selectorOf = (data: string) => data.slice(0, CALLDATA_SELECTOR_HEX_LENGTH)
+
+const makeGetSignatures =
+  (known: Record<string, string>) =>
+  (selector: string): { signature: string }[] =>
+    known[selector] ? [{ signature: known[selector]! }] : []
+
+const ALL_KNOWN_SIGNATURES = {
+  [selectorOf(transferData)]: TRANSFER_SIGNATURE,
+  [selectorOf(approveData)]: APPROVE_SIGNATURE,
+  [selectorOf(executeData)]: EXECUTE_SIGNATURE,
+  [selectorOf(multicallData)]: MULTICALL_SIGNATURE
+}
+
+describe('decodeCallDataRecursively', () => {
+  test('decodes call data nested in tuple arrays and lists every selector it looked up', () => {
+    const { decodedCall, selectors } = decodeCallDataRecursively(
+      executeData,
+      makeGetSignatures(ALL_KNOWN_SIGNATURES)
+    )
+
+    expect(decodedCall?.signature).toBe(EXECUTE_SIGNATURE)
+    expect(decodedCall?.selector).toBe(selectorOf(executeData))
+    expect(decodedCall).not.toHaveProperty('data')
+    expect(decodedCall?.args).toMatchObject([
+      {
+        key: 'param0',
+        val: [
+          {
+            key: 'param0',
+            val: [
+              { key: 'address', val: TOKEN },
+              { key: 'uint256', val: 0n },
+              {
+                key: 'bytes',
+                val: {
+                  signature: TRANSFER_SIGNATURE,
+                  args: [
+                    { key: 'address', val: RECIPIENT },
+                    { key: 'uint256', val: 1000n }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            key: 'param1',
+            val: [
+              { key: 'address', val: TOKEN },
+              { key: 'uint256', val: 0n },
+              { key: 'bytes', val: { signature: APPROVE_SIGNATURE } }
+            ]
+          }
+        ]
+      }
+    ])
+    expect(selectors.sort()).toEqual(
+      [selectorOf(executeData), selectorOf(transferData), selectorOf(approveData)].sort()
+    )
+  })
+
+  test('decodes three levels deep', () => {
+    const { decodedCall, selectors } = decodeCallDataRecursively(
+      multicallData,
+      makeGetSignatures(ALL_KNOWN_SIGNATURES)
+    )
+
+    const nestedExecute = (decodedCall?.args[0]?.val as any)[0].val
+    const nestedTransfer = nestedExecute.args[0].val[0].val[2].val
+
+    expect(decodedCall?.signature).toBe(MULTICALL_SIGNATURE)
+    expect(nestedExecute.signature).toBe(EXECUTE_SIGNATURE)
+    expect(nestedTransfer.signature).toBe(TRANSFER_SIGNATURE)
+    expect(selectors).toHaveLength(4)
+  })
+
+  test('keeps nested call data with an unknown selector as hex and still lists that selector', () => {
+    const knownWithoutApprove = Object.fromEntries(
+      Object.entries(ALL_KNOWN_SIGNATURES).filter(
+        ([selector]) => selector !== selectorOf(approveData)
+      )
+    )
+    const { decodedCall, selectors } = decodeCallDataRecursively(
+      executeData,
+      makeGetSignatures(knownWithoutApprove)
+    )
+
+    const [transferCall, approveCall] = decodedCall?.args[0]?.val as any[]
+
+    expect(transferCall.val[2].val.signature).toBe(TRANSFER_SIGNATURE)
+    expect(approveCall.val[2].val).toBe(approveData)
+    expect(selectors).toContain(selectorOf(approveData))
+  })
+
+  test('returns null for top level call data with an unknown selector, without looking deeper', () => {
+    const getSignatures = jest.fn(makeGetSignatures({}))
+    const { decodedCall, selectors } = decodeCallDataRecursively(executeData, getSignatures)
+
+    expect(decodedCall).toBeNull()
+    expect(selectors).toEqual([selectorOf(executeData)])
+    expect(getSignatures).toHaveBeenCalledTimes(1)
+  })
+
+  test('looks nothing up for data that is too short or not hex', () => {
+    const getSignatures = jest.fn(makeGetSignatures(ALL_KNOWN_SIGNATURES))
+
+    expect(decodeCallDataRecursively('0x', getSignatures)).toEqual({
+      decodedCall: null,
+      selectors: []
+    })
+    expect(decodeCallDataRecursively('0x1234', getSignatures)).toEqual({
+      decodedCall: null,
+      selectors: []
+    })
+    expect(decodeCallDataRecursively('not call data at all', getSignatures)).toEqual({
+      decodedCall: null,
+      selectors: []
+    })
+    expect(getSignatures).not.toHaveBeenCalled()
+  })
+
+  test('does not treat address arguments as call data', () => {
+    const { selectors } = decodeCallDataRecursively(
+      transferData,
+      makeGetSignatures(ALL_KNOWN_SIGNATURES)
+    )
+
+    expect(selectors).toEqual([selectorOf(transferData)])
+    expect(selectors).not.toContain(selectorOf(RECIPIENT))
+  })
+
+  test('returns null when the only known signature does not match the data', () => {
+    const { decodedCall, selectors } = decodeCallDataRecursively(
+      transferData,
+      makeGetSignatures({ [selectorOf(transferData)]: 'transfer(bytes4[9],bytes5[6],int48[11])' })
+    )
+
+    expect(decodedCall).toBeNull()
+    expect(selectors).toEqual([selectorOf(transferData)])
+  })
+})
+
+describe('withDecodedCalls', () => {
+  const TRANSFER_DATA = '0xa9059cbb00'
+  const UNKNOWN_DATA = '0xdeadbeef00'
+  const decodedTransfer: DecodedCall = {
+    selector: '0xa9059cbb',
+    signature: 'transfer(address,uint256)',
+    args: [],
+    diffInBytes: 0
+  }
+  const toCall = (data: string): IrCall => ({ to: '0x', value: 0n, data })
+
+  test('decodes each distinct data once, and keeps the calls and the array when nothing changed', () => {
+    const calls = [toCall(TRANSFER_DATA), toCall(TRANSFER_DATA), toCall(UNKNOWN_DATA)]
+    const getDecodedCall = jest.fn((data: string) =>
+      data === TRANSFER_DATA ? decodedTransfer : null
+    )
+
+    const decodedCalls = withDecodedCalls(calls, getDecodedCall, () => false)
+
+    console.log(
+      '[decoded]',
+      decodedCalls.map(({ data, decodedCall }) => [data, decodedCall?.signature])
+    )
+    expect(getDecodedCall.mock.calls).toEqual([[TRANSFER_DATA], [UNKNOWN_DATA]])
+    expect(decodedCalls.map(({ decodedCall }) => decodedCall)).toEqual([
+      decodedTransfer,
+      decodedTransfer,
+      undefined
+    ])
+    // The undecodable call didn't change, so it's the same object
+    expect(decodedCalls[2]).toBe(calls[2])
+
+    // A decoded call equal to the one already set, even as a new object, is no change
+    const decodedAgain = withDecodedCalls(
+      decodedCalls,
+      (data) => (data === TRANSFER_DATA ? { ...decodedTransfer } : null),
+      () => false
+    )
+    expect(decodedAgain).toBe(decodedCalls)
+  })
+
+  test('marks only the calls that are not decoded and still decoding, and clears the mark once they stop', () => {
+    const PENDING_DATA = '0x095ea7b300'
+    const calls = [toCall(TRANSFER_DATA), toCall(PENDING_DATA), toCall(UNKNOWN_DATA)]
+    const getDecodedCall = (data: string) => (data === TRANSFER_DATA ? decodedTransfer : null)
+    // The transfer is also still decoding, but it's already decoded from a saved signature
+    const pendingDatas = new Set([TRANSFER_DATA, PENDING_DATA])
+
+    const whileDecoding = withDecodedCalls(calls, getDecodedCall, (data) => pendingDatas.has(data))
+    console.log(
+      '[while decoding]',
+      whileDecoding.map(({ data, isDecodingCall }) => [data, isDecodingCall])
+    )
+    expect(whileDecoding.map(({ isDecodingCall }) => isDecodingCall)).toEqual([
+      undefined,
+      true,
+      undefined
+    ])
+    expect(whileDecoding[2]).toBe(calls[2])
+
+    // Nothing settled yet, so nothing changed
+    expect(withDecodedCalls(whileDecoding, getDecodedCall, (data) => pendingDatas.has(data))).toBe(
+      whileDecoding
+    )
+
+    pendingDatas.clear()
+    const afterDecoding = withDecodedCalls(whileDecoding, getDecodedCall, () => false)
+    console.log(
+      '[after decoding]',
+      afterDecoding.map(({ data, isDecodingCall }) => [data, isDecodingCall])
+    )
+    expect(afterDecoding).not.toBe(whileDecoding)
+    expect(afterDecoding[1]!.isDecodingCall).toBeUndefined()
+    expect(afterDecoding[1]!.decodedCall).toBeUndefined()
+    expect(afterDecoding[0]).toBe(whileDecoding[0])
+    expect(afterDecoding[2]).toBe(whileDecoding[2])
   })
 })
