@@ -65,7 +65,6 @@ import {
   TypedMessageUserRequest,
   UserRequest
 } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getAccountOpNonce, isSafeRejectionCall } from '../../libs/accountOp/accountOp'
 import {
@@ -111,11 +110,6 @@ import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/sig
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
-
-const ONE_CLICK_WINDOW_SIZE = {
-  width: 600,
-  height: 600
-}
 
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
@@ -741,20 +735,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         await this.focusRequestWindow()
       }
     } else {
-      let customSize
-
-      if (
-        this.currentUserRequest?.kind === 'swapAndBridge' ||
-        this.currentUserRequest?.kind === 'transfer'
-      ) {
-        customSize = ONE_CLICK_WINDOW_SIZE
-      }
-
       try {
         // Keep this right after the check above with no await in between, so a second request
         // arriving now finds the open already in progress instead of starting its own.
         this.requestWindow.openWindowPromise = this.#ui.requestView
-          .open({ customSize, baseWindowId })
+          .open({ baseWindowId })
           .then((windowProps) => {
             // Stays null when the request is rendered in the panel instead of a window
             // Set here, not after the await below, so it is already recorded by the time
@@ -1988,10 +1973,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!isASignOperationRequestedForAnotherAccount) {
       await this.addUserRequests([userRequest], {
         position,
-        executionType:
-          position === 'first' || isSmartAccount(this.#selectedAccount.account)
-            ? 'open-request-window'
-            : 'queue-but-open-request-window'
+        // A new request always takes focus, so the one the app just sent is what the user sees
+        executionType: 'open-request-window'
       })
       return
     }
