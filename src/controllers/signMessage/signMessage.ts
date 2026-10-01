@@ -268,6 +268,7 @@ export class SignMessageController
 
   reset() {
     this.#signingGeneration += 1
+    this.stopHumanization()
     if (!this.isInitialized) return
 
     this.#onAbortOperation()
