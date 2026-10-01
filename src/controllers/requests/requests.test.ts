@@ -10,6 +10,7 @@ import {
   DAPP_SILENCE_DURATION
 } from '../../consts/safeguards/dappRequestSpam'
 import { Hex } from '../../interfaces/hex'
+import { Platform } from '../../interfaces/platform'
 import {
   BenzinUserRequest,
   CallsUserRequest,
@@ -113,13 +114,18 @@ const getActivityAccountOp = (
   timestamp
 })
 
-const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) => {
+const prepareTest = async (
+  seedTestDapp = false,
+  isSelectedAccountSafe = false,
+  platform?: Platform
+) => {
   const { mainCtrl, eventEmitterRegistry, getWindowId, eventEmitter } = await makeMainController(
     async (storageCtrl) => {
       await storageCtrl.set('accounts', accounts)
       await storageCtrl.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
       if (seedTestDapp) await storageCtrl.set('dappsV2', [TEST_DAPP])
-    }
+    },
+    { overrides: { platform } }
   )
 
   if (isSelectedAccountSafe) {
@@ -187,6 +193,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
       keystore: mainCtrl.keystore,
       portfolio: mainCtrl.portfolio,
       featureFlags: mainCtrl.featureFlags,
+      platform: 'browser-webkit',
       signAccountOpPreference: mainCtrl.signAccountOpPreference,
       externalSignerControllers: {},
       activity: mainCtrl.activity,
@@ -2543,7 +2550,7 @@ describe('SIWE auto-login and signing authentication', () => {
   }
 
   test('does not sign on the user behalf for an app they have not confirmed for signing', async () => {
-    const { controller, autoLoginCtrl } = await prepareTest(true)
+    const { controller, autoLoginCtrl } = await prepareTest(true, false, 'mobile-ios')
 
     jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
     const autoLoginSpy = jest.spyOn(autoLoginCtrl, 'autoLogin')
@@ -2560,9 +2567,26 @@ describe('SIWE auto-login and signing authentication', () => {
   })
 
   test('signs on the user behalf once they have confirmed for that app', async () => {
-    const { controller, autoLoginCtrl, dappsCtrl } = await prepareTest(true)
+    const { controller, autoLoginCtrl, dappsCtrl } = await prepareTest(true, false, 'mobile-ios')
 
     dappsCtrl.updateDapp(MOCK_SESSION.id, { signingAuthenticated: true })
+
+    jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+    const autoLoginSpy = jest
+      .spyOn(autoLoginCtrl, 'autoLogin')
+      .mockResolvedValue({ signature: '0xdeadbeef' } as any)
+
+    const resolve = await buildSiweRequest(controller)
+
+    expect(autoLoginSpy).toHaveBeenCalled()
+    expect(resolve).toHaveBeenCalledWith({ hash: '0xdeadbeef' })
+    expect(controller.userRequests.length).toBe(0)
+
+    jest.restoreAllMocks()
+  })
+
+  test('signs on the user behalf without a confirmation outside of mobile', async () => {
+    const { controller, autoLoginCtrl } = await prepareTest(true, false, 'browser-webkit')
 
     jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
     const autoLoginSpy = jest
