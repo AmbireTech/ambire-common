@@ -45,6 +45,7 @@ import { DecodedCall } from '../../interfaces/decodeCall'
 import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, ExternalSignerControllers } from '../../interfaces/keystore'
+import { Platform } from '../../interfaces/platform'
 import { IProvidersController } from '../../interfaces/provider'
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
@@ -480,6 +481,7 @@ const init = async (
     contractInfoFetch?: Fetch
     // Lets several controllers share one, like the requests of a real wallet do
     contractInfo?: ContractInfoController
+    platform?: Platform
     /**
      * Pause the controller the moment it is built, before its estimate and gas price intervals
      * get to run. For tests that drive those intervals themselves.
@@ -781,6 +783,7 @@ const init = async (
     keystore,
     portfolio,
     featureFlags: featureFlagsCtrl,
+    platform: options?.platform ?? 'browser-webkit',
     signAccountOpPreference,
     externalSignerControllers: options?.externalSignerControllers || {},
     account,
@@ -4285,7 +4288,7 @@ describe('SignAccountOp signing authentication', () => {
 
   const initSigningAuth = async (
     calls: AccountOp['calls'],
-    options?: { dapps?: Dapp[]; sentTo?: string[] }
+    options?: { dapps?: Dapp[]; sentTo?: string[]; platform?: Platform }
   ) => {
     const accountOp = createEOAAccountOp(eoaAccount)
     ;(accountOp.op.calls as any) = calls
@@ -4340,6 +4343,7 @@ describe('SignAccountOp signing authentication', () => {
       false,
       {
         dapps: options?.dapps,
+        platform: options?.platform ?? 'mobile-ios',
         initialSetStorage: async (storageCtrl) => {
           if (!options?.sentTo?.length) return
 
@@ -4462,6 +4466,19 @@ describe('SignAccountOp signing authentication', () => {
       firstTimeRecipients: [ALICE],
       unauthenticatedDapps: [{ id: dappA.id, name: dappA.name }]
     })
+  })
+
+  test('is never required outside of mobile, and the recipients are not looked up', async () => {
+    const hasAccountOpsSentToSpy = jest.spyOn(ActivityController.prototype, 'hasAccountOpsSentTo')
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x', dapp: dappA }], {
+      dapps: [dappA],
+      platform: 'browser-webkit'
+    })
+
+    expect(controller.signingAuthRequirement).toBe(null)
+    expect(hasAccountOpsSentToSpy).not.toHaveBeenCalled()
+
+    hasAccountOpsSentToSpy.mockRestore()
   })
 })
 
