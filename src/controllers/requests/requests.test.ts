@@ -193,6 +193,7 @@ const prepareTest = async (
       keystore: mainCtrl.keystore,
       portfolio: mainCtrl.portfolio,
       featureFlags: mainCtrl.featureFlags,
+      platform: 'browser-webkit',
       signAccountOpPreference: mainCtrl.signAccountOpPreference,
       externalSignerControllers: {},
       activity: mainCtrl.activity,

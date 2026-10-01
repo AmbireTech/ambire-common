@@ -74,6 +74,7 @@ import {
   getSafeMessageRequestBanners
 } from '../../libs/banners/banners'
 import { getDappIdsFromUserRequest } from '../../libs/dapps/dappRequestSpam'
+import { isSigningAuthPlatform } from '../../libs/dapps/helpers'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getShouldSimulateInTheBackground } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
@@ -1825,11 +1826,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         autoLoginStatus = this.#autoLogin.getAutoLoginStatus(parsedSiwe)
 
         // The signing authentication is mobile only, so elsewhere no app is ever confirmed for
-        const isSigningAuthRequired =
-          this.#platform === 'mobile-android' || this.#platform === 'mobile-ios'
         if (
           autoLoginStatus === 'active' &&
-          (!isSigningAuthRequired || dapp?.signingAuthenticated)
+          (!isSigningAuthPlatform(this.#platform) || dapp?.signingAuthenticated)
         ) {
           // Sign and respond
           const signedMessage = await this.#autoLogin.autoLogin({
@@ -2597,6 +2596,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           keystore: this.#keystore,
           portfolio: this.#portfolio,
           featureFlags: this.#featureFlags,
+          platform: this.#platform,
           signAccountOpPreference: this.#signAccountOpPreference,
           externalSignerControllers: this.#externalSignerControllers,
           activity: this.#activity,

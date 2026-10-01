@@ -40,6 +40,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -302,6 +303,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #featureFlags: IFeatureFlagsController
 
+  #platform: Platform
+
   #serviceProviderAPI: SwapProviderExecutor
 
   #activeRoutes: SwapAndBridgeActiveRoute[] = []
@@ -494,6 +497,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     storage,
     signAccountOpPreference,
     featureFlags,
+    platform,
     phishing,
     dapps,
     erc7730,
@@ -521,6 +525,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     storage: IStorageController
     signAccountOpPreference: SignAccountOpPreferenceController
     featureFlags: IFeatureFlagsController
+    platform: Platform
     phishing: IPhishingController
     dapps: IDappsController
     erc7730: IErc7730Controller
@@ -552,6 +557,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#storage = storage
     this.#signAccountOpPreference = signAccountOpPreference
     this.#featureFlags = featureFlags
+    this.#platform = platform
     this.#phishing = phishing
     this.#dapps = dapps
     this.#erc7730 = erc7730
@@ -3372,6 +3378,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       keystore: this.#keystore,
       portfolio: this.#portfolio,
       featureFlags: this.#featureFlags,
+      platform: this.#platform,
       signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
