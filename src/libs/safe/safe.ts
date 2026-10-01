@@ -30,6 +30,7 @@ import {
   decodeMultiSend,
   multiCallAbi,
   parseSafeMessageOrigin,
+  parseSafeTransactionOrigin,
   SuccessfullyDecoded
 } from './helpers'
 
@@ -46,6 +47,7 @@ import type {
   SafeMultisigConfirmationResponse,
   SafeMultisigTransactionResponse
 } from '@safe-global/types-kit'
+import type { Dapp } from '../../interfaces/dapp'
 
 export type ExtendedSafeMessage = SafeMessage & { isConfirmed: boolean }
 
@@ -215,7 +217,8 @@ export async function propose(
   safeAddress: Hex,
   owner: Hex,
   ownerSig: Hex,
-  safeTxHash: string
+  safeTxHash: string,
+  origin?: string
 ) {
   const apiKit = getApiKit(chainId)
   const proposeTransactionProps: ProposeTransactionProps = {
@@ -231,7 +234,8 @@ export async function propose(
       nonce: parseInt(txn.nonce)
     },
     senderAddress: owner,
-    senderSignature: ownerSig
+    senderSignature: ownerSig,
+    origin
   }
 
   return apiKit.proposeTransaction(proposeTransactionProps)
@@ -365,7 +369,8 @@ export async function fetchAllPending(
 
 export function toCallsUserRequest(
   safeAddr: Hex,
-  response: SafeResults
+  response: SafeResults,
+  getDappById?: (id: string) => Dapp | undefined
 ): {
   type: 'calls'
   params: {
@@ -415,6 +420,15 @@ export function toCallsUserRequest(
         // this just means it's not a batch
         calls = [{ to: txn.to, value: BigInt(txn.value), data: txn.data || '0x' }]
       }
+
+      const dappIdByCallIndex = parseSafeTransactionOrigin(txn.origin)
+      calls = calls.map((call, index) => {
+        const dappId = dappIdByCallIndex.get(index)
+        if (!dappId) return call
+
+        const dapp = getDappById?.(dappId)
+        return dapp ? { ...call, dapp } : call
+      })
 
       const signature = txn.confirmations
         ? sortSigs(

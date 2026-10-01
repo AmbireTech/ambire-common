@@ -125,7 +125,7 @@ import {
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
-import { getSafeTxn } from '../../libs/safe/helpers'
+import { buildSafeTransactionOrigin, getSafeTxn } from '../../libs/safe/helpers'
 import {
   confirm,
   getAlreadySignedOwners,
@@ -3262,7 +3262,8 @@ export class SignAccountOpController
                   this.account.addr as Hex,
                   this.#accountOp.signingKeyAddr as Hex,
                   signature,
-                  safeTxnHash
+                  safeTxnHash,
+                  buildSafeTransactionOrigin(this.accountOp.calls)
                 ),
               {
                 timeoutMs: SAFE_API_TIMEOUT_MS,

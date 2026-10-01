@@ -1,17 +1,44 @@
 import { concat, getAddress, getBytes, Interface, solidityPacked, ZeroAddress } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
+import SafeApiKit from '@safe-global/api-kit'
 
-import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
-import { getSafeAccountByOwner, normalizeSafeGlobalMessage, toCallsUserRequest } from './safe'
+import {
+  buildSafeMessageOrigin,
+  buildSafeTransactionOrigin,
+  parseSafeMessageOrigin,
+  parseSafeTransactionOrigin
+} from './helpers'
+import {
+  getSafeAccountByOwner,
+  normalizeSafeGlobalMessage,
+  propose,
+  toCallsUserRequest
+} from './safe'
 
 import type { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
 import type { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
+import type { Dapp } from '../../interfaces/dapp'
 import type { Hex } from '../../interfaces/hex'
+import type { SafeTx } from '../../interfaces/safe'
 
 const OWNER: Hex = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
 const OTHER_OWNER = '0x94b0080A00579C1307B0eF2C499AD98A8ce58e58'
 const SAFE_ADDRESS: Hex = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+const UNISWAP_DAPP: Dapp = {
+  id: 'uniswap',
+  name: 'Uniswap',
+  description: '',
+  url: 'https://app.uniswap.org',
+  icon: 'https://example.com/uniswap.png'
+}
+const AAVE_DAPP: Dapp = {
+  id: 'aave',
+  name: 'Aave',
+  description: '',
+  url: 'https://app.aave.com',
+  icon: 'https://example.com/aave.png'
+}
 
 const buildSafeTransaction = (
   overrides: Partial<SafeMultisigTransactionResponse>
@@ -99,6 +126,137 @@ describe('toCallsUserRequest', () => {
     })[0]!.params.userRequestParams
 
     expect(decodedCalls).toEqual(calls)
+  })
+
+  test('restores dapp metadata on the matching decoded batch calls', () => {
+    const calls = [
+      { to: ZeroAddress, value: 0n, data: '0x', dapp: UNISWAP_DAPP },
+      { to: OWNER, value: 1n, data: '0x', dapp: AAVE_DAPP }
+    ]
+    const encodedCalls = concat(
+      calls.map((call) =>
+        solidityPacked(
+          ['uint8', 'address', 'uint256', 'uint256', 'bytes'],
+          [0, call.to, call.value, BigInt(getBytes(call.data).length), call.data]
+        )
+      )
+    )
+    const data = new Interface(['function multiSend(bytes transactions)']).encodeFunctionData(
+      'multiSend',
+      [encodedCalls]
+    )
+    const origin = buildSafeTransactionOrigin(calls)
+    const dappsById = new Map([
+      [UNISWAP_DAPP.id, UNISWAP_DAPP],
+      [AAVE_DAPP.id, AAVE_DAPP]
+    ])
+
+    const { calls: decodedCalls } = toCallsUserRequest(
+      SAFE_ADDRESS,
+      {
+        '1': { txns: [buildSafeTransaction({ data, origin })], messages: [] }
+      },
+      (id) => dappsById.get(id)
+    )[0]!.params.userRequestParams
+
+    expect(decodedCalls).toEqual([calls[0], { ...calls[1], to: calls[1]!.to.toLowerCase() }])
+  })
+
+  test('does not attach metadata when the reported dapp is not in the catalogue', () => {
+    const origin = buildSafeTransactionOrigin([
+      { to: ZeroAddress, value: 0n, data: '0x', dapp: UNISWAP_DAPP }
+    ])
+
+    const { calls } = toCallsUserRequest(
+      SAFE_ADDRESS,
+      {
+        '1': { txns: [buildSafeTransaction({ origin })], messages: [] }
+      },
+      () => undefined
+    )[0]!.params.userRequestParams
+
+    expect(calls).toEqual([{ to: ZeroAddress, value: 0n, data: '0x' }])
+  })
+})
+
+describe('Safe transaction origin', () => {
+  test('groups call indexes by dapp ID and round-trips them', () => {
+    const origin = buildSafeTransactionOrigin([
+      { to: ZeroAddress, value: 0n, data: '0x', dapp: UNISWAP_DAPP },
+      { to: ZeroAddress, value: 0n, data: '0x', dapp: AAVE_DAPP },
+      { to: ZeroAddress, value: 0n, data: '0x', dapp: UNISWAP_DAPP },
+      { to: ZeroAddress, value: 0n, data: '0x' }
+    ])
+
+    expect(origin).toBe('{"name":"Ambire","v":1,"calls":[["uniswap",[0,2]],["aave",[1]]]}')
+    expect(Array.from(parseSafeTransactionOrigin(origin).entries())).toEqual([
+      [0, 'uniswap'],
+      [2, 'uniswap'],
+      [1, 'aave']
+    ])
+  })
+
+  test('returns no origin without dapp metadata or when the payload exceeds Safe limits', () => {
+    expect(buildSafeTransactionOrigin([{ to: ZeroAddress, value: 0n, data: '0x' }])).toBeUndefined()
+    expect(
+      buildSafeTransactionOrigin([
+        {
+          to: ZeroAddress,
+          value: 0n,
+          data: '0x',
+          dapp: { ...UNISWAP_DAPP, id: 'x'.repeat(200) }
+        }
+      ])
+    ).toBeUndefined()
+  })
+
+  test.each([
+    undefined,
+    '',
+    'Ambire',
+    '{}',
+    '{"name":"Other","v":1,"calls":[["uniswap",[0]]]}',
+    '{"name":"Ambire","v":2,"calls":[["uniswap",[0]]]}',
+    '{"name":"Ambire","v":1,"calls":[["uniswap",[-1,1.5,"2"]]]}'
+  ])('ignores invalid or foreign origin payload %p', (origin) => {
+    expect(Array.from(parseSafeTransactionOrigin(origin).entries())).toEqual([])
+  })
+})
+
+describe('propose', () => {
+  test('forwards the origin to the Safe API', async () => {
+    const previousApiKey = process.env.SAFE_API_KEY
+    process.env.SAFE_API_KEY = 'test-safe-api-key'
+    const proposeTransactionSpy = jest
+      .spyOn(SafeApiKit.prototype, 'proposeTransaction')
+      .mockResolvedValue()
+    const txn: SafeTx = {
+      to: ZeroAddress as `0x${string}`,
+      value: '0x00',
+      data: '0x',
+      operation: 0,
+      safeTxGas: '0x00',
+      baseGas: '0x00',
+      gasPrice: '0x00',
+      gasToken: ZeroAddress as `0x${string}`,
+      refundReceiver: ZeroAddress as `0x${string}`,
+      nonce: '0x00'
+    }
+    const origin = '{"name":"Ambire","v":1,"calls":[["uniswap",[0]]]}'
+
+    try {
+      await propose(txn, 1n, SAFE_ADDRESS, OWNER, '0x1234', `0x${'1'.repeat(64)}`, origin)
+
+      expect(proposeTransactionSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          origin
+        })
+      )
+    } finally {
+      proposeTransactionSpy.mockRestore()
+      if (previousApiKey === undefined) delete process.env.SAFE_API_KEY
+      else process.env.SAFE_API_KEY = previousApiKey
+    }
   })
 })
 
