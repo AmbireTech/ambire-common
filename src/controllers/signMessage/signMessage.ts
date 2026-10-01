@@ -813,8 +813,9 @@ export class SignMessageController
     if (this.#account?.safeCreation && this.messageToSign) {
       const accountState =
         this.#accounts.accountStates[this.#account.addr]?.[this.messageToSign.chainId.toString()]
+      // A state that is not loaded yet falls through to the dapp check, so it never skips the prompt
       if (
-        !accountState ||
+        accountState &&
         !canHotOwnersMeetSafeThreshold(accountState.importedAccountKeys, accountState.threshold)
       )
         return null
