@@ -33,13 +33,14 @@ import {
   isIdentifiedByMultipleTxn,
   isIdentifiedByRelayer,
   isIdentifiedByUserOpHash,
+  NftBalanceChange,
   PortfoliosToUpdate,
   SubmittedAccountOp,
   SubmittedAccountOpLike,
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
-import { getTransferLogTokens } from '../../libs/logsParser/parseLogs'
+import { getTransferLogNfts, getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { filterStaticBlacklistedAddrs } from '../../libs/portfolio/blacklist'
 import { ScamFilter } from '../../libs/scamFilter'
 import { parseLogs } from '../../libs/userOperation/userOperation'
@@ -198,6 +199,30 @@ const getBalanceChangeTokenAddrsFromReceipts = async (
   )
 
   return getBalanceChangeTokenAddresses(foundTokens, accountOp.chainId)
+}
+
+const getNftBalanceChangesFromReceipts = async (
+  accountOp: AccountOpBalanceChangesBackfillReference,
+  receipts: TransactionReceipt[] | BalanceChangesReceipt[]
+): Promise<NftBalanceChange[]> => {
+  const changes = await getTransferLogNfts(
+    receipts.flatMap((receipt) => receipt.logs),
+    accountOp.accountAddr
+  )
+
+  return changes.map((change) => ({ ...change, chainId: accountOp.chainId }))
+}
+
+const getNftsToLearn = (nftBalanceChanges: NftBalanceChange[]): [string, bigint[]][] => {
+  const tokenIdsByAddress = new Map<string, bigint[]>()
+
+  nftBalanceChanges.forEach(({ address, tokenId }) => {
+    const tokenIds = tokenIdsByAddress.get(address) || []
+    if (!tokenIds.includes(tokenId)) tokenIds.push(tokenId)
+    tokenIdsByAddress.set(address, tokenIds)
+  })
+
+  return Array.from(tokenIdsByAddress.entries())
 }
 
 const getAccountOpReceipts = async (
@@ -889,10 +914,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     try {
-      const foundTokens = filterStaticBlacklistedAddrs(
-        await getTransferLogTokens(receipt.logs, accountAddr),
-        chainId
-      )
+      const [foundTokens, nftBalanceChanges] = await Promise.all([
+        getTransferLogTokens(receipt.logs, accountAddr).then((tokens) =>
+          filterStaticBlacklistedAddrs(tokens, chainId)
+        ),
+        getNftBalanceChangesFromReceipts(submittedAccountOpLike, [receipt])
+      ])
+      submittedAccountOpLike.nftBalanceChanges = nftBalanceChanges
+      this.#portfolio.addErc721sToBeLearned(getNftsToLearn(nftBalanceChanges), accountAddr, chainId)
       if (shouldLearnTokens) {
         const tokensWithAPrice = await new ScamFilter({
           fetch: this.#fetch,
@@ -939,7 +968,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     identifiedBy: AccountOpIdentifiedBy,
     accountAddr: string,
     chainId: bigint,
-    balanceChanges: BalanceChange[] | Error
+    balanceChanges: BalanceChange[] | Error,
+    nftBalanceChanges: NftBalanceChange[] = []
   ) {
     await this.#initialLoadPromise
 
@@ -951,6 +981,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // we allow 3 retries before giving up on them and setting them to an
     // empty array
     if (balanceChanges instanceof Error) {
+      accountOp.nftBalanceChanges = nftBalanceChanges
       const balanceChangesFetchRetryCount = accountOp.balanceChangesFetchRetryCount || 0
       accountOp.balanceChangesFetchRetryCount = balanceChangesFetchRetryCount + 1
       if (accountOp.balanceChangesFetchRetryCount >= 3) {
@@ -960,6 +991,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     }
 
     accountOp.balanceChanges = balanceChanges
+    accountOp.nftBalanceChanges = nftBalanceChanges
   }
 
   /**
@@ -1016,6 +1048,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
         accountOp.identifiedBy,
         accountOp.accountAddr,
         accountOp.chainId,
+        [],
         []
       )
 
@@ -1028,6 +1061,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // temp error, do not set balance changes to allow the system to retry
     if (!network || !provider) return
 
+    let nftBalanceChanges: NftBalanceChange[] = []
+
     try {
       const receipts = await getAccountOpReceipts(accountOp, provider)
 
@@ -1036,13 +1071,20 @@ export class ActivityController extends EventEmitter implements IActivityControl
           accountOp.identifiedBy,
           accountOp.accountAddr,
           accountOp.chainId,
-          new Error('no receipts found')
+          new Error('no receipts found'),
+          nftBalanceChanges
         )
 
         return
       }
 
       const tokenAddrs = await getBalanceChangeTokenAddrsFromReceipts(accountOp, receipts)
+      nftBalanceChanges = await getNftBalanceChangesFromReceipts(accountOp, receipts)
+      this.#portfolio.addErc721sToBeLearned(
+        getNftsToLearn(nftBalanceChanges),
+        accountOp.accountAddr,
+        accountOp.chainId
+      )
       const balanceChangeWindow = getBalanceChangeWindowFromReceipts(accountOp, receipts)
 
       if (!balanceChangeWindow) {
@@ -1062,7 +1104,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         tokenAddrs,
         balanceChangeWindow.receiptBlockNumber,
         balanceChangeWindow.prevBlockNumber,
-        receipts
+        receipts,
+        nftBalanceChanges
       )
     } catch (error: any) {
       console.log(error)
@@ -1070,7 +1113,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         accountOp.identifiedBy,
         accountOp.accountAddr,
         accountOp.chainId,
-        error
+        error,
+        nftBalanceChanges
       )
     }
   }
@@ -1120,20 +1164,30 @@ export class ActivityController extends EventEmitter implements IActivityControl
       receiptBlockNumber: number
       prevBlockNumber?: number
       receipts?: BalanceChangesReceipt[]
+      nftBalanceChanges?: NftBalanceChange[]
     }>
   ) {
     if (balanceChangesTasks.length === 0) return
 
     await Promise.all(
       balanceChangesTasks.map(
-        ({ accountOp, network, tokenAddrs, receiptBlockNumber, prevBlockNumber, receipts }) =>
+        ({
+          accountOp,
+          network,
+          tokenAddrs,
+          receiptBlockNumber,
+          prevBlockNumber,
+          receipts,
+          nftBalanceChanges
+        }) =>
           this.updateAccountOpBalanceChanges(
             accountOp,
             network,
             tokenAddrs,
             receiptBlockNumber,
             prevBlockNumber,
-            receipts
+            receipts,
+            nftBalanceChanges
           )
       )
     )
@@ -1185,6 +1239,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
       receiptBlockNumber: number
       prevBlockNumber?: number
       receipts?: BalanceChangesReceipt[]
+      nftBalanceChanges?: NftBalanceChange[]
     }> = []
 
     // we should fetch Safe txns again upon failure
@@ -1431,6 +1486,15 @@ export class ActivityController extends EventEmitter implements IActivityControl
             }
 
             if (shouldScheduleBalanceChangesTask && typeof lastReceiptBlockNumber !== 'undefined') {
+              const nftBalanceChanges = await getNftBalanceChangesFromReceipts(
+                accountOp,
+                receiptsForBalanceChanges
+              )
+              this.#portfolio.addErc721sToBeLearned(
+                getNftsToLearn(nftBalanceChanges),
+                accountOp.accountAddr,
+                accountOp.chainId
+              )
               balanceChangesTasks.push({
                 accountOp,
                 network,
@@ -1444,7 +1508,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
                   typeof firstReceiptBlockNumber !== 'undefined'
                     ? getPreviousBlockNumber(firstReceiptBlockNumber)
                     : undefined,
-                receipts: receiptsForBalanceChanges
+                receipts: receiptsForBalanceChanges,
+                nftBalanceChanges
               })
             }
           })
@@ -1480,7 +1545,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
     tokenAddrs: string[],
     receiptBlockNumber: number,
     prevBlockNumber?: number,
-    receipts?: BalanceChangesReceipt[]
+    receipts?: BalanceChangesReceipt[],
+    nftBalanceChanges: NftBalanceChange[] = []
   ) {
     await this.#initialLoadPromise
 
@@ -1509,7 +1575,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         accountOp.identifiedBy,
         accountOp.accountAddr,
         accountOp.chainId,
-        balanceChanges
+        balanceChanges,
+        nftBalanceChanges
       )
 
       return balanceChanges
@@ -1519,7 +1586,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         accountOp.identifiedBy,
         accountOp.accountAddr,
         accountOp.chainId,
-        error
+        error,
+        nftBalanceChanges
       )
 
       return []

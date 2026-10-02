@@ -1,4 +1,5 @@
 import { describe, expect, it, jest } from '@jest/globals'
+import { getAddress, Interface, ZeroAddress } from 'ethers'
 
 import { Storage } from '../../interfaces/storage'
 import { AccountOpStatus } from '../../libs/accountOp/types'
@@ -58,10 +59,37 @@ const createStorage = (
   return { data, firstExternalAccountOpsSet, storage }
 }
 
+const createPortfolio = () => ({
+  addTokensToBeLearned: jest.fn(),
+  addErc721sToBeLearned: jest.fn(),
+  getTokenBalancesOnBlock: jest.fn(async () => [
+    [
+      '0x',
+      {
+        address: '0x0000000000000000000000000000000000000000',
+        amount: 0n,
+        chainId,
+        decimals: 18,
+        flags: {
+          canTopUpGasTank: false,
+          isFeeToken: true,
+          onGasTank: false,
+          rewardsType: null
+        },
+        marketDataIn: [],
+        name: 'Ether',
+        priceIn: [],
+        symbol: 'ETH'
+      }
+    ]
+  ])
+})
+
 const createController = (
   storage: Storage,
   provider: any,
-  callRelayer: any = jest.fn(async () => undefined)
+  callRelayer: any = jest.fn(async () => undefined),
+  portfolio: ReturnType<typeof createPortfolio> = createPortfolio()
 ) =>
   new ActivityController(
     storage as any,
@@ -71,36 +99,64 @@ const createController = (
     { initialLoadPromise: Promise.resolve(), account: { addr: accountAddr } } as any,
     { providers: { [chainId.toString()]: provider } } as any,
     { networks: [{ chainId }], isInitialized: true } as any,
-    {
-      addTokensToBeLearned: jest.fn(),
-      getTokenBalancesOnBlock: jest.fn(async () => [
-        [
-          '0x',
-          {
-            address: '0x0000000000000000000000000000000000000000',
-            amount: 0n,
-            chainId,
-            decimals: 18,
-            flags: {
-              canTopUpGasTank: false,
-              isFeeToken: true,
-              onGasTank: false,
-              rewardsType: null
-            },
-            marketDataIn: [],
-            name: 'Ether',
-            priceIn: [],
-            symbol: 'ETH'
-          }
-        ]
-      ])
-    } as any,
+    portfolio as any,
     {} as any,
     { isFeatureEnabled: () => true } as any,
     jest.fn(async () => undefined)
   )
 
 describe('ActivityController external account ops', () => {
+  it('learns transferred NFTs even when fungible token learning is disabled', async () => {
+    const txnId = `0x${'e'.repeat(64)}`
+    const positionManager = '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e'
+    const tokenId = 12345n
+    const transferInterface = new Interface([
+      'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)'
+    ])
+    const transferEvent = transferInterface.getEvent('Transfer')
+    if (!transferEvent) throw new Error('Missing Transfer event')
+
+    const receipt = {
+      ...buildReceipt(txnId),
+      logs: [
+        {
+          address: positionManager,
+          ...transferInterface.encodeEventLog(transferEvent, [ZeroAddress, accountAddr, tokenId])
+        }
+      ]
+    }
+    const provider = {
+      getTransaction: jest.fn(async () => null),
+      getBlock: jest.fn(async () => ({ timestamp: 1700000000 }))
+    }
+    const { data, storage } = createStorage({}, { delayFirstExternalAccountOpsSet: false })
+    const portfolio = createPortfolio()
+    const controller = createController(storage, provider, undefined, portfolio)
+
+    await controller.addExternalAccountOp({
+      accountAddr,
+      chainId,
+      txnId,
+      receipt,
+      shouldLearnTokens: false
+    })
+
+    expect(portfolio.addTokensToBeLearned).not.toHaveBeenCalled()
+    expect(portfolio.addErc721sToBeLearned).toHaveBeenCalledWith(
+      [[getAddress(positionManager), [tokenId]]],
+      accountAddr,
+      chainId
+    )
+    expect(data.externalAccountOps[accountAddr][chainId.toString()][0].nftBalanceChanges).toEqual([
+      {
+        address: getAddress(positionManager),
+        tokenId,
+        chainId,
+        balanceChange: 1n
+      }
+    ])
+  })
+
   it('does not add an external account op when the txnId already exists on an internal account op', async () => {
     const txnId = `0x${'a'.repeat(64)}`
     const provider = {

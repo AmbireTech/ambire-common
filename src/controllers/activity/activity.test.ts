@@ -1,4 +1,4 @@
-import { getAddress } from 'ethers'
+import { getAddress, Interface, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { generateUuid } from '@/utils/uuid'
@@ -370,6 +370,14 @@ describe('Activity Controller ', () => {
 
     test('setAccountOpBalanceChanges stores an empty array after 3 failures', async () => {
       const { controller, sessionId } = await prepareTest()
+      const nftBalanceChanges = [
+        {
+          address: '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e',
+          tokenId: 12345n,
+          chainId: SUBMITTED_ACCOUNT_OP.chainId,
+          balanceChange: 1n
+        }
+      ]
 
       await controller.addAccountOp(SUBMITTED_ACCOUNT_OP)
 
@@ -377,19 +385,24 @@ describe('Activity Controller ', () => {
         SUBMITTED_ACCOUNT_OP.identifiedBy,
         SUBMITTED_ACCOUNT_OP.accountAddr,
         SUBMITTED_ACCOUNT_OP.chainId,
-        new Error('balance changes failed')
+        new Error('balance changes failed'),
+        nftBalanceChanges
       )
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
       expect(
         controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
       ).toBe(1)
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBe(undefined)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.nftBalanceChanges).toEqual(
+        nftBalanceChanges
+      )
 
       await controller.setAccountOpBalanceChanges(
         SUBMITTED_ACCOUNT_OP.identifiedBy,
         SUBMITTED_ACCOUNT_OP.accountAddr,
         SUBMITTED_ACCOUNT_OP.chainId,
-        new Error('balance changes failed')
+        new Error('balance changes failed'),
+        nftBalanceChanges
       )
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
       expect(
@@ -401,7 +414,8 @@ describe('Activity Controller ', () => {
         SUBMITTED_ACCOUNT_OP.identifiedBy,
         SUBMITTED_ACCOUNT_OP.accountAddr,
         SUBMITTED_ACCOUNT_OP.chainId,
-        new Error('balance changes failed')
+        new Error('balance changes failed'),
+        nftBalanceChanges
       )
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toEqual([])
       expect(
@@ -410,6 +424,9 @@ describe('Activity Controller ', () => {
       const balanceChanges = controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges
       expect(balanceChanges).not.toBe(undefined)
       expect(balanceChanges?.length).toBe(0)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.nftBalanceChanges).toEqual(
+        nftBalanceChanges
+      )
     })
 
     test('Pagination and filtration handled correctly', async () => {
@@ -656,6 +673,84 @@ describe('Activity Controller ', () => {
           gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
         })
       )
+    })
+
+    test('records and learns Uniswap position NFT balance changes from receipt logs', async () => {
+      const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      const positionManager = '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e'
+      const tokenId = 12345n
+      const transferInterface = new Interface([
+        'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)'
+      ])
+      const transferEvent = transferInterface.getEvent('Transfer')
+      if (!transferEvent) throw new Error('Missing Transfer event')
+
+      const transferLog = {
+        address: positionManager,
+        ...transferInterface.encodeEventLog(transferEvent, [
+          ZeroAddress,
+          SUBMITTED_ACCOUNT_OP.accountAddr,
+          tokenId
+        ])
+      }
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockResolvedValue(buildMockReceipt({ logs: [transferLog] }))
+      jest.spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock').mockResolvedValue([
+        [
+          '0x',
+          {
+            address: ZeroAddress,
+            amount: 0n,
+            chainId: 1n,
+            decimals: 18,
+            flags: {
+              canTopUpGasTank: false,
+              isFeeToken: true,
+              onGasTank: false,
+              rewardsType: null
+            },
+            marketDataIn: [],
+            name: 'Ether',
+            priceIn: [],
+            symbol: 'ETH'
+          }
+        ]
+      ])
+      const addErc721sToBeLearnedSpy = jest.spyOn(mainCtrl.portfolio, 'addErc721sToBeLearned')
+      const accountOp = buildSubmittedAccountOp()
+
+      await controller.addAccountOp(accountOp)
+      await controller.updateAccountsOpsStatuses()
+
+      const updatedAccountOp = controller.getAccountOpsForAccount({
+        accountAddr: accountOp.accountAddr
+      })[0]!
+      if (updatedAccountOp.nftBalanceChanges === undefined) {
+        await new Promise<void>((resolve) => {
+          const unsubscribe = controller.onUpdate(() => {
+            if (updatedAccountOp.nftBalanceChanges === undefined) return
+
+            unsubscribe()
+            resolve()
+          })
+        })
+      }
+
+      expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
+        [[getAddress(positionManager), [tokenId]]],
+        accountOp.accountAddr,
+        accountOp.chainId
+      )
+      expect(updatedAccountOp.nftBalanceChanges).toEqual([
+        {
+          address: getAddress(positionManager),
+          tokenId,
+          chainId: accountOp.chainId,
+          balanceChange: 1n
+        }
+      ])
     })
 
     test('`failed` status is set correctly', async () => {
