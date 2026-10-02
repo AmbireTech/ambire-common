@@ -88,11 +88,12 @@ describe('Account state checks tests', () => {
       acc.associatedKeys,
       ...getAccountDeployParams(acc),
       ERC_4337_ENTRYPOINT,
-      false
+      false,
+      ethers.ZeroAddress
     ])
 
     const abi = [
-      'function getAccountsState(tuple(address, address[], address, bytes, address, bool)[]) external'
+      'function getAccountsState(tuple(address, address[], address, bytes, address, bool, address)[]) external'
     ]
     const iface = new ethers.Interface(abi)
     const callData = iface.encodeFunctionData('getAccountsState', [args])
@@ -103,7 +104,9 @@ describe('Account state checks tests', () => {
       data: callData
     })
     const decoded = abiCoder.decode(
-      ['tuple(bool, bytes, uint, address[], bool, uint256, bool, uint, bool, uint, uint)[]'],
+      [
+        'tuple(bool, bytes, uint, address[], bool, uint256, bool, uint, bool, uint, uint, string)[]'
+      ],
       result
     )[0]
     const block = await ethers.provider.getBlock('latest')
@@ -121,6 +124,8 @@ describe('Account state checks tests', () => {
       expect(oneAcc[8]).to.equal(false)
       expect(oneAcc[9]).to.be.equal(block?.number)
       expect(oneAcc[10]).to.equal(0)
+      // safeVersion is only populated for Safe accounts
+      expect(oneAcc[11]).to.equal('')
       return null
     })
   })
