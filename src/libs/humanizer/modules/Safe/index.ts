@@ -54,6 +54,13 @@ const execTransactionAbi = parseAbi([
   'function execTransaction(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, bytes signatures) payable returns (bool)'
 ])
 const multiSendAbi = parseAbi(['function multiSend(bytes transactions)'])
+const createProxyWithNonceAbi = parseAbi([
+  'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
+])
+// v1.5.0+: calls createProxyWithNonce internally, so it deploys the same way
+const createProxyWithNonceL2Abi = parseAbi([
+  'function createProxyWithNonceL2(address _singleton, bytes initializer, uint256 saltNonce)'
+])
 // shared recursion-depth guard for both nested `setup` hooks and nested `multiSend` batches,
 // so a maliciously self-referential payload can't recurse getSafeHumanization indefinitely
 const MAX_SAFE_SETUP_HOOK_DEPTH = 4
@@ -96,6 +103,8 @@ const setFallbackHandlerSelector = toFunctionSelector(setFallbackHandlerAbi[0])
 const setDomainVerifierSelector = toFunctionSelector(setDomainVerifierAbi[0])
 const multiSendSelector = toFunctionSelector(multiSendAbi[0])
 const execTransactionSelector = toFunctionSelector(execTransactionAbi[0])
+const createProxyWithNonceSelector = toFunctionSelector(createProxyWithNonceAbi[0])
+const createProxyWithNonceL2Selector = toFunctionSelector(createProxyWithNonceL2Abi[0])
 
 export const getSafeHumanization = (
   safeAddr?: string,
@@ -189,6 +198,36 @@ export const getSafeHumanization = (
     // `setupOwners` against being called on an already-initialized account), so a decodable
     // `setup` call is always this account's creation, never a change to an existing one - nothing
     // to warn about here.
+
+    return {
+      visuals: fullVisualization,
+      warnings
+    }
+  }
+
+  if (selector === createProxyWithNonceSelector || selector === createProxyWithNonceL2Selector) {
+    const abi =
+      selector === createProxyWithNonceSelector
+        ? createProxyWithNonceAbi
+        : createProxyWithNonceL2Abi
+    fullVisualization.push(getAction('Create Safe account'))
+
+    // a malformed deployment call still gets the action label, only the details are skipped
+    try {
+      const { args } = decodeFunctionData({ abi, data: padCallData(data, 3) })
+      const [, initializer] = args
+      const setupHumanization =
+        setupHookDepth < MAX_SAFE_SETUP_HOOK_DEPTH
+          ? getSafeHumanization(safeAddr, to, 0n, initializer, setupHookDepth + 1)
+          : undefined
+
+      if (setupHumanization?.visuals?.length) {
+        fullVisualization.push(getBreak(), ...setupHumanization.visuals)
+      }
+      if (setupHumanization?.warnings) warnings.push(...setupHumanization.warnings)
+    } catch {
+      return { visuals: fullVisualization, warnings }
+    }
 
     return {
       visuals: fullVisualization,
