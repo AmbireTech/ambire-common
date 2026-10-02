@@ -96,6 +96,7 @@ const getAccountOnchainState = (
   delegatedContract: null,
   delegatedContractName: null,
   threshold: 1,
+  safeVersion: null,
   updatedAt: 0,
   ...overrides
 })
@@ -1112,8 +1113,7 @@ describe('Portfolio Controller ', () => {
           factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
           singleton: '0x29fcB43b46531BcA003ddC8FCB67FFE91900C762',
           saltNonce: '0x00',
-          setupData: '0x',
-          version: '1.4.1'
+          setupData: '0x'
         }
       }
       const { controller } = await prepareTest({

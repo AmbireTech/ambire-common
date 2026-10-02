@@ -350,8 +350,7 @@ const safeAccount: Account = {
     factoryAddr: smartAccount.addr as Hex,
     singleton: smartAccount.addr as Hex,
     saltNonce: '0x00',
-    setupData: '0x',
-    version: '1.4.1'
+    setupData: '0x'
   }
 }
 

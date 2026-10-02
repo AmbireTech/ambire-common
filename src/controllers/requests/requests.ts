@@ -16,8 +16,14 @@ import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
+import { SAFE_NETWORKS } from '../../consts/safe'
 import { MAX_DAPP_CALLS_PER_REQUEST } from '../../consts/safeguards/dappRequestSpam'
-import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
+import {
+  Account,
+  AccountOnchainState,
+  IAccountsController,
+  SafeAccountCreation
+} from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
@@ -25,11 +31,11 @@ import { Dapp, DappProviderRequest, IDappsController } from '../../interfaces/da
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
-import { Platform } from '../../interfaces/platform'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
@@ -68,6 +74,7 @@ import {
 } from '../../interfaces/userRequest'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getAccountOpNonce, isSafeRejectionCall } from '../../libs/accountOp/accountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import {
   getAccountOpBanners,
   getDappUserRequestsBanners,
@@ -85,9 +92,15 @@ import {
   getCallsUserRequestsByNetwork,
   isSignedSafeCallsRequest,
   isSignRequest,
+  isWaitingForSafeDeployment,
   messageOnNewRequest
 } from '../../libs/requests/requests'
 import { parse } from '../../libs/richJson/richJson'
+import {
+  findDeployData,
+  getSafeDeploymentCall,
+  hasCompleteSafeCreationData
+} from '../../libs/safe/safe'
 import {
   AMBIRE_OPERATION_SIGNING_NOT_ALLOWED_MESSAGE,
   isCallToSelfOrAmbireOp
@@ -106,12 +119,22 @@ import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
 import type { EIP712TypedData } from '@safe-global/types-kit'
+import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import type { Call } from '../../libs/accountOp/types'
 import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/signAccountOp'
 
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
+
+const SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE =
+  "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
+const SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE =
+  'Your Safe account is still being activated on this network. Wait a moment, then try again.'
+const SAFE_DEPLOYMENT_FAILED_MESSAGE =
+  "Activating your Safe account failed, so this request can't be completed."
+const SAFE_DEPLOYMENT_STUCK_MESSAGE =
+  'Activating your Safe account is taking too long, so this transaction was cancelled. Please try again.'
 
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
@@ -249,6 +272,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const queuedNonces = this.userRequests.reduce<bigint[]>((nonces, request) => {
       if (
         request.kind !== 'calls' ||
+        request.meta.isSafeDeploy ||
         !request.signAccountOp.account.safeCreation ||
         request.signAccountOp.accountOp.accountAddr !== accountAddr ||
         request.signAccountOp.accountOp.chainId !== chainId
@@ -468,7 +492,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     let baseWindowId: number | undefined
 
-    const userRequestsToAdd = []
+    const userRequestsToAdd: UserRequest[] = []
 
     // If any of the requests is a dapp request, we know the source window ID,
     // so we set it as the baseWindowId. This will be used as the reference
@@ -607,6 +631,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           }
         }
 
+        const safeDeploymentRequest = await this.#getSafeDeployRequestForMessage(req, executionType)
+        // the Safe can't be deployed on this chain, so it can't sign the message either
+        if (safeDeploymentRequest === null) continue
+        // the deployment goes first so it's the request that opens
+        if (safeDeploymentRequest && !userRequestsToAdd.includes(safeDeploymentRequest))
+          userRequestsToAdd.push(safeDeploymentRequest)
+
         userRequestsToAdd.push(req)
       } else {
         userRequestsToAdd.push(req)
@@ -630,7 +661,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       await this.#setCurrentUserRequest(null)
     }
 
-    userRequestsToAdd.forEach((newReq) => {
+    // unshifting them one by one reverses their order, so start from the last one
+    const orderedUserRequestsToAdd =
+      position === 'first' ? [...userRequestsToAdd].reverse() : userRequestsToAdd
+
+    orderedUserRequestsToAdd.forEach((newReq) => {
       const existingIndex = this.userRequests.findIndex((r) => r.id === newReq.id)
 
       if (existingIndex !== -1) {
@@ -673,6 +708,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   async #performSimulation(curR: CallsUserRequest) {
     try {
+      if (curR.meta.isSafeDeploy || isWaitingForSafeDeployment(curR, this.#accounts.accountStates))
+        return
+
       // we don't perform a dashboard simulation on partially signed Safe txns
       // until they are opened on the SignAccountOp screen
       if (isSignedSafeCallsRequest(curR)) return
@@ -689,6 +727,53 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.requestWindow.closeWindowPromise
     await this.requestWindow.focusWindowPromise
     await this.requestWindow.openWindowPromise
+  }
+
+  #getSafeDeployRequest(accountAddr: string, chainId: bigint): CallsUserRequest | undefined {
+    return this.userRequests.find(
+      (r): r is CallsUserRequest =>
+        r.kind === 'calls' &&
+        !!r.meta.isSafeDeploy &&
+        !!r.signAccountOp.account.safeCreation &&
+        r.meta.accountAddr === accountAddr &&
+        r.meta.chainId === chainId
+    )
+  }
+
+  /**
+   * Safs can't be opened until their Safe is deployed. If the known account state says the Safe
+   * isn't deployed yet, it gets refreshed first, as the deployment may have just been confirmed.
+   */
+  async #confirmSafeDeploymentBeforeOpening(
+    accountAddr: string,
+    chainId: bigint
+  ): Promise<boolean> {
+    try {
+      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId])
+
+      const accountState = this.#accounts.accountStates[accountAddr]?.[chainId.toString()]
+
+      if (!accountState?.isDeployed) {
+        this.emitError({
+          level: 'expected',
+          message: SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE,
+          error: new Error(
+            `Safe deployment not confirmed for ${accountAddr} on chain ${chainId.toString()}`
+          )
+        })
+        return false
+      }
+
+      return true
+    } catch (error) {
+      this.emitError({
+        level: 'major',
+        message:
+          "We couldn't check if your Safe account is active on this network. Wait a moment, then try again.",
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+      return false
+    }
   }
 
   async #setCurrentUserRequest(nextRequest: UserRequest | null, params?: OpenRequestWindowParams) {
@@ -1163,6 +1248,24 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     const { kind, meta, dappPromises } = userRequest
 
+    // if the request was a isSafeDeploy, confirm that the account state is
+    // refreshed and the account really is deployed before continuing
+    if (kind === 'benzin' && meta.submittedAccountOp?.meta?.isSafeDeploy) {
+      const pendingSafeRequests = this.#getSameChainNotSignedSafeRequestIds(
+        meta.accountAddr,
+        meta.chainId
+      )
+
+      if (
+        pendingSafeRequests.length &&
+        !(await this.#confirmSafeDeploymentBeforeOpening(
+          userRequest.meta.accountAddr,
+          userRequest.meta.chainId
+        ))
+      )
+        return
+    }
+
     getDappIdsFromUserRequest(userRequest).forEach((dappId) =>
       this.#dapps.clearDappRejections(dappId)
     )
@@ -1299,7 +1402,21 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   ) {
     const { isUserInitiated = true, ...removeOptions } = options || {}
-    const userRequestsToReject = this.userRequests.filter((r) => requestIds.includes(r.id))
+
+    // rejecting a Safe deployment request rejects all other calls request
+    // on the same chain that are not signed
+    const rejectedSafeDeployRequest = this.userRequests.find(
+      (r): r is CallsUserRequest =>
+        requestIds.includes(r.id) && r.kind === 'calls' && !!r.meta.isSafeDeploy
+    )
+    const safeIdsToReject = !rejectedSafeDeployRequest
+      ? []
+      : this.#getSameChainNotSignedSafeRequestIds(
+          rejectedSafeDeployRequest.meta.accountAddr,
+          rejectedSafeDeployRequest.meta.chainId
+        )
+    const requestIdsToReject = [...new Set([...requestIds, ...safeIdsToReject])]
+    const userRequestsToReject = this.userRequests.filter((r) => requestIdsToReject.includes(r.id))
     const rejectedSwitchAccountRequestIds = userRequestsToReject
       .filter((r) => r.kind === 'switchAccount')
       .map((r) => r.id)
@@ -1332,10 +1449,113 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       (r) => !waitingUserRequestsToReject.includes(r)
     )
 
-    await this.removeUserRequests(requestIds, {
+    await this.removeUserRequests(requestIdsToReject, {
       ...removeOptions,
       shouldSkipSafeQueueRequests: true
     })
+  }
+
+  /**
+   * The not-yet-signed transaction and message requests of a Safe on the specified chain,
+   * which are the ones that wait for its deployment there.
+   */
+  #getSameChainNotSignedSafeRequestIds(accountAddr: string, chainId: bigint) {
+    return this.userRequests
+      .filter((request) => {
+        if (request.kind === 'calls') {
+          return (
+            request.meta.accountAddr === accountAddr &&
+            request.meta.chainId === chainId &&
+            !request.signAccountOp.accountOp.signed?.length
+          )
+        }
+
+        if (
+          request.kind === 'message' ||
+          request.kind === 'typedMessage' ||
+          request.kind === 'siwe'
+        ) {
+          return (
+            request.meta.accountAddr === accountAddr &&
+            request.meta.chainId === chainId &&
+            !request.meta.signed?.length
+          )
+        }
+
+        return false
+      })
+      .map((request) => request.id)
+  }
+
+  /** Rejects every not-yet-signed transaction and message request of the specified Safe on the specified chain. */
+  async rejectSameChainNotSignedSafeRequest(
+    accountAddr: string,
+    chainId: bigint,
+    errorMessage: string
+  ) {
+    const requestIds = this.#getSameChainNotSignedSafeRequestIds(accountAddr, chainId)
+    if (!requestIds.length) return
+
+    await this.rejectUserRequests(errorMessage, requestIds, {
+      isUserInitiated: false,
+      shouldOpenNextRequest: false
+    })
+  }
+
+  /**
+   * Rejects the not-yet-signed requests of a Safe that were waiting for its deployment
+   * once the deployment op is finalized without a success.
+   *
+   * `Failure` and `Rejected` mean the Safe was definitely not deployed. `UnknownButPastNonce`
+   * (the op was replaced - by a cancel or by a speed-up that may have succeeded) and
+   * `BroadcastButStuck` (no receipt in time, but it may still get mined) don't tell us that,
+   * so for them the on-chain state is checked first and the requests are kept if the Safe is deployed.
+   */
+  async handleSafeDeployStatusUpdate(op: SubmittedAccountOp) {
+    if (!op.meta?.isSafeDeploy) return
+
+    const isDefinitelyNotDeployed =
+      op.status === AccountOpStatus.Failure || op.status === AccountOpStatus.Rejected
+    const isMaybeDeployed =
+      op.status === AccountOpStatus.UnknownButPastNonce ||
+      op.status === AccountOpStatus.BroadcastButStuck
+    if (!isDefinitelyNotDeployed && !isMaybeDeployed) return
+
+    try {
+      if (isMaybeDeployed && (await this.#isSafeDeployedOnChain(op.accountAddr, op.chainId))) return
+
+      const errorMessage =
+        op.status === AccountOpStatus.BroadcastButStuck
+          ? SAFE_DEPLOYMENT_STUCK_MESSAGE
+          : SAFE_DEPLOYMENT_FAILED_MESSAGE
+      await this.rejectSameChainNotSignedSafeRequest(op.accountAddr, op.chainId, errorMessage)
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: `Failed to handle the Safe deployment status update on network with id ${op.chainId}.`,
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+    }
+  }
+
+  /**
+   * Refreshes the account state and checks if the Safe is deployed.
+   * If the check fails, the Safe is treated as not deployed, so the requests
+   * waiting for it don't hang forever (the deployment op is no longer tracked).
+   */
+  async #isSafeDeployedOnChain(accountAddr: string, chainId: bigint): Promise<boolean> {
+    try {
+      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId])
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: `Failed to check if the Safe is deployed on network with id ${chainId}.`,
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+      return false
+    }
+
+    return !!this.#accounts.accountStates[accountAddr]?.[chainId.toString()]?.isDeployed
   }
 
   async build({ type, params }: BuildRequest) {
@@ -1356,11 +1576,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (type === 'calls') {
       const { userRequestParams, executionType, ...rest } = params
-      const userRequest = await this.#createOrUpdateCallsUserRequest(
+      const userRequests = await this.#createOrUpdateCallsUserRequests(
         userRequestParams,
         executionType
       )
-      if (userRequest) await this.addUserRequests([userRequest], { executionType, ...rest })
+      if (userRequests.length) await this.addUserRequests(userRequests, { executionType, ...rest })
     }
 
     if (type === 'transferRequest') {
@@ -1423,7 +1643,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         return
       }
 
-      const rejectionRequest = await this.#createOrUpdateCallsUserRequest(
+      const rejectionRequests = await this.#createOrUpdateCallsUserRequests(
         {
           calls: [{ to: ZeroAddress, value: 0n, data: '0x' }],
           meta: {
@@ -1435,8 +1655,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         { accountOpNonce: nonce }
       )
 
-      if (rejectionRequest) {
-        await this.addUserRequests([rejectionRequest], { executionType: 'open-request-window' })
+      if (rejectionRequests.length) {
+        await this.addUserRequests(rejectionRequests, { executionType: 'open-request-window' })
       }
     } catch (e) {
       this.emitError({
@@ -1643,7 +1863,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       const last = built[built.length - 1]!
 
-      const userRequest = await this.#createOrUpdateCallsUserRequest({
+      const userRequests = await this.#createOrUpdateCallsUserRequests({
         calls: built.flatMap(({ params }) => params.calls),
         // The batch shares an account and a chain; of what is left, the newest request wins,
         // which is what merging them one by one used to end up with.
@@ -1652,7 +1872,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         dappSessionId: last.item.request.session.sessionId
       })
 
-      if (userRequest) await this.#addBuiltDappRequest(userRequest)
+      if (userRequests.length) await this.#addBuiltDappRequests(userRequests)
 
       built.forEach(({ item }) => item.settle())
     } catch (error) {
@@ -1760,7 +1980,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     if (!userRequest) return
 
-    await this.#addBuiltDappRequest(userRequest)
+    await this.#addBuiltDappRequests([userRequest])
   }
 
   /**
@@ -1956,7 +2176,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   /** Puts a built app request in front of the user, or behind an account switch if it needs one. */
-  async #addBuiltDappRequest(userRequest: UserRequest) {
+  async #addBuiltDappRequests(userRequests: UserRequest[]) {
+    const userRequest = userRequests[userRequests.length - 1]!
     const [firstDappPromise] = userRequest.dappPromises
 
     let position: RequestPosition = 'last'
@@ -1982,7 +2203,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // We can simply add the user request if it's not a sign operation
     // for another account
     if (!isASignOperationRequestedForAnotherAccount) {
-      await this.addUserRequests([userRequest], {
+      await this.addUserRequests(userRequests, {
         position,
         // A new request always takes focus, so the one the app just sent is what the user sees
         executionType: 'open-request-window'
@@ -1990,7 +2211,19 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    await this.#addSwitchAccountUserRequest(userRequest as SignUserRequest)
+    const switchAccountUserRequest = buildSwitchAccountUserRequest({
+      nextUserRequest: userRequest as SignUserRequest,
+      selectedAccountAddr: (userRequest as SignUserRequest).meta.accountAddr,
+      dappPromises: userRequest.dappPromises
+    })
+    userRequests.forEach((request) => {
+      request.meta.switchAccountRequestId = switchAccountUserRequest.id
+    })
+    this.userRequestsWaitingAccountSwitch.push(...userRequests)
+    await this.addUserRequests([switchAccountUserRequest], {
+      position: 'last',
+      executionType: 'open-request-window'
+    })
   }
 
   async #buildIntentUserRequest({
@@ -2061,14 +2294,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    const userRequest = await this.#createOrUpdateCallsUserRequest(
+    const userRequests = await this.#createOrUpdateCallsUserRequests(
       {
         ...requestParams,
         dappPromises: []
       },
       executionType
     )
-    if (userRequest) await this.addUserRequests([userRequest], { executionType, position: 'last' })
+    if (userRequests.length)
+      await this.addUserRequests(userRequests, { executionType, position: 'last' })
   }
 
   async #buildSafeSignMessageUserRequest({
@@ -2214,11 +2448,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    const userRequest = await this.#createOrUpdateCallsUserRequest(
+    const userRequests = await this.#createOrUpdateCallsUserRequests(
       callsRequestParams,
       executionType
     )
-    if (userRequest) await this.addUserRequests([userRequest], { position: 'last', executionType })
+    if (userRequests.length)
+      await this.addUserRequests(userRequests, { position: 'last', executionType })
     this.#transfer.resetForm() // reset the transfer form after adding a req
   }
 
@@ -2288,12 +2523,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           quote
         )
 
-        const userRequest = await this.#createOrUpdateCallsUserRequest(
+        const userRequests = await this.#createOrUpdateCallsUserRequests(
           swapAndBridgeRequestParams,
           openActionWindow ? 'open-request-window' : 'queue'
         )
-        if (userRequest) {
-          await this.addUserRequests([userRequest], {
+        if (userRequests.length) {
+          await this.addUserRequests(userRequests, {
             position: 'last',
             executionType: openActionWindow ? 'open-request-window' : 'queue'
           })
@@ -2339,8 +2574,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       selectedToken: token,
       claimableRewardsData
     })
-    const userRequest = await this.#createOrUpdateCallsUserRequest(userRequestParams)
-    if (userRequest) await this.addUserRequests([userRequest])
+    const userRequests = await this.#createOrUpdateCallsUserRequests(userRequestParams)
+    if (userRequests.length) await this.addUserRequests(userRequests)
   }
 
   async #buildMintVestingUserRequest({ token }: { token: TokenResult }) {
@@ -2356,8 +2591,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       selectedToken: token,
       addrVestingData
     })
-    const userRequest = await this.#createOrUpdateCallsUserRequest(userRequestParams)
-    if (userRequest) await this.addUserRequests([userRequest])
+    const userRequests = await this.#createOrUpdateCallsUserRequests(userRequestParams)
+    if (userRequests.length) await this.addUserRequests(userRequests)
   }
 
   #rejectAmbireOperationTypedDataRequest(req: TypedMessageUserRequest) {
@@ -2402,7 +2637,156 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     ]
   }
 
-  async #createOrUpdateCallsUserRequest(
+  #getPossibleSafeDeploymentSourceNetworks(accountAddr: Account['addr']): Network[] {
+    return this.#networks.networks.filter(
+      ({ chainId }) =>
+        SAFE_NETWORKS.includes(Number(chainId)) &&
+        !!this.#providers.providers[chainId.toString()] &&
+        !!this.#accounts.accountStates[accountAddr]?.[chainId.toString()]?.isDeployed
+    )
+  }
+
+  async #recoverSafeCreation(
+    account: Account,
+    sourceNetworks: Network[]
+  ): Promise<SafeAccountCreation | null> {
+    for (const network of sourceNetworks) {
+      const provider = this.#providers.providers[network.chainId.toString()]
+      if (!provider) return null
+
+      const safeCreation = await findDeployData(account.addr, network.chainId, provider)
+      if (safeCreation instanceof Error) return null
+
+      // always updaate with the latest info found
+      const error = await this.#accounts
+        .updateSafeCreation(account.addr, safeCreation)
+        .catch((e: Error) => e)
+      if (error) return null
+      return safeCreation
+    }
+
+    return null
+  }
+
+  /**
+   * Builds the call that deploys the Safe on the specified chain. If a property needed for the
+   * deploy is missing, it's recovered first from a chain the Safe is already deployed on.
+   * Returns null if the deployment can't be built.
+   */
+  async #buildSafeDeploymentCall(
+    account: Account,
+    chainId: bigint
+  ): Promise<{ account: Account; safeDeploymentCall: Call } | null> {
+    let accountWithCreation = account
+
+    if (!hasCompleteSafeCreationData(account.safeCreation)) {
+      const safeCreation: SafeAccountCreation | null = await this.#recoverSafeCreation(
+        account,
+        this.#getPossibleSafeDeploymentSourceNetworks(account.addr)
+      )
+      if (!safeCreation) return null
+
+      accountWithCreation = { ...account, safeCreation }
+    }
+
+    const provider = this.#providers.providers[chainId.toString()]
+    if (!provider) {
+      this.emitError({
+        level: 'expected',
+        message: `Network with id ${chainId.toString()} is not enabled`,
+        error: new Error(`Network with id ${chainId.toString()} is not enabled`)
+      })
+      return null
+    }
+
+    const safeDeploymentCall = await getSafeDeploymentCall(accountWithCreation, provider)
+    if (!safeDeploymentCall) {
+      this.emitError({
+        level: 'expected',
+        message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE,
+        error: new Error(
+          `Safe deployment data does not derive account ${account.addr} on chain ${chainId.toString()}`
+        )
+      })
+      return null
+    }
+
+    return { account: accountWithCreation, safeDeploymentCall }
+  }
+
+  /**
+   * Returns the pending request that deploys the Safe on the specified chain, or creates one
+   * with the passed deployment call if there isn't one yet.
+   */
+  async #getOrCreateSafeDeployRequest(
+    accountAddr: Account['addr'],
+    chainId: bigint,
+    safeDeploymentCall: Call,
+    executionType: RequestExecutionType
+  ): Promise<CallsUserRequest | undefined> {
+    // A deployment for this Safe is already pending - the new request waits for it as well
+    const existingSafeDeploymentRequest = this.#getSafeDeployRequest(accountAddr, chainId)
+    if (existingSafeDeploymentRequest) return existingSafeDeploymentRequest
+
+    const safeDeploymentRequests = await this.#createOrUpdateCallsUserRequests(
+      {
+        calls: [safeDeploymentCall],
+        meta: { accountAddr, chainId, isSafeDeploy: true }
+      },
+      executionType
+    )
+
+    return safeDeploymentRequests[0]
+  }
+
+  /**
+   * A Safe can sign messages only on chains it's deployed on, so a message request for a chain
+   * where it isn't gets a request that deploys it first.
+   * Resolves with:
+   * - `undefined` if no deployment is needed (not a Safe or already deployed)
+   * - the deployment request
+   * - `null` if the deployment can't be done - the app promises of the message are rejected
+   */
+  async #getSafeDeployRequestForMessage(
+    req: PlainTextMessageUserRequest | TypedMessageUserRequest | SiweMessageUserRequest,
+    executionType: RequestExecutionType
+  ): Promise<CallsUserRequest | undefined | null> {
+    const { accountAddr, chainId } = req.meta
+    const account = this.#accounts.accounts.find((acc) => acc.addr === accountAddr)
+    if (!account?.safeCreation) return undefined
+
+    const pendingSafeDeploymentRequest = this.#getSafeDeployRequest(accountAddr, chainId)
+    if (pendingSafeDeploymentRequest) return pendingSafeDeploymentRequest
+
+    const isKnownAsDeployed =
+      !!this.#accounts.accountStates[accountAddr]?.[chainId.toString()]?.isDeployed
+    // the known account state may be outdated, so confirm onchain before deploying
+    if (isKnownAsDeployed || (await this.#isSafeDeployedOnChain(accountAddr, chainId)))
+      return undefined
+
+    const safeDeployment = await this.#buildSafeDeploymentCall(account, chainId)
+    const safeDeploymentRequest = safeDeployment
+      ? await this.#getOrCreateSafeDeployRequest(
+          accountAddr,
+          chainId,
+          safeDeployment.safeDeploymentCall,
+          executionType
+        )
+      : undefined
+
+    if (safeDeploymentRequest) return safeDeploymentRequest
+
+    req.dappPromises.forEach((promise) => {
+      promise.reject(
+        ethErrors.rpc.transactionRejected({
+          message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+        })
+      )
+    })
+    return null
+  }
+
+  async #createOrUpdateCallsUserRequests(
     {
       calls,
       meta,
@@ -2418,7 +2802,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     },
     executionType: RequestExecutionType = 'open-request-window',
     { accountOpNonce }: { accountOpNonce?: bigint } = {}
-  ) {
+  ): Promise<CallsUserRequest[]> {
     let callUserRequest: CallsUserRequest | undefined
     const existingUserRequest = this.userRequests.find(
       (r) =>
@@ -2427,6 +2811,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // 2) a fetched rejection is bundled with the current local present rejection
         isSafeRejectionCall(calls, meta.accountAddr) ===
           isSafeRejectionCall(r.signAccountOp.accountOp.calls, meta.accountAddr) &&
+        !!r.meta.isSafeDeploy === !!meta.isSafeDeploy &&
         r.meta.accountAddr === meta.accountAddr &&
         r.meta.chainId === meta.chainId &&
         (accountOpNonce === undefined ||
@@ -2459,14 +2844,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       dappPromises.forEach((p) => p.reject(ethErrors.rpc.limitExceeded({ message: errorMessage })))
 
-      return
+      return []
     }
 
     if (existingUserRequest) {
       // Prevent updating the signAccountOp if a signing or broadcasting process is already in progress for the same account and chain.
       if (existingUserRequest.signAccountOp.signAndBroadcastPromise) {
         // if the update is coming from Safe Global, just ignore it
-        if (meta.safeTxnProps) return
+        if (meta.safeTxnProps) return []
 
         const errorMessage =
           'Please wait until the previous transaction is fully processed before adding a new one.'
@@ -2509,7 +2894,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
           // if we're updating a signAccountOp with external data (txnId / signature),
           // we do not wish to continue any further down as race conditions may happen
-          return
+          return []
         } else {
           existingUserRequest.signAccountOp.update({
             accountOpData: {
@@ -2534,9 +2919,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         existingUserRequest.dappPromises = [...existingUserRequest.dappPromises, ...dappPromises]
       }
 
+      const safeDeploymentRequest = this.#getSafeDeployRequest(meta.accountAddr, meta.chainId)
       let currentUserRequest = null
       if (executionType === 'open-request-window') {
         currentUserRequest =
+          safeDeploymentRequest ||
           this.visibleUserRequests.find((r) => r.id === existingUserRequest.id) ||
           this.currentUserRequest
       } else if (executionType === 'queue-but-open-request-window') {
@@ -2550,8 +2937,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       } else {
         this.emitUpdate()
       }
+
+      return safeDeploymentRequest
+        ? [safeDeploymentRequest, existingUserRequest]
+        : [existingUserRequest]
     } else {
-      const account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
+      let account = this.#accounts.accounts.find((x) => x.addr === meta.accountAddr)!
       const accountStateBefore =
         this.#accounts.accountStates?.[meta.accountAddr]?.[meta.chainId.toString()]
 
@@ -2569,9 +2960,29 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       ])) as any
 
       // do not build requests for expired Safe txns
-      if (meta.safeTxnProps && meta.safeTxnProps.nonce < accountState.nonce) return
+      if (meta.safeTxnProps && meta.safeTxnProps.nonce < accountState.nonce) return []
 
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
+      const provider = this.#providers.providers[network.chainId.toString()]!
+      let safeDeploymentCall: Call | null = null
+
+      if (!!account.safeCreation && !accountState.isDeployed && !meta.isSafeDeploy) {
+        const safeDeployment = await this.#buildSafeDeploymentCall(account, meta.chainId)
+
+        if (!safeDeployment) {
+          dappPromises.forEach((promise) => {
+            promise.reject(
+              ethErrors.rpc.transactionRejected({
+                message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+              })
+            )
+          })
+          return []
+        }
+
+        account = safeDeployment.account
+        safeDeploymentCall = safeDeployment.safeDeploymentCall
+      }
 
       const baseRequestId = `${meta.accountAddr}-${meta.chainId}${meta.safeTxnProps?.txnId ? `-${meta.safeTxnProps.txnId}` : ''}`
       // add a unique id for safe requests as we want to make sure
@@ -2602,7 +3013,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           activity: this.#activity,
           account,
           network,
-          provider: this.#providers.providers[network.chainId.toString()]!,
+          provider,
           phishing: this.#phishing,
           dapps: this.#dapps,
           erc7730: this.#erc7730,
@@ -2686,9 +3097,35 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           this.propagateUpdate(forceEmit)
         }
       }, 'requests-ctrl')
+
+      if (safeDeploymentCall) {
+        // Keep the original request idle until the deployment is broadcast and removed.
+        callUserRequest.signAccountOp.pause()
+
+        const safeDeploymentRequest = await this.#getOrCreateSafeDeployRequest(
+          account.addr,
+          network.chainId,
+          safeDeploymentCall,
+          executionType
+        )
+
+        if (!safeDeploymentRequest) {
+          callUserRequest.signAccountOp.destroy()
+          dappPromises.forEach((promise) => {
+            promise.reject(
+              ethErrors.rpc.transactionRejected({
+                message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+              })
+            )
+          })
+          return []
+        }
+
+        return [safeDeploymentRequest, callUserRequest]
+      }
     }
 
-    return callUserRequest
+    return callUserRequest ? [callUserRequest] : []
   }
 
   /**
@@ -2849,7 +3286,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   getSameNonceSafeRequests(requestId: UserRequest['id']): UserRequest[] {
     const req = this.userRequests.find((uReq) => uReq.id === requestId)
-    if (!req || req.kind !== 'calls' || !req.signAccountOp.account.safeCreation) return []
+    if (
+      !req ||
+      req.kind !== 'calls' ||
+      !req.signAccountOp.account.safeCreation ||
+      req.meta.isSafeDeploy
+    )
+      return []
 
     const broadcastAccountOp = req.signAccountOp.accountOp
     const broadcastNonce = getAccountOpNonce(broadcastAccountOp)
@@ -2859,6 +3302,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       (r) =>
         r.kind === 'calls' &&
         !!r.signAccountOp.account.safeCreation &&
+        !r.meta.isSafeDeploy &&
         r.signAccountOp.accountOp.accountAddr === broadcastAccountOp.accountAddr &&
         r.signAccountOp.accountOp.chainId === broadcastAccountOp.chainId &&
         getAccountOpNonce(r.signAccountOp.accountOp) === broadcastNonce &&

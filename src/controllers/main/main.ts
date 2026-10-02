@@ -1521,10 +1521,13 @@ export class MainController extends EventEmitter implements IMainController {
     const updatedAccountsOpsByAccount =
       await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
 
+    const safeDeployStatusUpdates: Promise<void>[] = []
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+
+          safeDeployStatusUpdates.push(this.requests.handleSafeDeployStatusUpdate(op))
 
           // we scan for logs only if Success & a dapp interaction has been made
           // because only a dapp interaction might have a receiving txn after;
@@ -1550,6 +1553,7 @@ export class MainController extends EventEmitter implements IMainController {
         })
       }
     )
+    await Promise.all(safeDeployStatusUpdates)
 
     Object.entries(updatedAccountsOpsByAccount).forEach(
       async ([
@@ -2088,7 +2092,6 @@ export class MainController extends EventEmitter implements IMainController {
       txnId: null,
       userOpHash: null
     }
-
     if (submittedAccountOp) {
       meta.txnId = submittedAccountOp.txnId
       meta.identifiedBy = submittedAccountOp.identifiedBy
