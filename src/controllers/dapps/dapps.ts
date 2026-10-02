@@ -1124,6 +1124,29 @@ export class DappsController extends EventEmitter implements IDappsController {
     })
   }
 
+  /**
+   * Tells every connected dapp that the wallet was unlocked. Each dapp receives only the
+   * accounts it is allowed to see, never the accounts of another dapp.
+   */
+  async broadcastUnlock() {
+    await this.initialLoadPromise
+
+    const sessionDappIds = new Set(Object.values(this.dappSessions).map((session) => session.id))
+
+    await Promise.all(
+      Array.from(sessionDappIds).map((dappId) =>
+        this.broadcastDappSessionEvent(
+          'unlock',
+          getAccountsForDapp(
+            this.getDapp(dappId)?.accountPreferences,
+            this.#selectedAccount.account?.addr
+          ),
+          dappId
+        )
+      )
+    )
+  }
+
   removeAccountData(address: string) {
     this.#dapps.forEach((dapp) => {
       if (!dapp.accountPreferences) return
