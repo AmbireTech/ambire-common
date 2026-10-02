@@ -113,6 +113,12 @@ const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
 
+/** How long a resolved transitional request stays, so the app request it was blocking can arrive */
+const TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS = 300
+
+/** The longest a resolved request with a next request waits for that one to be built */
+const NEXT_REQUEST_MAX_WAIT_MS = 10_000
+
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
  * Prior to v2.66.0, all request logic resided in the MainController. To improve scalability, readability,
@@ -233,6 +239,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * refused. Scoped to the close in flight - see `closeRequestWindow`.
    */
   #isWalletInitiatedClose = false
+
+  /** Removal timers of resolved transitional requests, cleared when the request goes away sooner */
+  #transitionalRemovalTimeouts = new Map<UserRequest['id'], ReturnType<typeof setTimeout>[]>()
+
+  /** Resolved requests that only wait for their next request to finish building */
+  #requestIdsWaitingOnNextRequest = new Set<UserRequest['id']>()
 
   private shouldSimulateAccountOps = true
 
@@ -1070,6 +1082,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     let didRemoveSkipQueueRequest = false
 
     ids.forEach((id) => {
+      this.#transitionalRemovalTimeouts.get(id)?.forEach(clearTimeout)
+      this.#transitionalRemovalTimeouts.delete(id)
+      this.#requestIdsWaitingOnNextRequest.delete(id)
+
       const req = this.userRequests.find((uReq) => uReq.id === id)
 
       if (!req) return
@@ -1160,6 +1176,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   async resolveUserRequest(data: any, requestId: UserRequest['id']) {
     const userRequest = this.userRequests.find((r) => r.id === requestId)
     if (!userRequest) return // TODO: emit error
+    // Already resolved and only waiting to be removed, so resolving it again changes nothing
+    if (userRequest.meta.pendingToRemove) return
 
     const { kind, meta, dappPromises } = userRequest
 
@@ -1180,14 +1198,58 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (kind === 'unlock' || kind === 'dappConnect') {
       meta.pendingToRemove = true
 
-      setTimeout(async () => {
-        await this.removeUserRequests([requestId])
-        this.emitUpdate()
-      }, 300)
+      this.#transitionalRemovalTimeouts.set(requestId, [
+        setTimeout(async () => {
+          await this.removeUserRequests([requestId])
+          this.emitUpdate()
+        }, TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS)
+      ])
+    } else if (meta.hasNextRequest) {
+      // The app request behind it can take seconds to build, so after the same delay the removal
+      // also waits for that build to finish, up to a limit
+      meta.pendingToRemove = true
+
+      this.#transitionalRemovalTimeouts.set(requestId, [
+        setTimeout(async () => {
+          this.#requestIdsWaitingOnNextRequest.add(requestId)
+          await this.#removeRequestsWaitingOnNextRequest()
+        }, TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS),
+        setTimeout(() => this.#removeTransitionalRequests([requestId]), NEXT_REQUEST_MAX_WAIT_MS)
+      ])
     } else {
       await this.removeUserRequests([requestId])
       this.emitUpdate()
     }
+  }
+
+  /**
+   * Removes the resolved requests waiting on their next request once no app request is being
+   * built, so the view moves straight to the next one instead of closing and reopening for it.
+   * Does nothing while a build is running, as the end of every build calls it again.
+   */
+  async #removeRequestsWaitingOnNextRequest() {
+    if (this.#dappRequestQueues.size || !this.#requestIdsWaitingOnNextRequest.size) return
+
+    await this.#removeTransitionalRequests([...this.#requestIdsWaitingOnNextRequest])
+  }
+
+  /**
+   * Removes resolved transitional requests. Leaves the view alone when another request has
+   * already replaced them on screen.
+   */
+  async #removeTransitionalRequests(requestIds: UserRequest['id'][]) {
+    // Some may already be gone without passing through `removeUserRequests`, e.g. with their account
+    requestIds.forEach((id) => this.#requestIdsWaitingOnNextRequest.delete(id))
+
+    const existingRequestIds = requestIds.filter((id) => this.userRequests.some((r) => r.id === id))
+    if (!existingRequestIds.length) return
+
+    const isTransitionalRequestShown =
+      !!this.currentUserRequest && existingRequestIds.includes(this.currentUserRequest.id)
+
+    await this.removeUserRequests(existingRequestIds, {
+      shouldOpenNextRequest: isTransitionalRequestShown
+    })
   }
 
   /**
@@ -1556,6 +1618,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.#dappRequestQueues.delete(key)
       queue.splice(0).forEach(({ fail }) => fail(ethErrors.rpc.internal()))
     }
+
+    await this.#removeRequestsWaitingOnNextRequest()
   }
 
   async #buildDappRequestBatch(batch: DappRequestQueueItem[]) {
@@ -1753,7 +1817,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       userRequest = {
         id: generateUuid(),
         kind,
-        meta: { params: request.params },
+        // Only the flag the wallet sets itself is taken over, never anything else in `meta`
+        meta: { params: request.params, hasNextRequest: request.meta?.hasNextRequest === true },
         dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
       } as UserRequest
     }
