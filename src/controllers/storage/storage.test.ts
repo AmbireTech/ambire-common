@@ -3,6 +3,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import { Selectors } from '../../interfaces/contractInfo'
 import { Storage } from '../../interfaces/storage'
 import { StorageController } from './storage'
 
@@ -28,7 +29,8 @@ const ALL_MIGRATION_KEYS = [
   'fixSelectedAccountDismissedBannerIdsType',
   'migrateDappsAddConnectionSources',
   'migrateDomainsCacheToNames',
-  'migrateDappsAddMissingIds'
+  'migrateDappsAddMissingIds',
+  'removeFetchingDisabledSelectors'
 ]
 
 // Wraps a memory store and counts how many times each key is read and how many
@@ -352,6 +354,65 @@ describe('StorageController', () => {
       expect(counting.setCount()).toBe(1)
       expect(passed).toContain(MIGRATION_KEY)
       expect(await storageCtrl.get('dappsV2', [])).toEqual([withId])
+    })
+  })
+
+  describe('removeFetchingDisabledSelectors', () => {
+    const MIGRATION_KEY = 'removeFetchingDisabledSelectors'
+    const TRANSFER_SELECTOR = '0xa9059cbb'
+    const APPROVE_SELECTOR = '0x095ea7b3'
+    const MINT_SELECTOR = '0x40c10f19'
+    const UNKNOWN_SELECTOR = '0xbeeeeeee'
+    const currentSelectors: Selectors = {
+      [APPROVE_SELECTOR]: {
+        status: 'success',
+        data: [{ signature: 'approve(address,uint256)' }],
+        updatedAt: 1
+      },
+      [MINT_SELECTOR]: {
+        status: 'error',
+        data: [{ signature: 'mint(address,uint256)' }],
+        error: 'Network error',
+        updatedAt: 2
+      },
+      [UNKNOWN_SELECTOR]: { status: 'not-found', updatedAt: 3 }
+    }
+
+    test('removes only the fetching-disabled entries and keeps the rest as they are', async () => {
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {
+        functionSelectors: {
+          ...currentSelectors,
+          [TRANSFER_SELECTOR]: { status: 'fetching-disabled', updatedAt: 4 }
+        }
+      })
+
+      expect(await storageCtrl.get('functionSelectors', {})).toEqual(currentSelectors)
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+
+    test('writes only the migration marker when there are no fetching-disabled entries', async () => {
+      const counting = produceCountingStore()
+      await counting.store.set(
+        'passedMigrations',
+        ALL_MIGRATION_KEYS.filter((key) => key !== MIGRATION_KEY)
+      )
+      await counting.store.set('functionSelectors', currentSelectors)
+      counting.reset()
+
+      const storageCtrl = new StorageController(counting.store)
+      const passed = await storageCtrl.get('passedMigrations', [])
+
+      // The single write is the `passedMigrations` marker, `functionSelectors` is left as it was.
+      expect(counting.setCount()).toBe(1)
+      expect(passed).toContain(MIGRATION_KEY)
+      expect(await storageCtrl.get('functionSelectors', {})).toEqual(currentSelectors)
+    })
+
+    test('stores no selectors when none were saved', async () => {
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {})
+
+      expect(await storageCtrl.get('functionSelectors')).toBeUndefined()
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
     })
   })
 

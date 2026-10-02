@@ -26,6 +26,7 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
+import { ContractInfoController } from '../contractInfo/contractInfo'
 import { Erc7730Controller } from '../erc7730/erc7730'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
@@ -236,6 +237,12 @@ const erc7730Ctrl = new Erc7730Controller({
   providers: providersCtrl,
   ui: uiCtrl
 })
+const contractInfoCtrl = new ContractInfoController({
+  fetch,
+  storage: storageCtrl,
+  featureFlags: featureFlagsCtrl,
+  ui: uiCtrl
+})
 
 const portfolioCtrl = new PortfolioController(
   storageCtrl,
@@ -339,6 +346,7 @@ const buildSwapAndBridgeController = (controllerStorage: StorageController = sto
     platform: 'browser-webkit',
     swapProvider: socketAPIMock as any,
     erc7730: erc7730Ctrl,
+    contractInfo: contractInfoCtrl,
     keystore,
     portfolio: portfolioCtrl,
     providers: providersCtrl,
@@ -385,6 +393,7 @@ const transferCtrl = new TransferController(
   () => Promise.resolve(),
   uiCtrl,
   erc7730Ctrl,
+  contractInfoCtrl,
   'browser-webkit'
 )
 
@@ -397,6 +406,7 @@ requestsCtrl = new RequestsController({
   phishing: phishingCtrl,
   dapps: dappsControllerMock,
   erc7730: erc7730Ctrl,
+  contractInfo: contractInfoCtrl,
   accounts: accountsCtrl,
   networks: networksCtrl,
   providers: providersCtrl,
@@ -1503,6 +1513,7 @@ describe('SwapAndBridge Controller: to token market data', () => {
       platform: 'browser-webkit',
       swapProvider: socketAPIMock as any,
       erc7730: erc7730Ctrl,
+      contractInfo: contractInfoCtrl,
       keystore,
       portfolio: portfolioCtrl,
       providers: providersCtrl,

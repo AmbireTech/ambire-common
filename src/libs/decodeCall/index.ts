@@ -1,9 +1,16 @@
 import { Interface } from 'ethers'
 import { isHex } from 'viem'
 
-import { DecodedCall } from '@/interfaces/decodeCall'
+import { DecodedCall, RecursivelyDecodedCallData } from '@/interfaces/decodeCall'
 
 import { Call } from '../accountOp/types'
+import { stringify } from '../richJson/richJson'
+
+import type { IrCall } from '../humanizer/interfaces'
+/** Length of the 0x prefixed function selector at the start of call data. */
+export const CALLDATA_SELECTOR_HEX_LENGTH = 10
+
+const ADDRESS_HEX_LENGTH = 42
 
 /**
  *
@@ -103,9 +110,8 @@ export function decodeCall(
       const result = {
         diffInBytes,
         signature,
-        selector: data.slice(0, 10),
-        args: argsToReturn,
-        data
+        selector: data.slice(0, CALLDATA_SELECTOR_HEX_LENGTH),
+        args: argsToReturn
       }
       if (!diffInBytes) return result
       if (resultWithDiff.diff > diffInBytes) {
@@ -128,4 +134,102 @@ export function decodeCall(
   // mitigation for false positive when there is no exact match
   if (resultWithDiff.diff && data.startsWith('0x00000000')) return null
   return resultWithDiff.decoded
+}
+
+function decodeNestedArg(
+  arg: DecodedCall['args'][number],
+  getSignatures: (selector: string) => { signature: string }[],
+  lookedUpSelectors: Set<string>
+): DecodedCall['args'][number] {
+  if (
+    typeof arg.val === 'string' &&
+    isHex(arg.val) &&
+    arg.val.length >= CALLDATA_SELECTOR_HEX_LENGTH &&
+    arg.val.length !== ADDRESS_HEX_LENGTH
+  )
+    return {
+      key: arg.key,
+      val: decodeCallDataWithNesting(arg.val, getSignatures, lookedUpSelectors) || arg.val
+    }
+  if (Array.isArray(arg.val))
+    return {
+      key: arg.key,
+      val: arg.val.map((nestedArg) => decodeNestedArg(nestedArg, getSignatures, lookedUpSelectors))
+    }
+  return arg
+}
+
+function decodeCallDataWithNesting(
+  data: string,
+  getSignatures: (selector: string) => { signature: string }[],
+  lookedUpSelectors: Set<string>
+): DecodedCall | null {
+  if (!isHex(data) || data.length < CALLDATA_SELECTOR_HEX_LENGTH) return null
+
+  const selector = data.slice(0, CALLDATA_SELECTOR_HEX_LENGTH)
+  lookedUpSelectors.add(selector)
+
+  const signatures = getSignatures(selector)
+  if (!signatures.length) return null
+
+  const decoded = decodeCall(data, signatures)
+  if (!decoded) return null
+
+  return {
+    ...decoded,
+    args: decoded.args.map((arg) => decodeNestedArg(arg, getSignatures, lookedUpSelectors))
+  }
+}
+
+/**
+ * Decodes call data with the signatures known for its selector, then keeps decoding every
+ * argument that is call data itself. `getSignatures` gives the known signatures of a selector,
+ * or an empty list. Nothing is fetched, so the result also lists every selector that was looked
+ * up, letting the caller fetch the unknown ones and decode again.
+ */
+export function decodeCallDataRecursively(
+  data: string,
+  getSignatures: (selector: string) => { signature: string }[]
+): RecursivelyDecodedCallData {
+  const lookedUpSelectors = new Set<string>()
+  const decodedCall = decodeCallDataWithNesting(data, getSignatures, lookedUpSelectors)
+
+  return { decodedCall, selectors: [...lookedUpSelectors] }
+}
+
+/**
+ * Returns the calls with `decodedCall` set from `getDecodedCall`, which is asked once per
+ * distinct call data and gives null when the data can't be decoded. A call that isn't decoded
+ * gets `isDecodingCall` when `isDecoding` says its signatures are still on the way. Calls that
+ * come out the same are kept as they are, and so is the whole array when none of them changed,
+ * so a caller that re-renders on a reference change only does so when the decoding actually
+ * changed.
+ */
+export function withDecodedCalls(
+  calls: IrCall[],
+  getDecodedCall: (data: string) => DecodedCall | null,
+  isDecoding: (data: string) => boolean
+): IrCall[] {
+  const decodedCallsByData = new Map<string, DecodedCall | undefined>()
+  let hasChanged = false
+
+  const callsWithDecodedData = calls.map((call) => {
+    if (!decodedCallsByData.has(call.data)) {
+      decodedCallsByData.set(call.data, getDecodedCall(call.data) || undefined)
+    }
+    const decodedCall = decodedCallsByData.get(call.data)
+    const isDecodingCall = !decodedCall && isDecoding(call.data) ? true : undefined
+
+    if (
+      stringify(call.decodedCall) === stringify(decodedCall) &&
+      call.isDecodingCall === isDecodingCall
+    )
+      return call
+
+    hasChanged = true
+
+    return { ...call, decodedCall, isDecodingCall }
+  })
+
+  return hasChanged ? callsWithDecodedData : calls
 }
