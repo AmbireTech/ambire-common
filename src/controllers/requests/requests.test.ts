@@ -1,3 +1,4 @@
+import { errorCodes } from 'eth-rpc-errors'
 import { Wallet, ZeroAddress } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
@@ -7,7 +8,8 @@ import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
 import {
   DAPP_REJECTS_BEFORE_OFFERING_SILENCE,
-  DAPP_SILENCE_DURATION
+  DAPP_SILENCE_DURATION,
+  MAX_DAPP_CALLS_PER_REQUEST
 } from '../../consts/safeguards/dappRequestSpam'
 import { Hex } from '../../interfaces/hex'
 import { Platform } from '../../interfaces/platform'
@@ -15,6 +17,7 @@ import {
   BenzinUserRequest,
   CallsUserRequest,
   DappConnectRequest,
+  PlainTextMessageUserRequest,
   UserRequest
 } from '../../interfaces/userRequest'
 import { generateUuid } from '../../utils/uuid'
@@ -293,6 +296,21 @@ const DAPP_CONNECT_REQUEST: DappConnectRequest = {
   ]
 }
 
+/** A message to sign for the selected account, from the test app. */
+const makeMessageRequest = (
+  id: string,
+  reject: (err: any) => void
+): PlainTextMessageUserRequest => ({
+  id,
+  kind: 'message',
+  meta: {
+    params: { message: '0x48656c6c6f' },
+    accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+    chainId: 1n
+  },
+  dappPromises: [{ id, resolve: () => {}, reject, session: MOCK_SESSION, meta: {} }]
+})
+
 describe('RequestsController ', () => {
   beforeEach(() => {
     jest.restoreAllMocks()
@@ -569,6 +587,90 @@ describe('RequestsController ', () => {
     expect(openRequestView).not.toHaveBeenCalled()
     expect(controller.userRequests.map((r) => r.id)).toEqual(['arrived-request'])
     arrivedRequest.signAccountOp.destroy()
+  })
+  test('shows a request that arrives while the request window closes instead of refusing it', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    const closedRequest = { ...DAPP_CONNECT_REQUEST, id: 'closed-request' }
+    const arrivedReject = jest.fn()
+    await controller.addUserRequests([closedRequest])
+    const closeView = uiCtrl.requestView.close.bind(uiCtrl.requestView)
+    let addArrivedRequest: Promise<void> | undefined
+    // Removing the window fires `windowRemoved` right away, so its handler runs while the close
+    // is still in flight, and the next request lands in the middle of both
+    jest.spyOn(uiCtrl.requestView, 'close').mockImplementationOnce(async (winId) => {
+      await closeView(winId)
+      addArrivedRequest = controller.addUserRequests([
+        makeMessageRequest('arrived-request', arrivedReject)
+      ])
+    })
+
+    await controller.closeRequestWindow()
+    await addArrivedRequest
+
+    expect(arrivedReject).not.toHaveBeenCalled()
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['arrived-request'])
+    expect(controller.currentUserRequest?.id).toBe('arrived-request')
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+  })
+  describe('closing the side panel', () => {
+    /** Requests show up in the panel, which has no window of its own. */
+    const prepareSidePanelTest = async () => {
+      const context = await prepareTest()
+      jest.spyOn(context.uiCtrl.requestView, 'open').mockResolvedValue(null)
+      return context
+    }
+
+    test('turns away the request it shows', async () => {
+      const { controller } = await prepareSidePanelTest()
+      const shownReject = jest.fn()
+      await controller.addUserRequests([makeMessageRequest('shown-request', shownReject)])
+      expect(controller.requestWindow.windowProps).toBe(null)
+      expect(controller.currentUserRequest?.id).toBe('shown-request')
+
+      await controller.closeRequestWindow()
+
+      expect(shownReject).toHaveBeenCalledTimes(1)
+      expect(controller.userRequests).toHaveLength(0)
+      expect(controller.currentUserRequest).toBe(null)
+    })
+
+    test('a request that comes up while it closes is shown instead of turned away', async () => {
+      const { controller } = await prepareSidePanelTest()
+      const shownReject = jest.fn()
+      const arrivedReject = jest.fn()
+      await controller.addUserRequests([makeMessageRequest('shown-request', shownReject)])
+      // Something the close has to wait for, like a focus still in flight
+      let finishFocus: () => void = () => {}
+      controller.requestWindow.focusWindowPromise = new Promise((resolve) => {
+        finishFocus = () => resolve(null)
+      })
+
+      const close = controller.closeRequestWindow()
+      // A different kind than the one shown, as a second message would replace the first itself
+      const addArrivedRequest = controller.addUserRequests([
+        {
+          ...DAPP_CONNECT_REQUEST,
+          id: 'arrived-request',
+          dappPromises: [
+            {
+              id: 'arrived-request',
+              resolve: () => {},
+              reject: arrivedReject,
+              session: MOCK_SESSION,
+              meta: {}
+            }
+          ]
+        }
+      ])
+      finishFocus()
+      controller.requestWindow.focusWindowPromise = undefined
+      await Promise.all([close, addArrivedRequest])
+
+      expect(shownReject).toHaveBeenCalledTimes(1)
+      expect(arrivedReject).not.toHaveBeenCalled()
+      expect(controller.userRequests.map((r) => r.id)).toEqual(['arrived-request'])
+      expect(controller.currentUserRequest?.id).toBe('arrived-request')
+    })
   })
   test('does not simulate a signed Safe transaction that is added to the queue', async () => {
     const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
@@ -1411,40 +1513,73 @@ describe('RequestsController ', () => {
     expect(destroySpy).toHaveBeenCalledTimes(1)
   })
 
-  test('rejecting an account switch removes the pending request and its simulation', async () => {
-    const { controller, getCallsRequest, portfolioCtrl, selectedAccountCtrl } = await prepareTest()
-    const req = await getCallsRequest({
-      addr: accounts[0]!.addr,
-      chainId: 1n
-    })
-    const rejectMock = jest.fn()
-    req.dappPromises = [
-      {
-        id: 'account-switch-request',
-        resolve: jest.fn(),
-        reject: rejectMock,
-        session: MOCK_SESSION,
-        meta: {}
-      }
+  describe('wallet-built calls for an account that is not selected', () => {
+    const OTHER_ACCOUNT_ADDR = accounts[0]!.addr
+    const TRANSFER_CALLS = [
+      { to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', data: '0x', value: 1n }
     ]
-    const destroySpy = jest.spyOn(req.signAccountOp, 'destroy')
-    const overrideSimulationResultsSpy = jest.spyOn(portfolioCtrl, 'overrideSimulationResults')
 
-    await controller.addUserRequests([req], { allowAccountSwitch: true })
+    const buildCallsForOtherAccount = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller']
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          allowAccountSwitch: true,
+          userRequestParams: {
+            calls: TRANSFER_CALLS,
+            meta: { accountAddr: OTHER_ACCOUNT_ADDR, chainId: 1n }
+          }
+        }
+      })
 
-    const switchAccountRequest = controller.userRequests[0]!
-    expect(switchAccountRequest.kind).toBe('switchAccount')
-    expect(controller.userRequestsWaitingAccountSwitch).toStrictEqual([req])
+    test('refusing the switch leaves nothing behind', async () => {
+      const { controller, selectedAccountCtrl, accountsCtrl } = await prepareTest()
 
-    await controller.rejectUserRequests('User rejected', [switchAccountRequest.id])
-    await selectedAccountCtrl.setAccount(accounts[0]!)
+      await buildCallsForOtherAccount(controller)
 
-    expect(rejectMock).toHaveBeenCalledTimes(1)
-    expect(overrideSimulationResultsSpy).toHaveBeenCalledWith(req.signAccountOp.accountOp)
-    expect(destroySpy).toHaveBeenCalledTimes(1)
-    expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
-    expect(controller.userRequests).toHaveLength(0)
+      const [switchAccountRequest] = controller.userRequests
+      expect(controller.userRequests).toHaveLength(1)
+      expect(switchAccountRequest!.kind).toBe('switchAccount')
+      // Kept unbuilt while waiting, so nothing is estimated for an account the user isn't on
+      expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(1)
+      expect(controller.userRequestsWaitingAccountSwitch[0]).not.toHaveProperty('signAccountOp')
+
+      await controller.rejectUserRequests('User rejected', [switchAccountRequest!.id])
+      await selectedAccountCtrl.setAccount(
+        accountsCtrl.accounts.find((a) => a.addr === OTHER_ACCOUNT_ADDR)!
+      )
+
+      expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+      expect(controller.userRequests).toHaveLength(0)
+    })
+
+    test('joins the batch the other account already has once the user switches', async () => {
+      const { controller, selectedAccountCtrl, accountsCtrl, getCallsRequest } = await prepareTest()
+      const existingBatch = await getCallsRequest({ addr: OTHER_ACCOUNT_ADDR, chainId: 1n })
+      await controller.addUserRequests([existingBatch], { executionType: 'queue' })
+
+      await buildCallsForOtherAccount(controller)
+
+      // Asked first, not slipped into a batch the user isn't looking at
+      expect(existingBatch.signAccountOp.accountOp.calls).toHaveLength(1)
+      const switchAccountRequest = controller.userRequests.find((r) => r.kind === 'switchAccount')
+      expect(switchAccountRequest).toBeDefined()
+
+      await selectedAccountCtrl.setAccount(
+        accountsCtrl.accounts.find((a) => a.addr === OTHER_ACCOUNT_ADDR)!
+      )
+      await controller.resolveUserRequest(null, switchAccountRequest!.id)
+
+      const otherAccountBatches = controller.userRequests.filter((r) => r.kind === 'calls')
+      expect(otherAccountBatches).toEqual([existingBatch])
+      expect(existingBatch.signAccountOp.accountOp.calls).toHaveLength(2)
+      expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+
+      existingBatch.signAccountOp.destroy()
+    })
   })
+
   test('add multiple user requests', async () => {
     const { controller, getCallsRequest } = await prepareTest()
     const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
@@ -1675,7 +1810,7 @@ describe('RequestsController ', () => {
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
       dappPromise: { id: string; reject: (err: any) => void },
       session = MOCK_SESSION,
-      callOverrides: { data?: string } = {}
+      callOverrides: { data?: string; from?: string; to?: string } = {}
     ) =>
       controller.build({
         type: 'dappRequest',
@@ -2009,6 +2144,317 @@ describe('RequestsController ', () => {
 
       unfetchable.signAccountOp.destroy()
       fine.signAccountOp.destroy()
+    })
+
+    test('an empty transaction to the account itself joins the batch it already has', async () => {
+      const { controller } = await prepareTest(true)
+      const [transfer, emptyToSelf] = makeRejectMocks(2) as [
+        { id: string; reject: jest.Mock },
+        { id: string; reject: jest.Mock }
+      ]
+
+      await sendTransaction(controller, transfer)
+      const [existingBatch] = controller.userRequests.filter(
+        (r) => r.kind === 'calls'
+      ) as CallsUserRequest[]
+      const destroyExistingBatch = jest.spyOn(existingBatch!.signAccountOp, 'destroy')
+
+      // Looks like a Safe cancellation, which only Safe accounts keep apart from the batch
+      await sendTransaction(controller, emptyToSelf, MOCK_SESSION, { to: FROM })
+
+      const callsRequests = controller.userRequests.filter((r) => r.kind === 'calls')
+      expect(callsRequests).toEqual([existingBatch])
+      expect(existingBatch!.signAccountOp.accountOp.calls).toHaveLength(2)
+      expect(existingBatch!.dappPromises.map((p) => p.id)).toEqual([transfer.id, emptyToSelf.id])
+      expect(destroyExistingBatch).not.toHaveBeenCalled()
+
+      destroyExistingBatch.mockRestore()
+      existingBatch!.signAccountOp.destroy()
+    })
+
+    const OTHER_ACCOUNT_ADDR = accounts[0]!.addr
+
+    type TestContext = Awaited<ReturnType<typeof prepareTest>>
+
+    const sendTransactionFromOtherAccount = (
+      controller: TestContext['controller'],
+      dappPromise: { id: string; reject: (err: any) => void }
+    ) => sendTransaction(controller, dappPromise, MOCK_SESSION, { from: OTHER_ACCOUNT_ADDR })
+
+    const selectAccount = ({ accountsCtrl, selectedAccountCtrl }: TestContext, addr: string) =>
+      selectedAccountCtrl.setAccount(accountsCtrl.accounts.find((a) => a.addr === addr)!)
+
+    const getSwitchAccountRequests = (controller: TestContext['controller']) =>
+      controller.userRequests.filter((r) => r.kind === 'switchAccount')
+
+    /** What the switch screen does once the user agrees to switch. */
+    const acceptAccountSwitch = async (context: TestContext) => {
+      const [switchAccountRequest] = getSwitchAccountRequests(context.controller)
+      expect(switchAccountRequest).toBeDefined()
+
+      await selectAccount(context, OTHER_ACCOUNT_ADDR)
+      await context.controller.resolveUserRequest(null, switchAccountRequest!.id)
+    }
+
+    describe('transactions for an account that is not selected', () => {
+      const getOtherAccountBatches = (controller: TestContext['controller']) =>
+        controller.userRequests.filter(
+          (r) => r.kind === 'calls' && r.meta.accountAddr === OTHER_ACCOUNT_ADDR
+        ) as CallsUserRequest[]
+
+      /** Leaves the other account with a batch of one transaction and goes back to the selected one. */
+      const seedOtherAccountBatch = async (
+        context: TestContext,
+        dappPromise: { id: string; reject: (err: any) => void }
+      ) => {
+        await selectAccount(context, OTHER_ACCOUNT_ADDR)
+        await sendTransactionFromOtherAccount(context.controller, dappPromise)
+        await selectAccount(context, ACCOUNT_ADDR)
+
+        const [seededBatch] = getOtherAccountBatches(context.controller)
+        expect(seededBatch?.signAccountOp.accountOp.calls).toHaveLength(1)
+
+        return seededBatch!
+      }
+
+      test('asks to switch accounts before adding to a batch the other account already has', async () => {
+        const context = await prepareTest(true)
+        const { controller } = context
+        const [seeded, incoming] = makeRejectMocks(2) as [
+          { id: string; reject: jest.Mock },
+          { id: string; reject: jest.Mock }
+        ]
+        const seededBatch = await seedOtherAccountBatch(context, seeded)
+
+        await sendTransactionFromOtherAccount(controller, incoming)
+
+        const switchAccountRequests = getSwitchAccountRequests(controller)
+        expect(switchAccountRequests).toHaveLength(1)
+        expect(switchAccountRequests[0]!.meta.switchToAccountAddr).toBe(OTHER_ACCOUNT_ADDR)
+        expect(controller.currentUserRequest?.id).toBe(switchAccountRequests[0]!.id)
+
+        // Nothing joins the batch of an account the user isn't looking at
+        expect(seededBatch.signAccountOp.accountOp.calls).toHaveLength(1)
+        expect(seededBatch.dappPromises.map((p) => p.id)).toEqual([seeded.id])
+        expect(incoming.reject).not.toHaveBeenCalled()
+
+        seededBatch.signAccountOp.destroy()
+      })
+
+      test('adds the transaction to the batch the other account already has once the user switches', async () => {
+        const context = await prepareTest(true)
+        const { controller } = context
+        const [seeded, incoming] = makeRejectMocks(2) as [
+          { id: string; reject: jest.Mock },
+          { id: string; reject: jest.Mock }
+        ]
+        const seededBatch = await seedOtherAccountBatch(context, seeded)
+
+        await sendTransactionFromOtherAccount(controller, incoming)
+        await acceptAccountSwitch(context)
+
+        const otherAccountBatches = getOtherAccountBatches(controller)
+        expect(otherAccountBatches).toHaveLength(1)
+        // The batch is added to, not replaced - replacing it would drop the calls it already had
+        expect(otherAccountBatches[0]).toBe(seededBatch)
+        expect(seededBatch.signAccountOp.accountOp.calls).toHaveLength(2)
+        expect(seededBatch.dappPromises.map((p) => p.id)).toEqual([seeded.id, incoming.id])
+        expect(getSwitchAccountRequests(controller)).toHaveLength(0)
+        expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+        expect(seeded.reject).not.toHaveBeenCalled()
+        expect(incoming.reject).not.toHaveBeenCalled()
+
+        seededBatch.signAccountOp.destroy()
+      })
+
+      test('refusing the switch turns away only the new transaction', async () => {
+        const context = await prepareTest(true)
+        const { controller } = context
+        const [seeded, incoming] = makeRejectMocks(2) as [
+          { id: string; reject: jest.Mock },
+          { id: string; reject: jest.Mock }
+        ]
+        const seededBatch = await seedOtherAccountBatch(context, seeded)
+        const destroySeededBatch = jest.spyOn(seededBatch.signAccountOp, 'destroy')
+
+        await sendTransactionFromOtherAccount(controller, incoming)
+        await controller.rejectUserRequests('User rejected', [
+          getSwitchAccountRequests(controller)[0]!.id
+        ])
+
+        expect(incoming.reject).toHaveBeenCalledTimes(1)
+        expect(seeded.reject).not.toHaveBeenCalled()
+        expect(destroySeededBatch).not.toHaveBeenCalled()
+        expect(getOtherAccountBatches(controller)).toEqual([seededBatch])
+        expect(seededBatch.signAccountOp.accountOp.calls).toHaveLength(1)
+        expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+
+        destroySeededBatch.mockRestore()
+        seededBatch.signAccountOp.destroy()
+      })
+
+      test('transactions sent one after another end up in one batch once the user switches', async () => {
+        const context = await prepareTest(true)
+        const { controller } = context
+        const [first, second] = makeRejectMocks(2) as [
+          { id: string; reject: jest.Mock },
+          { id: string; reject: jest.Mock }
+        ]
+
+        await sendTransactionFromOtherAccount(controller, first)
+        await sendTransactionFromOtherAccount(controller, second)
+        await acceptAccountSwitch(context)
+
+        const otherAccountBatches = getOtherAccountBatches(controller)
+        expect(otherAccountBatches).toHaveLength(1)
+        expect(otherAccountBatches[0]!.signAccountOp.accountOp.calls).toHaveLength(2)
+        expect(otherAccountBatches[0]!.dappPromises.map((p) => p.id)).toEqual([first.id, second.id])
+        expect(getSwitchAccountRequests(controller)).toHaveLength(0)
+        expect(first.reject).not.toHaveBeenCalled()
+        expect(second.reject).not.toHaveBeenCalled()
+
+        otherAccountBatches[0]!.signAccountOp.destroy()
+      })
+
+      test('prepares the transaction with the onchain state of the account it is from', async () => {
+        const context = await prepareTest(true)
+        const getOrFetchAccountOnChainState = jest.spyOn(
+          context.accountsCtrl,
+          'getOrFetchAccountOnChainState'
+        )
+
+        await sendTransactionFromOtherAccount(context.controller, makeRejectMocks(1)[0]!)
+
+        expect(getOrFetchAccountOnChainState.mock.calls.map(([addr]) => addr)).toEqual([
+          OTHER_ACCOUNT_ADDR
+        ])
+      })
+
+      test('turns away a transaction from an account that is not in the wallet', async () => {
+        const { controller } = await prepareTest(true)
+        const [unknownAccountPromise] = makeRejectMocks(1)
+
+        await expect(
+          sendTransaction(controller, unknownAccountPromise!, MOCK_SESSION, {
+            from: Wallet.createRandom().address
+          })
+        ).rejects.toMatchObject({ code: errorCodes.provider.unauthorized })
+
+        expect(controller.userRequests).toHaveLength(0)
+        expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+      })
+
+      test('turns away too many transactions for another account before asking to switch', async () => {
+        const { controller } = await prepareTest(true)
+        const reject = jest.fn()
+
+        await controller.build({
+          type: 'dappRequest',
+          params: {
+            request: {
+              method: 'wallet_sendCalls',
+              params: [
+                {
+                  from: OTHER_ACCOUNT_ADDR,
+                  chainId: '0x1',
+                  calls: Array.from({ length: MAX_DAPP_CALLS_PER_REQUEST + 1 }, () => ({
+                    to: TO,
+                    value: '0x0',
+                    data: '0x'
+                  }))
+                }
+              ],
+              session: MOCK_SESSION
+            },
+            dappPromise: { id: 'too-many', resolve: () => {}, reject, session: MOCK_SESSION }
+          }
+        })
+
+        expect(reject).toHaveBeenCalledWith(
+          expect.objectContaining({ code: errorCodes.rpc.limitExceeded })
+        )
+        expect(getSwitchAccountRequests(controller)).toHaveLength(0)
+      })
+    })
+
+    describe('the request window when the user switches accounts', () => {
+      const signMessageFromOtherAccount = (
+        controller: TestContext['controller'],
+        dappPromise: { id: string; reject: (err: any) => void }
+      ) =>
+        controller.build({
+          type: 'dappRequest',
+          params: {
+            request: {
+              method: 'personal_sign',
+              params: ['0x48656c6c6f', OTHER_ACCOUNT_ADDR],
+              session: MOCK_SESSION
+            },
+            dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...dappPromise }
+          }
+        })
+
+      test('shows the message in the same window once the user switches', async () => {
+        const context = await prepareTest(true)
+        const { controller, uiCtrl } = context
+        const [message] = makeRejectMocks(1) as [{ id: string; reject: jest.Mock }]
+        await signMessageFromOtherAccount(controller, message)
+        const switchWindowId = controller.requestWindow.windowProps?.id
+        expect(switchWindowId).toBeDefined()
+        const sideEffects = watchSideEffects(uiCtrl)
+
+        await acceptAccountSwitch(context)
+
+        expect(message.reject).not.toHaveBeenCalled()
+        expect(controller.currentUserRequest?.kind).toBe('message')
+        expect(controller.currentUserRequest?.dappPromises.map((p) => p.id)).toEqual([message.id])
+        // Going through a closed window on the way is what refused the message
+        expect(sideEffects.closeCount()).toBe(0)
+        expect(sideEffects.openCount()).toBe(0)
+        expect(controller.requestWindow.windowProps?.id).toBe(switchWindowId)
+      })
+
+      test('shows the transaction in the same window once the user switches', async () => {
+        const context = await prepareTest(true)
+        const { controller, uiCtrl } = context
+        const [transaction] = makeRejectMocks(1) as [{ id: string; reject: jest.Mock }]
+        await sendTransactionFromOtherAccount(controller, transaction)
+        const switchWindowId = controller.requestWindow.windowProps?.id
+        expect(switchWindowId).toBeDefined()
+        const sideEffects = watchSideEffects(uiCtrl)
+
+        await acceptAccountSwitch(context)
+
+        const batch = controller.currentUserRequest as CallsUserRequest
+        expect(transaction.reject).not.toHaveBeenCalled()
+        expect(batch.kind).toBe('calls')
+        expect(batch.meta.accountAddr).toBe(OTHER_ACCOUNT_ADDR)
+        expect(batch.dappPromises.map((p) => p.id)).toEqual([transaction.id])
+        expect(sideEffects.closeCount()).toBe(0)
+        expect(sideEffects.openCount()).toBe(0)
+        expect(controller.requestWindow.windowProps?.id).toBe(switchWindowId)
+
+        batch.signAccountOp.destroy()
+      })
+
+      test('refusing the switch closes the window and turns the message away', async () => {
+        const context = await prepareTest(true)
+        const { controller, uiCtrl } = context
+        const [message] = makeRejectMocks(1) as [{ id: string; reject: jest.Mock }]
+        await signMessageFromOtherAccount(controller, message)
+        const sideEffects = watchSideEffects(uiCtrl)
+
+        await controller.rejectUserRequests('User rejected', [
+          getSwitchAccountRequests(controller)[0]!.id
+        ])
+
+        expect(message.reject).toHaveBeenCalledTimes(1)
+        expect(controller.userRequests).toHaveLength(0)
+        expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+        expect(controller.currentUserRequest).toBe(null)
+        expect(sideEffects.closeCount()).toBe(1)
+        expect(controller.requestWindow.windowProps).toBe(null)
+      })
     })
   })
 
