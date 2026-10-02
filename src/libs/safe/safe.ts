@@ -192,11 +192,19 @@ async function getCalculatedSafeAddressFromCreation(
 }
 
 const safeProxyFactoryInterface = new Interface([
-  'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
+  'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)',
+  // v1.5.0+: calls createProxyWithNonce internally, so it uses the same salt and derives the
+  // same address, which makes its deployment data reusable on other chains
+  'function createProxyWithNonceL2(address _singleton, bytes initializer, uint256 saltNonce)'
 ])
-const safeProxyFactorySelector = safeProxyFactoryInterface
-  .getFunction('createProxyWithNonce')!
-  .selector.slice(2)
+/**
+ * Factory functions whose deployment data can be replayed on other chains. Chain specific and
+ * callback deployments are intentionally excluded as they don't derive the same address elsewhere.
+ */
+const crossChainSafeDeployFunctions = ['createProxyWithNonce', 'createProxyWithNonceL2'] as const
+const getSafeProxyFactorySelector = (
+  functionName: (typeof crossChainSafeDeployFunctions)[number]
+): string => safeProxyFactoryInterface.getFunction(functionName)!.selector.slice(2)
 const proxyCreationTopic = id('ProxyCreation(address,address)')
 
 /** Returns whether all fields required to redeploy a Safe are available. */
@@ -215,10 +223,12 @@ export function hasCompleteSafeCreationData(
   )
 }
 
-function decodeSafeDeploymentData(
+function decodeSafeDeploymentCalls(
   transactionData: string,
-  factoryAddr: Hex
+  factoryAddr: Hex,
+  functionName: (typeof crossChainSafeDeployFunctions)[number]
 ): SafeAccountCreation[] {
+  const safeProxyFactorySelector = getSafeProxyFactorySelector(functionName)
   const normalizedTransactionData = transactionData.toLowerCase()
   const deploymentData = []
   let selectorIndex = normalizedTransactionData.indexOf(safeProxyFactorySelector)
@@ -226,7 +236,7 @@ function decodeSafeDeploymentData(
   while (selectorIndex !== -1) {
     try {
       const [singleton, setupData, saltNonce] = safeProxyFactoryInterface.decodeFunctionData(
-        'createProxyWithNonce',
+        functionName,
         `0x${transactionData.slice(selectorIndex)}`
       )
       deploymentData.push({
@@ -248,6 +258,15 @@ function decodeSafeDeploymentData(
   return deploymentData
 }
 
+function decodeSafeDeploymentData(
+  transactionData: string,
+  factoryAddr: Hex
+): SafeAccountCreation[] {
+  return crossChainSafeDeployFunctions.flatMap((functionName) =>
+    decodeSafeDeploymentCalls(transactionData, factoryAddr, functionName)
+  )
+}
+
 /**
  * Finds the Safe factory that deployed safeAddr. Uses transaction.to when the factory was called
  * directly; otherwise locates the ProxyCreation event emitted for safeAddr in the deploy receipt,
@@ -261,7 +280,9 @@ async function findFactoryAddr(
   // lucky guess: if the call is to the factory, just take it directly
   if (
     transaction.to &&
-    transaction.data.toLowerCase().startsWith(`0x${safeProxyFactorySelector}`)
+    crossChainSafeDeployFunctions.some((functionName) =>
+      transaction.data.toLowerCase().startsWith(`0x${getSafeProxyFactorySelector(functionName)}`)
+    )
   ) {
     return getAddress(transaction.to) as Hex
   }

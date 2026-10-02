@@ -4,10 +4,12 @@ import {
   getAddress,
   getBytes,
   getCreate2Address,
+  id,
   Interface,
   keccak256,
   solidityPacked,
-  ZeroAddress
+  ZeroAddress,
+  zeroPadValue
 } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
@@ -216,6 +218,188 @@ describe('Safe deployment data', () => {
     ).resolves.toEqual(account.safeCreation)
   })
 
+  describe('when the Safe API does not know the factory', () => {
+    const entryPointAddr = '0x0000000071727De22E5E9d8BAf0edAc6f37da032' as Hex
+    const fakeFactoryAddr = '0x3456789012345678901234567890123456789012' as Hex
+    const proxyCreationTopic = id('ProxyCreation(address,address)')
+    const paddedSafeAddr = zeroPadValue(safeAddr, 32)
+    const factoryLessCreationInfo: SafeCreationInfoResponse = {
+      ...incompleteDeploySafeCreationInfo,
+      factoryAddress: '0x'
+    }
+    const unrecoveredCreation = {
+      factoryAddr: '0x',
+      singleton: getAddress(singleton),
+      setupData: '0x',
+      saltNonce: '0x'
+    }
+    // 4337 deployments: the EntryPoint is called and the factory call is packed in the initCode
+    const handleOpsData = new Interface(['function handleOps(bytes initCode)']).encodeFunctionData(
+      'handleOps',
+      [concat([factoryAddr, deployTransactionData])]
+    )
+    const proxyCreationLogV141 = {
+      address: factoryAddr,
+      topics: [proxyCreationTopic, paddedSafeAddr],
+      data: new AbiCoder().encode(['address'], [singleton])
+    }
+    const proxyCreationLogV130 = {
+      address: factoryAddr,
+      topics: [proxyCreationTopic],
+      data: new AbiCoder().encode(['address', 'address'], [safeAddr, singleton])
+    }
+
+    const buildProvider = ({
+      to = entryPointAddr,
+      data = handleOpsData,
+      getTransactionReceipt = jest.fn(
+        async (): Promise<unknown> => ({
+          logs: [proxyCreationLogV141]
+        })
+      )
+    }: {
+      to?: Hex
+      data?: string
+      getTransactionReceipt?: jest.Mock<() => Promise<unknown>>
+    } = {}) =>
+      ({
+        getTransaction: jest.fn(async () => ({ hash: deployTransactionHash, to, data })),
+        getTransactionReceipt,
+        call: jest.fn(async () => encodedProxyCreationCode)
+      }) as unknown as RPCProvider
+
+    const findFactoryLessDeployData = (provider: RPCProvider) =>
+      findDeployData(safeAddr, 1n, provider, () => ({
+        getSafeCreationInfo: jest.fn(async () => factoryLessCreationInfo)
+      }))
+
+    test('recovers the factory from a v1.4.1+ deploy log when the deployment is wrapped', async () => {
+      const provider = buildProvider()
+
+      await expect(findFactoryLessDeployData(provider)).resolves.toEqual(account.safeCreation)
+      expect(provider.getTransactionReceipt).toHaveBeenCalledWith(deployTransactionHash)
+    })
+
+    test('recovers the factory from a v1.3.0 deploy log when the deployment is wrapped', async () => {
+      const provider = buildProvider({
+        getTransactionReceipt: jest.fn(
+          async (): Promise<unknown> => ({
+            logs: [proxyCreationLogV130]
+          })
+        )
+      })
+
+      await expect(findFactoryLessDeployData(provider)).resolves.toEqual(account.safeCreation)
+    })
+
+    test('does not fetch the receipt when the factory is called directly', async () => {
+      const provider = buildProvider({ to: factoryAddr, data: deployTransactionData })
+
+      await expect(findFactoryLessDeployData(provider)).resolves.toEqual(account.safeCreation)
+      expect(provider.getTransactionReceipt).not.toHaveBeenCalled()
+    })
+
+    test('recovers a direct createProxyWithNonceL2 deployment', async () => {
+      const deployL2TransactionData = new Interface([
+        'function createProxyWithNonceL2(address _singleton, bytes initializer, uint256 saltNonce)'
+      ]).encodeFunctionData('createProxyWithNonceL2', [singleton, setupData, saltNonce])
+      const provider = buildProvider({ to: factoryAddr, data: deployL2TransactionData })
+
+      await expect(findFactoryLessDeployData(provider)).resolves.toEqual(account.safeCreation)
+      expect(provider.getTransactionReceipt).not.toHaveBeenCalled()
+    })
+
+    test('recovers a wrapped createProxyWithNonceL2 deployment', async () => {
+      const deployL2TransactionData = new Interface([
+        'function createProxyWithNonceL2(address _singleton, bytes initializer, uint256 saltNonce)'
+      ]).encodeFunctionData('createProxyWithNonceL2', [singleton, setupData, saltNonce])
+      const provider = buildProvider({
+        data: new Interface(['function handleOps(bytes initCode)']).encodeFunctionData(
+          'handleOps',
+          [concat([factoryAddr, deployL2TransactionData])]
+        )
+      })
+
+      await expect(findFactoryLessDeployData(provider)).resolves.toEqual(account.safeCreation)
+    })
+
+    test('does not recover a chain specific deployment as it cannot be replayed on other chains', async () => {
+      const chainSpecificDeployData = new Interface([
+        'function createChainSpecificProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
+      ]).encodeFunctionData('createChainSpecificProxyWithNonce', [singleton, setupData, saltNonce])
+      const provider = buildProvider({ to: factoryAddr, data: chainSpecificDeployData })
+
+      await expect(findFactoryLessDeployData(provider)).resolves.toEqual(unrecoveredCreation)
+    })
+
+    test('returns partial API data when the deploy receipt cannot be fetched', async () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+      const provider = buildProvider({
+        getTransactionReceipt: jest.fn(async (): Promise<unknown> => {
+          throw new Error('RPC unavailable')
+        })
+      })
+
+      await expect(findFactoryLessDeployData(provider)).resolves.toEqual(unrecoveredCreation)
+      expect(consoleErrorSpy).toHaveBeenCalled()
+      consoleErrorSpy.mockRestore()
+    })
+
+    test('returns partial API data when the deploy receipt is missing', async () => {
+      const provider = buildProvider({
+        getTransactionReceipt: jest.fn(async (): Promise<unknown> => null)
+      })
+
+      await expect(findFactoryLessDeployData(provider)).resolves.toEqual(unrecoveredCreation)
+    })
+
+    test('ignores deploy logs for a different Safe', async () => {
+      const provider = buildProvider({
+        getTransactionReceipt: jest.fn(
+          async (): Promise<unknown> => ({
+            logs: [
+              {
+                ...proxyCreationLogV141,
+                topics: [proxyCreationTopic, zeroPadValue(OTHER_OWNER, 32)]
+              }
+            ]
+          })
+        )
+      })
+
+      await expect(findFactoryLessDeployData(provider)).resolves.toEqual(unrecoveredCreation)
+    })
+
+    test('ignores unrelated logs that mention the Safe', async () => {
+      const provider = buildProvider({
+        getTransactionReceipt: jest.fn(
+          async (): Promise<unknown> => ({
+            logs: [
+              {
+                ...proxyCreationLogV141,
+                topics: [id('Transfer(address,address,uint256)'), paddedSafeAddr]
+              }
+            ]
+          })
+        )
+      })
+
+      await expect(findFactoryLessDeployData(provider)).resolves.toEqual(unrecoveredCreation)
+    })
+
+    test('rejects a spoofed deploy log emitted by a contract that is not the real factory', async () => {
+      const provider = buildProvider({
+        getTransactionReceipt: jest.fn(
+          async (): Promise<unknown> => ({
+            logs: [{ ...proxyCreationLogV141, address: fakeFactoryAddr }]
+          })
+        )
+      })
+
+      await expect(findFactoryLessDeployData(provider)).resolves.toEqual(unrecoveredCreation)
+    })
+  })
+
   test('returns partial API data when the creation record has no deployment transaction', async () => {
     const creationInfo = { ...incompleteDeploySafeCreationInfo, transactionHash: '' }
     const getSafeCreationInfo = jest.fn(async () => creationInfo)
@@ -274,20 +458,19 @@ describe('Safe deployment data', () => {
     ).resolves.toMatchObject({ setupData: '0x', saltNonce: '0x' })
   })
 
-  test('returns all-empty creation data when the Safe API request fails', async () => {
+  test('returns the error when the Safe API request fails', async () => {
+    const apiError = new Error('Safe API unavailable')
     const getSafeCreationInfo = jest.fn(async () => {
-      throw new Error('Safe API unavailable')
+      throw apiError
     })
-    const provider = {} as RPCProvider
+    const provider = {
+      getTransaction: jest.fn()
+    } as unknown as RPCProvider
 
     await expect(
       findDeployData(safeAddr, 1n, provider, () => ({ getSafeCreationInfo }))
-    ).resolves.toEqual({
-      factoryAddr: '0x',
-      singleton: '0x',
-      setupData: '0x',
-      saltNonce: '0x'
-    })
+    ).resolves.toBe(apiError)
+    expect(provider.getTransaction).not.toHaveBeenCalled()
   })
 
   test('treats a missing deployment field as incomplete creation data', () => {
