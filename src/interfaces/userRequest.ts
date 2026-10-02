@@ -201,6 +201,8 @@ export interface WalletAddEthereumChainRequest extends UserRequestBase<[DappProm
   meta: UserRequestBase['meta'] & {
     // TODO: impl AddEthereumChainParameter
     params: [any]
+    /** Set when an app request is waiting on this one, so the view moves straight to it */
+    hasNextRequest?: boolean
     [key: string]: any
   }
 }
