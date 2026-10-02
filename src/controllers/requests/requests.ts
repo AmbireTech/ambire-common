@@ -118,6 +118,8 @@ import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
 import type { EIP712TypedData } from '@safe-global/types-kit'
+import { AccountOpStatus } from '../../libs/accountOp/types'
+import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import type { Call } from '../../libs/accountOp/types'
 import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/signAccountOp'
 
@@ -129,6 +131,10 @@ const SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE =
   "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
 const SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE =
   'Your Safe account is still being activated on this network. Wait a moment, then try again.'
+const SAFE_DEPLOYMENT_FAILED_MESSAGE =
+  'The Safe account deployment failed, so this transaction cannot be completed.'
+const SAFE_DEPLOYMENT_STUCK_MESSAGE =
+  'Activating your Safe account is taking too long, so this transaction was cancelled. Please try again.'
 
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
@@ -1463,6 +1469,62 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       isUserInitiated: false,
       shouldOpenNextRequest: false
     })
+  }
+
+  /**
+   * Rejects the not-yet-signed requests of a Safe that were waiting for its deployment
+   * once the deployment op is finalized without a success.
+   *
+   * `Failure` and `Rejected` mean the Safe was definitely not deployed. `UnknownButPastNonce`
+   * (the op was replaced - by a cancel or by a speed-up that may have succeeded) and
+   * `BroadcastButStuck` (no receipt in time, but it may still get mined) don't tell us that,
+   * so for them the on-chain state is checked first and the requests are kept if the Safe is deployed.
+   */
+  async handleSafeDeployStatusUpdate(op: SubmittedAccountOp) {
+    if (!op.meta?.isSafeDeploy) return
+
+    const isDefinitelyNotDeployed =
+      op.status === AccountOpStatus.Failure || op.status === AccountOpStatus.Rejected
+    const isMaybeDeployed =
+      op.status === AccountOpStatus.UnknownButPastNonce ||
+      op.status === AccountOpStatus.BroadcastButStuck
+    if (!isDefinitelyNotDeployed && !isMaybeDeployed) return
+
+    try {
+      if (isMaybeDeployed && (await this.#isSafeDeployedOnChain(op.accountAddr, op.chainId))) return
+
+      const errorMessage =
+        op.status === AccountOpStatus.BroadcastButStuck
+          ? SAFE_DEPLOYMENT_STUCK_MESSAGE
+          : SAFE_DEPLOYMENT_FAILED_MESSAGE
+      await this.rejectSameChainNotSignedSafeRequest(op.accountAddr, op.chainId, errorMessage)
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: `Failed to handle the Safe deployment status update on network with id ${op.chainId}.`,
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+    }
+  }
+
+  /**
+   * Refreshes the account state and checks if the Safe is deployed.
+   * If the check fails, the Safe is treated as not deployed, so the requests
+   * waiting for it don't hang forever (the deployment op is no longer tracked).
+   */
+  async #isSafeDeployedOnChain(accountAddr: string, chainId: bigint): Promise<boolean> {
+    try {
+      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId])
+    } catch (error) {
+      this.emitError({
+        level: 'silent',
+        message: `Failed to check if the Safe is deployed on network with id ${chainId}.`,
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+      return false
+    }
+
+    return !!this.#accounts.accountStates[accountAddr]?.[chainId.toString()]?.isDeployed
   }
 
   async build({ type, params }: BuildRequest) {
