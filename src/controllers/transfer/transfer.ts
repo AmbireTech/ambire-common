@@ -581,7 +581,8 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.lastSentToRecipientAt,
         this.addressPoisoningMatch,
         this.recipientDomainAddressChange,
-        this.isRecipientAddressBlacklisted
+        this.isRecipientAddressBlacklisted,
+        this.isRecipientAddressViewOnly
       )
     }
 

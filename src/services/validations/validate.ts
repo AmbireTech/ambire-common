@@ -69,6 +69,8 @@ const NOT_IN_ADDRESS_BOOK_MESSAGE =
   "This address isn't in your Address Book. Double-check the details before confirming."
 const FIRST_TIME_SEND_MESSAGE = 'First time sending to this address.'
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE = FIRST_TIME_SEND_MESSAGE // same same as above, but keep it separate just in case
+const VIEW_ONLY_RECIPIENT_MESSAGE =
+  "This account is view-only in Ambire, so you can't move funds out of it from here. Make sure you can access it before you send."
 
 // Keep poisoning warnings readable with compact address previews.
 // We size the preview based on the strongest symmetric part of the match:
@@ -141,7 +143,8 @@ const validateSendTransferAddress = (
   lastRecipientTransactionDate?: Date | null,
   addressPoisoningMatch?: AddressPoisoningMatch | null,
   recipientDomainAddressChange?: { previousAddress: string } | null,
-  isRecipientAddressBlacklisted?: boolean
+  isRecipientAddressBlacklisted?: boolean,
+  isRecipientAddressViewOnly?: boolean
 ): Validation => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
@@ -202,6 +205,15 @@ const validateSendTransferAddress = (
       message: getAddressPoisoningWarningMessage(
         formatAddressPoisoningMatchForMessage(addressPoisoningMatch)
       ),
+      severity: 'warning'
+    }
+  }
+
+  // The transfer form requires hold-to-proceed for view-only recipients, so the message must
+  // explain why instead of showing a success message next to the hold button.
+  if (isRecipientAddressViewOnly) {
+    return {
+      message: VIEW_ONLY_RECIPIENT_MESSAGE,
       severity: 'warning'
     }
   }
