@@ -132,7 +132,7 @@ const SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE =
 const SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE =
   'Your Safe account is still being activated on this network. Wait a moment, then try again.'
 const SAFE_DEPLOYMENT_FAILED_MESSAGE =
-  'The Safe account deployment failed, so this transaction cannot be completed.'
+  "Activating your Safe account failed, so this request can't be completed."
 const SAFE_DEPLOYMENT_STUCK_MESSAGE =
   'Activating your Safe account is taking too long, so this transaction was cancelled. Please try again.'
 

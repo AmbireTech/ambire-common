@@ -139,7 +139,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     if (!deployedOn) {
       this.importError = {
         address: safeAddr,
-        message: `The Safe account is not deployed on any of your enabled networks that have Safe support: ${safeNetworks.map((n) => n.name).join(', ')}. Please deploy it from Safe Global on at least one network before continuing`
+        message: `The Safe account isn't active on any of your enabled networks that support Safe: ${safeNetworks.map((n) => n.name).join(', ')}. Please activate it in the Safe app on at least one of them before continuing.`
       }
       return
     }

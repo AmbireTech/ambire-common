@@ -508,7 +508,7 @@ describe('Main Controller ', () => {
       expect(rejectSafRequestsSpy).toHaveBeenCalledWith(
         senderAccount,
         1n,
-        'The Safe account deployment failed, so this transaction cannot be completed.'
+        "Activating your Safe account failed, so this request can't be completed."
       )
     })
 
