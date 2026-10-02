@@ -1274,8 +1274,6 @@ export class PortfolioController
     let res: any = {
       data: {
         rewards: {},
-        rewardsProjectionDataV2: {},
-        frozenRewardSeason1: 0,
         gasTank: { balance: [] }
       }
     }
@@ -1375,17 +1373,6 @@ export class PortfolioController
         updateStarted: start,
         tokens: rewardsTokens,
         total: getTotal(rewardsTokens, null)
-      }
-    }
-
-    accountState.projectedRewards = {
-      isReady: true,
-      isLoading: false,
-      errors: [],
-      lastSuccessfulUpdate: Date.now(),
-      result: {
-        ...res.data.rewardsProjectionDataV2,
-        frozenRewardSeason1: res.data.frozenRewardSeason1 ? res.data.frozenRewardSeason1 : 0
       }
     }
 
