@@ -146,7 +146,7 @@ export class SafeController extends EventEmitter implements ISafeController {
 
     const apiKit = getApiKit(deployedOn.chainId)
     const provider = this.#providers.providers[deployedOn.chainId.toString()]!
-    const [safeInfo, safeCreation]: [SafeInfoResponse | Error, SafeAccountCreation] =
+    const [safeInfo, safeCreation]: [SafeInfoResponse | Error, SafeAccountCreation | Error] =
       await Promise.all([
         apiKit.getSafeInfo(safeAddr).catch((e) => e),
         findDeployData(safeAddr, deployedOn.chainId, provider)
@@ -155,6 +155,13 @@ export class SafeController extends EventEmitter implements ISafeController {
       this.importError = {
         address: safeAddr,
         message: 'Failed to retrieve information about the Safe. Please try again'
+      }
+      return
+    }
+    if (safeCreation instanceof Error) {
+      this.importError = {
+        address: safeAddr,
+        message: safeCreation.message
       }
       return
     }

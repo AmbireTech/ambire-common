@@ -5,11 +5,13 @@ import {
   getAddress,
   getCreate2Address,
   hexlify,
+  id,
   Interface,
   keccak256,
   recoverAddress,
   toBeHex,
   toUtf8Bytes,
+  TransactionResponse,
   zeroPadValue
 } from 'ethers'
 
@@ -195,6 +197,7 @@ const safeProxyFactoryInterface = new Interface([
 const safeProxyFactorySelector = safeProxyFactoryInterface
   .getFunction('createProxyWithNonce')!
   .selector.slice(2)
+const proxyCreationTopic = id('ProxyCreation(address,address)')
 
 /** Returns whether all fields required to redeploy a Safe are available. */
 export function hasCompleteSafeCreationData(
@@ -210,15 +213,6 @@ export function hasCompleteSafeCreationData(
     creation.saltNonce &&
     creation.saltNonce !== '0x'
   )
-}
-
-function getEmptySafeCreationData(): SafeAccountCreation {
-  return {
-    factoryAddr: '0x',
-    singleton: '0x',
-    setupData: '0x',
-    saltNonce: '0x'
-  }
 }
 
 function decodeSafeDeploymentData(
@@ -255,6 +249,44 @@ function decodeSafeDeploymentData(
 }
 
 /**
+ * Finds the Safe factory that deployed safeAddr. Uses transaction.to when the factory was called
+ * directly; otherwise locates the ProxyCreation event emitted for safeAddr in the deploy receipt,
+ * which works regardless of how the factory call was wrapped (4337, MultiSend, relayers, etc.)
+ */
+async function findFactoryAddr(
+  transaction: TransactionResponse,
+  safeAddr: string,
+  provider: RPCProvider
+): Promise<Hex | null> {
+  // lucky guess: if the call is to the factory, just take it directly
+  if (
+    transaction.to &&
+    transaction.data.toLowerCase().startsWith(`0x${safeProxyFactorySelector}`)
+  ) {
+    return getAddress(transaction.to) as Hex
+  }
+
+  // take the receipt, find the deploy log and take the factory from there
+  const receipt = await provider.getTransactionReceipt(transaction.hash).catch((e: Error) => e)
+  if (receipt instanceof Error) {
+    console.error('failed to fetch the Safe deploy receipt', receipt)
+    return null
+  }
+  if (!receipt) return null
+
+  const paddedSafeAddr = zeroPadValue(safeAddr, 32).toLowerCase()
+  const proxyCreationLog = receipt.logs.find(
+    (log) =>
+      log.topics[0] === proxyCreationTopic &&
+      // v1.4.1+ indexes proxy (topics[1]); v1.3.0 has it as the first word of data
+      (log.topics[1]?.toLowerCase() === paddedSafeAddr ||
+        log.data.toLowerCase().startsWith(paddedSafeAddr))
+  )
+
+  return proxyCreationLog ? (getAddress(proxyCreationLog.address) as Hex) : null
+}
+
+/**
  * Returns the Safe creation data available from the Safe Transaction Service, recovering missing
  * fields from the validated deployment transaction when possible.
  */
@@ -263,54 +295,61 @@ export async function findDeployData(
   chainId: bigint,
   provider: RPCProvider,
   apiKitFactory: SafeDeploymentApiKitFactory = getApiKit
-): Promise<SafeAccountCreation> {
-  let safeCreation = getEmptySafeCreationData()
-
-  try {
-    const creationInfo = await withTimeout(
-      () => apiKitFactory(chainId).getSafeCreationInfo(safeAddr),
-      {
-        timeoutMs: SAFE_API_TIMEOUT_MS,
-        message: `Safe API: get Safe creation info timed out after ${SAFE_API_TIMEOUT_MS}ms`
-      }
-    )
-    safeCreation = {
-      factoryAddr: (creationInfo.factoryAddress || '0x') as Hex,
-      singleton: (creationInfo.singleton || '0x') as Hex,
-      setupData: (creationInfo.setupData || '0x') as Hex,
-      saltNonce:
-        creationInfo.saltNonce !== null && creationInfo.saltNonce !== undefined
-          ? (toBeHex(BigInt(creationInfo.saltNonce), 32) as Hex)
-          : '0x'
+): Promise<SafeAccountCreation | Error> {
+  const creationInfo = await withTimeout(
+    () => apiKitFactory(chainId).getSafeCreationInfo(safeAddr),
+    {
+      timeoutMs: SAFE_API_TIMEOUT_MS,
+      message: `Safe API: get Safe creation info timed out after ${SAFE_API_TIMEOUT_MS}ms`
     }
+  ).catch((e: Error) => e)
 
-    if (hasCompleteSafeCreationData(safeCreation)) return safeCreation
-    if (!creationInfo.transactionHash) return safeCreation
+  // on timeout or problems with the Safe API, return an error
+  // the caller should not proceed in this case
+  if (creationInfo instanceof Error) return creationInfo
 
-    const transaction = await provider.getTransaction(creationInfo.transactionHash)
-    if (!transaction?.data) return safeCreation
+  const safeCreation = {
+    factoryAddr: (creationInfo.factoryAddress || '0x') as Hex,
+    singleton: (creationInfo.singleton || '0x') as Hex,
+    setupData: (creationInfo.setupData || '0x') as Hex,
+    saltNonce:
+      creationInfo.saltNonce !== null && creationInfo.saltNonce !== undefined
+        ? (toBeHex(BigInt(creationInfo.saltNonce), 32) as Hex)
+        : '0x'
+  }
 
-    let factoryAddr = safeCreation.factoryAddr
-    if (
-      factoryAddr === '0x' &&
-      transaction.to &&
-      transaction.data.toLowerCase().startsWith(`0x${safeProxyFactorySelector}`)
-    ) {
-      factoryAddr = getAddress(transaction.to) as Hex
-    }
-    if (factoryAddr === '0x') return safeCreation
+  if (hasCompleteSafeCreationData(safeCreation)) return safeCreation
 
-    factoryAddr = getAddress(factoryAddr) as Hex
-    const deploymentData = decodeSafeDeploymentData(transaction.data, factoryAddr)
+  // if there's no transactionHash, we cannot find additional data,
+  // but we pass back the found safeCreation until now
+  if (!creationInfo.transactionHash) return safeCreation
 
-    for (const candidate of deploymentData) {
-      const calculatedAddress = await getCalculatedSafeAddressFromCreation(candidate, provider)
-      if (calculatedAddress?.toLowerCase() !== safeAddr.toLowerCase()) continue
+  const transaction = await provider
+    .getTransaction(creationInfo.transactionHash)
+    .catch((e: Error) => e)
 
-      return candidate
-    }
-  } catch (error) {
-    console.error(`failed to find Safe deployment data for ${safeAddr}`, error)
+  // if the provider step fails, we cannot add additional data,
+  // but we still pass back the found safeCreation until now
+  if (transaction instanceof Error || !transaction?.data) return safeCreation
+
+  // if factoryAddr is missing for whatever reason, try to locate it
+  // from the transaction itself
+  let factoryAddr = safeCreation.factoryAddr
+  if (factoryAddr === '0x') {
+    factoryAddr = (await findFactoryAddr(transaction, safeAddr, provider)) ?? '0x'
+  }
+
+  // if we cannot locate the factoryAddr, we return the data and move on
+  if (factoryAddr === '0x') return safeCreation
+
+  factoryAddr = getAddress(factoryAddr) as Hex
+  const deploymentData = decodeSafeDeploymentData(transaction.data, factoryAddr)
+
+  for (const candidate of deploymentData) {
+    const calculatedAddress = await getCalculatedSafeAddressFromCreation(candidate, provider)
+    if (calculatedAddress?.toLowerCase() !== safeAddr.toLowerCase()) continue
+
+    return candidate
   }
 
   return safeCreation

@@ -31,11 +31,11 @@ import { Dapp, DappProviderRequest, IDappsController } from '../../interfaces/da
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
-import { Platform } from '../../interfaces/platform'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
@@ -2558,11 +2558,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     sourceNetworks: Network[]
   ): Promise<SafeAccountCreation | null> {
     for (const network of sourceNetworks) {
-      const provider = this.#providers.providers[network.chainId.toString()]!
-      const safeCreation = await findDeployData(account.addr, network.chainId, provider)
-      if (!hasCompleteSafeCreationData(safeCreation)) continue
+      const provider = this.#providers.providers[network.chainId.toString()]
+      if (!provider) return null
 
-      await this.#accounts.updateSafeCreation(account.addr, safeCreation)
+      const safeCreation = await findDeployData(account.addr, network.chainId, provider)
+      if (safeCreation instanceof Error) return null
+
+      // always updaate with the latest info found
+      const error = await this.#accounts
+        .updateSafeCreation(account.addr, safeCreation)
+        .catch((e: Error) => e)
+      if (error) return null
       return safeCreation
     }
 
@@ -2755,15 +2761,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       if (!!account.safeCreation && !accountState.isDeployed && !meta.isSafeDeploy) {
         // if a property needed for the deploy is missing, we search for it
         if (!hasCompleteSafeCreationData(account.safeCreation)) {
-          let safeCreation: SafeAccountCreation | null
-          try {
-            safeCreation = await this.#recoverSafeCreation(account, safeDeploymentSourceNetworks)
-          } catch (error) {
-            this.emitError({
-              level: 'major',
-              message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE,
-              error: error instanceof Error ? error : new Error(String(error))
-            })
+          const safeCreation: SafeAccountCreation | null = await this.#recoverSafeCreation(
+            account,
+            safeDeploymentSourceNetworks
+          )
+          if (!safeCreation) {
             dappPromises.forEach((promise) => {
               promise.reject(
                 ethErrors.rpc.transactionRejected({
@@ -2773,26 +2775,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             })
             return []
           }
-          if (safeCreation) account = { ...account, safeCreation }
-        }
 
-        // if we still don't have the data after a recovery, declare an error
-        if (!hasCompleteSafeCreationData(account.safeCreation)) {
-          this.emitError({
-            level: 'expected',
-            message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE,
-            error: new Error(
-              `Safe deployment data does not derive account ${account.addr} on chain ${meta.chainId.toString()}`
-            )
-          })
-          dappPromises.forEach((promise) => {
-            promise.reject(
-              ethErrors.rpc.transactionRejected({
-                message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
-              })
-            )
-          })
-          return []
+          account = { ...account, safeCreation }
         }
 
         safeDeploymentCall = await getSafeDeploymentCall(account, provider)
