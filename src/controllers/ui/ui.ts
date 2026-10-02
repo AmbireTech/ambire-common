@@ -81,7 +81,8 @@ export class UiController extends EventEmitter implements IUiController {
 
     this.requestView = {
       open: async (options?: OpenWindowOptions) => {
-        if (this.panel?.isOpen()) return null
+        // The base window is the app's window, so only a panel in that window can show the request
+        if (this.panel?.isOpen(options?.baseWindowId)) return null
 
         // The popup can't stay open next to a request window
         await this.window.remove('popup')
