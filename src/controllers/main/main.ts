@@ -49,6 +49,7 @@ import { TransferController } from '@/controllers/transfer/transfer'
 import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
 import { VerificationController } from '@/controllers/verification/verification'
+import { WalletTokenController } from '@/controllers/walletToken/walletToken'
 import { Account, IAccountsController } from '@/interfaces/account'
 import { IAccountPickerController } from '@/interfaces/accountPicker'
 import { IActivityController } from '@/interfaces/activity'
@@ -93,6 +94,7 @@ import { ITransfersScannerController } from '@/interfaces/transferScanner'
 import { isExtensionOverlayView, IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
+import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
 import {
@@ -202,6 +204,8 @@ export class MainController extends EventEmitter implements IMainController {
   contractNames: IContractNamesController
 
   contractInfo: IContractInfoController
+
+  walletToken: IWalletTokenController
 
   autoLogin: IAutoLoginController
 
@@ -509,7 +513,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite,
       eventEmitterRegistry,
       this.dapps,
-      this.erc7730
+      this.erc7730,
+      platform
     )
 
     this.activity = new ActivityController(
@@ -528,6 +533,14 @@ export class MainController extends EventEmitter implements IMainController {
       },
       eventEmitterRegistry
     )
+    this.walletToken = new WalletTokenController({
+      eventEmitterRegistry,
+      storage: this.storage,
+      featureFlags: this.featureFlags,
+      providers: this.providers,
+      callRelayer: this.callRelayer,
+      activity: this.activity
+    })
     this.transferScanner = new TransfersScannerController({
       activity: this.activity,
       networks: this.networks,
@@ -558,6 +571,7 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       signAccountOpPreference: this.signAccountOpPreference,
       featureFlags: this.featureFlags,
+      platform,
       phishing: this.phishing,
       dapps: this.dapps,
       erc7730: this.erc7730,
@@ -620,6 +634,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
       this.erc7730,
+      platform,
       eventEmitterRegistry
     )
     this.domains = new DomainsController({
@@ -673,6 +688,7 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       storage: this.storage,
       featureFlags: this.featureFlags,
+      platform,
       signAccountOpPreference: this.signAccountOpPreference,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,
@@ -1505,10 +1521,13 @@ export class MainController extends EventEmitter implements IMainController {
     const updatedAccountsOpsByAccount =
       await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
 
+    const safeDeployStatusUpdates: Promise<void>[] = []
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+
+          safeDeployStatusUpdates.push(this.requests.handleSafeDeployStatusUpdate(op))
 
           // we scan for logs only if Success & a dapp interaction has been made
           // because only a dapp interaction might have a receiving txn after;
@@ -1534,6 +1553,7 @@ export class MainController extends EventEmitter implements IMainController {
         })
       }
     )
+    await Promise.all(safeDeployStatusUpdates)
 
     Object.entries(updatedAccountsOpsByAccount).forEach(
       async ([
@@ -2059,11 +2079,7 @@ export class MainController extends EventEmitter implements IMainController {
     const accountOpRequest = this.requests.userRequests.find((r) => r.id === requestId)
     if (!accountOpRequest) return
 
-    const {
-      signAccountOp,
-      dappPromises,
-      meta: accountOpRequestMeta
-    } = accountOpRequest as CallsUserRequest
+    const { signAccountOp, dappPromises } = accountOpRequest as CallsUserRequest
     const network = this.networks.networks.find(
       (n) => n.chainId === signAccountOp.accountOp.chainId
     )
@@ -2076,10 +2092,6 @@ export class MainController extends EventEmitter implements IMainController {
       txnId: null,
       userOpHash: null
     }
-    if (accountOpRequestMeta.safeDeployForRequestId) {
-      meta.safeDeployForRequestId = accountOpRequestMeta.safeDeployForRequestId
-    }
-
     if (submittedAccountOp) {
       meta.txnId = submittedAccountOp.txnId
       meta.identifiedBy = submittedAccountOp.identifiedBy

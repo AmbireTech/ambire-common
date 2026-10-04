@@ -78,6 +78,7 @@ const accountOnchainState: AccountOnchainState = {
   delegatedContract: null,
   delegatedContractName: null,
   threshold: 1,
+  safeVersion: null,
   updatedAt: 0
 }
 
@@ -187,7 +188,9 @@ describe('SignMessageController', () => {
       {},
       inviteCtrl,
       undefined,
-      dappsCtrl
+      dappsCtrl,
+      undefined,
+      'mobile-ios'
     )
   })
 
@@ -302,8 +305,7 @@ describe('SignMessageController', () => {
         factoryAddr: account.addr as Hex,
         singleton: account.addr as Hex,
         saltNonce: '0x00',
-        setupData: '0x',
-        version: '1.4.1'
+        setupData: '0x'
       }
     }
     const safeAccountsCtrl = {
@@ -942,6 +944,27 @@ describe('SignMessageController', () => {
       await signMessageController.init({ messageToSign })
 
       expect(signMessageController.signingAuthRequirement).toBe(null)
+    })
+
+    test('a dapp that has not been confirmed for does not require it outside of mobile', async () => {
+      const extensionSignMessageController = new SignMessageController(
+        keystoreCtrl,
+        providersCtrl,
+        networksCtrl,
+        accountsCtrl,
+        {},
+        inviteCtrl,
+        undefined,
+        dappsCtrl,
+        undefined,
+        'browser-webkit'
+      )
+      await extensionSignMessageController.init({
+        messageToSign,
+        dapp: getDappRequestData(verifiedDapp)
+      })
+
+      expect(extensionSignMessageController.signingAuthRequirement).toBe(null)
     })
   })
 

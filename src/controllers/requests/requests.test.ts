@@ -5,21 +5,26 @@ import { describe, expect, test } from '@jest/globals'
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
+import { SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE } from '../../consts/safe'
 import {
   DAPP_REJECTS_BEFORE_OFFERING_SILENCE,
   DAPP_SILENCE_DURATION
 } from '../../consts/safeguards/dappRequestSpam'
-import { SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE } from '../../consts/safe'
+import { AccountOnchainState } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
+import { Platform } from '../../interfaces/platform'
 import {
   BenzinUserRequest,
   CallsUserRequest,
   DappConnectRequest,
+  PlainTextMessageUserRequest,
+  TypedMessageUserRequest,
   UserRequest
 } from '../../interfaces/userRequest'
+import { AccountOpStatus } from '../../libs/accountOp/types'
+import * as safeLib from '../../libs/safe/safe'
 import { generateUuid } from '../../utils/uuid'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
-import * as safeLib from '../../libs/safe/safe'
 
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
@@ -115,13 +120,18 @@ const getActivityAccountOp = (
   timestamp
 })
 
-const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) => {
+const prepareTest = async (
+  seedTestDapp = false,
+  isSelectedAccountSafe = false,
+  platform?: Platform
+) => {
   const { mainCtrl, eventEmitterRegistry, getWindowId, eventEmitter } = await makeMainController(
     async (storageCtrl) => {
       await storageCtrl.set('accounts', accounts)
       await storageCtrl.set('selectedAccount', '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
       if (seedTestDapp) await storageCtrl.set('dappsV2', [TEST_DAPP])
-    }
+    },
+    { overrides: { platform } }
   )
 
   if (isSelectedAccountSafe) {
@@ -133,8 +143,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
       factoryAddr: selectedAccount.addr as Hex,
       singleton: selectedAccount.addr as Hex,
       saltNonce: '0x00',
-      setupData: '0x',
-      version: '1.4.1'
+      setupData: '0x'
     }
   }
 
@@ -160,6 +169,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
         delegatedContract: null,
         delegatedContractName: null,
         threshold: 1,
+        safeVersion: '1.4.1',
         updatedAt: 0
       } as any
     }
@@ -189,6 +199,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
       keystore: mainCtrl.keystore,
       portfolio: mainCtrl.portfolio,
       featureFlags: mainCtrl.featureFlags,
+      platform: 'browser-webkit',
       signAccountOpPreference: mainCtrl.signAccountOpPreference,
       externalSignerControllers: {},
       activity: mainCtrl.activity,
@@ -269,8 +280,7 @@ const prepareTest = async (seedTestDapp = false, isSelectedAccountSafe = false) 
     event: eventEmitter,
     getWindowId,
     uiCtrl: mainCtrl.ui,
-    autoLoginCtrl: mainCtrl.autoLogin,
-    dappsCtrl: mainCtrl.dapps
+    autoLoginCtrl: mainCtrl.autoLogin
   }
 }
 
@@ -281,7 +291,6 @@ const prepareSafeDeploymentHandoff = async () => {
   const chainId = 1n
   const transactionRequest = await getCallsRequest({ addr: accountAddr, chainId })
   transactionRequest.id = 'safe-transaction-after-deploy'
-  transactionRequest.meta.safeDeployRequestId = 'safe-deploy-request'
   transactionRequest.signAccountOp.pause()
   accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.isDeployed = false
 
@@ -299,7 +308,6 @@ const prepareSafeDeploymentHandoff = async () => {
       chainId,
       txnId: null,
       userOpHash: null,
-      safeDeployForRequestId: transactionRequest.id,
       submittedAccountOp
     },
     dappPromises: []
@@ -519,6 +527,127 @@ describe('RequestsController ', () => {
 
     expect(controller.currentUserRequest).toBe(signedRequest)
     signedRequest.signAccountOp.destroy()
+  })
+  test('closes the request window after rejecting a transaction while a signed Safe transaction waits in the queue', async () => {
+    const { controller, getCallsRequest, uiCtrl } = await prepareTest(false, true)
+    const rejectedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    rejectedRequest.id = 'rejected-request'
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [signedRequest]
+    await controller.addUserRequests([rejectedRequest])
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+    const createNotification = jest.spyOn(uiCtrl.notification, 'create')
+
+    await controller.rejectUserRequests('User rejected', [rejectedRequest.id])
+
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['signed-request'])
+    // The Safe transaction was already waiting, so the user is not told it was just queued
+    expect(createNotification).not.toHaveBeenCalled()
+    signedRequest.signAccountOp.destroy()
+  })
+  test('counts only transactions outside the Safe queue when the request window closes', async () => {
+    const { controller, getCallsRequest, uiCtrl } = await prepareTest(false, true)
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 1n
+    })
+    const unsignedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    signedRequest.id = 'signed-request'
+    unsignedRequest.id = 'unsigned-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+    controller.userRequests = [signedRequest]
+    await controller.addUserRequests([unsignedRequest])
+    const createNotification = jest.spyOn(uiCtrl.notification, 'create')
+
+    await controller.closeRequestWindow()
+
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['signed-request', 'unsigned-request'])
+    expect(createNotification.mock.calls).toEqual([
+      [
+        {
+          title: 'Transaction queued',
+          message: 'Queued pending transactions are available on your Dashboard.'
+        }
+      ]
+    ])
+    signedRequest.signAccountOp.destroy()
+    unsignedRequest.signAccountOp.destroy()
+  })
+  test('does not reopen the request window for a signed Safe transaction that arrives while it closes', async () => {
+    const { controller, getCallsRequest, uiCtrl } = await prepareTest(false, true)
+    const closedRequest = { ...DAPP_CONNECT_REQUEST, id: 'closed-request' }
+    const arrivedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    arrivedRequest.id = 'arrived-request'
+    updateAccountOp(arrivedRequest, { signed: [SAFE_OWNER] })
+    await controller.addUserRequests([closedRequest])
+    const openRequestView = jest.spyOn(uiCtrl.requestView, 'open')
+    // A slow close
+    jest.spyOn(uiCtrl.requestView, 'close').mockImplementation(async () => {
+      controller.userRequests.push(arrivedRequest)
+    })
+
+    await controller.closeRequestWindow()
+
+    expect(controller.currentUserRequest).toBe(null)
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(openRequestView).not.toHaveBeenCalled()
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['arrived-request'])
+    arrivedRequest.signAccountOp.destroy()
+  })
+  test('does not simulate a signed Safe transaction that is added to the queue', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    // @ts-expect-error makeMainController turns simulation off for every test, so turn it back on
+    controller.shouldSimulateAccountOps = true
+    const simulateAccountOp = jest
+      .spyOn(portfolioCtrl, 'simulateAccountOp')
+      .mockResolvedValue(undefined)
+    const signedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    signedRequest.id = 'signed-request'
+    updateAccountOp(signedRequest, { signed: [SAFE_OWNER] })
+
+    await controller.addUserRequests([signedRequest], { executionType: 'queue' })
+
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['signed-request'])
+    expect(simulateAccountOp).not.toHaveBeenCalled()
+    signedRequest.signAccountOp.destroy()
+  })
+  test('simulates an unsigned Safe transaction that is added to the queue', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    // @ts-expect-error makeMainController turns simulation off for every test, so turn it back on
+    controller.shouldSimulateAccountOps = true
+    const simulateAccountOp = jest
+      .spyOn(portfolioCtrl, 'simulateAccountOp')
+      .mockResolvedValue(undefined)
+    const unsignedRequest = await getCallsRequest({
+      addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+      chainId: 10n
+    })
+    unsignedRequest.id = 'unsigned-request'
+
+    await controller.addUserRequests([unsignedRequest], { executionType: 'queue' })
+
+    expect(simulateAccountOp.mock.calls).toEqual([[unsignedRequest.signAccountOp.accountOp]])
+    unsignedRequest.signAccountOp.destroy()
   })
   test('build dapp request', async () => {
     const { controller } = await prepareTest()
@@ -1221,9 +1350,16 @@ describe('RequestsController ', () => {
   test('queues a validated Safe deployment before an app transaction on an undeployed network', async () => {
     const { accountsCtrl, controller, portfolioCtrl } = await prepareTest(true, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
+    // Complete creation data, so the Safe can be deployed without recovering anything first
+    account.safeCreation = {
+      ...account.safeCreation!,
+      setupData: '0x1234'
+    }
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
     jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -1251,16 +1387,14 @@ describe('RequestsController ', () => {
       }
     })
 
+    expect(findDeployDataSpy).not.toHaveBeenCalled()
     const [deploymentRequest, transactionRequest] = controller.userRequests
     expect(deploymentRequest?.kind).toBe('calls')
     expect(transactionRequest?.kind).toBe('calls')
     if (deploymentRequest?.kind !== 'calls' || transactionRequest?.kind !== 'calls') {
       throw new Error('Expected two calls requests')
     }
-    expect(deploymentRequest.meta).toMatchObject({
-      isSafeDeploy: true,
-      safeDeployForRequestId: transactionRequest.id
-    })
+    expect(deploymentRequest.meta).toMatchObject({ isSafeDeploy: true })
     expect(deploymentRequest.dappPromises).toEqual([])
     expect(deploymentRequest.signAccountOp.accountOp.meta?.isSafeDeploy).toBe(true)
     expect(deploymentRequest.signAccountOp.accountOp.signingKeyAddr).toBeNull()
@@ -1273,7 +1407,6 @@ describe('RequestsController ', () => {
     expect(
       simulateAccountOpSpy.mock.calls.some(([accountOp]) => accountOp.meta?.isSafeDeploy)
     ).toBe(false)
-    expect(transactionRequest.meta.safeDeployRequestId).toBe(deploymentRequest.id)
     expect(controller.currentUserRequest).toBe(deploymentRequest)
 
     await controller.rejectUserRequests('User rejected the Safe deployment.', [
@@ -1491,6 +1624,280 @@ describe('RequestsController ', () => {
       res: { alreadyDeployed: true }
     })
   })
+  test('rejects only the safs of the specified Safe on the specified chain', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    const safeAccountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const unsignedSafeRequest = await getCallsRequest({ addr: safeAccountAddr, chainId: 1n })
+    unsignedSafeRequest.id = 'unsigned-safe-request'
+    const signedSafeRequest = await getCallsRequest({ addr: safeAccountAddr, chainId: 1n })
+    signedSafeRequest.id = 'signed-safe-request'
+    updateAccountOp(signedSafeRequest, { signed: [SAFE_OWNER] })
+    const otherChainSafeRequest = await getCallsRequest({ addr: safeAccountAddr, chainId: 10n })
+    otherChainSafeRequest.id = 'other-chain-safe-request'
+    const nonSafeRequest = await getCallsRequest({ addr: accounts[0]!.addr, chainId: 1n })
+    nonSafeRequest.id = 'non-safe-request'
+    const reject = jest.fn()
+    unsignedSafeRequest.dappPromises[0]!.reject = reject
+    const unsignedSafeDestroySpy = jest.spyOn(unsignedSafeRequest.signAccountOp, 'destroy')
+    const signedSafeDestroySpy = jest.spyOn(signedSafeRequest.signAccountOp, 'destroy')
+    const otherChainSafeDestroySpy = jest.spyOn(otherChainSafeRequest.signAccountOp, 'destroy')
+    const nonSafeDestroySpy = jest.spyOn(nonSafeRequest.signAccountOp, 'destroy')
+    jest.spyOn(portfolioCtrl, 'overrideSimulationResults').mockResolvedValue(undefined)
+    controller.userRequests = [
+      unsignedSafeRequest,
+      signedSafeRequest,
+      otherChainSafeRequest,
+      nonSafeRequest
+    ]
+
+    await controller.rejectSameChainNotSignedSafeRequest(
+      safeAccountAddr,
+      1n,
+      'Safe deployment failed'
+    )
+
+    expect(controller.userRequests).toEqual([
+      signedSafeRequest,
+      otherChainSafeRequest,
+      nonSafeRequest
+    ])
+    expect(reject).toHaveBeenCalledTimes(1)
+    expect(unsignedSafeDestroySpy).toHaveBeenCalledTimes(1)
+    expect(signedSafeDestroySpy).not.toHaveBeenCalled()
+    expect(otherChainSafeDestroySpy).not.toHaveBeenCalled()
+    expect(nonSafeDestroySpy).not.toHaveBeenCalled()
+
+    signedSafeRequest.signAccountOp.destroy()
+    otherChainSafeRequest.signAccountOp.destroy()
+    nonSafeRequest.signAccountOp.destroy()
+  })
+
+  describe('handleSafeDeployStatusUpdate', () => {
+    const safeAccountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const makeSafeDeployOp = (status: AccountOpStatus, isSafeDeploy = true) =>
+      ({
+        id: 'safe-deploy-op',
+        accountAddr: safeAccountAddr,
+        chainId: 1n,
+        status,
+        calls: [],
+        meta: { isSafeDeploy }
+      }) as unknown as SubmittedAccountOp
+
+    const setup = async (isDeployedOnChain: boolean) => {
+      const testSetup = await prepareTest(false, true)
+      const { controller, accountsCtrl } = testSetup
+      accountsCtrl.accountStates[safeAccountAddr]!['1']!.isDeployed = false
+      const rejectSpy = jest
+        .spyOn(controller, 'rejectSameChainNotSignedSafeRequest')
+        .mockResolvedValue(undefined)
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
+        .mockImplementation(async () => {
+          accountsCtrl.accountStates[safeAccountAddr]!['1']!.isDeployed = isDeployedOnChain
+        })
+
+      return { ...testSetup, rejectSpy, updateAccountStateSpy }
+    }
+
+    test('rejects the unsigned safs of the Safe on that chain when the deployment fails', async () => {
+      const { controller, getCallsRequest, portfolioCtrl, rejectSpy } = await setup(false)
+      rejectSpy.mockRestore()
+      jest.spyOn(portfolioCtrl, 'overrideSimulationResults').mockResolvedValue(undefined)
+      const unsignedSafeRequest = await getCallsRequest({ addr: safeAccountAddr, chainId: 1n })
+      unsignedSafeRequest.id = 'unsigned-safe-request'
+      const reject = jest.fn()
+      unsignedSafeRequest.dappPromises[0]!.reject = reject
+      const otherChainSafeRequest = await getCallsRequest({ addr: safeAccountAddr, chainId: 10n })
+      otherChainSafeRequest.id = 'other-chain-safe-request'
+      controller.userRequests = [unsignedSafeRequest, otherChainSafeRequest]
+
+      await controller.handleSafeDeployStatusUpdate(makeSafeDeployOp(AccountOpStatus.Failure))
+
+      expect(controller.userRequests).toEqual([otherChainSafeRequest])
+      expect(reject).toHaveBeenCalledTimes(1)
+
+      otherChainSafeRequest.signAccountOp.destroy()
+    })
+
+    test.each([AccountOpStatus.Failure, AccountOpStatus.Rejected])(
+      'rejects the safs without an on-chain check when the deployment is %s',
+      async (status) => {
+        const { controller, rejectSpy, updateAccountStateSpy } = await setup(true)
+
+        await controller.handleSafeDeployStatusUpdate(makeSafeDeployOp(status))
+
+        expect(updateAccountStateSpy).not.toHaveBeenCalled()
+        expect(rejectSpy).toHaveBeenCalledWith(
+          safeAccountAddr,
+          1n,
+          "Activating your Safe account failed, so this request can't be completed."
+        )
+      }
+    )
+
+    test.each([AccountOpStatus.UnknownButPastNonce, AccountOpStatus.BroadcastButStuck])(
+      'keeps the safs when the deployment is %s but the Safe is deployed (e.g. sped up)',
+      async (status) => {
+        const { controller, rejectSpy, updateAccountStateSpy } = await setup(true)
+
+        await controller.handleSafeDeployStatusUpdate(makeSafeDeployOp(status))
+
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+        expect(rejectSpy).not.toHaveBeenCalled()
+      }
+    )
+
+    test('rejects the safs when the deployment was replaced and the Safe is not deployed', async () => {
+      const { controller, rejectSpy } = await setup(false)
+
+      await controller.handleSafeDeployStatusUpdate(
+        makeSafeDeployOp(AccountOpStatus.UnknownButPastNonce)
+      )
+
+      expect(rejectSpy).toHaveBeenCalledWith(
+        safeAccountAddr,
+        1n,
+        "Activating your Safe account failed, so this request can't be completed."
+      )
+    })
+
+    test('rejects the safs with a "taking too long" message when the deployment is stuck', async () => {
+      const { controller, rejectSpy } = await setup(false)
+
+      await controller.handleSafeDeployStatusUpdate(
+        makeSafeDeployOp(AccountOpStatus.BroadcastButStuck)
+      )
+
+      expect(rejectSpy).toHaveBeenCalledWith(
+        safeAccountAddr,
+        1n,
+        'Activating your Safe account is taking too long, so this transaction was cancelled. Please try again.'
+      )
+    })
+
+    test('rejects the safs when the on-chain check fails', async () => {
+      const { controller, rejectSpy, updateAccountStateSpy } = await setup(true)
+      updateAccountStateSpy.mockRejectedValue(new Error('RPC down'))
+
+      await controller.handleSafeDeployStatusUpdate(
+        makeSafeDeployOp(AccountOpStatus.BroadcastButStuck)
+      )
+
+      expect(rejectSpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('does nothing on success or for non-deploy ops', async () => {
+      const { controller, rejectSpy, updateAccountStateSpy } = await setup(false)
+
+      await controller.handleSafeDeployStatusUpdate(makeSafeDeployOp(AccountOpStatus.Success))
+      await controller.handleSafeDeployStatusUpdate(
+        makeSafeDeployOp(AccountOpStatus.Failure, false)
+      )
+
+      expect(updateAccountStateSpy).not.toHaveBeenCalled()
+      expect(rejectSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  test('rejecting the Safe deployment rejects every saf of that Safe on that chain', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    const safeAccountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const deploymentRequest = await getCallsRequest({ addr: safeAccountAddr, chainId: 1n })
+    deploymentRequest.id = 'safe-deploy-request'
+    deploymentRequest.meta.isSafeDeploy = true
+    const firstSaf = await getCallsRequest({ addr: safeAccountAddr, chainId: 1n })
+    firstSaf.id = 'first-saf'
+    const secondSaf = await getCallsRequest({ addr: safeAccountAddr, chainId: 1n })
+    secondSaf.id = 'second-saf'
+    const signedSafeRequest = await getCallsRequest({ addr: safeAccountAddr, chainId: 1n })
+    signedSafeRequest.id = 'signed-safe-request'
+    updateAccountOp(signedSafeRequest, { signed: [SAFE_OWNER] })
+    const otherChainSaf = await getCallsRequest({ addr: safeAccountAddr, chainId: 10n })
+    otherChainSaf.id = 'other-chain-saf'
+    const firstSafReject = jest.fn()
+    const secondSafReject = jest.fn()
+    firstSaf.dappPromises[0]!.reject = firstSafReject
+    secondSaf.dappPromises[0]!.reject = secondSafReject
+    jest.spyOn(portfolioCtrl, 'overrideSimulationResults').mockResolvedValue(undefined)
+    controller.userRequests = [
+      deploymentRequest,
+      firstSaf,
+      secondSaf,
+      signedSafeRequest,
+      otherChainSaf
+    ]
+
+    await controller.rejectUserRequests('User rejected the Safe deployment.', [
+      deploymentRequest.id
+    ])
+
+    expect(controller.userRequests).toEqual([signedSafeRequest, otherChainSaf])
+    expect(firstSafReject).toHaveBeenCalledTimes(1)
+    expect(secondSafReject).toHaveBeenCalledTimes(1)
+
+    signedSafeRequest.signAccountOp.destroy()
+    otherChainSaf.signAccountOp.destroy()
+  })
+
+  test('rejecting a saf keeps the pending Safe deployment', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
+    const safeAccountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const deploymentRequest = await getCallsRequest({ addr: safeAccountAddr, chainId: 1n })
+    deploymentRequest.id = 'safe-deploy-request'
+    deploymentRequest.meta.isSafeDeploy = true
+    const saf = await getCallsRequest({ addr: safeAccountAddr, chainId: 1n })
+    saf.id = 'saf'
+    jest.spyOn(portfolioCtrl, 'overrideSimulationResults').mockResolvedValue(undefined)
+    controller.userRequests = [deploymentRequest, saf]
+
+    await controller.rejectUserRequests('User rejected the request.', [saf.id])
+
+    expect(controller.userRequests).toEqual([deploymentRequest])
+
+    deploymentRequest.signAccountOp.destroy()
+  })
+
+  test.each([true, false])(
+    'does not build a Safe deployment for a 7702 EOA when setDelegation is %s',
+    async (setDelegation) => {
+      const { accountsCtrl, controller } = await prepareTest(false)
+      const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
+      account.creation = null
+      account.safeCreation = undefined
+
+      Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
+        state.isDeployed = false
+      })
+      accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
+      const accountState = accountsCtrl.accountStates[accountAddr]![1]!
+      accountState.isSmarterEoa = true
+      accountState.delegatedContract = '0x1234567890123456789012345678901234567890'
+      jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+      const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
+      const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+
+      await controller.build({
+        type: 'calls',
+        params: {
+          userRequestParams: {
+            calls: [{ to: ZeroAddress, data: '0x', value: 0n }],
+            meta: { accountAddr, chainId: 1n, setDelegation }
+          }
+        }
+      })
+
+      expect(findDeployDataSpy).not.toHaveBeenCalled()
+      expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+      expect(controller.userRequests).toHaveLength(1)
+      expect(controller.userRequests[0]?.meta.isSafeDeploy).toBeUndefined()
+
+      if (controller.userRequests[0]?.kind === 'calls') {
+        controller.userRequests[0].signAccountOp.destroy()
+      }
+    }
+  )
 
   test('refreshes the confirmed Safe state before opening the request paired with its deployment', async () => {
     const { accountsCtrl, accountAddr, benzinRequest, chainId, controller, transactionRequest } =
@@ -1505,7 +1912,6 @@ describe('RequestsController ', () => {
     await controller.resolveUserRequest({}, benzinRequest.id)
 
     expect(updateAccountStateSpy).toHaveBeenCalledWith(accountAddr, 'latest', [chainId])
-    expect(transactionRequest.meta.safeDeployRequestId).toBeUndefined()
     expect(controller.userRequests).toEqual([transactionRequest])
     expect(controller.currentUserRequest).toBe(transactionRequest)
     expect(resumeSpy).toHaveBeenCalledTimes(1)
@@ -1513,96 +1919,66 @@ describe('RequestsController ', () => {
     transactionRequest.signAccountOp.destroy()
   })
 
-  test('links the deployment Benzin request to the request waiting for the Safe', async () => {
-    const { controller, getCallsRequest, mainCtrl } = await prepareTest(false, true)
-    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
-    const chainId = 1n
-    const deploymentRequest = await getCallsRequest({ addr: accountAddr, chainId })
-    deploymentRequest.id = 'safe-deploy-request'
-    deploymentRequest.meta.isSafeDeploy = true
-    deploymentRequest.meta.safeDeployForRequestId = 'request-after-safe-deploy'
-    controller.userRequests = [deploymentRequest]
-    jest.spyOn(controller, 'getSameNonceSafeRequests').mockReturnValue([])
-    const addUserRequestsSpy = jest
-      .spyOn(controller, 'addUserRequests')
-      .mockResolvedValue(undefined)
-    jest.spyOn(controller, 'removeUserRequests').mockResolvedValue(undefined)
-    jest.spyOn(deploymentRequest.signAccountOp, 'cleanupAfterBroadcast').mockReturnValue([])
-    const submittedAccountOp = {
-      ...getActivityAccountOp(accountAddr, chainId, 0n),
-      txnId: SAFE_TX_HASH,
-      meta: { isSafeDeploy: true }
-    }
-
-    await mainCtrl.resolveAccountOpRequest(submittedAccountOp, deploymentRequest.id)
-
-    expect(addUserRequestsSpy).toHaveBeenCalledWith(
-      [
-        expect.objectContaining({
-          kind: 'benzin',
-          meta: expect.objectContaining({
-            safeDeployForRequestId: 'request-after-safe-deploy'
-          })
-        })
-      ],
-      { position: 'first', skipFocus: true }
-    )
-
-    deploymentRequest.signAccountOp.destroy()
-  })
-
   test('keeps Benzin open while the Safe deployment is not confirmed', async () => {
     const { accountsCtrl, benzinRequest, controller, transactionRequest } =
       await prepareSafeDeploymentHandoff()
     jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
-    const emitErrorSpy = jest.spyOn(controller, 'emitError')
+    const onError = jest.fn()
+    controller.onError(onError)
     const resumeSpy = jest.spyOn(transactionRequest.signAccountOp, 'resume')
 
     await controller.resolveUserRequest({}, benzinRequest.id)
 
-    expect(transactionRequest.meta.safeDeployRequestId).toBe('safe-deploy-request')
     expect(controller.userRequests).toEqual([benzinRequest, transactionRequest])
     expect(controller.currentUserRequest).toBe(benzinRequest)
     expect(resumeSpy).not.toHaveBeenCalled()
-    expect(emitErrorSpy).toHaveBeenCalledWith(
+    expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({
         level: 'expected',
-        message: expect.stringContaining("deployment hasn't been confirmed")
+        message:
+          'Your Safe account is still being activated on this network. Wait a moment, then try again.'
       })
     )
 
     transactionRequest.signAccountOp.destroy()
   })
 
-  test('does not open the paired request when refreshing the Safe state fails', async () => {
+  test('keeps Benzin open when refreshing the Safe state after its deployment fails', async () => {
     const { accountsCtrl, benzinRequest, controller, transactionRequest } =
       await prepareSafeDeploymentHandoff()
     jest
       .spyOn(accountsCtrl, 'updateAccountState')
       .mockRejectedValue(new Error('account state fetch failed'))
-    const emitErrorSpy = jest.spyOn(controller, 'emitError')
+    const onError = jest.fn()
+    controller.onError(onError)
     const resumeSpy = jest.spyOn(transactionRequest.signAccountOp, 'resume')
 
-    await controller.setCurrentUserRequestById(transactionRequest.id)
+    await controller.resolveUserRequest({}, benzinRequest.id)
 
-    expect(transactionRequest.meta.safeDeployRequestId).toBe('safe-deploy-request')
+    expect(controller.userRequests).toEqual([benzinRequest, transactionRequest])
     expect(controller.currentUserRequest).toBe(benzinRequest)
     expect(resumeSpy).not.toHaveBeenCalled()
-    expect(emitErrorSpy).toHaveBeenCalledWith(
+    expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({
         level: 'major',
-        message: expect.stringContaining("couldn't check whether your Safe account")
+        message:
+          "We couldn't check if your Safe account is active on this network. Wait a moment, then try again."
       })
     )
 
     transactionRequest.signAccountOp.destroy()
   })
 
-  test('recovers and stores missing Safe deployment data before building the deployment', async () => {
+  test('recovers and stores incomplete Safe deployment data before building the deployment', async () => {
     const { accountsCtrl, controller, storageCtrl } = await prepareTest(true, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
-    account.safeCreation = undefined
+    account.safeCreation = {
+      factoryAddr: '0x',
+      singleton: '0x',
+      saltNonce: '0x',
+      setupData: '0x'
+    }
 
     Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
       state.isDeployed = false
@@ -1615,8 +1991,7 @@ describe('RequestsController ', () => {
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
       singleton: '0x2345678901234567890123456789012345678901' as Hex,
       saltNonce: `0x${'0'.repeat(63)}1` as Hex,
-      setupData: '0x1234' as Hex,
-      version: '1.4.1'
+      setupData: '0x1234' as Hex
     }
     const findDeployDataSpy = jest
       .spyOn(safeLib, 'findDeployData')
@@ -1660,11 +2035,16 @@ describe('RequestsController ', () => {
     )
   })
 
-  test('rejects a Safe deployment when missing creation data cannot be recovered', async () => {
+  test('rejects the app transaction when recovered Safe deployment data cannot be stored', async () => {
     const { accountsCtrl, controller } = await prepareTest(true, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
-    account.safeCreation = undefined
+    account.safeCreation = {
+      factoryAddr: '0x',
+      singleton: '0x',
+      saltNonce: '0x',
+      setupData: '0x'
+    }
 
     Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
       state.isDeployed = false
@@ -1673,13 +2053,76 @@ describe('RequestsController ', () => {
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
     jest.spyOn(safeLib, 'findDeployData').mockResolvedValue({
+      factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
+      singleton: '0x2345678901234567890123456789012345678901' as Hex,
+      saltNonce: `0x${'0'.repeat(63)}1` as Hex,
+      setupData: '0x1234' as Hex
+    })
+    jest
+      .spyOn(accountsCtrl, 'updateSafeCreation')
+      .mockRejectedValue(new Error('storage unavailable'))
+    const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+    const reject = jest.fn()
+
+    await controller.build({
+      type: 'dappRequest',
+      params: {
+        request: {
+          method: 'eth_sendTransaction',
+          params: [{ from: accountAddr, to: ZeroAddress, value: '0x0', data: '0x' }],
+          session: MOCK_SESSION
+        },
+        dappPromise: {
+          id: 'failed-safe-deploy-storage-test',
+          resolve: jest.fn(),
+          reject,
+          session: MOCK_SESSION
+        }
+      }
+    })
+
+    expect(controller.userRequests).toEqual([])
+    expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+    expect(reject).toHaveBeenCalledTimes(1)
+    expect(reject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message:
+          "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
+      })
+    )
+  })
+
+  test('rejects a Safe deployment when incomplete creation data cannot be recovered', async () => {
+    const { accountsCtrl, controller } = await prepareTest(true, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
+    account.safeCreation = {
       factoryAddr: '0x',
       singleton: '0x',
-      setupData: '0x',
       saltNonce: '0x',
-      version: ''
+      setupData: '0x'
+    }
+
+    Object.values(accountsCtrl.accountStates[accountAddr]!).forEach((state) => {
+      state.isDeployed = false
     })
-    const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+    accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
+    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    const incompleteSafeCreation = {
+      factoryAddr: '0x' as Hex,
+      singleton: '0x' as Hex,
+      setupData: '0x' as Hex,
+      saltNonce: '0x' as Hex
+    }
+    const findDeployDataSpy = jest
+      .spyOn(safeLib, 'findDeployData')
+      .mockResolvedValue(incompleteSafeCreation)
+    // incomplete creation data cannot derive the Safe address
+    const getSafeDeploymentCallSpy = jest
+      .spyOn(safeLib, 'getSafeDeploymentCall')
+      .mockResolvedValue(null)
+    const updateSafeCreationSpy = jest.spyOn(accountsCtrl, 'updateSafeCreation')
     const reject = jest.fn()
 
     await controller.build({
@@ -1700,10 +2143,17 @@ describe('RequestsController ', () => {
     })
 
     expect(controller.userRequests).toEqual([])
-    expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+    // Recovery is tried from the network the Safe is deployed on, but its data is still incomplete.
+    // The latest info found is stored anyway, and the deployment call cannot be built from it
+    expect(findDeployDataSpy).toHaveBeenCalledTimes(1)
+    expect(findDeployDataSpy).toHaveBeenCalledWith(accountAddr, 10n, expect.anything())
+    expect(updateSafeCreationSpy).toHaveBeenCalledWith(accountAddr, incompleteSafeCreation)
+    expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
+    expect(reject).toHaveBeenCalledTimes(1)
     expect(reject).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining("can't be deployed using its saved setup")
+        message:
+          "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
       })
     )
   })
@@ -1744,10 +2194,363 @@ describe('RequestsController ', () => {
     expect(controller.userRequests).toEqual([])
     expect(reject).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining("can't be deployed using its saved setup")
+        message:
+          "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
       })
     )
   })
+  describe('Safe deployment for message requests', () => {
+    const safeAccountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const SAFE_DEPLOYMENT_CALL = {
+      to: '0x1234567890123456789012345678901234567890',
+      value: 0n,
+      data: '0x1234' as Hex
+    }
+
+    const getMessageRequest = ({
+      id,
+      chainId = 1n,
+      accountAddr = safeAccountAddr,
+      reject = jest.fn(),
+      signed
+    }: {
+      id: string
+      chainId?: bigint
+      accountAddr?: string
+      reject?: jest.Mock
+      signed?: string[]
+    }): PlainTextMessageUserRequest => ({
+      id,
+      kind: 'message',
+      meta: { params: { message: '0x74657374' }, accountAddr, chainId, signed },
+      dappPromises: [{ id, resolve: jest.fn(), reject, session: MOCK_SESSION, meta: {} }]
+    })
+
+    const getTypedMessageRequest = ({
+      id,
+      chainId = 1n
+    }: {
+      id: string
+      chainId?: bigint
+    }): TypedMessageUserRequest => ({
+      id,
+      kind: 'typedMessage',
+      meta: {
+        params: {
+          domain: { name: 'Test', version: '1', chainId },
+          types: { Mail: [{ name: 'contents', type: 'string' }] },
+          message: { contents: 'test' },
+          primaryType: 'Mail'
+        },
+        accountAddr: safeAccountAddr,
+        chainId
+      },
+      dappPromises: [{ id, resolve: jest.fn(), reject: jest.fn(), session: MOCK_SESSION, meta: {} }]
+    })
+
+    /**
+     * A Safe with complete creation data that is not deployed on Ethereum, so a deployment
+     * can be built without recovering anything first.
+     */
+    const prepareUndeployedSafe = async () => {
+      const testSetup = await prepareTest(false, true)
+      const { accountsCtrl, portfolioCtrl, safeCtrl } = testSetup
+      const account = accountsCtrl.accounts.find(({ addr }) => addr === safeAccountAddr)!
+      account.safeCreation = { ...account.safeCreation!, setupData: '0x1234' }
+      const accountState = accountsCtrl.accountStates[safeAccountAddr]![1]!
+      accountState.isDeployed = false
+      jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+      // the onchain check confirms the Safe is still not deployed
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      const getSafeDeploymentCallSpy = jest
+        .spyOn(safeLib, 'getSafeDeploymentCall')
+        .mockResolvedValue(SAFE_DEPLOYMENT_CALL)
+      jest.spyOn(portfolioCtrl, 'overrideSimulationResults').mockResolvedValue(undefined)
+      jest.spyOn(safeCtrl, 'rejectTxnId').mockResolvedValue(undefined)
+
+      return { ...testSetup, accountState, getSafeDeploymentCallSpy, updateAccountStateSpy }
+    }
+
+    const getSafeDeployRequests = (userRequests: UserRequest[]) =>
+      userRequests.filter((r): r is CallsUserRequest => r.kind === 'calls' && !!r.meta.isSafeDeploy)
+
+    test('queues a Safe deployment before a message on a network the Safe is not deployed on', async () => {
+      const { controller, getSafeDeploymentCallSpy, updateAccountStateSpy } =
+        await prepareUndeployedSafe()
+      const reject = jest.fn()
+      const messageRequest = getMessageRequest({ id: 'safe-message', reject })
+
+      await controller.addUserRequests([messageRequest])
+
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+      expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
+      const [deploymentRequest, addedMessageRequest] = controller.userRequests
+      if (deploymentRequest?.kind !== 'calls') throw new Error('Expected a deployment request')
+      expect(deploymentRequest.meta).toMatchObject({
+        accountAddr: safeAccountAddr,
+        chainId: 1n,
+        isSafeDeploy: true
+      })
+      expect(deploymentRequest.dappPromises).toEqual([])
+      expect(deploymentRequest.signAccountOp.accountOp.calls).toEqual([
+        expect.objectContaining({ to: SAFE_DEPLOYMENT_CALL.to, data: SAFE_DEPLOYMENT_CALL.data })
+      ])
+      expect(addedMessageRequest).toBe(messageRequest)
+      expect(controller.userRequests).toHaveLength(2)
+      // the deployment is the one that opens, the message waits for it
+      expect(controller.currentUserRequest).toBe(deploymentRequest)
+      expect(reject).not.toHaveBeenCalled()
+
+      await controller.rejectUserRequests('User rejected the Safe deployment.', [
+        deploymentRequest.id
+      ])
+
+      // the message can't be signed without the deployment, so it's rejected with it
+      expect(controller.userRequests).toEqual([])
+      expect(reject).toHaveBeenCalledTimes(1)
+    })
+
+    test('keeps the deployment before the message when the message is added first in the list', async () => {
+      const { controller } = await prepareUndeployedSafe()
+      const messageRequest = getMessageRequest({ id: 'safe-message' })
+
+      await controller.addUserRequests([messageRequest], { position: 'first' })
+
+      const [deploymentRequest, addedMessageRequest] = controller.userRequests
+      if (deploymentRequest?.kind !== 'calls') throw new Error('Expected a deployment request')
+      expect(deploymentRequest.meta.isSafeDeploy).toBe(true)
+      expect(addedMessageRequest).toBe(messageRequest)
+      expect(controller.currentUserRequest).toBe(deploymentRequest)
+
+      await controller.rejectUserRequests('User rejected the Safe deployment.', [
+        deploymentRequest.id
+      ])
+    })
+
+    test('queues a Safe deployment before a typed message as well', async () => {
+      const { controller } = await prepareUndeployedSafe()
+      const typedMessageRequest = getTypedMessageRequest({ id: 'safe-typed-message' })
+
+      await controller.addUserRequests([typedMessageRequest])
+
+      const [deploymentRequest, addedMessageRequest] = controller.userRequests
+      if (deploymentRequest?.kind !== 'calls') throw new Error('Expected a deployment request')
+      expect(deploymentRequest.meta.isSafeDeploy).toBe(true)
+      expect(addedMessageRequest).toBe(typedMessageRequest)
+      expect(controller.currentUserRequest).toBe(deploymentRequest)
+
+      await controller.rejectUserRequests('User rejected the Safe deployment.', [
+        deploymentRequest.id
+      ])
+    })
+
+    test('reuses the pending Safe deployment for another message on the same network', async () => {
+      const { controller, getSafeDeploymentCallSpy } = await prepareUndeployedSafe()
+      const firstMessageRequest = getMessageRequest({ id: 'first-safe-message' })
+      const secondMessageRequest = getMessageRequest({ id: 'second-safe-message' })
+
+      await controller.addUserRequests([firstMessageRequest])
+      await controller.addUserRequests([secondMessageRequest])
+
+      expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
+      const safeDeployRequests = getSafeDeployRequests(controller.userRequests)
+      expect(safeDeployRequests).toHaveLength(1)
+      expect(safeDeployRequests[0]!.signAccountOp.accountOp.calls).toHaveLength(1)
+      expect(controller.userRequests).toEqual([
+        safeDeployRequests[0],
+        firstMessageRequest,
+        secondMessageRequest
+      ])
+
+      await controller.rejectUserRequests('User rejected the Safe deployment.', [
+        safeDeployRequests[0]!.id
+      ])
+      expect(controller.userRequests).toEqual([])
+    })
+
+    test('adds a single Safe deployment for messages added together', async () => {
+      const { controller, getSafeDeploymentCallSpy } = await prepareUndeployedSafe()
+      const plainMessageRequest = getMessageRequest({ id: 'safe-message' })
+      const typedMessageRequest = getTypedMessageRequest({ id: 'safe-typed-message' })
+
+      await controller.addUserRequests([plainMessageRequest, typedMessageRequest])
+
+      expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
+      const safeDeployRequests = getSafeDeployRequests(controller.userRequests)
+      expect(safeDeployRequests).toHaveLength(1)
+      expect(controller.userRequests).toEqual([
+        safeDeployRequests[0],
+        plainMessageRequest,
+        typedMessageRequest
+      ])
+
+      await controller.rejectUserRequests('User rejected the Safe deployment.', [
+        safeDeployRequests[0]!.id
+      ])
+    })
+
+    test('does not deploy a Safe that is already deployed on the network of the message', async () => {
+      const { accountState, controller, getSafeDeploymentCallSpy, updateAccountStateSpy } =
+        await prepareUndeployedSafe()
+      accountState.isDeployed = true
+      const messageRequest = getMessageRequest({ id: 'safe-message' })
+
+      await controller.addUserRequests([messageRequest])
+
+      expect(updateAccountStateSpy).not.toHaveBeenCalled()
+      expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+      expect(controller.userRequests).toEqual([messageRequest])
+      expect(controller.currentUserRequest).toBe(messageRequest)
+    })
+
+    test('does not deploy a Safe the onchain check finds deployed despite an outdated state', async () => {
+      const { accountState, controller, getSafeDeploymentCallSpy, updateAccountStateSpy } =
+        await prepareUndeployedSafe()
+      updateAccountStateSpy.mockImplementation(async () => {
+        accountState.isDeployed = true
+      })
+      const messageRequest = getMessageRequest({ id: 'safe-message' })
+
+      await controller.addUserRequests([messageRequest])
+
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+      expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+      expect(controller.userRequests).toEqual([messageRequest])
+    })
+
+    test('does not deploy anything for a message of an account that is not a Safe', async () => {
+      const { accountsCtrl, controller } = await prepareTest()
+      const accountAddr = accounts[0]!.addr
+      accountsCtrl.accountStates[accountAddr]![1]!.isDeployed = false
+      const updateAccountStateSpy = jest.spyOn(accountsCtrl, 'updateAccountState')
+      const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+      const messageRequest = getMessageRequest({ id: 'smart-account-message', accountAddr })
+
+      await controller.addUserRequests([messageRequest])
+
+      expect(updateAccountStateSpy).not.toHaveBeenCalled()
+      expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+      expect(controller.userRequests).toEqual([messageRequest])
+    })
+
+    test('rejects the message without adding requests when the Safe cannot be deployed', async () => {
+      const { controller, getSafeDeploymentCallSpy } = await prepareUndeployedSafe()
+      getSafeDeploymentCallSpy.mockResolvedValue(null)
+      const onError = jest.fn()
+      controller.onError(onError)
+      const reject = jest.fn()
+
+      await controller.addUserRequests([getMessageRequest({ id: 'safe-message', reject })])
+
+      expect(controller.userRequests).toEqual([])
+      expect(controller.currentUserRequest).toBeNull()
+      expect(reject).toHaveBeenCalledTimes(1)
+      expect(reject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message:
+            "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
+        })
+      )
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ level: 'expected' }))
+    })
+
+    test('rejects the message when incomplete Safe creation data cannot be recovered', async () => {
+      const { accountsCtrl, controller, getSafeDeploymentCallSpy } = await prepareUndeployedSafe()
+      const account = accountsCtrl.accounts.find(({ addr }) => addr === safeAccountAddr)!
+      account.safeCreation = { ...account.safeCreation!, setupData: '0x' }
+      // no network the Safe is deployed on to recover the data from
+      Object.values(accountsCtrl.accountStates[safeAccountAddr]!).forEach((state) => {
+        state.isDeployed = false
+      })
+      const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
+      const reject = jest.fn()
+
+      await controller.addUserRequests([getMessageRequest({ id: 'safe-message', reject })])
+
+      expect(findDeployDataSpy).not.toHaveBeenCalled()
+      expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+      expect(controller.userRequests).toEqual([])
+      expect(reject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message:
+            "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
+        })
+      )
+    })
+
+    test('rejects only the unsigned messages of the Safe on the chain of the failed deployment', async () => {
+      const { controller, safeCtrl } = await prepareTest(false, true)
+      jest.spyOn(safeCtrl, 'rejectTxnId').mockResolvedValue(undefined)
+      const unsignedReject = jest.fn()
+      const signedReject = jest.fn()
+      const otherChainReject = jest.fn()
+      const nonSafeReject = jest.fn()
+      const unsignedMessage = getMessageRequest({ id: 'unsigned', reject: unsignedReject })
+      const signedMessage = getMessageRequest({
+        id: 'signed',
+        reject: signedReject,
+        signed: [SAFE_OWNER]
+      })
+      const otherChainMessage = getMessageRequest({
+        id: 'other-chain',
+        chainId: 10n,
+        reject: otherChainReject
+      })
+      const nonSafeMessage = getMessageRequest({
+        id: 'non-safe',
+        accountAddr: accounts[0]!.addr,
+        reject: nonSafeReject
+      })
+      controller.userRequests = [unsignedMessage, signedMessage, otherChainMessage, nonSafeMessage]
+
+      await controller.rejectSameChainNotSignedSafeRequest(
+        safeAccountAddr,
+        1n,
+        'Safe deployment failed'
+      )
+
+      expect(controller.userRequests).toEqual([signedMessage, otherChainMessage, nonSafeMessage])
+      expect(unsignedReject).toHaveBeenCalledTimes(1)
+      expect(signedReject).not.toHaveBeenCalled()
+      expect(otherChainReject).not.toHaveBeenCalled()
+      expect(nonSafeReject).not.toHaveBeenCalled()
+    })
+
+    test('keeps Benzin open while the Safe deployment a message waits for is not confirmed', async () => {
+      const { accountsCtrl, controller } = await prepareTest(false, true)
+      accountsCtrl.accountStates[safeAccountAddr]![1]!.isDeployed = false
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      const messageRequest = getMessageRequest({ id: 'safe-message' })
+      const benzinRequest: BenzinUserRequest = {
+        id: 'safe-deploy-benzin',
+        kind: 'benzin',
+        meta: {
+          accountAddr: safeAccountAddr,
+          chainId: 1n,
+          txnId: null,
+          userOpHash: null,
+          submittedAccountOp: {
+            ...getActivityAccountOp(safeAccountAddr, 1n, 0n),
+            meta: { isSafeDeploy: true }
+          }
+        },
+        dappPromises: []
+      }
+      controller.userRequests = [benzinRequest, messageRequest]
+      controller.currentUserRequest = benzinRequest
+
+      await controller.resolveUserRequest({}, benzinRequest.id)
+
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+      expect(controller.userRequests).toEqual([benzinRequest, messageRequest])
+      expect(controller.currentUserRequest).toBe(benzinRequest)
+    })
+  })
+
   test('resolve user request', async () => {
     const { controller, getCallsRequest } = await prepareTest()
 
@@ -2267,6 +3070,47 @@ describe('RequestsController ', () => {
       callsRequests[0]!.signAccountOp.destroy()
     })
 
+    test.each([
+      ['a smart account', false],
+      ['an EOA', true]
+    ])(
+      'focuses a transaction on another chain over the one already open, for %s',
+      async (_, isEOA) => {
+        const { controller, dappsCtrl, accountsCtrl } = await prepareTest(true)
+        if (isEOA) accountsCtrl.accounts.find((a) => a.addr === ACCOUNT_ADDR)!.creation = null
+        const [onMainnet, onBase] = makeRejectMocks(2)
+
+        await sendTransaction(controller, onMainnet!)
+        dappsCtrl.updateDapp(MOCK_SESSION.id, { chainId: 8453 })
+        await sendTransaction(controller, onBase!)
+
+        const callsRequests = controller.userRequests.filter(
+          (r) => r.kind === 'calls'
+        ) as CallsUserRequest[]
+        expect(callsRequests.map((r) => r.meta.chainId)).toEqual([1n, 8453n])
+        expect(controller.currentUserRequest).toBe(callsRequests[1])
+
+        callsRequests.forEach((r) => r.signAccountOp.destroy())
+      }
+    )
+
+    test.each([
+      ['a smart account', false],
+      ['an EOA', true]
+    ])('focuses a message request over the transaction already open, for %s', async (_, isEOA) => {
+      const { controller, accountsCtrl } = await prepareTest(true)
+      if (isEOA) accountsCtrl.accounts.find((a) => a.addr === ACCOUNT_ADDR)!.creation = null
+      const [transaction, message] = makeRejectMocks(2)
+
+      await sendTransaction(controller, transaction!)
+      await signTypedData(controller, message!)
+
+      expect(controller.currentUserRequest?.kind).toBe('typedMessage')
+
+      const callsRequest = controller.userRequests.find((r) => r.kind === 'calls')
+      ;(callsRequest as CallsUserRequest).signAccountOp.destroy()
+    })
+
     test('a malformed transaction in the batch costs only the app that sent it', async () => {
       const { controller, uiCtrl } = await prepareTest(true)
       const sideEffects = watchSideEffects(uiCtrl)
@@ -2428,9 +3272,11 @@ describe('RequestsController ', () => {
       jest
         .spyOn(accountsCtrl, 'forceFetchPendingState')
         .mockImplementation(async (_addr: string, chainId: bigint) =>
+          // The real method reads the state from a map, so it resolves with `undefined` when
+          // nothing was fetched, even though its signature doesn't say so
           chainId === 10n
-            ? undefined
-            : accountsCtrl.accountStates[ACCOUNT_ADDR]![chainId.toString()]
+            ? (undefined as unknown as AccountOnchainState)
+            : accountsCtrl.accountStates[ACCOUNT_ADDR]![chainId.toString()]!
         )
 
       await controller.addUserRequests([unfetchable, fine])
@@ -2984,7 +3830,7 @@ describe('SIWE auto-login and signing authentication', () => {
   }
 
   test('does not sign on the user behalf for an app they have not confirmed for signing', async () => {
-    const { controller, autoLoginCtrl } = await prepareTest(true)
+    const { controller, autoLoginCtrl } = await prepareTest(true, false, 'mobile-ios')
 
     jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
     const autoLoginSpy = jest.spyOn(autoLoginCtrl, 'autoLogin')
@@ -3001,9 +3847,26 @@ describe('SIWE auto-login and signing authentication', () => {
   })
 
   test('signs on the user behalf once they have confirmed for that app', async () => {
-    const { controller, autoLoginCtrl, dappsCtrl } = await prepareTest(true)
+    const { controller, autoLoginCtrl, dappsCtrl } = await prepareTest(true, false, 'mobile-ios')
 
     dappsCtrl.updateDapp(MOCK_SESSION.id, { signingAuthenticated: true })
+
+    jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+    const autoLoginSpy = jest
+      .spyOn(autoLoginCtrl, 'autoLogin')
+      .mockResolvedValue({ signature: '0xdeadbeef' } as any)
+
+    const resolve = await buildSiweRequest(controller)
+
+    expect(autoLoginSpy).toHaveBeenCalled()
+    expect(resolve).toHaveBeenCalledWith({ hash: '0xdeadbeef' })
+    expect(controller.userRequests.length).toBe(0)
+
+    jest.restoreAllMocks()
+  })
+
+  test('signs on the user behalf without a confirmation outside of mobile', async () => {
+    const { controller, autoLoginCtrl } = await prepareTest(true, false, 'browser-webkit')
 
     jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
     const autoLoginSpy = jest

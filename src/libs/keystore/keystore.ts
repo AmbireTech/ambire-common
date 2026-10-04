@@ -133,14 +133,16 @@ export const decryptMainKeyWithSecret = async (
     ['encrypt', 'decrypt']
   )
 
-  // Only the cipher is wrapped, so a key import failing stays an unexpected platform failure
-  // rather than being reported to the user as a wrong password
+  // Only the cipher is wrapped, so a key import failing or malformed stored data stays an
+  // unexpected failure rather than being reported to the user as a wrong password
+  const iv = new Uint8Array(getBytes(aesEncrypted.iv))
+  const ciphertext = new Uint8Array(getBytes(aesEncrypted.ciphertext))
   let decrypted: ArrayBuffer
   try {
     decrypted = await crypto.subtle.decrypt(
-      { name: CIPHER, iv: new Uint8Array(getBytes(aesEncrypted.iv)), tagLength: 128 },
+      { name: CIPHER, iv, tagLength: 128 },
       importedSecretKey,
-      new Uint8Array(getBytes(aesEncrypted.ciphertext))
+      ciphertext
     )
   } catch (error) {
     throw new WrongSecretError(error)

@@ -68,6 +68,7 @@ const accountState: AccountOnchainState = {
   delegatedContract: null,
   delegatedContractName: null,
   threshold: 1,
+  safeVersion: null,
   updatedAt: Date.now()
 }
 

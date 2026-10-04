@@ -8,6 +8,7 @@ import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/su
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { Erc7730PersistedRegistryCache } from '../libs/humanizer/erc7730/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
+import { WalletStakingRelayerLog } from '../libs/walletStaking/pendingWithdrawal'
 import {
   AccountAssetsState as PortfolioAccountAssetsState,
   LearnedAssets,
@@ -22,9 +23,9 @@ import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
-import type { FeeSpeed } from './signAccountOp'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
+import type { FeeSpeed } from './signAccountOp'
 export type IStorageController = ControllerInterface<
   InstanceType<typeof import('../controllers/storage/storage').StorageController>
 >
@@ -65,6 +66,7 @@ export type StorageProps = {
   dappsV2: Dapp[]
   dapps: Dapp[]
   recentDapps: RecentDappEntry[]
+  disguisedAsMetaMaskDapps: string[]
   trending: {
     updatedAt: number
     tokens: TrendingToken[]
@@ -136,6 +138,10 @@ export type StorageProps = {
   functionSelectors: Selectors
   // Per-controller debug logging toggles. Only enabled ones are stored
   debugLogNamespaces: Record<string, boolean>
+  // The $WALLET staking leave logs (in the relayer's shape) of each account's pending withdrawals,
+  // keyed by the lowercase account address. Kept so that the withdrawals are known without the
+  // relayer, e.g. when the user opted out of the withdrawals lookup
+  walletStakingLeaveLogs: { [accountAddr: string]: WalletStakingRelayerLog[] }
 }
 
 export interface Storage {

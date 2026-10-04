@@ -1,5 +1,6 @@
 import { generateUuid } from '@/utils/uuid'
 
+import { AccountStates } from '../../interfaces/account'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import {
   CallsUserRequest,
@@ -109,3 +110,22 @@ export const sumTopUps = (userRequests: UserRequest[]): bigint | undefined => {
       .reduce((a, b) => a! + b!, 0n) ?? undefined
   )
 }
+
+/**
+ * True for a Safe transaction that at least one owner has already signed. Such a transaction
+ * waits in the Safe queue for the other owners, so the wallet should open it only when the
+ * user picks it.
+ */
+export const isSignedSafeCallsRequest = (request: UserRequest): boolean =>
+  request.kind === 'calls' &&
+  !!request.signAccountOp.account.safeCreation &&
+  !!request.signAccountOp.accountOp.signed?.length
+
+// todo: description
+export const isWaitingForSafeDeployment = (
+  request: UserRequest,
+  accountStates: AccountStates
+): boolean =>
+  request.kind === 'calls' &&
+  !!request.signAccountOp.account.safeCreation &&
+  !accountStates[request.meta.accountAddr]?.[request.meta.chainId.toString()]?.isDeployed

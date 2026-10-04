@@ -98,8 +98,6 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     swapTxn?: SwapAndBridgeSendTxRequest
     quote?: SwapAndBridgeQuote
     isSafeDeploy?: boolean
-    safeDeployRequestId?: UserRequestBase['id']
-    safeDeployForRequestId?: UserRequestBase['id']
   }
   signAccountOp: ISignAccountOpController
 }
@@ -187,7 +185,6 @@ export interface BenzinUserRequest extends UserRequestBase<[]> {
     userOpHash: string | null
     accountAddr: string
     chainId: bigint
-    safeDeployForRequestId?: UserRequestBase['id']
   }
 }
 

@@ -73,7 +73,6 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   safeInfo?: SafeAccountCreation & {
     deployedOn: bigint[]
-    version: string
     address: Hex
     owners: Hex[]
     // does the safe need special conditions to send/sign txns
@@ -140,7 +139,7 @@ export class SafeController extends EventEmitter implements ISafeController {
     if (!deployedOn) {
       this.importError = {
         address: safeAddr,
-        message: `The Safe account is not deployed on any of your enabled networks that have Safe support: ${safeNetworks.map((n) => n.name).join(', ')}. Please deploy it from Safe Global on at least one network before continuing`
+        message: `The Safe account isn't active on any of your enabled networks that support Safe: ${safeNetworks.map((n) => n.name).join(', ')}. Please activate it in the Safe app on at least one of them before continuing.`
       }
       return
     }
@@ -150,19 +149,25 @@ export class SafeController extends EventEmitter implements ISafeController {
     const [safeInfo, safeCreation]: [SafeInfoResponse | Error, SafeAccountCreation | Error] =
       await Promise.all([
         apiKit.getSafeInfo(safeAddr).catch((e) => e),
-        findDeployData(safeAddr, deployedOn.chainId, provider).catch((e) => e)
+        findDeployData(safeAddr, deployedOn.chainId, provider)
       ])
-    if (safeInfo instanceof Error || safeCreation instanceof Error) {
+    if (safeInfo instanceof Error) {
       this.importError = {
         address: safeAddr,
         message: 'Failed to retrieve information about the Safe. Please try again'
       }
       return
     }
+    if (safeCreation instanceof Error) {
+      this.importError = {
+        address: safeAddr,
+        message: safeCreation.message
+      }
+      return
+    }
 
     this.safeInfo = {
       ...safeCreation,
-      version: safeCreation.version || safeInfo.version,
       address: safeInfo.address as Hex,
       owners: safeInfo.owners as Hex[],
       deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId),

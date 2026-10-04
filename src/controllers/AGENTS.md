@@ -91,6 +91,7 @@ The networks controller that reads the network list from storage (which is async
 - Never use raw `setInterval`. Always use `RecurringTimeout` from `src/classes/recurringTimeout/recurringTimeout.ts`.
 - Long-running background intervals must be declared in `ContinuousUpdatesController`, which orchestrates their lifecycle based on app state and controller events. If you need a new background loop, add it there and wire its start/stop/restart logic through the existing event subscriptions.
 - Never call `this.storage.set()` in parallel. Always await the previous call before making another one.
+- When adding or changing a storage migration in `StorageController`, make it safe to re-run (it can get skipped or interrupted and run later on data already in the current shape) - follow the rules in the comment above `#loadMigrations` in `src/controllers/storage/storage.ts`.
 - Always use `this.emitError` for error handling in controllers; all emitted errors are reported to Sentry and logged, and non-silent errors are also displayed as toasts in the UI. Public methods must never let errors propagate — use `EmittableError` (thrown inside a `withStatus` wrapper, which auto-emits it) or `try/catch` + `emitError({ level, message, error })` otherwise.
 - Public state is serialized and sent to the UI on every update, so it should be minimal and only include what's necessary for the UI. Do not store large data or sensitive data in public state. Use private fields for that and expose only derived non-sensitive data in public state if needed.
 - NEVER write expensive calculations inside getters.
@@ -131,7 +132,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **ProvidersController** – Initializes and manages JSON-RPC providers for each configured network.
 - **PhishingController** – Maintains and updates a list of phishing domains and addresses to protect users.
 - **PortfolioController** – Fetches and caches token balances, DeFi positions, and price data per account.
-- **WalletTokenController** – Loads and validates WALLET-token data for the portfolio, including the cached xWALLET conversion rate.
+- **WalletTokenController** – Loads each account's pending $WALLET withdrawals (from the relayer's leave logs, or, when the user opts out, from local and user-entered transactions) and stores them as leave logs.
 - **RequestsController** – Handles all requests (e.g., signing, connecting to an app, etc.), which come from the app UI and dApps.
 - **SafeController** – Integrates with Safe (Gnosis Safe) multisig wallets for transaction and message fetching.
 - **SelectedAccountController** – Tracks the currently selected account and derives its data (e.g., portfolio and auto login policies)
