@@ -11,6 +11,7 @@ import {
 } from '../../consts/privacyPools'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { AccountOpStatus } from '../../libs/accountOp/types'
+import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -236,8 +237,12 @@ class FakeProtocol {
   /** The options it was last asked to prove with. */
   unshieldOptions: unknown = null
 
-  constructor(host: any) {
+  /** What the controller constructed it with - the prover factory among them. */
+  params: any
+
+  constructor(host: any, params: any) {
     this.host = host
+    this.params = params
     protocols.push(this)
   }
 
@@ -299,7 +304,9 @@ class FakeProtocol {
 }
 
 jest.mock('@kohaku-eth/privacy-pools', () => ({
-  PrivacyPoolsV1Protocol: jest.fn().mockImplementation((host: any) => new FakeProtocol(host)),
+  PrivacyPoolsV1Protocol: jest
+    .fn()
+    .mockImplementation((host: any, params: any) => new FakeProtocol(host, params)),
   OxBowAspService: jest.fn(),
   createPPv1Broadcaster: jest.fn()
 }))
@@ -414,8 +421,13 @@ const releaseSync = async (seedId: string) => {
 const prepareTest = async ({
   accounts = ['seed-a', 'seed-b'],
   // Passed to start again from what an earlier controller left in storage, as after a restart
-  storage = new StorageController(produceMemoryStore())
-}: { accounts?: string[]; storage?: StorageController } = {}) => {
+  storage = new StorageController(produceMemoryStore()),
+  proverFactory
+}: {
+  accounts?: string[]
+  storage?: StorageController
+  proverFactory?: PrivacyPoolsProverFactory
+} = {}) => {
   await storage.set(
     'privacyPoolsAccounts',
     accounts.map((seedId) => ({ seedId, createdAt: 1 }))
@@ -434,6 +446,7 @@ const prepareTest = async ({
     storage,
     fetch: fakeFetch as any,
     circuitsBaseUrl: '',
+    proverFactory,
     onAccountsRemoved
   })
   await controller.initialLoadPromise
@@ -1411,6 +1424,41 @@ describe('PrivacyPoolsController', () => {
       })
     })
   })
+  describe('proving', () => {
+    const syncedProtocol = async (proverFactory?: PrivacyPoolsProverFactory) => {
+      const { controller, selectedAccount } = await prepareTest({ proverFactory })
+      selectedAccount.select('seed-a')
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+
+      const [protocol] = protocols
+      return protocol!
+    }
+
+    it('hands the SDK the platform prover when there is one', async () => {
+      const proof = { proof: { pi_a: ['1'] }, publicSignals: ['2'], mappedSignals: {} }
+      const prove = jest.fn(async () => proof)
+      const proverFactory = jest.fn(async () => ({ prove }) as any)
+
+      const protocol = await syncedProtocol(proverFactory)
+      const prover = await protocol.params.proverFactory()
+
+      await expect(prover.prove('commitment', { value: 1n })).resolves.toBe(proof)
+      expect(proverFactory).toHaveBeenCalledTimes(1)
+      expect(prove).toHaveBeenCalledWith('commitment', { value: 1n })
+    })
+
+    it('proves in its own context without one, from the circuits base URL', async () => {
+      const protocol = await syncedProtocol()
+
+      // The test passes no base URL, which is what a platform without artifacts does
+      await expect(protocol.params.proverFactory()).rejects.toThrow(
+        'privacyPools: proving is not available on this platform (no circuit artifacts)'
+      )
+    })
+  })
+
   describe('prices', () => {
     it('prices every asset the pools accept, not only those held, when syncing', async () => {
       const { controller, selectedAccount } = await prepareTest()

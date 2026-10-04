@@ -112,6 +112,7 @@ import {
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
+import { PrivacyPoolsProverFactory } from '@/libs/privacyPools/prover'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
@@ -256,6 +257,7 @@ export class MainController extends EventEmitter implements IMainController {
     externalSignerControllers,
     uiManager,
     privacyPoolsCircuitsBaseUrl,
+    privacyPoolsProverFactory,
     getPrivacyPoolsInitialState
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
@@ -278,6 +280,11 @@ export class MainController extends EventEmitter implements IMainController {
      * platform layer knows, so it is injected rather than derived here.
      */
     privacyPoolsCircuitsBaseUrl: string
+    /**
+     * Where Privacy Pools proofs are generated, when the platform layer has a better place for them
+     * than this controller's own context - see `PrivacyPoolsController`'s `proverFactory`.
+     */
+    privacyPoolsProverFactory?: PrivacyPoolsProverFactory
     /**
      * Loads the pre-scanned Privacy Pools history a first sync starts from. Shipped by the platform
      * layer, since only it knows how its build serves several megabytes of it - and absent is fine,
@@ -445,6 +452,7 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       fetch: this.fetch,
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
+      proverFactory: privacyPoolsProverFactory,
       getInitialState: getPrivacyPoolsInitialState,
       onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
     })

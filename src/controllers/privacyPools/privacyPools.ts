@@ -60,7 +60,7 @@ import {
   withKohakuDebugProver,
   withKohakuDebugTiming
 } from '../../libs/privacyPools/kohakuDebug'
-import { createProverFactory } from '../../libs/privacyPools/prover'
+import { createProverFactory, PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
 import { encodePrivacyPoolsDeposit, readPrivacyPoolsDeposit } from '../../libs/privacyPools/deposit'
 import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
@@ -133,6 +133,11 @@ type AssetRef = { tokenAddress: string }
 type PreparedPaymasterWithdrawal = Extract<
   Awaited<ReturnType<PrivacyPoolsV1Protocol['prepareUnshield']>>,
   { mode: 'paymaster' }
+>
+
+/** The prover factory as the SDK types it. Its params type is not exported, hence reading it off. */
+type SdkProverFactory = NonNullable<
+  ConstructorParameters<typeof PrivacyPoolsV1Protocol>[1]['proverFactory']
 >
 
 /**
@@ -300,7 +305,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    */
   #pendingWithdrawal: PreparedPaymasterWithdrawal | null = null
 
-  #proverFactory: () => Promise<any>
+  #proverFactory: PrivacyPoolsProverFactory
 
   /**
    * The pre-scanned pool history a first sync starts from, when the platform layer ships one.
@@ -355,6 +360,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     storage,
     fetch,
     circuitsBaseUrl,
+    proverFactory,
     getInitialState,
     onAccountsRemoved,
     eventEmitterRegistry
@@ -370,6 +376,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
      * knows - an extension URL on the extension, a static path on the websites.
      */
     circuitsBaseUrl: string
+    /**
+     * Where proofs are generated, when not in this controller's own context - the extension hands
+     * them to its offscreen document, where they run on several threads. Absent, they are generated
+     * here from the artifacts at `circuitsBaseUrl`.
+     */
+    proverFactory?: PrivacyPoolsProverFactory
     /**
      * Loads the shipped pool history, keyed the way the plugin keys its own store. A callback so
      * the several megabytes it holds are fetched only when a chain actually needs them, and so the
@@ -399,7 +411,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     })
     this.#onAccountsRemoved = onAccountsRemoved
     this.#getShippedInitialState = getInitialState
-    this.#proverFactory = withKohakuDebugProver(createProverFactory(circuitsBaseUrl))
+    this.#proverFactory = withKohakuDebugProver(
+      proverFactory ?? createProverFactory(circuitsBaseUrl)
+    )
 
     // Cleared when done so the resolved promise isn't carried in the state sent to the UI.
     this.initialLoadPromise = this.#load().finally(() => {
@@ -735,7 +749,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         address: BigInt(config.entrypointAddress),
         deploymentBlock: config.deploymentBlock
       },
-      proverFactory: this.#proverFactory,
+      // The SDK types it as the circuits package's whole `Prover`, but only ever calls `prove`
+      proverFactory: this.#proverFactory as SdkProverFactory,
       // 0xBow's API rather than the SDK's IPFS default, which depends on ipfs.io being up and on
       // the CID in the last on-chain root update still being pinned.
       aspServiceFactory: () =>

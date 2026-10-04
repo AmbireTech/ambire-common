@@ -5,6 +5,17 @@ import { PRIVACY_POOLS_CIRCUIT_PATHS } from '../../consts/privacyPools'
 type KohakuProver = Awaited<ReturnType<typeof Prover>>
 
 /**
+ * The part of a prover the SDK actually calls - `prove` alone, never the `circuits` it carries.
+ *
+ * Narrowed so a platform can generate proofs somewhere else than the controller's own context (the
+ * extension's offscreen document, where they can run on several threads) behind the same call.
+ */
+export type PrivacyPoolsProver = Pick<KohakuProver, 'prove'>
+
+/** Hands the SDK a prover once per operation. Expected to reuse one rather than build a new one. */
+export type PrivacyPoolsProverFactory = () => Promise<PrivacyPoolsProver>
+
+/**
  * Builds the prover the SDK uses for withdrawals and public reclaims, pointed at artifacts the app
  * serves itself.
  *
