@@ -70,18 +70,56 @@ const SIMULATION_LOGS_INTERFACE = new Interface([
   'event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)'
 ])
 
+const WITHDRAWAL_SENDER = '0xA3a4D83896ec4b595668fA3d5430157cd235F720'
+
+const toFakeProof = (withdrawnValue: bigint) => ({
+  pA: [1n, 2n],
+  pB: [
+    [3n, 4n],
+    [5n, 6n]
+  ],
+  pC: [7n, 8n],
+  pubSignals: [11n, 12n, withdrawnValue, 14n, 15n, 16n, 17n, 18n]
+})
+
+/**
+ * What a batch of two deposits runs once the larger one is paid to the sender: the sender withdraws
+ * the other one itself, then forwards everything minus the fee.
+ */
+const encodeBatchCalls = (sponsoredValue: bigint) =>
+  new Interface([
+    'function executeBatch((address target, uint256 value, bytes data)[] calls)'
+  ]).encodeFunctionData('executeBatch', [
+    [
+      {
+        target: ETHEREUM_ETH_POOL,
+        value: 0n,
+        data: new Interface([
+          'function withdraw((address processooor, bytes data) withdrawal, (uint256[2] pA, uint256[2][2] pB, uint256[2] pC, uint256[8] pubSignals) proof)'
+        ]).encodeFunctionData('withdraw', [
+          { processooor: WITHDRAWAL_SENDER, data: '0x' },
+          toFakeProof(WITHDRAWAL_AMOUNT - sponsoredValue)
+        ])
+      },
+      { target: WITHDRAWAL_RECIPIENT, value: WITHDRAWAL_AMOUNT - WITHDRAWAL_FEE, data: '0x' }
+    ]
+  ])
+
 /**
  * A proved withdrawal the way the SDK hands it over, with the fee, recipient and amount encoded
  * where `readPaymasterWithdrawal` checks them. The proof itself is never verified off chain.
+ *
+ * As a batch, it spends two deposits: the sponsored one is paid to the sender, which forwards it.
  */
-const buildPreparedWithdrawal = () => {
+const buildPreparedWithdrawal = ({ isBatch = false }: { isBatch?: boolean } = {}) => {
   const coder = AbiCoder.defaultAbiCoder()
   const adapter = ETHEREUM_PAYMASTER.poolAdapters[ETHEREUM_ETH_POOL]!
+  const sponsoredValue = isBatch ? (WITHDRAWAL_AMOUNT * 3n) / 5n : WITHDRAWAL_AMOUNT
   const feeData = coder.encode(
     ['tuple(address recipient, address feeRecipient, uint256 fee)'],
     [
       {
-        recipient: WITHDRAWAL_RECIPIENT,
+        recipient: isBatch ? WITHDRAWAL_SENDER : WITHDRAWAL_RECIPIENT,
         feeRecipient: ETHEREUM_PAYMASTER.paymasterAddress,
         fee: WITHDRAWAL_FEE
       }
@@ -94,15 +132,7 @@ const buildPreparedWithdrawal = () => {
     [
       {
         withdrawal: { processooor: adapter, data: feeData },
-        proof: {
-          pA: [1n, 2n],
-          pB: [
-            [3n, 4n],
-            [5n, 6n]
-          ],
-          pC: [7n, 8n],
-          pubSignals: [11n, 12n, WITHDRAWAL_AMOUNT, 14n, 15n, 16n, 17n, 18n]
-        }
+        proof: toFakeProof(sponsoredValue)
       }
     ]
   )
@@ -114,10 +144,10 @@ const buildPreparedWithdrawal = () => {
       paymasterAddress: ETHEREUM_PAYMASTER.paymasterAddress,
       entryPointAddress: ETHEREUM_PAYMASTER.entryPointAddress,
       userOperation: {
-        sender: '0xA3a4D83896ec4b595668fA3d5430157cd235F720',
+        sender: WITHDRAWAL_SENDER,
         nonce: '0x0',
-        callData: '0x',
-        callGasLimit: '0x0',
+        callData: isBatch ? encodeBatchCalls(sponsoredValue) : '0x',
+        callGasLimit: isBatch ? toBeHex(580_000n) : '0x0',
         verificationGasLimit: toBeHex(50_000n),
         preVerificationGas: toBeHex(100_000n),
         maxFeePerGas: toBeHex(10n ** 9n),
@@ -136,8 +166,11 @@ const buildPreparedWithdrawal = () => {
   }
 }
 
-/** What a node answers when it runs that withdrawal and the paymaster refunds part of the fee. */
-const successfulSimulation = () => [
+/**
+ * What a node answers when it runs that withdrawal and the paymaster refunds part of the fee - to
+ * whoever the withdrawal was paid out to.
+ */
+const successfulSimulation = (refundRecipient = WITHDRAWAL_RECIPIENT) => [
   {
     calls: [
       {
@@ -147,7 +180,7 @@ const successfulSimulation = () => [
             address: SIMULATED_NATIVE_TRANSFERS,
             ...SIMULATION_LOGS_INTERFACE.encodeEventLog('Transfer', [
               ETHEREUM_PAYMASTER.paymasterAddress,
-              WITHDRAWAL_RECIPIENT,
+              refundRecipient,
               WITHDRAWAL_REFUND
             ])
           },
@@ -155,7 +188,7 @@ const successfulSimulation = () => [
             address: ETHEREUM_PAYMASTER.entryPointAddress,
             ...SIMULATION_LOGS_INTERFACE.encodeEventLog('UserOperationEvent', [
               ZeroHash,
-              '0xA3a4D83896ec4b595668fA3d5430157cd235F720',
+              WITHDRAWAL_SENDER,
               ETHEREUM_PAYMASTER.paymasterAddress,
               0n,
               true,
@@ -200,6 +233,9 @@ class FakeProtocol {
   /** How many syncs this plugin had done when it was asked to prove - see `prepareUnshield`. */
   syncCountWhenProving: number | null = null
 
+  /** The options it was last asked to prove with. */
+  unshieldOptions: unknown = null
+
   constructor(host: any) {
     this.host = host
     protocols.push(this)
@@ -239,8 +275,9 @@ class FakeProtocol {
 
   // Proving is not faked: unless a test hands it a signed withdrawal, this fails the way proving
   // would, for tests that check what happens before one is asked for
-  async prepareUnshield() {
+  async prepareUnshield(_assets: unknown, _to: unknown, options: unknown) {
     this.syncCountWhenProving = this.syncCount
+    this.unshieldOptions = options
     if (prepareUnshieldFailure) throw prepareUnshieldFailure
     if (preparedWithdrawal) return preparedWithdrawal
 
@@ -606,7 +643,7 @@ describe('PrivacyPoolsController', () => {
       expect(protocols.filter((protocol) => protocol.seedId === 'seed-a')).toHaveLength(2)
     })
 
-    it('tells the most one transfer can send apart from the whole approved balance', async () => {
+    it('counts only approved notes as what a transfer can send', async () => {
       notesBySeed['seed-a'] = [
         { label: 1n, amount: 10n, approved: true },
         { label: 2n, amount: 30n, approved: true },
@@ -619,14 +656,9 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-a')
       await syncing
 
-      // A transfer spends one note, so the pending one does not count even though it is larger
+      // A transfer combines approved notes only, so the pending one does not count
       expect(controller.balances['1']).toEqual([
-        expect.objectContaining({
-          approvedAmount: 40n,
-          maxWithdrawAmount: 30n,
-          pendingAmount: 50n,
-          totalAmount: 90n
-        })
+        expect.objectContaining({ approvedAmount: 40n, pendingAmount: 50n, totalAmount: 90n })
       ])
     })
 
@@ -1195,8 +1227,8 @@ describe('PrivacyPoolsController', () => {
       expect(runningSyncs).toHaveLength(0)
     })
 
-    const prepareSignedWithdrawal = async () => {
-      preparedWithdrawal = buildPreparedWithdrawal()
+    const prepareSignedWithdrawal = async ({ isBatch = false }: { isBatch?: boolean } = {}) => {
+      preparedWithdrawal = buildPreparedWithdrawal({ isBatch })
       const test = await prepareTest()
       test.selectedAccount.select('seed-a')
 
@@ -1314,6 +1346,69 @@ describe('PrivacyPoolsController', () => {
         quote: { expectedFeeAmount: null }
       })
       expect(providers.providers['1'].send).not.toHaveBeenCalled()
+    })
+
+    it('asks the SDK for a batch, whose selection skips pending deposits', async () => {
+      await prepareSignedWithdrawal()
+
+      const [protocol] = protocols
+      expect(protocol?.unshieldOptions).toEqual({ mode: 'paymaster', batch: true })
+    })
+
+    describe('combining deposits', () => {
+      it('shows the whole fee, since the refund goes to the single-use sender', async () => {
+        simulateWithdrawal = async () => successfulSimulation(WITHDRAWAL_SENDER)
+
+        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
+
+        expect(controller.operation).toMatchObject({
+          status: 'pending',
+          phase: 'ready',
+          quote: {
+            feeAmount: WITHDRAWAL_FEE,
+            amountAfterFee: WITHDRAWAL_AMOUNT - WITHDRAWAL_FEE,
+            expectedFeeAmount: WITHDRAWAL_FEE
+          }
+        })
+      })
+
+      const batchNotConfirmedError =
+        'This transfer combines several of your deposits, and we could not confirm it would go through, so it was not sent. Please try again in a moment, or send a smaller amount.'
+
+      it('refuses one the node cannot run', async () => {
+        simulateWithdrawal = async () => {
+          throw new Error('the method eth_simulateV1 does not exist/is not available')
+        }
+
+        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
+
+        expect(controller.operation).toMatchObject({
+          status: 'failed',
+          error: batchNotConfirmedError
+        })
+      })
+
+      it('refuses one the simulation says would revert', async () => {
+        simulateWithdrawal = async () => [{ calls: [{ status: '0x0', logs: [] }] }]
+
+        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
+
+        expect(controller.operation).toMatchObject({
+          status: 'failed',
+          error: batchNotConfirmedError
+        })
+      })
+
+      it('refuses one on a node without state overrides', async () => {
+        rpcNoStateOverride = true
+
+        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
+
+        expect(controller.operation).toMatchObject({
+          status: 'failed',
+          error: batchNotConfirmedError
+        })
+      })
     })
   })
   describe('prices', () => {

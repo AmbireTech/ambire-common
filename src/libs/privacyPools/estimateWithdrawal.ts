@@ -1,7 +1,6 @@
 import { concat, getAddress, id, Interface, toBeHex, toQuantity, zeroPadValue } from 'ethers'
 
 import { isPrivacyPoolsNativeAsset } from '../../consts/privacyPools'
-import { DEPLOYLESS_SIMULATION_FROM } from '../../consts/deploy'
 import { RPCProvider } from '../../interfaces/provider'
 
 /**
@@ -40,6 +39,15 @@ const EIP7702_DESIGNATOR_PREFIX = '0xef0100'
 const SIMULATED_NATIVE_TRANSFER_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
 
 const MAX_BALANCE = '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+
+/**
+ * Who calls the simulated `handleOps`, given the maximum balance to pay for it. Not the wallet's
+ * shared `DEPLOYLESS_SIMULATION_FROM`: that is `0x...01`, the `ecrecover` precompile, and some of
+ * the nodes behind one RPC URL stop running the precompile once its account is overridden. The
+ * single-use sender's signature check then recovers no signer, so about one run in three failed
+ * with `AA23` (`ECDSAInvalidSignature`) on Ethereum - for a userOp that was fine.
+ */
+const SIMULATION_CALLER = '0x00000000000000000000000000000000C0FFEE01'
 
 /**
  * Where the simulated `handleOps` sends the gas payment a bundler would collect. Not the calling
@@ -106,6 +114,21 @@ const packUserOperation = (userOperation: PrivacyPoolsSerializedUserOperation) =
   }
 }
 
+/** What running a prepared withdrawal showed it will cost. */
+export type PrivacyPoolsWithdrawalFeeEstimate = {
+  /** The fee locked into the proof minus what the paymaster refunds to the recipient. */
+  expectedFee: bigint
+  /** The gas the userOp used, as the entry point reports it. */
+  gasUsed: bigint
+  /** What that gas cost the paymaster, in wei. */
+  gasCost: bigint
+  /**
+   * What the paymaster refunds to the single-use sender instead of the recipient - a batch's whole
+   * refund, which nobody can reach afterwards.
+   */
+  senderRefund: bigint
+}
+
 /**
  * Estimates what a prepared, signed paymaster withdrawal will actually cost, by running it on top of
  * the latest block without sending it.
@@ -115,6 +138,10 @@ const packUserOperation = (userOperation: PrivacyPoolsSerializedUserOperation) =
  * in the same transaction. What the user actually pays is that fee minus the refund, which is only
  * known by running the transaction - so it is run here, through `EntryPoint.handleOps`, exactly as
  * the bundler will submit it.
+ *
+ * A batch withdrawal is paid out to its single-use sender rather than to the recipient, and the
+ * paymaster refunds whoever was paid out - after the sender's calls have already forwarded the
+ * funds. Its refund never reaches the recipient, so its expected fee is the whole fee.
  *
  * On chain, the single-use sender becomes a smart account through the 7702 authorization the
  * bundler puts into the transaction. A simulated call carries no authorization, so the sender is
@@ -143,7 +170,7 @@ export const estimatePaymasterWithdrawalFee = async ({
   tokenAddress: string
   /** The fee locked into the proof, as `readPaymasterWithdrawal` decoded it. */
   fee: bigint
-}): Promise<{ expectedFee: bigint }> => {
+}): Promise<PrivacyPoolsWithdrawalFeeEstimate> => {
   const delegate = userOperation.eip7702Auth?.address
   if (!delegate)
     throw new Error('privacyPools: the withdrawal to simulate carries no 7702 authorization')
@@ -161,11 +188,11 @@ export const estimatePaymasterWithdrawalFee = async ({
           blockOverrides: { baseFeePerGas: toQuantity(latestBlock.baseFeePerGas) },
           stateOverrides: {
             [userOperation.sender]: { code: concat([EIP7702_DESIGNATOR_PREFIX, delegate]) },
-            [DEPLOYLESS_SIMULATION_FROM]: { balance: MAX_BALANCE }
+            [SIMULATION_CALLER]: { balance: MAX_BALANCE }
           },
           calls: [
             {
-              from: DEPLOYLESS_SIMULATION_FROM,
+              from: SIMULATION_CALLER,
               to: entryPointAddress,
               data: ENTRY_POINT_INTERFACE.encodeFunctionData('handleOps', [
                 [packUserOperation(userOperation)],
@@ -196,33 +223,41 @@ export const estimatePaymasterWithdrawalFee = async ({
   )
   if (!userOperationEvent)
     throw new Error('privacyPools: the withdrawal simulation emitted no user operation')
-  if (!ENTRY_POINT_INTERFACE.parseLog(userOperationEvent)?.args.success)
+  const userOperationResult = ENTRY_POINT_INTERFACE.parseLog(userOperationEvent)?.args
+  if (!userOperationResult?.success)
     throw new Error('privacyPools: the withdrawal would revert on chain')
 
   const refundTokenAddress = isPrivacyPoolsNativeAsset(tokenAddress)
     ? SIMULATED_NATIVE_TRANSFER_ADDRESS
     : tokenAddress
   // The adapter pays the recipient too, so only what comes from the paymaster is the refund
-  const refund = logs.reduce((sum, log) => {
-    // Three topics: an ERC-20 transfer. An NFT's shares the signature but indexes a fourth
-    if (
-      !isSameAddress(log.address, refundTokenAddress) ||
-      log.topics[0] !== TRANSFER_TOPIC ||
-      log.topics.length !== 3
-    )
-      return sum
+  const sumRefundsTo = (refundRecipient: string) =>
+    logs.reduce((sum, log) => {
+      // Three topics: an ERC-20 transfer. An NFT's shares the signature but indexes a fourth
+      if (
+        !isSameAddress(log.address, refundTokenAddress) ||
+        log.topics[0] !== TRANSFER_TOPIC ||
+        log.topics.length !== 3
+      )
+        return sum
 
-    const transfer = TRANSFER_INTERFACE.parseLog(log)
-    if (!transfer) return sum
+      const transfer = TRANSFER_INTERFACE.parseLog(log)
+      if (!transfer) return sum
 
-    const { from, to, value } = transfer.args
-    if (!isSameAddress(from, paymasterAddress) || !isSameAddress(to, recipient)) return sum
+      const { from, to, value } = transfer.args
+      if (!isSameAddress(from, paymasterAddress) || !isSameAddress(to, refundRecipient)) return sum
 
-    return sum + BigInt(value)
-  }, 0n)
+      return sum + BigInt(value)
+    }, 0n)
+  const refund = sumRefundsTo(recipient)
 
   if (refund > fee)
     throw new Error('privacyPools: the simulated refund is larger than the withdrawal fee')
 
-  return { expectedFee: fee - refund }
+  return {
+    expectedFee: fee - refund,
+    gasUsed: BigInt(userOperationResult.actualGasUsed),
+    gasCost: BigInt(userOperationResult.actualGasCost),
+    senderRefund: sumRefundsTo(userOperation.sender)
+  }
 }

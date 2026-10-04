@@ -107,7 +107,7 @@ describe('estimatePaymasterWithdrawalFee', () => {
       logs: withdrawalLogs(NATIVE_TRANSFERS, 5n * 10n ** 15n)
     })
 
-    await expect(estimate(provider)).resolves.toEqual({ expectedFee: FEE - REFUND })
+    await expect(estimate(provider)).resolves.toMatchObject({ expectedFee: FEE - REFUND })
   })
 
   test('runs the signed userOp through handleOps with the sender delegated and the latest base fee', async () => {
@@ -133,6 +133,10 @@ describe('estimatePaymasterWithdrawalFee', () => {
     const [[op], beneficiary] = entryPointInterface.decodeFunctionData('handleOps', call.data)
     // Not the caller, whose overridden maximum balance the gas payment would overflow
     expect(beneficiary).not.toBe(getAddress(call.from))
+    // Funded to pay for the run, and not a precompile: some nodes stop running `ecrecover` once
+    // `0x...01` is overridden, which fails the sender's signature check
+    expect(block.stateOverrides[call.from].balance).toBeDefined()
+    expect(BigInt(call.from)).toBeGreaterThan(0x1_0000n)
     expect(op.sender).toBe(SENDER)
     expect(op.initCode).toBe('0x')
     expect(op.signature).toBe(USER_OPERATION.signature)
@@ -162,7 +166,7 @@ describe('estimatePaymasterWithdrawalFee', () => {
       ]
     })
 
-    await expect(estimate(provider, { tokenAddress: USDC, fee: usdcFee })).resolves.toEqual({
+    await expect(estimate(provider, { tokenAddress: USDC, fee: usdcFee })).resolves.toMatchObject({
       expectedFee: usdcFee - usdcRefund
     })
   })
@@ -173,7 +177,27 @@ describe('estimatePaymasterWithdrawalFee', () => {
       logs: withdrawalLogs(NATIVE_TRANSFERS, 5n * 10n ** 15n, 0n)
     })
 
-    await expect(estimate(provider)).resolves.toEqual({ expectedFee: FEE })
+    await expect(estimate(provider)).resolves.toMatchObject({ expectedFee: FEE })
+  })
+
+  test('reports the gas the userOp used and a refund stranded on the sender', async () => {
+    const strandedRefund = 123n
+    const { provider } = mockProvider({
+      status: '0x1',
+      logs: [
+        ...withdrawalLogs(NATIVE_TRANSFERS, 5n * 10n ** 15n, 0n),
+        transferLog(NATIVE_TRANSFERS, PAYMASTER, SENDER, strandedRefund),
+        // Not from the paymaster, so not a refund
+        transferLog(NATIVE_TRANSFERS, ADAPTER, SENDER, 7n)
+      ]
+    })
+
+    await expect(estimate(provider)).resolves.toEqual({
+      expectedFee: FEE,
+      gasUsed: 804167n,
+      gasCost: 823625286561441n,
+      senderRefund: strandedRefund
+    })
   })
 
   test('refuses a withdrawal that would revert', async () => {

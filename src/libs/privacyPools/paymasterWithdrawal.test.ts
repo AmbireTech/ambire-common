@@ -1,4 +1,4 @@
-import { AbiCoder, getAddress } from 'ethers'
+import { AbiCoder, getAddress, Interface } from 'ethers'
 
 import { expect } from '@jest/globals'
 
@@ -14,6 +14,9 @@ const POOL = '0xf241d57c6debae225c0f2e6ea1529373c9a9c9fb'
 const ADAPTER = getAddress('0x0a230D83f16209E2692494a0ae139aAD8C96bde9')
 const PAYMASTER = getAddress('0xe06CB96C57D2442f8F60F5017354BC08F7e91308')
 const ENTRY_POINT = getAddress('0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108')
+const SENDER = getAddress('0xA3a4D83896ec4b595668fA3d5430157cd235F720')
+const NATIVE = '0x0000000000000000000000000000000000000000'
+const USDC = getAddress('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48')
 
 const AMOUNT = 10n ** 18n
 const FEE = 10n ** 15n
@@ -25,6 +28,24 @@ const PAYMASTER_CONFIG: PrivacyPoolsPaymasterConfig = {
 }
 
 const coder = AbiCoder.defaultAbiCoder()
+
+const SENDER_INTERFACE = new Interface([
+  'function executeBatch((address target, uint256 value, bytes data)[] calls)'
+])
+const POOL_INTERFACE = new Interface([
+  'function withdraw((address processooor, bytes data) withdrawal, (uint256[2] pA, uint256[2][2] pB, uint256[2] pC, uint256[8] pubSignals) proof)'
+])
+const ERC20_INTERFACE = new Interface(['function transfer(address to, uint256 amount)'])
+
+const toProof = (withdrawnValue: bigint) => ({
+  pA: [1n, 2n],
+  pB: [
+    [3n, 4n],
+    [5n, 6n]
+  ],
+  pC: [7n, 8n],
+  pubSignals: [11n, 12n, withdrawnValue, 14n, 15n, 16n, 17n, 18n]
+})
 
 const encodePaymasterData = ({
   adapter = ADAPTER,
@@ -52,15 +73,7 @@ const encodePaymasterData = ({
     [
       {
         withdrawal: { processooor, data },
-        proof: {
-          pA: [1n, 2n],
-          pB: [
-            [3n, 4n],
-            [5n, 6n]
-          ],
-          pC: [7n, 8n],
-          pubSignals: [11n, 12n, withdrawnValue, 14n, 15n, 16n, 17n, 18n]
-        }
+        proof: toProof(withdrawnValue)
       }
     ]
   )
@@ -75,20 +88,72 @@ const buildWithdrawal = (
   poolAddress: BigInt(POOL),
   paymasterAddress: PAYMASTER,
   entryPointAddress: ENTRY_POINT,
-  userOperation: { paymaster: PAYMASTER, paymasterData },
+  userOperation: { sender: SENDER, callData: '0x', paymaster: PAYMASTER, paymasterData },
   ...overrides
 })
 
-const read = (withdrawal: PrivacyPoolsPaymasterWithdrawalPayload, recipient = RECIPIENT) =>
-  readPaymasterWithdrawal({ withdrawal, paymaster: PAYMASTER_CONFIG, recipient, amount: AMOUNT })
+const read = (
+  withdrawal: PrivacyPoolsPaymasterWithdrawalPayload,
+  recipient = RECIPIENT,
+  tokenAddress = NATIVE
+) =>
+  readPaymasterWithdrawal({
+    withdrawal,
+    paymaster: PAYMASTER_CONFIG,
+    recipient,
+    tokenAddress,
+    amount: AMOUNT
+  })
+
+const SPONSORED_VALUE = (AMOUNT * 3n) / 5n
+
+/** A deposit the sender withdraws itself, in a batch. */
+const poolWithdrawCall = ({
+  target = POOL,
+  processooor = SENDER,
+  withdrawnValue = AMOUNT - SPONSORED_VALUE
+}: { target?: string; processooor?: string; withdrawnValue?: bigint } = {}) => ({
+  target,
+  value: 0n,
+  data: POOL_INTERFACE.encodeFunctionData('withdraw', [
+    { processooor, data: '0x' },
+    toProof(withdrawnValue)
+  ])
+})
+
+const nativeForwardCall = (to = RECIPIENT, value = AMOUNT - FEE) => ({
+  target: to,
+  value,
+  data: '0x'
+})
+
+/**
+ * A batch of two deposits as the SDK builds it: the larger one sponsored and paid to the sender,
+ * the other withdrawn by the sender, then everything minus the fee forwarded.
+ */
+const buildBatchWithdrawal = (
+  calls: { target: string; value: bigint; data: string }[] = [
+    poolWithdrawCall(),
+    nativeForwardCall()
+  ],
+  paymasterData = encodePaymasterData({ recipient: SENDER, withdrawnValue: SPONSORED_VALUE })
+) =>
+  buildWithdrawal({
+    userOperation: {
+      sender: SENDER,
+      callData: SENDER_INTERFACE.encodeFunctionData('executeBatch', [calls]),
+      paymaster: PAYMASTER,
+      paymasterData
+    }
+  })
 
 describe('libs/privacyPools/paymasterWithdrawal', () => {
   it('returns the fee of a withdrawal that matches the request', () => {
-    expect(read(buildWithdrawal())).toEqual({ fee: FEE })
+    expect(read(buildWithdrawal())).toEqual({ fee: FEE, noteCount: 1 })
   })
 
   it('accepts a recipient that differs only in checksum casing', () => {
-    expect(read(buildWithdrawal(), RECIPIENT.toLowerCase())).toEqual({ fee: FEE })
+    expect(read(buildWithdrawal(), RECIPIENT.toLowerCase())).toEqual({ fee: FEE, noteCount: 1 })
   })
 
   it('refuses a withdrawal that pays out to another address', () => {
@@ -144,5 +209,130 @@ describe('libs/privacyPools/paymasterWithdrawal', () => {
     expect(() => read(buildWithdrawal({}, encodePaymasterData({ fee: AMOUNT })))).toThrow(
       /whole amount/
     )
+  })
+
+  it('refuses a single deposit that also runs calls', () => {
+    expect(() =>
+      read(
+        buildWithdrawal({
+          userOperation: {
+            sender: SENDER,
+            callData: SENDER_INTERFACE.encodeFunctionData('executeBatch', [[nativeForwardCall()]]),
+            paymaster: PAYMASTER,
+            paymasterData: encodePaymasterData()
+          }
+        })
+      )
+    ).toThrow(/runs calls it should not/)
+  })
+
+  describe('a batch of deposits', () => {
+    it('returns the fee and the deposit count of a batch that matches the request', () => {
+      expect(read(buildBatchWithdrawal())).toEqual({ fee: FEE, noteCount: 2 })
+    })
+
+    it('accepts a token batch forwarded with a transfer', () => {
+      const withdrawal = buildBatchWithdrawal([
+        poolWithdrawCall(),
+        {
+          target: USDC,
+          value: 0n,
+          data: ERC20_INTERFACE.encodeFunctionData('transfer', [RECIPIENT, AMOUNT - FEE])
+        }
+      ])
+
+      expect(read(withdrawal, RECIPIENT, USDC)).toEqual({ fee: FEE, noteCount: 2 })
+    })
+
+    it('refuses a sponsored deposit paid to anyone but the sender', () => {
+      expect(() =>
+        read(buildBatchWithdrawal(undefined, encodePaymasterData({ recipient: ATTACKER })))
+      ).toThrow(/different address/)
+    })
+
+    it('refuses a batch that forwards the funds to another address', () => {
+      expect(() =>
+        read(buildBatchWithdrawal([poolWithdrawCall(), nativeForwardCall(ATTACKER)]))
+      ).toThrow(/forwards the funds differently/)
+    })
+
+    it('refuses a batch that forwards less than the amount minus the fee', () => {
+      expect(() =>
+        read(
+          buildBatchWithdrawal([
+            poolWithdrawCall(),
+            nativeForwardCall(RECIPIENT, AMOUNT - 2n * FEE)
+          ])
+        )
+      ).toThrow(/forwards the funds differently/)
+    })
+
+    it('refuses a token batch forwarded as native, or to the token by another call', () => {
+      expect(() => read(buildBatchWithdrawal(), RECIPIENT, USDC)).toThrow(
+        /forwards the funds differently/
+      )
+      const approveInsteadOfTransfer = new Interface([
+        'function approve(address spender, uint256 amount)'
+      ]).encodeFunctionData('approve', [RECIPIENT, AMOUNT - FEE])
+      expect(() =>
+        read(
+          buildBatchWithdrawal([
+            poolWithdrawCall(),
+            { target: USDC, value: 0n, data: approveInsteadOfTransfer }
+          ]),
+          RECIPIENT,
+          USDC
+        )
+      ).toThrow(/forwards the funds differently/)
+    })
+
+    it('refuses a deposit withdrawn to someone other than the sender', () => {
+      expect(() =>
+        read(
+          buildBatchWithdrawal([poolWithdrawCall({ processooor: ATTACKER }), nativeForwardCall()])
+        )
+      ).toThrow(/pays out to an unexpected address/)
+    })
+
+    it('refuses a deposit withdrawn from another contract', () => {
+      expect(() =>
+        read(buildBatchWithdrawal([poolWithdrawCall({ target: ATTACKER }), nativeForwardCall()]))
+      ).toThrow(/unexpected contract/)
+    })
+
+    it('refuses deposits that do not add up to the amount', () => {
+      expect(() =>
+        read(
+          buildBatchWithdrawal([
+            poolWithdrawCall({ withdrawnValue: AMOUNT - SPONSORED_VALUE + 1n }),
+            nativeForwardCall()
+          ])
+        )
+      ).toThrow(/different amount/)
+    })
+
+    it('refuses a batch that runs anything but deposits and the forward', () => {
+      expect(() =>
+        read(
+          buildBatchWithdrawal([
+            poolWithdrawCall(),
+            nativeForwardCall(ATTACKER, 1n),
+            nativeForwardCall()
+          ])
+        )
+      ).toThrow(/unexpected contract/)
+      expect(() => read(buildBatchWithdrawal([nativeForwardCall()]))).toThrow(/unexpected shape/)
+    })
+
+    it('refuses a payout to the sender that runs no batch', () => {
+      expect(() =>
+        read(
+          buildWithdrawal(
+            {},
+            encodePaymasterData({ recipient: SENDER, withdrawnValue: SPONSORED_VALUE })
+          )
+        )
+      ).toThrow(/unexpected shape/)
+    })
   })
 })
