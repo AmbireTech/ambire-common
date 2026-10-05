@@ -286,6 +286,20 @@ const DAPP_CONNECT_REQUEST: DappConnectRequest = {
   ]
 }
 
+const APP_WINDOW_ID = 2
+const OTHER_WINDOW_ID = 3
+
+const getDappConnectRequestFromWindow = (windowId: number): DappConnectRequest => ({
+  ...DAPP_CONNECT_REQUEST,
+  id: `dapp-connect-from-window-${windowId}`,
+  dappPromises: [
+    {
+      ...DAPP_CONNECT_REQUEST.dappPromises[0]!,
+      session: new Session({ tabId: 1, windowId, url: 'https://test-dApp.com' })
+    }
+  ]
+})
+
 describe('RequestsController ', () => {
   beforeEach(() => {
     jest.restoreAllMocks()
@@ -1587,6 +1601,45 @@ describe('RequestsController ', () => {
     await controller.addUserRequests([DAPP_CONNECT_REQUEST])
 
     expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
+    expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('should ask whether the panel is open in the window of the app that made the request', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    const isOpen = jest.fn(() => true)
+    uiCtrl.panel = { isOpen }
+
+    await controller.addUserRequests([getDappConnectRequestFromWindow(APP_WINDOW_ID)])
+
+    expect(isOpen).toHaveBeenCalledWith(APP_WINDOW_ID)
+  })
+  test('should open a request window when the panel is open only in another window', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: (windowId) => windowId === OTHER_WINDOW_ID }
+    const request = getDappConnectRequestFromWindow(APP_WINDOW_ID)
+
+    await controller.addUserRequests([request])
+
+    expect(controller.currentUserRequest).toBe(request)
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+  })
+  test('should show the request in the panel open in the window of the app', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: (windowId) => windowId === APP_WINDOW_ID }
+    const request = getDappConnectRequestFromWindow(APP_WINDOW_ID)
+
+    await controller.addUserRequests([request])
+
+    expect(controller.currentUserRequest).toBe(request)
+    expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('should ask about any window when the request has no app window', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    const isOpen = jest.fn(() => true)
+    uiCtrl.panel = { isOpen }
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+
+    expect(isOpen).toHaveBeenCalledWith(undefined)
     expect(controller.requestWindow.windowProps).toBe(null)
   })
   test('should reject the active request on close when there is no request window', async () => {
