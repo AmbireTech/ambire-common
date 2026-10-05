@@ -1092,6 +1092,25 @@ describe('PrivacyPoolsController', () => {
       )
     })
 
+    // USDT refuses to change one non-zero allowance into another
+    it('resets a leftover allowance before approving the deposit', async () => {
+      const { controller } = await prepareTest()
+      const amount = 5n * 10n ** 6n
+      allowance = 1n
+
+      const building = buildDeposit(controller, { tokenAddress: USDC, amount })
+      await releaseSync('seed-b')
+      const [resetCall, approveCall, depositCall] = await building
+
+      expect(resetCall?.data).toBe(
+        ERC20_INTERFACE.encodeFunctionData('approve', [ETHEREUM_ENTRYPOINT, 0n])
+      )
+      expect(approveCall?.data).toBe(
+        ERC20_INTERFACE.encodeFunctionData('approve', [ETHEREUM_ENTRYPOINT, amount])
+      )
+      expect(depositCall?.to).toBe(ETHEREUM_ENTRYPOINT)
+    })
+
     it('records a broadcast deposit with its sender and refuses another until the chain moves on', async () => {
       const { controller, selectedAccount } = await prepareTest()
 

@@ -1471,6 +1471,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    *
    * `Entrypoint.deposit` pulls ERC-20s with `transferFrom`, and the SDK builds only the entrypoint
    * call - so without this the deposit reverts with nothing explaining why.
+   *
+   * A leftover allowance is reset to zero first: USDT refuses to change one non-zero allowance
+   * into another.
    */
   async #approvalCallIfNeeded(
     chainId: string,
@@ -1494,13 +1497,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     if (allowance >= amount) return []
 
-    return [
-      {
-        to: asset.address,
-        value: 0n,
-        data: ERC20_INTERFACE.encodeFunctionData('approve', [config.entrypointAddress, amount])
-      }
-    ]
+    const approve = (value: bigint): Call => ({
+      to: asset.address,
+      value: 0n,
+      data: ERC20_INTERFACE.encodeFunctionData('approve', [config.entrypointAddress, value])
+    })
+
+    return allowance ? [approve(0n), approve(amount)] : [approve(amount)]
   }
 
   #startOperation(params: {
