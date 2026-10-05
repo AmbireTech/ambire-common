@@ -73,7 +73,7 @@ export type StorageProps = {
   // Selected account
   dismissedBanners: (string | number)[]
   selectedAccount: string | null
-  /** The selected Privacy Pools account, by its recovery phrase id - exclusive with `selectedAccount`. */
+  /** Seed id of the selected Privacy Pools account. Exclusive with `selectedAccount`. */
   selectedPrivacyPoolsAccount: string | null
   selectedAccountDismissedBannerIds: { [key: string]: string[] }
   // Email vault
@@ -103,14 +103,13 @@ export type StorageProps = {
   rejectedSafeTxns: string[]
   // Privacy Pools
   /**
-   * The SDK's own per-chain state, held as one blob because the plugin invents its storage keys at
-   * runtime while `StorageProps` is a closed map. Values are serialized stores, several megabytes
-   * each on mainnet - they are what spares the user a full rescan from the deployment block.
+   * The SDK's per-chain state as one blob, as the SDK invents its storage keys at runtime. Values
+   * are serialized stores (megabytes each on mainnet) that spare a full rescan from deployment.
    */
   privacyPoolsState: { [key: string]: string }
   /**
-   * Locally recorded operation log. Kept because the pool exposes no history of its own: notes
-   * carry no timestamp and no transaction id, and change notes look like fresh ones.
+   * Locally recorded operation log. The pool has no history: notes carry no timestamp or
+   * transaction id, and change notes look like fresh ones.
    */
   privacyPoolsActivity: PrivacyPoolsActivityEntry[]
   /** The wallet's Privacy Pools accounts, at most one per stored recovery phrase. */

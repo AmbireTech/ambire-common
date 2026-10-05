@@ -3,11 +3,7 @@ import { AbiCoder, getAddress, Interface, Result } from 'ethers'
 import { isPrivacyPoolsNativeAsset } from '../../consts/privacyPools'
 import { PrivacyPoolsPaymasterConfig } from '../../interfaces/privacyPools'
 
-/**
- * The parts of the SDK's `IGenericPaymasterWithdrawalPayload` this module reads. Declared here
- * rather than imported because the SDK does not export the type from its entry point. TypeScript is
- * structural, so the SDK's payload still satisfies it.
- */
+/** The parts of the SDK's `IGenericPaymasterWithdrawalPayload` read here (not exported). */
 export type PrivacyPoolsPaymasterWithdrawalPayload = {
   /** The SDK stores addresses as bigints. */
   poolAddress: bigint
@@ -16,25 +12,22 @@ export type PrivacyPoolsPaymasterWithdrawalPayload = {
   userOperation: { sender: string; callData: string; paymaster?: string; paymasterData?: string }
 }
 
-/**
- * `(address adapter, bytes adapterData)` - what the paymaster reads from `paymasterData` to know
- * which adapter to hand the withdrawal to.
- */
+/** `paymasterData`: the adapter the paymaster hands the withdrawal to, and its input. */
 const PAYMASTER_DATA_TYPE = 'tuple(address adapter, bytes adapterData)'
 
 /**
- * The adapter's input: the pool withdrawal it submits, and the proof over it. `pubSignals[2]` is the
- * withdrawn value, in the circuit's output-then-input signal order.
+ * The adapter's input: the pool withdrawal and its proof. `pubSignals[2]` is the withdrawn value
+ * (the circuit orders outputs before inputs).
  */
 const ADAPTER_DATA_TYPE =
   'tuple(tuple(address processooor, bytes data) withdrawal, tuple(uint256[2] pA, uint256[2][2] pB, uint256[2] pC, uint256[8] pubSignals) proof)'
 
-/** `withdrawal.data` as the adapter decodes it before splitting the funds. */
+/** `withdrawal.data`, as the adapter decodes it to split the funds. */
 const FEE_DATA_TYPE = 'tuple(address recipient, address feeRecipient, uint256 fee)'
 
 const WITHDRAWN_VALUE_SIGNAL_INDEX = 2
 
-/** What the single-use sender runs once the paymaster has paid it - see `readBatchCalls`. */
+/** What the single-use sender runs after being paid - see `readBatchCalls`. */
 const SENDER_INTERFACE = new Interface([
   'function executeBatch((address target, uint256 value, bytes data)[] calls)'
 ])
@@ -53,13 +46,11 @@ const isSameAddress = (a: string, b: string) => getAddress(a) === getAddress(b)
 type BatchCall = { target: string; value: bigint; data: string }
 
 /**
- * Reads the calls a batch withdrawal runs after its first deposit is paid out, returning what the
- * other deposits add to it.
+ * Checks a batch withdrawal's calls and returns what the deposits beyond the sponsored one add.
  *
- * A batch spends several deposits in one userOp. The paymaster can only sponsor one of them, and
- * when the userOp runs calls of its own the adapter pays that one to the sender rather than to the
- * recipient. So the sender withdraws each other deposit itself, then forwards everything, minus the
- * fee, to the recipient - in that order, and nothing else.
+ * The paymaster sponsors only one deposit, paid to the sender when the userOp has calls. The sender
+ * must withdraw each other deposit itself, then forward the total minus the fee to the recipient -
+ * in that order, and nothing else.
  */
 const readBatchCalls = ({
   callData,
@@ -99,8 +90,7 @@ const readBatchCalls = ({
     } catch {
       throw new Error('privacyPools: the withdrawal calls the pool in an unexpected way')
     }
-    // The pool pays whoever submits the withdrawal, so a deposit made out to anyone else would
-    // never reach the forwarding call
+    // The pool pays whoever submits the withdrawal, so anything else would bypass the forward
     if (!isSameAddress(processooor, sender))
       throw new Error('privacyPools: a deposit in the withdrawal pays out to an unexpected address')
 
@@ -126,17 +116,15 @@ const readBatchCalls = ({
 }
 
 /**
- * Decodes a prepared paymaster withdrawal and checks it against what the user asked for, returning
- * the fee it pays and how many deposits it spends.
+ * Decodes a prepared paymaster withdrawal and checks it against the request, returning its fee and
+ * deposit count.
  *
- * The SDK builds and signs the userOp in one call and hands back only the result, so this is the
- * one place to confirm - from the bytes the paymaster and the pool will act on, not from the SDK's
- * word - that the funds go to the address the user typed, that the amount is theirs, and that the
- * fee goes to the paymaster we configured. The package is an unaudited alpha; anything that
- * disagrees is refused before the user is ever asked to send it.
+ * Security boundary: the unaudited SDK builds and signs the userOp in one call, so this is the one
+ * place to verify, from the bytes the paymaster and pool act on, the recipient, the amount and the
+ * fee recipient. Any mismatch is refused before the user is asked to send it.
  *
- * A single deposit is paid straight to the recipient and runs no calls. A batch is paid to the
- * single-use sender, which then forwards it - see `readBatchCalls`.
+ * A single deposit is paid straight to the recipient with no calls; a batch goes through the
+ * single-use sender - see `readBatchCalls`.
  */
 export const readPaymasterWithdrawal = ({
   withdrawal,

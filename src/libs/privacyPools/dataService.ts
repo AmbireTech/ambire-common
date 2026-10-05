@@ -4,17 +4,12 @@ import type { EthereumProvider } from '@kohaku-eth/provider'
 import { createParallelLogSource } from './parallelLogSource'
 
 /**
- * How the plugin reads the chain.
+ * How the plugin reads the chain. The pools' history comes from the saga-sync CDN when given;
+ * everything else (the entrypoint, blocks after the CDN's last index, chains without a CDN) goes
+ * to the provider through `createParallelLogSource`.
  *
- * Two sources, layered. The pools' history, which is the bulk of it, comes from the saga-sync CDN
- * when the chain has one published and has nothing stored yet - one verified file per pool instead
- * of thousands of `eth_getLogs` calls. Everything else goes to the provider through a reader that
- * runs several windows at once: the entrypoint, which nobody publishes, the blocks since the CDN
- * last indexed, and every chain without a CDN at all.
- *
- * The seam is the CDN reader's own `fallback`, which is why this composes `createSagaLogSource`
- * rather than the `createSagaDataService` shorthand - the shorthand hardwires the provider's
- * one-window-at-a-time reader, which is the thing worth replacing.
+ * Composes `createSagaLogSource` rather than `createSagaDataService`, which hardwires the SDK's
+ * sequential reader as the fallback.
  */
 export const createPrivacyPoolsDataService = async ({
   provider,
@@ -39,8 +34,7 @@ export const createPrivacyPoolsDataService = async ({
 
     return { dataService: new DataService({ provider, getLogs: sagaLogs }), isSagaHydrated: true }
   } catch (error: any) {
-    // Deliberately not fatal. An unreachable or unverifiable manifest means the same history is
-    // read from the provider instead - the same state, only slower. Nothing for the user to do.
+    // Not fatal: the provider yields the same history, only slower
     onSagaUnavailable(error)
 
     return { dataService: new DataService({ provider, getLogs }), isSagaHydrated: false }

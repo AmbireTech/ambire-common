@@ -69,16 +69,12 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   account: Account | null = null
 
   /**
-   * The Privacy Pools account on screen, by the id of the recovery phrase it belongs to, or null
-   * when a regular account is.
+   * Seed id of the selected Privacy Pools account, or null when a regular one is selected. Lives
+   * here, not in the Privacy Pools controller, as it is part of "the selected account" to the UI
+   * (signed in, dashboard) and this state reaches a view before its first paint.
    *
-   * Kept here rather than in the Privacy Pools controller because it is part of what "the selected
-   * account" means to the UI - whether anyone is signed in, what the dashboard shows - and this
-   * controller's state reaches a view before its first paint.
-   *
-   * Exclusive with `account`, which is null while a Privacy Pools account is selected: it has no
-   * address of its own, and nothing that reads `account` - the portfolio, apps, signing - is meant
-   * to act on it.
+   * Exclusive with `account`, which is null meanwhile: the account has no address, and nothing that
+   * reads `account` (portfolio, apps, signing) may act on it.
    */
   privacyPoolsAccountId: string | null = null
 
@@ -213,8 +209,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   async setAccount(account: Account | null) {
     this.account = account
-    // Selecting a regular account deselects the Privacy Pools one. Clearing it leaves it as is,
-    // since that is also how a Privacy Pools account gets selected - see `setPrivacyPoolsAccount`.
+    // Kept on null, which is also how `setPrivacyPoolsAccount` selects a Privacy Pools account
     if (account) this.privacyPoolsAccountId = null
     this.balanceAffectingErrors = []
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
@@ -243,13 +238,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     }
   }
 
-  /**
-   * Selects a Privacy Pools account, clearing the regular one. Null clears both, which is the
-   * signed-out state.
-   */
+  /** Selects a Privacy Pools account, clearing the regular one. Null clears both (signed out). */
   async setPrivacyPoolsAccount(seedId: string | null) {
-    // Set before `account` is cleared, so no update goes out with neither one selected - the UI
-    // reads that as signed out.
+    // Set first, so no update goes out with neither selected, which the UI reads as signed out
     this.privacyPoolsAccountId = seedId
     await this.setAccount(null)
 

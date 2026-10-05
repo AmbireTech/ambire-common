@@ -1,21 +1,11 @@
 import type { EthereumProvider, TxLog } from '@kohaku-eth/provider'
 
-/**
- * Blocks per `eth_getLogs` call.
- *
- * Not a tuning choice - the wallet's own RPC refuses anything wider with "eth_getLogs is limited
- * to 5000 block range", so the only way to cover a range faster is more calls at once, not fewer
- * wider ones.
- */
+/** Blocks per `eth_getLogs` call: the widest range the wallet's RPC accepts. */
 const LOG_WINDOW_BLOCKS = 5000n
 
 /**
- * How many windows are in flight at once.
- *
- * Measured against `invictus.ambire.com`: one at a time answers 1.6 requests a second, five answer
- * about seven, and past that the endpoint queues rather than parallelizes - thirty-two in flight
- * buy a further third at the cost of a p95 four times worse. Five sits just past the knee and
- * leaves the endpoint, which every other part of the wallet shares, room to answer them.
+ * Windows in flight at once. Measured on `invictus.ambire.com`: 1 gives 1.6 req/s, 5 about 7, and
+ * 32 only a third more with a 4x worse p95. 5 is past the knee and leaves the shared endpoint room.
  */
 const LOG_WINDOW_CONCURRENCY = 5
 
@@ -39,18 +29,12 @@ export type PrivacyPoolsLogsParams = {
 }
 
 /**
- * Reads an address's logs over a block range, several windows at a time.
+ * Reads an address's logs over a block range, several windows at a time. The SDK's reader is
+ * sequential; for the entrypoint's ~800 windows this cuts ten minutes to under two.
  *
- * The SDK's own reader walks the range one window after another, which is what makes a first sync
- * expensive: the entrypoint alone is close to eight hundred windows, and nothing about them depends
- * on each other. Running five at once turns ten minutes into under two without asking the RPC for
- * anything it does not already serve.
- *
- * Two things this must not get wrong. The logs come back in block order regardless of which window
- * finished first, because callers read the last event of a kind and mean the latest one - the ASP
- * root update is chosen that way. And a window that cannot be read after its retries fails the
- * whole read rather than returning what did arrive: a sync missing a `PoolRegistered` would look
- * like a pool that does not exist, which is worse than a sync that failed and says so.
+ * Logs must stay in block order, as callers take the last event of a kind as the latest (e.g. the
+ * ASP root). A window that fails all retries fails the whole read: a sync missing a
+ * `PoolRegistered` would show a pool as nonexistent.
  */
 export const createParallelLogSource =
   ({ provider }: { provider: EthereumProvider }) =>
@@ -76,8 +60,7 @@ export const createParallelLogSource =
       }
     }
 
-    // Written into the slot the window occupies rather than appended, so the result is in block
-    // order whatever order the answers arrive in.
+    // Slotted by window rather than appended, to keep block order whatever order answers arrive in
     const logsByWindow: TxLog[][] = new Array(windows.length)
     let nextWindow = 0
 

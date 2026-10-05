@@ -126,18 +126,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   #keystoreSeeds: StoredKeystoreSeed[] = []
 
   /**
-   * Whether the stored recovery phrases have been read. Stays false if reading them failed, when
-   * `seeds` is empty without the wallet having none - so nothing may be dropped for a phrase
-   * missing from it.
+   * Whether the stored recovery phrases have been read. False if reading failed, when `seeds` may
+   * be wrongly empty, so nothing may be dropped for a phrase missing from it.
    */
   areSeedsLoaded = false
 
   #tempSeed: KeystoreTempSeed | null = null
 
-  /**
-   * The `PRIVACY_POOLS_DERIVATION_PATH_PREFIX` node of each recovery phrase, derived once while
-   * unlocked - see `derivePrivacyPoolsKey`.
-   */
+  /** Each seed's Privacy Pools root node, cached while unlocked - see `derivePrivacyPoolsKey`. */
   #privacyPoolsRootNodes = new Map<KeystoreSeed['id'], Promise<HDNodeWallet>>()
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
@@ -744,12 +740,9 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Generates a new recovery phrase and stores it straight away, returning the id it is stored
-   * with. For a phrase that no account is derived from through the account picker - a Privacy
-   * Pools account's - so, unlike `generateTempSeed`, it never passes through the temp seed another
+   * Generates and stores a recovery phrase flagged as not backed up, returning its id. For a
+   * Privacy Pools-only phrase: unlike `generateTempSeed`, it never touches the temp seed another
    * flow may be holding.
-   *
-   * Flagged as not backed up, exactly like a generated temp seed.
    */
   async addGeneratedSeed({ extraEntropy }: { extraEntropy?: string }): Promise<string> {
     const seed = new EntropyGenerator().generateRandomMnemonic(12, extraEntropy || '').phrase
@@ -1491,19 +1484,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Derives one Privacy Pools note secret from a stored recovery phrase.
-   *
-   * Exists so the phrase itself never reaches `@kohaku-eth/privacy-pools`. The SDK's host contract
-   * is a keystore with a single `deriveAt(path)` method, and its own bundled implementation keeps
-   * the mnemonic - which would put the phrase inside an unaudited alpha dependency for as long as
-   * the plugin lives. This hands back one derived key and nothing else.
+   * Derives one Privacy Pools note secret from a stored recovery phrase, so the phrase never
+   * reaches `@kohaku-eth/privacy-pools`, whose bundled keystore would keep it (an unaudited alpha).
    *
    * The prefix check is the security boundary: the SDK chooses the paths, so without it a bug or a
-   * malicious bump could ask for the user's EVM keys and get them.
+   * malicious bump could get the user's EVM keys.
    *
-   * Keys are derived from the prefix's node, which is derived from the phrase once while unlocked:
-   * from the phrase each key would cost a decryption and a PBKDF2. The node can only reach Privacy
-   * Pools keys, never the EVM ones.
+   * Keys come from the prefix's node, derived once while unlocked to skip a decryption and a PBKDF2
+   * per key. That node can only reach Privacy Pools keys.
    */
   async derivePrivacyPoolsKey(seedId: KeystoreSeed['id'], path: string): Promise<Hex> {
     await this.initialLoadPromise
@@ -1531,7 +1519,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       )
     )
     this.#privacyPoolsRootNodes.set(seedId, rootNode)
-    // Not kept when it fails, so the next key tries again
+    // Dropped on failure, so the next call retries
     rootNode.catch(() => {
       if (this.#privacyPoolsRootNodes.get(seedId) === rootNode)
         this.#privacyPoolsRootNodes.delete(seedId)

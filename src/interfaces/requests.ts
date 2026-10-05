@@ -48,7 +48,7 @@ export type BuildRequest =
         recipientDomain: string | undefined
         selectedToken: TokenResult
         executionType: RequestExecutionType
-        /** Set when the transfer goes to a Privacy Pools account, which has no address. */
+        /** Seed id of the Privacy Pools account to send to, which has no address. */
         privacyPoolsSeedId?: string
       }
     }

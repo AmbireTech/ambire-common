@@ -3,13 +3,9 @@ import { PrivacyPoolsAsset, PrivacyPoolsChainConfig } from '../interfaces/privac
 import { ZERO_ADDRESS } from '../services/socket/constants'
 
 /**
- * The sentinel `@kohaku-eth/privacy-pools` uses for native ETH. The SDK types every asset as an
- * ERC-20, so native amounts travel as `{ __type: 'erc20', contract: E_ADDRESS }` rather than as the
- * `native` asset kind - which `prepareUnshield` explicitly refuses.
- *
- * It stops at the controller's edge: `fromPrivacyPoolsAssetAddress` maps it to `ZERO_ADDRESS` on
- * the way out, so the portfolio, token lists and UI keep using the wallet's own convention for
- * native and never learn this constant exists.
+ * The SDK's native ETH sentinel. Native travels as `{ __type: 'erc20', contract: E_ADDRESS }`,
+ * since `prepareUnshield` refuses the `native` asset kind. Never leaves the controller - see
+ * `fromPrivacyPoolsAssetAddress`.
  */
 export const PRIVACY_POOLS_NATIVE_ASSET_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
 
@@ -17,40 +13,27 @@ export const PRIVACY_POOLS_NATIVE_ASSET_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeee
  * Privacy Pools' BIP-32 prefix, from the SDK's `SecretManager`:
  * `m/28784'/1'/<account>'/<salt|nullifier>'/<deposit>'/<secret>'`.
  *
- * `KeystoreController.derivePrivacyPoolsKey` refuses anything outside it. That whitelist is the
- * security boundary, not a tidiness rule: the plugin is an unaudited alpha that asks the host
- * keystore to derive arbitrary paths, and without the prefix check it could reach the user's EVM
- * keys.
+ * Security boundary: `KeystoreController.derivePrivacyPoolsKey` refuses any path outside it, since
+ * the unaudited plugin asks for arbitrary paths and could otherwise reach the user's EVM keys.
  */
 export const PRIVACY_POOLS_DERIVATION_PATH_PREFIX = "m/28784'/1'/"
 
 /**
- * Which key set to derive. Fixed at 0 so the notes a phrase owns are a pure function of that
- * phrase and nothing has to be persisted to recover them - at the cost of one identity per phrase.
- * A per-account index would have to be user-chosen and stored; never infer one, since a different
- * inference points the wallet at an empty set of notes.
+ * Fixed so a phrase alone recovers its notes, at the cost of one identity per phrase. Never infer
+ * another index: a wrong one points the wallet at an empty set of notes.
  */
 export const PRIVACY_POOLS_ACCOUNT_INDEX = 0
 
 /**
- * Where the pools' event history is published as static files, signed and content-addressed.
- *
- * Run by fatlabs, who also build the protocol's circuits. Reading a pool from here costs one
- * request and about a second, against the thousands of sequential `eth_getLogs` calls the same
- * history costs from a provider - which is the whole reason a first sync used to take a quarter of
- * an hour.
- *
- * Only Ethereum is published, and only the pools: the entrypoint has no stream, so its own walk
- * still goes to the provider. Nothing here is trusted on its word - the client checks every file
- * against the digests in the signed manifest before the SDK sees an event.
+ * fatlabs' CDN of the pools' event history as signed, content-addressed files: one request and
+ * about a second per pool, against thousands of `eth_getLogs` calls. Only Ethereum's pools are
+ * published, not the entrypoint. Every file is checked against the signed manifest before use.
  */
 export const PRIVACY_POOLS_SAGA_SYNC_URL = 'https://saga.fatsolutions.xyz'
 
 /**
- * The chains Privacy Pools runs on in this wallet: Ethereum only. Sepolia is left out because it
- * has no paymaster, so nothing could be sent out of an account there. The protocol is live on more
- * chains (Optimism, BSC, Arbitrum) behind a different entrypoint - adding them means more than
- * appending an id here.
+ * Ethereum only: Sepolia has no paymaster, so nothing could be withdrawn there. Other chains
+ * (Optimism, BSC, Arbitrum) use a different entrypoint, so adding them takes more than an entry.
  */
 export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig } = {
   '1': {
@@ -161,12 +144,8 @@ export const PRIVACY_POOLS_SUPPORTED_CHAIN_IDS = Object.values(PRIVACY_POOLS_CHA
 )
 
 /**
- * The bundler a withdrawal's userOp is estimated and sent through.
- *
- * Pimlico specifically, not whichever bundler the network is configured with: the SDK prices the
- * userOp with `pimlico_getUserOperationGasPrice`, which no other bundler answers. Our own key when
- * the build has one, so withdrawals are not throttled by the public endpoint's rate limit - the
- * same key the regular transaction flow already sends to Pimlico.
+ * The bundler for withdrawals. Always Pimlico, as the SDK prices the userOp with
+ * `pimlico_getUserOperationGasPrice`. Uses our key when present to avoid the public rate limit.
  */
 export const getPrivacyPoolsBundlerUrl = (chainId: bigint): string => {
   const apiKey = process.env.REACT_APP_PIMLICO_API_KEY
@@ -177,12 +156,8 @@ export const getPrivacyPoolsBundlerUrl = (chainId: bigint): string => {
 }
 
 /**
- * Circuit artifacts are served from the app as same-origin assets - see the extension's webpack
- * copy step. The host supplies the base; the SDK's `Circuits` appends these paths.
- *
- * Deliberately not the SDK's `DEFAULT_ARTIFACTS_BASE_URL`, which points at a pinned commit on
- * raw.githubusercontent.com: a third-party CDN in the path of a withdrawal, needing a CSP entry,
- * re-downloading ~23 MB per prover instance.
+ * Circuit artifact paths, relative to the same-origin base the host supplies (see the extension's
+ * webpack copy step). Why not the SDK's default: see `createProverFactory`.
  */
 export const PRIVACY_POOLS_CIRCUIT_PATHS = {
   withdraw: {
@@ -197,7 +172,7 @@ export const PRIVACY_POOLS_CIRCUIT_PATHS = {
   }
 } as const
 
-/** Storage key holding the local operation log. The pool exposes no history of its own. */
+/** Storage key of the local operation log. */
 export const PRIVACY_POOLS_ACTIVITY_STORAGE_KEY = 'privacyPoolsActivity'
 
 /** Storage key holding the wallet's Privacy Pools accounts. */
@@ -207,11 +182,8 @@ export const getPrivacyPoolsChainConfig = (chainId: bigint): PrivacyPoolsChainCo
   PRIVACY_POOLS_CHAINS[chainId.toString()]
 
 /**
- * Where the plugin keeps a chain's history, in the plugin's own key format.
- *
- * Mirrored here rather than read from the SDK, which does not export it, because two things the
- * wallet does need the key before a plugin exists: shipping that chain a starting state, and
- * telling whether the chain has any history at all yet.
+ * The plugin's storage key for a chain's history, mirrored as the SDK does not export it. Needed
+ * before a plugin exists: to seed its starting state and tell whether the chain has history yet.
  */
 export const getPrivacyPoolsStoreKey = ({
   chainId,
@@ -219,18 +191,11 @@ export const getPrivacyPoolsStoreKey = ({
 }: PrivacyPoolsChainConfig): string =>
   `privacy-pool-state-${chainId.toString()}-${BigInt(entrypointAddress).toString()}`
 
-/** Whether an address is how this wallet writes "the chain's native token". */
+/** Whether the address is the wallet's native token address (`ZERO_ADDRESS`). */
 export const isPrivacyPoolsNativeAsset = (address: string): boolean =>
   address.toLowerCase() === ZERO_ADDRESS
 
-/**
- * Looks up an asset's display data by the address the wallet uses for it.
- *
- * Configured rather than read from the contract: `decimals` is what user-entered amounts are
- * parsed with, so a wrong or missing value is a wrong amount, and the pools are a short, curated
- * list that 0xBow controls. Reading them over RPC would add a round trip per token and a failure
- * mode on a slow node, for data that does not change.
- */
+/** Looks up a configured asset (see `PrivacyPoolsAsset`) by the wallet's address for it. */
 export const getPrivacyPoolsAsset = (
   chainId: bigint,
   address: string
@@ -239,7 +204,7 @@ export const getPrivacyPoolsAsset = (
     (asset) => asset.address.toLowerCase() === address.toLowerCase()
   )
 
-/** The asset, if a Privacy Pools account can receive it - see `PrivacyPoolsAsset.isWithdrawable`. */
+/** The asset, if it can be deposited - see `PrivacyPoolsAsset.isWithdrawable`. */
 export const getPrivacyPoolsDepositAsset = (
   chainId: bigint,
   address: string
@@ -255,10 +220,7 @@ export const toPrivacyPoolsAssetAddress = (address: string): Hex =>
     ? PRIVACY_POOLS_NATIVE_ASSET_ADDRESS
     : address.toLowerCase()) as Hex
 
-/**
- * Translates an address the SDK reported back into the wallet's own convention, so the sentinel
- * never leaves the controller. Takes the bigint the SDK actually stores addresses as.
- */
+/** Translates an SDK address (often a bigint) into the wallet's convention for native. */
 export const fromPrivacyPoolsAssetAddress = (address: bigint | string): Hex => {
   const hex =
     typeof address === 'bigint'

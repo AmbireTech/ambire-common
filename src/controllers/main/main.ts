@@ -276,19 +276,13 @@ export class MainController extends EventEmitter implements IMainController {
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
     /**
-     * The fetch Privacy Pools reaches its services with. Kept apart from `fetch` so that none of its
-     * requests carry anything identifying the wallet, like the instance id sent to Ambire's APIs.
+     * Fetch for the Privacy Pools services. Separate from `fetch` so its requests carry nothing
+     * identifying the wallet, like the instance id sent to Ambire's APIs.
      */
     privacyPoolsFetch: Fetch
-    /**
-     * Where the Privacy Pools circuit artifacts are served from. A build asset whose URL only the
-     * platform layer knows, so it is injected rather than derived here.
-     */
+    /** Base URL of the Privacy Pools circuit artifacts, a build asset only the platform knows. */
     privacyPoolsCircuitsBaseUrl: string
-    /**
-     * Where Privacy Pools proofs are generated, when the platform layer has a better place for them
-     * than this controller's own context - see `PrivacyPoolsController`'s `proverFactory`.
-     */
+    /** Where to generate Privacy Pools proofs if not here - see `PrivacyPoolsController`. */
     privacyPoolsProverFactory?: PrivacyPoolsProverFactory
   }) {
     super(eventEmitterRegistry)
@@ -907,8 +901,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.survey.initialLoadPromise
 
     await this.privacyPools.initialLoadPromise
-    // A Privacy Pools account restored as selected that is gone by now - removed with its recovery
-    // phrase, possibly while the wallet was still loading
+    // The restored Privacy Pools account may be gone, removed with its recovery phrase mid-load
     const { privacyPoolsAccountId } = this.selectedAccount
     if (privacyPoolsAccountId && !this.#hasPrivacyPoolsAccount(privacyPoolsAccountId)) {
       await this.#selectFallbackAccount()
@@ -977,7 +970,7 @@ export class MainController extends EventEmitter implements IMainController {
     ])
   }
 
-  /** Cleans up after the account on screen, before another one - of either kind - is selected. */
+  /** Cleans up after the selected account, before another one of either kind is selected. */
   async #leaveSelectedAccount() {
     // call closeRequestWindow while still on the currently selected account to allow proper
     // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
@@ -1002,7 +995,7 @@ export class MainController extends EventEmitter implements IMainController {
   async addPrivacyPoolsAccount(seedId: string) {
     await this.initialLoadPromise
 
-    // Wrapped as a whole, so a refused account is shown to the user rather than left to propagate
+    // Wrapped as a whole, so a refused account is shown to the user
     await this.withStatus(
       'selectAccount',
       async () => {
@@ -1014,11 +1007,8 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Creates a new recovery phrase with only a Privacy Pools account on it, and selects it - no
-   * regular account is derived from the phrase.
-   *
-   * The phrase is stored as not backed up, and the UI asks for a backup right away: it is the only
-   * way to recover whatever the account will hold.
+   * Creates a recovery phrase with only a Privacy Pools account on it, and selects it. The phrase
+   * is stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
    */
   async addPrivacyPoolsAccountFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
     await this.initialLoadPromise
@@ -1045,10 +1035,8 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Puts a Privacy Pools account on screen, leaving no regular account selected.
-   *
-   * Apps are deliberately not told: what they should see while a Privacy Pools account is selected
-   * is not decided yet, so they keep whatever account they had.
+   * Selects a Privacy Pools account, leaving no regular account selected. Apps are not told: what
+   * they should see then is undecided, so they keep their account.
    */
   async #selectPrivacyPoolsAccount(seedId: string) {
     if (!this.#hasPrivacyPoolsAccount(seedId)) {
@@ -1072,8 +1060,8 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Selects what should be on screen once the selected account is gone: the first regular account,
-   * else the first Privacy Pools account, else nothing - which is the signed-out state.
+   * Once the selected account is gone, selects the first regular account, else the first Privacy
+   * Pools account, else nothing (signed out).
    */
   async #selectFallbackAccount() {
     const [firstAccount] = this.accounts.accounts
@@ -1095,7 +1083,7 @@ export class MainController extends EventEmitter implements IMainController {
   async #onPrivacyPoolsAccountsRemoved(seedIds: string[]) {
     const { privacyPoolsAccountId } = this.selectedAccount
     if (!privacyPoolsAccountId || !seedIds.includes(privacyPoolsAccountId)) return
-    // Still loading: `#load` makes this same check once everything it needs is in place
+    // Still loading: `#load` makes the same check once ready
     if (!this.isReady) return
 
     await this.#selectFallbackAccount()
@@ -1186,8 +1174,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
     await this.activity.addAccountOp(submittedAccountOp)
-    // Transfers into a Privacy Pools account go out as ordinary account ops, however they were
-    // signed, so this is the one place all of them pass through
+    // Every deposit into a Privacy Pools account, however signed, is broadcast through here
     await this.privacyPools.onAccountOpBroadcast(submittedAccountOp)
     await this.ui.notification.create({
       title:

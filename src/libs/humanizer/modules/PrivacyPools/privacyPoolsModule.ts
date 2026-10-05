@@ -8,9 +8,8 @@ import { HumanizerCallModule, IrCall } from '../../interfaces'
 import { getAction, getLabel, getToken } from '../../utils'
 
 /**
- * Describes a deposit into Privacy Pools the way the wallet presents it: a transfer to a Privacy
- * Pools account. Which account is not in the call - the deposit is only tied to it by a
- * precommitment - so none is named.
+ * Shows a Privacy Pools deposit as a send to a Privacy Pools account. The call ties it to the
+ * account only by a precommitment, so no account is named.
  */
 export const privacyPoolsModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const config = accountOp.chainId ? getPrivacyPoolsChainConfig(accountOp.chainId) : undefined

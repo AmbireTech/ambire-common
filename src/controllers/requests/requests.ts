@@ -2193,7 +2193,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     )
 
     const paymasterService = getAmbirePaymasterService(baseAcc, this.#relayerUrl)
-    // A transfer to a Privacy Pools account is a deposit, whose calls only that controller can build
+    // A transfer to a Privacy Pools account is a deposit
     const callsRequestParams = privacyPoolsSeedId
       ? {
           calls: await this.#transfer.buildPrivacyPoolsDepositCalls({

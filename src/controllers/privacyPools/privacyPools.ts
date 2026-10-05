@@ -79,25 +79,18 @@ import { generateUuid } from '../../utils/uuid'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-/**
- * How long a broadcast deposit blocks another into the same account, while it most likely has
- * not landed yet. See `#broadcastDeposits`.
- */
+/** How long a broadcast deposit blocks another into the same account. See `#broadcastDeposits`. */
 const DEPOSIT_CONFIRMATION_WINDOW_MS = 15 * 60 * 1000
 
-/** How long prices are kept before a sync asks for them again. */
 const PRICES_MAX_AGE_MS = 5 * 60 * 1000
 
-/** How recently a chain must have been read for opening the account not to read it again. */
+/** A chain read more recently than this is not read again when the account is opened. */
 const SYNC_MAX_AGE_MS = 10 * 60 * 1000
 
-/**
- * How long a proved withdrawal waits for its fee estimation before it is shown with only the most
- * it can cost. See `#getExpectedWithdrawalFee`.
- */
+/** After this, a proved withdrawal is shown with only its fee cap. */
 const WITHDRAWAL_ESTIMATION_TIMEOUT_MS = 8 * 1000
 
-/** What an account op's final status means for the deposits in it, or null while it has none. */
+/** Maps an account op's final status to its deposits' outcome, or null while not final. */
 const getDepositOutcome = (status?: AccountOpStatus): 'success' | 'failed' | null => {
   if (status === AccountOpStatus.Success || status === AccountOpStatus.UnknownButPastNonce)
     return 'success'
@@ -120,39 +113,32 @@ const ERC20_INTERFACE = new Interface([
 ])
 
 /**
- * Callers name a token by the address the wallet uses for it - `ZERO_ADDRESS` for native. Whether
- * that means native is derived here rather than passed alongside, so the two can never disagree.
+ * A token by its wallet address - `ZERO_ADDRESS` for native. Nativeness is derived from it, not
+ * passed alongside, so the two can never disagree.
  */
 type AssetRef = { tokenAddress: string }
 
 /**
- * A prepared withdrawal in the only shape this wallet asks for - a paymaster-sponsored ERC-4337
- * userOp, already built and signed by the withdrawal's single-use sender.
- *
- * The SDK also prepares relayer withdrawals, so what `prepareUnshield` returns is a union. The
- * paymaster variant is not exported on its own, hence narrowing the union rather than naming it.
+ * A paymaster-sponsored withdrawal: an ERC-4337 userOp signed by its single-use sender. Narrowed
+ * from the `prepareUnshield` union, as the SDK does not export the variant.
  */
 type PreparedPaymasterWithdrawal = Extract<
   Awaited<ReturnType<PrivacyPoolsV1Protocol['prepareUnshield']>>,
   { mode: 'paymaster' }
 >
 
-/** The prover factory as the SDK types it. Its params type is not exported, hence reading it off. */
+/** The SDK's prover factory type, which it does not export. */
 type SdkProverFactory = NonNullable<
   ConstructorParameters<typeof PrivacyPoolsV1Protocol>[1]['proverFactory']
 >
 
 /**
- * What the SDK throws when the paymaster's gas fee would exceed the withdrawn amount. Matched by
- * its exact wording because the SDK throws a plain `Error` with no code to tell it apart - and from
- * inside a thunk, so it arrives as a plain object; see `toPrivacyPoolsSdkError`.
+ * The SDK's error when the paymaster fee exceeds the withdrawn amount. Matched by wording: it has
+ * no code, and arrives as a plain object (see `toPrivacyPoolsSdkError`).
  */
 const FEE_ABOVE_AMOUNT_SDK_MESSAGE = 'Withdrawal amount too small to cover the sponsored gas fee'
 
-/**
- * Turns the one SDK failure a user can act on into a sentence they can read. Everything else is
- * passed through as an `Error` with the SDK's message, and shown as the generic fallback.
- */
+/** Makes the fee-above-amount SDK error readable; passes anything else through as an `Error`. */
 const toReadableWithdrawalError = (error: unknown) => {
   const sdkError = toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
   if (!sdkError.message.includes(FEE_ABOVE_AMOUNT_SDK_MESSAGE)) return sdkError
@@ -166,12 +152,9 @@ const toReadableWithdrawalError = (error: unknown) => {
 }
 
 /**
- * Owns the wallet's Privacy Pools state: one plugin per (chain, recovery phrase), the notes those
- * plugins find, and the locally kept log of what this wallet did with them.
- *
- * Scoped by recovery phrase rather than by account, because the note secrets are derived from the
- * phrase: accounts sharing a phrase share one set of notes, and an account without one (hardware,
- * private-key import, view-only) cannot use Privacy Pools at all.
+ * Privacy Pools state: one plugin per (chain, recovery phrase), its notes, and the local activity
+ * log. Scoped by phrase, as note secrets are derived from it - accounts without one (hardware,
+ * private key, view-only) cannot use Privacy Pools.
  */
 export class PrivacyPoolsController extends EventEmitter implements IPrivacyPoolsController {
   #keystore: IKeystoreController
@@ -189,61 +172,37 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #fetch: Fetch
 
   /**
-   * The one storage adapter every plugin persists through.
-   *
-   * Shared rather than built per plugin, because the adapter caches the whole blob and rewrites it
-   * on every save. Two plugins with a cache each - two recovery phrases on the same device - would
-   * each write back their own copy, and the last one would silently undo the other's progress.
+   * Shared by all plugins: the adapter caches the whole blob and rewrites it on every save, so
+   * per-plugin adapters (two phrases) would overwrite each other's progress.
    */
   #kohakuStorage: Storage
 
-  /**
-   * Told which accounts were just removed, so whoever selects accounts can move off one that was
-   * selected. A callback because removal also happens here on its own, when a phrase is deleted.
-   */
+  /** Lets the selection move off a removed account. Also fired when a phrase is deleted. */
   #onAccountsRemoved: (seedIds: string[]) => Promise<void>
 
-  /**
-   * One plugin per `${chainId}:${seedId}`. Keyed by both because a plugin binds a chain's provider
-   * to one phrase's secrets, and switching either has to produce a different instance rather than
-   * reuse one that would scan for the wrong notes.
-   */
+  /** Per `${chainId}:${seedId}`: a plugin binds one chain's provider to one phrase's secrets. */
   #protocols = new Map<string, PrivacyPoolsV1Protocol>()
 
   /** The provider each plugin was built against, so a provider swap can invalidate it. */
   #providerInstances = new Map<string, JsonRpcProvider>()
 
-  /**
-   * Which live plugins read their pool history from the CDN rather than the chain.
-   *
-   * Tracked because that reading is worth doing exactly once. See `#dropSagaHydratedProtocols`.
-   */
+  /** Live plugins that read pool history from the CDN. See `#dropSagaHydratedProtocols`. */
   #sagaHydratedKeys = new Set<string>()
 
-  /**
-   * One key adapter per phrase, outliving the plugins built on it, so a rebuilt plugin reuses the
-   * keys already derived instead of paying a fresh pbkdf2 for each of them again.
-   */
+  /** Per phrase, outliving its plugins, so a rebuilt plugin skips re-deriving keys (pbkdf2). */
   #kohakuKeystores = new Map<string, Keystore>()
 
   /**
-   * The tail every sync is chained onto, so syncs run one at a time whatever their network or
-   * phrase.
-   *
-   * Serialized rather than parallel because the expensive part of a sync - reading the pools'
-   * history - is the same for every phrase on a network. The first one pays for it and persists
-   * it, and every phrase after it starts from that and only reads the few blocks since. Two in
-   * parallel would each walk the whole history, doubling the RPC load to reach the same state.
+   * Runs syncs one at a time across all chains and phrases. The pools' history is the same for
+   * every phrase on a chain: the first sync reads and persists it, later ones read only new blocks.
+   * In parallel each would walk the whole history.
    */
   #syncQueue: Promise<void> = Promise.resolve()
 
   /** The queued or running sync per `${chainId}:${seedId}`, so asking again joins it. */
   #syncJobs = new Map<string, Promise<void>>()
 
-  /**
-   * How many syncs are queued or running per chain. The chain reads as syncing while any is, for
-   * every phrase - they all wait on the same history.
-   */
+  /** Queued or running syncs per chain. It reads as syncing, for every phrase, while any is. */
   #pendingSyncsByChain = new Map<string, number>()
 
   #syncStatesByChain: { [chainId: string]: PrivacyPoolsChainSyncState } = {}
@@ -252,22 +211,17 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #chainHistories: { [chainId: string]: PrivacyPoolsChainHistory } = {}
 
   /**
-   * Bumped whenever a sync persists a chain's history. A plugin reads the store only once, when it
-   * is built, so one built before the latest save would walk again the blocks another phrase's
-   * sync has already read. See `#getProtocol`.
+   * Bumped whenever a sync persists a chain's history. A plugin reads the store only when built, so
+   * an older one would re-read blocks another phrase's sync already read. See `#getProtocol`.
    */
   #chainVersions = new Map<string, number>()
 
   /** The chain version each live plugin's in-memory state matches. */
   #protocolChainVersions = new Map<string, number>()
 
-  /**
-   * Bumped on every lock. A sync cannot be aborted, so one still running when the wallet locks
-   * would otherwise write back the notes the lock just wiped.
-   */
+  /** Bumped on every lock, so a sync that cannot be aborted does not write back wiped notes. */
   #generation = 0
 
-  /** Notes per `${seedId}` then per chain, so switching accounts keeps each phrase's own view. */
   #notesByIdentity: {
     [seedId: string]: { [chainId: string]: PrivacyPoolsIdentityChainState }
   } = {}
@@ -275,57 +229,43 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #activity: PrivacyPoolsActivityEntry[] = []
 
   /**
-   * The next deposit's precommitment per `${chainId}:${seedId}`, derived once - see
-   * `#getNextDepositPrecommitment` - with the sync it was derived after. `epoch` is null while that
-   * sync is still under way.
+   * The next deposit's precommitment per `${chainId}:${seedId}` and the sync epoch it was derived
+   * after (null while that sync runs). See `#getNextDepositPrecommitment`.
    */
   #nextDepositPrecommitments = new Map<
     string,
     { derivation: Promise<bigint>; epoch: number | null }
   >()
 
-  /**
-   * How many syncs have completed per `${chainId}:${seedId}`. A derived precommitment is good only
-   * for the sync it followed: any later one may have seen a deposit land, which moves it on.
-   */
+  /** Completed syncs per `${chainId}:${seedId}`. A precommitment is valid until the next one. */
   #syncEpochs = new Map<string, number>()
 
-  /** Deposits `buildDepositCalls` prepared, by precommitment, so a broadcast can be told one. */
+  /** Deposits `buildDepositCalls` prepared, by precommitment, so a broadcast can be recognised. */
   #preparedDeposits = new Map<bigint, { seedId: string; chainId: string }>()
 
   /**
-   * When each recognised deposit was broadcast, by precommitment.
-   *
-   * A second deposit into the same account before the first lands would carry the same
-   * precommitment, and the entrypoint rejects a reused one - so building one is refused for a
-   * while. Not until the deposit is seen on chain, because a broadcast that never lands would then
-   * block the account for good.
+   * Broadcast time per precommitment. A second deposit before the first lands would reuse its
+   * precommitment, which the entrypoint rejects - so it is refused for a fixed window rather than
+   * until seen on chain, which a never-landing broadcast would block forever.
    */
   #broadcastDeposits = new Map<bigint, number>()
 
-  /**
-   * The proved-but-unsent withdrawal. Private: it carries the proof and the signed userOp, neither
-   * of which the UI needs - it reads the fee off `operation.quote`.
-   */
+  /** The proved-but-unsent withdrawal. Private: it holds the proof and the signed userOp. */
   #pendingWithdrawal: PreparedPaymasterWithdrawal | null = null
 
   #proverFactory: PrivacyPoolsProverFactory
 
   #unsubscribers: (() => void)[] = []
 
-  /** The selected Privacy Pools account the UI last heard about - see `#subscribeToDependencies`. */
+  /** The selected Privacy Pools account the UI last heard of. See `#subscribeToDependencies`. */
   #selectedAccountId: string | null = null
 
-  /**
-   * What the entrypoint requires of a deposit, per `${chainId}:${tokenAddress}` (lowercase) - read
-   * from the chain once per session, as the form needs it to validate what is typed.
-   */
+  /** Entrypoint deposit requirements per `${chainId}:${tokenAddress}` (lowercase), read once. */
   depositAssetConfigs: { [key: string]: PrivacyPoolsDepositAssetConfig } = {}
 
   /**
-   * USD prices of the assets the pools accept, keyed as `getPrivacyPoolsPriceKey` does. Kept here
-   * rather than taken from the portfolio: with a Privacy Pools account selected there is no
-   * selected account's portfolio to price anything.
+   * USD prices of the pools' assets, keyed by `getPrivacyPoolsPriceKey`. Not from the portfolio,
+   * which has no selected account while a Privacy Pools account is selected.
    */
   prices: { [priceKey: string]: number } = {}
 
@@ -333,16 +273,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #pricesRequest: Promise<void> | null = null
 
-  /**
-   * The wallet's Privacy Pools accounts, at most one per stored recovery phrase. Removed along with
-   * their phrase, since nothing in them can be reached once it is gone.
-   */
+  /** At most one per stored recovery phrase, and removed with it. */
   accounts: PrivacyPoolsAccount[] = []
 
-  /**
-   * The latest withdrawal - the one in flight, or the last one until dismissed - whichever phrase
-   * it belongs to. Reaches the UI through `operation`, only while its phrase is on screen.
-   */
+  /** The latest withdrawal of any phrase. Exposed through `operation`. */
   #operation: PrivacyPoolsOperation | null = null
 
   initialLoadPromise?: Promise<void>
@@ -367,15 +301,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     selectedAccount: ISelectedAccountController
     storage: IStorageController
     fetch: Fetch
-    /**
-     * Where the circuit artifacts are served from. A build asset whose URL only the platform layer
-     * knows - an extension URL on the extension, a static path on the websites.
-     */
+    /** Where the circuit artifacts are served from, as only the platform knows it. */
     circuitsBaseUrl: string
     /**
-     * Where proofs are generated, when not in this controller's own context - the extension hands
-     * them to its offscreen document, where they run on several threads. Absent, they are generated
-     * here from the artifacts at `circuitsBaseUrl`.
+     * Proves outside this context (the extension's multi-threaded offscreen document). Absent,
+     * proofs run here from `circuitsBaseUrl`.
      */
     proverFactory?: PrivacyPoolsProverFactory
     onAccountsRemoved: (seedIds: string[]) => Promise<void>
@@ -412,20 +342,18 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   async #load() {
-    // Everything `supportedChainIds` and `unavailableReason` read has to be loaded first,
-    // otherwise the UI is briefly told Privacy Pools is unavailable on every start.
+    // What `supportedChainIds` and `unavailableReason` read, or the UI briefly shows unavailable
     await this.#networks.initialLoadPromise
     await this.#providers.initialLoadPromise
     await this.#keystore.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    // Entries recorded before the log carried a seed cannot be attributed to one, so they are
-    // dropped rather than kept around unreachable.
+    // Entries without a seed cannot be attributed to an account
     this.#activity = (await this.#storage.get(PRIVACY_POOLS_ACTIVITY_STORAGE_KEY, [])).filter(
       (entry) => !!entry.seedId
     )
     this.accounts = await this.#storage.get(PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY, [])
-    // A phrase deleted while this controller was not around to see it
+    // Phrases deleted while this controller was not running
     await this.#forgetAccountsOfDeletedSeeds()
 
     this.#subscribeToDependencies()
@@ -433,21 +361,15 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Privacy Pools holds derived secrets and live RPC providers, so it cannot just read its
-   * dependencies on demand - it has to react when they change. Each subscription either
-   * invalidates a plugin or changes what the getters below report, and getter values only reach
-   * the UI when an update is emitted.
-   *
-   * Passed on only when they can change what it reports, since the selected account and the
-   * networks update far more often than that.
+   * Each subscription invalidates a plugin or changes what the getters report. Updates are passed
+   * on only when they can change what this reports, as selected account and networks update often.
    */
   #subscribeToDependencies() {
     this.#selectedAccountId = this.#selectedAccount.privacyPoolsAccountId
 
     this.#unsubscribers.push(
       this.#keystore.onUpdate((forceEmit) => {
-        // Locking must drop the derived note secrets, not merely hide the UI. The notes go with
-        // them: nothing derived from the phrase may outlive the lock.
+        // Nothing derived from the phrase, notes included, may outlive the lock
         if (!this.#keystore.isUnlocked && this.#hasPhraseDerivedState()) this.#teardown()
 
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -456,9 +378,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         this.#propagateIfHasAccounts(forceEmit)
       }, 'privacyPools'),
 
-      // Switching accounts drops nothing: every phrase has its own plugins and its own notes, so
-      // switching back shows them at once, and a sync still running for the previous phrase keeps
-      // going and leaves the network's history warm for the next one.
+      // Switching accounts drops nothing: each phrase keeps its plugins and notes, and a running
+      // sync of the previous one still warms the chain's history
       this.#selectedAccount.onUpdate((forceEmit) => {
         const selectedAccountId = this.#selectedAccount.privacyPoolsAccountId
         if (selectedAccountId === this.#selectedAccountId) return
@@ -478,7 +399,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         this.#propagateIfHasAccounts(forceEmit)
       }, 'privacyPools'),
 
-      // Subscribed to purely so `supportedChainIds` and everything derived from it reaches the UI.
+      // Only so `supportedChainIds` and what derives from it reach the UI
       this.#networks.onUpdate(
         (forceEmit) => this.#propagateIfHasAccounts(forceEmit),
         'privacyPools'
@@ -497,10 +418,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (this.accounts.length) this.propagateUpdate(forceEmit)
   }
 
-  /**
-   * The chains this wallet can use Privacy Pools on: the SDK's own capability, narrowed to the
-   * networks the user actually has and that have a provider.
-   */
+  /** The SDK's supported chains, narrowed to the user's networks that have a provider. */
   get supportedChainIds(): string[] {
     return PRIVACY_POOLS_SUPPORTED_CHAIN_IDS.map((chainId) => chainId.toString()).filter(
       (chainId) =>
@@ -510,8 +428,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   get unavailableReason(): PrivacyPoolsUnavailableReason | null {
-    // Structural reasons first: they don't change by unlocking, so telling a user with no Privacy
-    // Pools account selected to unlock would send them to do something that cannot help.
+    // Before 'locked', which unlocking would not fix while these hold
     if (!this.#getSelectedSeedId()) return 'no-account'
     if (!this.supportedChainIds.length) return 'unsupported-network'
     if (!this.#keystore.isUnlocked) return 'locked'
@@ -523,10 +440,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return !this.unavailableReason
   }
 
-  /**
-   * Per-chain state as the UI reads it: the chain's own sync merged with this phrase's last read of
-   * it. A getter rather than a field, so the split stays an implementation detail.
-   */
+  /** Per chain: the chain's sync state merged with the selected phrase's last read of it. */
   get chains(): { [chainId: string]: PrivacyPoolsChainState } {
     const identityChains = this.#getSelectedIdentityChains()
     const chainIds = new Set([
@@ -563,11 +477,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * The withdrawal on screen - the one in flight, or the last one until dismissed. Public because
-   * proving takes ten seconds and up, and the UI has nothing else to show meanwhile.
-   *
-   * Hidden while another phrase is on screen, rather than dropped: a withdrawal cannot be stopped
-   * mid-proof, and switching back must show it where it was.
+   * The withdrawal in flight, or the last one until dismissed. Hidden, not dropped, while another
+   * phrase is selected: it cannot be stopped mid-proof, and switching back must show it.
    */
   get operation(): PrivacyPoolsOperation | null {
     if (this.#operation?.seedId !== this.#getSelectedSeedId()) return null
@@ -575,15 +486,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return this.#operation
   }
 
-  /** Whether any chain has completed a scan for this phrase, i.e. whether there is anything to show. */
+  /** Whether any chain has completed a scan for the selected phrase. */
   get hasSyncedAnyChain(): boolean {
     return Object.values(this.chains).some((chain) => !!chain.lastSyncedAt)
   }
 
   /**
-   * Notes collapsed to one row per token per chain, split by what can actually be done with them.
-   * Only `approvedAmount` can be withdrawn; the rest is waiting on the association set and can
-   * only be reclaimed publicly.
+   * One row per token per chain. Only `approvedAmount` can be withdrawn; the rest awaits the
+   * association set and can only be reclaimed publicly.
    */
   get balances(): { [chainId: string]: PrivacyPoolsTokenBalance[] } {
     const identityChains = this.#getSelectedIdentityChains()
@@ -597,8 +507,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
           const asset = getPrivacyPoolsAsset(BigInt(chainId), key)
           const entry = byToken.get(key) || {
             tokenAddress: key,
-            // An unconfigured asset can only happen if a pool is added before we list it. Showing
-            // the raw amount beats hiding a balance the user owns, so it degrades rather than drops.
+            // A pool added before we list it: show the raw amount rather than hide the balance
             symbol: asset?.symbol || 'Unknown token',
             decimals: asset?.decimals ?? 0,
             isNative: asset?.isNative ?? isPrivacyPoolsNativeAsset(key),
@@ -619,11 +528,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     )
   }
 
-  /**
-   * This phrase's operations, newest first. Scoped here rather than in the UI so another phrase's
-   * operations cannot reach it at all, and scoped by phrase rather than by account to match the
-   * notes they sit beside - accounts sharing a phrase share the notes, so they share the log.
-   */
+  /** The selected phrase's activity, newest first. Filtered here so others' never reach the UI. */
   get activity(): PrivacyPoolsActivityEntry[] {
     const seedId = this.#getSelectedSeedId()
     if (!seedId) return []
@@ -633,11 +538,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       .sort((a, b) => b.createdAt - a.createdAt)
   }
 
-  /**
-   * The recovery phrase of the selected Privacy Pools account - the one the note secrets are
-   * derived from. Null when a regular account is selected, or when the selection no longer points
-   * at an account and a phrase this wallet still has.
-   */
+  /** The selected Privacy Pools account's phrase, or null if none or its account/phrase is gone. */
   #getSelectedSeedId(): string | null {
     const seedId = this.#selectedAccount.privacyPoolsAccountId
     if (!seedId) return null
@@ -647,7 +548,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return seedId
   }
 
-  /** What the selected Privacy Pools account holds, per chain. */
   #getSelectedIdentityChains(): { [chainId: string]: PrivacyPoolsIdentityChainState } {
     const seedId = this.#getSelectedSeedId()
 
@@ -734,12 +634,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#protocolChainVersions.delete(key)
   }
 
-  /**
-   * The plugin for a chain and phrase.
-   *
-   * Rebuilt when another phrase's sync has persisted newer history since it was built, so it
-   * starts from that rather than from what it last held in memory.
-   */
+  /** Rebuilt when another phrase's sync persisted newer history since, to start from that. */
   async #getProtocol(chainId: string, seedId: string): Promise<PrivacyPoolsV1Protocol> {
     const key = this.#protocolKey(chainId, seedId)
     const chainVersion = this.#chainVersions.get(chainId) || 0
@@ -757,8 +652,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     const protocol = new PrivacyPoolsV1Protocol(host, {
       accountIndex: PRIVACY_POOLS_ACCOUNT_INDEX,
-      // Skipped entirely once this chain has a persisted store, so the cost of loading it is paid
-      // once per install rather than on every sync.
+      // Skipped once this chain has a persisted store
       initialState: this.#resolveInitialState,
       dataService: withKohakuDebugTiming(dataService, 'dataService'),
       entrypoint: {
@@ -767,17 +661,15 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       },
       // The SDK types it as the circuits package's whole `Prover`, but only ever calls `prove`
       proverFactory: this.#proverFactory as SdkProverFactory,
-      // 0xBow's API rather than the SDK's IPFS default, which depends on ipfs.io being up and on
-      // the CID in the last on-chain root update still being pinned.
+      // Not the SDK's IPFS default, which needs ipfs.io up and the last root update's CID pinned
       aspServiceFactory: () =>
         withKohakuDebugTiming(
           new OxBowAspService({ network: host.network, aspUrl: config.aspUrl }),
           'aspService'
         ),
-      // Passed explicitly rather than left to the SDK's built-in table, so the adapters a
-      // withdrawal is checked against in `readPaymasterWithdrawal` are the same ones it is built
-      // with, and so the bundler is reached with our own key. Empty for a chain without a
-      // paymaster, which makes the SDK refuse the withdrawal rather than fall back to its table.
+      // Not the SDK's built-in table: withdrawals are built with the adapters
+      // `readPaymasterWithdrawal` checks, and reach the bundler with our key. Empty without a
+      // paymaster, so the SDK refuses rather than falls back to its table.
       paymasterConfig: config.paymaster
         ? {
             [Number(config.chainId)]: {
@@ -799,11 +691,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * What a chain with no stored history of its own starts from, keyed the way the plugin keys its
-   * own store: the block its entrypoint was deployed at. The SDK starts its entrypoint walk wherever
-   * this says the last sync reached - and with nothing to say, that is block zero, twenty-two
-   * million blocks of `eth_getLogs` before the first event that exists. Nothing else is claimed:
-   * the pools are left empty, so they are read in full.
+   * Starts a cold chain's entrypoint walk at its deployment block instead of block zero (22M blocks
+   * of `eth_getLogs` before the first event). Pools are left empty, so they are read in full.
    */
   #resolveInitialState = async (): Promise<Record<string, any>> =>
     PRIVACY_POOLS_SUPPORTED_CHAIN_IDS.reduce((state, chainId) => {
@@ -819,15 +708,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }, {})
 
   /**
-   * How this chain's plugin reads the chain.
-   *
-   * The CDN is offered only for a cold chain, because its reader replays a pool's whole history on
-   * every call - it ignores the block a sync asks it to start from. That is exactly what a first
-   * sync wants and exactly what every later one does not, so a warm chain reads its handful of new
-   * blocks from the provider. See `#dropSagaHydratedProtocols` for the other half of that.
-   *
-   * The provider-backed reader underneath is used either way, and is the parallel one in both
-   * cases.
+   * The CDN only for a cold chain: its reader replays a pool's whole history on every call,
+   * ignoring the start block. A warm chain reads new blocks from the provider. See
+   * `#dropSagaHydratedProtocols`.
    */
   async #getDataService(config: PrivacyPoolsChainConfig, provider: Host['provider']) {
     const canUseSaga = !!config.sagaSyncUrl && (await this.#isChainCold(config))
@@ -851,23 +734,17 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /** Whether the plugin has stored nothing for this chain yet. */
   async #isChainCold(config: PrivacyPoolsChainConfig): Promise<boolean> {
     try {
-      // Read through the shared adapter rather than the raw store, so a save still in flight from
-      // another phrase's sync already counts.
+      // The shared adapter, not the raw store, so another phrase's in-flight save counts
       return !(await this.#kohakuStorage.get(getPrivacyPoolsStoreKey(config)))
     } catch {
-      // A store that cannot be read is a store with nothing in it as far as this decision goes,
-      // and reading from the CDN is the cheaper way to be wrong.
+      // Treated as cold: reading from the CDN is the cheaper way to be wrong
       return true
     }
   }
 
   /**
-   * Drops the plugins that hydrated a chain from the CDN, once they have.
-   *
-   * The CDN reader is built for a cold chain and replays everything on every call, so keeping one
-   * alive would re-download and re-parse a pool's whole history on every later sync. Dropping it
-   * costs nothing: the history it fetched is already persisted, so the plugin built in its place
-   * hydrates from the store and reads only the blocks since.
+   * Drops plugins that hydrated a chain from the CDN, whose reader would re-download the whole
+   * history on every sync. Their replacements start from the persisted store.
    */
   #dropSagaHydratedProtocols(chainId: string) {
     this.#sagaHydratedKeys.forEach((key) => {
@@ -883,8 +760,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Looks up whether a chain's history has been read on this device, once per chain. Asked for when
-   * a sync is, so a network in for the long first read says so while it still waits its turn.
+   * Looks up once per chain whether its history was read on this device, so a queued sync can
+   * already show the long first read is ahead.
    */
   async #lookUpInitialSync(chainId: string) {
     if (typeof this.#chainHistories[chainId]?.isInitialSyncDone === 'boolean') return
@@ -893,7 +770,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (!config) return
 
     const isChainCold = await this.#isChainCold(config)
-    // A sync that got its turn meanwhile has found out itself, and may have read the chain since
+    // A sync that ran meanwhile has set it, and may have read the chain since
     if (typeof this.#chainHistories[chainId]?.isInitialSyncDone === 'boolean') return
 
     this.#writeChainHistory(chainId, { isInitialSyncDone: !isChainCold })
@@ -912,24 +789,19 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Walks a chain's pools and decrypts whatever belongs to this phrase.
-   *
-   * Queued behind any sync already running (see `#syncQueue`), and joinable: asking again for the
-   * same chain and phrase returns the sync already queued or running rather than adding another.
+   * Reads a chain's notes for the selected phrase. Queued (see `#syncQueue`), and a repeat call for
+   * the same chain and phrase joins the queued or running one.
    */
   async syncChain(chainId: string): Promise<void> {
     const seedId = this.#assertAvailableAndGetSeedId()
-    // A balance is worth little without what it is worth, and a sync is when it is looked at
+    // Prices are refreshed along with balances
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.#refreshPrices()
 
     return this.#queueSync(chainId, seedId)
   }
 
-  /**
-   * Asks for prices again once they are older than `PRICES_MAX_AGE_MS`, one request at a time.
-   * Never while the user has opted out of token prices.
-   */
+  /** Refetches stale prices, one request at a time, unless token prices are opted out of. */
   async #refreshPrices() {
     if (!this.#featureFlags.isFeatureEnabled('tokenPrices')) return
     if (this.#pricesRequest || Date.now() - this.#pricesFetchedAt < PRICES_MAX_AGE_MS) return
@@ -949,7 +821,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         this.#pricesFetchedAt = Date.now()
         this.emitUpdate()
       } catch (error: any) {
-        // The balances stand without them - the previous prices, if any, stay on screen
+        // Previous prices, if any, stay
         this.emitError({
           level: 'silent',
           message: 'Could not load the prices of what is in Privacy Pools.',
@@ -968,7 +840,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#pricesFetchedAt = 0
   }
 
-  /** Queues a sync for any account, not only the selected one - see `syncChain`. */
+  /** Like `syncChain`, for any phrase, not only the selected one. */
   #queueSync(chainId: string, seedId: string): Promise<void> {
     const jobKey = this.#protocolKey(chainId, seedId)
     const existingJob = this.#syncJobs.get(jobKey)
@@ -980,8 +852,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#lookUpInitialSync(chainId)
 
     this.#pendingSyncsByChain.set(chainId, (this.#pendingSyncsByChain.get(chainId) || 0) + 1)
-    // Shown at once rather than when the sync gets its turn, so a sync waiting behind another
-    // reads as under way instead of as nothing happening.
+    // At once, so a sync waiting its turn already reads as under way
     if (!this.#isChainSyncing(chainId)) {
       this.#writeChainSyncState(chainId, {
         syncStatus: 'syncing',
@@ -1014,20 +885,19 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * One sync, once its turn comes. Resolves with the error to show for the chain, or null.
-   *
-   * Never rejects: a failed sync must not break the queue for the syncs behind it.
+   * Resolves with the error to show for the chain, or null. Never rejects, so a failure does not
+   * break the queue.
    */
   async #runSync(chainId: string, seedId: string, generation: number): Promise<string | null> {
-    // Locked while this waited its turn - the secrets it was queued with are gone.
+    // Locked while this waited its turn
     if (generation !== this.#generation) return null
 
     const config = getPrivacyPoolsChainConfig(BigInt(chainId))
     const isChainCold = !!config && (await this.#isChainCold(config))
     const startedAt = Date.now()
 
-    // 'initializing' is the chain's own first read, whichever phrase happens to trigger it: that
-    // is the walk that takes minutes. A phrase new to an already read chain only reads the tail.
+    // 'initializing' is the chain's first read (minutes), whichever phrase triggers it. A phrase
+    // new to an already read chain only reads the tail.
     this.#writeChainSyncState(chainId, {
       syncStatus: isChainCold ? 'initializing' : 'syncing',
       syncStartedAt: startedAt,
@@ -1043,13 +913,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         this.#getProtocol(chainId, seedId)
       )
 
-      // `notes` is optional on the plugin interface - it exists only when the plugin declares a
-      // note type, which PPv1 does. Checked rather than asserted so a future SDK that drops it
-      // fails with this sentence instead of a TypeError.
+      // Optional on the plugin interface; checked so an SDK that drops it fails clearly
       if (!protocol.notes) throw new Error('privacyPools: plugin does not expose notes')
 
-      // Reading the notes is the sync: the plugin syncs before every read, and each of its syncs
-      // costs seconds even with no new blocks, so a `sync()` first would pay for it twice.
+      // The plugin syncs before every read, costing seconds even with no new blocks, so a
+      // `sync()` first would pay twice
       const notes = await kohakuDebugPhase(debugTrace, 'sdk.notes (sync)', () => protocol.notes!())
       const syncDuration = Date.now() - startedAt
       endKohakuDebugTrace(debugTrace, {
@@ -1060,16 +928,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         treeSizes: readKohakuDebugTreeSizes(() => protocol.dumpState())
       })
 
-      // The history is persisted by now, whoever's phrase it was read for and whether or not the
-      // wallet has been locked since: it is the chain's, not the phrase's
+      // Even if locked since: the history is the chain's, not the phrase's
       if (isChainCold)
         this.#writeChainHistory(chainId, {
           isInitialSyncDone: true,
           initialSyncDuration: syncDuration
         })
 
-      // Locked while syncing: nothing derived from the phrase may be written back. Nor for an
-      // account removed meanwhile, whose notes would otherwise outlive it.
+      // Nothing derived from the phrase is written back after a lock or account removal
       if (generation !== this.#generation) return null
       if (!this.accounts.some((account) => account.seedId === seedId)) return null
 
@@ -1091,14 +957,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       const syncKey = this.#protocolKey(chainId, seedId)
       this.#syncEpochs.set(syncKey, (this.#syncEpochs.get(syncKey) || 0) + 1)
 
-      // The sync has persisted the chain's history by now, so every other phrase's plugin on this
-      // chain is behind the store - and this one is exactly at it.
+      // Other phrases' plugins on this chain are now behind the store; this one is at it
       const chainVersion = (this.#chainVersions.get(chainId) || 0) + 1
       this.#chainVersions.set(chainId, chainVersion)
       this.#protocolChainVersions.set(this.#protocolKey(chainId, seedId), chainVersion)
 
-      // Whatever the CDN fetched is persisted by now, so the plugin that fetched it has done its
-      // one job and the next sync should read the few new blocks from the provider instead.
       this.#dropSagaHydratedProtocols(chainId)
 
       return null
@@ -1116,12 +979,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
   }
 
-  /**
-   * Resolves the chain's status once a sync is done, unless another is still queued for it - the
-   * chain keeps reading as syncing until the last one finishes.
-   */
+  /** The chain keeps reading as syncing until its last queued sync finishes. */
   #settleChainSync(chainId: string, generation: number, error: string | null) {
-    // The lock that superseded this sync has already reset everything it would settle
+    // The superseding lock already reset everything this would settle
     if (generation !== this.#generation) return
 
     const pendingSyncs = (this.#pendingSyncsByChain.get(chainId) || 1) - 1
@@ -1139,12 +999,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Syncs every chain this wallet can use, for the account on screen, however recently it was read
-   * - what refreshing it does. Opening it goes through `syncIfStale` instead.
+   * Syncs every supported chain for the selected phrase, however fresh (a refresh).
    *
-   * Not wrapped in `withStatus`, which refuses a call while the previous one runs: a first read
-   * takes minutes, and opening another account meanwhile must still queue its sync - see
-   * `#syncQueue`. What is in flight is reported per chain instead, through `chains`.
+   * Not in `withStatus`, which refuses a call while the previous one runs: a first read takes
+   * minutes, and another account opened meanwhile must still queue its sync. Progress is per chain,
+   * through `chains`.
    */
   async sync(): Promise<void> {
     try {
@@ -1155,13 +1014,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * What opening the account on screen does: syncs every chain it has not read in the last 10
-   * minutes, rather than every chain every time it is opened. Not wrapped in `withStatus`, for the
-   * reason `sync` is not.
-   *
-   * Nothing is read until the account's recovery phrase is backed up. The first read of a network
-   * takes minutes, and the phrase is the only way to recover the account - so the dashboard asks
-   * for the backup first, and the account is read once it is done.
+   * On opening the account, syncs chains older than `SYNC_MAX_AGE_MS`. Not in `withStatus`, as
+   * `sync`. Skipped until the phrase, the only way to recover the account, is backed up: the
+   * dashboard asks for it before the minutes-long first read.
    */
   async syncIfStale(): Promise<void> {
     try {
@@ -1195,19 +1050,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * The calls that send funds from one of the wallet's accounts into a Privacy Pools account - a
-   * deposit, in the protocol's terms.
-   *
-   * Only built here: the caller hands them to the regular signing flow, because a deposit is an
-   * ordinary transaction from the sending account and deserves the same fee handling, simulation
-   * and confirmation as any other. Nothing is recorded until it is broadcast - see
-   * `onAccountOpBroadcast`.
-   *
-   * For ERC-20s the SDK builds only the entrypoint call, while `Entrypoint.deposit` pulls the funds
-   * with `transferFrom` - so the approval has to be prepended here or the deposit reverts.
-   *
-   * The deposit is public by nature: the pool stores the sending address and emits it. Nothing here
-   * hides that, and the screen says so.
+   * Builds the deposit calls from a wallet account into a Privacy Pools account, for the regular
+   * signing flow. Recorded only once broadcast - see `onAccountOpBroadcast`. Deposits are public:
+   * the pool stores and emits the sender's address.
    */
   async buildDepositCalls({
     seedId,
@@ -1303,10 +1148,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return [...(await this.#approvalCallIfNeeded(chainId, asset, amount, accountAddr)), depositCall]
   }
 
-  /**
-   * What the entrypoint requires of a deposit of this asset, read once and then kept - also on
-   * `depositAssetConfigs`, for the form to validate against as the amount is typed.
-   */
+  /** Reads the entrypoint's deposit requirements for an asset once, into `depositAssetConfigs`. */
   async loadDepositAssetConfig(
     chainId: string,
     tokenAddress: string
@@ -1340,15 +1182,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * The precommitment the next deposit into this account on this chain is made with.
-   *
-   * It comes from how many deposits the phrase has on chain, so it stays the same until one lands -
-   * which is what makes it worth deriving once rather than for every amount typed: deriving it
-   * syncs the chain for the phrase first, through the queue like any other sync. The amount is not
-   * part of it, so the deposit itself is encoded here for whatever amount is asked for.
-   *
-   * The SDK builds the transaction that carries it; only the precommitment is taken from it, and
-   * only once the transaction is confirmed to go to the configured entrypoint.
+   * The next deposit's precommitment. It depends on the phrase's deposit count, not the amount, so
+   * it is derived once per sync (deriving needs a sync first). Taken from an SDK-built deposit only
+   * if that goes to the configured entrypoint.
    */
   #getNextDepositPrecommitment(chainId: string, seedId: string): Promise<bigint> {
     const key = this.#protocolKey(chainId, seedId)
@@ -1363,7 +1199,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
     const derivation = (async () => {
       await this.#queueSync(chainId, seedId)
-      // Pinned to the sync just awaited, which is the one it is derived after
+      // Pinned to the sync just awaited
       entry.epoch = this.#syncEpochs.get(key) || 0
 
       const config = getPrivacyPoolsChainConfig(BigInt(chainId))
@@ -1387,7 +1223,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     entry.derivation = derivation
     this.#nextDepositPrecommitments.set(key, entry)
-    // Not kept when it fails, so the next attempt derives it again rather than failing forever
+    // Not cached on failure, so the next attempt retries
     derivation.catch(() => {
       if (this.#nextDepositPrecommitments.get(key) === entry)
         this.#nextDepositPrecommitments.delete(key)
@@ -1405,10 +1241,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     })
   }
 
-  /**
-   * Settles the deposits that went out in an account op, once its outcome is known. Nothing else
-   * can tell: the pool's own records carry no transaction to match a deposit by.
-   */
+  /** Settles an account op's deposits. The pool's records carry no transaction to match them by. */
   async onAccountOpStatusUpdate({ id, status }: { id: string; status?: AccountOpStatus }) {
     const outcome = getDepositOutcome(status)
     if (!outcome) return
@@ -1432,12 +1265,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Records the deposits a just-broadcast account op carries, whichever way it was signed - the
-   * inline transfer, a batch, a request window.
-   *
-   * Only deposits `buildDepositCalls` prepared are recognised, by their precommitment: that is what
-   * ties one to a Privacy Pools account, and a deposit into someone else's is none of this wallet's
-   * business.
+   * Records a broadcast account op's deposits, however it was signed. Only those
+   * `buildDepositCalls` prepared are recognised, by precommitment - others are not this wallet's.
    */
   async onAccountOpBroadcast({
     id: accountOpId,
@@ -1491,13 +1320,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * The approval a deposit needs, or nothing when the allowance already covers it.
-   *
-   * `Entrypoint.deposit` pulls ERC-20s with `transferFrom`, and the SDK builds only the entrypoint
-   * call - so without this the deposit reverts with nothing explaining why.
-   *
-   * A leftover allowance is reset to zero first: USDT refuses to change one non-zero allowance
-   * into another.
+   * The approval `Entrypoint.deposit`'s `transferFrom` needs, which the SDK does not build. A
+   * leftover allowance is reset to zero first, as USDT refuses non-zero to non-zero.
    */
   async #approvalCallIfNeeded(
     chainId: string,
@@ -1508,8 +1332,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     const config = getPrivacyPoolsChainConfig(BigInt(chainId))
     if (!config) throw new Error(`privacyPools: unsupported chain ${chainId}`)
 
-    // Read through the provider rather than an ethers `Contract`, whose dynamically generated
-    // methods are untyped and read as possibly undefined.
+    // Not an ethers `Contract`, whose generated methods are untyped
     const allowanceResult = await this.#getProvider(chainId).call({
       to: asset.address,
       data: ERC20_INTERFACE.encodeFunctionData('allowance', [owner, config.entrypointAddress])
@@ -1554,10 +1377,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return operation
   }
 
-  /**
-   * Replaces the operation with a later state of itself, unless it has been wiped or superseded
-   * meanwhile - by a lock, most notably, which a proof or a broadcast in flight cannot notice.
-   */
+  /** Updates the operation unless a lock or a newer one replaced it meanwhile. */
   #updateOperation(operation: PrivacyPoolsOperation): boolean {
     if (this.#operation?.id !== operation.id) return false
 
@@ -1571,7 +1391,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   dismissOperation() {
-    // Only the one on screen, so another phrase's cannot be dismissed from here
+    // `operation`, so another phrase's cannot be dismissed
     if (!this.operation || this.#isOperationInFlight()) return
 
     this.#operation = null
@@ -1580,19 +1400,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Proves a withdrawal without sending it.
+   * Proves a withdrawal without sending it, so the user sees the fee before anything is sent.
    *
-   * Split from broadcasting because the proof is the expensive half - ten seconds and up on a
-   * desktop, usually twice over - and the fee is not known until the userOp is priced. Doing both
-   * in one call would commit the user to a fee they never saw. This way the screen can show what
-   * the withdrawal will actually cost before anything is sent.
+   * A single-use sender derived from the phrase submits an ERC-4337 userOp whose gas a paymaster
+   * pays, taking a fee from the withdrawn amount - so no user-owned address pays gas.
    *
-   * Sponsored by an ERC-4337 paymaster: a single-use sender derived from the phrase submits the
-   * userOp, the paymaster pays its gas and takes a fee out of the withdrawn amount. Nothing the
-   * user owns pays gas next to the recipient, and the recipient never needs ETH of its own.
-   *
-   * Not wrapped in `withStatus`: proving runs long with no way to abort, which is exactly the shape
-   * `withStatus` must not wrap. Progress is reported through `operation`.
+   * Not in `withStatus`: proving is long and cannot be aborted. Progress is in `operation`.
    */
   async prepareWithdrawal({
     chainId,
@@ -1618,8 +1431,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     this.#assertBundlerIsAllowed()
 
-    // Checked here and not only in the form: the proof commits to the recipient, and one made out
-    // to a malformed or zero address would burn the funds it releases
+    // Not only in the form: a proof to a malformed or zero address would burn the funds
     if (!isAddress(recipient) || BigInt(recipient) === 0n)
       throw new EmittableError({
         message: 'Please enter a valid address to send to.',
@@ -1627,8 +1439,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         error: new Error('privacyPools: invalid withdrawal recipient')
       })
 
-    // One at a time, across phrases: only one proved withdrawal is ever kept, so a second would
-    // silently replace the first one's proof while it is still being built.
+    // One at a time across phrases: only one proved withdrawal is kept
     if (this.#isOperationInFlight())
       throw new EmittableError({
         message:
@@ -1662,21 +1473,16 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         this.#assertPoolIsSponsored(chainId, tokenAddress)
       )
 
-      // The SDK syncs the chain itself before proving, outside the queue, so it only waits here for
-      // a queued sync to finish rather than run beside it. Not a sync of its own first: the SDK's
-      // costs about the same even with no new blocks, so running both only doubles the wait.
+      // The SDK syncs before proving, outside the queue, so only wait for queued syncs rather than
+      // run beside them. No sync of our own: it would only double the wait.
       await kohakuDebugPhase(debugTrace, 'waitForQueuedSync', () => this.#syncQueue)
 
       const protocol = await kohakuDebugPhase(debugTrace, 'getProtocol', () =>
         this.#getProtocol(chainId, seedId)
       )
 
-      // Pricing the gas, proving, and signing the userOp all happen inside this one call.
-      //
-      // Always as a batch, even when one deposit covers the amount - a batch of one is built
-      // exactly like a plain withdrawal. The SDK's plain withdrawal picks its deposit without
-      // checking it is approved, so a pending deposit that happens to fit is chosen and the proof
-      // fails; its batch selection only picks approved ones.
+      // Prices gas, proves and signs the userOp. Always a batch (a batch of one equals a plain
+      // withdrawal): the SDK's plain withdrawal may pick a pending deposit, failing the proof.
       const privateOp = await kohakuDebugPhase(
         debugTrace,
         'sdk.prepareUnshield (sync + proofs + gas + signing)',
@@ -1692,8 +1498,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       )
       debugSummary.treeSizes = readKohakuDebugTreeSizes(() => protocol.dumpState())
 
-      // The SDK types a prepared withdrawal as a union of relayer and paymaster ones. We only ever
-      // ask for the paymaster mode, so anything else means the SDK ignored what we asked for.
+      // Only paymaster mode is asked for, so anything else means the SDK ignored it
       if (privateOp.mode !== 'paymaster')
         throw new Error('privacyPools: the withdrawal came back in an unsupported form')
 
@@ -1732,9 +1537,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
           }
         : 'unavailable'
 
-      // A batch must be seen to go through before it is sent. If its own calls fail on chain, the
-      // largest deposit is still spent - paid out to the single-use sender, where the wallet cannot
-      // reach it - and the rest never move.
+      // A batch must simulate first: if its calls fail on chain, the largest deposit is still paid
+      // to the single-use sender, out of the wallet's reach
       if (noteCount > 1 && expectedFeeAmount === null)
         throw new EmittableError({
           message:
@@ -1748,7 +1552,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         phase: 'ready',
         quote: { feeAmount: fee, amountAfterFee: amount - fee, expectedFeeAmount }
       })
-      // A proof that finished after a lock must not be kept for a withdrawal nobody can see.
+      // Not kept if a lock superseded it
       if (isStillCurrent) this.#pendingWithdrawal = privateOp
     } catch (error: any) {
       debugSummary.failed = String(error?.message || error)
@@ -1764,7 +1568,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.emitUpdate()
   }
 
-  /** How many approved notes of a token the last sync found - for `[kohaku-debug]` only. */
+  /** Approved notes of a token found by the last sync - for `[kohaku-debug]` only. */
   #countApprovedNotes(seedId: string, chainId: string, tokenAddress: string): number | undefined {
     return this.#notesByIdentity[seedId]?.[chainId]?.notes.filter(
       (note) =>
@@ -1774,14 +1578,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * What a proved withdrawal is expected to actually cost, by running it first - see
-   * `estimatePaymasterWithdrawalFee`. Null when it cannot be run.
-   *
-   * Best effort: the fee locked into the proof is already the most the user can be charged, so a
-   * node that cannot simulate, or answers too slowly, leaves that on screen instead of holding up
-   * the confirmation. A simulation that says the withdrawal would fail does not fail it here - the
-   * bundler checks it again before accepting it. A batch is the exception: the bundler only checks
-   * the part the paymaster sponsors, so `prepareWithdrawal` refuses one this cannot run.
+   * The expected fee of a proved withdrawal, by simulating it, or null when it cannot be run.
+   * Best effort: the proof's fee is already the cap. A simulated failure does not fail it here, as
+   * the bundler checks it again. The bundler checks only the sponsored part of a batch, though, so
+   * `prepareWithdrawal` refuses a batch this cannot run.
    */
   async #getExpectedWithdrawalFee({
     chainId,
@@ -1845,11 +1645,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Refuses, before any proving, a token whose pool the paymaster has no adapter for.
-   *
-   * The SDK would refuse it too, but only after syncing - and with a sentence meant for developers.
-   * The pool is read from the entrypoint rather than configured, so a pool replaced behind the
-   * same token is caught here rather than trusted.
+   * Refuses before proving a token whose pool has no paymaster adapter (the SDK does so only after
+   * syncing). The pool is read from the entrypoint, so a replaced pool is caught.
    */
   async #assertPoolIsSponsored(chainId: string, tokenAddress: string) {
     const config = getPrivacyPoolsChainConfig(BigInt(chainId))
@@ -1872,13 +1669,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Sends the prepared withdrawal to the bundler and waits for it to land.
-   *
-   * The userOp is already signed, so this only forwards it. The pooled balance is refreshed either
-   * way: a userOp can land after the wait for its receipt gives up, and the balance is what tells.
+   * Sends the signed withdrawal to the bundler and waits for it. Syncs either way, as a userOp can
+   * land after the receipt wait gives up.
    */
   async broadcastWithdrawal(): Promise<void> {
-    // The one on screen: a withdrawal of a phrase that is not can't be sent from here
+    // `operation`, so another phrase's cannot be sent
     const operation = this.operation
     const privateOp = this.#pendingWithdrawal
 
@@ -1910,15 +1705,15 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#updateOperation({ ...operation, phase: 'broadcasting' })
     this.emitUpdate()
 
-    // Sent once: the userOp's sender is single-use (nonce 0), so a retry of the same payload could
-    // only fail - or duplicate one that did land. A failed send is prepared again from scratch.
+    // Sent once: the sender is single-use (nonce 0), so a retry could only fail or duplicate. A
+    // failed send is prepared again from scratch.
     this.#discardPending()
 
     try {
       const host = this.#getHost(this.#getProvider(operation.chainId), seedId)
       // No relayers: a paymaster withdrawal goes to the bundler URL carried in the payload.
       const broadcaster = createPPv1Broadcaster(host, { broadcasterUrl: {} })
-      // Its total is the time from handing the userOp to the bundler until it lands
+      // Times handing the userOp to the bundler until it lands
       const debugTrace = startKohakuDebugTrace('broadcast', { chainId: operation.chainId })
       const { txHash } = await broadcaster
         .broadcast(privateOp)
@@ -1943,26 +1738,16 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
     await this.#persistActivity()
 
-    // The note is spent and a change note took its place; nothing else reports that.
+    // Picks up the spent note and its change note
     await this.syncChain(operation.chainId)
   }
 
-  /**
-   * Drops a prepared withdrawal that was never sent.
-   *
-   * Worth doing explicitly rather than leaving it to be overwritten: the pending operation holds a
-   * proof over a specific note, and keeping it around after the user has moved on invites sending
-   * it later at a gas price that has since moved on.
-   */
+  /** Drops the unsent withdrawal, so its proof is not sent later at a stale gas price. */
   #discardPending() {
     this.#pendingWithdrawal = null
   }
 
-  /**
-   * Only an `EmittableError` carries a sentence meant for the user. Anything else comes from the
-   * SDK, the bundler or the chain, in words no user should have to read, so it is shown as the
-   * fallback and kept as the underlying error.
-   */
+  /** Shows an `EmittableError`'s message, or `fallback` for SDK, bundler and chain errors. */
   #failOperation(operation: PrivacyPoolsOperation, error: any, fallback: string): string {
     const message = error instanceof EmittableError ? error.message : fallback
 
@@ -1976,11 +1761,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return message
   }
 
-  /**
-   * Adds the Privacy Pools account of a stored recovery phrase.
-   *
-   * Nothing is derived or synced here - that happens once the account is opened.
-   */
+  /** Adds a stored phrase's Privacy Pools account. Nothing is derived or synced until opened. */
   async addAccount(seedId: string): Promise<void> {
     await this.initialLoadPromise
 
@@ -2003,10 +1784,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     await this.#persistAccounts()
   }
 
-  /**
-   * Removes a Privacy Pools account, not its funds: they stay in the pools, tied to the recovery
-   * phrase, and adding the account again finds them. Its activity log is kept for the same reason.
-   */
+  /** Removes the account, not its funds: re-adding it finds them. Its activity log is kept too. */
   async removeAccount(seedId: string): Promise<void> {
     await this.initialLoadPromise
 
@@ -2027,10 +1805,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     delete this.#notesByIdentity[seedId]
   }
 
-  /**
-   * Removes the accounts whose recovery phrase is no longer stored, with their activity log: once
-   * the phrase is gone, nothing in them can be reached, and importing it again starts afresh.
-   */
+  /** Removes accounts, and their activity, whose phrase is gone - nothing in them is reachable. */
   async #forgetAccountsOfDeletedSeeds() {
     if (!this.#keystore.areSeedsLoaded) return
 
@@ -2091,13 +1866,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Drops everything derived from any recovery phrase, on lock: nothing derived may stay in memory
-   * once the phrases are out of reach. What is known about the chains themselves stays - see
-   * `PrivacyPoolsChainHistory`.
-   *
-   * A sync already running cannot be stopped, so it is left to finish in the queue - `#generation`
-   * makes it discard what it finds, and a sync asked for after unlocking waits behind it rather
-   * than walking the same history in parallel.
+   * On lock, drops everything derived from any phrase; chain history stays (see
+   * `PrivacyPoolsChainHistory`). A running sync cannot be stopped, so it finishes in the queue and
+   * `#generation` makes it discard its results.
    */
   #teardown() {
     this.#generation += 1

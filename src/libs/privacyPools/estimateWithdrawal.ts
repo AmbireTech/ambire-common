@@ -3,11 +3,7 @@ import { concat, getAddress, id, Interface, toBeHex, toQuantity, zeroPadValue } 
 import { isPrivacyPoolsNativeAsset } from '../../consts/privacyPools'
 import { RPCProvider } from '../../interfaces/provider'
 
-/**
- * The parts of the SDK's serialized userOp a simulation reads - hex quantities, the shape
- * `eth_sendUserOperation` takes. Declared here rather than imported for the same reason as in
- * `paymasterWithdrawal`: the SDK does not export the type from its entry point.
- */
+/** The parts of the SDK's serialized userOp a simulation reads. Not exported by the SDK. */
 export type PrivacyPoolsSerializedUserOperation = {
   sender: string
   nonce: string
@@ -26,33 +22,22 @@ export type PrivacyPoolsSerializedUserOperation = {
   eip7702Auth?: { address: string }
 }
 
-/**
- * What an account's code is set to under EIP-7702: this prefix followed by the address of the
- * contract whose code it runs.
- */
+/** EIP-7702 delegated code: this prefix followed by the delegate's address. */
 const EIP7702_DESIGNATOR_PREFIX = '0xef0100'
 
-/**
- * Where `eth_simulateV1` reports native transfers when `traceTransfers` is on: as ERC-20 `Transfer`
- * logs emitted from this address.
- */
+/** `eth_simulateV1` with `traceTransfers` reports native transfers as `Transfer` logs from here. */
 const SIMULATED_NATIVE_TRANSFER_ADDRESS = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
 
 const MAX_BALANCE = '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
 
 /**
- * Who calls the simulated `handleOps`, given the maximum balance to pay for it. Not the wallet's
- * shared `DEPLOYLESS_SIMULATION_FROM`: that is `0x...01`, the `ecrecover` precompile, and some of
- * the nodes behind one RPC URL stop running the precompile once its account is overridden. The
- * single-use sender's signature check then recovers no signer, so about one run in three failed
- * with `AA23` (`ECDSAInvalidSignature`) on Ethereum - for a userOp that was fine.
+ * Caller of the simulated `handleOps`, given the maximum balance. Not `DEPLOYLESS_SIMULATION_FROM`
+ * (`0x...01`, the `ecrecover` precompile): some nodes stop running the precompile once its account
+ * is overridden, which failed about one run in three with `AA23` on Ethereum.
  */
 const SIMULATION_CALLER = '0x00000000000000000000000000000000C0FFEE01'
 
-/**
- * Where the simulated `handleOps` sends the gas payment a bundler would collect. Not the calling
- * address: that one is given the maximum balance, which the payment would overflow.
- */
+/** Receives the simulated gas payment. Not the caller, whose maximum balance it would overflow. */
 const SIMULATION_BENEFICIARY = '0x000000000000000000000000000000000000dEaD'
 
 const ENTRY_POINT_INTERFACE = new Interface([
@@ -81,10 +66,7 @@ const toUint128 = (value: string | undefined) => zeroPadValue(toBeHex(BigInt(val
 
 const isSameAddress = (a: string, b: string) => getAddress(a) === getAddress(b)
 
-/**
- * The userOp in the packed form `EntryPoint.handleOps` takes: pairs of gas values share a word,
- * and the paymaster's address, gas limits and data are one byte string.
- */
+/** Packs the userOp into the form `EntryPoint.handleOps` takes. */
 const packUserOperation = (userOperation: PrivacyPoolsSerializedUserOperation) => {
   if (!userOperation.paymaster)
     throw new Error('privacyPools: the withdrawal to simulate carries no paymaster')
@@ -122,33 +104,20 @@ export type PrivacyPoolsWithdrawalFeeEstimate = {
   gasUsed: bigint
   /** What that gas cost the paymaster, in wei. */
   gasCost: bigint
-  /**
-   * What the paymaster refunds to the single-use sender instead of the recipient - a batch's whole
-   * refund, which nobody can reach afterwards.
-   */
+  /** A batch's refund, paid to the single-use sender, where nobody can reach it. */
   senderRefund: bigint
 }
 
 /**
- * Estimates what a prepared, signed paymaster withdrawal will actually cost, by running it on top of
- * the latest block without sending it.
+ * Estimates what a signed paymaster withdrawal will cost by simulating `EntryPoint.handleOps` on
+ * the latest block, as the bundler will submit it.
  *
- * The fee locked into the proof is a ceiling: it covers every gas limit at the userOp's maximum
- * gas price, with a margin on top, and the paymaster refunds what it did not spend to the recipient
- * in the same transaction. What the user actually pays is that fee minus the refund, which is only
- * known by running the transaction - so it is run here, through `EntryPoint.handleOps`, exactly as
- * the bundler will submit it.
+ * The proof's fee is a cap (all gas limits at the max gas price, plus a margin); the paymaster
+ * refunds the unspent part to the recipient. A batch's refund goes to the single-use sender after
+ * it has forwarded the funds, so its expected fee is the whole fee.
  *
- * A batch withdrawal is paid out to its single-use sender rather than to the recipient, and the
- * paymaster refunds whoever was paid out - after the sender's calls have already forwarded the
- * funds. Its refund never reaches the recipient, so its expected fee is the whole fee.
- *
- * On chain, the single-use sender becomes a smart account through the 7702 authorization the
- * bundler puts into the transaction. A simulated call carries no authorization, so the sender is
- * given the delegated code by a state override instead. Everything else - the signature, the
- * proof, the pool, the paymaster's deposit and its price oracle - is the real on-chain state, and
- * the gas price is the latest block's base fee plus the userOp's own priority fee, as it will be
- * when it lands in a block with the same base fee.
+ * A simulated call carries no 7702 authorization, so the sender's delegated code is set by a state
+ * override; everything else is real on-chain state.
  *
  * Throws when the node cannot simulate it or the withdrawal would fail.
  */
@@ -183,8 +152,7 @@ export const estimatePaymasterWithdrawalFee = async ({
     {
       blockStateCalls: [
         {
-          // Without it, a simulation without validation runs at a base fee of zero - and the
-          // paymaster would refund as if the gas cost only the priority fee
+          // Without validation the base fee is otherwise zero, inflating the paymaster's refund
           blockOverrides: { baseFeePerGas: toQuantity(latestBlock.baseFeePerGas) },
           stateOverrides: {
             [userOperation.sender]: { code: concat([EIP7702_DESIGNATOR_PREFIX, delegate]) },

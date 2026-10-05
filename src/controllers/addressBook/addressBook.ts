@@ -54,8 +54,7 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
 
   get contacts() {
     const allContacts = [...this.#manuallyAddedContacts, ...this.#walletAccountsSourcedContacts]
-    // No regular account is selected while a Privacy Pools account is, and sending from it to any
-    // of the wallet's accounts is exactly what it is for - so nothing is left out then.
+    // None while a Privacy Pools account is selected, which may send to any wallet account
     const selectedAccountAddr = this.#selectedAccount.account?.addr
     if (!selectedAccountAddr) return allContacts
 

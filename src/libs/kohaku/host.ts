@@ -8,25 +8,16 @@ import { Hex } from '../../interfaces/hex'
 import { IStorageController } from '../../interfaces/storage'
 
 /**
- * Adapters for the `Host` contract every `@kohaku-eth/*` plugin binds against.
- *
- * Protocol-agnostic on purpose: Railgun and Privacy Pools ask for the same four things, so these
- * live under `kohaku/` rather than beside either protocol. Anything specific to one pool belongs in
- * that pool's own lib.
- *
- * The provider adapter is at the bottom of this file.
+ * Adapters for the `Host` every `@kohaku-eth/*` plugin binds against. Keep them protocol-agnostic;
+ * protocol-specific code belongs in that protocol's lib.
  */
 
 /**
- * Backs a plugin's key-value storage with one blob in the wallet's own store.
+ * Backs a plugin's key-value storage with one cached blob in the wallet's store, since
+ * `StorageProps` is a closed map and plugins invent keys at runtime.
  *
- * A single blob rather than a key each, because `StorageProps` is a closed, typed map and plugins
- * invent their keys at runtime. The blob is hydrated once and cached, so reads after the first are
- * free and a read always reflects the last write.
- *
- * Writes are awaited, unlike the Railgun adapter's debounced ones: Privacy Pools persists once at
- * the end of a sync rather than per commitment, so there is no burst to coalesce and losing the
- * write on a torn-down worker would cost a full rescan.
+ * Writes are awaited, not debounced: Privacy Pools persists once per sync, and a lost write would
+ * cost a full rescan.
  */
 export const createKohakuStorage = ({
   storage,
@@ -40,8 +31,7 @@ export const createKohakuStorage = ({
 }): Storage => {
   let cache: Record<string, string> | null = null
   let hydratePromise: Promise<Record<string, string>> | null = null
-  // Serializes writes: the controller must never have two `storage.set` calls in flight, and a
-  // sync can finish on two chains at once.
+  // Serializes writes: two chains can finish syncing at once, and `storage.set` must not overlap
   let writeQueue: Promise<void> = Promise.resolve()
 
   const hydrate = (): Promise<Record<string, string>> => {
@@ -51,14 +41,12 @@ export const createKohakuStorage = ({
       hydratePromise = storage
         .get(storageKey, {})
         .then((blob) => {
-          // A concurrent hydrate may have populated it already - keep the same object identity,
-          // since pending writes mutate whatever `cache` pointed at.
+          // A concurrent hydrate may have set it already - keep that object, as writes mutate it
           cache = cache || blob
           return cache
         })
         .catch((error) => {
-          // Cleared so the next caller retries. Left rejected, one transient read failure would
-          // poison every later get and set for the lifetime of the controller.
+          // Cleared so the next caller retries, or one transient failure would poison every call
           hydratePromise = null
           throw error
         })
@@ -77,8 +65,7 @@ export const createKohakuStorage = ({
     async set(key: string, value: string) {
       const blob = await hydrate()
 
-      // The SDK re-serializes its whole store on every sync, changed or not. Comparing is cheap;
-      // persisting rewrites a blob that reaches several megabytes on mainnet.
+      // The SDK re-saves its whole store every sync; skip rewriting a multi-MB blob when unchanged
       if (blob[key] === value) return
 
       blob[key] = value
@@ -95,15 +82,12 @@ export const createKohakuStorage = ({
 }
 
 /**
- * Derives plugin keys without handing the plugin a recovery phrase.
+ * Derives plugin keys without giving the unaudited plugin the recovery phrase, unlike the SDK's
+ * `MnemonicKeystore`. `deriveKey` must whitelist its paths - see
+ * `KeystoreController.derivePrivacyPoolsKey`.
  *
- * Deliberately not the SDK's bundled `MnemonicKeystore`, which holds the phrase: that would put it
- * inside an unaudited alpha for as long as the plugin lives. `deriveKey` is expected to whitelist
- * the paths it will answer for - see `KeystoreController.derivePrivacyPoolsKey`.
- *
- * The cache is what makes repeated derivation viable: Privacy Pools derives two keys per deposit
- * index on every sync while it scans for the user's notes, and each one is a fresh pbkdf2 over the
- * seed otherwise. It is dropped with the instance, so a lock or a seed change clears it.
+ * Cached because every sync derives two keys per deposit index, each a pbkdf2 over the seed.
+ * Dropped with the instance, so a lock or seed change clears it.
  */
 export const createKohakuKeystore = (deriveKey: (path: string) => Promise<Hex>): Keystore => {
   const cache = new Map<string, Hex>()
@@ -127,12 +111,8 @@ export const createKohakuNetwork = (fetch: Fetch): Network => ({
 })
 
 /**
- * Adapts an ethers `JsonRpcProvider` to the `EthereumProvider` plugins bind against.
- *
- * `@kohaku-eth/provider` ships this adapter as `@kohaku-eth/provider/ethers`, but that subpath
- * export cannot be resolved under the app's `moduleResolution: "node"`, which predates the
- * `exports` field. Reimplementing the surface over ethers is smaller and safer than moving the
- * whole app to `node16`.
+ * Adapts an ethers `JsonRpcProvider` to the plugins' `EthereumProvider`. Reimplements
+ * `@kohaku-eth/provider/ethers`, which the app's `moduleResolution: "node"` cannot resolve.
  */
 export const createKohakuProvider = (
   provider: JsonRpcProvider

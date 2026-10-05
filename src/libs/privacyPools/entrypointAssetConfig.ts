@@ -1,10 +1,8 @@
 import { Interface, JsonRpcProvider } from 'ethers'
 
 /**
- * The parts of the entrypoint's per-asset settings (`IEntrypoint.AssetConfig`) the wallet uses.
- *
- * Read from the chain rather than configured, unlike the asset list in `consts/privacyPools`:
- * 0xBow tunes them, and a pool can be replaced behind the same asset.
+ * The used parts of `IEntrypoint.AssetConfig`. Read from the chain, not configured: 0xBow tunes
+ * them, and a pool can be replaced behind the same asset.
  */
 export type PrivacyPoolsEntrypointAssetConfig = {
   poolAddress: string
@@ -16,11 +14,8 @@ const ENTRYPOINT_INTERFACE = new Interface([
 ])
 
 /**
- * Reads an asset's entrypoint configuration.
- *
- * The SDK fetches the same tuple in `getPoolForAsset` but keeps it to itself, so the wallet reads
- * it separately - to learn which pool an asset's withdrawal goes through before any work is done
- * on it.
+ * Reads an asset's entrypoint configuration. The SDK's `getPoolForAsset` reads it too but does not
+ * expose it, and the wallet needs the pool before starting a withdrawal.
  */
 export const readEntrypointAssetConfig = async ({
   provider,

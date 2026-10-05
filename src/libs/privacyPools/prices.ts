@@ -7,7 +7,7 @@ import { PrivacyPoolsTokenBalance } from '../../interfaces/privacyPools'
 
 const PRICES_API_URL = 'https://cena.ambire.com/api/v3/simple'
 
-/** The price service's answer: a USD price per asset id or contract address it knows. */
+/** USD price per asset id or contract address. */
 type PricesResponse = { [id: string]: { usd?: number } | undefined }
 
 const NO_PRICES: PricesResponse = {}
@@ -17,9 +17,8 @@ export const getPrivacyPoolsPriceKey = (chainId: string | bigint, tokenAddress: 
   `${chainId.toString()}:${tokenAddress.toLowerCase()}`
 
 /**
- * The USD value of a Privacy Pools account per chain: the approved part of each balance - what can
- * be sent on, and the figure its dashboard shows. A token with no known price adds nothing, rather
- * than making the whole chain's value unknown.
+ * USD value per chain of the approved (withdrawable) balances. An unpriced token adds nothing
+ * rather than making the chain's value unknown.
  */
 export const getPrivacyPoolsValuePerChain = (
   balances: { [chainId: string]: PrivacyPoolsTokenBalance[] },
@@ -38,12 +37,8 @@ export const getPrivacyPoolsValuePerChain = (
   )
 
 /**
- * USD prices of every asset the pools accept on the given networks, from the same price service
- * the portfolio uses.
- *
- * Every accepted asset is asked for, not only those the account holds, so the request says nothing
- * about what a Privacy Pools account contains - the list is the same for everyone. An asset the
- * service does not price is simply left out, as are test networks' assets, which it does not know.
+ * USD prices of every asset the pools accept on the given networks. Asks for all of them, not only
+ * the held ones, so the request reveals nothing about the account. Unpriced assets are left out.
  */
 export const fetchPrivacyPoolsPrices = async ({
   fetch,

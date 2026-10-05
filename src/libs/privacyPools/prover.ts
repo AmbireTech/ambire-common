@@ -5,41 +5,29 @@ import { PRIVACY_POOLS_CIRCUIT_PATHS } from '../../consts/privacyPools'
 type KohakuProver = Awaited<ReturnType<typeof Prover>>
 
 /**
- * The part of a prover the SDK actually calls - `prove` alone, never the `circuits` it carries.
- *
- * Narrowed so a platform can generate proofs somewhere else than the controller's own context (the
- * extension's offscreen document, where they can run on several threads) behind the same call.
+ * The only part of a prover the SDK calls. Narrowed so a platform can prove elsewhere, e.g. in the
+ * extension's offscreen document, on several threads.
  */
 export type PrivacyPoolsProver = Pick<KohakuProver, 'prove'>
 
-/** Hands the SDK a prover once per operation. Expected to reuse one rather than build a new one. */
+/** Called by the SDK once per operation. Should reuse one prover rather than build a new one. */
 export type PrivacyPoolsProverFactory = () => Promise<PrivacyPoolsProver>
 
 /**
- * Builds the prover the SDK uses for withdrawals and public reclaims, pointed at artifacts the app
- * serves itself.
+ * Builds the SDK's prover, differing from its defaults in two ways:
  *
- * Two things are deliberately not the SDK's defaults:
+ * 1. Same-origin `baseUrl`. The default is a pinned commit on raw.githubusercontent.com: a
+ *    third-party host in the withdrawal path, needing a CSP entry, re-downloading ~23 MB per
+ *    prover. Same-origin works offline and trusts nothing external.
  *
- * 1. `baseUrl`. Left alone, `Circuits` fetches from a pinned commit on raw.githubusercontent.com -
- *    a third-party host in the path of a withdrawal, needing a CSP entry and re-downloading ~23 MB
- *    every time a prover is constructed. The app passes a same-origin base instead (an extension
- *    URL, a bundled asset path), so proving works offline and nothing external is trusted.
- *
- * 2. Lifetime. `Prover()` eagerly loads both circuits and the SDK calls `proverFactory()` once per
- *    operation, so an unmemoized factory would re-read ~23 MB per withdrawal. One instance is
- *    built and shared; the artifacts stay resident, which is the trade for not re-reading them.
- *
- * The eager load is the SDK's, not ours: `Prover` awaits `initArtifacts` internally, and skipping
- * it would mean reimplementing the snarkjs call. Reading the extra ~3 MB commitment circuit once
- * costs far less than owning that code path.
+ * 2. Memoized. `Prover()` eagerly loads both circuits (including the unused ~3 MB commitment one,
+ *    cheaper than reimplementing its snarkjs call) and the SDK calls the factory per operation.
  */
 export const createProverFactory = (baseUrl: string): (() => Promise<KohakuProver>) => {
   let proverPromise: Promise<KohakuProver> | null = null
 
   return () => {
-    // Platforms that do not ship the artifacts pass an empty base. Refusing here names the real
-    // reason, instead of letting `Circuits` fail later on a nonsensical URL.
+    // Platforms without the artifacts pass an empty base; fail with the real reason, not a bad URL
     if (!baseUrl)
       return Promise.reject(
         new Error('privacyPools: proving is not available on this platform (no circuit artifacts)')
@@ -47,14 +35,11 @@ export const createProverFactory = (baseUrl: string): (() => Promise<KohakuProve
 
     if (!proverPromise) {
       proverPromise = Prover({
-        // `Circuits` resolves each artifact with `new URL(path, baseUrl)`, so the base has to end
-        // in a slash or its last segment is dropped.
+        // `new URL(path, baseUrl)` drops the base's last segment unless it ends in a slash
         baseUrl: baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`,
         ...PRIVACY_POOLS_CIRCUIT_PATHS
       }).catch((error) => {
-        // Cleared so a later withdrawal retries. Without this a single failed read - a transient
-        // storage error, a worker torn down mid-fetch - would leave this promise rejected for the
-        // lifetime of the controller and fail every subsequent proof with it.
+        // Cleared so a later withdrawal retries, or one transient failure would fail every proof
         proverPromise = null
 
         throw error

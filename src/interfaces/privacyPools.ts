@@ -6,82 +6,60 @@ export type IPrivacyPoolsController = ControllerInterface<
 >
 
 /**
- * One asset a pool accepts, with the display data the UI needs.
- *
- * Configured rather than read from the contract: `decimals` is what user-entered amounts are parsed
- * with, so a missing or wrong value is a wrong amount. The pools are a short list 0xBow curates,
- * and none of this changes.
+ * One asset a pool accepts. Configured rather than read from the contract: user-entered amounts
+ * are parsed with `decimals`, so a wrong value is a wrong amount. 0xBow's curated list is static.
  */
 export type PrivacyPoolsAsset = {
-  /**
-   * The address the wallet uses. Native is `ZERO_ADDRESS`, matching the rest of the app - the
-   * SDK's own sentinel is translated at the controller's edge and never appears here.
-   */
+  /** Native is `ZERO_ADDRESS`; the SDK's own sentinel never appears here. */
   address: Hex
   symbol: string
   decimals: number
   isNative: boolean
   /**
-   * The per-deposit ceiling 0xBow's own interface applies. Not a protocol limit - the pool only
-   * rejects deposits at `type(uint128).max` - so treat it as the operator's policy, which is the
-   * bound that matters in practice since the ASP is theirs too.
+   * 0xBow's interface limit per deposit. Not a protocol limit, but the one that matters, since
+   * 0xBow also runs the ASP.
    */
   maxDeposit: bigint
   /**
-   * Whether the paymaster can sponsor sending this asset out of a Privacy Pools account. Only these
-   * are offered for deposits - without it, funds sent in could not be sent out from this wallet.
+   * Whether the paymaster can sponsor withdrawing it. Only these are offered for deposits, or the
+   * funds could not be sent out from this wallet.
    */
   isWithdrawable: boolean
 }
 
-/** One chain's 0xBow deployment, plus the off-chain services that serve it. */
+/** One chain's 0xBow deployment and the off-chain services for it. */
 export type PrivacyPoolsChainConfig = {
   chainId: bigint
   entrypointAddress: Hex
-  /**
-   * Where the entrypoint was deployed. A first sync walks the entrypoint's history from here in
-   * 5000-block `eth_getLogs` steps.
-   */
+  /** Where a first sync starts reading the entrypoint's history. */
   deploymentBlock: bigint
   /** 0xBow's association-set API for this chain. */
   aspUrl: string
-  /**
-   * Where this chain's pool history is published as static, verifiable files, when someone
-   * publishes it. Set only for chains the saga-sync CDN actually carries - a chain without one
-   * rebuilds its history from the provider, which is correct but slow.
-   */
+  /** The saga-sync CDN serving the pools' history. Without it, a first sync is slow. */
   sagaSyncUrl?: string
-  /**
-   * The ERC-4337 paymaster that sponsors withdrawals on this chain. Absent where none is deployed,
-   * and withdrawals are unavailable there.
-   */
+  /** The ERC-4337 paymaster for withdrawals. Without it, withdrawals are unavailable. */
   paymaster?: PrivacyPoolsPaymasterConfig
-  /** The assets this chain's pools accept, in the order the UI should offer them. */
+  /** In the order the UI offers them. */
   assets: PrivacyPoolsAsset[]
 }
 
 /**
- * How a withdrawal is sponsored: the userOp's gas is paid by the paymaster, which takes its fee out
- * of the withdrawn amount, so the recipient never needs ETH of its own and nothing the user owns
- * pays gas next to it.
+ * The paymaster pays the userOp's gas and takes its fee out of the withdrawn amount, so the
+ * recipient needs no ETH.
  */
 export type PrivacyPoolsPaymasterConfig = {
   entryPointAddress: Hex
   paymasterAddress: Hex
   /**
-   * Pool address (lowercase, the way the SDK looks it up) to the adapter that withdraws from it
-   * during paymaster validation. A pool missing here cannot be withdrawn from.
+   * Pool address (lowercase, as the SDK looks it up) to the adapter that withdraws from it during
+   * paymaster validation. A pool missing here cannot be withdrawn from.
    */
   poolAdapters: { [poolAddress: string]: Hex }
 }
 
 /**
- * A Privacy Pools account: the notes one stored recovery phrase holds in the pools.
- *
- * Identified by the phrase rather than by an address, because it has none - deposits and
- * withdrawals are tied to secrets derived from the phrase, and each withdrawal is sent from a fresh
- * single-use sender. At most one per phrase: its secrets come from a fixed account index, so a
- * second one would hold the very same notes.
+ * The notes one stored recovery phrase holds in the pools. It has no address: notes are tied to
+ * secrets derived from the phrase. At most one per phrase, since the account index is fixed.
  */
 export type PrivacyPoolsAccount = {
   seedId: string
@@ -91,27 +69,21 @@ export type PrivacyPoolsAccount = {
 export type PrivacyPoolsSyncStatus = 'idle' | 'initializing' | 'syncing' | 'ready'
 
 /**
- * Why Privacy Pools can't be used right now, so the UI can explain rather than just disable:
+ * Why Privacy Pools can't be used right now:
  * - 'locked' - the keystore is locked, so the note secrets can't be derived
- * - 'no-account' - no Privacy Pools account is selected; a regular one is, or none at all
+ * - 'no-account' - no Privacy Pools account is selected
  * - 'unsupported-network' - no Privacy Pools chain is in the user's network list
  */
 export type PrivacyPoolsUnavailableReason = 'locked' | 'no-account' | 'unsupported-network'
 
 /**
- * Whether a note may be spent privately, decided by the Association Set Provider rather than by
- * the protocol. A deposit lands 'pending' and becomes 'approved' once 0xBow includes its label in
- * the set and the postman pushes the new root on chain.
- *
- * Only 'approved' notes can be withdrawn. A 'pending' one can only be reclaimed publicly (the
- * protocol's ragequit), back to the address that deposited it.
+ * Set by the Association Set Provider, not the protocol. A deposit is 'pending' until 0xBow adds
+ * its label to the set and the new root is pushed on chain. Only 'approved' notes can be withdrawn;
+ * a 'pending' one can only be reclaimed publicly (ragequit) to its depositor.
  */
 export type PrivacyPoolsApprovalStatus = 'approved' | 'pending'
 
-/**
- * One note as the SDK reports it. `label` is the pool's per-deposit identifier and the handle a
- * public reclaim is requested by, so it is carried rather than recomputed.
- */
+/** One note as the SDK reports it. `label` is the handle a public reclaim is requested by. */
 export type PrivacyPoolsNote = {
   label: bigint
   tokenAddress: string
@@ -119,10 +91,7 @@ export type PrivacyPoolsNote = {
   approval: PrivacyPoolsApprovalStatus
 }
 
-/**
- * Notes collapsed to one entry per token, split by what the user can actually do with them. Only
- * `approvedAmount` can be withdrawn privately.
- */
+/** Notes summed per token. Only `approvedAmount` can be withdrawn. */
 export type PrivacyPoolsTokenBalance = {
   tokenAddress: string
   symbol: string
@@ -134,90 +103,68 @@ export type PrivacyPoolsTokenBalance = {
 }
 
 /**
- * One chain as the UI reads it, merged from the chain's own sync - shared by every identity on it -
- * and this identity's last read of it. The notes themselves stay in the controller: the UI gets
- * them summed up per token, through `balances`.
+ * One chain as the UI reads it: the chain's sync, shared by every identity, merged with this
+ * identity's last read. Notes reach the UI only as per-token `balances`.
  */
 export type PrivacyPoolsChainState = {
   chainId: string
   syncStatus: PrivacyPoolsSyncStatus
-  /**
-   * When the sync in flight started, or null when none is. The SDK reports no progress at all, so
-   * elapsed time is the only thing telling a slow sync from a hung one.
-   */
+  /** Start of the sync in flight. The SDK reports no progress, so this tells slow from hung. */
   syncStartedAt: number | null
-  /**
-   * Why this chain is unusable, or null when it is fine. Per chain rather than controller-wide:
-   * one dead RPC must not present itself as "Privacy Pools is broken" while the other chain's
-   * balances are on screen and spendable.
-   */
+  /** Per chain, so one dead RPC doesn't hide the other chains' usable balances. */
   error: string | null
   /**
-   * Whether the chain's history has been read on this device - the one-time part of using a
-   * network, which takes minutes where every later sync takes seconds. False while that first read
-   * is waiting or running, null until it has been looked up.
+   * Whether this device has read the chain's history - minutes the first time, seconds after.
+   * Null until looked up.
    */
   isInitialSyncDone: boolean | null
-  /** How long that first read took, in milliseconds, when it ran since the wallet started. */
+  /** In ms, when the first read ran since the wallet started. */
   initialSyncDuration: number | null
   // Tells "never synced" (show placeholders) apart from "syncing again" (keep what is on screen)
   lastSyncedAt: number | null
-  /** How long this identity's latest sync of the chain took, in milliseconds. */
+  /** In ms, of this identity's latest sync. */
   lastSyncDuration: number | null
 }
 
-/** The half of `PrivacyPoolsChainState` that belongs to the chain, shared by every identity. */
+/** The part of `PrivacyPoolsChainState` shared by every identity. */
 export type PrivacyPoolsChainSyncState = Pick<
   PrivacyPoolsChainState,
   'syncStatus' | 'syncStartedAt' | 'error'
 >
 
-/**
- * What is known about reading a chain at all, rather than about the sync in flight. Shared by
- * every identity and kept through a lock: none of it comes from a recovery phrase.
- */
+/** Shared by every identity and kept through a lock, as none of it comes from a phrase. */
 export type PrivacyPoolsChainHistory = Pick<
   PrivacyPoolsChainState,
   'isInitialSyncDone' | 'initialSyncDuration'
 >
 
-/** The half that belongs to one identity, with the notes it owns in that chain's pools. */
+/** The part that belongs to one identity, with its notes in that chain's pools. */
 export type PrivacyPoolsIdentityChainState = Pick<
   PrivacyPoolsChainState,
   'lastSyncedAt' | 'lastSyncDuration'
 > & { notes: PrivacyPoolsNote[] }
 
 /**
- * What a prepared withdrawal costs, after we have checked it against what we asked for.
- *
- * The fee is decoded out of the signed userOp's `paymasterData` - the bytes the paymaster and the
- * pool will actually act on - rather than taken from the SDK's word. See `readPaymasterWithdrawal`.
- * What it is expected to actually cost comes from running that userOp on top of the latest block.
- * See `estimatePaymasterWithdrawalFee`.
+ * A prepared withdrawal's cost. The fee is decoded from the signed userOp, not taken from the SDK
+ * (see `readPaymasterWithdrawal`); the expected cost is simulated (see
+ * `estimatePaymasterWithdrawalFee`).
  */
 export type PrivacyPoolsQuote = {
   /**
-   * The most the transfer can cost, in the withdrawn token's units: the fee locked into the proof,
-   * which the paymaster takes out of the amount. What it does not spend on gas, it refunds to the
-   * recipient in the same transaction.
+   * The cap, in the token's units: the fee locked into the proof. The paymaster refunds what gas
+   * does not use to the recipient in the same transaction.
    */
   feeAmount: bigint
-  /** What the recipient receives at the least - the amount minus `feeAmount`. */
+  /** The least the recipient receives. */
   amountAfterFee: bigint
-  /**
-   * What the transfer is expected to actually cost, in the same units: `feeAmount` minus the
-   * refund. Null when the transfer could not be run first, which leaves `feeAmount` as all that is
-   * known.
-   */
+  /** `feeAmount` minus the refund. Null when the simulation failed. */
   expectedFeeAmount: bigint | null
 }
 
 /**
- * How far along a withdrawal is. No percentage to be had - the SDK reports nothing while it works -
- * so these are the points the controller can observe: proving and pricing the gas (~10s and up,
- * the bulk of the wait - the proof is usually built twice, once more after the bundler refines the
- * gas limits), a pause for the user to confirm the fee, broadcasting, then the refresh that
- * confirms it.
+ * A withdrawal's progress. The SDK reports none while it works, so these are the observable
+ * points. 'proving' is the bulk of the wait (~10s and up): the proof is usually built twice, again
+ * after the bundler refines the gas limits.
  */
 export type PrivacyPoolsOperationPhase =
   | 'proving'
@@ -227,14 +174,13 @@ export type PrivacyPoolsOperationPhase =
   | 'finalizing'
 
 /**
- * The withdrawal on screen: the one in flight, or the last one until the user dismisses it.
- * Deposits are absent - they go through the regular transaction flow, which has its own progress
- * UI.
+ * The withdrawal in flight, or the last one until dismissed. Deposits go through the regular
+ * transaction flow instead.
  */
 export type PrivacyPoolsOperation = {
   // The id of the matching activity entry, so the two can never drift apart
   id: string
-  /** The recovery phrase whose notes are being withdrawn - the operation is shown only with it. */
+  /** Shown only with this recovery phrase's account. */
   seedId: string
   chainId: string
   tokenAddress: string
@@ -250,23 +196,18 @@ export type PrivacyPoolsOperation = {
 }
 
 /**
- * - 'deposit' - funds moved into the pool. Public, including the depositing address.
- * - 'withdraw' - funds left the pool privately, to any address.
+ * - 'deposit' - into the pool. Public, including the depositing address.
+ * - 'withdraw' - out of the pool privately, to any address.
  */
 export type PrivacyPoolsActivityType = 'deposit' | 'withdraw'
 
 /**
- * A Privacy Pools operation started from this wallet. Recorded locally as operations are
- * performed, because the pool exposes no transaction history: notes carry no timestamp and no
- * transaction id, and a change note is indistinguishable from a fresh one.
+ * A Privacy Pools operation started from this wallet. Recorded locally, because notes carry no
+ * timestamp or transaction id and a change note looks like a fresh one.
  */
 export type PrivacyPoolsActivityEntry = {
   id: string
-  /**
-   * The seed the notes belong to. Recorded because the log is one flat list shared by every
-   * identity on the device, while the notes it describes are per recovery phrase - so it is what
-   * scopes the log to the account on screen.
-   */
+  /** Scopes the device-wide log to the account on screen. */
   seedId: string
   chainId: string
   type: PrivacyPoolsActivityType
@@ -275,15 +216,9 @@ export type PrivacyPoolsActivityEntry = {
   amount: bigint
   /** Public address for withdrawals, null for deposits. */
   recipient: string | null
-  /**
-   * The wallet account a deposit was sent from. Kept because only that address can take the
-   * deposit back if it is never approved - see `PrivacyPoolsApprovalStatus`.
-   */
+  /** Only this address can reclaim the deposit if it is never approved. */
   depositor?: string
-  /**
-   * The account op a deposit went out in, which is what tells when it has landed - see
-   * `PrivacyPoolsController.onAccountOpStatusUpdate`.
-   */
+  /** Tells when a deposit landed - see `PrivacyPoolsController.onAccountOpStatusUpdate`. */
   accountOpId?: string
   status: PrivacyPoolsActivityStatus
   createdAt: number
@@ -296,16 +231,13 @@ export type PrivacyPoolsActivityEntry = {
   txnId?: string
 }
 
-/**
- * What the entrypoint requires of a deposit of one asset, read from the chain since 0xBow tunes it
- * per deployment. See `PrivacyPoolsEntrypointAssetConfig` for the full tuple.
- */
+/** The entrypoint's deposit requirements for one asset, read from the chain as 0xBow tunes them. */
 export type PrivacyPoolsDepositAssetConfig = {
   minimumDepositAmount: bigint
 }
 
 /**
- * 'pending' means "not observed as complete yet". A withdrawal resolves from its own broadcast
- * result; a deposit resolves from the transaction that carries it.
+ * 'pending' means "not observed as complete yet". A withdrawal resolves from its broadcast result,
+ * a deposit from the transaction that carries it.
  */
 export type PrivacyPoolsActivityStatus = 'pending' | 'success' | 'failed'

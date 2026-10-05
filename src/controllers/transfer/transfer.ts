@@ -147,24 +147,18 @@ export class TransferController extends EventEmitter implements ITransferControl
   isTopUp: boolean = false
 
   /**
-   * The Privacy Pools account the funds go to, by the id of its recovery phrase, when the transfer
-   * is not to an address. Exclusive with `addressState`: setting either clears the other.
-   *
-   * Such a transfer is a deposit into Privacy Pools, so it offers only the tokens and networks the
-   * pools accept, and its calls come from `PrivacyPoolsController.buildDepositCalls`.
+   * Seed id of the Privacy Pools account to deposit into, instead of an address. Exclusive with
+   * `addressState`: setting either clears the other. Limits the tokens to what the pools accept.
    */
   privacyPoolsRecipient: string | null = null
 
-  /**
-   * Whether the calls of a transfer to a Privacy Pools account are being prepared. The first time
-   * for an account it syncs that account's network, which can take a while.
-   */
+  /** Whether the deposit calls are being built. The first build per account syncs its network. */
   isPreparingPrivacyPoolsDeposit = false
 
-  /** Why the transfer to a Privacy Pools account cannot be prepared, in words for the user. */
+  /** Why the deposit cannot be prepared, in words for the user. */
   privacyPoolsDepositError: string | null = null
 
-  /** Drops the result of a preparation overtaken by a newer one - see `#syncPrivacyPoolsDeposit`. */
+  /** Lets a newer deposit preparation discard the result of an older, slower one. */
   #privacyPoolsDepositPreparationId = 0
 
   #privacyPools?: IPrivacyPoolsController
@@ -327,8 +321,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.propagateUpdate(forceEmit)
     }, 'transfer-recipient-phishing-check')
 
-    // The amount of a transfer to a Privacy Pools account is validated against the entrypoint's
-    // limits, which that controller reads from the chain
+    // Re-validates the amount once the entrypoint's deposit limits are read
     this.#privacyPools?.onUpdate((forceEmit) => {
       if (!this.#currentTransferSessionId || !this.privacyPoolsRecipient) return
 
@@ -441,10 +434,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
   }
 
-  /**
-   * Whether a Privacy Pools account can receive this token - a pool accepts it, on a network the
-   * user has, and it can be sent out of the account again.
-   */
+  /** Whether a Privacy Pools account can receive this token, and send it out again. */
   #isPrivacyPoolsDepositToken(token: TokenResult) {
     return (
       !!this.#privacyPools?.supportedChainIds.includes(token.chainId.toString()) &&
@@ -621,12 +611,11 @@ export class TransferController extends EventEmitter implements ITransferControl
   get validationFormMsgs() {
     if (!this.isInitialized) return DEFAULT_VALIDATION_FORM_MSGS
 
-    // A copy, as the defaults are also what is returned before the controller is initialized
+    // A copy, so the defaults returned before init are not mutated
     const validationFormMsgsNew = { ...DEFAULT_VALIDATION_FORM_MSGS }
 
     if (this.privacyPoolsRecipient) {
-      // None of the address checks apply: the recipient is one of the wallet's own accounts, and
-      // it has no address to check
+      // No address to check: the recipient is one of the wallet's own accounts
       validationFormMsgsNew.recipientAddress = { severity: 'success', message: '' }
     } else if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
       // if the recipientAcc is an account in the extension
@@ -670,9 +659,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   /**
-   * What stops the amount from going to a Privacy Pools account: the operator's ceiling, which is
-   * configured, and the entrypoint's minimum, once it has been read. Null when nothing does, or
-   * when the transfer is not to a Privacy Pools account.
+   * Checks the amount against the configured maximum and the entrypoint's minimum (once read).
+   * Null when it passes or the transfer is not to a Privacy Pools account.
    */
   #getPrivacyPoolsAmountError(): string | null {
     const token = this.selectedToken
@@ -716,7 +704,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     const areFormFieldsValid = this.validationFormMsgs.amount.severity === 'success'
 
-    // No address to resolve - its amount, which includes the pools' limits, is all there is
+    // No address to resolve; the amount check covers the pools' limits
     if (this.privacyPoolsRecipient) return !!this.selectedToken && areFormFieldsValid
 
     return areFormFieldsValid && !this.addressState.isDomainResolving
@@ -822,10 +810,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   /**
-   * Switches between sending to a Privacy Pools account and sending to an address.
-   *
-   * The account op built so far is dropped either way: the calls are of a different kind, and so
-   * is the set of tokens to choose from.
+   * Switches between sending to a Privacy Pools account and to an address. Drops the account op
+   * either way, as the calls and the tokens to choose from differ.
    */
   #setPrivacyPoolsRecipient(seedId: string | null) {
     if (this.privacyPoolsRecipient === seedId) return
@@ -838,8 +824,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (seedId) {
       this.addressState = { ...DEFAULT_ADDRESS_STATE }
       this.#onRecipientAddressChange()
-      // The address field may still hold what was typed to find the account in the list, so the
-      // UI has to be told to take the cleared value
+      // The address field may still hold the text typed to find the account; make the UI clear it
       this.programmaticUpdateCounter += 1
     }
 
@@ -855,7 +840,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#privacyPoolsDepositPreparationId += 1
   }
 
-  /** Reads the entrypoint's limits for the selected token, which the amount is validated against. */
+  /** Loads the entrypoint's deposit limits for the selected token. */
   #loadPrivacyPoolsDepositLimits() {
     const token = this.selectedToken
     if (!this.#privacyPools || !token || !getPrivacyPoolsDepositAsset(token.chainId, token.address))
@@ -864,7 +849,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#privacyPools
       .loadDepositAssetConfig(token.chainId.toString(), token.address)
       .catch((error) => {
-        // Not fatal: preparing the transfer checks the same limits and reports what fails
+        // Not fatal: preparing the deposit checks the same limits
         this.emitError({
           level: 'silent',
           message: 'Could not read what Privacy Pools accepts for this token.',
@@ -1299,13 +1284,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     await this.#initSignAccOp(userRequestParams.calls, userRequestParams.meta.topUpAmount)
   }
 
-  /**
-   * The calls of a transfer to a Privacy Pools account, built for the amount on screen.
-   *
-   * Built by the Privacy Pools controller, which may first have to sync the account's network - so
-   * a preparation can be overtaken by a newer amount or another recipient while it runs, and only
-   * the latest one is kept.
-   */
+  /** Builds the deposit calls into a Privacy Pools account. May first sync its network (slow). */
   async buildPrivacyPoolsDepositCalls({
     seedId,
     selectedToken,
@@ -1356,8 +1335,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       if (!isCurrent()) return
 
       this.isPreparingPrivacyPoolsDeposit = false
-      // Shown next to the form rather than as a toast: it holds for as long as the form does, and
-      // it would otherwise pop up again on every keystroke
+      // Shown in the form, not as a toast, which would pop up again on every keystroke
       this.privacyPoolsDepositError =
         error instanceof EmittableError
           ? error.message

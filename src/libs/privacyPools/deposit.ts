@@ -9,7 +9,7 @@ export const NATIVE_DEPOSIT_SIGNATURE = 'deposit(uint256)'
 /** The entrypoint's ERC-20 deposit, which pulls the amount with `transferFrom`. */
 export const ERC20_DEPOSIT_SIGNATURE = 'deposit(address,uint256,uint256)'
 
-/** The entrypoint's two deposit functions - the only calls a deposit makes into it. */
+/** The entrypoint's two deposit functions. */
 export const ENTRYPOINT_DEPOSIT_INTERFACE = new Interface([
   'function deposit(uint256 _precommitment) payable returns (uint256)',
   'function deposit(address _asset, uint256 _value, uint256 _precommitment) returns (uint256)'
@@ -17,15 +17,14 @@ export const ENTRYPOINT_DEPOSIT_INTERFACE = new Interface([
 
 export type PrivacyPoolsDepositCall = {
   precommitment: bigint
-  /** In the SDK's convention, where native is its own sentinel rather than the zero address. */
+  /** In the SDK's convention: native is `PRIVACY_POOLS_NATIVE_ASSET_ADDRESS`. */
   assetAddress: string
   amount: bigint
 }
 
 /**
- * Reads an entrypoint deposit call: what it deposits, how much, and under which precommitment -
- * which is what ties the deposit to the account it goes to. Null for any other call, including one
- * whose data does not decode.
+ * Decodes an entrypoint deposit call. The precommitment ties it to the receiving account. Null for
+ * any other or undecodable call.
  */
 export const readPrivacyPoolsDeposit = ({
   data,
@@ -59,7 +58,7 @@ export const readPrivacyPoolsDeposit = ({
   return null
 }
 
-/** Encodes a deposit of `amount` under `precommitment` - the inverse of `readPrivacyPoolsDeposit`. */
+/** Encodes a deposit call - the inverse of `readPrivacyPoolsDeposit`. */
 export const encodePrivacyPoolsDeposit = ({
   isNative,
   assetAddress,
