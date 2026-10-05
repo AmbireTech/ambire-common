@@ -126,6 +126,13 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   #keystoreSeeds: StoredKeystoreSeed[] = []
 
+  /**
+   * Whether the stored recovery phrases have been read. Stays false if reading them failed, when
+   * `seeds` is empty without the wallet having none - so nothing may be dropped for a phrase
+   * missing from it.
+   */
+  areSeedsLoaded = false
+
   #tempSeed: KeystoreTempSeed | null = null
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
@@ -210,6 +217,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         // of the extension supported only one saved seed which lacked id and label props.
         return { ...s, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' }
       })
+      this.areSeedsLoaded = true
       // Dates the keys stored before the wallet recorded birthdays.
       const { keys: datedKeys, hasBackfilled } = backfillKeyBirthdays(keystoreKeys)
       this.#keystoreKeys = datedKeys

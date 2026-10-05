@@ -2012,6 +2012,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * the phrase is gone, nothing in them can be reached, and importing it again starts afresh.
    */
   async #forgetAccountsOfDeletedSeeds() {
+    if (!this.#keystore.areSeedsLoaded) return
+
     const storedSeedIds = new Set(this.#keystore.seeds.map((seed) => seed.id))
     const orphanedSeedIds = this.accounts
       .map((account) => account.seedId)

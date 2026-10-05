@@ -320,6 +320,8 @@ class FakeKeystore extends EventEmitter {
 
   isUnlocked = true
 
+  areSeedsLoaded = true
+
   seeds: { id: string; notBackedUp?: boolean }[] = [{ id: 'seed-a' }, { id: 'seed-b' }]
 
   keys = []
@@ -541,6 +543,33 @@ describe('PrivacyPoolsController', () => {
       await controller.initialLoadPromise
 
       expect(controller.accounts.map((account) => account.seedId)).toEqual(['seed-a'])
+    })
+
+    it('keeps every account and its activity when the recovery phrases could not be read', async () => {
+      const storage = new StorageController(produceMemoryStore())
+      await storage.set('privacyPoolsAccounts', [{ seedId: 'seed-a', createdAt: 1 }])
+      await storage.set('privacyPoolsActivity', [{ id: 'a', seedId: 'seed-a' } as any])
+      const keystore = new FakeKeystore()
+      keystore.areSeedsLoaded = false
+      keystore.seeds = []
+      const onAccountsRemoved = jest.fn(async () => {})
+      const controller = new PrivacyPoolsController({
+        keystore: keystore as unknown as IKeystoreController,
+        networks: new FakeNetworks() as unknown as INetworksController,
+        providers: new FakeProviders() as unknown as IProvidersController,
+        selectedAccount: new FakeSelectedAccount() as unknown as ISelectedAccountController,
+        storage,
+        fetch: fakeFetch as any,
+        circuitsBaseUrl: '',
+        onAccountsRemoved
+      })
+      await controller.initialLoadPromise
+      keystore.fireUpdate()
+
+      expect(controller.accounts.map((account) => account.seedId)).toEqual(['seed-a'])
+      expect(await storage.get('privacyPoolsAccounts', [])).toHaveLength(1)
+      expect(await storage.get('privacyPoolsActivity', [])).toHaveLength(1)
+      expect(onAccountsRemoved).not.toHaveBeenCalled()
     })
   })
 
