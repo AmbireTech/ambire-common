@@ -1346,12 +1346,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (!config) throw new Error(`privacyPools: unsupported chain ${chainId}`)
 
     try {
-      const { minimumDepositAmount, vettingFeeBps } = await readEntrypointAssetConfig({
+      const { minimumDepositAmount } = await readEntrypointAssetConfig({
         provider: this.#getProvider(chainId),
         entrypointAddress: config.entrypointAddress,
         assetAddress: toPrivacyPoolsAssetAddress(tokenAddress)
       })
-      const assetConfig = { minimumDepositAmount, vettingFeeBps }
+      const assetConfig = { minimumDepositAmount }
 
       this.depositAssetConfigs = { ...this.depositAssetConfigs, [key]: assetConfig }
       this.emitUpdate()

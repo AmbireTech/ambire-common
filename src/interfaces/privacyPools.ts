@@ -291,8 +291,6 @@ export type PrivacyPoolsActivityEntry = {
   broadcastedAt?: number
   // Set when `status` is 'failed', to surface why without digging through logs
   error?: string
-  /** What the entrypoint took on the way in, recorded rather than recomputed. */
-  vettingFee?: bigint
   /** What the paymaster took out of a withdrawal for its gas. */
   fee?: bigint
   txnId?: string
@@ -304,8 +302,6 @@ export type PrivacyPoolsActivityEntry = {
  */
 export type PrivacyPoolsDepositAssetConfig = {
   minimumDepositAmount: bigint
-  /** The share of each deposit the entrypoint keeps, in basis points. */
-  vettingFeeBps: bigint
 }
 
 /**

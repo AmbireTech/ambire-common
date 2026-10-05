@@ -383,7 +383,7 @@ describe('Transfer Controller', () => {
 
 describe('Transfer Controller - Privacy Pools recipient', () => {
   const PRIVACY_POOLS_SEED_ID = 'privacy-pools-seed'
-  const ETH_DEPOSIT_LIMITS = { minimumDepositAmount: 10n ** 16n, vettingFeeBps: 50n }
+  const ETH_DEPOSIT_LIMITS = { minimumDepositAmount: 10n ** 16n }
 
   /** A transfer screen open on a portfolio with ETH on Ethereum and POL on Polygon. */
   const prepareOpenTransfer = async () => {
