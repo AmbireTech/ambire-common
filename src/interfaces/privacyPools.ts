@@ -103,8 +103,8 @@ export type PrivacyPoolsUnavailableReason = 'locked' | 'no-account' | 'unsupport
  * the protocol. A deposit lands 'pending' and becomes 'approved' once 0xBow includes its label in
  * the set and the postman pushes the new root on chain.
  *
- * Only 'approved' notes can be withdrawn. A 'pending' one can only be reclaimed publicly, back to
- * the address that deposited it - see `PrivacyPoolsActivityType`'s 'reclaim'.
+ * Only 'approved' notes can be withdrawn. A 'pending' one can only be reclaimed publicly (the
+ * protocol's ragequit), back to the address that deposited it.
  */
 export type PrivacyPoolsApprovalStatus = 'approved' | 'pending'
 
@@ -252,10 +252,8 @@ export type PrivacyPoolsOperation = {
 /**
  * - 'deposit' - funds moved into the pool. Public, including the depositing address.
  * - 'withdraw' - funds left the pool privately, to any address.
- * - 'reclaim' - the protocol's ragequit: a still-unapproved deposit taken back publicly, to the
- *   address that made it. Named for what it does, since "ragequit" means nothing to a user.
  */
-export type PrivacyPoolsActivityType = 'deposit' | 'withdraw' | 'reclaim'
+export type PrivacyPoolsActivityType = 'deposit' | 'withdraw'
 
 /**
  * A Privacy Pools operation started from this wallet. Recorded locally as operations are
@@ -275,11 +273,11 @@ export type PrivacyPoolsActivityEntry = {
   tokenAddress: string
   isNative: boolean
   amount: bigint
-  /** Public address for withdrawals and reclaims, null for deposits. */
+  /** Public address for withdrawals, null for deposits. */
   recipient: string | null
   /**
    * The wallet account a deposit was sent from. Kept because only that address can take the
-   * deposit back if it is never approved - see `PrivacyPoolsActivityType`'s 'reclaim'.
+   * deposit back if it is never approved - see `PrivacyPoolsApprovalStatus`.
    */
   depositor?: string
   /**

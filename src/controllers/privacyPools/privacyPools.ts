@@ -2004,28 +2004,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * The calls that reclaim an unapproved deposit, publicly, to the address that made it.
-   *
-   * The protocol's ragequit. It is the only way out for a deposit the association set has not
-   * accepted, and it necessarily reveals the link between that deposit and the depositor - the
-   * pool checks `depositors[label] == msg.sender`, so it cannot go anywhere else.
-   */
-  async buildReclaimCalls({
-    chainId,
-    labels
-  }: {
-    chainId: string
-    labels: bigint[]
-  }): Promise<Call[]> {
-    const seedId = this.#assertAvailableAndGetSeedId()
-    const protocol = await this.#getProtocol(chainId, seedId)
-
-    const { txns } = await protocol.ragequit(labels)
-
-    return txns.map((txn) => ({ to: txn.to, data: txn.data, value: txn.value }))
-  }
-
-  /**
    * Adds the Privacy Pools account of a stored recovery phrase.
    *
    * Nothing is derived or synced here - that happens once the account is opened.
