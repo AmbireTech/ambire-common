@@ -39,8 +39,8 @@ export type PrivacyPoolsChainConfig = {
   chainId: bigint
   entrypointAddress: Hex
   /**
-   * Where the entrypoint was deployed. A first sync walks the chain from here in 5000-block
-   * `eth_getLogs` steps, which is why a shipped state snapshot matters on mainnet.
+   * Where the entrypoint was deployed. A first sync walks the entrypoint's history from here in
+   * 5000-block `eth_getLogs` steps.
    */
   deploymentBlock: bigint
   /** 0xBow's association-set API for this chain. */

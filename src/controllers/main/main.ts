@@ -258,8 +258,7 @@ export class MainController extends EventEmitter implements IMainController {
     uiManager,
     privacyPoolsFetch,
     privacyPoolsCircuitsBaseUrl,
-    privacyPoolsProverFactory,
-    getPrivacyPoolsInitialState
+    privacyPoolsProverFactory
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -291,12 +290,6 @@ export class MainController extends EventEmitter implements IMainController {
      * than this controller's own context - see `PrivacyPoolsController`'s `proverFactory`.
      */
     privacyPoolsProverFactory?: PrivacyPoolsProverFactory
-    /**
-     * Loads the pre-scanned Privacy Pools history a first sync starts from. Shipped by the platform
-     * layer, since only it knows how its build serves several megabytes of it - and absent is fine,
-     * it only means the first sync walks the chain itself.
-     */
-    getPrivacyPoolsInitialState?: () => Promise<Record<string, any>>
   }) {
     super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
@@ -460,7 +453,6 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: privacyPoolsFetch,
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       proverFactory: privacyPoolsProverFactory,
-      getInitialState: getPrivacyPoolsInitialState,
       onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
     })
 

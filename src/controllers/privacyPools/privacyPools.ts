@@ -311,18 +311,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #proverFactory: PrivacyPoolsProverFactory
 
-  /**
-   * The pre-scanned pool history a first sync starts from, when the platform layer ships one.
-   *
-   * Only ever consulted on a cold chain: the plugin prefers what it has already persisted, so this
-   * is the floor for a fresh install rather than something that can overwrite a synced wallet.
-   *
-   * Optional, and increasingly beside the point - a chain with a `sagaSyncUrl` reads the same
-   * history from the CDN, fresher and without several megabytes in the build. See
-   * `#resolveInitialState` for what a chain starts from when nothing is shipped.
-   */
-  #getShippedInitialState?: () => Promise<Record<string, any>>
-
   #unsubscribers: (() => void)[] = []
 
   /** The selected Privacy Pools account the UI last heard about - see `#subscribeToDependencies`. */
@@ -369,7 +357,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     fetch,
     circuitsBaseUrl,
     proverFactory,
-    getInitialState,
     onAccountsRemoved,
     eventEmitterRegistry
   }: {
@@ -391,12 +378,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
      * here from the artifacts at `circuitsBaseUrl`.
      */
     proverFactory?: PrivacyPoolsProverFactory
-    /**
-     * Loads the shipped pool history, keyed the way the plugin keys its own store. A callback so
-     * the several megabytes it holds are fetched only when a chain actually needs them, and so the
-     * platform layer decides where they come from - a bundled asset, or nothing at all.
-     */
-    getInitialState?: () => Promise<Record<string, any>>
     onAccountsRemoved: (seedIds: string[]) => Promise<void>
     eventEmitterRegistry?: IEventEmitterRegistryController
   }) {
@@ -420,7 +401,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         })
     })
     this.#onAccountsRemoved = onAccountsRemoved
-    this.#getShippedInitialState = getInitialState
     this.#proverFactory = withKohakuDebugProver(
       proverFactory ?? createProverFactory(circuitsBaseUrl)
     )
@@ -820,30 +800,23 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * What a chain with no stored history of its own starts from, keyed the way the plugin keys its
-   * own store.
-   *
-   * Two things are merged. A platform layer that ships a pre-scanned history contributes it as it
-   * comes. Every other chain still gets the block its entrypoint was deployed at, because the SDK
-   * starts its entrypoint walk wherever this says the last sync reached - and with nothing to say,
-   * that is block zero, twenty-two million blocks of `eth_getLogs` before the first event that
-   * exists. Nothing else is claimed: the pools are left empty, so they are read in full.
+   * own store: the block its entrypoint was deployed at. The SDK starts its entrypoint walk wherever
+   * this says the last sync reached - and with nothing to say, that is block zero, twenty-two
+   * million blocks of `eth_getLogs` before the first event that exists. Nothing else is claimed:
+   * the pools are left empty, so they are read in full.
    */
-  #resolveInitialState = async (): Promise<Record<string, any>> => {
-    const shipped = this.#getShippedInitialState ? await this.#getShippedInitialState() : {}
-
-    return PRIVACY_POOLS_SUPPORTED_CHAIN_IDS.reduce((state, chainId) => {
+  #resolveInitialState = async (): Promise<Record<string, any>> =>
+    PRIVACY_POOLS_SUPPORTED_CHAIN_IDS.reduce((state, chainId) => {
       const config = getPrivacyPoolsChainConfig(chainId)
       if (!config) return state
 
-      const key = getPrivacyPoolsStoreKey(config)
-      if (state[key]) return state
-
       return {
         ...state,
-        [key]: { sync: { lastSyncedBlock: `0x${config.deploymentBlock.toString(16)}` } }
+        [getPrivacyPoolsStoreKey(config)]: {
+          sync: { lastSyncedBlock: `0x${config.deploymentBlock.toString(16)}` }
+        }
       }
-    }, shipped)
-  }
+    }, {})
 
   /**
    * How this chain's plugin reads the chain.
