@@ -27,6 +27,11 @@ export type PrivacyPoolsAsset = {
    * bound that matters in practice since the ASP is theirs too.
    */
   maxDeposit: bigint
+  /**
+   * Whether the paymaster can sponsor sending this asset out of a Privacy Pools account. Only these
+   * are offered for deposits - without it, funds sent in could not be sent out from this wallet.
+   */
+  isWithdrawable: boolean
 }
 
 /** One chain's 0xBow deployment, plus the off-chain services that serve it. */

@@ -46,12 +46,17 @@ export const PRIVACY_POOLS_ACCOUNT_INDEX = 0
  */
 export const PRIVACY_POOLS_SAGA_SYNC_URL = 'https://saga.fatsolutions.xyz'
 
-const nativeAsset = (symbol: string, maxDeposit: bigint): PrivacyPoolsAsset => ({
+const nativeAsset = (
+  symbol: string,
+  maxDeposit: bigint,
+  isWithdrawable: boolean
+): PrivacyPoolsAsset => ({
   address: ZERO_ADDRESS as Hex,
   symbol,
   decimals: 18,
   isNative: true,
-  maxDeposit
+  maxDeposit,
+  isWithdrawable
 })
 
 /**
@@ -82,69 +87,78 @@ export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig 
       }
     },
     assets: [
-      nativeAsset('ETH', 10_000n * 10n ** 18n),
+      nativeAsset('ETH', 10_000n * 10n ** 18n, true),
       {
         address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
         symbol: 'USDC',
         decimals: 6,
         isNative: false,
-        maxDeposit: 1_000_000n * 10n ** 6n
+        maxDeposit: 1_000_000n * 10n ** 6n,
+        isWithdrawable: true
       },
       {
         address: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
         symbol: 'USDT',
         decimals: 6,
         isNative: false,
-        maxDeposit: 1_000_000n * 10n ** 6n
+        maxDeposit: 1_000_000n * 10n ** 6n,
+        isWithdrawable: true
       },
       {
         address: '0x6B175474E89094C44Da98b954EedeAC495271d0F',
         symbol: 'DAI',
         decimals: 18,
         isNative: false,
-        maxDeposit: 1_000_000n * 10n ** 18n
+        maxDeposit: 1_000_000n * 10n ** 18n,
+        isWithdrawable: false
       },
       {
         address: '0xdC035D45d973E3EC169d2276DDab16f1e407384F',
         symbol: 'USDS',
         decimals: 18,
         isNative: false,
-        maxDeposit: 1_000_000n * 10n ** 18n
+        maxDeposit: 1_000_000n * 10n ** 18n,
+        isWithdrawable: false
       },
       {
         address: '0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD',
         symbol: 'sUSDS',
         decimals: 18,
         isNative: false,
-        maxDeposit: 1_000_000n * 10n ** 18n
+        maxDeposit: 1_000_000n * 10n ** 18n,
+        isWithdrawable: false
       },
       {
         address: '0x4c9EDD5852cd905f086C759E8383e09bff1E68B3',
         symbol: 'USDe',
         decimals: 18,
         isNative: false,
-        maxDeposit: 1_000_000n * 10n ** 18n
+        maxDeposit: 1_000_000n * 10n ** 18n,
+        isWithdrawable: false
       },
       {
         address: '0x8d0D000Ee44948FC98c9B98A4FA4921476f08B0d',
         symbol: 'USD1',
         decimals: 18,
         isNative: false,
-        maxDeposit: 1_000_000n * 10n ** 18n
+        maxDeposit: 1_000_000n * 10n ** 18n,
+        isWithdrawable: false
       },
       {
         address: '0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0',
         symbol: 'wstETH',
         decimals: 18,
         isNative: false,
-        maxDeposit: 100_000n * 10n ** 18n
+        maxDeposit: 100_000n * 10n ** 18n,
+        isWithdrawable: false
       },
       {
         address: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599',
         symbol: 'wBTC',
         decimals: 8,
         isNative: false,
-        maxDeposit: 100n * 10n ** 8n
+        maxDeposit: 100n * 10n ** 8n,
+        isWithdrawable: false
       }
     ]
   },
@@ -156,20 +170,22 @@ export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig 
     // No `paymaster`: the SDK ships no paymaster for Sepolia yet, so withdrawals are unavailable
     // here until one is deployed. Deposits, balances and reclaims are unaffected.
     assets: [
-      nativeAsset('ETH', 1n * 10n ** 18n),
+      nativeAsset('ETH', 1n * 10n ** 18n, false),
       {
         address: '0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0',
         symbol: 'USDT',
         decimals: 6,
         isNative: false,
-        maxDeposit: 100n * 10n ** 6n
+        maxDeposit: 100n * 10n ** 6n,
+        isWithdrawable: false
       },
       {
         address: '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238',
         symbol: 'USDC',
         decimals: 6,
         isNative: false,
-        maxDeposit: 100n * 10n ** 6n
+        maxDeposit: 100n * 10n ** 6n,
+        isWithdrawable: false
       }
     ]
   }
@@ -257,6 +273,16 @@ export const getPrivacyPoolsAsset = (
   getPrivacyPoolsChainConfig(chainId)?.assets.find(
     (asset) => asset.address.toLowerCase() === address.toLowerCase()
   )
+
+/** The asset, if a Privacy Pools account can receive it - see `PrivacyPoolsAsset.isWithdrawable`. */
+export const getPrivacyPoolsDepositAsset = (
+  chainId: bigint,
+  address: string
+): PrivacyPoolsAsset | undefined => {
+  const asset = getPrivacyPoolsAsset(chainId, address)
+
+  return asset?.isWithdrawable ? asset : undefined
+}
 
 /** Translates an address into the sentinel the SDK expects for native. */
 export const toPrivacyPoolsAssetAddress = (address: string): Hex =>

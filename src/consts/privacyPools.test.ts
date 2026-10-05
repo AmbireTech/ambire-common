@@ -4,6 +4,7 @@ import { ZERO_ADDRESS } from '../services/socket/constants'
 import {
   fromPrivacyPoolsAssetAddress,
   getPrivacyPoolsAsset,
+  getPrivacyPoolsDepositAsset,
   isPrivacyPoolsNativeAsset,
   PRIVACY_POOLS_CHAINS,
   PRIVACY_POOLS_NATIVE_ASSET_ADDRESS,
@@ -11,6 +12,7 @@ import {
 } from './privacyPools'
 
 const USDC_MAINNET = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+const DAI_MAINNET = '0x6B175474E89094C44Da98b954EedeAC495271d0F'
 
 describe('consts/privacyPools', () => {
   describe('native asset translation', () => {
@@ -85,7 +87,27 @@ describe('consts/privacyPools', () => {
     })
   })
 
+  describe('getPrivacyPoolsDepositAsset', () => {
+    it('resolves an asset the paymaster can send out again', () => {
+      expect(getPrivacyPoolsDepositAsset(1n, USDC_MAINNET)).toMatchObject({ symbol: 'USDC' })
+      expect(getPrivacyPoolsDepositAsset(1n, ZERO_ADDRESS)).toMatchObject({ symbol: 'ETH' })
+    })
+
+    it('returns nothing for an asset that could not be sent out again', () => {
+      expect(getPrivacyPoolsAsset(1n, DAI_MAINNET)).toBeDefined()
+      expect(getPrivacyPoolsDepositAsset(1n, DAI_MAINNET)).toBeUndefined()
+    })
+  })
+
   describe('chain config', () => {
+    it('marks an asset withdrawable only on a chain with a paymaster', () => {
+      Object.values(PRIVACY_POOLS_CHAINS).forEach((chain) => {
+        if (chain.paymaster) return
+
+        expect(chain.assets.filter((asset) => asset.isWithdrawable)).toHaveLength(0)
+      })
+    })
+
     it('lists native first on every chain, since it is the common case', () => {
       Object.values(PRIVACY_POOLS_CHAINS).forEach((chain) => {
         expect(chain.assets[0].isNative).toBe(true)

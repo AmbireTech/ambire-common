@@ -1016,6 +1016,16 @@ describe('PrivacyPoolsController', () => {
       ).rejects.toThrow(EmittableError)
     })
 
+    it('refuses a token that could not be sent out of the account again', async () => {
+      const { controller } = await prepareTest()
+      const DAI = '0x6B175474E89094C44Da98b954EedeAC495271d0F'
+
+      await expect(buildDeposit(controller, { tokenAddress: DAI })).rejects.toThrow(
+        'This token cannot be sent to a Privacy Pools account.'
+      )
+      expect(runningSyncs).toHaveLength(0)
+    })
+
     it('refuses a deposit into an account the wallet does not have', async () => {
       const { controller } = await prepareTest({ accounts: ['seed-a'] })
 

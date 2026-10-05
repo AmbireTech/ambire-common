@@ -4,7 +4,7 @@ import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
 
 import EmittableError from '../../classes/EmittableError'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { getPrivacyPoolsAsset } from '../../consts/privacyPools'
+import { getPrivacyPoolsDepositAsset } from '../../consts/privacyPools'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
@@ -441,11 +441,14 @@ export class TransferController extends EventEmitter implements ITransferControl
     }
   }
 
-  /** Whether a Privacy Pools account can receive this token - a pool accepts it on a network the user has. */
+  /**
+   * Whether a Privacy Pools account can receive this token - a pool accepts it, on a network the
+   * user has, and it can be sent out of the account again.
+   */
   #isPrivacyPoolsDepositToken(token: TokenResult) {
     return (
       !!this.#privacyPools?.supportedChainIds.includes(token.chainId.toString()) &&
-      !!getPrivacyPoolsAsset(token.chainId, token.address)
+      !!getPrivacyPoolsDepositAsset(token.chainId, token.address)
     )
   }
 
@@ -675,7 +678,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     const token = this.selectedToken
     if (!this.privacyPoolsRecipient || !token) return null
 
-    const asset = getPrivacyPoolsAsset(token.chainId, token.address)
+    const asset = getPrivacyPoolsDepositAsset(token.chainId, token.address)
     if (!asset) return 'This token cannot be sent to a Privacy Pools account.'
 
     const amount = parseUnits(
@@ -855,7 +858,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   /** Reads the entrypoint's limits for the selected token, which the amount is validated against. */
   #loadPrivacyPoolsDepositLimits() {
     const token = this.selectedToken
-    if (!this.#privacyPools || !token || !getPrivacyPoolsAsset(token.chainId, token.address)) return
+    if (!this.#privacyPools || !token || !getPrivacyPoolsDepositAsset(token.chainId, token.address))
+      return
 
     this.#privacyPools
       .loadDepositAssetConfig(token.chainId.toString(), token.address)

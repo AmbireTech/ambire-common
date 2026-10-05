@@ -13,6 +13,7 @@ import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsBundlerUrl,
   getPrivacyPoolsChainConfig,
+  getPrivacyPoolsDepositAsset,
   getPrivacyPoolsStoreKey,
   isPrivacyPoolsNativeAsset,
   PRIVACY_POOLS_ACCOUNT_INDEX,
@@ -1225,7 +1226,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         error: new Error(`privacyPools: unsupported chain ${chainId}`)
       })
 
-    const asset = getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)
+    const asset = getPrivacyPoolsDepositAsset(BigInt(chainId), tokenAddress)
     if (!asset)
       throw new EmittableError({
         message: 'This token cannot be sent to a Privacy Pools account.',
