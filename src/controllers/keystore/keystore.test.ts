@@ -487,7 +487,6 @@ describe('KeystoreController recovery phrase backup state', () => {
 
     expect(keystoreCtrl.seeds.map((seed) => seed.id)).toEqual([seedId])
     expect(keystoreCtrl.seeds[0]!.notBackedUp).toBe(true)
-    expect(keystoreCtrl.seeds[0]!.isNewlyGenerated).toBe(true)
     expect(keystoreCtrl.seeds[0]!.hdPathTemplate).toBe(BIP44_STANDARD_DERIVATION_TEMPLATE)
     // Stored encrypted and recoverable, as a valid phrase
     const { seed } = await keystoreCtrl.getSavedSeed(seedId)

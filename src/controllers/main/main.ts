@@ -1120,18 +1120,8 @@ export class MainController extends EventEmitter implements IMainController {
         hdPathTemplate: this.accountPicker.hdPathTemplate
       })
 
-      // Stamped here rather than in the key iterator, which derives addresses without knowing
-      // where the phrase came from. An address under a phrase this wallet generated has no past,
-      // so its `createdAt` is a real boundary - see `InternalKey['meta'].hasNoPriorHistory`.
       this.accountPicker.readyToAddKeys.internal = this.accountPicker.readyToAddKeys.internal.map(
-        (key) => ({
-          ...key,
-          meta: {
-            ...key.meta,
-            fromSeedId: storedSeed.id,
-            hasNoPriorHistory: !!storedSeed.isNewlyGenerated
-          }
-        })
+        (key) => ({ ...key, meta: { ...key.meta, fromSeedId: storedSeed.id } })
       )
     }
 

@@ -31,7 +31,6 @@ import {
   migrateStoredPayloadsToGCM,
   SCRYPT_PARAMS
 } from '@/libs/keystore/keystore'
-import { backfillKeyBirthdays } from '@/libs/keystore/keyBirthday'
 
 import EmittableError from '../../classes/EmittableError'
 import {
@@ -185,29 +184,6 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     })
   }
 
-  /**
-   * Writes back the birthdays assumed on load.
-   *
-   * Persisted rather than recomputed each time so the assumed date is fixed at the first run
-   * instead of moving forward with every startup - a birthday that drifted would put a note made
-   * today out of reach of tomorrow's scan.
-   *
-   * A failed write is not a failed load: the keys are already usable, and the only cost is that
-   * the next startup assumes the birthdays again. Reported silently so it still reaches Sentry
-   * without telling the user their keystore is broken.
-   */
-  async #persistAssumedKeyBirthdays(keys: StoredKey[]) {
-    try {
-      await this.#storage.set('keystoreKeys', keys)
-    } catch (e: any) {
-      this.emitError({
-        message: 'Could not save when this account was created.',
-        level: 'silent',
-        error: e instanceof Error ? e : new Error('keystore: failed to persist key birthdays')
-      })
-    }
-  }
-
   async #load() {
     try {
       const [keystoreSeeds, keyStoreUid, keystoreKeys] = await Promise.all([
@@ -224,10 +200,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         return { ...s, id: 'legacy-saved-seed', label: 'Recovery Phrase 1' }
       })
       this.areSeedsLoaded = true
-      // Dates the keys stored before the wallet recorded birthdays.
-      const { keys: datedKeys, hasBackfilled } = backfillKeyBirthdays(keystoreKeys)
-      this.#keystoreKeys = datedKeys
-      if (hasBackfilled) await this.#persistAssumedKeyBirthdays(datedKeys)
+      this.#keystoreKeys = keystoreKeys
     } catch (e: any) {
       this.emitError({
         message:
@@ -724,13 +697,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   get seeds() {
     return this.#keystoreSeeds.map(
-      ({ id, label, hdPathTemplate, seedPassphrase, notBackedUp, isNewlyGenerated }) => ({
+      ({ id, label, hdPathTemplate, seedPassphrase, notBackedUp }) => ({
         id,
         label: label || 'Unnamed Recovery Seed',
         hdPathTemplate,
         withPassphrase: !!seedPassphrase,
-        notBackedUp,
-        isNewlyGenerated
+        notBackedUp
       })
     )
   }
@@ -763,10 +735,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     this.#tempSeed = {
       seed,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-      notBackedUp: true,
-      // The only place this can be known: the phrase is being created right now, so nothing can
-      // have been done with it before. Every address derived from it is datable because of this.
-      isNewlyGenerated: true
+      notBackedUp: true
     }
 
     this.emitUpdate()
@@ -780,7 +749,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * Pools account's - so, unlike `generateTempSeed`, it never passes through the temp seed another
    * flow may be holding.
    *
-   * Flagged as not backed up and as newly generated, exactly like a generated temp seed.
+   * Flagged as not backed up, exactly like a generated temp seed.
    */
   async addGeneratedSeed({ extraEntropy }: { extraEntropy?: string }): Promise<string> {
     const seed = new EntropyGenerator().generateRandomMnemonic(12, extraEntropy || '').phrase
@@ -789,8 +758,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
       {
         seed,
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-        notBackedUp: true,
-        isNewlyGenerated: true
+        notBackedUp: true
       }
     ])
     if (!seedId) throw new Error('keystore: the generated seed was not stored')
@@ -847,14 +815,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     try {
       // Entries are pushed as they are built, so that duplicates and labels are
       // resolved against the seeds added earlier in the same batch as well
-      for (const {
-        seed,
-        seedPassphrase,
-        hdPathTemplate,
-        notBackedUp,
-        isNewlyGenerated,
-        id
-      } of seedsToAdd) {
+      for (const { seed, seedPassphrase, hdPathTemplate, notBackedUp, id } of seedsToAdd) {
         const existingEntry = await this.#findStoredSeed(seed, seedPassphrase)
         if (existingEntry) {
           ids.push(existingEntry.id)
@@ -869,8 +830,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
             ? await encryptWithKey(this.#mainKey, new TextEncoder().encode(seedPassphrase))
             : null,
           hdPathTemplate,
-          notBackedUp,
-          isNewlyGenerated
+          notBackedUp
         }
 
         this.#keystoreSeeds.push(newEntry)
