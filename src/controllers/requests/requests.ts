@@ -1403,26 +1403,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   ) {
     const { isUserInitiated = true, ...removeOptions } = options || {}
 
-    const rejectedSwitchAccountRequestIds = this.userRequests
-      .filter((r) => requestIds.includes(r.id) && r.kind === 'switchAccount')
-      .map((r) => r.id)
-    const waitingUserRequestsToReject = this.userRequestsWaitingAccountSwitch.filter((r) =>
-      rejectedSwitchAccountRequestIds.includes(r.meta.switchAccountRequestId)
-    )
-    // An app request for an account that is not selected gets merged into that account's
-    // pending batch on the same chain, if there is one, so the batch itself ends up waiting
-    // for the switch. It must leave the queue together with the switch request, otherwise
-    // it stays there with its signAccountOp destroyed and can never be signed
-    const queuedWaitingRequestIdsToReject = waitingUserRequestsToReject
-      .filter((r) => this.userRequests.some((queued) => queued.id === r.id))
-      .map((r) => r.id)
-    const directlyRejectedRequestIds = [...requestIds, ...queuedWaitingRequestIdsToReject]
-
     // rejecting a Safe deployment request rejects all other calls request
     // on the same chain that are not signed
     const rejectedSafeDeployRequest = this.userRequests.find(
       (r): r is CallsUserRequest =>
-        directlyRejectedRequestIds.includes(r.id) && r.kind === 'calls' && !!r.meta.isSafeDeploy
+        requestIds.includes(r.id) && r.kind === 'calls' && !!r.meta.isSafeDeploy
     )
     const safeIdsToReject = !rejectedSafeDeployRequest
       ? []
@@ -1430,23 +1415,24 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           rejectedSafeDeployRequest.meta.accountAddr,
           rejectedSafeDeployRequest.meta.chainId
         )
-    const requestIdsToReject = [...new Set([...directlyRejectedRequestIds, ...safeIdsToReject])]
+    const requestIdsToReject = [...new Set([...requestIds, ...safeIdsToReject])]
     const userRequestsToReject = this.userRequests.filter((r) => requestIdsToReject.includes(r.id))
-    // the queued ones get destroyed by removeUserRequests along with the rest of the queue
-    const notQueuedWaitingUserRequestsToReject = waitingUserRequestsToReject.filter(
-      (r) => !requestIdsToReject.includes(r.id)
+    const rejectedSwitchAccountRequestIds = userRequestsToReject
+      .filter((r) => r.kind === 'switchAccount')
+      .map((r) => r.id)
+    const waitingUserRequestsToReject = this.userRequestsWaitingAccountSwitch.filter((r) =>
+      rejectedSwitchAccountRequestIds.includes(r.meta.switchAccountRequestId)
     )
 
     if (isUserInitiated) this.#recordDappRejections(userRequestsToReject)
 
-    // a switch request holds the same promises as the requests waiting for it,
-    // so they are deduplicated to answer each app request only once
-    const dappPromisesToReject = new Set(userRequestsToReject.flatMap((r) => r.dappPromises))
-    dappPromisesToReject.forEach((p) => p.reject(ethErrors.provider.userRejectedRequest<any>(err)))
+    userRequestsToReject.forEach((r) => {
+      r.dappPromises.forEach((p) => p.reject(ethErrors.provider.userRejectedRequest<any>(err)))
+    })
 
     const callsUserRequestsToReject = [
       ...userRequestsToReject,
-      ...notQueuedWaitingUserRequestsToReject
+      ...waitingUserRequestsToReject
     ].filter((r) => r.kind === 'calls') as CallsUserRequest[]
 
     // do not await overrideSimulationResults as the Reject handle becomes slow
@@ -1456,7 +1442,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       )
     )
 
-    notQueuedWaitingUserRequestsToReject.forEach((r) => {
+    waitingUserRequestsToReject.forEach((r) => {
       if (r.kind === 'calls') r.signAccountOp.destroy()
     })
     this.userRequestsWaitingAccountSwitch = this.userRequestsWaitingAccountSwitch.filter(
