@@ -633,6 +633,32 @@ describe('PrivacyPoolsController', () => {
 
       expect(controller.unavailableReason).toBe('locked')
     })
+
+    it('updates the UI on a selected account update only when the selection changed', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      const onUpdate = jest.fn()
+      controller.onUpdate(onUpdate)
+
+      selectedAccount.select('seed-a')
+      await flush()
+      expect(onUpdate).toHaveBeenCalledTimes(1)
+
+      // A portfolio refresh of the selected account updates it without changing the selection
+      selectedAccount.select('seed-a')
+      await flush()
+      expect(onUpdate).toHaveBeenCalledTimes(1)
+    })
+
+    it('passes no updates on while the wallet has no Privacy Pools account', async () => {
+      const { controller, keystore } = await prepareTest({ accounts: [] })
+      const onUpdate = jest.fn()
+      controller.onUpdate(onUpdate)
+
+      keystore.fireUpdate()
+      await flush()
+
+      expect(onUpdate).not.toHaveBeenCalled()
+    })
   })
 
   describe('sync queue', () => {

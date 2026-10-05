@@ -325,6 +325,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #unsubscribers: (() => void)[] = []
 
+  /** The selected Privacy Pools account the UI last heard about - see `#subscribeToDependencies`. */
+  #selectedAccountId: string | null = null
+
   /**
    * What the entrypoint requires of a deposit, per `${chainId}:${tokenAddress}` (lowercase) - read
    * from the chain once per session, as the form needs it to validate what is typed.
@@ -454,8 +457,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * dependencies on demand - it has to react when they change. Each subscription either
    * invalidates a plugin or changes what the getters below report, and getter values only reach
    * the UI when an update is emitted.
+   *
+   * Passed on only when they can change what it reports, since the selected account and the
+   * networks update far more often than that.
    */
   #subscribeToDependencies() {
+    this.#selectedAccountId = this.#selectedAccount.privacyPoolsAccountId
+
     this.#unsubscribers.push(
       this.#keystore.onUpdate((forceEmit) => {
         // Locking must drop the derived note secrets, not merely hide the UI. The notes go with
@@ -465,16 +473,19 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.#forgetAccountsOfDeletedSeeds()
 
-        this.propagateUpdate(forceEmit)
+        this.#propagateIfHasAccounts(forceEmit)
       }, 'privacyPools'),
 
       // Switching accounts drops nothing: every phrase has its own plugins and its own notes, so
       // switching back shows them at once, and a sync still running for the previous phrase keeps
       // going and leaves the network's history warm for the next one.
-      this.#selectedAccount.onUpdate(
-        (forceEmit) => this.propagateUpdate(forceEmit),
-        'privacyPools'
-      ),
+      this.#selectedAccount.onUpdate((forceEmit) => {
+        const selectedAccountId = this.#selectedAccount.privacyPoolsAccountId
+        if (selectedAccountId === this.#selectedAccountId) return
+
+        this.#selectedAccountId = selectedAccountId
+        this.propagateUpdate(forceEmit)
+      }, 'privacyPools'),
 
       this.#providers.onUpdate((forceEmit) => {
         const staleKeys = [...this.#providerInstances.keys()].filter((key) => {
@@ -484,18 +495,26 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
         staleKeys.forEach((key) => this.#dropProtocol(key))
 
-        this.propagateUpdate(forceEmit)
+        this.#propagateIfHasAccounts(forceEmit)
       }, 'privacyPools'),
 
       // Subscribed to purely so `supportedChainIds` and everything derived from it reaches the UI.
-      this.#networks.onUpdate((forceEmit) => this.propagateUpdate(forceEmit), 'privacyPools'),
+      this.#networks.onUpdate(
+        (forceEmit) => this.#propagateIfHasAccounts(forceEmit),
+        'privacyPools'
+      ),
 
       this.#featureFlags.onUpdate((forceEmit) => {
         if (!this.#featureFlags.isFeatureEnabled('tokenPrices')) this.#dropPrices()
 
-        this.propagateUpdate(forceEmit)
+        this.#propagateIfHasAccounts(forceEmit)
       }, 'privacyPools')
     )
+  }
+
+  /** Without a Privacy Pools account, nothing this controller reports depends on the others. */
+  #propagateIfHasAccounts(forceEmit?: boolean) {
+    if (this.accounts.length) this.propagateUpdate(forceEmit)
   }
 
   /**
