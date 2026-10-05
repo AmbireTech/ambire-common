@@ -135,6 +135,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   #tempSeed: KeystoreTempSeed | null = null
 
+  /**
+   * The `PRIVACY_POOLS_DERIVATION_PATH_PREFIX` node of each recovery phrase, derived once while
+   * unlocked - see `derivePrivacyPoolsKey`.
+   */
+  #privacyPoolsRootNodes = new Map<KeystoreSeed['id'], Promise<HDNodeWallet>>()
+
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
   #keystoreKeys: StoredKey[] = []
@@ -248,6 +254,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   lock() {
     this.#mainKey = null
+    this.#privacyPoolsRootNodes.clear()
     if (this.#tempSeed) this.deleteTempSeed(false)
 
     this.#seedsToAddOnKeystoreReady = []
@@ -993,6 +1000,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     await this.initialLoadPromise
 
     this.#keystoreSeeds = this.#keystoreSeeds.filter((s) => s.id !== id)
+    this.#privacyPoolsRootNodes.delete(id)
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
     this.emitUpdate()
@@ -1532,6 +1540,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    *
    * The prefix check is the security boundary: the SDK chooses the paths, so without it a bug or a
    * malicious bump could ask for the user's EVM keys and get them.
+   *
+   * Keys are derived from the prefix's node, which is derived from the phrase once while unlocked:
+   * from the phrase each key would cost a decryption and a PBKDF2. The node can only reach Privacy
+   * Pools keys, never the EVM ones.
    */
   async derivePrivacyPoolsKey(seedId: KeystoreSeed['id'], path: string): Promise<Hex> {
     await this.initialLoadPromise
@@ -1541,10 +1553,31 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     if (!path.startsWith(PRIVACY_POOLS_DERIVATION_PATH_PREFIX))
       throw new Error(`keystore: refusing to derive a key outside Privacy Pools' paths (${path})`)
 
-    const { seed, seedPassphrase } = await this.getSavedSeed(seedId)
+    const rootNode = await this.#getPrivacyPoolsRootNode(seedId)
 
-    return HDNodeWallet.fromMnemonic(Mnemonic.fromPhrase(seed, seedPassphrase), path)
+    return rootNode.derivePath(path.slice(PRIVACY_POOLS_DERIVATION_PATH_PREFIX.length))
       .privateKey as Hex
+  }
+
+  #getPrivacyPoolsRootNode(seedId: KeystoreSeed['id']): Promise<HDNodeWallet> {
+    const cached = this.#privacyPoolsRootNodes.get(seedId)
+    if (cached) return cached
+
+    const rootNode = this.getSavedSeed(seedId).then(({ seed, seedPassphrase }) =>
+      HDNodeWallet.fromMnemonic(
+        Mnemonic.fromPhrase(seed, seedPassphrase),
+        // Without the trailing slash, which `fromMnemonic` would read as an empty last segment
+        PRIVACY_POOLS_DERIVATION_PATH_PREFIX.slice(0, -1)
+      )
+    )
+    this.#privacyPoolsRootNodes.set(seedId, rootNode)
+    // Not kept when it fails, so the next key tries again
+    rootNode.catch(() => {
+      if (this.#privacyPoolsRootNodes.get(seedId) === rootNode)
+        this.#privacyPoolsRootNodes.delete(seedId)
+    })
+
+    return rootNode
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {
