@@ -584,7 +584,8 @@ const init = async (
     'https://staging-relayer.ambire.com',
     velcroUrl,
     bannerCtrl,
-    featureFlagsCtrl
+    featureFlagsCtrl,
+    uiCtrl
   )
   const continuouslyUpdatePhishingSpy = options?.dapps
     ? jest

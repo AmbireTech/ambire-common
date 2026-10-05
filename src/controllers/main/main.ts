@@ -434,6 +434,7 @@ export class MainController extends EventEmitter implements IMainController {
       velcroUrl,
       this.banner,
       this.featureFlags,
+      this.ui,
       eventEmitterRegistry,
       this.verification,
       platform
