@@ -2515,6 +2515,99 @@ describe('RequestsController ', () => {
     expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
     expect(controller.userRequests).toHaveLength(0)
   })
+
+  test('rejecting an account switch for a transaction merged into a pending Safe batch removes the batch and its deployment', async () => {
+    const { accountsCtrl, controller, portfolioCtrl, selectedAccountCtrl } = await prepareTest(
+      true,
+      true
+    )
+    const safeAccountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const safeAccount = accountsCtrl.accounts.find(({ addr }) => addr === safeAccountAddr)!
+    safeAccount.safeCreation = { ...safeAccount.safeCreation!, setupData: '0x1234' }
+    const accountState = accountsCtrl.accountStates[safeAccountAddr]![1]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
+      to: '0x1234567890123456789012345678901234567890',
+      value: 0n,
+      data: '0x1234'
+    })
+    jest.spyOn(portfolioCtrl, 'overrideSimulationResults').mockResolvedValue(undefined)
+    const buildSafeTransaction = (dappPromiseId: string, reject: jest.Mock) =>
+      controller.build({
+        type: 'dappRequest',
+        params: {
+          request: {
+            method: 'eth_sendTransaction',
+            params: [{ from: safeAccountAddr, to: ZeroAddress, value: '0x0', data: '0x' }],
+            session: MOCK_SESSION
+          },
+          dappPromise: { id: dappPromiseId, resolve: jest.fn(), reject, session: MOCK_SESSION }
+        }
+      })
+    const firstTransactionReject = jest.fn()
+    const secondTransactionReject = jest.fn()
+
+    await buildSafeTransaction('first-safe-transaction', firstTransactionReject)
+    const [deploymentRequest, transactionRequest] = controller.userRequests
+    if (deploymentRequest?.kind !== 'calls' || transactionRequest?.kind !== 'calls') {
+      throw new Error('Expected a Safe deployment and a transaction request')
+    }
+    const deploymentDestroySpy = jest.spyOn(deploymentRequest.signAccountOp, 'destroy')
+    const transactionDestroySpy = jest.spyOn(transactionRequest.signAccountOp, 'destroy')
+
+    await selectedAccountCtrl.setAccount(accounts[0]!)
+    await buildSafeTransaction('second-safe-transaction', secondTransactionReject)
+
+    const switchAccountRequest = controller.userRequests.find((r) => r.kind === 'switchAccount')
+    if (!switchAccountRequest) throw new Error('Expected an account switch request')
+    expect(transactionRequest.signAccountOp.accountOp.calls).toHaveLength(2)
+    expect(controller.userRequestsWaitingAccountSwitch).toEqual([
+      deploymentRequest,
+      transactionRequest
+    ])
+
+    await controller.rejectUserRequests('User rejected', [switchAccountRequest.id])
+
+    expect(controller.userRequests).toEqual([])
+    expect(controller.userRequestsWaitingAccountSwitch).toEqual([])
+    expect(deploymentDestroySpy).toHaveBeenCalledTimes(1)
+    expect(transactionDestroySpy).toHaveBeenCalledTimes(1)
+    expect(firstTransactionReject).toHaveBeenCalledTimes(1)
+    expect(secondTransactionReject).toHaveBeenCalledTimes(1)
+  })
+
+  test('rejecting an account switch keeps the pending requests that do not wait for it', async () => {
+    const { controller, getCallsRequest, portfolioCtrl } = await prepareTest()
+    const otherAccountRequest = await getCallsRequest({ addr: accounts[1]!.addr, chainId: 1n })
+    otherAccountRequest.id = 'other-account-request'
+    const waitingRequest = await getCallsRequest({ addr: accounts[0]!.addr, chainId: 1n })
+    const waitingRequestReject = jest.fn()
+    waitingRequest.dappPromises = [
+      {
+        id: 'waiting-request',
+        resolve: jest.fn(),
+        reject: waitingRequestReject,
+        session: MOCK_SESSION,
+        meta: {}
+      }
+    ]
+    const otherAccountDestroySpy = jest.spyOn(otherAccountRequest.signAccountOp, 'destroy')
+    jest.spyOn(portfolioCtrl, 'overrideSimulationResults').mockResolvedValue(undefined)
+    controller.userRequests = [otherAccountRequest]
+
+    await controller.addUserRequests([waitingRequest], { allowAccountSwitch: true })
+    const switchAccountRequest = controller.userRequests.find((r) => r.kind === 'switchAccount')
+    if (!switchAccountRequest) throw new Error('Expected an account switch request')
+
+    await controller.rejectUserRequests('User rejected', [switchAccountRequest.id])
+
+    expect(controller.userRequests).toEqual([otherAccountRequest])
+    expect(otherAccountDestroySpy).not.toHaveBeenCalled()
+    expect(waitingRequestReject).toHaveBeenCalledTimes(1)
+
+    otherAccountRequest.signAccountOp.destroy()
+  })
   test('add multiple user requests', async () => {
     const { controller, getCallsRequest } = await prepareTest()
     const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
