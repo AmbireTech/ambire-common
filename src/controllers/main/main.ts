@@ -942,14 +942,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
   }
 
-  async #selectAccount(toAccountAddr: string | null) {
-    if (!toAccountAddr) {
-      await this.selectedAccount.setAccount(null)
-
-      this.emitUpdate()
-      return
-    }
-
+  async #selectAccount(toAccountAddr: string) {
     const accountToSelect = this.accounts.accounts.find((acc) => acc.addr === toAccountAddr)
     if (!accountToSelect) {
       console.error(`Account with address ${toAccountAddr} does not exist`)
