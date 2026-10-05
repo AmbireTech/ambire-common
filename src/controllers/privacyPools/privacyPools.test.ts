@@ -880,22 +880,6 @@ describe('PrivacyPoolsController', () => {
       }
     })
 
-    it('says a network never read before is in for its first read while it still waits its turn', async () => {
-      const { controller, selectedAccount } = await prepareTest()
-
-      selectedAccount.select('seed-a')
-      const syncEthereum = controller.syncChain('1')
-      await waitUntil(() => runningSyncs.length === 1)
-      // Queued behind the one running, on a network whose history is not stored either
-      const syncSepolia = controller.syncChain('11155111')
-
-      await waitUntil(() => controller.chains['11155111']?.isInitialSyncDone === false)
-      expect(controller.chains['11155111']?.syncStatus).toBe('syncing')
-
-      await releaseSync('seed-a')
-      await Promise.all([syncEthereum, syncSepolia])
-    })
-
     it('keeps what it knows about a network through a lock', async () => {
       const { controller, keystore, selectedAccount } = await prepareTest()
 

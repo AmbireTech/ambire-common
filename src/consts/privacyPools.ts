@@ -46,26 +46,11 @@ export const PRIVACY_POOLS_ACCOUNT_INDEX = 0
  */
 export const PRIVACY_POOLS_SAGA_SYNC_URL = 'https://saga.fatsolutions.xyz'
 
-const nativeAsset = (
-  symbol: string,
-  maxDeposit: bigint,
-  isWithdrawable: boolean
-): PrivacyPoolsAsset => ({
-  address: ZERO_ADDRESS as Hex,
-  symbol,
-  decimals: 18,
-  isNative: true,
-  maxDeposit,
-  isWithdrawable
-})
-
 /**
- * The chains the 0xBow deployment is configured for in this SDK version. `PrivacyPoolsV1_0xBow`
- * only carries these two, and the protocol is live on more (Optimism, BSC, Arbitrum) behind a
- * different entrypoint - adding them means more than appending an id here.
- *
- * Mutually exclusive in practice: Sepolia only exists in the testnet network set and Ethereum only
- * in the mainnet one.
+ * The chains Privacy Pools runs on in this wallet: Ethereum only. Sepolia is left out because it
+ * has no paymaster, so nothing could be sent out of an account there. The protocol is live on more
+ * chains (Optimism, BSC, Arbitrum) behind a different entrypoint - adding them means more than
+ * appending an id here.
  */
 export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig } = {
   '1': {
@@ -87,7 +72,14 @@ export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig 
       }
     },
     assets: [
-      nativeAsset('ETH', 10_000n * 10n ** 18n, true),
+      {
+        address: ZERO_ADDRESS as Hex,
+        symbol: 'ETH',
+        decimals: 18,
+        isNative: true,
+        maxDeposit: 10_000n * 10n ** 18n,
+        isWithdrawable: true
+      },
       {
         address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
         symbol: 'USDC',
@@ -158,33 +150,6 @@ export const PRIVACY_POOLS_CHAINS: { [chainId: string]: PrivacyPoolsChainConfig 
         decimals: 8,
         isNative: false,
         maxDeposit: 100n * 10n ** 8n,
-        isWithdrawable: false
-      }
-    ]
-  },
-  '11155111': {
-    chainId: 11155111n,
-    entrypointAddress: '0x34A2068192b1297f2a7f85D7D8CdE66F8F0921cB',
-    deploymentBlock: 8461453n,
-    aspUrl: 'https://dw.0xbow.io',
-    // No `paymaster`: the SDK ships no paymaster for Sepolia yet, so withdrawals are unavailable
-    // here until one is deployed. Deposits, balances and reclaims are unaffected.
-    assets: [
-      nativeAsset('ETH', 1n * 10n ** 18n, false),
-      {
-        address: '0xaA8E23Fb1079EA71e0a56F48a2aA51851D8433D0',
-        symbol: 'USDT',
-        decimals: 6,
-        isNative: false,
-        maxDeposit: 100n * 10n ** 6n,
-        isWithdrawable: false
-      },
-      {
-        address: '0x1c7d4b196cb0c7b01d743fbc6116a902379c7238',
-        symbol: 'USDC',
-        decimals: 6,
-        isNative: false,
-        maxDeposit: 100n * 10n ** 6n,
         isWithdrawable: false
       }
     ]

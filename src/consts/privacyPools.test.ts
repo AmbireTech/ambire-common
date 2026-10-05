@@ -80,11 +80,6 @@ describe('consts/privacyPools', () => {
     it('returns nothing for an unsupported chain', () => {
       expect(getPrivacyPoolsAsset(137n, ZERO_ADDRESS)).toBeUndefined()
     })
-
-    // Sepolia and mainnet share symbols but not addresses; a lookup must not cross chains.
-    it('does not resolve a mainnet token against Sepolia', () => {
-      expect(getPrivacyPoolsAsset(11155111n, USDC_MAINNET)).toBeUndefined()
-    })
   })
 
   describe('getPrivacyPoolsDepositAsset', () => {

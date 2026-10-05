@@ -489,9 +489,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /**
    * The chains this wallet can use Privacy Pools on: the SDK's own capability, narrowed to the
    * networks the user actually has and that have a provider.
-   *
-   * In practice this resolves to one chain - Sepolia only exists in the testnet network set and
-   * Ethereum only in the mainnet one.
    */
   get supportedChainIds(): string[] {
     return PRIVACY_POOLS_SUPPORTED_CHAIN_IDS.map((chainId) => chainId.toString()).filter(
@@ -819,7 +816,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * blocks from the provider. See `#dropSagaHydratedProtocols` for the other half of that.
    *
    * The provider-backed reader underneath is used either way, and is the parallel one in both
-   * cases - a warm sync is a few windows, a cold Sepolia is thousands.
+   * cases.
    */
   async #getDataService(config: PrivacyPoolsChainConfig, provider: Host['provider']) {
     const canUseSaga = !!config.sagaSyncUrl && (await this.#isChainCold(config))
