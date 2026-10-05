@@ -417,6 +417,10 @@ const flush = () =>
     setImmediate(resolve)
   })
 
+/** What the selected account holds on Ethereum, per token - seed-a holds 10, seed-b 20. */
+const getHeldAmounts = (controller: PrivacyPoolsController) =>
+  (controller.balances['1'] || []).map(({ totalAmount }) => totalAmount)
+
 const waitUntil = async (condition: () => boolean) => {
   for (let i = 0; i < 200; i++) {
     if (condition()) return
@@ -650,9 +654,9 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-b')
       await syncB
 
-      expect(controller.chains['1']?.notes.map((note) => note.label)).toEqual([2n])
+      expect(getHeldAmounts(controller)).toEqual([20n])
       selectedAccount.select('seed-a')
-      expect(controller.chains['1']?.notes.map((note) => note.label)).toEqual([1n])
+      expect(getHeldAmounts(controller)).toEqual([10n])
     })
 
     it('joins a sync already queued for the same network and phrase', async () => {
@@ -730,6 +734,19 @@ describe('PrivacyPoolsController', () => {
       ])
     })
 
+    it('sends the UI balances, never the notes and their deposit labels', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+
+      const { chains, balances } = controller.toJSON()
+      expect(chains['1']).not.toHaveProperty('notes')
+      expect(balances['1']).toHaveLength(1)
+    })
+
     it('keeps notes across account switches without syncing again', async () => {
       const { controller, selectedAccount } = await prepareTest()
 
@@ -739,10 +756,10 @@ describe('PrivacyPoolsController', () => {
       await syncA
 
       selectedAccount.select('seed-b')
-      expect(controller.chains['1']?.notes).toEqual([])
+      expect(getHeldAmounts(controller)).toEqual([])
       selectedAccount.select('seed-a')
 
-      expect(controller.chains['1']?.notes.map((note) => note.label)).toEqual([1n])
+      expect(getHeldAmounts(controller)).toEqual([10n])
       expect(protocols).toHaveLength(1)
     })
 
@@ -760,7 +777,7 @@ describe('PrivacyPoolsController', () => {
 
       keystore.isUnlocked = true
       keystore.fireUpdate()
-      expect(controller.chains['1']?.notes).toEqual([])
+      expect(getHeldAmounts(controller)).toEqual([])
       expect(controller.chains['1']?.lastSyncedAt).toBeNull()
       expect(controller.chains['1']?.syncStatus).toBe('idle')
     })
@@ -778,7 +795,7 @@ describe('PrivacyPoolsController', () => {
 
       // Added back, it starts with nothing until it is synced again
       await controller.addAccount('seed-a')
-      expect(controller.chains['1']?.notes).toEqual([])
+      expect(getHeldAmounts(controller)).toEqual([])
       expect(controller.chains['1']?.lastSyncedAt).toBeNull()
     })
 
@@ -797,7 +814,7 @@ describe('PrivacyPoolsController', () => {
       await releaseSync('seed-b')
       await Promise.all([syncA, syncB])
 
-      expect(controller.chains['1']?.notes.map((note) => note.label)).toEqual([2n])
+      expect(getHeldAmounts(controller)).toEqual([20n])
     })
 
     it('lets the syncs behind a failed one run', async () => {
@@ -816,7 +833,7 @@ describe('PrivacyPoolsController', () => {
 
       await releaseSync('seed-b')
       await syncB
-      expect(controller.chains['1']?.notes.map((note) => note.label)).toEqual([2n])
+      expect(getHeldAmounts(controller)).toEqual([20n])
     })
   })
   describe('syncing on opening an account', () => {

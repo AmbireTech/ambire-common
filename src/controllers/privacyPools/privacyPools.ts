@@ -525,12 +525,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Per-chain state as the UI reads it: the chain's own sync merged with what this phrase holds
-   * there. A getter rather than a field, so the split stays an implementation detail.
+   * Per-chain state as the UI reads it: the chain's own sync merged with this phrase's last read of
+   * it. A getter rather than a field, so the split stays an implementation detail.
    */
   get chains(): { [chainId: string]: PrivacyPoolsChainState } {
-    const seedId = this.#getSelectedSeedId()
-    const identityChains = (seedId && this.#notesByIdentity[seedId]) || {}
+    const identityChains = this.#getSelectedIdentityChains()
     const chainIds = new Set([
       ...this.supportedChainIds,
       ...Object.keys(this.#syncStatesByChain),
@@ -557,8 +556,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
             ...sync,
             ...history,
             lastSyncedAt: identity?.lastSyncedAt ?? null,
-            lastSyncDuration: identity?.lastSyncDuration ?? null,
-            notes: identity?.notes ?? []
+            lastSyncDuration: identity?.lastSyncDuration ?? null
           }
         ]
       })
@@ -589,11 +587,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * only be reclaimed publicly.
    */
   get balances(): { [chainId: string]: PrivacyPoolsTokenBalance[] } {
+    const identityChains = this.#getSelectedIdentityChains()
+
     return Object.fromEntries(
-      Object.entries(this.chains).map(([chainId, chain]) => {
+      Object.keys(this.chains).map((chainId) => {
         const byToken = new Map<string, PrivacyPoolsTokenBalance>()
 
-        chain.notes.forEach((note) => {
+        ;(identityChains[chainId]?.notes || []).forEach((note) => {
           const key = note.tokenAddress.toLowerCase()
           const asset = getPrivacyPoolsAsset(BigInt(chainId), key)
           const entry = byToken.get(key) || {
@@ -646,6 +646,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (!this.#keystore.seeds.some((seed) => seed.id === seedId)) return null
 
     return seedId
+  }
+
+  /** What the selected Privacy Pools account holds, per chain. */
+  #getSelectedIdentityChains(): { [chainId: string]: PrivacyPoolsIdentityChainState } {
+    const seedId = this.#getSelectedSeedId()
+
+    return (seedId && this.#notesByIdentity[seedId]) || {}
   }
 
   #assertAvailableAndGetSeedId(): string {

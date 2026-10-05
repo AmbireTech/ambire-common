@@ -135,7 +135,8 @@ export type PrivacyPoolsTokenBalance = {
 
 /**
  * One chain as the UI reads it, merged from the chain's own sync - shared by every identity on it -
- * and the notes this identity owns there.
+ * and this identity's last read of it. The notes themselves stay in the controller: the UI gets
+ * them summed up per token, through `balances`.
  */
 export type PrivacyPoolsChainState = {
   chainId: string
@@ -163,7 +164,6 @@ export type PrivacyPoolsChainState = {
   lastSyncedAt: number | null
   /** How long this identity's latest sync of the chain took, in milliseconds. */
   lastSyncDuration: number | null
-  notes: PrivacyPoolsNote[]
 }
 
 /** The half of `PrivacyPoolsChainState` that belongs to the chain, shared by every identity. */
@@ -181,11 +181,11 @@ export type PrivacyPoolsChainHistory = Pick<
   'isInitialSyncDone' | 'initialSyncDuration'
 >
 
-/** The half that belongs to one identity - the notes it owns in that chain's pools. */
+/** The half that belongs to one identity, with the notes it owns in that chain's pools. */
 export type PrivacyPoolsIdentityChainState = Pick<
   PrivacyPoolsChainState,
-  'lastSyncedAt' | 'lastSyncDuration' | 'notes'
->
+  'lastSyncedAt' | 'lastSyncDuration'
+> & { notes: PrivacyPoolsNote[] }
 
 /**
  * What a prepared withdrawal costs, after we have checked it against what we asked for.
