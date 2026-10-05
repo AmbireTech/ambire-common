@@ -9,6 +9,7 @@ import {
   getPrivacyPoolsChainConfig,
   getPrivacyPoolsStoreKey
 } from '../../consts/privacyPools'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
@@ -347,6 +348,19 @@ class FakeSelectedAccount extends EventEmitter {
   }
 }
 
+class FakeFeatureFlags extends EventEmitter {
+  flags: { [flag: string]: boolean } = { tokenPrices: true, erc4337: true }
+
+  isFeatureEnabled(flag: string) {
+    return this.flags[flag]
+  }
+
+  set(flag: string, value: boolean) {
+    this.flags[flag] = value
+    this.emitUpdate()
+  }
+}
+
 class FakeNetworks extends EventEmitter {
   initialLoadPromise = Promise.resolve()
 
@@ -436,12 +450,14 @@ const prepareTest = async ({
   )
 
   const keystore = new FakeKeystore()
+  const featureFlags = new FakeFeatureFlags()
   const selectedAccount = new FakeSelectedAccount()
   const providers = new FakeProviders()
   const onAccountsRemoved = jest.fn<(seedIds: string[]) => Promise<void>>(async () => {})
 
   const controller = new PrivacyPoolsController({
     keystore: keystore as unknown as IKeystoreController,
+    featureFlags: featureFlags as unknown as IFeatureFlagsController,
     networks: new FakeNetworks() as unknown as INetworksController,
     providers: providers as unknown as IProvidersController,
     selectedAccount: selectedAccount as unknown as ISelectedAccountController,
@@ -453,7 +469,15 @@ const prepareTest = async ({
   })
   await controller.initialLoadPromise
 
-  return { controller, keystore, selectedAccount, providers, storage, onAccountsRemoved }
+  return {
+    controller,
+    keystore,
+    featureFlags,
+    selectedAccount,
+    providers,
+    storage,
+    onAccountsRemoved
+  }
 }
 
 describe('PrivacyPoolsController', () => {
@@ -532,6 +556,7 @@ describe('PrivacyPoolsController', () => {
       ])
       const controller = new PrivacyPoolsController({
         keystore: new FakeKeystore() as unknown as IKeystoreController,
+        featureFlags: new FakeFeatureFlags() as unknown as IFeatureFlagsController,
         networks: new FakeNetworks() as unknown as INetworksController,
         providers: new FakeProviders() as unknown as IProvidersController,
         selectedAccount: new FakeSelectedAccount() as unknown as ISelectedAccountController,
@@ -555,6 +580,7 @@ describe('PrivacyPoolsController', () => {
       const onAccountsRemoved = jest.fn(async () => {})
       const controller = new PrivacyPoolsController({
         keystore: keystore as unknown as IKeystoreController,
+        featureFlags: new FakeFeatureFlags() as unknown as IFeatureFlagsController,
         networks: new FakeNetworks() as unknown as INetworksController,
         providers: new FakeProviders() as unknown as IProvidersController,
         selectedAccount: new FakeSelectedAccount() as unknown as ISelectedAccountController,
@@ -1235,6 +1261,24 @@ describe('PrivacyPoolsController', () => {
       expect(runningSyncs).toHaveLength(0)
     })
 
+    it('refuses to prove a transfer while the user has opted out of ERC-4337', async () => {
+      const { controller, featureFlags, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+      featureFlags.set('erc4337', false)
+
+      await expect(
+        controller.prepareWithdrawal({
+          chainId: '1',
+          tokenAddress: ZERO_ADDRESS,
+          amount: 10n ** 17n,
+          recipient: WITHDRAWAL_RECIPIENT
+        })
+      ).rejects.toThrow(EmittableError)
+
+      expect(controller.operation).toBeNull()
+      expect(protocols).toHaveLength(0)
+    })
+
     it('leaves the sync before proving to the SDK when none is queued', async () => {
       const { controller, selectedAccount } = await prepareTest()
       selectedAccount.select('seed-a')
@@ -1540,6 +1584,27 @@ describe('PrivacyPoolsController', () => {
       await second
 
       expect(fakeFetch.mock.calls.length).toBe(requestsAfterFirst)
+    })
+
+    it('asks for no prices while the user has opted out of them, and drops those it had', async () => {
+      const { controller, featureFlags, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+
+      const first = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await first
+      await waitUntil(() => Object.keys(controller.prices).length > 0)
+
+      featureFlags.set('tokenPrices', false)
+      expect(controller.prices).toEqual({})
+
+      fakeFetch.mockClear()
+      const second = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await second
+
+      expect(fakeFetch).not.toHaveBeenCalled()
+      expect(controller.prices).toEqual({})
     })
   })
 })

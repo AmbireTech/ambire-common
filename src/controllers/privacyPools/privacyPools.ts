@@ -23,6 +23,7 @@ import {
   toPrivacyPoolsAssetAddress
 } from '../../consts/privacyPools'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -174,6 +175,8 @@ const toReadableWithdrawalError = (error: unknown) => {
  */
 export class PrivacyPoolsController extends EventEmitter implements IPrivacyPoolsController {
   #keystore: IKeystoreController
+
+  #featureFlags: IFeatureFlagsController
 
   #networks: INetworksController
 
@@ -355,6 +358,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   constructor({
     keystore,
+    featureFlags,
     networks,
     providers,
     selectedAccount,
@@ -367,6 +371,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     eventEmitterRegistry
   }: {
     keystore: IKeystoreController
+    featureFlags: IFeatureFlagsController
     networks: INetworksController
     providers: IProvidersController
     selectedAccount: ISelectedAccountController
@@ -394,6 +399,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }) {
     super(eventEmitterRegistry)
     this.#keystore = keystore
+    this.#featureFlags = featureFlags
     this.#networks = networks
     this.#providers = providers
     this.#selectedAccount = selectedAccount
@@ -482,7 +488,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       }, 'privacyPools'),
 
       // Subscribed to purely so `supportedChainIds` and everything derived from it reaches the UI.
-      this.#networks.onUpdate((forceEmit) => this.propagateUpdate(forceEmit), 'privacyPools')
+      this.#networks.onUpdate((forceEmit) => this.propagateUpdate(forceEmit), 'privacyPools'),
+
+      this.#featureFlags.onUpdate((forceEmit) => {
+        if (!this.#featureFlags.isFeatureEnabled('tokenPrices')) this.#dropPrices()
+
+        this.propagateUpdate(forceEmit)
+      }, 'privacyPools')
     )
   }
 
@@ -915,18 +927,26 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return this.#queueSync(chainId, seedId)
   }
 
-  /** Asks for prices again once they are older than `PRICES_MAX_AGE_MS`, one request at a time. */
+  /**
+   * Asks for prices again once they are older than `PRICES_MAX_AGE_MS`, one request at a time.
+   * Never while the user has opted out of token prices.
+   */
   async #refreshPrices() {
+    if (!this.#featureFlags.isFeatureEnabled('tokenPrices')) return
     if (this.#pricesRequest || Date.now() - this.#pricesFetchedAt < PRICES_MAX_AGE_MS) return
 
     this.#pricesRequest = (async () => {
       try {
-        this.prices = await fetchPrivacyPoolsPrices({
+        const prices = await fetchPrivacyPoolsPrices({
           fetch: this.#fetch,
           networks: this.#networks.networks.filter(({ chainId }) =>
             this.supportedChainIds.includes(chainId.toString())
           )
         })
+        // Opted out while the request was in flight
+        if (!this.#featureFlags.isFeatureEnabled('tokenPrices')) return
+
+        this.prices = prices
         this.#pricesFetchedAt = Date.now()
         this.emitUpdate()
       } catch (error: any) {
@@ -942,6 +962,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     })()
 
     await this.#pricesRequest
+  }
+
+  #dropPrices() {
+    this.prices = {}
+    this.#pricesFetchedAt = 0
   }
 
   /** Queues a sync for any account, not only the selected one - see `syncChain`. */
@@ -1592,6 +1617,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         error: new Error(`privacyPools: no paymaster configured for chain ${chainId}`)
       })
 
+    this.#assertBundlerIsAllowed()
+
     // Checked here and not only in the form: the proof commits to the recipient, and one made out
     // to a malformed or zero address would burn the funds it releases
     if (!isAddress(recipient) || BigInt(recipient) === 0n)
@@ -1806,6 +1833,18 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
   }
 
+  /** A transfer out goes through an ERC-4337 bundler, which the user can opt out of. */
+  #assertBundlerIsAllowed() {
+    if (this.#featureFlags.isFeatureEnabled('erc4337')) return
+
+    throw new EmittableError({
+      message:
+        'Sending from a Privacy Pools account needs "ERC-4337 smart account features", which you turned off. Turn it on in Settings > Privacy opt-outs to send.',
+      level: 'expected',
+      error: new Error('privacyPools: the user opted out of ERC-4337')
+    })
+  }
+
   /**
    * Refuses, before any proving, a token whose pool the paymaster has no adapter for.
    *
@@ -1852,6 +1891,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       })
 
     this.#assertAvailableAndGetSeedId()
+    this.#assertBundlerIsAllowed()
     const { seedId } = operation
 
     const entry: PrivacyPoolsActivityEntry = {

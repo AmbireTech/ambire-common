@@ -446,6 +446,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.privacyPools = new PrivacyPoolsController({
       eventEmitterRegistry,
       keystore: this.keystore,
+      featureFlags: this.featureFlags,
       networks: this.networks,
       providers: this.providers,
       selectedAccount: this.selectedAccount,
