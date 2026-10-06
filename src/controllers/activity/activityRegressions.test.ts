@@ -95,7 +95,7 @@ function makeController(
     Object.assign(selectedAccount, { initialLoadPromise: Promise.resolve() }) as any, // same ref, so a test can switch account
     providers,
     { networks: [{ chainId: 1n }] } as any,
-    { addTokensToBeLearned: () => {} } as any,
+    { addTokensToBeLearned: () => {}, addErc721sToBeLearned: () => {} } as any,
     {} as any,
     { isFeatureEnabled: () => undefined } as any, // featureFlags
     async () => {},
