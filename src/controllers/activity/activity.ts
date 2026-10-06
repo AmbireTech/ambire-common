@@ -213,10 +213,17 @@ const getNftBalanceChangesFromReceipts = async (
   return changes.map((change) => ({ ...change, chainId: accountOp.chainId }))
 }
 
+/**
+ * Groups the NFTs that entered the account by collection address, in the format expected by
+ * `addErc721sToBeLearned`. NFTs that left the account are skipped as learned NFTs are never
+ * removed from the hints and would otherwise be queried on every portfolio update.
+ */
 const getNftsToLearn = (nftBalanceChanges: NftBalanceChange[]): [string, bigint[]][] => {
   const tokenIdsByAddress = new Map<string, bigint[]>()
 
-  nftBalanceChanges.forEach(({ address, tokenId }) => {
+  nftBalanceChanges.forEach(({ address, tokenId, balanceChange }) => {
+    if (balanceChange <= 0n) return
+
     const tokenIds = tokenIdsByAddress.get(address) || []
     if (!tokenIds.includes(tokenId)) tokenIds.push(tokenId)
     tokenIdsByAddress.set(address, tokenIds)
@@ -243,6 +250,9 @@ const getAccountOpReceipts = async (
 
   return receipts.filter((receipt): receipt is TransactionReceipt => !!receipt)
 }
+
+const getBalanceChangesTaskId = (accountOp: AccountOpBalanceChangesBackfillReference) =>
+  `${accountOp.accountAddr}:${accountOp.chainId.toString()}:${accountOp.identifiedBy.identifier}`
 
 /**
  * Activity Controller
@@ -338,6 +348,16 @@ export class ActivityController extends EventEmitter implements IActivityControl
   #backfillAccountOpBalanceChangesPromises: {
     [key: string]: Promise<void> | undefined
   } = {}
+
+  #backfillAccountOpNftBalanceChangesPromises: {
+    [key: string]: Promise<boolean> | undefined
+  } = {}
+
+  /**
+   * Task ids of NFT balance changes backfills that failed during this session.
+   * They are skipped until the next session so a failing RPC isn't hit on every sync.
+   */
+  #failedNftBalanceChangesBackfills = new Set<string>()
 
   #addExternalAccountOpQueue: Promise<void> = Promise.resolve()
 
@@ -559,6 +579,20 @@ export class ActivityController extends EventEmitter implements IActivityControl
     )
     if (opsWithNoBalanceChanges.length)
       this.backfillAccountOpBalanceChangesAndPersist(opsWithNoBalanceChanges).catch(() => null)
+
+    // ops recorded before NFT balance changes were introduced already have
+    // balanceChanges, so the backfill above skips them. Backfill only their NFTs
+    const opsWithNoNftBalanceChanges = result.items.filter(
+      (op): op is SubmittedAccountOp =>
+        internalAccountOps.has(op as SubmittedAccountOp) &&
+        op.balanceChanges !== undefined &&
+        op.nftBalanceChanges === undefined &&
+        !this.#failedNftBalanceChangesBackfills.has(getBalanceChangesTaskId(op))
+    )
+    if (opsWithNoNftBalanceChanges.length)
+      this.#backfillAccountOpNftBalanceChangesAndPersist(opsWithNoNftBalanceChanges).catch(
+        () => null
+      )
   }
 
   setDashboardBannersSeen(
@@ -921,8 +955,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
         getNftBalanceChangesFromReceipts(submittedAccountOpLike, [receipt])
       ])
       submittedAccountOpLike.nftBalanceChanges = nftBalanceChanges
-      this.#portfolio.addErc721sToBeLearned(getNftsToLearn(nftBalanceChanges), accountAddr, chainId)
       if (shouldLearnTokens) {
+        this.#portfolio.addErc721sToBeLearned(
+          getNftsToLearn(nftBalanceChanges),
+          accountAddr,
+          chainId
+        )
         const tokensWithAPrice = await new ScamFilter({
           fetch: this.#fetch,
           network,
@@ -1022,9 +1060,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     if (!currentAccountOp || typeof currentAccountOp.balanceChanges !== 'undefined') return
 
-    const taskId = `${accountOp.accountAddr}:${accountOp.chainId.toString()}:${
-      accountOp.identifiedBy.identifier
-    }`
+    const taskId = getBalanceChangesTaskId(accountOp)
 
     if (this.#backfillAccountOpBalanceChangesPromises[taskId]) {
       return this.#backfillAccountOpBalanceChangesPromises[taskId]
@@ -1037,6 +1073,85 @@ export class ActivityController extends EventEmitter implements IActivityControl
     })
 
     return this.#backfillAccountOpBalanceChangesPromises[taskId]
+  }
+
+  async #backfillAccountOpNftBalanceChangesAndPersist(accountOps: SubmittedAccountOp[]) {
+    const results = await Promise.all(
+      accountOps.map((accOp) => this.#backfillAccountOpNftBalanceChanges(accOp))
+    )
+
+    // persist only on changes as persisting re-runs the filters, which call this method again
+    if (results.some(Boolean)) await this.persistAccountsOps()
+  }
+
+  /**
+   * Calculates only the NFT balance changes of an account op that already has
+   * its token balance changes. Returns whether the account op was updated
+   */
+  async #backfillAccountOpNftBalanceChanges(accountOp: SubmittedAccountOp): Promise<boolean> {
+    const taskId = getBalanceChangesTaskId(accountOp)
+
+    if (this.#backfillAccountOpNftBalanceChangesPromises[taskId]) {
+      return this.#backfillAccountOpNftBalanceChangesPromises[taskId]
+    }
+
+    this.#backfillAccountOpNftBalanceChangesPromises[taskId] =
+      this.#runNftBalanceChangesBackfillTask(accountOp, taskId).finally(() => {
+        this.#backfillAccountOpNftBalanceChangesPromises[taskId] = undefined
+      })
+
+    return this.#backfillAccountOpNftBalanceChangesPromises[taskId]
+  }
+
+  async #runNftBalanceChangesBackfillTask(
+    accountOp: SubmittedAccountOp,
+    taskId: string
+  ): Promise<boolean> {
+    await this.#initialLoadPromise
+
+    // take the latest #accountOp, not a stale one from the UI
+    const currentAccountOp = this.findByIdentifiedBy(
+      accountOp.identifiedBy,
+      accountOp.accountAddr,
+      accountOp.chainId
+    )
+    if (!currentAccountOp || currentAccountOp.nftBalanceChanges !== undefined) return false
+
+    const hasReceipt =
+      currentAccountOp.status === AccountOpStatus.Success ||
+      currentAccountOp.status === AccountOpStatus.Failure
+    if (!hasReceipt || !currentAccountOp.txnId) {
+      currentAccountOp.nftBalanceChanges = []
+      return true
+    }
+
+    const provider = this.#providers.providers[currentAccountOp.chainId.toString()]
+    // temp error, do not set nft balance changes to allow the system to retry
+    if (!provider) return false
+
+    try {
+      const receipts = await getAccountOpReceipts(currentAccountOp, provider)
+      // NFTs from past ops are only displayed and not learned, as the account
+      // may no longer own them and learned NFTs are queried on every portfolio update
+      currentAccountOp.nftBalanceChanges = await getNftBalanceChangesFromReceipts(
+        currentAccountOp,
+        receipts
+      )
+
+      return true
+    } catch (error) {
+      this.#failedNftBalanceChangesBackfills.add(taskId)
+      this.emitError({
+        level: 'silent',
+        message: `Failed to backfill NFT balance changes on network with id ${currentAccountOp.chainId} for ${currentAccountOp.txnId}.`,
+        error:
+          error instanceof Error
+            ? error
+            : new Error(`activity: failed to backfill NFT balance changes for ${taskId}`)
+      })
+
+      return false
+    }
   }
 
   async #prepareAndRunBalanceChangesTask(accountOp: SubmittedAccountOp) {

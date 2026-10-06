@@ -106,10 +106,11 @@ const createController = (
   )
 
 describe('ActivityController external account ops', () => {
-  it('learns transferred NFTs even when fungible token learning is disabled', async () => {
+  describe('NFT learning', () => {
     const txnId = `0x${'e'.repeat(64)}`
     const positionManager = '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e'
-    const tokenId = 12345n
+    const receivedTokenId = 12345n
+    const sentTokenId = 6789n
     const transferInterface = new Interface([
       'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)'
     ])
@@ -121,40 +122,79 @@ describe('ActivityController external account ops', () => {
       logs: [
         {
           address: positionManager,
-          ...transferInterface.encodeEventLog(transferEvent, [ZeroAddress, accountAddr, tokenId])
+          ...transferInterface.encodeEventLog(transferEvent, [
+            ZeroAddress,
+            accountAddr,
+            receivedTokenId
+          ])
+        },
+        {
+          address: positionManager,
+          ...transferInterface.encodeEventLog(transferEvent, [
+            accountAddr,
+            '0x0000000000000000000000000000000000000002',
+            sentTokenId
+          ])
         }
       ]
     }
-    const provider = {
-      getTransaction: jest.fn(async () => null),
-      getBlock: jest.fn(async () => ({ timestamp: 1700000000 }))
-    }
-    const { data, storage } = createStorage({}, { delayFirstExternalAccountOpsSet: false })
-    const portfolio = createPortfolio()
-    const controller = createController(storage, provider, undefined, portfolio)
-
-    await controller.addExternalAccountOp({
-      accountAddr,
-      chainId,
-      txnId,
-      receipt,
-      shouldLearnTokens: false
-    })
-
-    expect(portfolio.addTokensToBeLearned).not.toHaveBeenCalled()
-    expect(portfolio.addErc721sToBeLearned).toHaveBeenCalledWith(
-      [[getAddress(positionManager), [tokenId]]],
-      accountAddr,
-      chainId
-    )
-    expect(data.externalAccountOps[accountAddr][chainId.toString()][0].nftBalanceChanges).toEqual([
+    const expectedNftBalanceChanges = [
       {
         address: getAddress(positionManager),
-        tokenId,
+        tokenId: receivedTokenId,
         chainId,
         balanceChange: 1n
+      },
+      {
+        address: getAddress(positionManager),
+        tokenId: sentTokenId,
+        chainId,
+        balanceChange: -1n
       }
-    ])
+    ]
+
+    const addExternalAccountOp = async (shouldLearnTokens: boolean) => {
+      const provider = {
+        getTransaction: jest.fn(async () => null),
+        getBlock: jest.fn(async () => ({ timestamp: 1700000000 }))
+      }
+      const { data, storage } = createStorage({}, { delayFirstExternalAccountOpsSet: false })
+      const portfolio = createPortfolio()
+      const controller = createController(storage, provider, undefined, portfolio)
+
+      await controller.addExternalAccountOp({
+        accountAddr,
+        chainId,
+        txnId,
+        receipt,
+        shouldLearnTokens
+      })
+
+      return { data, portfolio }
+    }
+
+    it('learns only the received NFTs when token learning is enabled', async () => {
+      const { data, portfolio } = await addExternalAccountOp(true)
+
+      expect(portfolio.addErc721sToBeLearned).toHaveBeenCalledWith(
+        [[getAddress(positionManager), [receivedTokenId]]],
+        accountAddr,
+        chainId
+      )
+      expect(data.externalAccountOps[accountAddr][chainId.toString()][0].nftBalanceChanges).toEqual(
+        expectedNftBalanceChanges
+      )
+    })
+
+    it('does not learn NFTs when token learning is disabled', async () => {
+      const { data, portfolio } = await addExternalAccountOp(false)
+
+      expect(portfolio.addTokensToBeLearned).not.toHaveBeenCalled()
+      expect(portfolio.addErc721sToBeLearned).not.toHaveBeenCalled()
+      expect(data.externalAccountOps[accountAddr][chainId.toString()][0].nftBalanceChanges).toEqual(
+        expectedNftBalanceChanges
+      )
+    })
   })
 
   it('does not add an external account op when the txnId already exists on an internal account op', async () => {
