@@ -54,3 +54,25 @@ export const allowedFallbackHandlers = [
   '0xf48f2B2d2a534e402487b3ee7C18c33Aec0Fe5e4', // CompatibilityFallbackHandler v1.3.0
   '0xfd0732Dc9E303f09fCEf3a7388Ad10A83459Ec99' // CompatibilityFallbackHandler v1.4.1
 ]
+
+/**
+ * Canonical Safe v1.4.1 contracts used to create new Safe accounts. They share the same
+ * address on all SAFE_NETWORKS, so a new Safe gets the same counterfactual address everywhere.
+ * https://github.com/safe-global/safe-deployments/tree/main/src/assets/v1.4.1
+ */
+export const SAFE_V1_4_1 = {
+  /**
+   * SafeL2 emits events for every executed txn, which the Safe Transaction Service
+   * needs to index the Safe on L2s. It's used on all networks, incl. Ethereum, so the
+   * singleton is the same everywhere and so is the counterfactual address
+   */
+  singletonL2: '0x29fcB43b46531BcA003ddC8FCB67FFE91900C762',
+  proxyFactory: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
+  compatibilityFallbackHandler: '0xfd0732Dc9E303f09fCEf3a7388Ad10A83459Ec99',
+  /**
+   * The result of proxyCreationCode() on the v1.4.1 SafeProxyFactory - the SafeProxy
+   * creation bytecode. Hardcoded so the counterfactual address is derived without an RPC call
+   */
+  proxyCreationCode:
+    '0x608060405234801561001057600080fd5b506040516101e63803806101e68339818101604052602081101561003357600080fd5b8101908080519060200190929190505050600073ffffffffffffffffffffffffffffffffffffffff168173ffffffffffffffffffffffffffffffffffffffff1614156100ca576040517f08c379a00000000000000000000000000000000000000000000000000000000081526004018080602001828103825260228152602001806101c46022913960400191505060405180910390fd5b806000806101000a81548173ffffffffffffffffffffffffffffffffffffffff021916908373ffffffffffffffffffffffffffffffffffffffff1602179055505060ab806101196000396000f3fe608060405273ffffffffffffffffffffffffffffffffffffffff600054167fa619486e0000000000000000000000000000000000000000000000000000000060003514156050578060005260206000f35b3660008037600080366000845af43d6000803e60008114156070573d6000fd5b3d6000f3fea264697066735822122003d1488ee65e08fa41e58e888a9865554c535f2c77126a82cb4c0f917f31441364736f6c63430007060033496e76616c69642073696e676c65746f6e20616464726573732070726f7669646564'
+} as const

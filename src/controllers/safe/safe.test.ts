@@ -336,3 +336,55 @@ describe('SafeController findSafesByOwner', () => {
     expect(getOwnerSearch(controller)?.status).toBe('DONE')
   })
 })
+
+describe('SafeController createSafeAccount', () => {
+  const createControllerWithAddAccounts = () => {
+    const addAccounts = jest.fn(async () => undefined)
+    const controller = new SafeController({
+      accounts: {
+        accounts: [],
+        accountStates: {},
+        initialLoadPromise: Promise.resolve(),
+        addAccounts
+      } as any,
+      networks: { initialLoadPromise: Promise.resolve(), networks: [] } as any,
+      providers: { providers: {} } as any,
+      storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any
+    })
+
+    return { controller, addAccounts }
+  }
+
+  it('adds the new Safe account with its counterfactual address', async () => {
+    const { controller, addAccounts } = createControllerWithAddAccounts()
+    // verified against the v1.4.1 SafeProxyFactory, see libs/safe/safe.test.ts
+    const owners = [OWNER, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'] as Hex[]
+
+    await controller.createSafeAccount(owners, 2)
+
+    expect(addAccounts).toHaveBeenCalledWith([
+      expect.objectContaining({
+        addr: '0x913F170e793293e71749ee6CA674DF0469Ee3735',
+        associatedKeys: owners,
+        creation: null,
+        safeCreation: expect.objectContaining({
+          factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
+          singleton: '0x29fcB43b46531BcA003ddC8FCB67FFE91900C762'
+        })
+      })
+    ])
+    expect(controller.statuses.createSafeAccount).toBe('SUCCESS')
+  })
+
+  it('does not add an account for an invalid setup', async () => {
+    const { controller, addAccounts } = createControllerWithAddAccounts()
+    const onError = jest.fn()
+    controller.onError(onError)
+
+    await controller.createSafeAccount([OWNER as Hex], 2)
+
+    expect(addAccounts).not.toHaveBeenCalled()
+    expect(controller.statuses.createSafeAccount).toBe('ERROR')
+    expect(onError).toHaveBeenCalled()
+  })
+})

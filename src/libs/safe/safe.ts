@@ -12,6 +12,7 @@ import {
   toBeHex,
   toUtf8Bytes,
   TransactionResponse,
+  ZeroAddress,
   zeroPadValue
 } from 'ethers'
 
@@ -19,7 +20,7 @@ import { SignTypedDataVersion, TypedDataUtils } from '@metamask/eth-sig-util'
 import SafeApiKit from '@safe-global/api-kit'
 
 import SafeAbi from '../../../contracts/compiled/Safe.json'
-import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
+import { SAFE_API_TIMEOUT_MS, SAFE_V1_4_1 } from '../../consts/safe'
 import { Account, SafeAccountCreation } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { Key } from '../../interfaces/keystore'
@@ -157,13 +158,25 @@ export async function getCalculatedSafeAddress(
   )
 }
 
+/**
+ * Derives the CREATE2 address a SafeProxyFactory deploys a Safe proxy to,
+ * the same way its createProxyWithNonce does.
+ */
+export function getSafeProxyAddress(creation: SafeAccountCreation, proxyCreationCode: Hex): Hex {
+  const salt = keccak256(
+    concat([keccak256(creation.setupData), zeroPadValue(creation.saltNonce, 32)])
+  )
+  const bytecode = concat([
+    proxyCreationCode,
+    new AbiCoder().encode(['address'], [creation.singleton])
+  ]) as Hex
+  return getCreate2Address(creation.factoryAddr, salt, keccak256(bytecode)) as Hex
+}
+
 async function getCalculatedSafeAddressFromCreation(
   creation: SafeAccountCreation,
   provider: RPCProvider
 ): Promise<Hex | null> {
-  const salt = keccak256(
-    concat([keccak256(creation.setupData), zeroPadValue(creation.saltNonce, 32)])
-  )
   const factoryAbi = ['function proxyCreationCode() view returns (bytes)']
   const factory = new Contract(creation.factoryAddr, factoryAbi, provider)
   let proxyCreationCode
@@ -176,12 +189,68 @@ async function getCalculatedSafeAddressFromCreation(
     )
     return null
   }
-  const abiCoder = new AbiCoder()
-  const bytecode = concat([
-    proxyCreationCode,
-    abiCoder.encode(['address'], [creation.singleton])
-  ]) as Hex
-  return getCreate2Address(creation.factoryAddr, salt, keccak256(bytecode)) as Hex
+  return getSafeProxyAddress(creation, proxyCreationCode)
+}
+
+const safeSetupInterface = new Interface([
+  'function setup(address[] calldata _owners,uint256 _threshold,address to,bytes calldata data,address fallbackHandler,address paymentToken,uint256 payment,address payable paymentReceiver)'
+])
+
+/**
+ * Builds the creation data of a new Safe v1.4.1 account with the given owners and threshold.
+ * The salt nonce is always zero, so the same owners (in the same order) and threshold
+ * always result in the same Safe address.
+ */
+export function getNewSafeCreation(owners: Hex[], threshold: number): SafeAccountCreation {
+  if (!owners.length) throw new Error('A Safe account needs at least one owner.')
+  if (new Set(owners.map((owner) => owner.toLowerCase())).size !== owners.length) {
+    throw new Error('Each Safe account owner can be added only once.')
+  }
+  if (!Number.isInteger(threshold) || threshold < 1 || threshold > owners.length) {
+    throw new Error(
+      'The number of required confirmations must be between one and the number of owners.'
+    )
+  }
+
+  return {
+    factoryAddr: SAFE_V1_4_1.proxyFactory,
+    singleton: SAFE_V1_4_1.singletonL2,
+    setupData: safeSetupInterface.encodeFunctionData('setup', [
+      owners.map((owner) => getAddress(owner)),
+      threshold,
+      // no delegate call during setup
+      ZeroAddress,
+      '0x',
+      SAFE_V1_4_1.compatibilityFallbackHandler,
+      // no deployment payment
+      ZeroAddress,
+      0,
+      ZeroAddress
+    ]) as Hex,
+    saltNonce: toBeHex(0, 32) as Hex
+  }
+}
+
+/**
+ * Builds a new, not yet deployed Safe v1.4.1 account with the given owners and threshold.
+ * Its address is the counterfactual address the Safe will be deployed to.
+ */
+export function getNewSafeAccount(owners: Hex[], threshold: number): Account {
+  const safeCreation = getNewSafeCreation(owners, threshold)
+  const addr = getAddress(getSafeProxyAddress(safeCreation, SAFE_V1_4_1.proxyCreationCode))
+  const associatedKeys = owners.map((owner) => getAddress(owner))
+
+  return {
+    addr,
+    associatedKeys,
+    initialPrivileges: associatedKeys.map((owner) => [owner, '0x01']),
+    creation: null,
+    safeCreation,
+    preferences: {
+      label: 'Safe',
+      pfp: addr
+    }
+  }
 }
 
 const safeProxyFactoryInterface = new Interface([

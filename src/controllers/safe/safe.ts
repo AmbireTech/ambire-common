@@ -21,6 +21,7 @@ import {
   findDeployData,
   getApiKit,
   getMessage,
+  getNewSafeAccount,
   getSafeAccountByOwner,
   SafeResults
 } from '../../libs/safe/safe'
@@ -34,7 +35,8 @@ const SAFE_OWNER_SEARCH_TTL = 5 * 60 * 1000
 const SAFE_OWNER_SEARCH_DEBOUNCE = 3 * 1000
 
 export const STATUS_WRAPPED_METHODS = {
-  findSafe: 'INITIAL'
+  findSafe: 'INITIAL',
+  createSafeAccount: 'INITIAL'
 } as const
 
 type SafeOwnerSearch = {
@@ -177,6 +179,23 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   async findSafe(safeAddr: string) {
     await this.withStatus('findSafe', () => this.#findSafe(safeAddr), true)
+  }
+
+  /**
+   * Creates a new Safe v1.4.1 account with the given owners and threshold and adds it to
+   * the wallet. It's not deployed - it's added with its counterfactual address and gets
+   * deployed with its first transaction. If a Safe with the same setup already exists,
+   * it has the same address, so the existing Safe gets added instead
+   */
+  async createSafeAccount(owners: Hex[], threshold: number) {
+    await this.withStatus(
+      'createSafeAccount',
+      async () => {
+        const account = getNewSafeAccount(owners, threshold)
+        await this.#accounts.addAccounts([account])
+      },
+      true
+    )
   }
 
   async resetFind() {
