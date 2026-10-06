@@ -28,7 +28,8 @@ const ALL_MIGRATION_KEYS = [
   'fixSelectedAccountDismissedBannerIdsType',
   'migrateDappsAddConnectionSources',
   'migrateDomainsCacheToNames',
-  'migrateDappsAddMissingIds'
+  'migrateDappsAddMissingIds',
+  'indexSentToHistoryFromAccountsOps'
 ]
 
 // Wraps a memory store and counts how many times each key is read and how many

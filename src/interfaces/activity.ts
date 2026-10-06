@@ -1,5 +1,76 @@
+import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { ControllerInterface } from './controller'
 
 export type IActivityController = ControllerInterface<
   InstanceType<typeof import('../controllers/activity/activity').ActivityController>
 >
+
+export interface InternalAccountsOps {
+  // account => network => SubmittedAccountOp[]
+  [key: string]: { [key: string]: SubmittedAccountOp[] }
+}
+
+/** One per storage service. ActivityController always holds one, whichever is available. */
+export interface IActivityOpsBackend {
+  /**
+   * Whether loadStartupOps() returns a window rather than everything. Callers branch on this,
+   * never on the concrete class.
+   */
+  readonly loadsPartially: boolean
+
+  /**
+   * One-time migration of the legacy blob into IDB. No-op on the key-value backend.
+   *
+   * isEmpty()/migrateFromStorage() stay off this interface — declaring them would force dead
+   * stubs onto the key-value class.
+   */
+  ensureMigrated(
+    getStoredOps: () => Promise<InternalAccountsOps>,
+    removeStoredOps: () => Promise<void>
+  ): Promise<void>
+
+  /**
+   * Pending ops for every account, plus a finalized window per chain — the full one for
+   * `fullWindowFor`, a shorter one for every other account, which several synchronous readers
+   * still depend on. Key-value reads everything.
+   */
+  loadStartupOps(fullWindowFor?: string): Promise<InternalAccountsOps>
+
+  /** Write one new op, and delete the op the in-memory trim evicted (if any). */
+  /** @returns the net change in stored rows, so callers can keep a count without re-reading. */
+  putSingleOp(
+    accountAddr: string,
+    chainId: bigint | string,
+    op: SubmittedAccountOp,
+    trimmedId?: string
+  ): Promise<number>
+
+  updateOps(ops: SubmittedAccountOp[]): Promise<void>
+
+  deleteAccount(accountAddr: string): Promise<void>
+
+  /**
+   * Exact stored count, for the whole account or one of its chains. Needed because the IDB
+   * startup read is a window, so in-memory lengths are not a total.
+   */
+  countOpsForAccount(accountAddr: string, chainId?: bigint | string): Promise<number>
+
+  /**
+   * Folds back ops written while the controller was on its key-value fallback, inserting only
+   * what the backend does not already hold. Never overwrites a stored op, except to carry over
+   * a finalized status onto one the backend still has pending.
+   */
+  mergeGroups(ops: InternalAccountsOps): Promise<void>
+
+  /** Whether the account already stores an op carrying this txnId, including per-call ones. */
+  hasOpWithTxnId(accountAddr: string, txnId: string): Promise<boolean>
+
+  /**
+   * The newest `limit` ops of one chain, newest first — one page without the whole history.
+   */
+  getRecentOps(
+    accountAddr: string,
+    limit: number,
+    chainId: bigint | string
+  ): Promise<SubmittedAccountOp[]>
+}
