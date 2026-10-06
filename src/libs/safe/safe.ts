@@ -19,6 +19,7 @@ import SafeApiKit from '@safe-global/api-kit'
 import SafeAbi from '../../../contracts/compiled/Safe.json'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
 import { Hex } from '../../interfaces/hex'
+import { Key } from '../../interfaces/keystore'
 import { RPCProvider } from '../../interfaces/provider'
 import { SafeAccountByOwner, SafeTx } from '../../interfaces/safe'
 import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/userRequest'
@@ -56,17 +57,10 @@ export interface SafeResults {
   }
 }
 
-function getTxServiceUrl(chainId: bigint) {
-  if (chainId === 8217n) return 'https://api.safe.global/tx-service/kaia/api'
-  if (chainId === 4663n) return 'https://api.safe.global/tx-service/robinhood/api'
-  return undefined
-}
-
 export function getApiKit(chainId: bigint) {
   return new SafeApiKit({
     chainId,
-    apiKey: process.env.SAFE_API_KEY,
-    txServiceUrl: getTxServiceUrl(chainId)
+    apiKey: process.env.SAFE_API_KEY
   })
 }
 
@@ -563,6 +557,17 @@ export function getImportedSignersThatHaveNotSigned(
   importedOwners: string[]
 ): string[] {
   return importedOwners.filter((o) => !signed.includes(o))
+}
+
+/**
+ * Whether the imported owners of a Safe can reach its threshold with hot (keystore held) keys
+ * alone. Hardware wallets and cards confirm on the device, so they do not count towards it.
+ */
+export function canHotOwnersMeetSafeThreshold(
+  importedOwners: Pick<Key, 'type'>[],
+  threshold: number
+): boolean {
+  return importedOwners.filter(({ type }) => type === 'internal').length >= threshold
 }
 
 export function getSigs(signature?: string | null): Hex[] {

@@ -336,6 +336,7 @@ const buildSwapAndBridgeController = (controllerStorage: StorageController = sto
     storage: controllerStorage,
     signAccountOpPreference,
     featureFlags: featureFlagsCtrl,
+    platform: 'browser-webkit',
     swapProvider: socketAPIMock as any,
     erc7730: erc7730Ctrl,
     keystore,
@@ -383,7 +384,8 @@ const transferCtrl = new TransferController(
   relayerUrl,
   () => Promise.resolve(),
   uiCtrl,
-  erc7730Ctrl
+  erc7730Ctrl,
+  'browser-webkit'
 )
 
 requestsCtrl = new RequestsController({
@@ -400,6 +402,7 @@ requestsCtrl = new RequestsController({
   providers: providersCtrl,
   storage: storageCtrl,
   featureFlags: featureFlagsCtrl,
+  platform: 'browser-webkit',
   signAccountOpPreference,
   selectedAccount: selectedAccountCtrl,
   keystore,
@@ -1497,6 +1500,7 @@ describe('SwapAndBridge Controller: to token market data', () => {
       storage: storageCtrl,
       signAccountOpPreference,
       featureFlags: featureFlagsCtrl,
+      platform: 'browser-webkit',
       swapProvider: socketAPIMock as any,
       erc7730: erc7730Ctrl,
       keystore,

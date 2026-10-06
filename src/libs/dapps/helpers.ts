@@ -8,6 +8,7 @@ import {
   RawTrendingToken,
   TrendingToken
 } from '../../interfaces/dapp'
+import { Platform } from '../../interfaces/platform'
 import { UnauthenticatedDapp } from '../../interfaces/signingAuth'
 
 /**
@@ -175,6 +176,11 @@ function unifyDefiLlamaDappUrl(url: string) {
   } catch {
     return url // If it's not a valid URL, return as-is
   }
+}
+
+/** Whether signing requests can ask for the password/biometrics confirmation - mobile only. */
+export function isSigningAuthPlatform(platform?: Platform): boolean {
+  return platform === 'mobile-android' || platform === 'mobile-ios'
 }
 
 /**
