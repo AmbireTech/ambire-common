@@ -595,12 +595,22 @@ const getEnumValue = (
   return typeof enumValue === 'string' ? enumValue : null
 }
 
+/** Shown for an encrypted field when its descriptor does not give a `fallbackLabel` */
+const DEFAULT_ENCRYPTED_VALUE_LABEL = '[Hidden value]'
+
 const formatFieldValue = (
   field: Erc7730Field,
   value: unknown,
   context: FormatContext,
   base: unknown
 ): HumanizerVisualization[] => {
+  // The value of an encrypted field is a ciphertext handle, not the real value. Formatting it
+  // (e.g. as a token amount) would show a meaningless huge number, so show the descriptor's
+  // fallback text instead.
+  if (field.encryption) {
+    return [getText(field.encryption.fallbackLabel || DEFAULT_ENCRYPTED_VALUE_LABEL)]
+  }
+
   if (field.format === 'addressName' || field.format === 'interoperableAddressName') {
     if (typeof value === 'bigint') return [getAddressVisualization(uintToAddress(value))]
 
@@ -1094,7 +1104,9 @@ const interpolateIntentParts = (
 
     const formattedValue = formatFieldValue(matchingField, value, context, base)
     if (!formattedValue.length) return null
+    // An encrypted amount is formatted as its fallback text, never as a token
     if (
+      !matchingField.encryption &&
       (matchingField.format === 'amount' || matchingField.format === 'tokenAmount') &&
       !formattedValue.some((item) => item.type === 'token')
     ) {
