@@ -158,9 +158,6 @@ export default class PortfolioViewBuilder {
     networkData: NetworkState | undefined,
     isManualUpdate: boolean
   ): void {
-    if (chainId === 'projectedRewards') {
-      return
-    }
     if (chainId !== 'gasTank' && chainId !== 'rewards' && chainId !== 'defiApps') {
       this.isNonInternalNetworkAdded = true
     }
@@ -234,7 +231,6 @@ export default class PortfolioViewBuilder {
       isReloading: this.isReloading,
       isReadyToVisualize,
       shouldShowPartialResult: this.isAllReady ? false : shouldShowPartialResult,
-      projectedRewardsStats: null,
       walletStaking: this.walletStaking,
       verification: this.verification,
       portfolioState: strippedPortfolioState,

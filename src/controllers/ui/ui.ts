@@ -99,12 +99,14 @@ export class UiController extends EventEmitter implements IUiController {
   }
 
   addView(view: View) {
-    const existingOverlay = this.views.find((v) => isExtensionOverlayView(v))
+    // The popup and the side panel can be open at the same time, so each keeps its own view
+    const existingOverlay = this.views.find(
+      (v) => isExtensionOverlayView(v) && v.type === view.type
+    )
 
-    // if an overlay view already exists, just update its id and stop here
+    // if an overlay view of the same type already exists, just update its id and stop here
     if (isExtensionOverlayView(view) && existingOverlay) {
       existingOverlay.id = view.id
-      existingOverlay.type = view.type
       delete existingOverlay.currentRoute
       delete existingOverlay.pendingRoute
       delete existingOverlay.searchParams

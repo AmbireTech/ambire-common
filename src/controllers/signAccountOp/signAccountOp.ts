@@ -59,6 +59,7 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
@@ -90,7 +91,7 @@ import {
   getAccountOpNonce,
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
-import { getUnauthenticatedDapps } from '../../libs/dapps/helpers'
+import { getUnauthenticatedDapps, isSigningAuthPlatform } from '../../libs/dapps/helpers'
 import {
   AccountOpIdentifiedBy,
   getAccountOpRecipients,
@@ -127,6 +128,7 @@ import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
 import { getSafeTxn } from '../../libs/safe/helpers'
 import {
+  canHotOwnersMeetSafeThreshold,
   confirm,
   getAlreadySignedOwners,
   getImportedSignersThatHaveNotSigned,
@@ -254,6 +256,8 @@ export class SignAccountOpController
   #portfolio: IPortfolioController
 
   #featureFlags: IFeatureFlagsController
+
+  #platform: Platform
 
   #signAccountOpPreference: SignAccountOpPreferenceController
 
@@ -472,6 +476,7 @@ export class SignAccountOpController
     keystore,
     portfolio,
     featureFlags,
+    platform,
     signAccountOpPreference,
     externalSignerControllers,
     account,
@@ -496,6 +501,7 @@ export class SignAccountOpController
     keystore: IKeystoreController
     portfolio: IPortfolioController
     featureFlags: IFeatureFlagsController
+    platform: Platform
     signAccountOpPreference: SignAccountOpPreferenceController
     externalSignerControllers: ExternalSignerControllers
     account: Account
@@ -519,6 +525,7 @@ export class SignAccountOpController
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#featureFlags = featureFlags
+    this.#platform = platform
     this.#signAccountOpPreference = signAccountOpPreference
     this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
     this.selectedFeeSpeed =
@@ -650,6 +657,9 @@ export class SignAccountOpController
    * account still counts; only the fee collector is left out, as the app picks it, not the user.
    */
   async #updateFirstTimeRecipients() {
+    // Only the signing authentication reads them, so elsewhere the activity lookups are skipped
+    if (!isSigningAuthPlatform(this.#platform)) return
+
     const accountOpId = this.#accountOp.id
     const recipients = getAccountOpRecipients(this.#accountOp)
       .map(({ address }) => address)
@@ -688,8 +698,17 @@ export class SignAccountOpController
   /**
    * Why this account op needs the password/biometrics confirmation, or `null` when it does not.
    * Read live for the dapps, whose stored flag can change while the request is on screen.
+   * Mobile only. A Safe needs it only when its hot owners can meet the threshold on their own.
    */
   get signingAuthRequirement(): SigningAuthRequirement | null {
+    if (!isSigningAuthPlatform(this.#platform)) return null
+
+    if (
+      this.account.safeCreation &&
+      !canHotOwnersMeetSafeThreshold(this.accountKeyStoreKeys, this.threshold)
+    )
+      return null
+
     const unauthenticatedDapps = getUnauthenticatedDapps(
       this.#accountOp.calls.map((call) =>
         call.dapp?.id ? this.#dapps.getDapp(call.dapp.id) : undefined
