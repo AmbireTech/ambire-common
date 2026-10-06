@@ -361,7 +361,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
   } = {}
 
   #backfillAccountOpNftBalanceChangesPromises: {
-    [key: string]: Promise<boolean> | undefined
+    [key: string]: Promise<SubmittedAccountOp | null> | undefined
   } = {}
 
   /**
@@ -1142,19 +1142,21 @@ export class ActivityController extends EventEmitter implements IActivityControl
   }
 
   async #backfillAccountOpNftBalanceChangesAndPersist(accountOps: SubmittedAccountOp[]) {
-    const results = await Promise.all(
-      accountOps.map((accOp) => this.#backfillAccountOpNftBalanceChanges(accOp))
-    )
+    const updatedAccountOps = (
+      await Promise.all(accountOps.map((accOp) => this.#backfillAccountOpNftBalanceChanges(accOp)))
+    ).filter((accOp): accOp is SubmittedAccountOp => !!accOp)
 
     // persist only on changes as persisting re-runs the filters, which call this method again
-    if (results.some(Boolean)) await this.persistAccountsOps()
+    if (updatedAccountOps.length) await this.persistAccountsOps(updatedAccountOps)
   }
 
   /**
    * Calculates only the NFT balance changes of an account op that already has
-   * its token balance changes. Returns whether the account op was updated
+   * its token balance changes. Returns the updated account op, or null if it wasn't updated
    */
-  async #backfillAccountOpNftBalanceChanges(accountOp: SubmittedAccountOp): Promise<boolean> {
+  async #backfillAccountOpNftBalanceChanges(
+    accountOp: SubmittedAccountOp
+  ): Promise<SubmittedAccountOp | null> {
     const taskId = getBalanceChangesTaskId(accountOp)
 
     if (this.#backfillAccountOpNftBalanceChangesPromises[taskId]) {
@@ -1172,7 +1174,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
   async #runNftBalanceChangesBackfillTask(
     accountOp: SubmittedAccountOp,
     taskId: string
-  ): Promise<boolean> {
+  ): Promise<SubmittedAccountOp | null> {
     await this.#initialLoadPromise
 
     // take the latest #accountOp, not a stale one from the UI
@@ -1181,19 +1183,19 @@ export class ActivityController extends EventEmitter implements IActivityControl
       accountOp.accountAddr,
       accountOp.chainId
     )
-    if (!currentAccountOp || currentAccountOp.nftBalanceChanges !== undefined) return false
+    if (!currentAccountOp || currentAccountOp.nftBalanceChanges !== undefined) return null
 
     const hasReceipt =
       currentAccountOp.status === AccountOpStatus.Success ||
       currentAccountOp.status === AccountOpStatus.Failure
     if (!hasReceipt || !currentAccountOp.txnId) {
       currentAccountOp.nftBalanceChanges = []
-      return true
+      return currentAccountOp
     }
 
     const provider = this.#providers.providers[currentAccountOp.chainId.toString()]
     // temp error, do not set nft balance changes to allow the system to retry
-    if (!provider) return false
+    if (!provider) return null
 
     try {
       const receipts = await getAccountOpReceipts(currentAccountOp, provider)
@@ -1204,7 +1206,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
         receipts
       )
 
-      return true
+      return currentAccountOp
     } catch (error) {
       this.#failedNftBalanceChangesBackfills.add(taskId)
       this.emitError({
@@ -1216,7 +1218,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
             : new Error(`activity: failed to backfill NFT balance changes for ${taskId}`)
       })
 
-      return false
+      return null
     }
   }
 
