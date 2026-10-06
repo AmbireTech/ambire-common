@@ -61,17 +61,10 @@ export interface SafeResults {
   }
 }
 
-function getTxServiceUrl(chainId: bigint) {
-  if (chainId === 8217n) return 'https://api.safe.global/tx-service/kaia/api'
-  if (chainId === 4663n) return 'https://api.safe.global/tx-service/robinhood/api'
-  return undefined
-}
-
 export function getApiKit(chainId: bigint) {
   return new SafeApiKit({
     chainId,
-    apiKey: process.env.SAFE_API_KEY,
-    txServiceUrl: getTxServiceUrl(chainId)
+    apiKey: process.env.SAFE_API_KEY
   })
 }
 
