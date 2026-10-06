@@ -15,12 +15,24 @@ import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishin
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 import { getDappIdFromUrl, getNormalizedHostnameFromUrl } from '../../libs/dapps/helpers'
+import {
+  applySortedDelta,
+  isSortedUnique,
+  sortedIncludes,
+  toSortedUnique
+} from '../../libs/sortedList/sortedList'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SUSPICIOUS_HOSTING_DOMAINS } from './suspiciousHostingDomains'
 
 const SCAMCHECKER_BASE_URL = 'https://cena.ambire.com/api/v3/scamchecker'
 const PHISHING_ACTIVE_VIEW_TYPES = new Set(['request-window', 'popup', 'tab'])
+
+// TEMP(benchmark): timing logs for comparing the sorted-list approach on a real device. Remove
+// before merging.
+const logPhishingTiming = (label: string, startedAt: number) => {
+  console.log(`[PhishingBench] ${label}: ${(performance.now() - startedAt).toFixed(1)}ms`)
+}
 
 function isSuspiciousHostingDomain(url: string): boolean {
   // The canonical hostname, so a fully-qualified host ("my-dapp.vercel.app.") is matched against
@@ -97,9 +109,11 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
   #isScamAndPhishingCheckerEnabled: boolean
 
-  #domains = new Set<string>()
+  // Both lists are kept sorted and free of duplicates, so lookups are a binary search. See
+  // libs/sortedList for why they are not Sets.
+  #domains: string[] = []
 
-  #addresses = new Set<string>()
+  #addresses: string[] = []
 
   // Local versioning, used for requesting incremental phishing list updates.
   #version: number = 0
@@ -249,17 +263,42 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   async #load() {
     await this.#featureFlags.initialLoadPromise
 
+    let startedAt = performance.now()
     const phishing = await this.#storage.get('phishing', {
       version: 0,
       updatedAt: 0,
       domains: [],
       addresses: []
     })
+    logPhishingTiming(
+      `load: storage.get (domains=${phishing.domains.length}, addresses=${phishing.addresses.length})`,
+      startedAt
+    )
 
     this.#version = phishing.version
     this.#updatedAt = phishing.updatedAt
-    this.#domains = new Set(phishing.domains)
-    this.#addresses = new Set(phishing.addresses)
+
+    startedAt = performance.now()
+    // Lists stored before they were kept sorted are sorted once and written back, so every later
+    // load only pays for the check.
+    const isStoredListSorted =
+      isSortedUnique(phishing.domains) && isSortedUnique(phishing.addresses)
+    this.#domains = isStoredListSorted ? phishing.domains : toSortedUnique(phishing.domains)
+    this.#addresses = isStoredListSorted ? phishing.addresses : toSortedUnique(phishing.addresses)
+    logPhishingTiming(`load: sorted check (wasSorted=${isStoredListSorted})`, startedAt)
+
+    if (!isStoredListSorted) {
+      startedAt = performance.now()
+      // Awaited before the update interval starts, so the two writes never run in parallel
+      await this.#storage.set('phishing', {
+        version: this.#version,
+        updatedAt: phishing.updatedAt,
+        domains: this.#domains,
+        addresses: this.#addresses
+      })
+      logPhishingTiming('load: one-time sorted re-save', startedAt)
+    }
+
     if (this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) {
       this.updatePhishingInterval.start({ runImmediately: true })
     }
@@ -341,7 +380,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const { domains, addresses } = getListsFromPhishingResponse(phishing, res.url)
 
     if (this.#version) {
-      // Incremental update: apply add/remove operations on top of local sets.
+      // Incremental update: apply add/remove operations on top of local lists.
       // Validated before anything is applied, and the version is only moved forward once the whole
       // delta is in. A partly applied delta whose checkpoint had moved would drop those entries for
       // good, since no later delta repeats them.
@@ -355,21 +394,25 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       if (typeof phishing.toVersion !== 'number')
         throw new Error(`Phishing delta has no version to move to (url: ${res.url})`)
 
-      domains.forEach(({ op, domain }: PhishingDeltaEntry) => {
-        if (op === 'add') this.#domains.add(domain!)
-        if (op === 'remove') this.#domains.delete(domain!)
-      })
-      addresses.forEach(({ op, address }: PhishingDeltaEntry) => {
-        // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup,
-        // regardless of the casing the relayer used.
-        const normalizedAddress = address!.toLowerCase()
-        if (op === 'add') this.#addresses.add(normalizedAddress)
-        if (op === 'remove') this.#addresses.delete(normalizedAddress)
-      })
+      const startedAt = performance.now()
+      this.#domains = applySortedDelta(
+        this.#domains,
+        domains.map(({ op, domain }: PhishingDeltaEntry) => ({ op, value: domain! }))
+      )
+      this.#addresses = applySortedDelta(
+        this.#addresses,
+        addresses.map(({ op, address }: PhishingDeltaEntry) => ({
+          op,
+          // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup,
+          // regardless of the casing the relayer used.
+          value: address!.toLowerCase()
+        }))
+      )
+      logPhishingTiming(`update: apply delta (ops=${domains.length + addresses.length})`, startedAt)
 
       this.#version = phishing.toVersion
     } else {
-      // Initial/full update: replace local sets with the server snapshot.
+      // Initial/full update: replace local lists with the server snapshot.
       if (typeof phishing.version !== 'number')
         throw new Error(`Phishing snapshot has no version (url: ${res.url})`)
       if (domains.some((domain) => typeof domain !== 'string'))
@@ -377,11 +420,16 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       if (addresses.some((address) => typeof address !== 'string'))
         throw new Error(`Phishing snapshot holds addresses that are not strings (url: ${res.url})`)
 
+      const startedAt = performance.now()
       this.#version = phishing.version
-      this.#domains = new Set<string>(domains)
+      this.#domains = toSortedUnique(domains)
       // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup, regardless
       // of the casing the relayer used.
-      this.#addresses = new Set<string>(addresses.map((address: string) => address.toLowerCase()))
+      this.#addresses = toSortedUnique(addresses.map((address: string) => address.toLowerCase()))
+      logPhishingTiming(
+        `update: full snapshot sort (domains=${domains.length}, addresses=${addresses.length})`,
+        startedAt
+      )
     }
 
     this.#shouldSyncDapps = true
@@ -390,12 +438,15 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const updatedAt = Date.now()
     this.#updatedAt = updatedAt
 
+    const writeStartedAt = performance.now()
+    // The lists are replaced, never mutated, so they can be handed to storage without a copy
     await this.#storage.set('phishing', {
       version: this.#version,
       updatedAt,
-      domains: [...this.#domains],
-      addresses: [...this.#addresses]
+      domains: this.#domains,
+      addresses: this.#addresses
     })
+    logPhishingTiming('update: storage.set', writeStartedAt)
 
     if (this.updatePhishingInterval.currentTimeout === PHISHING_FAILED_TO_GET_UPDATE_INTERVAL) {
       this.updatePhishingInterval.updateTimeout({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
@@ -403,7 +454,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     // NOTE: used for debugging only
     // console.log(
-    //   `[PhishingController] Update applied (version=${this.#version}, domains=${this.#domains.size}, addresses=${this.#addresses.size})`
+    //   `[PhishingController] Update applied (version=${this.#version}, domains=${this.#domains.length}, addresses=${this.#addresses.length})`
     // )
   }
 
@@ -442,10 +493,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     // Priority: BLACKLISTED (phishing DB) > SUSPICIOUS_HOSTING > VERIFIED.
     dappsData.forEach(({ url, dappId }) => {
-      if (
-        this.#domains.size &&
-        (this.#domains.has(dappId) || this.#domains.has(getDomain(dappId)!))
-      ) {
+      if (this.#domains.length && this.#isDomainListed(dappId)) {
         this.#domainsBlacklistedStatus.set(dappId, 'BLACKLISTED')
         return
       }
@@ -453,7 +501,7 @@ export class PhishingController extends EventEmitter implements IPhishingControl
         this.#domainsBlacklistedStatus.set(dappId, 'SUSPICIOUS_HOSTING')
         return
       }
-      if (this.#domains.size) this.#domainsBlacklistedStatus.set(dappId, 'VERIFIED')
+      if (this.#domains.length) this.#domainsBlacklistedStatus.set(dappId, 'VERIFIED')
     })
 
     // Filter: we only fetch for ones that are missing or stale
@@ -689,8 +737,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     if (!dappId) return undefined
 
     // BLACKLISTED (phishing DB) always takes highest priority.
-    if (this.#domains.size) {
-      if (this.#domains.has(dappId) || this.#domains.has(getDomain(dappId)!)) return 'BLACKLISTED'
+    if (this.#domains.length) {
+      if (this.#isDomainListed(dappId)) return 'BLACKLISTED'
       if (isSuspiciousHostingDomain(url)) return 'SUSPICIOUS_HOSTING'
       return 'VERIFIED'
     }
@@ -705,9 +753,17 @@ export class PhishingController extends EventEmitter implements IPhishingControl
    * "not blacklisted" apart from "not checked yet".
    */
   getAddressBlacklistedStatus(address: string): BlacklistedStatus | undefined {
-    if (!this.#addresses.size) return undefined
+    if (!this.#addresses.length) return undefined
 
-    return this.#addresses.has(address.toLowerCase()) ? 'BLACKLISTED' : 'VERIFIED'
+    return sortedIncludes(this.#addresses, address.toLowerCase()) ? 'BLACKLISTED' : 'VERIFIED'
+  }
+
+  /** Whether the dApp's hostname or its registrable domain is on the phishing list. */
+  #isDomainListed(dappId: string): boolean {
+    if (sortedIncludes(this.#domains, dappId)) return true
+
+    const registrableDomain = getDomain(dappId)
+    return !!registrableDomain && sortedIncludes(this.#domains, registrableDomain)
   }
 
   toJSON() {

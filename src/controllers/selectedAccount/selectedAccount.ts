@@ -1,8 +1,7 @@
-import { formatEther, getAddress, isAddress } from 'ethers'
+import { getAddress } from 'ethers'
 
 import { IUiController } from '@/interfaces/ui'
 
-import { STK_WALLET, UNI_V3_WALLET_WETH_POOL, WALLET_TOKEN } from '../../consts/addresses'
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AutoLoginPolicy, IAutoLoginController } from '../../interfaces/autoLogin'
@@ -25,7 +24,6 @@ import {
   getDefiPositionsOnDisabledNetworksForTheSelectedAccount,
   getEnsExpiryBanner
 } from '../../libs/banners/banners'
-import { AssetType } from '../../libs/defiPositions/types'
 import {
   getDefiAppsErrors,
   getNetworksWithDeFiPositionsErrorErrors,
@@ -36,7 +34,6 @@ import {
   calculateSelectedAccountPortfolio,
   DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
 } from '../../libs/selectedAccount/selectedAccount'
-import { getProjectedRewardsStatsAndToken } from '../../utils/rewards'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
 // Portfolio recalculations fire back-to-back as per-network results stream in.
@@ -263,87 +260,6 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     newSelectedAccountPortfolio.mobileInviteKey =
       this.#portfolio.mobileInviteKeys[this.account.addr]
-
-    // Try catch this just in case the relayer sends unexpected data or we have other errs in the calculations
-    try {
-      // Find stkWALLET or WALLET token in the latest portfolio state
-      const walletOrStkWalletTokenPrice = portfolioAccountState['1']?.result?.tokens.find(
-        ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
-      )?.priceIn?.[0]?.price
-
-      const ethTokenPrice = portfolioAccountState['1']?.result?.tokens.find(
-        ({ symbol }) => symbol === 'ETH'
-      )?.priceIn?.[0]?.price
-
-      const stkTokenInPortfolio = portfolioAccountState['1']?.result?.tokens.find(
-        ({ address }) => address === STK_WALLET
-      )
-      const stkBalanceUsd =
-        stkTokenInPortfolio === undefined || stkTokenInPortfolio.priceIn[0]?.price === undefined
-          ? undefined
-          : Number(formatEther(stkTokenInPortfolio.amount)) * stkTokenInPortfolio.priceIn[0].price
-
-      const walletEthProvidedLiquidityInUsd = portfolioAccountState[
-        '1'
-      ]?.result?.defiPositions.positionsByProvider
-        .find((p) => p.providerName === 'Uniswap V3')
-        ?.positions.filter(
-          (p) =>
-            p.additionalData.inRange &&
-            isAddress(p.additionalData.pool?.id) &&
-            getAddress(p.additionalData.pool.id) === UNI_V3_WALLET_WETH_POOL
-        )
-        .map((p) => p.assets)
-        .flat()
-        // assets in the uniswap positions can have asset type of liquidity or rewards
-        // we remove the latter because the rewards app does not fetch anything
-        // from debank, and is only able to get the assets with liquidity type for the
-        // uniswap liquidity position. To achieve minimal discrepancy between the
-        // extension and the app, we will not include assets with type Reward for the
-        // uniswap liquidity position
-        .filter((a) => a.type === AssetType.Liquidity)
-        .map((a) => {
-          const tokenPriceFromPosition = a.priceIn?.price
-          const tokenPriceFromPortfolio =
-            a.address === WALLET_TOKEN ? walletOrStkWalletTokenPrice : ethTokenPrice
-          const tokenPriceToUse = tokenPriceFromPosition || tokenPriceFromPortfolio
-          if (tokenPriceToUse === undefined) return undefined
-
-          return tokenPriceToUse * Number(formatEther(a.amount))
-        })
-        .reduce((a, b) => (a === undefined || b === undefined ? undefined : a + b), 0)
-
-      // there might not be supported chain ids, especially if providers are disabled
-      const supportedChainIds =
-        portfolioAccountState.projectedRewards?.result?.supportedChainIds?.map((n) => n.toString())
-
-      if (portfolioAccountState.projectedRewards && supportedChainIds) {
-        const currentBalance = Object.entries(this.portfolio.balancePerNetwork)
-          .filter(([chainId]) => supportedChainIds.includes(chainId))
-          .map(([, balance]): number => balance)
-          .reduce((total, balance) => total + balance, 0)
-        const projectedRewardsData = getProjectedRewardsStatsAndToken(
-          portfolioAccountState.projectedRewards,
-          walletOrStkWalletTokenPrice,
-          currentBalance,
-          stkBalanceUsd,
-          walletEthProvidedLiquidityInUsd
-        )
-
-        // Calculate and add projected rewards token
-        if (projectedRewardsData) {
-          newSelectedAccountPortfolio.tokens.push(projectedRewardsData?.token)
-
-          newSelectedAccountPortfolio.projectedRewardsStats = projectedRewardsData.data
-        }
-      }
-    } catch (e) {
-      this.emitError({
-        level: 'silent',
-        message: 'Should NEVER happen: Error while calculating projected rewards stats',
-        error: e as Error
-      })
-    }
 
     let justLoaded = false
 
