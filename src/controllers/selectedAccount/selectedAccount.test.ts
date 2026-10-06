@@ -305,12 +305,6 @@ describe('SelectedAccount Controller', () => {
 
     await portfolioCtrl.updateSelectedAccount(accountAddr)
     await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
-    console.log(
-      'getMobileInviteKey called with:',
-      getMobileInviteKeySpy.mock.calls.map(([addr]) => addr),
-      'portfolio.mobileInviteKey:',
-      selectedAccountCtrl.portfolio.mobileInviteKey
-    )
 
     expect(getMobileInviteKeySpy).toHaveBeenCalledWith(accountAddr)
     expect(selectedAccountCtrl.portfolio.mobileInviteKey).toBe(mobileInviteKey)
@@ -379,7 +373,6 @@ describe('SelectedAccount Controller', () => {
       const defiBanner = selectedAccountCtrl.banners.find(
         ({ id }) => id === defiPositionsOnDisabledNetworksBannerId
       )
-      console.log('DeFi on disabled networks banner:', stringify(defiBanner))
 
       expect(getDefiPositionsCountSpy).toHaveBeenCalledWith(accountAddr)
       expect(defiBanner).toBeDefined()

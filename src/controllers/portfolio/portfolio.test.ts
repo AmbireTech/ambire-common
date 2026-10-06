@@ -3828,21 +3828,18 @@ describe('Portfolio Controller ', () => {
         fetchOverride: exchangeListFetchOverride
       })
 
-      console.log('exchangeListUpdatedAt before the load:', controller.exchangeListUpdatedAt)
       expect(controller.exchangeListUpdatedAt).toBeNull()
       expect(controller.getExchangesInfo([UNISWAP_EXCHANGE.id])).toEqual({})
 
       await loadExchangeList(controller)
 
       const exchangesInfo = controller.getExchangesInfo([UNISWAP_EXCHANGE.id, 'unknown_exchange'])
-      console.log('getExchangesInfo result:', JSON.stringify(exchangesInfo))
       expect(typeof controller.exchangeListUpdatedAt).toBe('number')
       expect(exchangesInfo).toEqual({ [UNISWAP_EXCHANGE.id]: UNISWAP_EXCHANGE })
       expect(controller.getExchangesInfo([])).toEqual({})
 
       const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
       controller.getExchangesInfoAndSendResToUi([BINANCE_EXCHANGE.id], 'request-1')
-      console.log('UI message sent:', JSON.stringify(sendUiMessageSpy.mock.calls))
       expect(sendUiMessageSpy).toHaveBeenCalledTimes(1)
       expect(sendUiMessageSpy).toHaveBeenCalledWith({
         requestId: 'request-1',
@@ -3858,7 +3855,6 @@ describe('Portfolio Controller ', () => {
 
       const serialized = stringify(controller)
       const serializedKeys = Object.keys(JSON.parse(serialized))
-      console.log('Serialized portfolio keys:', serializedKeys.join(', '))
       ;[
         'exchangeState',
         'hints',
