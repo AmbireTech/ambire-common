@@ -1,3 +1,4 @@
+import { IrCall } from '../libs/humanizer/interfaces'
 import { ControllerInterface } from './controller'
 import { Hex } from './hex'
 
@@ -191,6 +192,12 @@ export type PrivacyPoolsOperation = {
   phase: PrivacyPoolsOperationPhase
   startedAt: number
   quote: PrivacyPoolsQuote | null
+  /**
+   * The proved withdrawal as the sign screens show a transaction: what it sends and to whom, read
+   * from its payload rather than from the request, and what the recipient is expected to get, from
+   * the simulation. Set with `quote`.
+   */
+  humanization: IrCall | null
   // Set when `status` is 'failed', in the same plain language the toast would have used
   error: string | null
 }

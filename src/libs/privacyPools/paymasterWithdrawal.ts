@@ -46,7 +46,25 @@ const isSameAddress = (a: string, b: string) => getAddress(a) === getAddress(b)
 type BatchCall = { target: string; value: bigint; data: string }
 
 /**
- * Checks a batch withdrawal's calls and returns what the deposits beyond the sponsored one add.
+ * What a prepared paymaster withdrawal does, read from the bytes the paymaster and pool act on, so
+ * it can be shown as what will happen rather than as what was asked for.
+ */
+export type PrivacyPoolsPaymasterWithdrawal = {
+  /** Who receives the funds. */
+  recipient: string
+  /** The withdrawn token, in the wallet's own convention - `ZERO_ADDRESS` for native. */
+  tokenAddress: string
+  /** What leaves the Privacy Pools account, before the fee. */
+  amount: bigint
+  /** The cap locked into the proof, taken out of `amount`. */
+  fee: bigint
+  /** How many deposits the withdrawal spends. */
+  noteCount: number
+}
+
+/**
+ * Checks a batch withdrawal's calls and returns what the deposits beyond the sponsored one add, and
+ * who the forward pays.
  *
  * The paymaster sponsors only one deposit, paid to the sender when the userOp has calls. The sender
  * must withdraw each other deposit itself, then forward the total minus the fee to the recipient -
@@ -66,7 +84,7 @@ const readBatchCalls = ({
   tokenAddress: string
   recipient: string
   amountOut: bigint
-}): { withdrawnValue: bigint; noteCount: number } => {
+}): { withdrawnValue: bigint; noteCount: number; recipient: string } => {
   let calls: BatchCall[]
   try {
     ;[calls] = SENDER_INTERFACE.decodeFunctionData('executeBatch', callData)
@@ -112,16 +130,24 @@ const readBatchCalls = ({
   )
     throw new Error('privacyPools: the withdrawal forwards the funds differently than requested')
 
-  return { withdrawnValue, noteCount: withdrawCalls.length + 1 }
+  const [forwardRecipient] = isNative
+    ? [forwardCall.target]
+    : ERC20_INTERFACE.decodeFunctionData('transfer', forwardCall.data)
+
+  return {
+    withdrawnValue,
+    noteCount: withdrawCalls.length + 1,
+    recipient: getAddress(forwardRecipient)
+  }
 }
 
 /**
- * Decodes a prepared paymaster withdrawal and checks it against the request, returning its fee and
- * deposit count.
+ * Decodes a prepared paymaster withdrawal and checks it against the request, returning what it
+ * does - to show it from the payload rather than from the request.
  *
  * Security boundary: the unaudited SDK builds and signs the userOp in one call, so this is the one
- * place to verify, from the bytes the paymaster and pool act on, the recipient, the amount and the
- * fee recipient. Any mismatch is refused before the user is asked to send it.
+ * place to verify, from the bytes the paymaster and pool act on, the token, the recipient, the
+ * amount and the fee recipient. Any mismatch is refused before the user is asked to send it.
  *
  * A single deposit is paid straight to the recipient with no calls; a batch goes through the
  * single-use sender - see `readBatchCalls`.
@@ -129,23 +155,32 @@ const readBatchCalls = ({
 export const readPaymasterWithdrawal = ({
   withdrawal,
   paymaster,
+  poolAddress: tokenPoolAddress,
   recipient,
   tokenAddress,
   amount
 }: {
   withdrawal: PrivacyPoolsPaymasterWithdrawalPayload
   paymaster: PrivacyPoolsPaymasterConfig
+  /**
+   * The token's pool, as the entrypoint lists it. The payload names only a pool, and every pool has
+   * an adapter, so this is what ties the withdrawal to the token.
+   */
+  poolAddress: string
   recipient: string
   /** The withdrawn token, in the wallet's own convention - `ZERO_ADDRESS` for native. */
   tokenAddress: string
   amount: bigint
-}): { fee: bigint; noteCount: number } => {
+}): PrivacyPoolsPaymasterWithdrawal => {
   const { userOperation } = withdrawal
   const poolAddress = toHexAddress(withdrawal.poolAddress).toLowerCase()
   const expectedAdapter = paymaster.poolAdapters[poolAddress]
 
   if (!expectedAdapter)
     throw new Error(`privacyPools: no paymaster adapter configured for pool ${poolAddress}`)
+  // Otherwise another token's pool would pass, its amount compared as if it were this token's
+  if (!isSameAddress(poolAddress, tokenPoolAddress))
+    throw new Error('privacyPools: the withdrawal is from the pool of a different token')
   if (!isSameAddress(withdrawal.entryPointAddress, paymaster.entryPointAddress))
     throw new Error('privacyPools: the withdrawal targets an unexpected ERC-4337 entry point')
   if (
@@ -185,7 +220,7 @@ export const readPaymasterWithdrawal = ({
   if (fee >= amount) throw new Error('privacyPools: the withdrawal fee would take the whole amount')
 
   const batch = isPaidToRecipient
-    ? { withdrawnValue: 0n, noteCount: 1 }
+    ? { withdrawnValue: 0n, noteCount: 1, recipient: getAddress(feeData.recipient) }
     : readBatchCalls({
         callData: userOperation.callData,
         sender: userOperation.sender,
@@ -195,8 +230,16 @@ export const readPaymasterWithdrawal = ({
         amountOut: amount - fee
       })
 
-  if (sponsoredValue + batch.withdrawnValue !== amount)
+  const withdrawnAmount = sponsoredValue + batch.withdrawnValue
+  if (withdrawnAmount !== amount)
     throw new Error('privacyPools: the withdrawal proves a different amount than requested')
 
-  return { fee, noteCount: batch.noteCount }
+  return {
+    recipient: batch.recipient,
+    // The pool's token: the pool is checked above to be the one the entrypoint lists for it
+    tokenAddress,
+    amount: withdrawnAmount,
+    fee,
+    noteCount: batch.noteCount
+  }
 }

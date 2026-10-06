@@ -44,6 +44,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { Call } from '../../libs/accountOp/types'
+import { humanizePrivacyPoolsWithdrawal } from '../../libs/humanizer/modules/PrivacyPools/privacyPoolsModule'
 import {
   createKohakuKeystore,
   createKohakuNetwork,
@@ -1283,6 +1284,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       phase: 'proving',
       startedAt: Date.now(),
       quote: null,
+      humanization: null,
       error: null
     }
 
@@ -1384,7 +1386,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
 
     try {
-      await kohakuDebugPhase(debugTrace, 'assertPoolIsSponsored', () =>
+      const poolAddress = await kohakuDebugPhase(debugTrace, 'assertPoolIsSponsored', () =>
         this.#assertPoolIsSponsored(chainId, tokenAddress)
       )
 
@@ -1417,13 +1419,15 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       if (privateOp.mode !== 'paymaster')
         throw new Error('privacyPools: the withdrawal came back in an unsupported form')
 
-      const { fee, noteCount } = readPaymasterWithdrawal({
+      const paymasterWithdrawal = readPaymasterWithdrawal({
         withdrawal: privateOp.withdrawal,
         paymaster,
+        poolAddress,
         recipient,
         tokenAddress,
         amount
       })
+      const { fee, noteCount } = paymasterWithdrawal
       debugSummary.noteCount = noteCount
       debugSummary.userOperationGas = describeKohakuDebugUserOperationGas(
         privateOp.withdrawal.userOperation
@@ -1465,7 +1469,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       const isStillCurrent = this.#updateOperation({
         ...operation,
         phase: 'ready',
-        quote: { feeAmount: fee, amountAfterFee: amount - fee, expectedFeeAmount }
+        quote: { feeAmount: fee, amountAfterFee: amount - fee, expectedFeeAmount },
+        humanization: humanizePrivacyPoolsWithdrawal({
+          withdrawal: paymasterWithdrawal,
+          expectedFeeAmount
+        })
       })
       // Not kept if a lock superseded it
       if (isStillCurrent) this.#pendingWithdrawal = privateOp
@@ -1561,9 +1569,10 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Refuses before proving a token whose pool has no paymaster adapter (the SDK does so only after
-   * syncing). The pool is read from the entrypoint, so a replaced pool is caught.
+   * syncing). The pool is read from the entrypoint, so a replaced pool is caught. Returns the pool,
+   * which the proved withdrawal must be from.
    */
-  async #assertPoolIsSponsored(chainId: string, tokenAddress: string) {
+  async #assertPoolIsSponsored(chainId: string, tokenAddress: string): Promise<string> {
     const config = getPrivacyPoolsChainConfig(BigInt(chainId))
     if (!config?.paymaster) throw new Error(`privacyPools: no paymaster for chain ${chainId}`)
 
@@ -1573,7 +1582,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       assetAddress: toPrivacyPoolsAssetAddress(tokenAddress)
     })
 
-    if (config.paymaster.poolAdapters[poolAddress.toLowerCase()]) return
+    if (config.paymaster.poolAdapters[poolAddress.toLowerCase()]) return poolAddress
 
     const symbol = getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)?.symbol || 'this token'
     throw new EmittableError({

@@ -11,6 +11,7 @@ import {
 } from '../../consts/privacyPools'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
+import { IrCall } from '../../libs/humanizer/interfaces'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
@@ -221,6 +222,8 @@ let prepareUnshieldFailure: unknown = null
 /** How the node answers `eth_simulateV1`. */
 let simulateWithdrawal: () => Promise<unknown> = async () => successfulSimulation()
 let rpcNoStateOverride = false
+/** The pool the entrypoint lists for any asset. */
+let entrypointPool = ETHEREUM_ETH_POOL
 
 class FakeProtocol {
   host: any
@@ -383,8 +386,8 @@ const fakeProviderCall = async ({ data }: { to: string; data: string }) => {
     const [asset] = ENTRYPOINT_INTERFACE.decodeFunctionData('assetConfig', data)
 
     return ENTRYPOINT_INTERFACE.encodeFunctionResult('assetConfig', [
-      // The Ethereum ETH pool, which the paymaster has an adapter for
-      ETHEREUM_ETH_POOL,
+      // The Ethereum ETH pool by default, which the paymaster has an adapter for
+      entrypointPool,
       String(asset).toLowerCase() === USDC ? MINIMUM_USDC_DEPOSIT : MINIMUM_DEPOSIT,
       50n,
       100n
@@ -495,6 +498,7 @@ describe('PrivacyPoolsController', () => {
     prepareUnshieldFailure = null
     simulateWithdrawal = async () => successfulSimulation()
     rpcNoStateOverride = false
+    entrypointPool = ETHEREUM_ETH_POOL
     notesBySeed = {
       'seed-a': [{ label: 1n, amount: 10n, approved: true }],
       'seed-b': [{ label: 2n, amount: 20n, approved: false }]
@@ -1401,6 +1405,83 @@ describe('PrivacyPoolsController', () => {
       expect(params.blockStateCalls[0].calls[0].to).toBe(ETHEREUM_PAYMASTER.entryPointAddress)
     })
 
+    /** The proved transfer's clear-signing card, without the ids the humanizer draws at random. */
+    const describeHumanization = (humanization: IrCall | null | undefined) => {
+      const card = humanization?.fullVisualization?.[0]
+      if (card?.type !== 'erc7730') return card
+
+      return {
+        intent: card.intent.map(({ type, content }) => ({ type, content })),
+        rows: card.fields.map((row) =>
+          row.type === 'single-value'
+            ? { label: row.label, address: row.value.address, value: row.value.value }
+            : row
+        )
+      }
+    }
+
+    /** The card of the proved transfer, with what the recipient gets when it is known. */
+    const humanizedSend = (expectedToReceive: bigint | null) => ({
+      intent: [{ type: 'action', content: 'Send' }],
+      rows: [
+        { label: 'Amount to Send', address: ZERO_ADDRESS, value: WITHDRAWAL_AMOUNT },
+        ...(expectedToReceive === null
+          ? []
+          : [{ label: 'Estimated to Receive', address: ZERO_ADDRESS, value: expectedToReceive }]),
+        { label: 'Recipient', address: WITHDRAWAL_RECIPIENT.toLowerCase(), value: undefined }
+      ]
+    })
+
+    it('describes a proved transfer as a clear-signing card, the refund in what it pays out', async () => {
+      const { controller } = await prepareSignedWithdrawal()
+
+      expect(describeHumanization(controller.operation?.humanization)).toEqual(
+        humanizedSend(WITHDRAWAL_AMOUNT - (WITHDRAWAL_FEE - WITHDRAWAL_REFUND))
+      )
+    })
+
+    it('leaves out what the recipient gets when the transfer could not be run', async () => {
+      simulateWithdrawal = async () => {
+        throw new Error('the method eth_simulateV1 does not exist/is not available')
+      }
+
+      const { controller } = await prepareSignedWithdrawal()
+
+      expect(describeHumanization(controller.operation?.humanization)).toEqual(humanizedSend(null))
+    })
+
+    it('describes a transfer only once it is proved', async () => {
+      const test = await prepareTest()
+      test.selectedAccount.select('seed-a')
+      preparedWithdrawal = buildPreparedWithdrawal()
+
+      const preparing = test.controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        amount: WITHDRAWAL_AMOUNT,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+      expect(test.controller.operation).toMatchObject({ phase: 'proving', humanization: null })
+
+      await preparing
+      expect(test.controller.operation?.humanization).not.toBeNull()
+    })
+
+    it('refuses a transfer proved from the pool of another token', async () => {
+      // A pool the paymaster sponsors too, so only the token tells the two apart
+      entrypointPool = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
+
+      const { controller } = await prepareSignedWithdrawal()
+
+      expect(controller.operation).toMatchObject({
+        status: 'failed',
+        error: 'The transfer could not be prepared. Please try again.',
+        quote: null,
+        humanization: null
+      })
+      expect(controller.emittedErrors.at(-1)?.error.message).toMatch(/pool of a different token/)
+    })
+
     it('shows only the most a transfer can cost when the node cannot run it', async () => {
       simulateWithdrawal = async () => {
         throw new Error('the method eth_simulateV1 does not exist/is not available')
@@ -1448,6 +1529,17 @@ describe('PrivacyPoolsController', () => {
     })
 
     describe('combining deposits', () => {
+      it('describes it by the forward to the recipient, not by the single-use sender', async () => {
+        simulateWithdrawal = async () => successfulSimulation(WITHDRAWAL_SENDER)
+
+        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
+
+        // Its refund goes to the single-use sender, so the recipient gets the amount net of the cap
+        expect(describeHumanization(controller.operation?.humanization)).toEqual(
+          humanizedSend(WITHDRAWAL_AMOUNT - WITHDRAWAL_FEE)
+        )
+      })
+
       it('shows the whole fee, since the refund goes to the single-use sender', async () => {
         simulateWithdrawal = async () => successfulSimulation(WITHDRAWAL_SENDER)
 

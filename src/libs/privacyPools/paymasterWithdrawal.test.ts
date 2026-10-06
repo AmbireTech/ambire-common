@@ -12,6 +12,9 @@ const RECIPIENT = getAddress('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
 const ATTACKER = getAddress('0x0000000000000000000000000000000000000bad')
 const POOL = '0xf241d57c6debae225c0f2e6ea1529373c9a9c9fb'
 const ADAPTER = getAddress('0x0a230D83f16209E2692494a0ae139aAD8C96bde9')
+/** The USDC pool, which has an adapter of its own. */
+const USDC_POOL = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
+const USDC_ADAPTER = getAddress('0x16B7d484c634985FbafaaaC6f3ee14e9eFDa4889')
 const PAYMASTER = getAddress('0xe06CB96C57D2442f8F60F5017354BC08F7e91308')
 const ENTRY_POINT = getAddress('0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108')
 const SENDER = getAddress('0xA3a4D83896ec4b595668fA3d5430157cd235F720')
@@ -24,7 +27,7 @@ const FEE = 10n ** 15n
 const PAYMASTER_CONFIG: PrivacyPoolsPaymasterConfig = {
   entryPointAddress: ENTRY_POINT,
   paymasterAddress: PAYMASTER,
-  poolAdapters: { [POOL]: ADAPTER }
+  poolAdapters: { [POOL]: ADAPTER, [USDC_POOL]: USDC_ADAPTER }
 }
 
 const coder = AbiCoder.defaultAbiCoder()
@@ -95,11 +98,13 @@ const buildWithdrawal = (
 const read = (
   withdrawal: PrivacyPoolsPaymasterWithdrawalPayload,
   recipient = RECIPIENT,
-  tokenAddress = NATIVE
+  tokenAddress = NATIVE,
+  poolAddress = POOL
 ) =>
   readPaymasterWithdrawal({
     withdrawal,
     paymaster: PAYMASTER_CONFIG,
+    poolAddress,
     recipient,
     tokenAddress,
     amount: AMOUNT
@@ -147,13 +152,38 @@ const buildBatchWithdrawal = (
     }
   })
 
+/** What `read` returns for a withdrawal that matches the request. */
+const EXPECTED_WITHDRAWAL = {
+  recipient: RECIPIENT,
+  tokenAddress: NATIVE,
+  amount: AMOUNT,
+  fee: FEE,
+  noteCount: 1
+}
+
 describe('libs/privacyPools/paymasterWithdrawal', () => {
-  it('returns the fee of a withdrawal that matches the request', () => {
-    expect(read(buildWithdrawal())).toEqual({ fee: FEE, noteCount: 1 })
+  it('returns what a withdrawal that matches the request does', () => {
+    expect(read(buildWithdrawal())).toEqual(EXPECTED_WITHDRAWAL)
   })
 
-  it('accepts a recipient that differs only in checksum casing', () => {
-    expect(read(buildWithdrawal(), RECIPIENT.toLowerCase())).toEqual({ fee: FEE, noteCount: 1 })
+  it('returns the recipient as the payload pays it, checksummed', () => {
+    expect(read(buildWithdrawal(), RECIPIENT.toLowerCase())).toEqual(EXPECTED_WITHDRAWAL)
+  })
+
+  it('refuses a withdrawal from the pool of another token', () => {
+    // The ETH pool's withdrawal, asked for as USDC: the amount would read as USDC
+    expect(() => read(buildWithdrawal(), RECIPIENT, USDC, USDC_POOL)).toThrow(
+      /pool of a different token/
+    )
+    // Another token's pool, routed through that pool's own adapter
+    expect(() =>
+      read(
+        buildWithdrawal(
+          { poolAddress: BigInt(USDC_POOL) },
+          encodePaymasterData({ adapter: USDC_ADAPTER, processooor: USDC_ADAPTER })
+        )
+      )
+    ).toThrow(/pool of a different token/)
   })
 
   it('refuses a withdrawal that pays out to another address', () => {
@@ -227,8 +257,12 @@ describe('libs/privacyPools/paymasterWithdrawal', () => {
   })
 
   describe('a batch of deposits', () => {
-    it('returns the fee and the deposit count of a batch that matches the request', () => {
-      expect(read(buildBatchWithdrawal())).toEqual({ fee: FEE, noteCount: 2 })
+    it('returns what a batch that matches the request does', () => {
+      expect(read(buildBatchWithdrawal())).toEqual({ ...EXPECTED_WITHDRAWAL, noteCount: 2 })
+    })
+
+    it('returns the recipient of the forward, not the sender the sponsored deposit pays', () => {
+      expect(read(buildBatchWithdrawal(), RECIPIENT.toLowerCase()).recipient).toBe(RECIPIENT)
     })
 
     it('accepts a token batch forwarded with a transfer', () => {
@@ -241,7 +275,11 @@ describe('libs/privacyPools/paymasterWithdrawal', () => {
         }
       ])
 
-      expect(read(withdrawal, RECIPIENT, USDC)).toEqual({ fee: FEE, noteCount: 2 })
+      expect(read(withdrawal, RECIPIENT.toLowerCase(), USDC)).toEqual({
+        ...EXPECTED_WITHDRAWAL,
+        tokenAddress: USDC,
+        noteCount: 2
+      })
     })
 
     it('refuses a sponsored deposit paid to anyone but the sender', () => {
