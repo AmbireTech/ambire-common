@@ -178,7 +178,7 @@ export type PrivacyPoolsOperationPhase =
  * transaction flow instead.
  */
 export type PrivacyPoolsOperation = {
-  // The id of the matching activity entry, so the two can never drift apart
+  /** Tells a superseded withdrawal's late result apart from the current one's. */
   id: string
   /** Shown only with this recovery phrase's account. */
   seedId: string
@@ -187,7 +187,7 @@ export type PrivacyPoolsOperation = {
   isNative: boolean
   amount: bigint
   recipient: string
-  status: PrivacyPoolsActivityStatus
+  status: PrivacyPoolsOperationStatus
   phase: PrivacyPoolsOperationPhase
   startedAt: number
   quote: PrivacyPoolsQuote | null
@@ -195,49 +195,10 @@ export type PrivacyPoolsOperation = {
   error: string | null
 }
 
-/**
- * - 'deposit' - into the pool. Public, including the depositing address.
- * - 'withdraw' - out of the pool privately, to any address.
- */
-export type PrivacyPoolsActivityType = 'deposit' | 'withdraw'
-
-/**
- * A Privacy Pools operation started from this wallet. Recorded locally, because notes carry no
- * timestamp or transaction id and a change note looks like a fresh one.
- */
-export type PrivacyPoolsActivityEntry = {
-  id: string
-  /** Scopes the device-wide log to the account on screen. */
-  seedId: string
-  chainId: string
-  type: PrivacyPoolsActivityType
-  tokenAddress: string
-  isNative: boolean
-  amount: bigint
-  /** Public address for withdrawals, null for deposits. */
-  recipient: string | null
-  /** Only this address can reclaim the deposit if it is never approved. */
-  depositor?: string
-  /** Tells when a deposit landed - see `PrivacyPoolsController.onAccountOpStatusUpdate`. */
-  accountOpId?: string
-  status: PrivacyPoolsActivityStatus
-  createdAt: number
-  /** Set for deposits once the transaction is signed and sent. */
-  broadcastedAt?: number
-  // Set when `status` is 'failed', to surface why without digging through logs
-  error?: string
-  /** What the paymaster took out of a withdrawal for its gas. */
-  fee?: bigint
-  txnId?: string
-}
-
 /** The entrypoint's deposit requirements for one asset, read from the chain as 0xBow tunes them. */
 export type PrivacyPoolsDepositAssetConfig = {
   minimumDepositAmount: bigint
 }
 
-/**
- * 'pending' means "not observed as complete yet". A withdrawal resolves from its broadcast result,
- * a deposit from the transaction that carries it.
- */
-export type PrivacyPoolsActivityStatus = 'pending' | 'success' | 'failed'
+/** 'pending' means "not observed as complete yet". It resolves from the broadcast result. */
+export type PrivacyPoolsOperationStatus = 'pending' | 'success' | 'failed'

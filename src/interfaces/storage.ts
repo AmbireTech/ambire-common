@@ -22,7 +22,7 @@ import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
-import { PrivacyPoolsAccount, PrivacyPoolsActivityEntry } from './privacyPools'
+import { PrivacyPoolsAccount } from './privacyPools'
 import type { FeeSpeed } from './signAccountOp'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
@@ -107,11 +107,6 @@ export type StorageProps = {
    * are serialized stores (megabytes each on mainnet) that spare a full rescan from deployment.
    */
   privacyPoolsState: { [key: string]: string }
-  /**
-   * Locally recorded operation log. The pool has no history: notes carry no timestamp or
-   * transaction id, and change notes look like fresh ones.
-   */
-  privacyPoolsActivity: PrivacyPoolsActivityEntry[]
   /** The wallet's Privacy Pools accounts, at most one per stored recovery phrase. */
   privacyPoolsAccounts: PrivacyPoolsAccount[]
   // Other

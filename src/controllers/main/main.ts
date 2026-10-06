@@ -1175,7 +1175,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
     await this.activity.addAccountOp(submittedAccountOp)
     // Every deposit into a Privacy Pools account, however signed, is broadcast through here
-    await this.privacyPools.onAccountOpBroadcast(submittedAccountOp)
+    this.privacyPools.onAccountOpBroadcast(submittedAccountOp)
     await this.ui.notification.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple
@@ -1650,7 +1650,6 @@ export class MainController extends EventEmitter implements IMainController {
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
-          void this.privacyPools.onAccountOpStatusUpdate(op)
 
           // we scan for logs only if Success & a dapp interaction has been made
           // because only a dapp interaction might have a receiving txn after;

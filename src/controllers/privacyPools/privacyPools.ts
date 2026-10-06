@@ -18,7 +18,6 @@ import {
   isPrivacyPoolsNativeAsset,
   PRIVACY_POOLS_ACCOUNT_INDEX,
   PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY,
-  PRIVACY_POOLS_ACTIVITY_STORAGE_KEY,
   PRIVACY_POOLS_SUPPORTED_CHAIN_IDS,
   toPrivacyPoolsAssetAddress
 } from '../../consts/privacyPools'
@@ -30,7 +29,6 @@ import { INetworksController } from '../../interfaces/network'
 import {
   IPrivacyPoolsController,
   PrivacyPoolsAccount,
-  PrivacyPoolsActivityEntry,
   PrivacyPoolsDepositAssetConfig,
   PrivacyPoolsChainConfig,
   PrivacyPoolsChainHistory,
@@ -45,7 +43,7 @@ import {
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
-import { AccountOpStatus, Call } from '../../libs/accountOp/types'
+import { Call } from '../../libs/accountOp/types'
 import {
   createKohakuKeystore,
   createKohakuNetwork,
@@ -89,20 +87,6 @@ const SYNC_MAX_AGE_MS = 10 * 60 * 1000
 
 /** After this, a proved withdrawal is shown with only its fee cap. */
 const WITHDRAWAL_ESTIMATION_TIMEOUT_MS = 8 * 1000
-
-/** Maps an account op's final status to its deposits' outcome, or null while not final. */
-const getDepositOutcome = (status?: AccountOpStatus): 'success' | 'failed' | null => {
-  if (status === AccountOpStatus.Success || status === AccountOpStatus.UnknownButPastNonce)
-    return 'success'
-  if (
-    status === AccountOpStatus.Failure ||
-    status === AccountOpStatus.Rejected ||
-    status === AccountOpStatus.BroadcastButStuck
-  )
-    return 'failed'
-
-  return null
-}
 
 const readDepositPrecommitment = (data: string): bigint | null =>
   readPrivacyPoolsDeposit({ data, value: 0n })?.precommitment ?? null
@@ -152,8 +136,7 @@ const toReadableWithdrawalError = (error: unknown) => {
 }
 
 /**
- * Privacy Pools state: one plugin per (chain, recovery phrase), its notes, and the local activity
- * log. Scoped by phrase, as note secrets are derived from it - accounts without one (hardware,
+ * Privacy Pools state: one plugin per (chain, recovery phrase) and its notes. Scoped by phrase, as note secrets are derived from it - accounts without one (hardware,
  * private key, view-only) cannot use Privacy Pools.
  */
 export class PrivacyPoolsController extends EventEmitter implements IPrivacyPoolsController {
@@ -225,8 +208,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #notesByIdentity: {
     [seedId: string]: { [chainId: string]: PrivacyPoolsIdentityChainState }
   } = {}
-
-  #activity: PrivacyPoolsActivityEntry[] = []
 
   /**
    * The next deposit's precommitment per `${chainId}:${seedId}` and the sync epoch it was derived
@@ -348,10 +329,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     await this.#keystore.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    // Entries without a seed cannot be attributed to an account
-    this.#activity = (await this.#storage.get(PRIVACY_POOLS_ACTIVITY_STORAGE_KEY, [])).filter(
-      (entry) => !!entry.seedId
-    )
     this.accounts = await this.#storage.get(PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY, [])
     // Phrases deleted while this controller was not running
     await this.#forgetAccountsOfDeletedSeeds()
@@ -526,16 +503,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         return [chainId, [...byToken.values()]]
       })
     )
-  }
-
-  /** The selected phrase's activity, newest first. Filtered here so others' never reach the UI. */
-  get activity(): PrivacyPoolsActivityEntry[] {
-    const seedId = this.#getSelectedSeedId()
-    if (!seedId) return []
-
-    return this.#activity
-      .filter((entry) => entry.seedId === seedId)
-      .sort((a, b) => b.createdAt - a.createdAt)
   }
 
   /** The selected Privacy Pools account's phrase, or null if none or its account/phrase is gone. */
@@ -1051,7 +1018,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * Builds the deposit calls from a wallet account into a Privacy Pools account, for the regular
-   * signing flow. Recorded only once broadcast - see `onAccountOpBroadcast`. Deposits are public:
+   * signing flow. Tracked only once broadcast - see `onAccountOpBroadcast`. Deposits are public:
    * the pool stores and emits the sender's address.
    */
   async buildDepositCalls({
@@ -1241,23 +1208,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     })
   }
 
-  /** Settles an account op's deposits. The pool's records carry no transaction to match them by. */
-  async onAccountOpStatusUpdate({ id, status }: { id: string; status?: AccountOpStatus }) {
-    const outcome = getDepositOutcome(status)
-    if (!outcome) return
-
-    const isSettlingAny = this.#activity.some(
-      (entry) => entry.accountOpId === id && entry.status === 'pending'
-    )
-    if (!isSettlingAny) return
-
-    this.#activity = this.#activity.map((entry) =>
-      entry.accountOpId === id && entry.status === 'pending' ? { ...entry, status: outcome } : entry
-    )
-    this.emitUpdate()
-    await this.#persistActivity()
-  }
-
   #isDepositAwaitingChain(precommitment: bigint) {
     const broadcastAt = this.#broadcastDeposits.get(precommitment)
 
@@ -1265,58 +1215,23 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * Records a broadcast account op's deposits, however it was signed. Only those
-   * `buildDepositCalls` prepared are recognised, by precommitment - others are not this wallet's.
+   * Marks a broadcast account op's deposits as awaiting the chain, however it was signed. Only
+   * those `buildDepositCalls` prepared are recognised, by precommitment - others are not this
+   * wallet's. Nothing is persisted, as a local log would link deposits to their withdrawals.
    */
-  async onAccountOpBroadcast({
-    id: accountOpId,
-    accountAddr,
-    chainId,
-    calls,
-    txnId
-  }: {
-    id?: string
-    accountAddr: string
-    chainId: bigint
-    calls: Call[]
-    txnId?: string
-  }) {
+  onAccountOpBroadcast({ chainId, calls }: { chainId: bigint; calls: Call[] }) {
     const config = getPrivacyPoolsChainConfig(chainId)
     if (!config) return
 
-    const entries = calls
+    calls
       .filter((call) => call.to?.toLowerCase() === config.entrypointAddress.toLowerCase())
       .map((call) => readPrivacyPoolsDeposit(call))
       .filter((deposit): deposit is NonNullable<typeof deposit> => !!deposit)
-      .map((deposit) => ({ deposit, prepared: this.#preparedDeposits.get(deposit.precommitment) }))
-      .filter(({ prepared }) => prepared?.chainId === chainId.toString())
-      .map(({ deposit, prepared }): PrivacyPoolsActivityEntry => {
-        const now = Date.now()
-        this.#broadcastDeposits.set(deposit.precommitment, now)
-
-        return {
-          id: generateUuid(),
-          seedId: prepared!.seedId,
-          chainId: chainId.toString(),
-          type: 'deposit',
-          tokenAddress: fromPrivacyPoolsAssetAddress(deposit.assetAddress),
-          isNative: isPrivacyPoolsNativeAsset(fromPrivacyPoolsAssetAddress(deposit.assetAddress)),
-          amount: deposit.amount,
-          recipient: null,
-          depositor: accountAddr,
-          status: 'pending',
-          createdAt: now,
-          broadcastedAt: now,
-          txnId,
-          accountOpId
-        }
-      })
-
-    if (!entries.length) return
-
-    this.#activity.push(...entries)
-    this.emitUpdate()
-    await this.#persistActivity()
+      .filter(
+        ({ precommitment }) =>
+          this.#preparedDeposits.get(precommitment)?.chainId === chainId.toString()
+      )
+      .forEach(({ precommitment }) => this.#broadcastDeposits.set(precommitment, Date.now()))
   }
 
   /**
@@ -1688,20 +1603,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#assertBundlerIsAllowed()
     const { seedId } = operation
 
-    const entry: PrivacyPoolsActivityEntry = {
-      id: operation.id,
-      seedId,
-      chainId: operation.chainId,
-      type: 'withdraw',
-      tokenAddress: operation.tokenAddress,
-      isNative: operation.isNative,
-      amount: operation.amount,
-      recipient: operation.recipient,
-      status: 'pending',
-      createdAt: operation.startedAt
-    }
-    this.#activity.push(entry)
-
     this.#updateOperation({ ...operation, phase: 'broadcasting' })
     this.emitUpdate()
 
@@ -1715,28 +1616,17 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       const broadcaster = createPPv1Broadcaster(host, { broadcasterUrl: {} })
       // Times handing the userOp to the bundler until it lands
       const debugTrace = startKohakuDebugTrace('broadcast', { chainId: operation.chainId })
-      const { txHash } = await broadcaster
-        .broadcast(privateOp)
-        .finally(() => endKohakuDebugTrace(debugTrace))
-
-      this.#updateActivity(operation.id, {
-        status: 'success',
-        fee: operation.quote?.feeAmount,
-        txnId: txHash
-      })
+      await broadcaster.broadcast(privateOp).finally(() => endKohakuDebugTrace(debugTrace))
 
       this.#updateOperation({ ...operation, status: 'success', phase: 'finalizing' })
       this.emitUpdate()
     } catch (error: any) {
-      const message = this.#failOperation(
+      this.#failOperation(
         { ...operation, phase: 'broadcasting' },
         error,
         'The transfer could not be sent. Please try again.'
       )
-      this.#updateActivity(operation.id, { status: 'failed', error: message })
     }
-
-    await this.#persistActivity()
 
     // Picks up the spent note and its change note
     await this.syncChain(operation.chainId)
@@ -1748,7 +1638,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /** Shows an `EmittableError`'s message, or `fallback` for SDK, bundler and chain errors. */
-  #failOperation(operation: PrivacyPoolsOperation, error: any, fallback: string): string {
+  #failOperation(operation: PrivacyPoolsOperation, error: any, fallback: string) {
     const message = error instanceof EmittableError ? error.message : fallback
 
     this.#updateOperation({ ...operation, status: 'failed', error: message })
@@ -1757,8 +1647,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       level: 'major',
       error: toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
     })
-
-    return message
   }
 
   /** Adds a stored phrase's Privacy Pools account. Nothing is derived or synced until opened. */
@@ -1784,7 +1672,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     await this.#persistAccounts()
   }
 
-  /** Removes the account, not its funds: re-adding it finds them. Its activity log is kept too. */
+  /** Removes the account, not its funds: re-adding it finds them. */
   async removeAccount(seedId: string): Promise<void> {
     await this.initialLoadPromise
 
@@ -1794,7 +1682,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     await this.#onAccountsRemoved([seedId])
   }
 
-  /** Drops an account and everything derived for it, leaving the activity log to the caller. */
+  /** Drops an account and everything derived for it. */
   #forgetAccount(seedId: string) {
     this.accounts = this.accounts.filter((account) => account.seedId !== seedId)
 
@@ -1805,7 +1693,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     delete this.#notesByIdentity[seedId]
   }
 
-  /** Removes accounts, and their activity, whose phrase is gone - nothing in them is reachable. */
+  /** Removes accounts whose phrase is gone - nothing in them is reachable. */
   async #forgetAccountsOfDeletedSeeds() {
     if (!this.#keystore.areSeedsLoaded) return
 
@@ -1817,12 +1705,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (!orphanedSeedIds.length) return
 
     orphanedSeedIds.forEach((seedId) => this.#forgetAccount(seedId))
-    this.#activity = this.#activity.filter((entry) => !orphanedSeedIds.includes(entry.seedId))
     this.emitUpdate()
 
-    // One after the other: the store must never have two writes in flight
     await this.#persistAccounts()
-    await this.#persistActivity()
     await this.#onAccountsRemoved(orphanedSeedIds)
   }
 
@@ -1834,24 +1719,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         message: 'Could not save your Privacy Pools accounts on this device.',
         level: 'major',
         error: error instanceof Error ? error : new Error('privacyPools: accounts write failed')
-      })
-    }
-  }
-
-  #updateActivity(id: string, update: Partial<PrivacyPoolsActivityEntry>) {
-    this.#activity = this.#activity.map((entry) =>
-      entry.id === id ? { ...entry, ...update } : entry
-    )
-  }
-
-  async #persistActivity() {
-    try {
-      await this.#storage.set(PRIVACY_POOLS_ACTIVITY_STORAGE_KEY, this.#activity)
-    } catch (error: any) {
-      this.emitError({
-        message: 'Could not save your Privacy Pools history on this device.',
-        level: 'silent',
-        error: error instanceof Error ? error : new Error('privacyPools: activity write failed')
       })
     }
   }
@@ -1903,7 +1770,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       isAvailableForSelectedAccount: this.isAvailableForSelectedAccount,
       chains: this.chains,
       balances: this.balances,
-      activity: this.activity,
       hasSyncedAnyChain: this.hasSyncedAnyChain,
       operation: this.operation
     }

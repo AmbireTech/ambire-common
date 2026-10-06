@@ -172,9 +172,6 @@ export const PRIVACY_POOLS_CIRCUIT_PATHS = {
   }
 } as const
 
-/** Storage key of the local operation log. */
-export const PRIVACY_POOLS_ACTIVITY_STORAGE_KEY = 'privacyPoolsActivity'
-
 /** Storage key holding the wallet's Privacy Pools accounts. */
 export const PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY = 'privacyPoolsAccounts'
 

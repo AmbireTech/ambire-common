@@ -11,7 +11,6 @@ import {
 } from '../../consts/privacyPools'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
-import { AccountOpStatus } from '../../libs/accountOp/types'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
@@ -537,12 +536,8 @@ describe('PrivacyPoolsController', () => {
       expect(onAccountsRemoved).toHaveBeenCalledWith(['seed-a'])
     })
 
-    it('removes the account of a deleted recovery phrase, with its activity', async () => {
-      const { controller, keystore, storage, onAccountsRemoved } = await prepareTest()
-      await storage.set('privacyPoolsActivity', [
-        { id: 'a', seedId: 'seed-a' } as any,
-        { id: 'b', seedId: 'seed-b' } as any
-      ])
+    it('removes the account of a deleted recovery phrase', async () => {
+      const { controller, keystore, onAccountsRemoved } = await prepareTest()
 
       keystore.seeds = [{ id: 'seed-b' }]
       keystore.fireUpdate()
@@ -574,10 +569,9 @@ describe('PrivacyPoolsController', () => {
       expect(controller.accounts.map((account) => account.seedId)).toEqual(['seed-a'])
     })
 
-    it('keeps every account and its activity when the recovery phrases could not be read', async () => {
+    it('keeps every account when the recovery phrases could not be read', async () => {
       const storage = new StorageController(produceMemoryStore())
       await storage.set('privacyPoolsAccounts', [{ seedId: 'seed-a', createdAt: 1 }])
-      await storage.set('privacyPoolsActivity', [{ id: 'a', seedId: 'seed-a' } as any])
       const keystore = new FakeKeystore()
       keystore.areSeedsLoaded = false
       keystore.seeds = []
@@ -598,7 +592,6 @@ describe('PrivacyPoolsController', () => {
 
       expect(controller.accounts.map((account) => account.seedId)).toEqual(['seed-a'])
       expect(await storage.get('privacyPoolsAccounts', [])).toHaveLength(1)
-      expect(await storage.get('privacyPoolsActivity', [])).toHaveLength(1)
       expect(onAccountsRemoved).not.toHaveBeenCalled()
     })
   })
@@ -1180,37 +1173,20 @@ describe('PrivacyPoolsController', () => {
       expect(depositCall?.to).toBe(ETHEREUM_ENTRYPOINT)
     })
 
-    it('records a broadcast deposit with its sender and refuses another until the chain moves on', async () => {
+    it('refuses another deposit until the broadcast one lands and the chain moves on', async () => {
       const { controller, selectedAccount } = await prepareTest()
 
       const building = buildDeposit(controller)
       await releaseSync('seed-b')
       const calls = await building
-      await controller.onAccountOpBroadcast({
-        accountAddr: DEPOSITOR,
-        chainId: 1n,
-        calls,
-        txnId: '0xabc'
-      })
+      controller.onAccountOpBroadcast({ chainId: 1n, calls })
 
-      selectedAccount.select('seed-b')
-      expect(controller.activity).toMatchObject([
-        {
-          type: 'deposit',
-          seedId: 'seed-b',
-          depositor: DEPOSITOR,
-          amount: ONE_ETH,
-          tokenAddress: ZERO_ADDRESS,
-          isNative: true,
-          status: 'pending',
-          txnId: '0xabc'
-        }
-      ])
       // Same precommitment, since the first one has not landed
       await expect(buildDeposit(controller)).rejects.toThrow(EmittableError)
 
       // It lands, and the next sync moves the precommitment on
       depositCountBySeed['seed-b'] = 1
+      selectedAccount.select('seed-b')
       const syncing = controller.syncChain('1')
       await releaseSync('seed-b')
       await syncing
@@ -1219,63 +1195,37 @@ describe('PrivacyPoolsController', () => {
       await expect(next).resolves.toHaveLength(1)
     })
 
-    it('settles a recorded deposit once the account op it went out in has an outcome', async () => {
-      const { controller, selectedAccount } = await prepareTest()
-      const building = buildDeposit(controller)
-      await releaseSync('seed-b')
-      const calls = await building
-      await controller.onAccountOpBroadcast({
-        id: 'account-op-1',
-        accountAddr: DEPOSITOR,
-        chainId: 1n,
-        calls
-      })
-      selectedAccount.select('seed-b')
+    it('does not block a deposit over a broadcast it did not prepare', async () => {
+      const { controller } = await prepareTest()
 
-      // Still on its way: nothing to settle yet
-      await controller.onAccountOpStatusUpdate({
-        id: 'account-op-1',
-        status: AccountOpStatus.BroadcastedButNotConfirmed
-      })
-      expect(controller.activity[0]?.status).toBe('pending')
-
-      // Another account op says nothing about this deposit
-      await controller.onAccountOpStatusUpdate({
-        id: 'account-op-2',
-        status: AccountOpStatus.Success
-      })
-      expect(controller.activity[0]?.status).toBe('pending')
-
-      await controller.onAccountOpStatusUpdate({
-        id: 'account-op-1',
-        status: AccountOpStatus.Failure
-      })
-      expect(controller.activity[0]?.status).toBe('failed')
-      // Settled once: a later status does not reopen it
-      await controller.onAccountOpStatusUpdate({
-        id: 'account-op-1',
-        status: AccountOpStatus.Success
-      })
-      expect(controller.activity[0]?.status).toBe('failed')
-    })
-
-    it('ignores deposits it did not prepare', async () => {
-      const { controller, selectedAccount } = await prepareTest()
-
-      await controller.onAccountOpBroadcast({
-        accountAddr: DEPOSITOR,
+      // Carries the precommitment the next deposit derives, but this wallet did not build it
+      controller.onAccountOpBroadcast({
         chainId: 1n,
         calls: [
           {
             to: ETHEREUM_ENTRYPOINT,
             value: ONE_ETH,
-            data: ENTRYPOINT_INTERFACE.encodeFunctionData('deposit(uint256)', [123n])
+            data: ENTRYPOINT_INTERFACE.encodeFunctionData('deposit(uint256)', [
+              getPrecommitment('seed-b')
+            ])
           }
         ]
       })
 
-      selectedAccount.select('seed-b')
-      expect(controller.activity).toEqual([])
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+      await expect(building).resolves.toHaveLength(1)
+    })
+
+    it('does not block a deposit over a broadcast on another chain', async () => {
+      const { controller } = await prepareTest()
+
+      const building = buildDeposit(controller)
+      await releaseSync('seed-b')
+      const calls = await building
+      controller.onAccountOpBroadcast({ chainId: 10n, calls })
+
+      await expect(buildDeposit(controller)).resolves.toHaveLength(1)
     })
   })
   describe('sending from a Privacy Pools account', () => {
