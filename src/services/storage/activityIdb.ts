@@ -398,31 +398,6 @@ export class ActivityIdbStorage implements IActivityOpsBackend {
   }
 
   /**
-   * Fetch all ops for a specific (account, chainId) pair (full history, no limit).
-   * Used for lazy-loading older history during pagination.
-   * Returns undefined if no ops found (matches existing caller checks).
-   */
-  async getOpsForAccountAndChain(
-    accountAddr: string,
-    chainId: bigint | string
-  ): Promise<SubmittedAccountOp[] | undefined> {
-    const chainIdStr = typeof chainId === 'bigint' ? chainId.toString() : chainId
-    const range = IDBKeyRange.bound(
-      [accountAddr, chainIdStr, ''],
-      [accountAddr, chainIdStr, RANGE_HIGH]
-    )
-    // Goes through #openTx rather than the db.getAll() shortcut so a dead
-    // connection is recovered here too.
-    const tx = await this.#openTx('readonly')
-    const rows = await tx.objectStore(this.#storeName).getAll(range)
-
-    if (rows.length === 0) return undefined
-
-    rows.sort((a, b) => b.timestamp - a.timestamp)
-    return rows.map((r) => r.op as SubmittedAccountOp)
-  }
-
-  /**
    * Batch write multiple (account, chainId) pairs in a single transaction.
    * Existing rows for each pair are deleted first, then the new ops inserted.
    */
@@ -674,16 +649,6 @@ export class ActivityKeyValueStorage implements IActivityOpsBackend {
 
   async updateOps(_ops: SubmittedAccountOp[]): Promise<void> {
     await this.#storage.set('accountsOps', this.#getOps())
-  }
-
-  async getOpsForAccountAndChain(
-    accountAddr: string,
-    chainId: bigint | string
-  ): Promise<SubmittedAccountOp[] | undefined> {
-    const chainIdStr = typeof chainId === 'bigint' ? chainId.toString() : chainId
-    const ops = this.#getOps()[accountAddr]?.[chainIdStr]
-    if (!ops?.length) return undefined
-    return [...ops].sort((a, b) => b.timestamp - a.timestamp)
   }
 
   async deleteAccount(_accountAddr: string): Promise<void> {

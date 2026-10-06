@@ -414,6 +414,41 @@ export const predefinedDapps: Dapp[] = [
     description: 'Leading DEX on Base Chain with staking and farming.',
     twitter: 'BaseSwapDEX',
     category: 'Dexes'
+  },
+  // DefiLlama returns an empty `url` (flagged as `deadUrl`) for CoW Swap, so it can't come from there
+  {
+    id: 'swap.cow.fi',
+    url: 'https://swap.cow.fi',
+    name: 'CoW Swap',
+    icon: 'https://icons.llamao.fi/icons/protocols/cowswap',
+    description:
+      'CoW Swap finds the lowest prices across all exchanges and aggregators & saves you more by matching Coincidences of Wants (CoWs) and protecting from MEV',
+    twitter: 'CoWSwap',
+    category: 'DEX Aggregator'
+  },
+  // Same as CoW Swap - empty `url` from DefiLlama. The eth.limo gateway serves the `tornadocash.eth`
+  // ENS contenthash, which is controlled by the Tornado Cash governance contract
+  {
+    id: 'tornadocash.eth.limo',
+    url: 'https://tornadocash.eth.limo',
+    name: 'Tornado Cash',
+    icon: 'https://icons.llamao.fi/icons/protocols/tornado-cash',
+    description:
+      'Non-custodial anonymous transactions on Ethereum. Opens the official app through the eth.limo service - the fastest way to load it.',
+    twitter: 'TornadoCash',
+    category: 'Privacy'
+  },
+  // Same `tornadocash.eth` app as above, but the inbrowser.link gateway verifies every file
+  // against its IPFS hash in the browser, so there is no need to trust a gateway server
+  {
+    id: 'tornadocash-eth.ipns.inbrowser.link',
+    url: 'https://tornadocash-eth.ipns.inbrowser.link',
+    name: 'Tornado Cash',
+    icon: 'https://icons.llamao.fi/icons/protocols/tornado-cash',
+    description:
+      'Non-custodial anonymous transactions on Ethereum. Opens the same official app, but your browser checks every file itself, so you do not have to trust a middleman server. Slower to load.',
+    twitter: 'TornadoCash',
+    category: 'Privacy'
   }
 ]
 

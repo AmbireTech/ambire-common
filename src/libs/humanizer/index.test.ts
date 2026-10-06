@@ -2083,7 +2083,7 @@ describe('ERC-7730 descriptors', () => {
       oracle: '0x663becd10dae6c4a3dcd89f1d76c1174199639b9',
       irm: '0x46415998764c29ab2a25cbea6254146d50d22687',
       lltv: 86145408065551n
-    }
+    } as const
     const morphoAccountOp: AccountOp = {
       ...accountOp,
       accountAddr: owner,
@@ -2248,11 +2248,11 @@ describe('ERC-7730 descriptors', () => {
       oracle: '0xf1561bc4b3d1ba49053986fb9ee88d4fe22d0cf4',
       irm: '0x870ac11d48b15db9a138cf899d20f13f79ba00bc',
       lltv: 86145408065551n
-    }
+    } as const
     const withdrawalMarketParams = {
       ...supplyMarketParams,
       collateralToken: '0xdddd770badd886df3864029e4b377b5f6a2b6b83'
-    }
+    } as const
     const iface = new ethers.Interface([
       'function multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)'
     ])

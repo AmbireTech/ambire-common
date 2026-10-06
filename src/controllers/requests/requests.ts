@@ -25,6 +25,7 @@ import { Dapp, DappProviderRequest, IDappsController } from '../../interfaces/da
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
+import { Platform } from '../../interfaces/platform'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
@@ -65,7 +66,6 @@ import {
   TypedMessageUserRequest,
   UserRequest
 } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getAccountOpNonce, isSafeRejectionCall } from '../../libs/accountOp/accountOp'
 import {
@@ -74,6 +74,7 @@ import {
   getSafeMessageRequestBanners
 } from '../../libs/banners/banners'
 import { getDappIdsFromUserRequest } from '../../libs/dapps/dappRequestSpam'
+import { isSigningAuthPlatform } from '../../libs/dapps/helpers'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getShouldSimulateInTheBackground } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
@@ -112,11 +113,6 @@ const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
 
-const ONE_CLICK_WINDOW_SIZE = {
-  width: 600,
-  height: 600
-}
-
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
  * Prior to v2.66.0, all request logic resided in the MainController. To improve scalability, readability,
@@ -136,6 +132,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #portfolio: IPortfolioController
 
   #featureFlags: IFeatureFlagsController
+
+  #platform: Platform
 
   #externalSignerControllers: Partial<{
     internal: ExternalSignerController
@@ -278,6 +276,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     callRelayer,
     portfolio,
     featureFlags,
+    platform,
     externalSignerControllers,
     activity,
     phishing,
@@ -309,6 +308,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     callRelayer: BindedRelayerCall
     portfolio: IPortfolioController
     featureFlags: IFeatureFlagsController
+    platform: Platform
     externalSignerControllers: Partial<{
       internal: ExternalSignerController
       trezor: ExternalSignerController
@@ -347,6 +347,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#callRelayer = callRelayer
     this.#portfolio = portfolio
     this.#featureFlags = featureFlags
+    this.#platform = platform
     this.#externalSignerControllers = externalSignerControllers
     this.#activity = activity
     this.#phishing = phishing
@@ -741,20 +742,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         await this.focusRequestWindow()
       }
     } else {
-      let customSize
-
-      if (
-        this.currentUserRequest?.kind === 'swapAndBridge' ||
-        this.currentUserRequest?.kind === 'transfer'
-      ) {
-        customSize = ONE_CLICK_WINDOW_SIZE
-      }
-
       try {
         // Keep this right after the check above with no await in between, so a second request
         // arriving now finds the open already in progress instead of starting its own.
         this.requestWindow.openWindowPromise = this.#ui.requestView
-          .open({ customSize, baseWindowId })
+          .open({ baseWindowId })
           .then((windowProps) => {
             // Stays null when the request is rendered in the panel instead of a window
             // Set here, not after the await below, so it is already recorded by the time
@@ -1833,7 +1825,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       try {
         autoLoginStatus = this.#autoLogin.getAutoLoginStatus(parsedSiwe)
 
-        if (autoLoginStatus === 'active' && dapp?.signingAuthenticated) {
+        // The signing authentication is mobile only, so elsewhere no app is ever confirmed for
+        if (
+          autoLoginStatus === 'active' &&
+          (!isSigningAuthPlatform(this.#platform) || dapp?.signingAuthenticated)
+        ) {
           // Sign and respond
           const signedMessage = await this.#autoLogin.autoLogin({
             message: rawMessage as `0x${string}`,
@@ -1988,10 +1984,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!isASignOperationRequestedForAnotherAccount) {
       await this.addUserRequests([userRequest], {
         position,
-        executionType:
-          position === 'first' || isSmartAccount(this.#selectedAccount.account)
-            ? 'open-request-window'
-            : 'queue-but-open-request-window'
+        // A new request always takes focus, so the one the app just sent is what the user sees
+        executionType: 'open-request-window'
       })
       return
     }
@@ -2602,6 +2596,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           keystore: this.#keystore,
           portfolio: this.#portfolio,
           featureFlags: this.#featureFlags,
+          platform: this.#platform,
           signAccountOpPreference: this.#signAccountOpPreference,
           externalSignerControllers: this.#externalSignerControllers,
           activity: this.#activity,

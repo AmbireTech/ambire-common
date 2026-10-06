@@ -14,6 +14,7 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -100,6 +101,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   #signAccountOpPreference: SignAccountOpPreferenceController
 
   #featureFlags: IFeatureFlagsController
+
+  #platform: Platform
 
   #networks: INetworksController
 
@@ -230,6 +233,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     onBroadcastSuccess: OnBroadcastSuccess,
     ui: IUiController,
     erc7730: IErc7730Controller,
+    platform: Platform,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
@@ -255,6 +259,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#ui = ui
+    this.#platform = platform
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -1190,6 +1195,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       keystore: this.#keystore,
       portfolio: this.#portfolio,
       featureFlags: this.#featureFlags,
+      platform: this.#platform,
       signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,

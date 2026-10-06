@@ -182,7 +182,7 @@ Two consequences:
 | `loadStartupOps()` | 2 transactions. Key-only cursor enumerates groups, then per-group queries run in parallel. Bounded by group count, not history size. |
 | `putSingleOp()` | 1 row write, plus one `count()` when the caller passed no `trimmedId` (the common case on IDB, since groups start at 20 and rarely hit the in-memory cap). |
 | `getRecentOps()` | Backwards cursor over `by-account-chain-timestamp`, one step per row, stopping at `limit`. Run once per rendered chain per pagination call. IDB indexes only sort ascending, so newest-first needs a reverse walk. |
-| `getOpsForAccountAndChain()` | Full group read. Called by `addExternalAccountOp`'s duplicate guard, which has to compare against the whole group rather than the loaded window. Deliberately not a txnId index: an internal op can carry a txnId per call (MultipleTxns), which a row-level index on `op.txnId` cannot see. |
+| `hasOpWithTxnId()` | Key-only lookup on the `by-txn-id` multiEntry index — no rows deserialized, cost independent of history size. `addExternalAccountOp`'s duplicate guard. The index is multiEntry over the op's own txnId plus one per call, so the MultipleTxns shape is covered too. |
 | `countOpsForAccount()` | `count()` over a key range — served from the index without deserializing rows. |
 | `hasAccountOpsSentTo()` | No backend read at all. Answers from `sentToHistory.recipients` — an O(1) key lookup, plus an O(recipients) comparison only for a first-time address. |
 

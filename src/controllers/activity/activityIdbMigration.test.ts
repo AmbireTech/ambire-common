@@ -123,6 +123,21 @@ function getActiveBackend(storageToRead: IStorageController) {
 }
 
 let db: AmbireIdbDatabase
+
+/**
+ * Everything stored for one (account, chain), newest first — or undefined for an empty group.
+ * Read straight from the store, so a test checks what was written, not a reader of it.
+ */
+async function storedGroup(accountAddr: string, chainId: bigint | string) {
+  const chainIdStr = chainId.toString()
+  const rows = await db.getAll(
+    'accountsOps',
+    IDBKeyRange.bound([accountAddr, chainIdStr, ''], [accountAddr, chainIdStr, '\uffff'])
+  )
+  if (!rows.length) return undefined
+
+  return rows.sort((a, b) => b.timestamp - a.timestamp).map((row) => row.op)
+}
 let storage: IStorageController
 let rawStore: ReturnType<typeof produceMemoryStore>
 
@@ -158,7 +173,7 @@ describe('ActivityController — IDB migration on load', () => {
 
     await awaitLoad(makeController(storage, db))
 
-    const rows = await new ActivityIdbStorage(db).getOpsForAccountAndChain(ACC, '1')
+    const rows = await storedGroup(ACC, '1')
     expect(rows).toHaveLength(1)
     expect(rows?.[0]?.id).toBe('legacy-1')
   })
@@ -183,9 +198,7 @@ describe('ActivityController — IDB migration on load', () => {
 
     await awaitLoad(makeController(storage, db))
 
-    const ids = (await new ActivityIdbStorage(db).getOpsForAccountAndChain(ACC, '1'))?.map(
-      (op) => op.id
-    )
+    const ids = (await storedGroup(ACC, '1'))?.map((op) => op.id)
     expect(ids).toEqual(['migrated'])
     expect(ids).not.toContain('stale')
   })
@@ -213,9 +226,7 @@ describe('ActivityController — IDB migration on load', () => {
 
     await awaitLoad(makeController(storage, db))
 
-    const ids = (await new ActivityIdbStorage(db).getOpsForAccountAndChain(ACC, '1'))?.map(
-      (op) => op.id
-    )
+    const ids = (await storedGroup(ACC, '1'))?.map((op) => op.id)
     expect(ids).toEqual(['good-2', 'good-1'])
     // Migration completed despite the bad row, so the flag is recorded
     expect(await getActiveBackend(storage)).toBe('idb')
@@ -395,25 +406,31 @@ describe('ActivityController — recipients indexed by the storage migration', (
     const controller = makeController(storage, db)
     await awaitLoadOnly(controller)
 
-    const spy = jest.spyOn(ActivityIdbStorage.prototype, 'getOpsForAccountAndChain')
+    // The two adapter methods that read history rows.
+    const pageRead = jest.spyOn(ActivityIdbStorage.prototype, 'getRecentOps')
+    const startupRead = jest.spyOn(ActivityIdbStorage.prototype, 'loadStartupOps')
     await controller.hasAccountOpsSentTo(OLD_RECIPIENT, ACC)
     await controller.hasAccountOpsSentTo(OLD_RECIPIENT, ACC)
     await controller.hasAccountOpsSentTo(OLD_RECIPIENT, '')
 
-    expect(spy).not.toHaveBeenCalled()
+    expect(pageRead).not.toHaveBeenCalled()
+    expect(startupRead).not.toHaveBeenCalled()
   })
 
   test('does not touch IDB on the key-value path', async () => {
     await seedLegacyOps(legacyBlob([makeOpTo('kv', 1, OLD_RECIPIENT)]))
-    const spy = jest.spyOn(ActivityIdbStorage.prototype, 'getOpsForAccountAndChain')
+    const pageRead = jest.spyOn(ActivityIdbStorage.prototype, 'getRecentOps')
+    const startupRead = jest.spyOn(ActivityIdbStorage.prototype, 'loadStartupOps')
 
     const controller = makeController(storage, undefined)
     const result = await controller.hasAccountOpsSentTo(OLD_RECIPIENT, ACC)
 
     // The key-value startup read already returns the full blob
     expect(result.found).toBe(true)
-    expect(spy).not.toHaveBeenCalled()
-    spy.mockRestore()
+    expect(pageRead).not.toHaveBeenCalled()
+    expect(startupRead).not.toHaveBeenCalled()
+    pageRead.mockRestore()
+    startupRead.mockRestore()
   })
 })
 
@@ -712,10 +729,7 @@ describe('ActivityController — recovering writes made on the key-value fallbac
     await seedLegacyOps(legacy)
   }
 
-  const storedIds = async () =>
-    ((await new ActivityIdbStorage(db).getOpsForAccountAndChain(ACC, CHAIN_1)) ?? []).map(
-      (op) => op.id
-    )
+  const storedIds = async () => ((await storedGroup(ACC, CHAIN_1)) ?? []).map((op) => op.id)
 
   test('an op written only on the fallback is folded back in', async () => {
     await seedAfterFallbackSession(legacyBlob([makeOp('idb-1', 1000), makeOp('kv-only', 2000)]), [
@@ -748,7 +762,7 @@ describe('ActivityController — recovering writes made on the key-value fallbac
 
     await awaitLoadOnly(makeController(storage, db))
 
-    const ops = (await new ActivityIdbStorage(db).getOpsForAccountAndChain(ACC, CHAIN_1)) ?? []
+    const ops = (await storedGroup(ACC, CHAIN_1)) ?? []
     expect(ops.find((op) => op.id === 'op-1')?.status).toBe(AccountOpStatus.Success)
   })
 
@@ -761,7 +775,7 @@ describe('ActivityController — recovering writes made on the key-value fallbac
 
     await awaitLoadOnly(makeController(storage, db))
 
-    const ops = (await new ActivityIdbStorage(db).getOpsForAccountAndChain(ACC, CHAIN_1)) ?? []
+    const ops = (await storedGroup(ACC, CHAIN_1)) ?? []
     expect(ops.find((op) => op.id === 'op-1')?.status).toBe(AccountOpStatus.Success)
   })
 
@@ -1069,7 +1083,8 @@ describe('ActivityController — paginated reads', () => {
     const controller = makeController(storage, db, providersStub)
     await awaitLoadOnly(controller)
 
-    const groupRead = jest.spyOn(ActivityIdbStorage.prototype, 'getOpsForAccountAndChain')
+    const groupRead = jest.spyOn(ActivityIdbStorage.prototype, 'getRecentOps')
+    const pointLookup = jest.spyOn(ActivityIdbStorage.prototype, 'hasOpWithTxnId')
     await controller.addExternalAccountOp({
       accountAddr: ACC,
       chainId: CHAIN_1,
@@ -1078,7 +1093,11 @@ describe('ActivityController — paginated reads', () => {
     })
 
     expect(groupRead).not.toHaveBeenCalled()
+    // And the guard did run — through the index, not a row read. Without this the test would
+    // pass just as well if the guard were skipped entirely.
+    expect(pointLookup).toHaveBeenCalled()
     groupRead.mockRestore()
+    pointLookup.mockRestore()
   })
 
   test('a failed lookup skips the op rather than risking a stored duplicate', async () => {
@@ -1593,8 +1612,8 @@ describe('ActivityController — empty and edge groups', () => {
   })
 
   test('a chain the account never used returns an empty page without error', async () => {
-    // getOpsForAccountAndChain returns undefined for zero rows. Marking the group
-    // loaded only on a non-empty result left every never-transacted-on chain unmarked,
+    // A chain with no rows reads back empty. Marking the group loaded only on a non-empty
+    // result left every never-transacted-on chain unmarked,
     // so it was re-queried on each filterAccountsOps call — which runs on every
     // emitUpdate path.
     await new ActivityIdbStorage(db).putMultiple([

@@ -47,12 +47,6 @@ export interface IActivityOpsBackend {
 
   updateOps(ops: SubmittedAccountOp[]): Promise<void>
 
-  /** Full history for one (account, chainId) — the lazy-load behind pagination. */
-  getOpsForAccountAndChain(
-    accountAddr: string,
-    chainId: bigint | string
-  ): Promise<SubmittedAccountOp[] | undefined>
-
   deleteAccount(accountAddr: string): Promise<void>
 
   /**

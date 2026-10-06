@@ -42,6 +42,21 @@ function makeOp(
 
 let db: AmbireIdbDatabase
 
+/**
+ * Everything stored for one (account, chain), newest first — or undefined for an empty group.
+ * Read straight from the store, so a test checks what was written, not a reader of it.
+ */
+async function storedGroup(accountAddr: string, chainId: bigint | string) {
+  const chainIdStr = chainId.toString()
+  const rows = await db.getAll(
+    'accountsOps',
+    IDBKeyRange.bound([accountAddr, chainIdStr, ''], [accountAddr, chainIdStr, '\uffff'])
+  )
+  if (!rows.length) return undefined
+
+  return rows.sort((a, b) => b.timestamp - a.timestamp).map((row) => row.op)
+}
+
 beforeEach(async () => {
   // Reset the singleton and replace the in-memory IDB factory so each test
   // gets a completely isolated environment.
@@ -75,7 +90,95 @@ describe('ActivityIdbStorage', () => {
     })
   })
 
-  describe('putMultiple + getOpsForAccountAndChain', () => {
+  describe('hasOpWithTxnId', () => {
+    const TXN = `0x${'ab'.repeat(32)}`
+    const MIXED_CASE_TXN = `0x${'aB'.repeat(32)}`
+
+    test('finds an op by its own txnId', async () => {
+      const store = new ActivityIdbStorage(db)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [{ ...makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000), txnId: TXN }]
+        }
+      ])
+
+      expect(await store.hasOpWithTxnId(ACC_A, TXN)).toBe(true)
+    })
+
+    test('finds an op by the txnId of one of its calls', async () => {
+      // The MultipleTxns shape: no op-level txnId, one per call. The index is multiEntry over
+      // both, so a row-level index on op.txnId alone would miss this.
+      const store = new ActivityIdbStorage(db)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [
+            {
+              ...makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000),
+              calls: [{ to: ACC_B, value: 0n, data: '0x', txnId: TXN }]
+            } as any
+          ]
+        }
+      ])
+
+      expect(await store.hasOpWithTxnId(ACC_A, TXN)).toBe(true)
+    })
+
+    test('matches whatever letter case the txnId is stored or asked in', async () => {
+      // Lowercased on write and on lookup. Without the write side, an op stored with a
+      // mixed-case hash is invisible to a lowercase lookup — and the in-memory check that also
+      // normalizes only covers ops inside the startup window, so an older op slips through.
+      const store = new ActivityIdbStorage(db)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [
+            {
+              ...makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000),
+              txnId: MIXED_CASE_TXN
+            }
+          ]
+        }
+      ])
+
+      expect(await store.hasOpWithTxnId(ACC_A, MIXED_CASE_TXN.toLowerCase())).toBe(true)
+      expect(
+        await store.hasOpWithTxnId(ACC_A, MIXED_CASE_TXN.toUpperCase().replace('0X', '0x'))
+      ).toBe(true)
+    })
+
+    test('does not match the same txnId stored for a different account', async () => {
+      const store = new ActivityIdbStorage(db)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_B,
+          chainId: CHAIN_1,
+          ops: [{ ...makeOp('op-1', ACC_B, CHAIN_1, AccountOpStatus.Success, 1000), txnId: TXN }]
+        }
+      ])
+
+      expect(await store.hasOpWithTxnId(ACC_A, TXN)).toBe(false)
+    })
+
+    test('is false for a txnId nothing carries', async () => {
+      const store = new ActivityIdbStorage(db)
+      await store.putMultiple([
+        {
+          accountAddr: ACC_A,
+          chainId: CHAIN_1,
+          ops: [makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000)]
+        }
+      ])
+
+      expect(await store.hasOpWithTxnId(ACC_A, TXN)).toBe(false)
+    })
+  })
+
+  describe('putMultiple — what a group holds', () => {
     test('stores ops and returns them sorted by timestamp descending', async () => {
       const store = new ActivityIdbStorage(db)
       await store.putMultiple([
@@ -90,13 +193,8 @@ describe('ActivityIdbStorage', () => {
         }
       ])
 
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result?.map((op) => op.id)).toEqual(['op-2', 'op-3', 'op-1'])
-    })
-
-    test('returns undefined when no ops exist for the pair', async () => {
-      const store = new ActivityIdbStorage(db)
-      expect(await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)).toBeUndefined()
     })
 
     test('accepts bigint chainId — retrieve with bigint or equivalent string', async () => {
@@ -109,8 +207,8 @@ describe('ActivityIdbStorage', () => {
         }
       ])
 
-      expect(await store.getOpsForAccountAndChain(ACC_A, CHAIN_137)).toHaveLength(1)
-      expect(await store.getOpsForAccountAndChain(ACC_A, '137')).toHaveLength(1)
+      expect(await storedGroup(ACC_A, CHAIN_137)).toHaveLength(1)
+      expect(await storedGroup(ACC_A, '137')).toHaveLength(1)
     })
 
     test('replaces existing ops on second write to the same pair', async () => {
@@ -133,7 +231,7 @@ describe('ActivityIdbStorage', () => {
         }
       ])
 
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(2)
       expect(result?.map((op) => op.id)).not.toContain('old')
     })
@@ -155,8 +253,8 @@ describe('ActivityIdbStorage', () => {
         }
       ])
 
-      expect((await store.getOpsForAccountAndChain(ACC_A, CHAIN_1))?.[0]?.id).toBe('chain1-op')
-      expect((await store.getOpsForAccountAndChain(ACC_A, CHAIN_137))?.[0]?.id).toBe('chain137-op')
+      expect((await storedGroup(ACC_A, CHAIN_1))?.[0]?.id).toBe('chain1-op')
+      expect((await storedGroup(ACC_A, CHAIN_137))?.[0]?.id).toBe('chain137-op')
     })
 
     test('concurrent writes from different accounts to the same chain do not interfere', async () => {
@@ -179,8 +277,8 @@ describe('ActivityIdbStorage', () => {
         ])
       ])
 
-      const aOps = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
-      const bOps = await store.getOpsForAccountAndChain(ACC_B, CHAIN_1)
+      const aOps = await storedGroup(ACC_A, CHAIN_1)
+      const bOps = await storedGroup(ACC_B, CHAIN_1)
 
       expect(aOps).toHaveLength(1)
       expect(aOps?.[0]?.id).toBe('a-op')
@@ -191,7 +289,7 @@ describe('ActivityIdbStorage', () => {
     test('writing an empty ops array leaves the pair as if it never existed', async () => {
       const store = new ActivityIdbStorage(db)
       await store.putMultiple([{ accountAddr: ACC_A, chainId: CHAIN_1, ops: [] }])
-      expect(await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)).toBeUndefined()
+      expect(await storedGroup(ACC_A, CHAIN_1)).toBeUndefined()
     })
 
     test('silently skips ops with no valid id', async () => {
@@ -201,7 +299,7 @@ describe('ActivityIdbStorage', () => {
       await store.putMultiple([
         { accountAddr: ACC_A, chainId: CHAIN_1, ops: [validOp as any, invalidOp as any] }
       ])
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.id).toBe('valid')
     })
@@ -213,7 +311,7 @@ describe('ActivityIdbStorage', () => {
       await store.putMultiple([
         { accountAddr: ACC_A, chainId: CHAIN_1, ops: [v1 as any, v2 as any] }
       ])
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.status).toBe(AccountOpStatus.Success)
     })
@@ -240,9 +338,9 @@ describe('ActivityIdbStorage', () => {
         }
       ])
 
-      expect(await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)).toHaveLength(1)
-      expect(await store.getOpsForAccountAndChain(ACC_A, CHAIN_137)).toHaveLength(1)
-      expect(await store.getOpsForAccountAndChain(ACC_B, CHAIN_1)).toHaveLength(1)
+      expect(await storedGroup(ACC_A, CHAIN_1)).toHaveLength(1)
+      expect(await storedGroup(ACC_A, CHAIN_137)).toHaveLength(1)
+      expect(await storedGroup(ACC_B, CHAIN_1)).toHaveLength(1)
     })
 
     test('replaces existing ops per pair', async () => {
@@ -262,7 +360,7 @@ describe('ActivityIdbStorage', () => {
         }
       ])
 
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.id).toBe('new')
     })
@@ -289,7 +387,7 @@ describe('ActivityIdbStorage', () => {
         ])
       ])
 
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.id).toBe('writer-2')
     })
@@ -312,7 +410,7 @@ describe('ActivityIdbStorage', () => {
         }
       ])
 
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.id).toBe('second-pass')
     })
@@ -382,8 +480,8 @@ describe('ActivityIdbStorage', () => {
 
       await store.deleteAccount(ACC_A)
 
-      expect(await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)).toBeUndefined()
-      expect(await store.getOpsForAccountAndChain(ACC_A, CHAIN_137)).toBeUndefined()
+      expect(await storedGroup(ACC_A, CHAIN_1)).toBeUndefined()
+      expect(await storedGroup(ACC_A, CHAIN_137)).toBeUndefined()
     })
 
     test('does not affect other accounts', async () => {
@@ -403,7 +501,7 @@ describe('ActivityIdbStorage', () => {
 
       await store.deleteAccount(ACC_A)
 
-      expect(await store.getOpsForAccountAndChain(ACC_B, CHAIN_1)).toHaveLength(1)
+      expect(await storedGroup(ACC_B, CHAIN_1)).toHaveLength(1)
     })
 
     test('is a no-op when the account has no ops', async () => {
@@ -430,7 +528,7 @@ describe('ActivityIdbStorage', () => {
         }
       ])
 
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.id).toBe('readded')
     })
@@ -449,9 +547,9 @@ describe('ActivityIdbStorage', () => {
         }
       })
 
-      expect(await store.getOpsForAccountAndChain(ACC_A, '1')).toHaveLength(1)
-      expect(await store.getOpsForAccountAndChain(ACC_A, '137')).toHaveLength(1)
-      expect(await store.getOpsForAccountAndChain(ACC_B, '1')).toHaveLength(1)
+      expect(await storedGroup(ACC_A, '1')).toHaveLength(1)
+      expect(await storedGroup(ACC_A, '137')).toHaveLength(1)
+      expect(await storedGroup(ACC_B, '1')).toHaveLength(1)
     })
 
     test('preserves op ids and timestamps after migration', async () => {
@@ -462,7 +560,7 @@ describe('ActivityIdbStorage', () => {
         }
       })
 
-      const result = await store.getOpsForAccountAndChain(ACC_A, '1')
+      const result = await storedGroup(ACC_A, '1')
       expect(result?.[0]?.id).toBe('migrate-op')
       expect(result?.[0]?.timestamp).toBe(42000)
     })
@@ -488,7 +586,7 @@ describe('ActivityIdbStorage', () => {
         async () => {}
       )
 
-      expect(await store.getOpsForAccountAndChain(ACC_A, '1')).toHaveLength(1)
+      expect(await storedGroup(ACC_A, '1')).toHaveLength(1)
     })
 
     test('calls removeStoredOps after a successful migration', async () => {
@@ -542,7 +640,7 @@ describe('ActivityIdbStorage', () => {
 
       await store.ensureMigrated(async () => legacy, removeSpy)
 
-      const ids = (await store.getOpsForAccountAndChain(ACC_A, '1'))?.map((op) => op.id)
+      const ids = (await storedGroup(ACC_A, '1'))?.map((op) => op.id)
       expect(ids).toEqual(['good-2', 'good-1'])
       expect(ids).not.toContain('no-timestamp')
       // Migration completed, so the legacy key is cleaned up rather than retried
@@ -565,7 +663,7 @@ describe('ActivityIdbStorage', () => {
         async () => {}
       )
 
-      const ids = (await store.getOpsForAccountAndChain(ACC_A, '1'))?.map((op) => op.id)
+      const ids = (await storedGroup(ACC_A, '1'))?.map((op) => op.id)
       expect(ids).toEqual(['good'])
     })
 
@@ -590,7 +688,7 @@ describe('ActivityIdbStorage', () => {
         )
       ])
 
-      const ops = await store1.getOpsForAccountAndChain(ACC_A, '1')
+      const ops = await storedGroup(ACC_A, '1')
       expect(ops).toHaveLength(1)
       expect(ops?.[0]?.id).toBe('concurrent')
     })
@@ -625,7 +723,7 @@ describe('ActivityIdbStorage', () => {
         async () => {}
       )
 
-      const ops = await store.getOpsForAccountAndChain(ACC_A, '1')
+      const ops = await storedGroup(ACC_A, '1')
       expect(ops).toHaveLength(1)
       expect(ops?.[0]?.id).toBe('migrated')
     })
@@ -664,7 +762,7 @@ describe('ActivityIdbStorage', () => {
 
       // IDB was written before removeStoredOps was called
       expect(await store.isEmpty()).toBe(false)
-      expect(await store.getOpsForAccountAndChain(ACC_A, '1')).toHaveLength(1)
+      expect(await storedGroup(ACC_A, '1')).toHaveLength(1)
     })
   })
 
@@ -900,7 +998,7 @@ describe('ActivityIdbStorage', () => {
       } as unknown as SubmittedAccountOpLike
 
       await store.putMultiple([{ accountAddr: ACC_A, chainId: CHAIN_1, ops: [op] }])
-      const [retrieved] = (await store.getOpsForAccountAndChain(ACC_A, CHAIN_1))!
+      const [retrieved] = (await storedGroup(ACC_A, CHAIN_1))!
 
       expect(retrieved?.chainId).toBe(CHAIN_1)
       expect((retrieved as any).nonce).toBe(42n)
@@ -908,14 +1006,14 @@ describe('ActivityIdbStorage', () => {
   })
 
   describe('putSingleOp', () => {
-    test('adds a new op accessible via getOpsForAccountAndChain', async () => {
+    test('adds a new op to the store', async () => {
       const store = new ActivityIdbStorage(db)
       await store.putSingleOp(
         ACC_A,
         CHAIN_1,
         makeOp('single-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000) as any
       )
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.id).toBe('single-op')
     })
@@ -935,7 +1033,7 @@ describe('ActivityIdbStorage', () => {
         makeOp('new-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000) as any,
         'old-op'
       )
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.id).toBe('new-op')
     })
@@ -948,7 +1046,7 @@ describe('ActivityIdbStorage', () => {
         makeOp('added-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000) as any,
         'ghost-id'
       )
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.id).toBe('added-op')
     })
@@ -967,7 +1065,7 @@ describe('ActivityIdbStorage', () => {
         CHAIN_1,
         makeOp('single-op', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000) as any
       )
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(2)
       expect(result!.map((op) => op.id)).toContain('bulk-op')
       expect(result!.map((op) => op.id)).toContain('single-op')
@@ -1011,7 +1109,7 @@ describe('ActivityIdbStorage', () => {
         makeOp('cap-op-1000', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000) as any
       )
 
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1000)
       expect(result!.map((op) => op.id)).not.toContain('cap-op-0')
       expect(result!.map((op) => op.id)).toContain('cap-op-1000')
@@ -1047,7 +1145,7 @@ describe('ActivityIdbStorage', () => {
       ).rejects.toThrow('without a valid timestamp')
 
       // op-a must still be pending — the batch was rejected as a whole
-      const rows = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const rows = await storedGroup(ACC_A, CHAIN_1)
       expect(rows).toHaveLength(1)
       expect(rows?.[0]?.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
     })
@@ -1074,7 +1172,7 @@ describe('ActivityIdbStorage', () => {
         makeOp('update-me', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000) as any
       ])
 
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.status).toBe(AccountOpStatus.Success)
     })
@@ -1084,7 +1182,7 @@ describe('ActivityIdbStorage', () => {
       await store.updateOps([
         makeOp('new-via-update', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000) as any
       ])
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       expect(result).toHaveLength(1)
       expect(result?.[0]?.id).toBe('new-via-update')
     })
@@ -1099,7 +1197,7 @@ describe('ActivityIdbStorage', () => {
         }
       ])
       await store.updateOps([])
-      expect(await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)).toHaveLength(1)
+      expect(await storedGroup(ACC_A, CHAIN_1)).toHaveLength(1)
     })
 
     test('updates multiple ops in a single call', async () => {
@@ -1120,7 +1218,7 @@ describe('ActivityIdbStorage', () => {
         makeOp('op-b', ACC_A, CHAIN_1, AccountOpStatus.Failure, 2000) as any
       ])
 
-      const result = await store.getOpsForAccountAndChain(ACC_A, CHAIN_1)
+      const result = await storedGroup(ACC_A, CHAIN_1)
       const statusById = Object.fromEntries(result!.map((op) => [op.id, op.status]))
       expect(statusById['op-a']).toBe(AccountOpStatus.Success)
       expect(statusById['op-b']).toBe(AccountOpStatus.Failure)
@@ -1153,8 +1251,9 @@ describe('ActivityIdbStorage', () => {
         makeOp('after', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000) as any
       )
 
-      // Both rows are present, so the op written after the close was not lost
-      const ids = (await store.getOpsForAccountAndChain(ACC_A, CHAIN_1))?.map((op) => op.id)
+      // Both rows are present, so the op written after the close was not lost. Read through
+      // the adapter: the test db handle is closed, and the adapter holds the reopened one.
+      const ids = (await store.getRecentOps(ACC_A, 100, CHAIN_1)).map((op) => op.id)
       expect(ids).toEqual(['after', 'before'])
     })
 
@@ -1170,7 +1269,8 @@ describe('ActivityIdbStorage', () => {
 
       db.close()
 
-      expect((await store.getOpsForAccountAndChain(ACC_A, CHAIN_1))?.[0]?.id).toBe('persisted')
+      // A history read through the adapter — the path whose reconnect this test is about.
+      expect((await store.getRecentOps(ACC_A, 100, CHAIN_1))[0]?.id).toBe('persisted')
       expect(await store.isEmpty()).toBe(false)
     })
 
@@ -1265,30 +1365,6 @@ describe('ActivityKeyValueStorage', () => {
       makeOp('new', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000) as any
     )
     expect(storage.set).toHaveBeenCalledWith('accountsOps', inMemoryOps)
-  })
-
-  test('getOpsForAccountAndChain reads in-memory state sorted by timestamp descending', async () => {
-    const inMemoryOps = {
-      [ACC_A]: {
-        '1': [
-          makeOp('op-1', ACC_A, CHAIN_1, AccountOpStatus.Success, 1000) as any,
-          makeOp('op-2', ACC_A, CHAIN_1, AccountOpStatus.Success, 3000) as any,
-          makeOp('op-3', ACC_A, CHAIN_1, AccountOpStatus.Success, 2000) as any
-        ]
-      }
-    }
-    const storage = makeStorageMock()
-    const backend = new ActivityKeyValueStorage(storage as any, () => inMemoryOps)
-
-    const result = await backend.getOpsForAccountAndChain(ACC_A, CHAIN_1)
-    expect(result?.map((op) => op.id)).toEqual(['op-2', 'op-3', 'op-1'])
-    // Must read in-memory state — storage.get must not be called
-    expect(storage.get).not.toHaveBeenCalled()
-  })
-
-  test('getOpsForAccountAndChain returns undefined for an unknown account or chain', async () => {
-    const backend = new ActivityKeyValueStorage(makeStorageMock() as any, () => ({}))
-    expect(await backend.getOpsForAccountAndChain(ACC_A, CHAIN_1)).toBeUndefined()
   })
 
   test('ensureMigrated is a no-op — neither callback is called', async () => {

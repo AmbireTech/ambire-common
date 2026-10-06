@@ -518,7 +518,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite,
       eventEmitterRegistry,
       this.dapps,
-      this.erc7730
+      this.erc7730,
+      platform
     )
 
     this.activity = new ActivityController(
@@ -576,6 +577,7 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       signAccountOpPreference: this.signAccountOpPreference,
       featureFlags: this.featureFlags,
+      platform,
       phishing: this.phishing,
       dapps: this.dapps,
       erc7730: this.erc7730,
@@ -638,6 +640,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
       this.erc7730,
+      platform,
       eventEmitterRegistry
     )
     this.domains = new DomainsController({
@@ -691,6 +694,7 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       storage: this.storage,
       featureFlags: this.featureFlags,
+      platform,
       signAccountOpPreference: this.signAccountOpPreference,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,
