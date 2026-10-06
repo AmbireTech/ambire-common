@@ -607,6 +607,8 @@ const formatFieldValue = (
   // The value of an encrypted field is a ciphertext handle, not the real value. Formatting it
   // (e.g. as a token amount) would show a meaningless huge number, so show the descriptor's
   // fallback text instead.
+  // We do not decrypt the value: each encryption scheme (e.g. FHEVM) needs its own custom
+  // code, and no real users have asked for it so far.
   if (field.encryption) {
     return [getText(field.encryption.fallbackLabel || DEFAULT_ENCRYPTED_VALUE_LABEL)]
   }
