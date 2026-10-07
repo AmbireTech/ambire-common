@@ -1,5 +1,5 @@
 {
-  "version": "2.110.8",
+  "version": "2.111.0",
   "name": "ambire-common",
   "description": "Common ground for the Ambire apps",
   "scripts": {
@@ -19,8 +19,8 @@
     "@corpus-core/colibri-stateless": "^1.1.30",
     "@lifi/types": "^17.7.1",
     "@metamask/eth-sig-util": "^8.2.0",
-    "@safe-global/api-kit": "^4.2.0",
-    "@safe-global/protocol-kit": "^7.2.0",
+    "@safe-global/api-kit": "^5.0.3",
+    "@safe-global/protocol-kit": "^8.0.6",
     "@signinwithethereum/siwe": "4.2.0",
     "aes-js": "^3.1.2",
     "dotenv": "^16.3.1",
@@ -29,12 +29,13 @@
     "ethers": "^6.8.0",
     "events": "^3.3.0",
     "hash-wasm": "^4.12.0",
+    "idb": "^8.0.3",
     "js-yaml": "^4.1.0",
     "pako": "2.1.0",
     "scrypt-js": "^3.0.1",
     "tldts": "7.0.17",
     "uuid": "9.0.0",
-    "viem": "2.45.2"
+    "viem": "2.56.3"
   },
   "peerDependencies": {
     "@noble/hashes": "^1.8.0",
@@ -79,6 +80,7 @@
     "eslint-plugin-prettier": "5.2.1",
     "eslint-plugin-react": "7.37.5",
     "eslint-plugin-react-hooks": "7.1.1",
+    "fake-indexeddb": "^6.2.5",
     "globals": "15.9.0",
     "hardhat": "2.24.1",
     "hardhat-gas-reporter": "1.0.10",
@@ -95,8 +97,6 @@
   "overrides": {
     "elliptic": "^6.6.1",
     "cipher-base": "^1.0.6",
-    "handlebars": "^4.7.9",
-    "@safe-global/safe-deployments": "1.37.56",
-    "@safe-global/safe-modules-deployments": "3.0.4"
+    "handlebars": "^4.7.9"
   }
 }

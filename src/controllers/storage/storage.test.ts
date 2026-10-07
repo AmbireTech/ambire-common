@@ -30,7 +30,8 @@ const ALL_MIGRATION_KEYS = [
   'migrateDappsAddConnectionSources',
   'migrateDomainsCacheToNames',
   'migrateDappsAddMissingIds',
-  'removeFetchingDisabledSelectors'
+  'removeFetchingDisabledSelectors',
+  'indexSentToHistoryFromAccountsOps'
 ]
 
 // Wraps a memory store and counts how many times each key is read and how many

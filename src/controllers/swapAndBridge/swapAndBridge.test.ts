@@ -254,7 +254,8 @@ const portfolioCtrl = new PortfolioController(
   relayerUrl,
   velcroUrl,
   bannerCtrl,
-  featureFlagsCtrl
+  featureFlagsCtrl,
+  uiCtrl
 )
 
 const safe = new SafeController({
