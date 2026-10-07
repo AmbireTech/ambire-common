@@ -4484,11 +4484,16 @@ describe('RPC gas prices with a bundler fallback', () => {
   }
 
   /**
-   * Builds a Safe signAccountOp with two native fee options: the Safe paying by itself
-   * (a bundler broadcast) and an EOA paying for it (a broadcast outside the bundler).
-   * The estimation comes with bundler gas prices, as a successful bundler estimation would
+   * Builds a smart account signAccountOp with two native fee options: the account paying
+   * by itself and an EOA paying for it (a broadcast outside the bundler). The estimation
+   * comes with bundler gas prices, as a successful bundler estimation would.
+   * A Safe pays by itself through the bundler, making it the default account here
    */
-  const initSafe = async (chainId: bigint, feeToken: TokenResult) => {
+  const initSmartAccount = async (
+    chainId: bigint,
+    feeToken: TokenResult,
+    account: Account = safeAccount
+  ) => {
     // the gas prices are driven by the test, not fetched from the network
     const fetchSpy = jest.spyOn(GasPriceController.prototype, 'fetch').mockResolvedValue(undefined)
     const option = {
@@ -4498,7 +4503,7 @@ describe('RPC gas prices with a bundler fallback', () => {
       token: feeToken
     }
     const feePaymentOptions = [
-      { ...option, paidBy: safeAccount.addr },
+      { ...option, paidBy: account.addr },
       { ...option, paidBy: eoaAccount.addr }
     ]
     const paymaster = {
@@ -4508,8 +4513,8 @@ describe('RPC gas prices with a bundler fallback', () => {
     } as unknown as AbstractPaymaster
 
     const { controller } = await init(
-      safeAccount,
-      createAccountOp(safeAccount, chainId),
+      account,
+      createAccountOp(account, chainId),
       eoaSigner,
       {
         providerEstimation: { gasUsed: 25000n, feePaymentOptions },
@@ -4534,14 +4539,18 @@ describe('RPC gas prices with a bundler fallback', () => {
         flags: {},
         updatedAt: Date.now()
       },
-      bundlerGasPrices
+      bundlerGasPrices,
+      false,
+      // otherwise the estimate interval runs a real estimation right away and puts the
+      // mocked one in a loading state, which skips the fee speeds calculation
+      { pauseOnInit: true }
     )
 
     return { controller, fetchSpy }
   }
 
   test('uses the RPC gas prices for an EOA paying on Ethereum and the bundler ones for the Safe itself', async () => {
-    const { controller } = await initSafe(1n, nativeFeeToken)
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
 
     // as the gas price controller would pass them
     controller.update({ rpcGasPrices })
@@ -4560,7 +4569,7 @@ describe('RPC gas prices with a bundler fallback', () => {
   })
 
   test('exposes the gas prices of the selected fee option', async () => {
-    const { controller } = await initSafe(1n, nativeFeeToken)
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
     controller.update({ rpcGasPrices })
 
     controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
@@ -4572,7 +4581,7 @@ describe('RPC gas prices with a bundler fallback', () => {
   })
 
   test('falls back to the bundler gas prices until the RPC ones are fetched', async () => {
-    const { controller } = await initSafe(1n, nativeFeeToken)
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
 
     expect(controller.rpcGasPrices).toBeUndefined()
     // slow is not increased, so it equals the bundler collection
@@ -4582,12 +4591,12 @@ describe('RPC gas prices with a bundler fallback', () => {
   })
 
   test('a gas price controller update does not overwrite the bundler estimation gas prices', async () => {
-    const { controller } = await initSafe(1n, nativeFeeToken)
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
 
     // the gas price controller mirrors the RPC gas prices in both of its fields
     controller.gasPrice.gasPrices = rpcGasPrices
     controller.gasPrice.rpcGasPrices = rpcGasPrices
-    await controller.gasPrice.forceEmitUpdate()
+    await controller.emitGasPriceUpdate()
 
     expect(controller.gasPrices).toEqual(bundlerGasPrices)
     expect(controller.rpcGasPrices).toEqual(rpcGasPrices)
@@ -4600,7 +4609,7 @@ describe('RPC gas prices with a bundler fallback', () => {
   })
 
   test('marks the gas prices as coming from the bundler estimation on Ethereum', async () => {
-    const { controller } = await initSafe(1n, nativeFeeToken)
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
 
     // the flag is truthful, and the strategy is what keeps the RPC fetch going
     // (see the gasPrice controller tests)
@@ -4612,7 +4621,7 @@ describe('RPC gas prices with a bundler fallback', () => {
   })
 
   test('custom gas prices override both collections', async () => {
-    const { controller } = await initSafe(1n, nativeFeeToken)
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
     controller.update({ rpcGasPrices })
 
     controller.update({ customGasPrices })
@@ -4628,7 +4637,12 @@ describe('RPC gas prices with a bundler fallback', () => {
   })
 
   test('ignores the RPC gas prices outside Ethereum', async () => {
-    const { controller } = await initSafe(137n, nativeFeeTokenPolygon)
+    // the test environment has no Polygon state for the Safe, so use an Ambire smart
+    // account, which prefers the bundler outside Ethereum just the same
+    const { controller } = await initSmartAccount(137n, nativeFeeTokenPolygon, smartAccount)
+    expect(
+      controller.baseAccount.getGasPriceFetchStrategy(controller.isErc4337Enabled)
+    ).toBe('bundlerWithRpcFallback')
 
     controller.update({ rpcGasPrices })
 
