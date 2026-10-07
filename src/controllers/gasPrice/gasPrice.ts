@@ -82,7 +82,9 @@ export class GasPriceController extends EventEmitter {
   }
 
   async fetch(emitLevelOnFailure: ErrorRef['level'] = 'silent') {
-    const strategy = this.#baseAccount.getGasPriceFetchStrategy()
+    const strategy = this.#baseAccount.getGasPriceFetchStrategy(
+      this.#featureFlags.isFeatureEnabled('erc4337')
+    )
 
     // the bundler estimation supplies the bundler gas prices, so when the account
     // relies on a single collection, there's nothing left to fetch here

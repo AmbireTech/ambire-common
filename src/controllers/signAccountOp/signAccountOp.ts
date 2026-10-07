@@ -1884,7 +1884,11 @@ export class SignAccountOpController
           // and we're stopping the gas price interval as
           // we will use the bundler gas prices, unless the account
           // also needs the RPC gas prices for its non-bundler broadcasts
-          if (this.baseAccount.getGasPriceFetchStrategy() === 'rpcWithBundlerFallback') {
+          if (
+            this.baseAccount.getGasPriceFetchStrategy(
+              this.#featureFlags.isFeatureEnabled('erc4337')
+            ) === 'rpcWithBundlerFallback'
+          ) {
             this.#startGasPriceIntervalIfNoCustomPrices()
           } else {
             this.#gasPriceInterval.stop()
@@ -2544,7 +2548,11 @@ export class SignAccountOpController
    */
   #shouldUseRpcGasPrices(broadcastOption: string): boolean {
     if (this.hasCustomGasPrices || !this.rpcGasPrices) return false
-    if (this.baseAccount.getGasPriceFetchStrategy() !== 'rpcWithBundlerFallback') return false
+    if (
+      this.baseAccount.getGasPriceFetchStrategy(this.#featureFlags.isFeatureEnabled('erc4337')) !==
+      'rpcWithBundlerFallback'
+    )
+      return false
 
     return this.baseAccount.shouldUseRpcGasPrices(broadcastOption)
   }

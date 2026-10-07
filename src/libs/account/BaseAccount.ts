@@ -159,9 +159,14 @@ export abstract class BaseAccount {
    * receive both collections so each broadcast option could use the correct one.
    * Everywhere else, the bundler is preferred as it's faster and more accurate
    */
-  getGasPriceFetchStrategy(): GasPriceFetchStrategy {
+  getGasPriceFetchStrategy(isErc4337Enabled: boolean): GasPriceFetchStrategy {
+    // global config
+    if (!isErc4337Enabled) return 'rpc'
+
+    // bundler is with priority on other chains
     if (this.network.chainId !== ETHEREUM_CHAIN_ID) return 'bundlerWithRpcFallback'
 
+    // rpc is with priority on Ethereum
     return this.canUseErc4337() ? 'rpcWithBundlerFallback' : 'rpc'
   }
 
