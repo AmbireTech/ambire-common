@@ -21,6 +21,7 @@ import { Account, AccountOnchainState, IAccountsController } from '../../interfa
 import { IActivityController } from '../../interfaces/activity'
 import { AutoLoginStatus, IAutoLoginController } from '../../interfaces/autoLogin'
 import { Banner } from '../../interfaces/banner'
+import { IContractInfoController } from '../../interfaces/contractInfo'
 import { Dapp, DappProviderRequest, IDappsController } from '../../interfaces/dapp'
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
@@ -149,6 +150,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   #dapps: IDappsController
 
   #erc7730: IErc7730Controller
+
+  #contractInfo: IContractInfoController
 
   #accounts: IAccountsController
 
@@ -282,6 +285,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     phishing,
     dapps,
     erc7730,
+    contractInfo,
     accounts,
     networks,
     providers,
@@ -319,6 +323,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     phishing: IPhishingController
     dapps: IDappsController
     erc7730: IErc7730Controller
+    contractInfo: IContractInfoController
     accounts: IAccountsController
     networks: INetworksController
     providers: IProvidersController
@@ -353,6 +358,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#phishing = phishing
     this.#dapps = dapps
     this.#erc7730 = erc7730
+    this.#contractInfo = contractInfo
     this.#accounts = accounts
     this.#networks = networks
     this.#providers = providers
@@ -2606,6 +2612,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           phishing: this.#phishing,
           dapps: this.#dapps,
           erc7730: this.#erc7730,
+          contractInfo: this.#contractInfo,
           fromRequestId: requestId,
           accountOp: providedAccountOp
             ? { ...providedAccountOp, nonce: initialNonce }

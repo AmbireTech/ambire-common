@@ -188,6 +188,7 @@ const prepareTest = async (
       type: 'default',
       callRelayer: mainCtrl.callRelayer,
       erc7730: mainCtrl.erc7730,
+      contractInfo: mainCtrl.contractInfo,
       accounts: mainCtrl.accounts,
       networks: mainCtrl.networks,
       keystore: mainCtrl.keystore,

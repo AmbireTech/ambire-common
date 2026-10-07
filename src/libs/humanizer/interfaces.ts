@@ -1,4 +1,5 @@
 import { Account } from '../../interfaces/account'
+import { DecodedCall } from '../../interfaces/decodeCall'
 import { BlacklistedStatus } from '../../interfaces/phishing'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
@@ -90,6 +91,10 @@ export interface IrCall extends Omit<Call, 'to'> {
   warnings?: HumanizerWarning[]
   isFallback?: boolean
   to?: string
+  /** The call data decoded with the function signature of its selector, when it can be decoded. */
+  decodedCall?: DecodedCall
+  /** The call isn't decoded yet because the function signatures it needs are still being fetched. */
+  isDecodingCall?: boolean
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]
