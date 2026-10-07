@@ -52,7 +52,9 @@ describe('curve', () => {
         getToken('0x0000000000000000000000000000000000000000', 19459257603515n)
       ]
     ]
-    const irCalls = curveModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
+    const irCalls = transactions.map((c) =>
+      curveModule(accountOp, c, humanizerInfo as HumanizerMeta)
+    )
 
     compareHumanizerVisualizations(irCalls, expectedVisualization)
   })

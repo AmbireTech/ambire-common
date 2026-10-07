@@ -1,7 +1,6 @@
-import { ZeroAddress } from 'ethers'
+import { Contract, ZeroAddress } from 'ethers'
 
-/* eslint-disable @typescript-eslint/no-use-before-define */
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
 import { STK_WALLET } from '../../consts/addresses'
@@ -10,11 +9,11 @@ import { getRpcProvider } from '../../services/provider'
 import { NetworkState, PortfolioNetworkResult, TokenResult } from '../portfolio/interfaces'
 import { PORTFOLIO_STATE } from '../portfolio/testData'
 import {
+  DefiUpdateMode,
   enhancePortfolioTokensWithDefiPositions,
   getAllAssetsAsHints,
-  getCanSkipUpdate,
+  getDefiUpdateMode,
   getFormattedApiPositions,
-  getShouldBypassServerSideCache,
   getUniqueMergedPositions
 } from './defiPositions'
 import {
@@ -24,6 +23,7 @@ import {
   getUniV3Positions
 } from './providers'
 import { AssetType, PositionsByProvider } from './types'
+import { AAVE_STATIC_CALL_TIMEOUT_MS } from './providers/aaveV3'
 
 describe('DeFi positions providers', () => {
   // If this test ever fails because the accounts remove their positions, you can:
@@ -108,6 +108,7 @@ describe('DeFi positions providers', () => {
         expect(res?.source).toBe('mixed')
         expect(res?.positions.length).toBeGreaterThan(0)
 
+        // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
         const firstPos = res?.positions[0]!
         expect(firstPos).toBeDefined()
         expect(firstPos?.additionalData.inRange).toBeDefined()
@@ -126,6 +127,7 @@ describe('DeFi positions providers', () => {
     })
     test('AAVE returns prices, health rate, additional date and asset value', async () => {
       const aavePositions = await getAAVEPositions(userAddrAave, providerEthereum, ethereum)
+      // eslint-disable-next-line @typescript-eslint/no-non-null-asserted-optional-chain
       const pos = aavePositions?.positions[0]!
       if (!pos) throw new Error('no positions found')
 
@@ -133,6 +135,22 @@ describe('DeFi positions providers', () => {
       expect(pos.additionalData.positionInUSD).toBeGreaterThan(0)
       expect(pos.additionalData.healthRate).toBeGreaterThan(0)
       expect(pos.additionalData.collateralInUSD).toBeGreaterThan(0)
+    })
+    test('AAVE getReservesCount times out instead of hanging forever', async () => {
+      jest.useFakeTimers()
+      const getFunctionSpy = jest.spyOn(Contract.prototype, 'getFunction').mockReturnValue({
+        staticCall: () => new Promise(() => {})
+      } as ReturnType<Contract['getFunction']>)
+
+      try {
+        const promise = getAAVEPositions(userAddrAave, providerEthereum, ethereum)
+        const expectation = expect(promise).rejects.toThrow(/took too long/i)
+        await jest.advanceTimersByTimeAsync(AAVE_STATIC_CALL_TIMEOUT_MS + 50)
+        await expectation
+      } finally {
+        getFunctionSpy.mockRestore()
+        jest.useRealTimers()
+      }
     })
   })
 })
@@ -193,6 +211,7 @@ describe('Defi positions helper and portfolio functions', () => {
           isCustom: false,
           canTopUpGasTank: false
         },
+        marketDataIn: [],
         priceIn: [],
         chainId: 1n,
         // Ensure required fields are present and not undefined
@@ -220,68 +239,134 @@ describe('Defi positions helper and portfolio functions', () => {
       expect(aBasWETH?.priceIn.length).toBe(1)
     })
   })
-  describe('getCanSkipUpdate', () => {
-    it("Should not skip if there is no previous state or there hasn't been a successful update", () => {
-      const canSkip = getCanSkipUpdate(undefined, false)
-
-      expect(canSkip).toBe(false)
-    })
-    it('Should not skip if the update is older than 60sec and the user has position', () => {
+  describe('getDefiUpdateMode', () => {
+    const buildDefiState = (
+      overrides: Partial<PortfolioNetworkResult['defiPositions']> = {}
+    ): PortfolioNetworkResult['defiPositions'] => {
       const portfolioState = structuredClone(
         PORTFOLIO_STATE['1']
       ) as NetworkState<PortfolioNetworkResult>
 
-      portfolioState.result!.defiPositions.lastSuccessfulUpdate = Date.now() - 61000
+      return Object.assign(portfolioState.result!.defiPositions, overrides)
+    }
 
-      const canSkip = getCanSkipUpdate(portfolioState.result!.defiPositions, false)
-
-      expect(canSkip).toBe(false)
+    const buildParams = (
+      overrides: Partial<Parameters<typeof getDefiUpdateMode>[0]> = {}
+    ): Parameters<typeof getDefiUpdateMode>[0] => ({
+      previousState: buildDefiState({ lastSuccessfulUpdate: Date.now() - 10000 }),
+      bypassServerSideCache: false,
+      isManualUpdate: false,
+      hasKeys: false,
+      sessionIds: [],
+      hasNonceChangedSinceLastUpdate: false,
+      hasScheduledUpdate: false,
+      maxDataAgeMs: 60000,
+      ...overrides
     })
-    it('Should not skip if the nonce has changed', () => {
-      const portfolioState = structuredClone(
-        PORTFOLIO_STATE['1']
-      ) as NetworkState<PortfolioNetworkResult>
 
-      portfolioState.result!.defiPositions.lastSuccessfulUpdate = Date.now() - 10000
+    it('Should force when bypassServerSideCache is set, regardless of everything else', () => {
+      const mode = getDefiUpdateMode(buildParams({ bypassServerSideCache: true }))
 
-      const canSkip = getCanSkipUpdate(portfolioState.result!.defiPositions, true)
-
-      expect(canSkip).toBe(false)
+      expect(mode).toBe(DefiUpdateMode.Force)
     })
-  })
-  describe('getShouldBypassServerSideCache', () => {
-    it('Should bypass if the last force api update is older than 30sec, there are keys, session ids and the update is manual', () => {
-      const portfolioState = structuredClone(
-        PORTFOLIO_STATE['1']
-      ) as NetworkState<PortfolioNetworkResult>
+    it('Should force when the nonce has changed and no scheduled update is pending', () => {
+      const mode = getDefiUpdateMode(buildParams({ hasNonceChangedSinceLastUpdate: true }))
 
-      portfolioState.result!.defiPositions.lastForceApiUpdate = Date.now() - 31000
-
-      const shouldBypass = getShouldBypassServerSideCache(
-        portfolioState.result!.defiPositions,
-        true,
-        true,
-        ['session-id-1'],
-        false
-      )
-      expect(shouldBypass).toBe(true)
+      expect(mode).toBe(DefiUpdateMode.Force)
     })
-    it('Should not bypass if the last force api update is within 30sec, even if there are keys, session ids and the update is manual', () => {
-      const portfolioState = structuredClone(
-        PORTFOLIO_STATE['1']
-      ) as NetworkState<PortfolioNetworkResult>
-
-      portfolioState.result!.defiPositions.lastForceApiUpdate = Date.now() - 20000
-
-      const shouldBypass = getShouldBypassServerSideCache(
-        portfolioState.result!.defiPositions,
-        true,
-        true,
-        ['session-id-1'],
-        false
+    it('Should force on a manual update with keys and session ids when the last force update is older than the cooldown', () => {
+      const mode = getDefiUpdateMode(
+        buildParams({
+          isManualUpdate: true,
+          hasKeys: true,
+          sessionIds: ['session-id-1'],
+          previousState: buildDefiState({ lastForceApiUpdate: Date.now() - 31000 })
+        })
       )
 
-      expect(shouldBypass).toBe(false)
+      expect(mode).toBe(DefiUpdateMode.Force)
+    })
+    it('Should force on a manual update even when a scheduled update is pending (manual updates are exempt)', () => {
+      const mode = getDefiUpdateMode(
+        buildParams({
+          isManualUpdate: true,
+          hasKeys: true,
+          sessionIds: ['session-id-1'],
+          hasScheduledUpdate: true,
+          previousState: buildDefiState({ lastForceApiUpdate: Date.now() - 31000 })
+        })
+      )
+
+      expect(mode).toBe(DefiUpdateMode.Force)
+    })
+
+    it('Should NOT force on an automatic update when a scheduled update is pending, even if the nonce has changed', () => {
+      const mode = getDefiUpdateMode(
+        buildParams({ hasNonceChangedSinceLastUpdate: true, hasScheduledUpdate: true })
+      )
+
+      expect(mode).not.toBe(DefiUpdateMode.Force)
+    })
+    it('Should NOT force on an automatic update with a pending scheduled update, even with keys/sessions and an old force update', () => {
+      const mode = getDefiUpdateMode(
+        buildParams({
+          hasKeys: true,
+          sessionIds: ['session-id-1'],
+          hasScheduledUpdate: true,
+          previousState: buildDefiState({
+            lastSuccessfulUpdate: Date.now() - 10000,
+            lastForceApiUpdate: Date.now() - 31000
+          })
+        })
+      )
+
+      expect(mode).not.toBe(DefiUpdateMode.Force)
+    })
+    it('Should NOT force on a manual update with a scheduled update pending if the last force update is within the cooldown', () => {
+      const mode = getDefiUpdateMode(
+        buildParams({
+          isManualUpdate: true,
+          hasKeys: true,
+          sessionIds: ['session-id-1'],
+          hasScheduledUpdate: true,
+          previousState: buildDefiState({
+            lastSuccessfulUpdate: Date.now() - 10000,
+            lastForceApiUpdate: Date.now() - 20000
+          })
+        })
+      )
+
+      expect(mode).not.toBe(DefiUpdateMode.Force)
+    })
+
+    it('Should return Cache when the data is fresh enough', () => {
+      const mode = getDefiUpdateMode(
+        buildParams({ previousState: buildDefiState({ lastSuccessfulUpdate: Date.now() - 10000 }) })
+      )
+
+      expect(mode).toBe(DefiUpdateMode.Cache)
+    })
+    it('Should return Default when the data is older than maxDataAgeMs', () => {
+      const mode = getDefiUpdateMode(
+        buildParams({ previousState: buildDefiState({ lastSuccessfulUpdate: Date.now() - 61000 }) })
+      )
+
+      expect(mode).toBe(DefiUpdateMode.Default)
+    })
+    it('Should return Default when there is no previous successful update', () => {
+      const mode = getDefiUpdateMode(buildParams({ previousState: undefined }))
+
+      expect(mode).toBe(DefiUpdateMode.Default)
+    })
+    it('Should return Cache when freshness is disabled (maxDataAgeMs < 0)', () => {
+      const mode = getDefiUpdateMode(
+        buildParams({
+          maxDataAgeMs: -1,
+          previousState: buildDefiState({ lastSuccessfulUpdate: Date.now() - 100000000 })
+        })
+      )
+
+      expect(mode).toBe(DefiUpdateMode.Cache)
     })
   })
   describe('getAllAssetsAsHints', () => {
@@ -333,7 +418,8 @@ describe('Defi positions helper and portfolio functions', () => {
             onGasTank: false,
             canTopUpGasTank: false,
             isFeeToken: false
-          }
+          },
+          marketDataIn: []
         })
       )
 
@@ -380,9 +466,9 @@ describe('Defi positions helper and portfolio functions', () => {
       const { restore } = suppressConsole()
       const clonedDebankUniV3 = structuredClone(DEBANK_UNI_V3)
 
-      // @ts-ignore
+      // @ts-expect-error test
       delete clonedDebankUniV3[0]!.source
-      // @ts-ignore
+      // @ts-expect-error test
       delete clonedDebankUniV3[0]!.positions[0]!.additionalData
 
       const firstPositionId = clonedDebankUniV3[0]!.positions[0]!.id
@@ -407,7 +493,7 @@ describe('Defi positions helper and portfolio functions', () => {
     it('Asset amounts are converted to BigInt', () => {
       const clonedDebankUniV3 = structuredClone(DEBANK_UNI_V3)
 
-      // @ts-ignore
+      // @ts-expect-error test
       clonedDebankUniV3[0]!.positions[0]!.assets[0]!.amount = 1234567890
 
       const formattedPositions = getFormattedApiPositions(clonedDebankUniV3)

@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
@@ -22,10 +21,25 @@ export abstract class BaseAccount {
 
   protected accountState: AccountOnchainState
 
-  constructor(account: Account, network: Network, accountState: AccountOnchainState) {
+  protected isErc4337Enabled: boolean
+
+  // when doing the 7702 activator/revoke, we should add the additional gas required
+  // for the authorization list:
+  // PER_EMPTY_ACCOUNT_COST: 25000
+  // access list storage key: 1900
+  // access list address: 2400
+  ACTIVATOR_GAS_USED = 29300n
+
+  constructor(
+    account: Account,
+    network: Network,
+    accountState: AccountOnchainState,
+    isErc4337Enabled: boolean
+  ) {
     this.account = account
     this.network = network
     this.accountState = accountState
+    this.isErc4337Enabled = isErc4337Enabled
   }
 
   getAccount() {
@@ -88,8 +102,16 @@ export abstract class BaseAccount {
    */
   abstract getNonceId(): string
 
+  abstract shouldStateOverrideDuringSimulations(): boolean
+
+  abstract canBroadcastByOtherEOA(): boolean
+
+  abstract canSetCustomGasPrices(feeOption: FeePaymentOption): boolean
+
+  abstract canSetCustomGas(feeOption: FeePaymentOption, accountOp?: AccountOp): boolean
+
   // this is specific for v2 accounts, hardcoding a false for all else
-  shouldIncludeActivatorCall() {
+  shouldIncludeActivatorCall(paidBy?: string) {
     return false
   }
 
@@ -115,6 +137,17 @@ export abstract class BaseAccount {
 
   isSponsorable(): boolean {
     return false
+  }
+
+  canUseErc4337(): boolean {
+    return false
+  }
+
+  /**
+   * Do we allow the account to broadcast by itself
+   */
+  canBroadcastByItself(): boolean {
+    return true
   }
 
   /**

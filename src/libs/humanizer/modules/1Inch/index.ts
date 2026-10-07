@@ -1,45 +1,68 @@
-import { Interface, ZeroAddress } from 'ethers'
+import { decodeFunctionData, parseAbi, toFunctionSelector, zeroAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { OneInch } from '../../const/abis/1Inch'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 import {
+  HexIrCall,
   eToNative,
   getAction,
   getLabel,
   getRecipientText,
   getToken,
+  isHexCall,
   uintToAddress
 } from '../../utils'
 
-const iface = new Interface(OneInch)
+const cancelOrderAbi = parseAbi(['function cancelOrder(uint256 makerTraits, bytes32 orderHash)'])
+const unoswap2Abi = parseAbi([
+  'function unoswap2(uint256 token, uint256 amount, uint256 minReturn, uint256 dex, uint256 dex2)'
+])
+const swapAbi = parseAbi([
+  'function swap(address executor, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 flags) desc, bytes data) payable returns (uint256, uint256)'
+])
+const ethUnoswapAbi = parseAbi(['function ethUnoswap(uint256, uint256) payable returns (uint256)'])
+const unoswapAbi = parseAbi([
+  'function unoswap(uint256 token,uint256 amount,uint256 minReturn,uint256 dex) returns (uint256)'
+])
+const unoswapToAbi = parseAbi([
+  'function unoswapTo(uint256 to,uint256 token,uint256 amount,uint256 minReturn,uint256 dex) returns (uint256)'
+])
+const unoswap3Abi = parseAbi([
+  'function unoswap3(uint256 token,uint256 amount,uint256 minReturn,uint256 dex,uint256 dex2,uint256 dex3) returns (uint256)'
+])
+const swapWithPermitAbi = parseAbi([
+  'function swap(address executor, (address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 flags) desc, bytes permit, bytes data) payable returns (uint256 returnAmount, uint256 spentAmount)'
+])
 
-const OneInchModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
-  const matcher = {
-    [iface.getFunction('cancelOrder(uint256 makerTraits, bytes32 orderHash)')?.selector!]: (
-      call: IrCall
-    ) => {
-      const { orderHash } = iface.parseTransaction(call)!.args
+const cancelOrderSelector = toFunctionSelector(cancelOrderAbi[0])
+const unoswap2Selector = toFunctionSelector(unoswap2Abi[0])
+const swapSelector = toFunctionSelector(swapAbi[0])
+const ethUnoswapSelector = toFunctionSelector(ethUnoswapAbi[0])
+const unoswapSelector = toFunctionSelector(unoswapAbi[0])
+const unoswapToSelector = toFunctionSelector(unoswapToAbi[0])
+const unoswap3Selector = toFunctionSelector(unoswap3Abi[0])
+const swapWithPermitSelector = toFunctionSelector(swapWithPermitAbi[0])
+
+const OneInchModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
+  const matcher: Record<string, (call: HexIrCall) => any> = {
+    [cancelOrderSelector]: (call) => {
+      const { args } = decodeFunctionData({ abi: cancelOrderAbi, data: call.data })
+      const [, orderHash] = args
       return [
         getAction('Cancel order'),
         getLabel(`with order hash ${orderHash.slice(0, 5)}...${orderHash.slice(63, 66)}`)
       ]
     },
-    [iface.getFunction(
-      'unoswap2(uint256 token, uint256 amount, uint256 minReturn, uint256 dex, uint256 dex2)'
-    )?.selector!]: (call: IrCall) => {
-      const { token: tokenArg, amount } = iface.parseTransaction(call)!.args
-
+    [unoswap2Selector]: (call) => {
+      const { args } = decodeFunctionData({ abi: unoswap2Abi, data: call.data })
+      const [tokenArg, amount] = args
       const token = uintToAddress(tokenArg)
-
       return [getAction('Swap'), getToken(eToNative(token), amount)]
     },
-    [iface.getFunction(
-      'swap(address executor,tuple(address srcToken,address dstToken,address srcReceiver,address dstReceiver,uint256 amount,uint256 minReturnAmount,uint256 flags) desc,bytes data)'
-    )?.selector!]: (call: IrCall) => {
-      const {
-        desc: { srcToken, dstToken, dstReceiver, amount, minReturnAmount }
-      } = iface.parseTransaction(call)!.args
+    [swapSelector]: (call) => {
+      const { args } = decodeFunctionData({ abi: swapAbi, data: call.data })
+      const [, desc] = args
+      const { srcToken, dstToken, dstReceiver, amount, minReturnAmount } = desc
       return [
         getAction('Swap'),
         getToken(eToNative(srcToken), amount),
@@ -48,43 +71,31 @@ const OneInchModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
         ...getRecipientText(accOp.accountAddr, dstReceiver)
       ]
     },
-    [iface.getFunction('ethUnoswap(uint256, uint256)')?.selector!]: (call: IrCall) => {
-      return [getAction('Swap'), getToken(ZeroAddress, call.value)]
+    [ethUnoswapSelector]: (call) => {
+      return [getAction('Swap'), getToken(zeroAddress, call.value)]
     },
-    [iface.getFunction('unoswap(uint256 token,uint256 amount,uint256 minReturn,uint256 dex)')
-      ?.selector!]: (call: IrCall) => {
-      const { token: tokenArg, amount } = iface.parseTransaction(call)!.args
-
+    [unoswapSelector]: (call) => {
+      const { args } = decodeFunctionData({ abi: unoswapAbi, data: call.data })
+      const [tokenArg, amount] = args
       const token = uintToAddress(tokenArg)
-
       return [getAction('Swap'), getToken(eToNative(token), amount)]
     },
-    [iface.getFunction(
-      'unoswapTo(uint256 to,uint256 token,uint256 amount,uint256 minReturn,uint256 dex)'
-    )?.selector!]: (call: IrCall) => {
-      const { token: tokenArg, amount } = iface.parseTransaction(call)!.args
+    [unoswapToSelector]: (call) => {
+      const { args } = decodeFunctionData({ abi: unoswapToAbi, data: call.data })
+      const [, tokenArg, amount] = args
       const token = uintToAddress(tokenArg)
-
       return [getAction('Swap'), getToken(eToNative(token), amount)]
     },
-    [iface.getFunction(
-      'unoswap3(uint256 token,uint256 amount,uint256 minReturn,uint256 dex,uint256 dex2,uint256 dex3)'
-    )?.selector!]: (call: IrCall) => {
-      const { token: tokenArg, amount } = iface.parseTransaction(call)!.args
+    [unoswap3Selector]: (call) => {
+      const { args } = decodeFunctionData({ abi: unoswap3Abi, data: call.data })
+      const [tokenArg, amount] = args
       const token = uintToAddress(tokenArg)
-
       return [getAction('Swap'), getToken(eToNative(token), amount)]
     },
-    [iface.getFunction(
-      'swap(address executor, tuple(address srcToken, address dstToken, address srcReceiver, address dstReceiver, uint256 amount, uint256 minReturnAmount, uint256 flags) desc, bytes permit, bytes data) payable returns (uint256 returnAmount, uint256 spentAmount)'
-    )?.selector!]: (call: IrCall) => {
-      const {
-        executor,
-        desc: { srcToken, dstToken, srcReceiver, dstReceiver, amount, minReturnAmount, flags },
-        permit,
-        data
-      } = iface.parseTransaction(call)!.args
-
+    [swapWithPermitSelector]: (call) => {
+      const { args } = decodeFunctionData({ abi: swapWithPermitAbi, data: call.data })
+      const [, desc] = args
+      const { srcToken, dstToken, dstReceiver, amount, minReturnAmount } = desc
       return [
         getAction('Swap'),
         getToken(srcToken, amount),
@@ -94,12 +105,9 @@ const OneInchModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       ]
     }
   }
-  const newCalls = calls.map((call) => {
-    if (call.fullVisualization || !matcher[call.data.slice(0, 10)]) return call
-    return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](call) }
-  })
-
-  return newCalls
+  const match = matcher[call.data.slice(0, 10)]
+  if (call.fullVisualization || !isHexCall(call) || !match) return call
+  return { ...call, fullVisualization: match(call) }
 }
 
 export default OneInchModule

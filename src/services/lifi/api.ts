@@ -1,22 +1,25 @@
+import { CITREA_CHAIN_ID } from '@/consts/networks'
 import {
   ExtendedChain as LiFiExtendedChain,
-  LiFiStep,
+  Step as LiFiIncludedStep,
   Route as LiFiRoute,
   RoutesResponse as LiFiRoutesResponse,
   StatusResponse as LiFiRouteStatusResponse,
-  Step as LiFiIncludedStep,
+  LiFiStep,
   Token as LiFiToken,
   TokensResponse as LiFiTokensResponse,
   ToolError
 } from '@lifi/types'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   ProviderQuoteParams,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
   SwapAndBridgeRouteStatus,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeStep,
   SwapAndBridgeSupportedChain,
@@ -33,7 +36,9 @@ import {
   lifiMapNativeToAddr,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { FEE_PERCENT, ZERO_ADDRESS } from '../socket/constants'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
+import type { FeeExemptionReason } from '../../libs/swapAndBridge/fee'
+import { ZERO_ADDRESS } from '../socket/constants'
 import { getHumanReadableErrorMessage } from './helpers'
 
 const normalizeLiFiTokenToSwapAndBridgeToToken = (
@@ -127,7 +132,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
   userAddress: string,
   accountNativeBalance: bigint,
   nativeSymbol: string,
-  withConvenienceFee: boolean
+  withConvenienceFee: boolean,
+  feeExemptionReason?: FeeExemptionReason
 ): SwapAndBridgeRoute => {
   // search for a feeCost that is not included in the quote
   // if there is one, check if the user has enough to pay for it
@@ -164,6 +170,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
     steps: route.steps.flatMap(normalizeLiFiStepToSwapAndBridgeStep),
     inputValueInUsd: +route.fromAmountUSD,
     outputValueInUsd: +route.toAmountUSD,
+    outputValueAfterGasInUsd:
+      route.gasCostUSD === undefined ? undefined : +route.toAmountUSD - +route.gasCostUSD,
     serviceTime: route.steps[0]?.estimate.executionDuration || 0,
     rawRoute: route,
     sender: route.fromAddress,
@@ -171,7 +179,8 @@ const normalizeLiFiRouteToSwapAndBridgeRoute = (
     disabled,
     disabledReason,
     serviceFee,
-    withConvenienceFee
+    withConvenienceFee,
+    feeExemptionReason
   }
 }
 
@@ -216,6 +225,8 @@ export class LiFiAPI implements SwapProvider {
 
   #fetch: Fetch
 
+  #featureFlags: Pick<IFeatureFlagsController, 'isFeatureEnabled'>
+
   #baseUrl = 'https://li.quest/v1'
 
   #headers: RequestInitWithCustomHeaders['headers']
@@ -238,8 +249,17 @@ export class LiFiAPI implements SwapProvider {
    */
   #apiKeyActivatedTimestamp?: number
 
-  constructor({ fetch, apiKey }: { fetch: Fetch; apiKey: string }) {
+  constructor({
+    fetch,
+    apiKey,
+    featureFlags
+  }: {
+    fetch: Fetch
+    apiKey: string
+    featureFlags: Pick<IFeatureFlagsController, 'isFeatureEnabled'>
+  }) {
     this.#fetch = fetch
+    this.#featureFlags = featureFlags
 
     this.#headers = {
       Accept: 'application/json',
@@ -264,7 +284,6 @@ export class LiFiAPI implements SwapProvider {
     this.#apiKeyActivatedTimestamp = undefined
   }
 
-  // eslint-disable-next-line class-methods-use-this
   async getHealth() {
     // Li.Fi's v1 API doesn't have a dedicated health endpoint
     return true
@@ -285,10 +304,15 @@ export class LiFiAPI implements SwapProvider {
     this.isHealthy = null
   }
 
+  /** disable explicitly citrea for lifi */
+  areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
+    return fromChainId !== Number(CITREA_CHAIN_ID) && toChainId !== Number(CITREA_CHAIN_ID)
+  }
+
   /**
    * Processes LiFi API responses and throws custom errors for various failures
    */
-  // eslint-disable-next-line class-methods-use-this
+
   async #handleResponse<T>({
     fetchPromise,
     errorPrefix
@@ -406,7 +430,8 @@ export class LiFiAPI implements SwapProvider {
     const sortedTokens = await attemptToSortTokensByMarketCap({
       fetch: this.#fetch,
       chainId: toChainId,
-      tokens
+      tokens,
+      featureFlags: this.#featureFlags
     })
 
     const withCustomTokens = addCustomTokensIfNeeded({ chainId: toChainId, tokens: sortedTokens })
@@ -449,7 +474,8 @@ export class LiFiAPI implements SwapProvider {
     sort,
     isWrapOrUnwrap,
     accountNativeBalance,
-    nativeSymbol
+    nativeSymbol,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     if (!fromAsset)
       throw new SwapAndBridgeProviderApiError(
@@ -477,7 +503,7 @@ export class LiFiAPI implements SwapProvider {
         allowDestinationCall: 'false',
         allowSwitchChain: 'false',
         // LiFi fee is from 0 to 1, so normalize it by dividing by 100
-        fee: (FEE_PERCENT / 100).toString() as string | undefined,
+        fee: (feePercent / 100).toString() as string | undefined,
         // How this works:
         // When this strategy is applied, we give all tool 900ms (minWaitTimeMs) to return a result.
         // If we received 5 or more (startingExpectedResults) results during this time we return those and don’t wait for other tools.
@@ -505,7 +531,11 @@ export class LiFiAPI implements SwapProvider {
       }
     }
 
-    const shouldRemoveConvenienceFee = isWrapOrUnwrap || isNoFeeToken(fromChainId, fromTokenAddress)
+    const feeExemptionReason = getFeeExemptionReason({
+      isWrapOrUnwrap,
+      isFeeExemptToken: isNoFeeToken(fromChainId, fromTokenAddress)
+    })
+    const shouldRemoveConvenienceFee = feePercent === 0 || !!feeExemptionReason
     if (shouldRemoveConvenienceFee) delete body.options.fee
 
     const url = `${this.#baseUrl}/advanced/routes`
@@ -529,7 +559,8 @@ export class LiFiAPI implements SwapProvider {
           userAddress,
           accountNativeBalance,
           nativeSymbol,
-          !shouldRemoveConvenienceFee
+          !shouldRemoveConvenienceFee,
+          feeExemptionReason
         )
       ),
       // selecting a route is a controller's responsiilibty, not the API's
@@ -566,8 +597,8 @@ export class LiFiAPI implements SwapProvider {
     fromChainId: number
     toChainId: number
     bridge?: string
-  }): Promise<SwapAndBridgeRouteStatus> {
-    if (!bridge) return 'completed'
+  }): Promise<SwapAndBridgeRouteStatusResult> {
+    if (!bridge) return { status: 'completed', txnId: txHash }
 
     const params = new URLSearchParams({
       txHash,
@@ -604,13 +635,19 @@ export class LiFiAPI implements SwapProvider {
     }
 
     if (response instanceof SwapAndBridgeProviderApiError) {
-      return statuses.PENDING
+      return { status: statuses.PENDING }
     }
+
+    const receivingTxnId =
+      'receiving' in response && 'txHash' in response.receiving ? response.receiving.txHash : null
 
     if (response.substatus && response.substatus === 'REFUNDED') {
-      return statuses.REFUNDED
+      return { status: statuses.REFUNDED, txnId: receivingTxnId }
     }
 
-    return statuses[response.status as LiFiRouteStatusResponse['status']]
+    return {
+      status: statuses[response.status as LiFiRouteStatusResponse['status']],
+      txnId: receivingTxnId
+    }
   }
 }

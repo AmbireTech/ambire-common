@@ -1,5 +1,8 @@
 import fetch from 'node-fetch'
 
+import { SwapAndBridgeController } from '@/controllers/swapAndBridge/swapAndBridge'
+import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
+import { getTokenMarketDataKey } from '@/libs/swapAndBridge/tokenMarketData'
 import { expect, jest } from '@jest/globals'
 
 import { relayerUrl, velcroUrl } from '../../../test/config'
@@ -7,11 +10,14 @@ import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsole } from '../../../test/helpers/console'
 import { mockUiManager } from '../../../test/helpers/ui'
 import { waitForFnToBeCalledAndExecuted } from '../../../test/recurringTimeout'
+import EmittableError from '../../classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
+import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'
 import { IRequestsController } from '../../interfaces/requests'
 import { Storage } from '../../interfaces/storage'
+import { SocketAPIToken } from '../../interfaces/swapAndBridge'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import wait from '../../utils/wait'
@@ -20,6 +26,8 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
+import { ContractInfoController } from '../contractInfo/contractInfo'
+import { Erc7730Controller } from '../erc7730/erc7730'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
 import { KeystoreController } from '../keystore/keystore'
@@ -28,12 +36,14 @@ import { PhishingController } from '../phishing/phishing'
 import { PortfolioController } from '../portfolio/portfolio'
 import { ProvidersController } from '../providers/providers'
 import { RequestsController } from '../requests/requests'
+import { SafeController } from '../safe/safe'
 import { SelectedAccountController } from '../selectedAccount/selectedAccount'
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 import { StorageController } from '../storage/storage'
+import { SurveyController } from '../survey/survey'
 import { TransferController } from '../transfer/transfer'
 import { UiController } from '../ui/ui'
 import { SocketAPIMock } from './socketApiMock'
-import { SwapAndBridgeController, SwapAndBridgeFormStatus } from './swapAndBridge'
 
 const accounts = [
   {
@@ -52,6 +62,57 @@ const accounts = [
     }
   }
 ]
+
+const getSubmittedAccountOp = (
+  txnId: string,
+  activeRouteId?: string,
+  status = 'broadcasted-but-not-confirmed',
+  chainId?: bigint
+) =>
+  ({
+    id: 'submitted-account-op-id',
+    accountAddr: accounts[0]!.addr,
+    signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
+    gasLimit: null,
+    gasFeePayment: {
+      isGasTank: false,
+      paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      inToken: '0x0000000000000000000000000000000000000000',
+      amount: 1n,
+      simulatedGasLimit: 1n,
+      gasPrice: 1n
+    },
+    chainId: chainId ? chainId : activeRouteId ? 10n : 1n,
+    nonce: 225n,
+    signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
+    calls: [
+      {
+        to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
+        value: BigInt(0),
+        data: '0x'
+      }
+    ],
+    txnId,
+    status,
+    timestamp: Date.now(),
+    identifiedBy: {
+      type: 'Transaction',
+      identifier: txnId
+    },
+    meta: activeRouteId
+      ? {
+          swapTxn: {
+            activeRouteId,
+            approvalData: null,
+            chainId: 10,
+            txData: '0x',
+            txTarget: '0x0000000000000000000000000000000000000000',
+            userTxIndex: 0,
+            value: '0'
+          }
+        }
+      : {}
+  }) as any
 
 // Notice
 // The status of swapAndBridge.ts is a bit more difficult to test
@@ -83,12 +144,35 @@ const networksCtrl = new NetworksController({
   useTempProvider: (props, cb) => {
     return providersCtrl.useTempProvider(props, cb)
   },
-  onAddOrUpdateNetworks: () => {}
+  onAddOrUpdateNetworks: () => {},
+  onReady: async () => {
+    await providersCtrl.init({ networks: networksCtrl.allNetworks })
+  }
 })
 
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
-providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
+// Add the dashboard and swap-and-bridge routes
+uiCtrl.addView({
+  id: 'dashboard',
+  type: 'tab',
+  currentRoute: 'dashboard',
+  isReady: true,
+  searchParams: {}
+})
+uiCtrl.addView({
+  id: 'swap-and-bridge',
+  type: 'tab',
+  currentRoute: 'dashboard',
+  isReady: true,
+  searchParams: {}
+})
+
+providersCtrl = new ProvidersController({
+  storage: storageCtrl,
+  getNetworks: () => networksCtrl.allNetworks,
+  sendUiMessage: () => uiCtrl.message.sendUiMessage
+})
 
 const keystore = new KeystoreController('default', storageCtrl, {}, uiCtrl)
 
@@ -114,18 +198,52 @@ const autoLoginCtrl = new AutoLoginController(
   {},
   new InviteController({ relayerUrl, fetch, storage: storageCtrl })
 )
+const surveyCtrl = new SurveyController({
+  fetch,
+  relayerUrl,
+  storage: storageCtrl,
+  ui: uiCtrl,
+  dismissBanner: () => {}
+})
+const bannerCtrl = new BannerController(
+  storageCtrl,
+  () => ({
+    status: 'has-selected-account',
+    address: accounts[0]!.addr,
+    hasKeys: true,
+    numberOfTransactions: 0,
+    totalUsdBalance: 0,
+    isBalanceReady: true
+  }),
+  surveyCtrl,
+  '1.0.0'
+)
 const selectedAccountCtrl = new SelectedAccountController({
   storage: storageCtrl,
   accounts: accountsCtrl,
-  keystore,
-  autoLogin: autoLoginCtrl
+  autoLogin: autoLoginCtrl,
+  banner: bannerCtrl,
+  ui: uiCtrl
 })
 
 const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
 
 const callRelayer = relayerCall.bind({ url: '', fetch })
-
 const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
+const erc7730Ctrl = new Erc7730Controller({
+  storage: storageCtrl,
+  callRelayer,
+  featureFlags: featureFlagsCtrl,
+  providers: providersCtrl,
+  ui: uiCtrl
+})
+const contractInfoCtrl = new ContractInfoController({
+  fetch,
+  storage: storageCtrl,
+  featureFlags: featureFlagsCtrl,
+  ui: uiCtrl
+})
+
 const portfolioCtrl = new PortfolioController(
   storageCtrl,
   fetch,
@@ -135,9 +253,17 @@ const portfolioCtrl = new PortfolioController(
   keystore,
   relayerUrl,
   velcroUrl,
-  new BannerController(storageCtrl),
-  featureFlagsCtrl
+  bannerCtrl,
+  featureFlagsCtrl,
+  uiCtrl
 )
+
+const safe = new SafeController({
+  networks: networksCtrl,
+  providers: providersCtrl,
+  storage: storageCtrl,
+  accounts: accountsCtrl
+})
 
 const activityCtrl = new ActivityController(
   storageCtrl,
@@ -148,13 +274,17 @@ const activityCtrl = new ActivityController(
   providersCtrl,
   networksCtrl,
   portfolioCtrl,
+  safe,
+  featureFlagsCtrl,
   () => Promise.resolve()
 )
 
 const phishingCtrl = new PhishingController({
   fetch,
   storage: storageCtrl,
-  addressBook: addressBookCtrl
+  addressBook: addressBookCtrl,
+  ui: uiCtrl,
+  featureFlags: featureFlagsCtrl
 })
 
 const socketAPIMock = new SocketAPIMock({ fetch, apiKey: '' })
@@ -167,6 +297,7 @@ const PORTFOLIO_TOKENS = [
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
     chainId: 10n,
     priceIn: [{ baseCurrency: 'usd', price: 0.99785 }],
+    marketDataIn: [],
     symbol: 'USDT',
     name: 'Tether'
   },
@@ -177,6 +308,7 @@ const PORTFOLIO_TOKENS = [
     flags: { onGasTank: false, rewardsType: null, isFeeToken: false, canTopUpGasTank: false },
     chainId: 8453n,
     priceIn: [{ baseCurrency: 'usd', price: 64325 }],
+    marketDataIn: [],
     symbol: 'cbBTC',
     name: 'Coinbase wrapped BTC'
   },
@@ -187,36 +319,65 @@ const PORTFOLIO_TOKENS = [
     flags: { onGasTank: false, rewardsType: null, isFeeToken: true, canTopUpGasTank: true },
     chainId: 10n,
     priceIn: [{ baseCurrency: 'usd', price: 3660.27 }],
+    marketDataIn: [],
     symbol: 'ETH',
     name: 'Ether'
   }
 ]
 
 let requestsCtrl: IRequestsController | undefined
+const signAccountOpPreference = new SignAccountOpPreferenceController({ storage: storageCtrl })
+const dappsControllerMock = {
+  dapps: [],
+  isReady: true,
+  onUpdate: () => () => {}
+} as any
 
-const swapAndBridgeController = new SwapAndBridgeController({
-  callRelayer: () => {},
-  selectedAccount: selectedAccountCtrl,
-  networks: networksCtrl,
-  accounts: accountsCtrl,
-  activity: activityCtrl,
-  storage: storageCtrl,
-  swapProvider: socketAPIMock as any,
-  keystore,
-  portfolio: portfolioCtrl,
-  providers: providersCtrl,
-  phishing: phishingCtrl,
-  externalSignerControllers: {},
-  relayerUrl,
-  getUserRequests: () => [],
-  getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
-  onBroadcastSuccess: () => Promise.resolve(),
-  onBroadcastFailed: () => {}
-})
+const buildSwapAndBridgeController = (controllerStorage: StorageController = storageCtrl) =>
+  new SwapAndBridgeController({
+    callRelayer: async () => ({}),
+    fetch: fetch as any,
+    selectedAccount: selectedAccountCtrl,
+    networks: networksCtrl,
+    accounts: accountsCtrl,
+    activity: activityCtrl,
+    storage: controllerStorage,
+    signAccountOpPreference,
+    featureFlags: featureFlagsCtrl,
+    platform: 'browser-webkit',
+    swapProvider: socketAPIMock as any,
+    erc7730: erc7730Ctrl,
+    contractInfo: contractInfoCtrl,
+    keystore,
+    portfolio: portfolioCtrl,
+    providers: providersCtrl,
+    phishing: phishingCtrl,
+    dapps: dappsControllerMock,
+    externalSignerControllers: {},
+    relayerUrl,
+    getUserRequests: () => [],
+    getVisibleUserRequests: () => (requestsCtrl ? requestsCtrl.visibleUserRequests : []),
+    onBroadcastSuccess: () => Promise.resolve(),
+    onBroadcastFailed: () => {},
+    ui: uiCtrl
+  })
+
+const swapAndBridgeController = buildSwapAndBridgeController()
+
+const createDeferred = <T>() => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+
+  return { promise, resolve }
+}
 
 const transferCtrl = new TransferController(
-  () => {},
+  async () => ({}),
   storageCtrl,
+  signAccountOpPreference,
+  featureFlagsCtrl,
   humanizerInfo as HumanizerMeta,
   selectedAccountCtrl,
   networksCtrl,
@@ -228,9 +389,13 @@ const transferCtrl = new TransferController(
   {},
   providersCtrl,
   phishingCtrl,
+  dappsControllerMock,
   relayerUrl,
   () => Promise.resolve(),
-  uiCtrl
+  uiCtrl,
+  erc7730Ctrl,
+  contractInfoCtrl,
+  'browser-webkit'
 )
 
 requestsCtrl = new RequestsController({
@@ -240,14 +405,22 @@ requestsCtrl = new RequestsController({
   externalSignerControllers: {},
   activity: activityCtrl,
   phishing: phishingCtrl,
+  dapps: dappsControllerMock,
+  erc7730: erc7730Ctrl,
+  contractInfo: contractInfoCtrl,
   accounts: accountsCtrl,
   networks: networksCtrl,
   providers: providersCtrl,
+  storage: storageCtrl,
+  featureFlags: featureFlagsCtrl,
+  platform: 'browser-webkit',
+  signAccountOpPreference,
   selectedAccount: selectedAccountCtrl,
   keystore,
   transfer: transferCtrl,
   swapAndBridge: swapAndBridgeController,
   ui: uiCtrl,
+  safe,
   autoLogin: autoLoginCtrl,
   getDapp: async () => undefined,
   updateSelectedAccountPortfolio: () => Promise.resolve(),
@@ -259,14 +432,6 @@ requestsCtrl = new RequestsController({
 
 describe('SwapAndBridge Controller', () => {
   beforeEach(() => {
-    const testName = expect.getState().currentTestName
-    if (
-      testName?.includes('should continuously update the quote') ||
-      testName?.includes('should continuously update active routes')
-    ) {
-      return
-    }
-
     jest.spyOn(swapAndBridgeController.updateQuoteInterval, 'start').mockImplementation(jest.fn())
     jest.spyOn(swapAndBridgeController.updateQuoteInterval, 'restart').mockImplementation(jest.fn())
     jest.spyOn(swapAndBridgeController.updateQuoteInterval, 'stop').mockImplementation(jest.fn())
@@ -291,6 +456,157 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController).toBeDefined()
     // TODO: move these in beforeEach with an exception for the continuous updates tests where mocks are not needed
   })
+  test('should persist and emit disabled swap providers without an active form session', async () => {
+    expect(swapAndBridgeController.swapProviders).toEqual([{ id: 'socket', name: 'Socket' }])
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+    expect(swapAndBridgeController.sessionIds).toEqual([])
+
+    const emittedDisabledProviderIds: string[][] = []
+    const unsubscribe = swapAndBridgeController.onUpdate(() => {
+      emittedDisabledProviderIds.push(swapAndBridgeController.getDisabledSwapProviderIds())
+    })
+
+    await swapAndBridgeController.setSwapProviderEnabled('unknown-provider', false)
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+    expect(emittedDisabledProviderIds).toEqual([])
+
+    await swapAndBridgeController.setSwapProviderEnabled('socket', false)
+    const disabledProviderIds = swapAndBridgeController.getDisabledSwapProviderIds()
+    disabledProviderIds.push('mutated-copy')
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual(['socket'])
+    expect(emittedDisabledProviderIds).toContainEqual(['socket'])
+    await expect(storageCtrl.get('disabledSwapProviderIds', [])).resolves.toEqual(['socket'])
+
+    await swapAndBridgeController.setSwapProviderEnabled('socket', true)
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+    expect(emittedDisabledProviderIds).toContainEqual([])
+    await expect(storageCtrl.get('disabledSwapProviderIds', [])).resolves.toEqual([])
+    unsubscribe()
+  })
+  test('should clear the token list error and skip fetching when all providers are disabled', async () => {
+    await swapAndBridgeController.initForm('all-providers-disabled-test')
+    const toSelectedToken = swapAndBridgeController.toTokenShortList[0]!
+    swapAndBridgeController.addOrUpdateError({
+      id: 'to-token-list-fetch-failed',
+      title: 'Token list fetch failed',
+      level: 'error'
+    })
+    const getToTokenListSpy = jest.spyOn(socketAPIMock, 'getToTokenList')
+    getToTokenListSpy.mockClear()
+
+    await swapAndBridgeController.setSwapProviderEnabled('socket', false)
+
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual(['socket'])
+    expect(getToTokenListSpy).not.toHaveBeenCalled()
+    expect(swapAndBridgeController.errors).not.toContainEqual(
+      expect.objectContaining({ id: 'to-token-list-fetch-failed' })
+    )
+
+    swapAndBridgeController.toSelectedToken = toSelectedToken
+    await swapAndBridgeController.updateToTokenList(true)
+
+    expect(getToTokenListSpy).not.toHaveBeenCalled()
+    expect(swapAndBridgeController.toSelectedToken).toBeNull()
+    expect(swapAndBridgeController.errors).not.toContainEqual(
+      expect.objectContaining({ id: 'to-token-list-fetch-failed' })
+    )
+
+    await swapAndBridgeController.setSwapProviderEnabled('socket', true)
+    swapAndBridgeController.unloadScreen('all-providers-disabled-test', true)
+  })
+  test('should enable only CoW Swap when MEV protection is enabled', async () => {
+    jest.spyOn(socketAPIMock, 'getProvidersInfo').mockReturnValue([
+      { id: 'socket', name: 'Socket' },
+      { id: 'uniswap', name: 'Uniswap' },
+      { id: 'cowswap', name: 'CoW Swap' }
+    ])
+    const persistedStorage = new StorageController(produceMemoryStore())
+    const controller = buildSwapAndBridgeController(persistedStorage)
+    const sessionId = 'mev-protection-test'
+
+    await controller.initForm(sessionId)
+    controller.unloadScreen(sessionId, true)
+    await controller.setSwapProviderEnabled('cowswap', false)
+    await controller.setMevProtectionEnabled(true)
+
+    expect(controller.getDisabledSwapProviderIds()).toEqual(['socket', 'uniswap'])
+    await expect(persistedStorage.get('disabledSwapProviderIds', [])).resolves.toEqual([
+      'socket',
+      'uniswap'
+    ])
+
+    await controller.setSwapProviderEnabled('uniswap', true)
+
+    expect(controller.getDisabledSwapProviderIds()).toEqual(['socket'])
+
+    await controller.setMevProtectionEnabled(true)
+    await controller.setMevProtectionEnabled(false)
+
+    expect(controller.getDisabledSwapProviderIds()).toEqual([])
+    await expect(persistedStorage.get('disabledSwapProviderIds', [])).resolves.toEqual([])
+  })
+  test('should ignore MEV protection when CoW Swap is unavailable', async () => {
+    const persistedStorage = new StorageController(produceMemoryStore())
+    const controller = buildSwapAndBridgeController(persistedStorage)
+    const sessionId = 'mev-protection-without-cow-test'
+
+    await controller.initForm(sessionId)
+    controller.unloadScreen(sessionId, true)
+    await controller.setSwapProviderEnabled('socket', false)
+    await controller.setMevProtectionEnabled(true)
+
+    expect(controller.getDisabledSwapProviderIds()).toEqual(['socket'])
+    await expect(persistedStorage.get('disabledSwapProviderIds', [])).resolves.toEqual(['socket'])
+  })
+  test('should ignore stale supported chains when provider settings change rapidly', async () => {
+    await swapAndBridgeController.initForm('rapid-provider-toggle-test')
+    await wait(0)
+    swapAndBridgeController.unloadScreen('rapid-provider-toggle-test')
+
+    const staleSupportedChains =
+      createDeferred<Awaited<ReturnType<SocketAPIMock['getSupportedChains']>>>()
+    const latestSupportedChains =
+      createDeferred<Awaited<ReturnType<SocketAPIMock['getSupportedChains']>>>()
+    const getSupportedChainsSpy = jest
+      .spyOn(socketAPIMock, 'getSupportedChains')
+      .mockReturnValueOnce(staleSupportedChains.promise)
+      .mockReturnValueOnce(latestSupportedChains.promise)
+
+    const disablePromise = swapAndBridgeController.setSwapProviderEnabled('socket', false)
+    await wait(0)
+    expect(getSupportedChainsSpy).toHaveBeenCalledTimes(1)
+
+    const enablePromise = swapAndBridgeController.setSwapProviderEnabled('socket', true)
+    await wait(0)
+    expect(getSupportedChainsSpy).toHaveBeenCalledTimes(2)
+
+    const expectedSupportedChains = networks.map(({ chainId }) => ({ chainId }))
+    latestSupportedChains.resolve(expectedSupportedChains)
+    await enablePromise
+
+    staleSupportedChains.resolve([{ chainId: 999999n }])
+    await disablePromise
+
+    expect(swapAndBridgeController.getDisabledSwapProviderIds()).toEqual([])
+    expect(swapAndBridgeController.supportedChainIds).toEqual(
+      expectedSupportedChains.map(({ chainId }) => chainId)
+    )
+  })
+  test('should restore valid disabled swap providers from storage', async () => {
+    const persistedStorage = new StorageController(produceMemoryStore())
+    await persistedStorage.set('disabledSwapProviderIds', ['socket', 'unknown-provider', 'socket'])
+    const restoredController = buildSwapAndBridgeController(persistedStorage)
+    const getToTokenListSpy = jest.spyOn(socketAPIMock, 'getToTokenList')
+
+    await restoredController.initForm('restore-disabled-providers-test')
+
+    expect(restoredController.getDisabledSwapProviderIds()).toEqual(['socket'])
+    expect(getToTokenListSpy).not.toHaveBeenCalled()
+    expect(restoredController.errors).not.toContainEqual(
+      expect.objectContaining({ id: 'to-token-list-fetch-failed' })
+    )
+    restoredController.unloadScreen('restore-disabled-providers-test', true)
+  })
   test('should initForm', async () => {
     await swapAndBridgeController.initForm('1')
     expect(swapAndBridgeController.sessionIds).toContain('1')
@@ -311,6 +627,209 @@ describe('SwapAndBridge Controller', () => {
       '0x0000000000000000000000000000000000000000' // the one with highest balance
     )
     expect(swapAndBridgeController.fromChainId).toEqual(10)
+    expect(swapAndBridgeController.toChainId).toEqual(10)
+  })
+  test('should only require portfolio token prices when token prices are enabled', async () => {
+    const controller = buildSwapAndBridgeController()
+    const tokensWithoutPrices = PORTFOLIO_TOKENS.map((token) => ({ ...token, priceIn: [] }))
+
+    try {
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
+      await controller.updatePortfolioTokenList(tokensWithoutPrices)
+      expect(controller.portfolioTokenList).toEqual([])
+
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', false)
+      await controller.updatePortfolioTokenList(tokensWithoutPrices)
+
+      expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
+      expect(controller.fromSelectedToken).not.toBeNull()
+    } finally {
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
+    }
+  })
+  test('should expose the wrap exemption before a quote is available', () => {
+    const network = networksCtrl.networks.find(({ chainId }) => chainId === 10n)
+    if (!network?.wrappedAddr)
+      throw new Error('Expected OP Mainnet to have a wrapped token address')
+
+    const previousFromSelectedToken = swapAndBridgeController.fromSelectedToken
+    const previousToSelectedToken = swapAndBridgeController.toSelectedToken
+    const previousFromChainId = swapAndBridgeController.fromChainId
+    const previousToChainId = swapAndBridgeController.toChainId
+    const previousQuote = swapAndBridgeController.quote
+
+    swapAndBridgeController.fromSelectedToken = PORTFOLIO_TOKENS[2]!
+    swapAndBridgeController.toSelectedToken = {
+      address: network.wrappedAddr,
+      chainId: 10,
+      decimals: 18,
+      name: 'Wrapped Ether',
+      symbol: 'WETH'
+    }
+    swapAndBridgeController.fromChainId = 10
+    swapAndBridgeController.toChainId = 10
+    swapAndBridgeController.quote = null
+
+    expect(swapAndBridgeController.feeExemptionReason).toBe('wrap-or-unwrap')
+    expect(swapAndBridgeController.toJSON().feeExemptionReason).toBe('wrap-or-unwrap')
+
+    swapAndBridgeController.fromSelectedToken = previousFromSelectedToken
+    swapAndBridgeController.toSelectedToken = previousToSelectedToken
+    swapAndBridgeController.fromChainId = previousFromChainId
+    swapAndBridgeController.toChainId = previousToChainId
+    swapAndBridgeController.quote = previousQuote
+  })
+  test('should emit token list updates while providers are still loading', async () => {
+    const partialToken: SocketAPIToken = {
+      address: '0x0000000000000000000000000000000000000001',
+      chainId: 137,
+      decimals: 18,
+      name: 'Partial token',
+      symbol: 'PARTIAL',
+      icon: '',
+      logoURI: ''
+    }
+    const finalToken: SocketAPIToken = {
+      address: '0x0000000000000000000000000000000000000002',
+      chainId: 137,
+      decimals: 18,
+      name: 'Final token',
+      symbol: 'FINAL',
+      icon: '',
+      logoURI: ''
+    }
+    let resolveTokenList!: (tokens: SocketAPIToken[]) => void
+    const getToTokenListSpy = jest.spyOn(socketAPIMock, 'getToTokenList').mockImplementation(
+      (params: any) =>
+        new Promise((resolve) => {
+          resolveTokenList = resolve
+          params.onUpdate([partialToken])
+        })
+    )
+    let unsubscribe = () => {}
+    const partialUpdatePromise = new Promise<void>((resolve) => {
+      unsubscribe = swapAndBridgeController.onUpdate(() => {
+        if (!swapAndBridgeController.toTokenShortList.includes(partialToken)) return
+
+        unsubscribe()
+        resolve()
+      })
+    })
+
+    const updatePromise = swapAndBridgeController.updateForm(
+      { toChainId: 137 },
+      { updateQuote: false }
+    )
+
+    await partialUpdatePromise
+    expect(swapAndBridgeController.updateToTokenListStatus).toEqual('LOADING')
+    expect(swapAndBridgeController.toTokenShortList).toContain(partialToken)
+
+    resolveTokenList([partialToken, finalToken])
+    await updatePromise
+    expect(swapAndBridgeController.updateToTokenListStatus).toEqual('INITIAL')
+    expect(swapAndBridgeController.toTokenShortList).toContain(finalToken)
+
+    getToTokenListSpy.mockRestore()
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should sync toChainId to the preselected from token chain when no to token is provided', async () => {
+    const preselectedToken = PORTFOLIO_TOKENS[1]!
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToken: {
+        address: preselectedToken.address,
+        chainId: preselectedToken.chainId
+      }
+    })
+
+    expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(preselectedToken.address)
+    expect(swapAndBridgeController.fromChainId).toEqual(Number(preselectedToken.chainId))
+    expect(swapAndBridgeController.toChainId).toEqual(Number(preselectedToken.chainId))
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should select a preselected to token that the service provider returns in another case', async () => {
+    // Trending tokens carry lowercased CoinGecko addresses, while the service providers return
+    // checksummed ones.
+    const toTokenAddr = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf'
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToToken: { address: toTokenAddr.toLowerCase(), chainId: 8453n }
+    })
+
+    expect(swapAndBridgeController.toChainId).toEqual(8453)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should select a preselected to token that is missing from the service provider list', async () => {
+    const toTokenAddr = '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToToken: { address: toTokenAddr, chainId: 8453n }
+    })
+
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+    expect(swapAndBridgeController.toTokenShortList).toContainEqual(
+      expect.objectContaining({ address: toTokenAddr })
+    )
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should keep a preselected to token when the from token network changes', async () => {
+    const toTokenAddr = '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58' // USDT
+    const fromToken = PORTFOLIO_TOKENS[2]! // ETH on Optimism
+    const fromTokenOnAnotherChain = PORTFOLIO_TOKENS[1]! // cbBTC on Base
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToken: { address: fromToken.address, chainId: fromToken.chainId },
+      preselectedToToken: { address: toTokenAddr, chainId: 8453n }
+    })
+    expect(swapAndBridgeController.fromChainId).toEqual(10)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+
+    await swapAndBridgeController.updateForm({ fromSelectedToken: fromTokenOnAnotherChain })
+
+    expect(swapAndBridgeController.fromChainId).toEqual(8453)
+    expect(swapAndBridgeController.toChainId).toEqual(8453)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should stop keeping a preselected to token after the user selects another one', async () => {
+    const toTokenAddr = '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58' // USDT
+    const userSelectedToTokenAddr = '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22' // cbETH
+    const fromToken = PORTFOLIO_TOKENS[2]! // ETH on Optimism
+    const fromTokenOnAnotherChain = PORTFOLIO_TOKENS[1]! // cbBTC on Base
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+      preselectedToken: { address: fromToken.address, chainId: fromToken.chainId },
+      preselectedToToken: { address: toTokenAddr, chainId: 8453n }
+    })
+    await swapAndBridgeController.updateForm(
+      { toSelectedTokenAddr: userSelectedToTokenAddr },
+      { isToSelectionByUser: true }
+    )
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(userSelectedToTokenAddr)
+
+    await swapAndBridgeController.updateForm({ fromSelectedToken: fromTokenOnAnotherChain })
+
+    // The default behavior applies again - the to token gets reset on a from network change
+    expect(swapAndBridgeController.toSelectedToken).toBeNull()
+
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
   })
   test('should update toChainId', (done) => {
     let emitCounter = 0
@@ -339,34 +858,89 @@ describe('SwapAndBridge Controller', () => {
     })
   })
   test('should update fromAmount', (done) => {
-    let emitCounter = 0
+    // Asserting on the status transitions instead of on a fixed number of emits, as
+    // the controller also emits for updates unrelated to the form (fetching the market
+    // data of the receive tokens, for instance).
+    let didPassThroughFetchingRoutes = false
     const unsubscribe = swapAndBridgeController.onUpdate(async () => {
-      emitCounter++
-      if (emitCounter === 4) {
-        expect(swapAndBridgeController.formStatus).toEqual('ready-to-estimate')
+      if (swapAndBridgeController.formStatus === 'fetching-routes')
+        didPassThroughFetchingRoutes = true
+
+      if (swapAndBridgeController.formStatus === 'ready-to-estimate') {
+        expect(didPassThroughFetchingRoutes).toBe(true)
         expect(swapAndBridgeController.quote).not.toBeNull()
         expect(swapAndBridgeController.fromAmount).toBe('0.8')
         unsubscribe()
         done()
       }
-      if (emitCounter === 2) {
-        expect(swapAndBridgeController.formStatus).toEqual('fetching-routes')
-      }
     })
     swapAndBridgeController.updateForm({ fromAmount: '0.8' })
+  })
+  test('should keep the provider quote when the receive token price lookup times out', async () => {
+    jest.useFakeTimers()
+    const { restore } = suppressConsole()
+    jest.spyOn(portfolioCtrl, 'getTokenPrice').mockImplementation(() => new Promise(() => {}))
+    jest.spyOn(swapAndBridgeController, 'initSignAccountOpIfNeeded').mockResolvedValue()
+
+    const updateQuotePromise = swapAndBridgeController.updateQuote({
+      skipQuoteUpdateOnSameValues: false
+    })
+
+    await jest.advanceTimersByTimeAsync(4000)
+    await updateQuotePromise
+
+    expect(swapAndBridgeController.quote).not.toBeNull()
+
+    jest.clearAllTimers()
+    jest.useRealTimers()
+    restore()
+  })
+  test('should emit quote failures silently', async () => {
+    const { restore } = suppressConsole()
+    const emittedErrorLevels: string[] = []
+    const unsubscribe = swapAndBridgeController.onError((error) => {
+      emittedErrorLevels.push(error.level)
+    })
+    jest.spyOn(socketAPIMock, 'quote').mockRejectedValueOnce(new Error('Quote failed'))
+
+    await swapAndBridgeController.updateQuote({ skipQuoteUpdateOnSameValues: false })
+
+    expect(emittedErrorLevels).toEqual(['silent'])
+
+    unsubscribe()
+    await swapAndBridgeController.updateQuote({ skipQuoteUpdateOnSameValues: false })
+    expect(swapAndBridgeController.quote).not.toBeNull()
+    restore()
+  })
+  test('should emit receive token lookup failures silently', async () => {
+    const { restore } = suppressConsole()
+    const emittedErrorLevels: string[] = []
+    const unsubscribe = swapAndBridgeController.onError((error) => {
+      emittedErrorLevels.push(error.level)
+    })
+    jest.spyOn(socketAPIMock, 'getToken').mockRejectedValueOnce(new Error('Token lookup failed'))
+
+    await swapAndBridgeController.addToTokenByAddress('0x0000000000000000000000000000000000000001')
+
+    expect(emittedErrorLevels).toEqual(['silent'])
+
+    unsubscribe()
+    restore()
   })
   test('should switch from and to tokens', async () => {
     const prevFromChainId = swapAndBridgeController.fromChainId
     const prevToChainId = swapAndBridgeController.toChainId
     const prevFromSelectedTokenAddress = swapAndBridgeController.fromSelectedToken?.address
     const prevToSelectedTokenAddress = swapAndBridgeController.toSelectedToken?.address
-    const fiatBefore = swapAndBridgeController.fromAmountInFiat
     await swapAndBridgeController.switchFromAndToTokens()
     expect(swapAndBridgeController.fromChainId).toEqual(prevToChainId)
     expect(swapAndBridgeController.toChainId).toEqual(prevFromChainId)
     expect(swapAndBridgeController.toSelectedToken?.address).toEqual(prevFromSelectedTokenAddress)
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(prevToSelectedTokenAddress)
-    expect(swapAndBridgeController.fromAmountInFiat).toEqual(fiatBefore)
+    // The switched-in token has fewer decimals, so the carried over amount rounds down to
+    // nothing - the fiat amount has to follow it instead of keeping the previous token's value
+    expect(Number(swapAndBridgeController.fromAmount)).toBeLessThan(1e-8)
+    expect(Number(swapAndBridgeController.fromAmountInFiat)).toBe(0)
     await swapAndBridgeController.switchFromAndToTokens()
     expect(swapAndBridgeController.fromChainId).toEqual(prevFromChainId)
     expect(swapAndBridgeController.toChainId).toEqual(prevToChainId)
@@ -391,50 +965,117 @@ describe('SwapAndBridge Controller', () => {
 
     await check()
   })
-  it('should continuously update the quote', async () => {
-    jest.useFakeTimers()
-    const { restore } = suppressConsole()
+  describe('continuous quote updates', () => {
+    beforeEach(() => {
+      // These tests need real interval behavior - undo the outer beforeEach mocks
+      jest.restoreAllMocks()
+    })
 
-    const updateQuoteSpy = jest
-      .spyOn(swapAndBridgeController, 'updateQuote')
-      .mockImplementation((() => {}) as any)
-    jest.spyOn(swapAndBridgeController, 'continuouslyUpdateQuote')
-    const updateQuoteIntervalRestartSpy = jest.spyOn(
-      swapAndBridgeController.updateQuoteInterval,
-      'restart'
-    )
-    const updateQuoteIntervalStopSpy = jest.spyOn(
-      swapAndBridgeController.updateQuoteInterval,
-      'stop'
-    )
+    it('should continuously update the quote', async () => {
+      // Set #isOnSwapAndBridgeRoute = true so #shouldAutoUpdateQuote can pass.
+      // The controller listens on 'updateView' (not 'addView'), so we add a view
+      // with a different route first, then update it to 'swap-and-bridge'.
+      // Must happen before useFakeTimers so the restart() queued by the listener
+      // resolves immediately and doesn't interfere with the test timers.
+      uiCtrl.addView({ id: 'test-quote', type: 'tab', currentRoute: 'other', isReady: true })
+      uiCtrl.updateView('test-quote', { currentRoute: 'swap-and-bridge', isReady: true })
 
-    expect(swapAndBridgeController.formStatus).not.toBe(SwapAndBridgeFormStatus.ReadyToSubmit)
-    expect(swapAndBridgeController.updateQuoteInterval.running).toBe(false)
+      jest.useFakeTimers()
+      const { restore } = suppressConsole()
 
-    swapAndBridgeController.updateQuoteInterval.restart()
-    expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(1)
-    expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(0)
-    await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateQuoteInterval)
-    expect(updateQuoteSpy).toHaveBeenCalledTimes(0)
-    expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
+      uiCtrl.updateView('swap-and-bridge', {
+        currentRoute: 'swap-and-bridge',
+        isReady: true,
+        searchParams: {}
+      })
 
-    jest
-      .spyOn(swapAndBridgeController, 'formStatus', 'get')
-      .mockReturnValueOnce(SwapAndBridgeFormStatus.ReadyToSubmit)
+      const updateQuoteSpy = jest
+        .spyOn(swapAndBridgeController, 'updateQuote')
+        .mockImplementation((() => {}) as any)
+      jest.spyOn(swapAndBridgeController, 'continuouslyUpdateQuote')
+      const updateQuoteIntervalRestartSpy = jest.spyOn(
+        swapAndBridgeController.updateQuoteInterval,
+        'restart'
+      )
+      const updateQuoteIntervalStopSpy = jest.spyOn(
+        swapAndBridgeController.updateQuoteInterval,
+        'stop'
+      )
 
-    // Otherwise the interval won't run
-    swapAndBridgeController.quote!.selectedRoute!.disabled = false
+      expect(swapAndBridgeController.formStatus).not.toBe(SwapAndBridgeFormStatus.ReadyToSubmit)
 
-    swapAndBridgeController.updateQuoteInterval.restart()
-    expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(2)
-    expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
-    await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateQuoteInterval)
-    expect(updateQuoteSpy).toHaveBeenCalledTimes(1)
-    expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
-    jest.clearAllTimers()
-    jest.useRealTimers()
-    restore()
-  })
+      swapAndBridgeController.updateQuoteInterval.restart()
+      expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(1)
+      expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(0)
+      await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateQuoteInterval)
+      expect(updateQuoteSpy).toHaveBeenCalledTimes(0)
+      expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
+
+      jest
+        .spyOn(swapAndBridgeController, 'formStatus', 'get')
+        .mockReturnValueOnce(SwapAndBridgeFormStatus.ReadyToSubmit)
+
+      // Otherwise the interval won't run
+      swapAndBridgeController.quote!.selectedRoute!.disabled = false
+
+      swapAndBridgeController.updateQuoteInterval.restart()
+      expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(2)
+      expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
+      await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateQuoteInterval)
+      expect(updateQuoteSpy).toHaveBeenCalledTimes(1)
+      expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
+      jest.clearAllTimers()
+      jest.useRealTimers()
+      restore()
+    })
+    it('should not continuously update the quote when not on the swap and bridge route', async () => {
+      jest.useFakeTimers()
+      const { restore } = suppressConsole()
+
+      // Navigate to dashboard
+      uiCtrl.updateView('swap-and-bridge', {
+        currentRoute: 'dashboard',
+        isReady: true,
+        searchParams: {}
+      })
+
+      const updateQuoteSpy = jest
+        .spyOn(swapAndBridgeController, 'updateQuote')
+        .mockImplementation((() => {}) as any)
+      jest.spyOn(swapAndBridgeController, 'continuouslyUpdateQuote')
+      const updateQuoteIntervalRestartSpy = jest.spyOn(
+        swapAndBridgeController.updateQuoteInterval,
+        'restart'
+      )
+      const updateQuoteIntervalStopSpy = jest.spyOn(
+        swapAndBridgeController.updateQuoteInterval,
+        'stop'
+      )
+
+      // Set all the conditions that would normally allow updateQuote to run
+      jest
+        .spyOn(swapAndBridgeController, 'formStatus', 'get')
+        .mockReturnValue(SwapAndBridgeFormStatus.ReadyToSubmit)
+      swapAndBridgeController.quote!.selectedRoute!.disabled = false
+
+      expect(swapAndBridgeController.updateQuoteInterval.running).toBe(false)
+
+      swapAndBridgeController.updateQuoteInterval.restart()
+      expect(updateQuoteIntervalRestartSpy).toHaveBeenCalledTimes(1)
+      expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(0)
+      await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateQuoteInterval)
+
+      // updateQuote must not be called even though all other conditions are met,
+      // because we are on dashboard and not on the swap-and-bridge route
+      expect(updateQuoteSpy).toHaveBeenCalledTimes(0)
+      expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
+
+      jest.clearAllTimers()
+      jest.useRealTimers()
+      restore()
+    })
+  }) // end describe('continuous quote updates')
+
   test('should add an activeRoute', async () => {
     const userTx = await socketAPIMock.startRoute({
       route: swapAndBridgeController.quote!.selectedRoute!
@@ -447,6 +1088,69 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.quote).toBeDefined()
     expect(swapAndBridgeController.banners).toHaveLength(0)
   })
+  test('should make active route errors silent', () => {
+    const previousQuote = swapAndBridgeController.quote
+    swapAndBridgeController.quote = null
+
+    try {
+      swapAndBridgeController.addActiveRoute({ userTxIndex: 0 })
+      throw new Error('Expected addActiveRoute to throw')
+    } catch (error) {
+      expect(error).toBeInstanceOf(EmittableError)
+      if (!(error instanceof EmittableError)) throw error
+      expect(error.level).toBe('silent')
+    } finally {
+      swapAndBridgeController.quote = previousQuote
+    }
+  })
+  test('should update an existing activeRoute when adding the same route again', async () => {
+    const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
+
+    swapAndBridgeController.addActiveRoute({
+      userTxIndex: swapAndBridgeController.activeRoutes[0]!.userTxIndex,
+      routeStatus: 'in-progress'
+    })
+    swapAndBridgeController.updateActiveRoute(activeRouteId, {
+      userTxHash: 'test'
+    })
+
+    expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
+    expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('in-progress')
+    expect(swapAndBridgeController.activeRoutes[0]!.userTxHash).toEqual('test')
+    expect(swapAndBridgeController.activeRoutesInProgress).toHaveLength(1)
+  })
+  test('should update an activeRoute userTxHash from submitted account op swapTxn meta', async () => {
+    const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
+    const submittedAccountOp = getSubmittedAccountOp('test', activeRouteId)
+
+    swapAndBridgeController.updateActiveRoute(activeRouteId, {
+      routeStatus: 'in-progress',
+      userTxHash: null,
+      identifiedBy: null
+    })
+    swapAndBridgeController.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(
+      submittedAccountOp
+    )
+
+    expect(swapAndBridgeController.activeRoutes[0]!.userTxHash).toEqual('test')
+    expect(swapAndBridgeController.activeRoutesInProgress).toHaveLength(1)
+  })
+  test('should fail an activeRoute from submitted account op swapTxn meta', async () => {
+    const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
+    const submittedAccountOp = getSubmittedAccountOp('test', activeRouteId, 'failure')
+
+    swapAndBridgeController.updateActiveRoute(activeRouteId, {
+      routeStatus: 'in-progress',
+      userTxHash: 'test'
+    })
+    swapAndBridgeController.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(
+      submittedAccountOp
+    )
+
+    expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('failed')
+    expect(swapAndBridgeController.activeRoutes[0]!.error).toEqual('The transaction failed onchain')
+    expect(swapAndBridgeController.activeRoutesInProgress).toHaveLength(0)
+  })
   test('should update an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
     swapAndBridgeController.updateActiveRoute(activeRouteId, {
@@ -457,53 +1161,64 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.activeRoutes).toHaveLength(1)
     expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('in-progress')
     expect(swapAndBridgeController.banners).toHaveLength(1)
-    expect(swapAndBridgeController.banners[0]!.actions).toHaveLength(2)
+    expect(swapAndBridgeController.banners[0]!.actions).toHaveLength(1)
+    expect(swapAndBridgeController.banners[0]!.meta?.accountAddr).toEqual(
+      '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    )
   })
-  it('should continuously update active routes', async () => {
-    const { restore } = suppressConsole()
-    jest.useFakeTimers()
+  describe('continuous active-route updates', () => {
+    beforeEach(() => {
+      // These tests need real interval behavior — undo the outer beforeEach mocks
+      jest.restoreAllMocks()
+    })
 
-    const checkForActiveRoutesStatusUpdateSpy = jest
-      .spyOn(swapAndBridgeController, 'checkForActiveRoutesStatusUpdate')
-      .mockImplementation((() => {}) as any)
-    jest.spyOn(swapAndBridgeController, 'continuouslyUpdateActiveRoutes')
-    const updateActiveRoutesIntervalStartSpy = jest.spyOn(
-      swapAndBridgeController.updateActiveRoutesInterval,
-      'start'
-    )
-    const updateActiveRoutesIntervalUpdateTimeoutSpy = jest.spyOn(
-      swapAndBridgeController.updateActiveRoutesInterval,
-      'updateTimeout'
-    )
-    const updateActiveRoutesIntervalStopSpy = jest.spyOn(
-      swapAndBridgeController.updateActiveRoutesInterval,
-      'stop'
-    )
+    it('should continuously update active routes', async () => {
+      const { restore } = suppressConsole()
+      jest.useFakeTimers()
 
-    expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(0)
-    expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
-    expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(0)
-    expect(swapAndBridgeController.activeRoutes.length).toEqual(1)
-    expect(swapAndBridgeController.activeRoutesInProgress.length).toEqual(1)
-    swapAndBridgeController.activeRoutes = [...swapAndBridgeController.activeRoutes]
-    expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
-    expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
-    expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(0)
-    await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateActiveRoutesInterval)
-    expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
-    expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
-    expect(swapAndBridgeController.continuouslyUpdateActiveRoutes).toHaveBeenCalledTimes(1)
-    expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(1)
-    expect(updateActiveRoutesIntervalUpdateTimeoutSpy).toHaveBeenCalledTimes(2)
-    await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateActiveRoutesInterval)
-    expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
-    expect(swapAndBridgeController.continuouslyUpdateActiveRoutes).toHaveBeenCalledTimes(2)
-    expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(2)
-    expect(updateActiveRoutesIntervalUpdateTimeoutSpy).toHaveBeenCalledTimes(3)
-    jest.clearAllTimers()
-    jest.useRealTimers()
-    restore()
-  })
+      const checkForActiveRoutesStatusUpdateSpy = jest
+        .spyOn(swapAndBridgeController, 'checkForActiveRoutesStatusUpdate')
+        .mockImplementation((() => {}) as any)
+      jest.spyOn(swapAndBridgeController, 'continuouslyUpdateActiveRoutes')
+      const updateActiveRoutesIntervalStartSpy = jest.spyOn(
+        swapAndBridgeController.updateActiveRoutesInterval,
+        'start'
+      )
+      const updateActiveRoutesIntervalUpdateTimeoutSpy = jest.spyOn(
+        swapAndBridgeController.updateActiveRoutesInterval,
+        'updateTimeout'
+      )
+      const updateActiveRoutesIntervalStopSpy = jest.spyOn(
+        swapAndBridgeController.updateActiveRoutesInterval,
+        'stop'
+      )
+
+      expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(0)
+      expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
+      expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(0)
+      expect(swapAndBridgeController.activeRoutes.length).toEqual(1)
+      expect(swapAndBridgeController.activeRoutesInProgress.length).toEqual(1)
+      swapAndBridgeController.activeRoutes = [...swapAndBridgeController.activeRoutes]
+      expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
+      expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
+      expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(0)
+      await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateActiveRoutesInterval)
+      expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
+      expect(updateActiveRoutesIntervalStopSpy).toHaveBeenCalledTimes(0)
+      expect(swapAndBridgeController.continuouslyUpdateActiveRoutes).toHaveBeenCalledTimes(1)
+      expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(1)
+      expect(updateActiveRoutesIntervalUpdateTimeoutSpy).toHaveBeenCalledTimes(2)
+      await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateActiveRoutesInterval)
+      expect(updateActiveRoutesIntervalStartSpy).toHaveBeenCalledTimes(1)
+      expect(swapAndBridgeController.continuouslyUpdateActiveRoutes).toHaveBeenCalledTimes(2)
+      expect(checkForActiveRoutesStatusUpdateSpy).toHaveBeenCalledTimes(2)
+      expect(updateActiveRoutesIntervalUpdateTimeoutSpy).toHaveBeenCalledTimes(3)
+      jest.clearAllTimers()
+      jest.useRealTimers()
+      restore()
+    })
+  }) // end describe('continuous active-route updates')
+
   test('should check for route status', async () => {
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
     swapAndBridgeController.updateActiveRoute(
@@ -514,46 +1229,232 @@ describe('SwapAndBridge Controller', () => {
         userTxIndex: 1
       }
     )
-    // dummy submittedAccountOp - just the txnId is important here, used in checkForActiveRoutesStatusUpdate
-    const SUBMITTED_ACCOUNT_OP = {
-      accountAddr: accounts[0]!.addr,
-      signingKeyAddr: '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175',
-      gasLimit: null,
-      gasFeePayment: {
-        isGasTank: false,
-        paidBy: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
-        inToken: '0x0000000000000000000000000000000000000000',
-        amount: 1n,
-        simulatedGasLimit: 1n,
-        gasPrice: 1n
-      },
-      chainId: 1n,
-      nonce: 225n,
-      signature: '0x0000000000000000000000005be214147ea1ae3653f289e17fe7dc17a73ad17503',
-      calls: [
-        {
-          to: '0x18Ce9CF7156584CDffad05003410C3633EFD1ad0',
-          value: BigInt(0),
-          data: '0x23b872dd000000000000000000000000b674f3fd5f43464db0448a57529eaf37f04ccea500000000000000000000000077777777789a8bbee6c64381e5e89e501fb0e4c80000000000000000000000000000000000000000000000000000000000000089'
-        }
-      ],
-      txnId: swapAndBridgeController.activeRoutes[0]?.userTxHash,
-      status: 'broadcasted-but-not-confirmed',
-      identifiedBy: {
-        type: 'Transaction',
-        identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
-      }
-    }
-    await activityCtrl.addAccountOp(SUBMITTED_ACCOUNT_OP as any)
+
+    const submittedAccountOp = getSubmittedAccountOp(
+      swapAndBridgeController.activeRoutes[0]!.userTxHash!
+    )
+
+    await activityCtrl.addAccountOp(submittedAccountOp as any)
 
     await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
     expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toEqual('completed')
+  })
+  test('should wait for a CoW Swap PreSign transaction before submitting the order', async () => {
+    const activeRoute = swapAndBridgeController.activeRoutes[0]!
+    const originalProviderId = activeRoute.route!.providerId
+    const userTxHash = 'cowswap-presign-pending'
+    const getRouteStatusSpy = jest.spyOn(socketAPIMock, 'getRouteStatus')
+
+    activeRoute.route!.providerId = 'cowswap'
+    swapAndBridgeController.updateActiveRoute(activeRoute.activeRouteId, {
+      routeStatus: 'in-progress',
+      userTxHash
+    })
+    await activityCtrl.addAccountOp(getSubmittedAccountOp(userTxHash))
+
+    await swapAndBridgeController.checkForActiveRoutesStatusUpdate()
+
+    expect(getRouteStatusSpy).not.toHaveBeenCalled()
+    activeRoute.route!.providerId = originalProviderId
+  })
+  test('should check a CoW Swap order immediately after the PreSign transaction succeeds', () => {
+    const originalActiveRoutes = swapAndBridgeController.activeRoutes
+    const activeRoute = originalActiveRoutes[0]!
+    const submittedAccountOp = getSubmittedAccountOp(
+      'cowswap-presign-success',
+      activeRoute.activeRouteId,
+      'success'
+    )
+    submittedAccountOp.calls[0]!.id = activeRoute.activeRouteId
+
+    swapAndBridgeController.activeRoutes = [
+      {
+        ...activeRoute,
+        routeStatus: 'in-progress',
+        userTxHash: submittedAccountOp.txnId,
+        route: {
+          ...activeRoute.route!,
+          providerId: 'cowswap',
+          userTxs: activeRoute.route!.userTxs.map((userTx) => ({
+            ...userTx,
+            serviceTime: 10
+          }))
+        }
+      }
+    ]
+    const updateActiveRoutesIntervalRestartSpy = jest.spyOn(
+      swapAndBridgeController.updateActiveRoutesInterval,
+      'restart'
+    )
+    updateActiveRoutesIntervalRestartSpy.mockClear()
+
+    swapAndBridgeController.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(
+      submittedAccountOp
+    )
+
+    expect(updateActiveRoutesIntervalRestartSpy).toHaveBeenCalledWith({
+      timeout: 10000,
+      runImmediately: true
+    })
+
+    swapAndBridgeController.activeRoutes = originalActiveRoutes
+  })
+  describe('intent activity recording', () => {
+    let originalActiveRoutes: typeof swapAndBridgeController.activeRoutes
+
+    const setActiveRouteForStatusCheck = (providerId: string) => {
+      const baseActiveRoute = originalActiveRoutes[0]!
+      const activeRoute = {
+        ...baseActiveRoute,
+        activeRouteId: `${providerId}-activity-route`,
+        routeStatus: 'in-progress' as const,
+        userTxHash: `${providerId}-source-transaction`,
+        route: {
+          ...baseActiveRoute.route!,
+          routeId: `${providerId}-activity-route`,
+          providerId,
+          fromChainId: 1,
+          toChainId: 1,
+          isIntent: false
+        }
+      }
+
+      swapAndBridgeController.activeRoutes = [activeRoute]
+      jest
+        .spyOn(activityCtrl, 'getAccountOpsForAccount')
+        .mockReturnValue([getSubmittedAccountOp(activeRoute.userTxHash, undefined, 'success', 1n)])
+
+      return activeRoute
+    }
+
+    beforeEach(() => {
+      originalActiveRoutes = swapAndBridgeController.activeRoutes
+    })
+
+    afterEach(() => {
+      swapAndBridgeController.activeRoutes = originalActiveRoutes
+    })
+
+    test('records a completed same-chain CoW Swap settlement in Activity', async () => {
+      const activeRoute = setActiveRouteForStatusCheck('cowswap')
+      const settlementTxnId = 'cowswap-settlement-transaction'
+      jest
+        .spyOn(socketAPIMock, 'getRouteStatus')
+        .mockResolvedValue({ status: 'completed', txnId: settlementTxnId })
+      const recordIntentActivitySpy = jest
+        .spyOn(swapAndBridgeController, 'recordIntentActivity')
+        .mockResolvedValue()
+
+      await swapAndBridgeController.continuouslyUpdateActiveRoutes()
+
+      expect(recordIntentActivitySpy).toHaveBeenCalledTimes(1)
+      expect(recordIntentActivitySpy).toHaveBeenCalledWith(
+        settlementTxnId,
+        activeRoute,
+        'completed'
+      )
+      expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toBe('completed')
+    })
+
+    test('does not create an external Activity record for a regular same-chain swap', async () => {
+      setActiveRouteForStatusCheck('socket')
+      jest.spyOn(socketAPIMock, 'getRouteStatus').mockResolvedValue({
+        status: 'completed',
+        txnId: 'regular-swap-transaction'
+      })
+      const recordIntentActivitySpy = jest
+        .spyOn(swapAndBridgeController, 'recordIntentActivity')
+        .mockResolvedValue()
+
+      await swapAndBridgeController.continuouslyUpdateActiveRoutes()
+
+      expect(recordIntentActivitySpy).not.toHaveBeenCalled()
+    })
+
+    test('does not create an Activity record without a settlement transaction ID', async () => {
+      setActiveRouteForStatusCheck('cowswap')
+      jest
+        .spyOn(socketAPIMock, 'getRouteStatus')
+        .mockResolvedValue({ status: 'completed', txnId: null })
+      const recordIntentActivitySpy = jest
+        .spyOn(swapAndBridgeController, 'recordIntentActivity')
+        .mockResolvedValue()
+
+      await swapAndBridgeController.continuouslyUpdateActiveRoutes()
+
+      expect(recordIntentActivitySpy).not.toHaveBeenCalled()
+    })
+
+    test('does not create a completed Activity record for a failed CoW Swap order', async () => {
+      setActiveRouteForStatusCheck('cowswap')
+      jest
+        .spyOn(socketAPIMock, 'getRouteStatus')
+        .mockResolvedValue({ status: 'failed', txnId: null })
+      const recordIntentActivitySpy = jest
+        .spyOn(swapAndBridgeController, 'recordIntentActivity')
+        .mockResolvedValue()
+
+      await swapAndBridgeController.continuouslyUpdateActiveRoutes()
+
+      expect(recordIntentActivitySpy).not.toHaveBeenCalled()
+      expect(swapAndBridgeController.activeRoutes[0]!.routeStatus).toBe('failed')
+    })
   })
   test('should remove an activeRoute', async () => {
     const activeRouteId = swapAndBridgeController.activeRoutes[0]!.activeRouteId
     swapAndBridgeController.removeActiveRoute(activeRouteId)
     expect(swapAndBridgeController.activeRoutes).toHaveLength(0)
     expect(swapAndBridgeController.banners).toHaveLength(0)
+  })
+  test('removeFailedRouteAndHideBanner removes the failed route and hides its activity banner', async () => {
+    const { restore } = suppressConsole()
+    const hideSpy = jest
+      .spyOn(activityCtrl, 'setDashboardBannersSeen')
+      .mockImplementationOnce(() => Promise.resolve())
+
+    const SUBMITTED_ACCOUNT_OP = getSubmittedAccountOp(
+      '0xbe0a59b6b409f9e61f96f2a18be67d8caf086e59785a24120f0df54693e8a197',
+      'failed-route-id',
+      'failure',
+      1n
+    )
+    await activityCtrl.addAccountOp(SUBMITTED_ACCOUNT_OP)
+
+    swapAndBridgeController.activeRoutes = [
+      {
+        activeRouteId: 'failed-route-id',
+        routeStatus: 'failed',
+        sender: accounts[0]!.addr,
+        userTxHash: '0xbe0a59b6b409f9e61f96f2a18be67d8caf086e59785a24120f0df54693e8a197',
+        identifiedBy: SUBMITTED_ACCOUNT_OP.identifiedBy,
+        route: { fromChainId: 1, toChainId: 8453 }
+      } as any
+    ]
+
+    await swapAndBridgeController.removeFailedRouteAndHideBanner('failed-route-id')
+
+    // The stale activity failed banner/badge is hidden for the original op...
+    expect(hideSpy).toHaveBeenCalledWith('dashboard', accounts[0]!.addr, {
+      accountOpIds: [SUBMITTED_ACCOUNT_OP.id],
+      emitUpdate: true,
+      hideImmediately: true
+    })
+    // ...and the failed route is removed (which removes the "Failed bridge" banner)
+    expect(swapAndBridgeController.activeRoutes).toHaveLength(0)
+    expect(swapAndBridgeController.banners).toHaveLength(0)
+
+    hideSpy.mockRestore()
+    restore()
+  })
+  test('removeFailedRouteAndHideBanner is a no-op for an unknown route', async () => {
+    const hideSpy = jest
+      .spyOn(activityCtrl, 'setDashboardBannersSeen')
+      .mockImplementationOnce(() => Promise.resolve())
+
+    await swapAndBridgeController.removeFailedRouteAndHideBanner('does-not-exist')
+
+    expect(hideSpy).not.toHaveBeenCalled()
+    hideSpy.mockRestore()
   })
   test('should switch fromAmountFieldMode', () => {
     swapAndBridgeController.updateForm({ fromSelectedToken: PORTFOLIO_TOKENS[0] }) // select USDT for easier calcs
@@ -563,13 +1464,201 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromAmount).toEqual('1.0')
     expect(swapAndBridgeController.validateFromAmount.severity).toEqual('success')
   })
+  test('should clear the fiat amount when the amount is cleared to zero', () => {
+    swapAndBridgeController.updateForm({ fromSelectedToken: PORTFOLIO_TOKENS[0] })
+    swapAndBridgeController.updateForm({ fromAmountFieldMode: 'token' })
+
+    swapAndBridgeController.updateForm({ fromAmount: '1' })
+    expect(Number(swapAndBridgeController.fromAmountInFiat)).toBeGreaterThan(0)
+
+    // The amount field turns a cleared input into a '0', so the fiat amount has to follow it
+    swapAndBridgeController.updateForm({ fromAmount: '0' })
+    expect(Number(swapAndBridgeController.fromAmountInFiat)).toBe(0)
+  })
   test('should unload screen', () => {
     swapAndBridgeController.unloadScreen('1')
     expect(swapAndBridgeController.formStatus).toEqual('empty')
     expect(swapAndBridgeController.sessionIds.length).toEqual(0)
   })
   test('should toJSON()', () => {
-    const json = swapAndBridgeController.toJSON()
-    expect(json).toBeDefined()
+    expect(swapAndBridgeController.toJSON()).toBeDefined()
+  })
+})
+
+describe('SwapAndBridge Controller: to token market data', () => {
+  // Longer than the batcher debounce, so that the fire-and-forget fetch has settled
+  const waitForMarketData = () => wait(400)
+
+  const MARKET_DATA_RESPONSE = {
+    usd: 1.0001,
+    usd_24h_change: -2.5,
+    usd_market_cap: 1200000000,
+    usd_24h_vol: 500000,
+    exchanges: ['binance', 'uniswap']
+  }
+
+  let marketDataFetch: jest.Mock<any>
+  let ctrl: SwapAndBridgeController
+
+  const buildController = (fetchMock: any) =>
+    new SwapAndBridgeController({
+      callRelayer: async () => ({}),
+      fetch: fetchMock,
+      selectedAccount: selectedAccountCtrl,
+      networks: networksCtrl,
+      accounts: accountsCtrl,
+      activity: activityCtrl,
+      storage: storageCtrl,
+      signAccountOpPreference,
+      featureFlags: featureFlagsCtrl,
+      platform: 'browser-webkit',
+      swapProvider: socketAPIMock as any,
+      erc7730: erc7730Ctrl,
+      contractInfo: contractInfoCtrl,
+      keystore,
+      portfolio: portfolioCtrl,
+      providers: providersCtrl,
+      phishing: phishingCtrl,
+      dapps: dappsControllerMock,
+      externalSignerControllers: {},
+      relayerUrl,
+      getUserRequests: () => [],
+      getVisibleUserRequests: () => [],
+      onBroadcastSuccess: () => Promise.resolve(),
+      onBroadcastFailed: () => {},
+      ui: uiCtrl
+    })
+
+  const initFormAndTokenList = async () => {
+    await ctrl.initForm('market-data-session')
+    await ctrl.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+    await waitForMarketData()
+  }
+
+  beforeEach(async () => {
+    marketDataFetch = jest.fn(async () => ({
+      status: 200,
+      json: async () => ({
+        // Our price API keys the response by lowercased contract address
+        '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58': MARKET_DATA_RESPONSE
+      })
+    })) as any
+
+    ctrl = buildController(marketDataFetch)
+    await selectedAccountCtrl.initialLoadPromise
+    await selectedAccountCtrl.setAccount(accounts[0]!)
+  })
+
+  afterEach(() => {
+    ctrl.unloadScreen('market-data-session')
+    jest.restoreAllMocks()
+  })
+
+  test('exposes the market data of a token our price API knows about', async () => {
+    await initFormAndTokenList()
+
+    const usdt = ctrl.toTokenShortList.find((t) => t.symbol === 'USDT')
+    expect(usdt).toBeDefined()
+
+    const marketData = ctrl.toTokenMarketData[getTokenMarketDataKey(usdt!.chainId, usdt!.address)]
+
+    expect(marketData).toEqual({
+      status: 'DONE',
+      exchanges: ['binance', 'uniswap']
+    })
+  })
+
+  test('marks the tokens missing from the response as not found', async () => {
+    await initFormAndTokenList()
+
+    const notInResponse = ctrl.toTokenShortList.find((t) => t.symbol !== 'USDT')
+    expect(notInResponse).toBeDefined()
+
+    expect(
+      ctrl.toTokenMarketData[getTokenMarketDataKey(notInResponse!.chainId, notInResponse!.address)]
+    ).toEqual({ status: 'NOT_FOUND' })
+  })
+
+  test('does not request the market data of a token that already has fresh data', async () => {
+    await initFormAndTokenList()
+    const callsAfterFirstFetch = marketDataFetch.mock.calls.length
+    expect(callsAfterFirstFetch).toBeGreaterThan(0)
+
+    await ctrl.searchToToken('USDT')
+    await waitForMarketData()
+
+    expect(marketDataFetch.mock.calls.length).toEqual(callsAfterFirstFetch)
+  })
+
+  test('hides the market data that went stale and requests it again', async () => {
+    await initFormAndTokenList()
+    const callsAfterFirstFetch = marketDataFetch.mock.calls.length
+
+    const usdt = ctrl.toTokenShortList.find((t) => t.symbol === 'USDT')!
+    const usdtKey = getTokenMarketDataKey(usdt.chainId, usdt.address)
+
+    // 11 minutes later, past the 10 minute threshold of a successfully fetched record
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 1000 * 60 * 11)
+
+    expect(ctrl.toTokenMarketData[usdtKey]).toEqual({ status: 'LOADING' })
+
+    await ctrl.searchToToken('USDT')
+    nowSpy.mockRestore()
+    await waitForMarketData()
+
+    expect(marketDataFetch.mock.calls.length).toBeGreaterThan(callsAfterFirstFetch)
+    expect(ctrl.toTokenMarketData[usdtKey]?.status).toEqual('DONE')
+  })
+
+  test('marks the tokens as failed when the request fails, without throwing', async () => {
+    const { restore } = suppressConsole()
+    ctrl = buildController(jest.fn(async () => ({ status: 500, json: async () => ({}) })) as any)
+
+    await initFormAndTokenList()
+
+    const usdt = ctrl.toTokenShortList.find((t) => t.symbol === 'USDT')!
+
+    expect(ctrl.toTokenMarketData[getTokenMarketDataKey(usdt.chainId, usdt.address)]).toEqual({
+      status: 'FAIL'
+    })
+    restore()
+  })
+
+  test('reports the tokens it has not fetched yet as loading', async () => {
+    await ctrl.initForm('market-data-session')
+    await ctrl.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+
+    const statuses = Object.values(ctrl.toTokenMarketData).map(({ status }) => status)
+
+    expect(statuses.length).toBeGreaterThan(0)
+    expect(statuses.every((status) => status === 'LOADING')).toBe(true)
+
+    await waitForMarketData()
+  })
+
+  describe('when the user has opted out', () => {
+    beforeEach(async () => {
+      await featureFlagsCtrl.setFeatureFlag('swapAndBridgeTokenInfo', false)
+    })
+
+    afterEach(async () => {
+      await featureFlagsCtrl.setFeatureFlag('swapAndBridgeTokenInfo', true)
+    })
+
+    test('sends no token addresses to the price API', async () => {
+      await initFormAndTokenList()
+
+      expect(marketDataFetch).not.toHaveBeenCalled()
+    })
+
+    test('keeps the data fetched before the opt out out of the UI state', async () => {
+      await featureFlagsCtrl.setFeatureFlag('swapAndBridgeTokenInfo', true)
+      await initFormAndTokenList()
+      expect(Object.keys(ctrl.toTokenMarketData).length).toBeGreaterThan(0)
+
+      await featureFlagsCtrl.setFeatureFlag('swapAndBridgeTokenInfo', false)
+
+      expect(ctrl.toTokenMarketData).toEqual({})
+    })
   })
 })

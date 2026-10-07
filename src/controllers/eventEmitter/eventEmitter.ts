@@ -1,12 +1,17 @@
-/* eslint-disable no-restricted-syntax */
 import { v4 as uuidv4 } from 'uuid'
 
 import { ErrorRef, IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
+import {
+  debugLog as moduleDebugLog,
+  debugLoggerRegistry,
+  DebugLogOptions
+} from '../../libs/debugLogger/debugLogger'
 import wait from '../../utils/wait'
 
 const LIMIT_ON_THE_NUMBER_OF_ERRORS = 100
 
-export default class EventEmitter {
+// Can be overwritten by controllers to narrow the flow tags for better console filtering and type safety.
+export default class EventEmitter<DebugFlow extends string = string> {
   id: string
 
   #registry: IEventEmitterRegistryController | null = null
@@ -27,6 +32,11 @@ export default class EventEmitter {
 
   #errors: ErrorRef[] = []
 
+  // Trailing throttle used by `emitUpdate({ throttleMs })`
+  #throttleTimeout: ReturnType<typeof setTimeout> | null = null
+
+  #hasTrailingUpdate = false
+
   statuses: Statuses<string> = {}
 
   /**
@@ -39,6 +49,9 @@ export default class EventEmitter {
    */
   constructor(registry?: IEventEmitterRegistryController, registerImmediately: boolean = true) {
     this.id = uuidv4()
+
+    // Register the controller on construction
+    debugLoggerRegistry.registerNamespace(this.name)
 
     if (registry) {
       this.#registry = registry
@@ -79,21 +92,73 @@ export default class EventEmitter {
    * normal batching may skip intermediate states and only emit the first and last ones.
    */
   async forceEmitUpdate() {
+    // An immediate emit supersedes any pending throttled update
+    this.#clearThrottle()
+
     // Bypassing background batching on the same tick
     await wait(1)
 
     // Passing `true` to the cb will bypass React batching
-    // eslint-disable-next-line no-restricted-syntax
-    for (const i of this.#callbacksWithId) i.cb(true)
-    // eslint-disable-next-line no-restricted-syntax
-    for (const cb of this.#callbacks) cb(true)
+    this.#doEmit(true)
   }
 
-  protected emitUpdate() {
-    // eslint-disable-next-line no-restricted-syntax
-    for (const i of this.#callbacksWithId) i.cb()
-    // eslint-disable-next-line no-restricted-syntax
-    for (const cb of this.#callbacks) cb()
+  #doEmit(forceEmit?: boolean) {
+    for (const i of this.#callbacksWithId) i.cb(forceEmit)
+
+    for (const cb of this.#callbacks) cb(forceEmit)
+  }
+
+  #clearThrottle() {
+    if (this.#throttleTimeout !== null) {
+      clearTimeout(this.#throttleTimeout)
+      this.#throttleTimeout = null
+    }
+    this.#hasTrailingUpdate = false
+  }
+
+  #openThrottleWindow(throttleMs: number) {
+    this.#throttleTimeout = setTimeout(() => {
+      // Keep throttling as long as updates keep arriving; stop once a window
+      // passes with nothing pending so an idle controller holds no timer.
+      if (this.#hasTrailingUpdate) {
+        this.#hasTrailingUpdate = false
+        this.#doEmit()
+        this.#openThrottleWindow(throttleMs)
+      } else {
+        this.#throttleTimeout = null
+      }
+    }, throttleMs)
+  }
+
+  /**
+   * Emits an update to all subscribers.
+   *
+   * Pass `throttleMs` for high-frequency background updates (e.g. portfolio
+   * ticks) that don't need to reach the UI on every single change. The first
+   * emit fires immediately, while further throttled emits within the
+   * window are coalesced into a single trailing emit that carries the latest
+   * state. A plain `emitUpdate()` or `forceEmitUpdate()` in the meantime flushes
+   * the pending update instantly, so user interactions are never delayed.
+   */
+  protected emitUpdate(options?: { throttleMs?: number }) {
+    const throttleMs = options?.throttleMs ?? 0
+
+    if (throttleMs <= 0) {
+      // An immediate emit supersedes any pending throttled update
+      this.#clearThrottle()
+      this.#doEmit()
+      return
+    }
+
+    // Leading edge: emit now and open the throttle window
+    if (this.#throttleTimeout === null) {
+      this.#doEmit()
+      this.#openThrottleWindow(throttleMs)
+      return
+    }
+
+    // Within the window: defer to a single trailing emit
+    this.#hasTrailingUpdate = true
   }
 
   /**
@@ -123,10 +188,25 @@ export default class EventEmitter {
    *     and the controller updates its own state), use `emitUpdate()` or `forceEmitUpdate()`.
    */
   protected propagateUpdate(forceEmit?: boolean) {
-    // eslint-disable-next-line no-restricted-syntax
-    for (const i of this.#callbacksWithId) i.cb(forceEmit)
-    // eslint-disable-next-line no-restricted-syntax
-    for (const cb of this.#callbacks) cb(forceEmit)
+    // An immediate emit supersedes any pending throttled update
+    this.#clearThrottle()
+    this.#doEmit(forceEmit)
+  }
+
+  /** True when this controller's debug logging is toggled on. */
+  get isDebugLogEnabled(): boolean {
+    return debugLoggerRegistry.isEnabled(this.name)
+  }
+
+  /** Per-controller gated debug log. No-op unless this controller's namespace is
+   *  toggled on via DebugController. */
+  protected debugLog(
+    flow: DebugFlow,
+    message: string,
+    payload?: unknown | (() => unknown),
+    options?: DebugLogOptions
+  ): void {
+    moduleDebugLog(this.name, flow, message, payload, options)
   }
 
   protected emitError(error: ErrorRef) {
@@ -137,9 +217,8 @@ export default class EventEmitter {
       this.#errors
     )
 
-    // eslint-disable-next-line no-restricted-syntax
     for (const i of this.#errorCallbacksWithId) i.cb(error)
-    // eslint-disable-next-line no-restricted-syntax
+
     for (const cb of this.#errorCallbacks) cb(error)
   }
 
@@ -165,16 +244,23 @@ export default class EventEmitter {
     // simultaneous actions can lead to unintended side effects. The 'allowConcurrentActions' flag is provided to enable
     // concurrent execution at the main controller level. This is useful when multiple actions need to modify the state
     // of different sub-controllers simultaneously.
-    if ((someStatusIsLoading && !allowConcurrentActions) || this.statuses[callName] !== 'INITIAL') {
+    if (
+      (someStatusIsLoading && !allowConcurrentActions) ||
+      !['INITIAL', 'SUCCESS'].includes(this.statuses[callName] as any)
+    ) {
       this.emitError({
         level: errorLevel,
-        message: `Please wait for the completion of the previous action before initiating another one.', ${callName}`,
+        message: `Please wait for the completion of the previous action before initiating another one, ${callName}`,
         error: new Error(
           'Another function is already being handled by withStatus refrain from invoking a second function.'
         )
       })
 
       return
+    }
+
+    if (this.statuses[callName] === 'SUCCESS') {
+      await wait(2) // to let the INITIAL status be fired from the prev session
     }
 
     this.statuses[callName] = 'LOADING'
@@ -257,6 +343,7 @@ export default class EventEmitter {
    * clearing all callbacks and errors.
    */
   destroy() {
+    this.#clearThrottle()
     this.unregisterFromRegistry()
     this.#callbacks = []
     this.#callbacksWithId = []
@@ -292,6 +379,10 @@ export default class EventEmitter {
     if (!this.#registry) return
 
     this.#registry?.delete(this.id)
+  }
+
+  isInRegistry(): boolean {
+    return !!this.#registry?.has(this.id)
   }
 
   toJSON() {

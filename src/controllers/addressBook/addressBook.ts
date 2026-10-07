@@ -1,21 +1,11 @@
 import { getAddress } from 'ethers'
 
-import { Account, IAccountsController } from '../../interfaces/account'
-import { IAddressBookController } from '../../interfaces/addressBook'
+import { IAccountsController } from '../../interfaces/account'
+import { Contacts, IAddressBookController } from '../../interfaces/addressBook'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import EventEmitter from '../eventEmitter/eventEmitter'
-
-export type Contact = {
-  name: string
-  address: Account['addr']
-  isWalletAccount?: boolean
-  createdAt?: number
-  updatedAt?: number
-}
-
-export type Contacts = Array<Contact>
 
 /**
  * AddressBook controller- responsible for managing contacts in the Address Book. There are two internal types of contacts in the Address Book:
@@ -77,12 +67,12 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
     try {
       this.#manuallyAddedContacts = await this.#storage.get('contacts', [])
       this.emitUpdate()
-    } catch (e) {
+    } catch (error: any) {
       this.emitError({
         message:
           'Something went wrong when loading the Address Book. Please try again or contact support if the problem persists.',
         level: 'major',
-        error: new Error('Address Book: failed to load contacts from the Address Book')
+        error
       })
     }
   }

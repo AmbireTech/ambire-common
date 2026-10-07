@@ -1,5 +1,5 @@
 import { Fetch } from '../../interfaces/fetch'
-/* eslint-disable no-prototype-builtins */
+
 import { fetchWithTimeout } from '../../utils/fetch'
 import { parse, stringify } from '../richJson/richJson'
 

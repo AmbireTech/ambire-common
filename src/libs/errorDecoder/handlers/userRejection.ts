@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
 
 export const USER_REJECTED_TRANSACTION_ERROR_CODE = 4001

@@ -1,3 +1,4 @@
+import { cowSwapModule } from './cowSwapModule'
 import { eip7702AuthorizationModule } from './eip7702AuthorizationModule'
 import { ensMessageModule } from './ensModule'
 import { entryPointModule } from './entryPointModule'
@@ -16,6 +17,7 @@ export {
   erc20Module,
   erc721Module,
   legendsMessageModule,
+  cowSwapModule,
   permit2Module,
   openseaMessageModule,
   zealyMessageModule,

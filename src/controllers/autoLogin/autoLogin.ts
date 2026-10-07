@@ -1,10 +1,12 @@
 import { isHexString, toUtf8String } from 'ethers'
-import { SiweMessage } from 'siwe'
-import { getDomain } from 'tldts'
+import { getHostname } from 'tldts'
 import { getAddress } from 'viem'
 import { SiweMessage as SiweMessageType } from 'viem/siwe'
 
-import { IAccountsController } from '../../interfaces/account'
+import { SiweMessage } from '@signinwithethereum/siwe'
+
+import { DEFAULT_AUTO_LOGIN_DURATION_OPTION } from '../../consts/autoLogin'
+import { Account, IAccountsController } from '../../interfaces/account'
 import {
   AutoLoginPoliciesByAccount,
   AutoLoginPolicy,
@@ -33,31 +35,29 @@ export const STATUS_WRAPPED_METHODS = {
 const prefixRegex =
   /^(?:(?<scheme>[a-zA-Z][a-zA-Z0-9+-.]*):\/\/)?(?<domain>[a-zA-Z0-9+-.]*(?::[0-9]{1,5})?) (?:wants you to sign in with your Ethereum account:\n)(?<address>0x[a-fA-F0-9]{40})\n\n(?:(?<statement>.*)\n\n)?/
 
+// Normalizes a SIWE domain/host authority (host, optionally with a port) for comparison.
+// tldts.getHostname() lowercases and validates the hostname (also handles localhost/IPs,
+// unlike tldts.getDomain() which returns null for those), but it always strips the port,
+// so the port is normalized and compared separately to preserve origin security boundaries.
+const normalizeSiweAuthority = (hostAndPort: string): string | null => {
+  const [host, port] = hostAndPort.split(':')
+
+  if (!host) return null
+
+  const normalizedHostname = getHostname(host)
+  if (!normalizedHostname) return null
+
+  const hostnameWithoutWww = normalizedHostname.startsWith('www.')
+    ? normalizedHostname.slice(4)
+    : normalizedHostname
+
+  return port ? `${hostnameWithoutWww}:${port}` : hostnameWithoutWww
+}
+
 /**
  * A list of default policies for popular apps
  */
 const DEFAULT_POLICIES: DefaultAutoLoginPolicy[] = []
-
-const DEFAULT_AUTO_LOGIN_DURATION_OPTION = {
-  label: '30 days',
-  value: 30 * 24 * 60 * 60 * 1000
-}
-
-// Implemented here to ensure consistency between the controller and the UI
-// Also, in the future when the duration setting becomes exposed to the UI we
-// will need to validate the input from the UI, so these will be useful
-export const AUTO_LOGIN_DURATION_OPTIONS = [
-  { label: '24 hours', value: 24 * 60 * 60 * 1000 },
-  {
-    label: '7 days',
-    value: 7 * 24 * 60 * 60 * 1000
-  },
-  {
-    label: '14 days',
-    value: 14 * 24 * 60 * 60 * 1000
-  },
-  DEFAULT_AUTO_LOGIN_DURATION_OPTION
-]
 
 /**
  * The controller handles SIWE-like messages and provides auto-login functionality.
@@ -113,7 +113,6 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       invite
     )
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -133,7 +132,8 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     const parsedSiweMessageViemFormat: SiweMessageType = {
       ...viemFormatParsedMessage,
       version: parsedSiweMessage.version as '1', // hack to stop viem from whining
-      address: parsedSiweMessage.address as `0x${string}`,
+      // Always convert the address to a checksummed address because all checks later on assume that the address is checksummed.
+      address: getAddress(parsedSiweMessage.address) as `0x${string}`,
       ...(parsedSiweMessage.expirationTime
         ? { expirationTime: new Date(parsedSiweMessage.expirationTime) }
         : {}),
@@ -146,8 +146,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
   static getParsedSiweMessage(
     message: string | `0x${string}`,
-    requestOrigin: string,
-    signerAddress?: string
+    requestOrigin: string
   ): null | {
     parsedSiwe: SiweMessageType
     status: SiweValidityStatus
@@ -168,20 +167,21 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
     try {
       const requestHostname = new URL(requestOrigin).host
 
-      // Some dApps don't use checksum addresses in the SIWE message
-      // Which makes verification by the 'siwe' package fail (as it's very strict)
-      if (signerAddress) {
-        messageString = messageString.replace(
-          signerAddress.toLowerCase(),
-          getAddress(signerAddress)
-        )
-      }
-
       const parsedSiweMessage = new SiweMessage(messageString)
 
       if (!parsedSiweMessage || !Object.keys(parsedSiweMessage).length) return null
 
-      if (getDomain(parsedSiweMessage.domain) !== getDomain(requestHostname))
+      // ERC-4361 requires comparing the SIWE domain against the full request
+      // authority (host + port), not the registrable domain, otherwise sibling
+      // subdomains (e.g. evil.example.com vs app.example.com) would pass as a match.
+      const normalizedSiweDomain = normalizeSiweAuthority(parsedSiweMessage.domain)
+      const normalizedRequestAuthority = normalizeSiweAuthority(requestHostname)
+
+      if (
+        !normalizedSiweDomain ||
+        !normalizedRequestAuthority ||
+        normalizedSiweDomain !== normalizedRequestAuthority
+      )
         return {
           parsedSiwe: AutoLoginController.convertSiweToViemFormat(parsedSiweMessage),
           status: 'domain-mismatch'
@@ -293,8 +293,12 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
   #getPolicyStatus(
     parsedSiwe: SiweMessageType,
-    accountKeys: Key[]
+    accountKeys: Key[],
+    account: Account
   ): 'no-policy' | 'expired' | 'valid-policy' | 'unsupported' {
+    // disable the auto login for Safe accounts
+    if (account.safeCreation) return 'unsupported'
+
     const accountPolicies = this.getAccountPolicies(parsedSiwe.address)
 
     let policy = accountPolicies.find((p) => {
@@ -398,7 +402,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
 
     const accountKeys = this.#keystore.getAccountKeys(accountData)
 
-    const policyStatus = this.#getPolicyStatus(parsedSiwe, accountKeys)
+    const policyStatus = this.#getPolicyStatus(parsedSiwe, accountKeys, accountData)
 
     switch (policyStatus) {
       case 'valid-policy':
@@ -443,7 +447,7 @@ export class AutoLoginController extends EventEmitter implements IAutoLoginContr
       }
     })
 
-    this.#signMessage.setSigningKey(key.addr, key.type)
+    this.#signMessage.setSigners([{ addr: key.addr, type: key.type }])
 
     await this.#signMessage.sign()
 

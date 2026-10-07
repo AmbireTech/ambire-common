@@ -1,21 +1,35 @@
-/* eslint-disable import/no-cycle */
-/* eslint-disable no-restricted-syntax */
 import { ZeroAddress } from 'ethers'
-/* eslint-disable guard-for-in */
 import { getAddress } from 'viem'
+
+import { getFeeToken } from '@/libs/portfolio/tokenProcessing'
 
 import BalanceGetter from '../../../contracts/compiled/BalanceGetter.json'
 import NFTGetter from '../../../contracts/compiled/NFTGetter.json'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { PINNED_TOKENS } from '../../consts/pinnedTokens'
+import { AMBIRE_API_TIMEOUT } from '../../consts/portfolio'
 import { Fetch } from '../../interfaces/fetch'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import batcher from '../../utils/batcher'
+import { paginate } from '../../utils/paginate'
 import { Deployless, fromDescriptor } from '../deployless/deployless'
-import batcher from './batcher'
+import { isBlacklistedAsset, prepareBlacklistPatterns, STATIC_BLACKLIST } from './blacklist'
+import { portfolioDebugLog } from './debug'
+import { PORTFOLIO_LIB_ERROR_NAMES } from './errorNames'
 import { geckoRequestBatcher, geckoResponseIdentifier } from './gecko'
 import { getNFTs, getTokens } from './getOnchainBalances'
-import { formatExternalHintsAPIResponse, mergeERC721s, tokenFilter } from './helpers'
+import {
+  convertApiTokenDataToTokenDataCache,
+  getTokenDataCacheKey,
+  formatExternalHintsAPIResponse,
+  getHardcodedCitreaPrices,
+  getVisibleCollectibles,
+  mergeCollectionHints,
+  mergeERC721s,
+  planAssetMetadata,
+  tokenFilter
+} from './helpers'
 import {
   CollectionResult,
   ExternalHintsAPIResponse,
@@ -24,71 +38,36 @@ import {
   Limits,
   LimitsOptions,
   PortfolioLibGetResult,
-  PriceCache,
+  TokenDataCache,
+  TokenDataCacheValue,
   TokenError,
+  TokenMetadataFetchPlan,
   TokenResult
 } from './interfaces'
-import { flattenResults, paginate } from './pagination'
-
-/**
- * List of tokens to exclude from display by chainId and address
- *
- * Note: MUST BE CHECKSUMMED ADDRESSES
- */
-const EXCLUDED_TOKENS: Record<string, string[]> = {
-  // Gnosis Chain (xDAI)
-  '100': [
-    '0xcB444e90D8198415266c6a2724b7900fb12FC56E' // EURe - Duplicate
-  ],
-  // Polygon
-  '137': [
-    '0x18ec0A6E18E5bc3784fDd3a3634b31245ab704F6', // EURe (Monerium EUR emoney) - Excluded due to regulatory restrictions and limited utility in the app
-    '0x0B91B07bEb67333225A5bA0259D55AeE10E3A578' // MNEP - scam token
-  ],
-  // Ethereum Mainnet
-  '1': [
-    '0x3231Cb76718CDeF2155FC47b5286d82e6eDA273f' // EURe - Duplicate
-  ],
-  // Hyper EVM
-  '999': [
-    '0x94e8396e0869c9F2200760aF0621aFd240E1CF38' // wstHYPE - Excluded because it's a duplicate of stHYPE
-  ],
-  // Andromeda
-  '1088': [
-    '0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000' // METIS as an ERC-20 token - Excluded because it's a duplicate of the native token
-  ],
-  // Optimism
-  '10': [
-    '0xDfA2d3a0d32F870D87f8A0d7AA6b9CdEB7bc5AdB' // sUSD - Duplicate of 0x8c6f28f2F1A3C87F0f938b96d27520d9751ec8d9
-  ]
-}
+import { flattenResults } from './pagination'
 
 export const LIMITS: Limits = {
   // we have to be conservative with erc721Tokens because if we pass 30x20 (worst case) tokenIds, that's 30x20 extra words which is 19kb
   // proxy mode input is limited to 24kb
-  deploylessProxyMode: { erc20: 66, erc721: 30, erc721TokensInput: 20, erc721Tokens: 50 },
+  deploylessProxyMode: {
+    erc20: 66,
+    erc20Simulation: 50,
+    erc721: 30,
+    erc721TokensInput: 20,
+    erc721Tokens: 50
+  },
   // theoretical capacity is 1666/450
   deploylessStateOverrideMode: {
     erc20: 230,
+    erc20Simulation: 50,
     erc721: 70,
     erc721TokensInput: 70,
     erc721Tokens: 70
   }
 }
 
-// @TODO: Move this somewhere else
-export const PORTFOLIO_LIB_ERROR_NAMES = {
-  /** External hints API (Velcro) request failed but fallback is sufficient */
-  NonCriticalApiHintsError: 'NonCriticalApiHintsError',
-  /** External API (Velcro) hints are older than X minutes */
-  StaleApiHintsError: 'StaleApiHintsError',
-  /** No external API (Velcro) hints are available- the request failed without fallback */
-  NoApiHintsError: 'NoApiHintsError',
-  /** One or more cena request has failed */
-  PriceFetchError: 'PriceFetchError',
-  /** Defi discovery failed */
-  DefiDiscoveryError: 'DefiDiscoveryError'
-}
+// Re-exported for backwards compatibility.
+export { PORTFOLIO_LIB_ERROR_NAMES }
 
 export const getEmptyHints = (): Hints => ({
   erc20s: [],
@@ -99,9 +78,9 @@ export const getEmptyHints = (): Hints => ({
 const defaultOptions: GetOptions = {
   baseCurrency: 'usd',
   blockTag: 'latest',
-  priceRecency: 0,
+  tokenDataRecency: 0,
   fetchPinned: true,
-  priceRecencyOnFailure: 1 * 60 * 60 * 1000 // 1 hour
+  tokenDataRecencyOnFailure: 1 * 60 * 60 * 1000 // 1 hour
 }
 
 export class Portfolio {
@@ -113,6 +92,8 @@ export class Portfolio {
 
   private batchedGecko: Function
 
+  private isTokenPricesEnabled: () => boolean
+
   private deploylessTokens: Deployless
 
   private deploylessNfts: Deployless
@@ -122,7 +103,8 @@ export class Portfolio {
     provider: RPCProvider,
     network: Network,
     velcroUrl?: string,
-    customBatcher?: Function
+    customBatcher?: Function,
+    isTokenPricesEnabled: () => boolean = () => true
   ) {
     if (customBatcher) {
       this.batchedVelcroDiscovery = customBatcher
@@ -152,12 +134,13 @@ export class Portfolio {
     }
     this.batchedGecko = batcher(fetch, geckoRequestBatcher, {
       timeoutSettings: {
-        timeoutAfter: 3000,
+        timeoutAfter: AMBIRE_API_TIMEOUT,
         timeoutErrorMessage: `Cena request timed out on ${network.name}`
       }
     })
     this.provider = provider
     this.network = network
+    this.isTokenPricesEnabled = isTokenPricesEnabled
     this.deploylessTokens = fromDescriptor(provider, BalanceGetter, !network.rpcNoStateOverride)
     this.deploylessNfts = fromDescriptor(provider, NFTGetter, !network.rpcNoStateOverride)
   }
@@ -234,15 +217,20 @@ export class Portfolio {
       specialErc20Hints,
       specialErc721Hints,
       blockTag,
-      priceRecencyOnFailure,
-      priceCache: paramsPriceCache,
-      priceRecency
+      tokenDataRecencyOnFailure,
+      tokenDataCache: paramsTokenDataCache,
+      tokenDataRecency,
+      blacklist,
+      preventTokenBlacklisting,
+      deployless,
+      knownTokenMetadata,
+      knownCollectionMetadata
     } = { ...defaultOptions, ...opts }
     const toBeLearned: PortfolioLibGetResult['toBeLearned'] = {
       erc20s: [],
       erc721s: {}
     }
-    if (simulation && simulation.account.addr !== accountAddr)
+    if (simulation && simulation.baseAccount.getAccount().addr !== accountAddr)
       throw new Error('wrong account passed')
 
     const start = Date.now()
@@ -266,60 +254,93 @@ export class Portfolio {
       ...gasTankFeeTokens.filter((x) => x.chainId === this.network.chainId).map((x) => x.address)
     ]
 
-    hints.erc721s = mergeERC721s([
-      additionalErc721Hints || {},
-      hints.erc721s,
-      ...Object.values(specialErc721Hints || {})
-    ])
+    // Taken before the merge, which folds the custom ids in. The learned assets
+    // are left out on purpose: adding a collectible also asks for it to be
+    // learned, so they would report every custom collection as discovered.
+    const discoveredCollections = new Set(
+      [...Object.keys(hints.erc721s), ...Object.keys(additionalErc721Hints || {})].map((address) =>
+        address.toLowerCase()
+      )
+    )
 
-    const checksummedErc20Hints = hints.erc20s
-      .map((address) => {
-        try {
-          // getAddress may throw an error. This will break the portfolio
-          // if the error isn't caught
-          return getAddress(address)
-        } catch {
-          return null
-        }
-      })
-      .filter(Boolean) as string[]
+    hints.erc721s = mergeCollectionHints({
+      additionalHints: additionalErc721Hints,
+      apiHints: hints.erc721s,
+      specialHints: specialErc721Hints
+    })
 
-    // Exclude tokens by chainId/address from hints (after checksumming)
-    const excludedAddresses = EXCLUDED_TOKENS[this.network.chainId.toString()]
-    const filteredChecksummedHints = excludedAddresses
-      ? checksummedErc20Hints.filter((addr) => !excludedAddresses.includes(addr))
-      : checksummedErc20Hints
+    // Deduped before checksumming for performance
+    const seenErc20Hints = new Set<string>()
+    const checksummedErc20Hints: string[] = []
+
+    hints.erc20s.forEach((address) => {
+      try {
+        const lowercasedAddress = address.toLowerCase()
+
+        if (seenErc20Hints.has(lowercasedAddress)) return
+
+        // getAddress may throw an error. This will break the portfolio
+        // if the error isn't caught
+        const checksummedAddress = getAddress(address)
+
+        seenErc20Hints.add(lowercasedAddress)
+        checksummedErc20Hints.push(checksummedAddress)
+      } catch {
+        // Not an address, so it can't be a token
+      }
+    })
+
+    // Merge static and dynamic blacklisted addresses for this chain
+    const chainIdStr = this.network.chainId.toString()
+    const staticBlacklistedAddrs = STATIC_BLACKLIST.blacklistAddrs[chainIdStr] || []
+    const dynamicBlacklistedAddrs = blacklist?.blacklistAddrs[chainIdStr] || []
+    const allBlacklistedAddrs = new Set([...staticBlacklistedAddrs, ...dynamicBlacklistedAddrs])
+    const filteredChecksummedHints = preventTokenBlacklisting
+      ? checksummedErc20Hints
+      : checksummedErc20Hints.filter((addr) => !allBlacklistedAddrs.has(addr))
 
     // Remove duplicates and always add ZeroAddress
     hints.erc20s = [...new Set(filteredChecksummedHints.concat(ZeroAddress))]
 
-    // This also allows getting prices, this is used for more exotic tokens that cannot be retrieved via Coingecko
-    const priceCache: PriceCache = paramsPriceCache || new Map()
+    const tokenDataCache: TokenDataCache = paramsTokenDataCache || new Map()
     for (const addr in hints.externalApi?.prices || {}) {
-      const priceHint = hints.externalApi?.prices[addr]
-      // eslint-disable-next-line no-continue
-      if (!priceHint) continue
-      // @TODO consider validating the external response here, before doing the .set; or validating the whole velcro response
-      priceCache.set(addr, [start, Array.isArray(priceHint) ? priceHint : [priceHint]])
+      const tokenDataHint = convertApiTokenDataToTokenDataCache(
+        hints.externalApi?.prices[addr] || null
+      )
+
+      if (!tokenDataHint) continue
+
+      tokenDataCache.set(getTokenDataCacheKey(addr), [start, tokenDataHint])
     }
+    const collectionsHints = Object.entries(hints.erc721s)
+
+    // Decided once for the whole update so that every page agrees on which assets
+    // must be read in full, and so the freshly read ones can be reported back. With
+    // nothing held, everything is read from the chain and nothing is reported back.
+    const metadataPlan = planAssetMetadata(hints.erc20s, knownTokenMetadata, start)
+    const collectionMetadataPlan = planAssetMetadata(
+      Object.keys(hints.erc721s),
+      knownCollectionMetadata,
+      start
+    )
+
     const discoveryDone = Date.now()
 
     // .isLimitedAt24kbData should be the same for both instances; @TODO more elegant check?
     const limits: LimitsOptions = this.deploylessTokens.isLimitedAt24kbData
       ? LIMITS.deploylessProxyMode
       : LIMITS.deploylessStateOverrideMode
-    const collectionsHints = Object.entries(hints.erc721s)
     const [tokensWithErr, collectionsWithErr] = await Promise.all([
       flattenResults(
-        paginate(hints.erc20s, limits.erc20).map((page, index) =>
-          getTokens(
-            this.network,
-            this.deploylessTokens,
-            { simulation, blockTag, specialErc20Hints },
-            accountAddr,
-            page,
-            index
-          )
+        paginate(hints.erc20s, opts.simulation ? limits.erc20Simulation : limits.erc20).map(
+          (page) =>
+            getTokens(
+              this.network,
+              this.deploylessTokens,
+              { simulation, blockTag, specialErc20Hints, deployless, metadataPlan },
+              accountAddr,
+              page
+            )
         )
       ),
       flattenResults(
@@ -327,7 +348,7 @@ export class Portfolio {
           getNFTs(
             this.network,
             this.deploylessNfts,
-            { simulation, blockTag },
+            { simulation, blockTag, deployless, metadataPlan: collectionMetadataPlan },
             accountAddr,
             page,
             limits
@@ -343,17 +364,35 @@ export class Portfolio {
       afterNonce: bigint
     }
     const [collectionsWithErrResult] = collectionsWithErr
+    const fetchedTokenMetadata: PortfolioLibGetResult['fetchedTokenMetadata'] = []
+    const fetchedCollectionMetadata: PortfolioLibGetResult['fetchedCollectionMetadata'] = []
 
     // Re-map/filter into our format
-    const getPriceFromCache = (address: string, _priceRecency: number = priceRecency) => {
-      const cached = priceCache.get(address)
+    const getTokenDataFromCache = (
+      address: string,
+      _tokenDataRecency: number = tokenDataRecency
+    ): TokenDataCacheValue | null => {
+      // hardcode citrea prices
+      if (this.network.chainId === 4114n) {
+        const citreaTokenPrice = getHardcodedCitreaPrices(address)
+        if (citreaTokenPrice)
+          return {
+            marketDataIn: [],
+            priceIn: [citreaTokenPrice]
+          }
+      }
+
+      const cached = tokenDataCache.get(getTokenDataCacheKey(address))
       if (!cached) return null
       const [timestamp, entry] = cached
-      const eligible = entry.filter((x) => x.baseCurrency === baseCurrency)
+      const eligible = entry.priceIn.find((p) => p.baseCurrency === baseCurrency)
+
+      if (!eligible) return null
+
       // by using `start` instead of `Date.now()`, we make sure that prices updated from Velcro will not be updated again
       // even if priceRecency is 0
-      const isStale = start - timestamp > _priceRecency
-      return isStale ? null : eligible
+      const isStale = start - timestamp > _tokenDataRecency
+      return isStale ? null : entry
     }
 
     const nativeToken = tokensWithErrResult.find(
@@ -363,9 +402,59 @@ export class Portfolio {
     const isValidToken = (error: TokenError, token: TokenResult): boolean =>
       error === '0x' && !!token.symbol
 
+    // name() and symbol() belong to the optional ERC721Metadata extension, so a
+    // collection without them is still a collection - the ENS registrar is one.
+    // Only the getter erroring says an address holds no collection, and it does
+    // error for one that doesn't.
+    const isValidCollection = (error: TokenError): boolean => error === '0x'
+
+    const blacklistPatterns = prepareBlacklistPatterns([
+      ...STATIC_BLACKLIST.blacklistBySymbols,
+      ...(blacklist?.blacklistBySymbols || [])
+    ])
+
     const tokensWithoutPrices = tokensWithErrResult
       .filter((_tokensWithErrResult: [TokenError, TokenResult]) => {
         if (!isValidToken(_tokensWithErrResult[0], _tokensWithErrResult[1])) return false
+
+        const token = _tokensWithErrResult[1]
+
+        // Kept before any of the filtering below, so metadata read for a token the
+        // user never sees is not read again on the next update.
+        if (knownTokenMetadata && metadataPlan.needsMetadata.has(token.address)) {
+          fetchedTokenMetadata.push([
+            token.address,
+            {
+              symbol: token.symbol,
+              name: token.name,
+              decimals: token.decimals,
+              fetchedAt: start
+            }
+          ])
+        }
+
+        // Spam filter: hide tokens whose symbol/name matches a blacklisted
+        // pattern. Custom (user-added) tokens are never hidden. We don't run the
+        // embedded-domain check here because token names/symbols legitimately contain domains.
+        if (
+          isBlacklistedAsset({
+            symbol: token.symbol,
+            name: token.name,
+            isCustom: token.flags?.isCustom,
+            patterns: blacklistPatterns
+          })
+        ) {
+          portfolioDebugLog(
+            'blacklist',
+            `${this.network.chainId.toString()}: Filtered token ${token.symbol}`,
+            {
+              address: token.address,
+              symbol: token.symbol,
+              name: token.name
+            }
+          )
+          return false
+        }
 
         // Don't filter by balance/custom/hidden etc. if this param isn't passed
         // The portfolio lib is used outside the controller, in which case we want to
@@ -399,126 +488,297 @@ export class Portfolio {
         return result
       })
 
-    const unfilteredCollections = collectionsWithErrResult.map(([error, x], i) => {
-      const address = collectionsHints[i][0] as unknown as string
-      return [
-        error,
-        {
-          ...x,
-          address,
-          priceIn: getPriceFromCache(address) || []
-        }
-      ] as [string, CollectionResult]
+    // Unlike the deployless ones, preference addresses aren't always checksummed.
+    // An empty array of ids means the collection was added before they were
+    // recorded, otherwise the listed collectibles are the added ones
+    const customCollectibles: { [lowercasedAddress: string]: bigint[] } = {}
+    Object.entries(specialErc721Hints?.custom || {}).forEach(([address, ids]) => {
+      customCollectibles[address.toLowerCase()] = ids
+    })
+    // An empty array of ids hides the whole collection, otherwise the listed
+    // collectibles are the hidden ones
+    const hiddenCollectibles: { [lowercasedAddress: string]: bigint[] } = {}
+    Object.entries(specialErc721Hints?.hidden || {}).forEach(([address, ids]) => {
+      hiddenCollectibles[address.toLowerCase()] = ids
     })
 
-    const collections = unfilteredCollections
-      .filter((preFilterCollection) => isValidToken(preFilterCollection[0], preFilterCollection[1]))
-      .map(([, collection]) => {
-        // Add all collections with collectibles to toBeLearned
-        if (!toBeLearned.erc721s[collection.address] && collection.collectibles.length) {
+    const collections = collectionsWithErrResult.reduce<CollectionResult[]>(
+      (acc, [error, collection]) => {
+        // The same check the collection errors are built from, so a collection is
+        // either displayed or reported, never both
+        if (!isValidCollection(error)) return acc
+
+        const lowercasedAddress = collection.address.toLowerCase()
+        const customIds = customCollectibles[lowercasedAddress]
+        const isCustom = !!customIds
+        const hiddenIds = hiddenCollectibles[lowercasedAddress]
+        const isHidden = !!hiddenIds && !hiddenIds.length
+        const visibleCollectibles = getVisibleCollectibles({
+          collectibles: collection.collectibles,
+          customIds,
+          hiddenIds,
+          isDiscovered: discoveredCollections.has(lowercasedAddress)
+        })
+
+        // Kept before the filtering below, for the same reason as the token metadata
+        if (
+          knownCollectionMetadata &&
+          collectionMetadataPlan.needsMetadata.has(collection.address)
+        ) {
+          fetchedCollectionMetadata.push([
+            collection.address,
+            {
+              symbol: collection.symbol,
+              name: collection.name,
+              fetchedAt: start
+            }
+          ])
+        }
+
+        // Spam filter: hide collections whose symbol/name matches a blacklisted
+        // pattern or embeds a phishing domain. Custom (user-added) collections
+        // are never hidden.
+        if (
+          isBlacklistedAsset({
+            symbol: collection.symbol,
+            name: collection.name,
+            isCustom,
+            patterns: blacklistPatterns,
+            checkForEmbeddedDomain: true
+          })
+        ) {
+          portfolioDebugLog(
+            'blacklist',
+            `${this.network.chainId.toString()}: Filtered collection ${collection.name}`,
+            {
+              address: collection.address,
+              symbol: collection.symbol,
+              name: collection.name
+            }
+          )
+
+          return acc
+        }
+
+        // Important note: Collections with 0 collectibles are allowed to pass through the filter.
+        // A hidden collection is requested by its own hint, so it doesn't have to
+        // be learned. A custom one is learned like any other, and removing it
+        // forgets that too, see `#forgetCollectible` in the hints controller.
+        if (
+          !isHidden &&
+          !toBeLearned.erc721s[collection.address] &&
+          collection.collectibles.length > 0
+        ) {
           toBeLearned.erc721s[collection.address] = collection.collectibles
         }
 
-        return collection
-      })
+        acc.push({
+          ...collection,
+          collectibles: visibleCollectibles,
+          // Collections have no flags until this point
+          flags: { isCustom, isHidden },
+          priceIn: getTokenDataFromCache(collection.address)?.priceIn || []
+        })
+        return acc
+      },
+      []
+    )
 
     const oracleCallDone = Date.now()
 
     // Update prices and set the priceIn for each token by reference,
     // updating the final tokens array as a result
     const tokensWithPrices: TokenResult[] = await Promise.all(
-      tokensWithoutPrices.map(async (token: { address: string }) => {
-        let priceIn: TokenResult['priceIn'] = []
-        const cachedPriceIn = getPriceFromCache(token.address)
+      tokensWithoutPrices.map(
+        async (token: Omit<TokenResult, 'priceIn' | 'marketDataIn' | 'meta'>) => {
+          let hasPrice = false
+          const cachedTokenData = getTokenDataFromCache(token.address, tokenDataRecencyOnFailure)
 
-        if (cachedPriceIn && cachedPriceIn !== null) {
-          priceIn = cachedPriceIn
+          if (cachedTokenData && cachedTokenData.priceIn && cachedTokenData.priceIn.length > 0) {
+            hasPrice = true
 
-          return {
-            ...(token as TokenResult),
-            priceIn
+            return {
+              ...(token as TokenResult),
+              ...cachedTokenData
+            }
           }
-        }
 
-        if (!this.network.platformId) {
-          return {
-            ...(token as TokenResult),
-            priceIn
+          if (!this.network.platformId || !this.isTokenPricesEnabled()) {
+            return {
+              ...token,
+              priceIn: [],
+              marketDataIn: []
+            }
           }
-        }
 
-        try {
-          const priceData = await this.batchedGecko({
-            ...token,
-            network: this.network,
-            baseCurrency,
-            // this is what to look for in the coingecko response object
-            responseIdentifier: geckoResponseIdentifier(token.address, this.network)
-          })
-
-          priceIn = Object.entries(priceData || {}).map(([baseCurr, price]) => ({
-            baseCurrency: baseCurr,
-            price: price as number
-          }))
-          priceCache.set(token.address, [Date.now(), priceIn])
-        } catch (error: any) {
-          const errorMessage = error?.message || 'Unknown error'
-
-          priceIn = getPriceFromCache(token.address, priceRecencyOnFailure) || []
-
-          if (
-            // Avoid duplicate errors, because this.bachedGecko is called for each token and if
-            // there is an error it will most likely be the same for all tokens
-            !errors.find(
-              (x) =>
-                x.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage
-            ) &&
-            // Don't display an error if there is a cached price
-            !priceIn.length
-          ) {
-            errors.push({
-              name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
-              message: errorMessage,
-              level: 'warning'
+          try {
+            const tokenData = await this.batchedGecko({
+              ...token,
+              network: this.network,
+              baseCurrency,
+              // this is what to look for in the coingecko response object
+              responseIdentifier: geckoResponseIdentifier(token.address, this.network)
             })
+
+            const formattedTokenData = convertApiTokenDataToTokenDataCache(tokenData)
+
+            if (
+              formattedTokenData &&
+              formattedTokenData.priceIn &&
+              formattedTokenData.priceIn.length > 0
+            ) {
+              hasPrice = true
+            }
+
+            tokenDataCache.set(getTokenDataCacheKey(token.address), [
+              Date.now(),
+              formattedTokenData
+            ])
+
+            return {
+              ...token,
+              ...formattedTokenData
+            }
+          } catch (error: any) {
+            const errorMessage = error?.message || 'Unknown error'
+
+            const olderCachedTokenData = getTokenDataFromCache(
+              token.address,
+              tokenDataRecencyOnFailure
+            )
+
+            if (
+              olderCachedTokenData &&
+              olderCachedTokenData.priceIn &&
+              olderCachedTokenData.priceIn.length > 0
+            ) {
+              hasPrice = true
+            }
+
+            if (
+              // Avoid duplicate errors, because this.bachedGecko is called for each token and if
+              // there is an error it will most likely be the same for all tokens
+              !errors.find(
+                (x) =>
+                  x.name === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError && x.message === errorMessage
+              ) &&
+              // Don't display an error if there is a cached price
+              !hasPrice
+            ) {
+              errors.push({
+                name: PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError,
+                message: errorMessage,
+                level: 'warning'
+              })
+            }
+
+            return {
+              ...token,
+              priceIn: olderCachedTokenData?.priceIn || [],
+              marketDataIn: olderCachedTokenData?.marketDataIn || []
+            }
           }
         }
-
-        return {
-          ...(token as TokenResult),
-          priceIn
-        }
-      })
+      )
     )
 
     const priceUpdateDone = Date.now()
 
     return {
       toBeLearned,
+      fetchedTokenMetadata,
+      fetchedCollectionMetadata,
       errors,
       updateStarted: start,
       discoveryTime: discoveryDone - start,
       oracleCallTime: oracleCallDone - discoveryDone,
       priceUpdateTime: priceUpdateDone - oracleCallDone,
-      priceCache,
+      tokenDataCache,
       tokens: tokensWithPrices,
       feeTokens: tokensWithPrices.filter((t) => {
         // return the native token
         if (t.address === ZeroAddress && t.chainId === this.network.chainId) return true
 
-        return gasTankFeeTokens.find(
-          (gasTankT) =>
-            gasTankT.address.toLowerCase() === t.address.toLowerCase() &&
-            gasTankT.chainId === t.chainId
-        )
+        return getFeeToken(t.address, t.chainId)
       }),
       beforeNonce,
       afterNonce,
       blockNumber,
       tokenErrors: tokensWithErrResult
-        .filter(([error, result]: [string, TokenResult]) => error !== '0x' || result.symbol === '')
+        .filter(([error, result]: [string, TokenResult]) => !isValidToken(error, result))
         .map(([error, result]: [string, TokenResult]) => ({ error, address: result.address })),
+      collectionErrors: collectionsWithErrResult
+        .filter(([error]: [string, CollectionResult]) => !isValidCollection(error))
+        .map(([error, result]: [string, CollectionResult]) => ({ error, address: result.address })),
       collections
     }
+  }
+
+  async getTokensByAddresses(
+    accountAddr: string,
+    tokenAddrs: string[],
+    opts: Pick<GetOptions, 'blockTag' | 'simulation' | 'specialErc20Hints' | 'deployless'>
+  ): Promise<[TokenError, TokenResult][]> {
+    const uniqueTokenAddrs = [...new Set(tokenAddrs)]
+
+    if (!uniqueTokenAddrs.length) return []
+
+    const limits: LimitsOptions = this.deploylessTokens.isLimitedAt24kbData
+      ? LIMITS.deploylessProxyMode
+      : LIMITS.deploylessStateOverrideMode
+
+    // Nothing is remembered across these one-off reads, so every token is read in full
+    const metadataPlan: TokenMetadataFetchPlan = {
+      known: new Map(),
+      needsMetadata: new Set(uniqueTokenAddrs)
+    }
+
+    const [tokensWithErrResult] = await flattenResults(
+      paginate(uniqueTokenAddrs, limits.erc20).map((page) =>
+        getTokens(this.network, this.deploylessTokens, { ...opts, metadataPlan }, accountAddr, page)
+      )
+    )
+
+    return tokensWithErrResult.map(([error, token]) => [
+      error,
+      {
+        ...token,
+        priceIn: token.priceIn || [],
+        marketDataIn: token.marketDataIn || []
+      }
+    ])
+  }
+
+  async getTokenPrice(
+    address: string,
+    {
+      baseCurrency = 'usd',
+      tokenDataCache = new Map(),
+      tokenDataRecency = 0
+    }: {
+      baseCurrency?: string
+      tokenDataCache?: TokenDataCache
+      tokenDataRecency?: number
+    } = {}
+  ): Promise<number | undefined> {
+    const cachedTokenData = tokenDataCache.get(getTokenDataCacheKey(address))
+
+    if (cachedTokenData && Date.now() - cachedTokenData[0] <= tokenDataRecency) {
+      return cachedTokenData[1].priceIn.find((price) => price.baseCurrency === baseCurrency)?.price
+    }
+
+    if (!this.network.platformId || !this.isTokenPricesEnabled()) return undefined
+
+    const tokenData = await this.batchedGecko({
+      address,
+      network: this.network,
+      baseCurrency,
+      responseIdentifier: geckoResponseIdentifier(address, this.network)
+    })
+    const formattedTokenData = convertApiTokenDataToTokenDataCache(tokenData)
+
+    tokenDataCache.set(getTokenDataCacheKey(address), [Date.now(), formattedTokenData])
+
+    return formattedTokenData.priceIn.find((price) => price.baseCurrency === baseCurrency)?.price
   }
 }

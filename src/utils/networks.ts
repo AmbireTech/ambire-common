@@ -1,5 +1,3 @@
-import { JsonRpcProvider } from 'ethers'
-
 import { BUNDLER } from '../consts/bundlers'
 import {
   ChainlistNetwork,
@@ -8,13 +6,14 @@ import {
   NetworkFeature,
   RelayerNetwork
 } from '../interfaces/network'
+import { FetchJsonRpcProvider } from '../services/provider/fetchJsonRpcProvider'
 
 const hardcodedRpcUrls: { [chainId: string]: string } = {
   '11155111': 'https://eth-sepolia.public.blastapi.io'
 }
 
 const checkIsRpcUrlWorking = async (rpcUrl: string) => {
-  const provider = new JsonRpcProvider(rpcUrl)
+  const provider = new FetchJsonRpcProvider(rpcUrl)
 
   try {
     await provider.getBlockNumber()
@@ -32,6 +31,7 @@ const rollProviderUrlsAndFindWorking = async (
   rpcUrls: string[],
   index: number
 ): Promise<string | null> => {
+  if (!rpcUrls[index]) return null
   const isProviderWorking = await checkIsRpcUrlWorking(rpcUrls[index])
 
   if (isProviderWorking) {
@@ -57,7 +57,7 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
 
     return !isApiKeyRequired
   })
-  const workingRpcUrl: string =
+  const workingRpcUrl: string | null =
     hardcodedRpcUrls[network.chainId.toString()] ??
     (await rollProviderUrlsAndFindWorking(freeHttpRpcUrls, 0))
 
@@ -88,8 +88,8 @@ const convertToAmbireNetworkFormat = async (network: ChainlistNetwork): Promise<
   return {
     name: network.name,
     chainId: BigInt(network.chainId),
-    rpcUrls: [workingRpcUrl ?? network.rpc[0]],
-    explorerUrl: network.explorers[0].url,
+    rpcUrls: [workingRpcUrl ?? network.rpc[0]!],
+    explorerUrl: network.explorers[0]?.url || '',
     selectedRpcUrl: workingRpcUrl || '',
     platformId,
     nativeAssetId,
@@ -133,7 +133,8 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     platformId,
     has7702,
     disabledByDefault,
-    rpcNoStateOverride
+    rpcNoStateOverride,
+    refreshInterval
   } = relayerNetwork
   const {
     native: {
@@ -162,9 +163,6 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     }),
     ...(typeof incomingFeeOptions.baseFeeMaxChangeDenominator === 'number' && {
       baseFeeMaxChangeDenominator: BigInt(incomingFeeOptions.baseFeeMaxChangeDenominator)
-    }),
-    ...(typeof incomingFeeOptions.feeIncrease === 'number' && {
-      feeIncrease: BigInt(incomingFeeOptions.feeIncrease)
     })
   }
 
@@ -213,6 +211,10 @@ export const mapRelayerNetworkConfigToAmbireNetwork = (
     hasRelayer,
     suggestedRpcUrl: relayerNetwork.selectedRpcUrl,
     suggestedRpcBatchCount: relayerNetwork.selectedRpcBatchCount,
+    refreshInterval:
+      typeof refreshInterval === 'number' && Number.isFinite(refreshInterval) && refreshInterval > 0
+        ? refreshInterval
+        : undefined,
     wrappedAddr,
     oldNativeAssetSymbols,
     feeOptions,

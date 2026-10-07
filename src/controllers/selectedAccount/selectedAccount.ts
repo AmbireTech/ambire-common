@@ -1,28 +1,31 @@
-/* eslint-disable no-underscore-dangle */
-import { formatEther, getAddress, isAddress } from 'ethers'
+import { getAddress } from 'ethers'
 
-import { STK_WALLET, UNI_V3_WALLET_WETH_POOL, WALLET_TOKEN } from '../../consts/addresses'
+import { IUiController } from '@/interfaces/ui'
+
 import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
 import { Account, IAccountsController } from '../../interfaces/account'
 import { AutoLoginPolicy, IAutoLoginController } from '../../interfaces/autoLogin'
-import { Banner } from '../../interfaces/banner'
+import { Banner, IBannerController } from '../../interfaces/banner'
+import { IDomainsController } from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
-import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import {
   ISelectedAccountController,
+  SelectedAccountBalanceByAccount,
   SelectedAccountPortfolio
 } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
 import {
   defiPositionsOnDisabledNetworksBannerId,
-  getDefiPositionsOnDisabledNetworksForTheSelectedAccount
+  ensExpiryBannerId,
+  getDefiPositionsOnDisabledNetworksForTheSelectedAccount,
+  getEnsExpiryBanner
 } from '../../libs/banners/banners'
-import { AssetType } from '../../libs/defiPositions/types'
 import {
+  getDefiAppsErrors,
   getNetworksWithDeFiPositionsErrorErrors,
   getNetworksWithErrors,
   SelectedAccountBalanceError
@@ -31,8 +34,15 @@ import {
   calculateSelectedAccountPortfolio,
   DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
 } from '../../libs/selectedAccount/selectedAccount'
-import { getProjectedRewardsStatsAndToken } from '../../utils/rewards'
 import EventEmitter from '../eventEmitter/eventEmitter'
+
+// Portfolio recalculations fire back-to-back as per-network results stream in.
+// Throttle their UI emit so the state isn't serialized on every partial tick.
+const PORTFOLIO_UPDATE_THROTTLE_MS = 100
+
+// The constant is already checksummed, so an address matches it when the two agree
+// without regard to case - which needs no keccak hash of the address to find out.
+const AMBIRE_ACCOUNT_FACTORY_LOWERCASED = AMBIRE_ACCOUNT_FACTORY.toLowerCase()
 
 export class SelectedAccountController extends EventEmitter implements ISelectedAccountController {
   #storage: IStorageController
@@ -45,9 +55,13 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   #networks: INetworksController | null = null
 
-  #keystore: IKeystoreController | null = null
-
   #providers: IProvidersController | null = null
+
+  #banner: IBannerController | null = null
+
+  #domains: IDomainsController | null = null
+
+  #ui: IUiController | null = null
 
   account: Account | null = null
 
@@ -57,6 +71,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
    * It is updated when the portfolio or defi positions controllers are updated.
    */
   portfolio: SelectedAccountPortfolio = DEFAULT_SELECTED_ACCOUNT_PORTFOLIO
+
+  balanceByAccounts: SelectedAccountBalanceByAccount = {}
 
   #portfolioLoadingTimeout: NodeJS.Timeout | null = null
 
@@ -81,23 +97,25 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     eventEmitterRegistry,
     storage,
     accounts,
-    keystore,
-    autoLogin
+    autoLogin,
+    banner,
+    ui
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     storage: IStorageController
     accounts: IAccountsController
-    keystore: IKeystoreController
     autoLogin: IAutoLoginController
+    banner: IBannerController
+    ui: IUiController
   }) {
     super(eventEmitterRegistry)
 
     this.#storage = storage
     this.#accounts = accounts
-    this.#keystore = keystore
     this.#autoLogin = autoLogin
+    this.#banner = banner
+    this.#ui = ui
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -108,7 +126,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     const [selectedAccountAddress, selectedAccountDismissedBannerIds] = await Promise.all([
       this.#storage.get('selectedAccount', null),
-      this.#storage.get('selectedAccountDismissedBannerIds', [])
+      this.#storage.get('selectedAccountDismissedBannerIds', {})
     ])
     this.dismissedBannerIds = selectedAccountDismissedBannerIds
     this.account = this.#accounts.accounts.find((a) => a.addr === selectedAccountAddress) || null
@@ -120,15 +138,18 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   initControllers({
     portfolio,
     networks,
-    providers
+    providers,
+    domains
   }: {
     portfolio: IPortfolioController
     networks: INetworksController
     providers: IProvidersController
+    domains: IDomainsController
   }) {
     this.#portfolio = portfolio
     this.#networks = networks
     this.#providers = providers
+    this.#domains = domains
 
     this.updateSelectedAccountPortfolio(true)
     this.#updatePortfolioErrors(true)
@@ -138,6 +159,12 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         this.updateSelectedAccountPortfolio()
       })
     }, 'selectedAccount')
+
+    this.#domains.onUpdate(() => {
+      this.#debounceFunctionCallsOnSameTick('updateDomainData', () => {
+        if (this.account) this.propagateUpdate()
+      })
+    })
 
     this.#providers.onUpdate(() => {
       this.#debounceFunctionCallsOnSameTick('updateErrors', () => {
@@ -223,9 +250,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
   updateSelectedAccountPortfolio(skipUpdate?: boolean) {
     if (!this.#portfolio || !this.account) return
 
-    const portfolioAccountState = structuredClone(
-      this.#portfolio.getAccountPortfolioState(this.account.addr)
-    )
+    const portfolioAccountState = this.#portfolio.getAccountPortfolioState(this.account.addr)
 
     const newSelectedAccountPortfolio = calculateSelectedAccountPortfolio(
       portfolioAccountState,
@@ -233,96 +258,28 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.#isManualUpdate
     )
 
-    // Try catch this just in case the relayer sends unexpected data or we have other errs in the calculations
-    try {
-      // Find stkWALLET or WALLET token in the latest portfolio state
-      const walletOrStkWalletTokenPrice = portfolioAccountState['1']?.result?.tokens.find(
-        ({ address }) => address === STK_WALLET || address === WALLET_TOKEN
-      )?.priceIn?.[0]?.price
+    newSelectedAccountPortfolio.mobileInviteKey = this.#portfolio.getMobileInviteKey(
+      this.account.addr
+    )
 
-      const ethTokenPrice = portfolioAccountState['1']?.result?.tokens.find(
-        ({ symbol }) => symbol === 'ETH'
-      )?.priceIn?.[0]?.price
-
-      const stkTokenInPortfolio = portfolioAccountState['1']?.result?.tokens.find(
-        ({ address }) => address === STK_WALLET
-      )
-      const stkBalanceUsd =
-        stkTokenInPortfolio === undefined || stkTokenInPortfolio.priceIn[0]?.price === undefined
-          ? undefined
-          : Number(formatEther(stkTokenInPortfolio.amount)) * stkTokenInPortfolio.priceIn[0].price
-
-      const walletEthProvidedLiquidityInUsd = portfolioAccountState[
-        '1'
-      ]?.result?.defiPositions.positionsByProvider
-        .find((p) => p.providerName === 'Uniswap V3')
-        ?.positions.filter(
-          (p) =>
-            p.additionalData.inRange &&
-            isAddress(p.additionalData.pool?.id) &&
-            getAddress(p.additionalData.pool.id) === UNI_V3_WALLET_WETH_POOL
-        )
-        .map((p) => p.assets)
-        .flat()
-        // assets in the uniswap positions can have asset type of liquidity or rewards
-        // we remove the latter because the rewards app does not fetch anything
-        // from debank, and is only able to get the assets with liquidity type for the
-        // uniswap liquidity position. To achieve minimal discrepancy between the
-        // extension and the app, we will not include assets with type Reward for the
-        // uniswap liquidity position
-        .filter((a) => a.type === AssetType.Liquidity)
-        .map((a) => {
-          const tokenPriceFromPosition = a.priceIn?.price
-          const tokenPriceFromPortfolio =
-            a.address === WALLET_TOKEN ? walletOrStkWalletTokenPrice : ethTokenPrice
-          const tokenPriceToUse = tokenPriceFromPosition || tokenPriceFromPortfolio
-          if (tokenPriceToUse === undefined) return undefined
-
-          return tokenPriceToUse * Number(formatEther(a.amount))
-        })
-        .reduce((a, b) => (a === undefined || b === undefined ? undefined : a + b), 0)
-
-      const currentBalance = Object.entries(this.portfolio.balancePerNetwork)
-        .filter(([k]) =>
-          portfolioAccountState.projectedRewards?.result?.supportedChainIds
-            .map((n) => n.toString())
-            .includes(k)
-        )
-        .map(([, v]): number => v)
-        .reduce((a, b) => a + b, 0)
-
-      if (portfolioAccountState.projectedRewards) {
-        const projectedRewardsData = getProjectedRewardsStatsAndToken(
-          portfolioAccountState.projectedRewards,
-          walletOrStkWalletTokenPrice,
-          currentBalance,
-          stkBalanceUsd,
-          walletEthProvidedLiquidityInUsd
-        )
-
-        // Calculate and add projected rewards token
-        if (projectedRewardsData) {
-          newSelectedAccountPortfolio.tokens.push(projectedRewardsData?.token)
-
-          newSelectedAccountPortfolio.projectedRewardsStats = projectedRewardsData.data
-        }
-      }
-    } catch (e) {
-      this.emitError({
-        level: 'silent',
-        message: 'Should NEVER happen: Error while calculating projected rewards stats',
-        error: e as Error
-      })
-    }
+    let justLoaded = false
 
     // Reset the loading timestamp if the portfolio is ready
     if (this.#portfolioLoadingTimeout && newSelectedAccountPortfolio.isAllReady) {
+      justLoaded = true
       clearTimeout(this.#portfolioLoadingTimeout)
       this.#portfolioLoadingTimeout = null
     }
 
     // Set the loading timestamp when the portfolio starts loading
-    if (!this.#portfolioLoadingTimeout && !newSelectedAccountPortfolio.isAllReady) {
+    if (
+      !this.#portfolioLoadingTimeout &&
+      !newSelectedAccountPortfolio.isAllReady &&
+      // Don't start the timeout until the user is on the dashboard
+      // to avoid showing the waiting too long warning on mobile when the
+      // loading has started before the user has navigated to the dashboard
+      this.#ui?.views.some((v) => v.currentRoute === 'dashboard')
+    ) {
       this.#portfolioLoadingTimeout = setTimeout(() => {
         this.portfolio.shouldShowPartialResult = true
         this.updateSelectedAccountPortfolio()
@@ -336,11 +293,24 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.portfolio.shouldShowPartialResult = false
     }
 
+    // Update the balanceByAccount only when the portfolio is ready, because
+    // the user may select an account, set a balance of 0 and then switch to another account.
+    // (then the balance of the first account will remain 0 until it's selected again)
+    if (newSelectedAccountPortfolio.isAllReady) {
+      this.balanceByAccounts[this.account.addr] = this.portfolio.totalBalance
+    }
+
     this.portfolio = newSelectedAccountPortfolio
+    if (newSelectedAccountPortfolio.isAllReady) {
+      // since we will have survey banner that are dependant on account balance
+      // we need to make sure that the banners are updated are displayed after the balance is
+      // fully loaded, if the balance satisfies the banners requirements
+      this.#banner?.emitUpdateBanners()
+    }
     this.#updatePortfolioErrors(true)
 
     if (!skipUpdate) {
-      this.emitUpdate()
+      this.emitUpdate({ throttleMs: justLoaded ? 0 : PORTFOLIO_UPDATE_THROTTLE_MS })
     }
   }
 
@@ -393,7 +363,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
         portfolioState: this.portfolio.portfolioState,
         providers: this.#providers.providers,
         networksWithPositions: this.#portfolio.getNetworksWithDefiPositions(this.account.addr)
-      })
+      }),
+      ...getDefiAppsErrors(this.portfolio.portfolioState)
     ].sort((a, b) => {
       const order = { error: 0, warning: 1 } as const
       return order[a.type] - order[b.type]
@@ -411,7 +382,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     if (
       !this.account.creation ||
-      getAddress(this.account.creation.factoryAddr) === AMBIRE_ACCOUNT_FACTORY
+      this.account.creation.factoryAddr.toLowerCase() === AMBIRE_ACCOUNT_FACTORY_LOWERCASED
     )
       return []
 
@@ -457,7 +428,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     const defiBanner = this.banners.find((b) => b.id === defiPositionsOnDisabledNetworksBannerId)
     if (!defiBanner) return
 
-    const action = defiBanner.actions.find((a) => a.actionName === 'enable-networks')
+    const action =
+      defiBanner.actions[0]?.actionName === 'enable-networks' ? defiBanner.actions[0] : undefined
     if (!action) return
 
     if (!this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId])
@@ -479,38 +451,81 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.emitUpdate()
   }
 
+  async dismissEnsExpiryBannerForTheSelectedAccount() {
+    if (!this.account) return
+
+    const expiry = this.#domains?.domains[getAddress(this.account.addr)]?.expiry
+    if (!expiry) return
+
+    // Key the dismissal by expiry timestamp so a renewed name (new expiry) shows the banner again.
+    const dismissKey = `${this.account.addr}-${expiry.expiresAt}`
+
+    if (!this.dismissedBannerIds[ensExpiryBannerId]) this.dismissedBannerIds[ensExpiryBannerId] = []
+    if (!this.dismissedBannerIds[ensExpiryBannerId]!.includes(dismissKey))
+      this.dismissedBannerIds[ensExpiryBannerId]!.push(dismissKey)
+
+    await this.#storage.set('selectedAccountDismissedBannerIds', this.dismissedBannerIds)
+    this.emitUpdate()
+  }
+
   // ! IMPORTANT !
   // Banners that depend on async data from sub-controllers should be implemented
   // in the sub-controllers themselves. This is because updates in the sub-controllers
   // will not trigger emitUpdate in the MainController, therefore the banners will
   // remain the same until a subsequent update in the MainController.
   get banners(): Banner[] {
+    if (!this.account) return []
+
+    const banners: Banner[] = []
+
+    // ENS expiry banner
+    const ownDomainEntry = this.#domains?.domains[this.account.addr]
+    const ensExpiry = ownDomainEntry?.expiry
+    const ensName = ownDomainEntry?.names?.ens
+    if (ensExpiry && ensName) {
+      const dismissKey = `${this.account.addr}-${ensExpiry.expiresAt}`
+      const isDismissed = !!this.dismissedBannerIds[ensExpiryBannerId]?.includes(dismissKey)
+
+      const ensExpiryBanner = isDismissed
+        ? null
+        : getEnsExpiryBanner({
+            accountAddr: this.account.addr,
+            ens: ensName,
+            expiresAt: ensExpiry.expiresAt,
+            gracePeriodEndsAt: ensExpiry.gracePeriodEndsAt
+          })
+      if (ensExpiryBanner) banners.push(ensExpiryBanner)
+    }
+
+    // DeFi positions banner
     if (
-      !this.account ||
-      !this.#networks ||
-      !this.#portfolio ||
-      !this.#networks.isInitialized ||
-      !this.portfolio.isAllReady
-    )
-      return []
+      this.#networks &&
+      this.#portfolio &&
+      this.#networks.isInitialized &&
+      this.portfolio.isAllReady
+    ) {
+      const defiPositionsCountOnDisabledNetworks =
+        this.#portfolio.getDefiPositionsCountOnDisabledNetworks(this.account.addr)
 
-    const defiPositionsCountOnDisabledNetworks =
-      this.#portfolio.defiPositionsCountOnDisabledNetworks[this.account.addr] || {}
+      const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
+        ? this.#networks.allNetworks.filter(
+            (n) =>
+              !this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]?.includes(
+                `${this.account!.addr}-${n.chainId}`
+              )
+          )
+        : this.#networks.allNetworks
 
-    const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
-      ? this.#networks.allNetworks.filter(
-          (n) =>
-            !this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]?.includes(
-              `${this.account!.addr}-${n.chainId}`
-            )
-        )
-      : this.#networks.allNetworks
+      banners.push(
+        ...getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
+          defiPositionsCountOnDisabledNetworks,
+          networks: notDismissedNetworks,
+          accountAddr: this.account.addr
+        })
+      )
+    }
 
-    return getDefiPositionsOnDisabledNetworksForTheSelectedAccount({
-      defiPositionsCountOnDisabledNetworks,
-      networks: notDismissedNetworks,
-      accountAddr: this.account.addr
-    })
+    return banners
   }
 
   toJSON() {

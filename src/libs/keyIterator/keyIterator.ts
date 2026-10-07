@@ -1,4 +1,3 @@
-/* eslint-disable new-cap */
 import { HDNodeWallet, Mnemonic, Wallet } from 'ethers'
 
 import {
@@ -31,6 +30,7 @@ export const getPrivateKeyFromSeed = (
     mnemonic,
     getHdPathFromTemplate(hdPathTemplate, keyIndex)
   )
+
   if (wallet) {
     return wallet.privateKey
   }
@@ -42,7 +42,7 @@ export const getPrivateKeyFromSeed = (
  * Serves for retrieving a range of addresses/keys from a given private key or seed phrase
  */
 export class KeyIterator implements KeyIteratorInterface {
-  type = 'internal' as 'internal'
+  type = 'internal' as const
 
   subType: 'seed' | 'private-key'
 
@@ -51,6 +51,8 @@ export class KeyIterator implements KeyIteratorInterface {
   #seedPhrase: string | null = null
 
   #seedPassphrase: string | null = null
+
+  #cachedBaseWallet: HDNodeWallet | null = null
 
   constructor(_privKeyOrSeed: string, _seedPassphrase?: string | null) {
     if (!_privKeyOrSeed) throw new Error('keyIterator: no private key or seed phrase provided')
@@ -74,19 +76,14 @@ export class KeyIterator implements KeyIteratorInterface {
     throw new Error('keyIterator: invalid argument provided to constructor')
   }
 
-  async getEncryptedSeed(
-    encryptor: (
-      seed: string,
-      seedPassphrase?: string | null | undefined
-    ) => Promise<{
-      seed: string
-      passphrase: string | null
-    }>
-  ) {
-    if (!this.#seedPhrase) return null
-    const encryptedSeed = await encryptor(this.#seedPhrase, this.#seedPassphrase)
+  #getBaseWallet(): HDNodeWallet | null {
+    if (this.#cachedBaseWallet) return this.#cachedBaseWallet
+    if (this.subType !== 'seed' || !this.#seedPhrase) return null
 
-    return encryptedSeed
+    const mnemonic = Mnemonic.fromPhrase(this.#seedPhrase, this.#seedPassphrase)
+    this.#cachedBaseWallet = HDNodeWallet.fromMnemonic(mnemonic, 'm')
+
+    return this.#cachedBaseWallet
   }
 
   async retrieve(
@@ -95,30 +92,32 @@ export class KeyIterator implements KeyIteratorInterface {
   ) {
     const keys: string[] = []
 
-    fromToArr.forEach(({ from, to }) => {
+    const baseWallet = this.#getBaseWallet()
+
+    for (const { from, to } of fromToArr) {
       if ((!from && from !== 0) || (!to && to !== 0) || !hdPathTemplate)
         throw new Error('keyIterator: invalid or missing arguments')
 
       if (this.#privateKey) {
-        const shouldDerive = from >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
         // Before v4.31.0, private keys for accounts used as smart account keys
         // were derived. That's no longer the case. Importing private keys
         // does not generate smart accounts anymore.
+        const shouldDerive = from >= SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET
         if (!shouldDerive) keys.push(new Wallet(this.#privateKey).address)
       }
 
-      if (this.#seedPhrase) {
-        const mnemonic = Mnemonic.fromPhrase(this.#seedPhrase, this.#seedPassphrase)
-
+      if (this.#seedPhrase && baseWallet) {
         for (let i = from; i <= to; i++) {
-          const wallet = HDNodeWallet.fromMnemonic(
-            mnemonic,
-            getHdPathFromTemplate(hdPathTemplate, i)
-          )
+          // Yield to the event loop every 2 derivations to keep UI responsive
+          if (i > from && i % 2 === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 0))
+          }
+          const path = getHdPathFromTemplate(hdPathTemplate, i)
+          const wallet = baseWallet.derivePath(path)
           keys.push(wallet.address)
         }
       }
-    })
+    }
 
     return keys
   }
@@ -135,25 +134,26 @@ export class KeyIterator implements KeyIteratorInterface {
         return []
       }
 
+      // Instead of parsing the seed individually for every child key (which executes pbkdf2),
+      // we cache the base node beforehand and only extract standard children indexes.
+      const baseWallet = this.#getBaseWallet()
+
       return acc.accountKeys.flatMap(({ index }: { index: number }, i) => {
         // In case it is a seed, the private keys have to be extracted
         if (this.subType === 'seed') {
-          if (!this.#seedPhrase) {
+          if (!this.#seedPhrase || !baseWallet) {
             // Should never happen
             console.error('keyIterator: no seed phrase provided')
             return []
           }
 
-          const privateKey = getPrivateKeyFromSeed(
-            this.#seedPhrase,
-            this.#seedPassphrase,
-            index,
-            hdPathTemplate
-          )
+          const path = getHdPathFromTemplate(hdPathTemplate, index)
+          const privateKey = baseWallet.derivePath(path).privateKey
+
           return [
             {
               addr: new Wallet(privateKey).address,
-              type: 'internal' as 'internal',
+              type: 'internal' as const,
               label:
                 getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
                 getDefaultKeyLabel(
@@ -192,7 +192,7 @@ export class KeyIterator implements KeyIteratorInterface {
         return [
           {
             addr: new Wallet(this.#privateKey).address,
-            type: 'internal' as 'internal',
+            type: 'internal' as const,
             label:
               getExistingKeyLabel(keystoreKeys, acc.account.addr, this.type) ||
               getDefaultKeyLabel(
@@ -210,11 +210,23 @@ export class KeyIterator implements KeyIteratorInterface {
     })
   }
 
-  isSeedMatching(seedPhraseToCompareWith: string) {
+  isSeedMatching(seedPhraseToCompareWith: string, passphraseToCompareWith: string | null): boolean {
     if (!this.#seedPhrase) return false
+    if (
+      passphraseToCompareWith !== undefined &&
+      (passphraseToCompareWith ?? '') !== (this.#seedPassphrase ?? '')
+    ) {
+      return false
+    }
+
+    const baseWallet = this.#getBaseWallet()
+    if (baseWallet) {
+      const otherMnemonic = Mnemonic.fromPhrase(seedPhraseToCompareWith)
+      return baseWallet.mnemonic?.phrase === otherMnemonic.phrase
+    }
 
     return (
-      Mnemonic.fromPhrase(this.#seedPhrase).phrase ===
+      Mnemonic.fromPhrase(this.#seedPhrase, this.#seedPassphrase).phrase ===
       Mnemonic.fromPhrase(seedPhraseToCompareWith).phrase
     )
   }

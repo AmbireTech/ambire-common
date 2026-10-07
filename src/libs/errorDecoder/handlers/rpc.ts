@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 import { isReasonValid } from '../helpers'
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
 import { USER_REJECTED_TRANSACTION_ERROR_CODE } from './userRejection'
@@ -18,7 +17,6 @@ class RpcErrorHandler implements ErrorHandler {
       !data &&
       !!error.message &&
       !error?.message?.includes('rejected transaction') &&
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       error?.code !== undefined &&
       error.code !== USER_REJECTED_TRANSACTION_ERROR_CODE
     )

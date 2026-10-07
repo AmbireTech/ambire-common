@@ -1,5 +1,7 @@
 import { getDomain } from 'tldts'
 
+import { ISelectedAccountController } from '@/interfaces/selectedAccount'
+
 import {
   IRecurringTimeout,
   RecurringTimeout
@@ -15,29 +17,78 @@ import {
   featuredDapps,
   predefinedDapps
 } from '../../consts/dapps/dapps'
-import { Dapp, DefiLlamaChain, DefiLlamaProtocol, IDappsController } from '../../interfaces/dapp'
+import {
+  ConnectionSource,
+  Dapp,
+  DAPP_VERIFICATION_BANNER_IDS,
+  DappVerificationBanner,
+  DefiLlamaChain,
+  DefiLlamaProtocol,
+  GetCurrentDappRes,
+  HasUnverifiedDappsRes,
+  IDappsController,
+  RawTrendingToken,
+  RecentDappEntry,
+  TrendingToken
+} from '../../interfaces/dapp'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Messenger } from '../../interfaces/messenger'
 import { INetworksController } from '../../interfaces/network'
-/* eslint-disable no-restricted-syntax */
-import { IPhishingController } from '../../interfaces/phishing'
+import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishing'
 import { IStorageController } from '../../interfaces/storage'
-import { IUiController, View } from '../../interfaces/ui'
+import { isExtensionOverlayView, IUiController, View } from '../../interfaces/ui'
 import { UserRequest } from '../../interfaces/userRequest'
 import {
+  DappSpamRecord,
+  getEmptyDappSpamRecord,
+  isSilenced,
+  recordRejection,
+  shouldOfferSilence
+} from '../../libs/dapps/dappRequestSpam'
+import {
   formatDappName,
+  getAccountsForDapp,
   getDappIdFromUrl,
   getDappNameFromId,
   getDomainFromUrl,
+  getNormalizedHostnameFromUrl,
   modifyDappPropsIfNeeded,
+  normalizeDappConnection,
+  normalizeHostname,
+  normalizeTrendingTokens,
   sortDapps,
   unifyDefiLlamaDappUrl
 } from '../../libs/dapps/helpers'
 import { networkChainIdToHex } from '../../libs/networks/networks'
-/* eslint-disable no-continue */
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
+import { canBeTrustedByUser } from '../phishing/phishing'
+
+const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
+
+// Indexed once, because the `dapps` getter asks this per dapp and it runs on every
+// update of this controller.
+const predefinedDappIds = new Set(predefinedDapps.map((d) => d.id))
+
+/**
+ * The categories present in a list of dapps, excluding the ones never shown. Takes the
+ * list rather than reading it back off the controller, so a caller that already has it
+ * does not derive it a second time.
+ */
+const getDappCategories = (dapps: Dapp[]): string[] =>
+  [
+    ...new Set(dapps.map((d) => d.category!).filter((c) => !!c && !categoriesToExclude.includes(c)))
+  ].sort()
+
+const mergeSource = (
+  existing: ConnectionSource[] | undefined,
+  source: ConnectionSource
+): ConnectionSource[] => {
+  const current = existing ?? []
+  return current.includes(source) ? current : [...current, source]
+}
 
 // The DappsController is responsible for the following tasks:
 // 1. Managing the dApp catalog
@@ -45,6 +96,8 @@ import EventEmitter from '../eventEmitter/eventEmitter'
 // 3. Broadcasting events from the wallet to connected dApps via the Session
 // The possible events include: accountsChanged, chainChanged, disconnect, lock, unlock, and connect.
 export class DappsController extends EventEmitter implements IDappsController {
+  static MAX_RECENT_DAPPS = 20
+
   #appVersion: string
 
   #fetch: Fetch
@@ -57,13 +110,32 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #ui: IUiController
 
+  #featureFlags: IFeatureFlagsController
+
   dappSessions: { [sessionId: string]: Session } = {}
 
   #dapps = new Map<string, Dapp>()
 
+  /**
+   * Rejection counters and quiet periods, keyed by dapp id.
+   */
+  #dappSpamRecords = new Map<string, DappSpamRecord>()
+
+  #recentDapps: RecentDappEntry[] = []
+
+  #disguisedAsMetaMaskDappIds: string[] = []
+
   dappToConnect: Dapp | null = null
 
+  // Set while dappToConnect's status was derived from a dangerous frame context instead of the
+  // dApp's own hosting. The user's trust covers the hosting only, so it must not silence this.
+  #dappToConnectContextStatus: BlacklistedStatus | undefined
+
+  #dappToConnectSession: Session | undefined
+
   isReadyToDisplayDapps: boolean = true
+
+  #isReady = false
 
   fetchAndUpdatePromise?: Promise<void>
 
@@ -74,6 +146,22 @@ export class DappsController extends EventEmitter implements IDappsController {
   #retryFetchAndUpdateAttempts: number = 0
 
   #retryFetchAndUpdateMaxAttempts: number = 3
+
+  #selectedAccount: ISelectedAccountController
+
+  #trendingTokens: TrendingToken[] = []
+
+  #trendingTokensUpdatedAt: number | null = null
+
+  get trendingTokens(): TrendingToken[] {
+    return this.#trendingTokens
+  }
+
+  // Timestamp of the last successful trending-tokens fetch. Read by the
+  // ContinuousUpdatesController which owns the trending update interval.
+  get trendingTokensUpdatedAt(): number | null {
+    return this.#trendingTokensUpdatedAt
+  }
 
   get shouldRetryFetchAndUpdate() {
     return this.#shouldRetryFetchAndUpdate
@@ -97,7 +185,9 @@ export class DappsController extends EventEmitter implements IDappsController {
     storage,
     networks,
     phishing,
-    ui
+    ui,
+    selectedAccount,
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -106,6 +196,8 @@ export class DappsController extends EventEmitter implements IDappsController {
     networks: INetworksController
     phishing: IPhishingController
     ui: IUiController
+    selectedAccount: ISelectedAccountController
+    featureFlags: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
 
@@ -115,6 +207,14 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.#networks = networks
     this.#phishing = phishing
     this.#ui = ui
+    this.#selectedAccount = selectedAccount
+    this.#featureFlags = featureFlags
+
+    this.#phishing.onUpdate(() => {
+      if (!this.#phishing.shouldSyncDapps) return
+      this.#syncDappsBlacklistedStatusWithPhishing()
+      this.#phishing.resetShouldSyncDapps()
+    })
 
     // Retry fetching and updating dapps after 5 minutes of user inactivity if the initial attempt fails
     this.#retryFetchAndUpdateInterval = new RecurringTimeout(
@@ -128,22 +228,30 @@ export class DappsController extends EventEmitter implements IDappsController {
 
     this.#ui.uiEvent.on('removeView', (removedView: View) => {
       if (
-        removedView.type === 'popup' &&
+        isExtensionOverlayView(removedView) &&
         this.#shouldRetryFetchAndUpdate &&
         this.#retryFetchAndUpdateAttempts < this.#retryFetchAndUpdateMaxAttempts
       ) {
         this.#retryFetchAndUpdateInterval.start()
       }
     })
+  }
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+  /**
+   * Not called immediately on construction because the data in storage is huge and overwhelming
+   * for the mobile app.
+   */
+  async init() {
+    if (this.initialLoadPromise) return this.initialLoadPromise
+    if (this.#isReady) return
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
+    return this.initialLoadPromise
   }
 
   get isReady() {
-    return !!this.dapps
+    return this.#isReady
   }
 
   get dapps(): Dapp[] {
@@ -151,19 +259,29 @@ export class DappsController extends EventEmitter implements IDappsController {
     const filteredMap = new Map(this.#dapps)
 
     for (const [key, d] of filteredMap) {
-      const isPredefined = predefinedDapps.some((pd) => pd.id === d.id)
-      if (!d.isConnected && d.blacklisted === 'BLACKLISTED') {
+      const isPredefined = predefinedDappIds.has(d.id)
+      const isConnected = !!d.connectedSources?.length
+      if (!isConnected && d.blacklisted === 'BLACKLISTED') {
         filteredMap.delete(key)
         continue
       }
-      if (isPredefined || d.isFeatured || d.isConnected || d.isCustom) continue
+      if (isPredefined || d.isFeatured || isConnected || d.isCustom) continue
+
+      const domainId = getDomainFromUrl(d.url)
+      const isInDappsNotToFilterOutByDomain =
+        domainId && dappsNotToFilterOutByDomain.includes(domainId)
 
       const shouldSkipByCategory = !categoriesNotToFilterOut.includes(d.category as string)
-      const hasNoNetworks = d.chainIds.length === 0
+      const hasNoNetworks = !d.chainIds || d.chainIds.length === 0
       const hasLowTVL = !d.tvl || d.tvl <= 15_000_000
 
       // Remove dapps that are not in excluded categories and either have no networks or low TVL
-      if (shouldSkipByCategory && (hasNoNetworks || hasLowTVL)) {
+      // But skip this filtering if the dapp's domain is in dappsNotToFilterOutByDomain
+      if (
+        shouldSkipByCategory &&
+        (hasNoNetworks || hasLowTVL) &&
+        !isInDappsNotToFilterOutByDomain
+      ) {
         filteredMap.delete(key)
       }
     }
@@ -177,24 +295,81 @@ export class DappsController extends EventEmitter implements IDappsController {
       if (domainId !== d.id && filteredMap.has(domainId)) filteredMap.delete(domainId)
     }
 
-    return Array.from(filteredMap.values()).sort(sortDapps)
+    return Array.from(filteredMap.values())
+      .sort(sortDapps)
+      .map((d) => this.#withTrustFlags(d))
+  }
+
+  get recentDapps(): Dapp[] {
+    // Resolve each recent entry against #dapps; filter stale ids whose dapp was removed.
+    // Defensive sort by openedAt desc — entries are unshifted on add, but stale-filtering can disturb ordering across versions.
+    return this.#recentDapps
+      .slice()
+      .sort((a, b) => b.openedAt - a.openedAt)
+      .map((entry) => this.#dapps.get(entry.id))
+      .filter((d): d is Dapp => !!d)
+      .map((d) => this.#withTrustFlags(d))
+  }
+
+  get disguisedAsMetaMaskDappIds(): string[] {
+    return this.#disguisedAsMetaMaskDappIds
   }
 
   get categories(): string[] {
-    return [
-      ...new Set(
-        this.dapps.map((d) => d.category!).filter((c) => !!c && !categoriesToExclude.includes(c))
-      )
-    ].sort()
+    return getDappCategories(this.dapps)
   }
 
   async #load() {
     await this.#networks.initialLoadPromise
+    await this.#selectedAccount.initialLoadPromise
 
-    const storedDapps = await this.#storage.get('dappsV2', predefinedDapps)
-    this.#dapps = new Map(storedDapps.map((d) => [d.id, d]))
+    const [storedDapps, storedRecentDapps, storedTrending, storedDisguisedAsMetaMaskDapps] =
+      await Promise.all([
+        this.#storage.get('dappsV2', predefinedDapps),
+        this.#storage.get('recentDapps', [] as RecentDappEntry[]),
+        this.#storage.get('trending', { updatedAt: 0, tokens: [] as TrendingToken[] }),
+        this.#storage.get('disguisedAsMetaMaskDapps', [] as string[])
+      ])
+    // Normalize on read so a drifted record (e.g. isConnected: true but connectedSources: [])
+    // can't show a dapp as connected in the UI while permission checks force a reconnect.
+    // Ids are canonicalized as well: a record stored before trailing-dot normalization
+    // ("my-dapp.vercel.app.") is unreachable by any lookup, so it would linger as an orphan
+    // entry in the UI while its permissions can never be resolved again.
+    this.#dapps = new Map()
+    // A record without an id is unreachable by any lookup, and letting it throw here would leave
+    // the controller loading forever. `migrateDappsAddMissingIds` repairs such records, so any
+    // that still show up are skipped and reported.
+    let skippedDappsWithoutIdCount = 0
+    storedDapps.forEach((dapp) => {
+      if (!dapp.id) {
+        skippedDappsWithoutIdCount += 1
+        return
+      }
 
-    this.fetchAndUpdateDapps()
+      const id = normalizeHostname(dapp.id)
+      // The canonical record wins over its trailing-dot duplicate - it is the one every lookup
+      // resolves to, and its permissions are the ones the user reviewed for it.
+      if (id !== dapp.id && this.#dapps.has(id)) return
+
+      this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
+    })
+    if (skippedDappsWithoutIdCount) {
+      this.emitError({
+        level: 'silent',
+        message: 'Some saved apps could not be loaded.',
+        error: new Error(
+          `DappsController: skipped ${skippedDappsWithoutIdCount} stored dapp(s) without an id`
+        )
+      })
+    }
+    this.#recentDapps = storedRecentDapps
+    this.#disguisedAsMetaMaskDappIds = storedDisguisedAsMetaMaskDapps
+    this.#trendingTokens = storedTrending.tokens
+    this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
+    this.#isReady = true
+    this.emitUpdate()
+
+    void this.fetchAndUpdateDapps()
   }
 
   async fetchAndUpdateDapps() {
@@ -209,7 +384,10 @@ export class DappsController extends EventEmitter implements IDappsController {
         this.#shouldRetryFetchAndUpdate = true
 
         // run the interval if the initial fetch failed while the extension is not in use
-        if (!this.#retryFetchAndUpdateAttempts && !this.#ui.views.some((v) => v.type === 'popup')) {
+        if (
+          !this.#retryFetchAndUpdateAttempts &&
+          !this.#ui.views.some((v) => isExtensionOverlayView(v))
+        ) {
           this.#retryFetchAndUpdateInterval.start()
         } else {
           this.#retryFetchAndUpdateInterval.stop()
@@ -232,8 +410,14 @@ export class DappsController extends EventEmitter implements IDappsController {
     // const lastDappsUpdateVersion = 'debug-force-fetch'
     const lastDappsUpdateVersion = await this.#storage.get('lastDappsUpdateVersion', null)
     if (lastDappsUpdateVersion && lastDappsUpdateVersion === this.#appVersion) {
-      const dappsWithoutBlacklistedStatus = Array.from(this.#dapps.values()).filter((d) =>
-        ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted)
+      const dappsWithoutBlacklistedStatus = Array.from(this.#dapps.values()).filter(
+        (d) =>
+          !d.blacklisted ||
+          ['LOADING', 'FAILED_TO_GET'].includes(d.blacklisted) ||
+          // Re-check dApps stored with a non-SUSPICIOUS_HOSTING status that now match the
+          // suspicious hosting pattern, so existing entries are migrated on startup.
+          (d.blacklisted !== 'SUSPICIOUS_HOSTING' &&
+            this.#phishing.getDomainBlacklistedStatus(d.url) === 'SUSPICIOUS_HOSTING')
       )
       // IMPORTANT: Do NOT await this call — we want `isReadyToDisplayDapps` to resolve immediately
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -309,6 +493,7 @@ export class DappsController extends EventEmitter implements IDappsController {
             this.#networks.allNetworks.find((n) => n.chainId.toString() === chainId.toString())
         )
 
+      const prevSources = prevStoredDapp?.connectedSources ?? []
       const updatedDapp: Dapp = {
         id,
         name: formatDappName(dapp.name),
@@ -318,14 +503,19 @@ export class DappsController extends EventEmitter implements IDappsController {
         category: CATEGORY_MAP[dapp.category] || dapp.category,
         tvl: dapp.tvl,
         chainIds,
-        isConnected: prevStoredDapp?.isConnected || false,
+        isConnected: prevSources.length > 0,
+        connectedSources: prevSources,
         isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(dapp.url)!),
-        isCustom: !!prevStoredDapp?.isCustom,
+        // Always false, even if the user connected to the app before it was listed - it's part of
+        // the catalog now, so it should be treated (and verified) like any other catalog app.
+        isCustom: false,
         chainId: prevStoredDapp?.chainId || 1,
         favorite: !!prevStoredDapp?.favorite,
+        isTrustedByUser: !!prevStoredDapp?.isTrustedByUser,
         blacklisted: 'LOADING',
         twitter: dapp.twitter,
         geckoId: dapp.gecko_id,
+        accountPreferences: prevStoredDapp?.accountPreferences,
         grantedPermissionId: prevStoredDapp?.grantedPermissionId,
         grantedPermissionAt: prevStoredDapp?.grantedPermissionAt
       }
@@ -346,6 +536,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       const prevStoredDapp = prevDapps.get(id)
 
       if (!dappsMap.has(id)) {
+        const prevSources = prevStoredDapp?.connectedSources ?? []
         dappsMap.set(id, {
           id,
           name: formatDappName(pd.name),
@@ -355,20 +546,23 @@ export class DappsController extends EventEmitter implements IDappsController {
           category: pd.category ? CATEGORY_MAP[pd.category] || pd.category : null,
           tvl: null,
           chainIds: pd.chainIds || [],
-          isConnected: prevStoredDapp?.isConnected ?? false,
+          isConnected: prevSources.length > 0,
+          connectedSources: prevSources,
           isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(pd.url)!),
           isCustom: false,
           chainId: prevStoredDapp?.chainId ?? 1,
           favorite: prevStoredDapp?.favorite ?? false,
+          isTrustedByUser: prevStoredDapp?.isTrustedByUser ?? false,
           blacklisted: 'LOADING',
           twitter: pd.twitter || null,
-          geckoId: null
+          geckoId: null,
+          accountPreferences: prevStoredDapp?.accountPreferences
         })
       }
     }
 
     const prevDappsArray = Array.from(prevDapps.values())
-    const prevConnectedDapps = prevDappsArray.filter((d) => d.isConnected)
+    const prevConnectedDapps = prevDappsArray.filter((d) => (d.connectedSources?.length ?? 0) > 0)
     const prevCustomDapps = prevDappsArray.filter((d) => d.isCustom)
 
     // Add connected + custom
@@ -419,6 +613,56 @@ export class DappsController extends EventEmitter implements IDappsController {
     )
   }
 
+  #syncDappsBlacklistedStatusWithPhishing() {
+    if (!this.#dapps.size) return
+
+    let hasUpdatedDapps = false
+    this.#dapps.forEach((dapp, dappId) => {
+      const updatedStatus = this.#phishing.getDomainBlacklistedStatus(dapp.url)
+      if (!updatedStatus || dapp.blacklisted === updatedStatus) return
+
+      this.#dapps.set(dappId, { ...dapp, blacklisted: updatedStatus })
+      hasUpdatedDapps = true
+    })
+
+    if (!hasUpdatedDapps) return
+
+    this.emitUpdate()
+    void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+  }
+
+  /**
+   * Fetches, normalizes and persists the trending tokens. Throws on a failed fetch or a
+   * malformed response so the caller can react (e.g. back off its retry cadence). Returns without
+   * fetching when swap and bridge token info is disabled. The update interval and its lifecycle are
+   * owned by the ContinuousUpdatesController.
+   */
+  async updateTrendingTokens() {
+    await this.#featureFlags.initialLoadPromise
+    if (!this.#featureFlags.isFeatureEnabled('swapAndBridgeTokenInfo')) return
+
+    await this.initialLoadPromise
+
+    const res = await fetchWithTimeout(this.#fetch, TRENDING_TOKENS_URL, {}, 30000)
+
+    if (!res.ok || res.status !== 200) {
+      throw new Error(`Failed to update trending tokens (status: ${res.status}, url: ${res.url})`)
+    }
+
+    const json = await res.json()
+    const raw: RawTrendingToken[] = json?.tokens
+    if (!Array.isArray(raw)) {
+      throw new Error('Trending tokens response does not contain a tokens array')
+    }
+
+    this.#trendingTokens = normalizeTrendingTokens(raw)
+    const updatedAt = Date.now()
+    this.#trendingTokensUpdatedAt = updatedAt
+    this.emitUpdate()
+
+    await this.#storage.set('trending', { updatedAt, tokens: this.#trendingTokens })
+  }
+
   async #createDappSession(initProps: SessionInitProps) {
     await this.initialLoadPromise
     const dappSession = new Session(initProps)
@@ -429,14 +673,32 @@ export class DappsController extends EventEmitter implements IDappsController {
     return dappSession
   }
 
-  async getOrCreateDappSession({ windowId, tabId, url }: SessionInitProps) {
+  async getOrCreateDappSession({
+    windowId,
+    tabId,
+    url,
+    wcTopic,
+    frameId,
+    topFrameUrl
+  }: SessionInitProps) {
     if (!tabId || !url) throw new Error('Invalid props passed to getOrCreateDappSession')
 
     const dappId = getDappIdFromUrl(new URL(url).origin)
     const sessionId = getSessionId({ windowId, tabId, dappId })
-    if (this.dappSessions[sessionId]) return this.dappSessions[sessionId]
 
-    return this.#createDappSession({ windowId, tabId, url })
+    const existingSession = this.dappSessions[sessionId]
+    if (existingSession) {
+      // The session id has no per-document component, so a reused session may come from an
+      // earlier visit. Refresh the frame context instead of trusting what it was created with.
+      existingSession.updateFrameContext({ frameId, topFrameUrl })
+      return existingSession
+    }
+
+    return this.#createDappSession({ windowId, tabId, url, wcTopic, frameId, topFrameUrl })
+  }
+
+  getDappSessionByWcTopic(wcTopic: string): Session | undefined {
+    return Object.values(this.dappSessions).find((session) => session.wcTopic === wcTopic)
   }
 
   setSessionMessenger = (sessionId: string, messenger: Messenger, isAmbireNext: boolean) => {
@@ -480,14 +742,64 @@ export class DappsController extends EventEmitter implements IDappsController {
     this.emitUpdate()
   }
 
+  /**
+   * Removes every session of a closed tab, including those of the iframes it hosted. Sessions are
+   * only created by an incoming dApp request, so nothing recreates them for a tab that is gone.
+   */
+  deleteDappSessionsForTab = (tabId: number) => {
+    let hasDeletedSession = false
+
+    Object.entries(this.dappSessions).forEach(([sessionId, session]) => {
+      if (session.tabId !== tabId) return
+
+      delete this.dappSessions[sessionId]
+      hasDeletedSession = true
+    })
+
+    if (hasDeletedSession) this.emitUpdate()
+  }
+
+  deleteDappSessionByWcTopic = (wcTopic: string) => {
+    const session = this.getDappSessionByWcTopic(wcTopic)
+    if (session) {
+      delete this.dappSessions[session.sessionId]
+      this.emitUpdate()
+    }
+  }
+
+  /**
+   * Removes a WalletConnect session terminated by the dApp and, once none of its WC sessions
+   * remain, revokes the `'wc'` connection so the next pairing asks for approval again.
+   */
+  disconnectWcSessionByTopic = (wcTopic: string) => {
+    const session = this.getDappSessionByWcTopic(wcTopic)
+    if (!session) return
+
+    const dappId = session.id
+    delete this.dappSessions[session.sessionId]
+    this.emitUpdate()
+
+    const hasOtherWcSession = Object.values(this.dappSessions).some(
+      (s) => s.id === dappId && !!s.wcTopic
+    )
+    if (hasOtherWcSession) return
+
+    const dapp = this.#dapps.get(dappId)
+    if (!dapp?.connectedSources?.includes('wc')) return
+
+    this.updateDapp(dappId, {
+      connectedSources: dapp.connectedSources.filter((source) => source !== 'wc')
+    })
+  }
+
   broadcastDappSessionEvent = async (
     ev: any,
     data?: any,
     id?: string,
-    skipPermissionCheck?: boolean
+    skipPermissionCheck?: boolean,
+    sourceFilter?: ConnectionSource
   ) => {
     await this.initialLoadPromise
-
     let dappSessions: { sessionId: string; data: Session }[] = []
     Object.keys(this.dappSessions).forEach((sessionId) => {
       const hasPermissionToBroadcast =
@@ -499,16 +811,33 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (id) {
       dappSessions = dappSessions.filter((dappSession) => dappSession.data.id === id)
     }
+    // Source filter: 'wc' → only sessions with a wcTopic; 'injected' → only sessions without one.
+    // Used by `disconnectDappSource` so disconnecting one channel doesn't tear down the other.
+    if (sourceFilter) {
+      dappSessions = dappSessions.filter((dappSession) =>
+        sourceFilter === 'wc' ? !!dappSession.data.wcTopic : !dappSession.data.wcTopic
+      )
+    }
 
     dappSessions.forEach((dappSession) => {
       try {
         dappSession.data.sendMessage?.(ev, data)
-      } catch (e) {
+      } catch (e: any) {
+        console.error('Error broadcasting event to dapp session', e)
         if (this.dappSessions[dappSession.sessionId]) {
           this.deleteDappSession(dappSession.sessionId)
         }
       }
     })
+
+    // on disconnect clean up the WC sessions
+    if (ev === 'disconnect') {
+      dappSessions.forEach((dappSession) => {
+        if (this.dappSessions[dappSession.sessionId]?.wcTopic) {
+          this.deleteDappSession(dappSession.sessionId)
+        }
+      })
+    }
   }
 
   async #buildDapp(dapp: {
@@ -533,7 +862,8 @@ export class DappsController extends EventEmitter implements IDappsController {
       return {
         ...existing,
         chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
-        isConnected: dapp.isConnected
+        isConnected: dapp.isConnected,
+        connectedSources: existing.connectedSources ?? []
       }
     }
 
@@ -543,12 +873,13 @@ export class DappsController extends EventEmitter implements IDappsController {
       id: dapp.id,
       url: dapp.url,
       name: existingByDomain?.name || dapp.name || getDappNameFromId(dapp.id),
-      chainId: network ? dapp.chainId! : DEFAULT_CHAIN_ID,
+      chainId: network ? dapp.chainId! : existingByDomain?.chainId || DEFAULT_CHAIN_ID,
       description: existingByDomain?.description || '',
       icon: existingByDomain?.icon || dapp.icon,
       category: existingByDomain?.category || null,
       favorite: existingByDomain?.favorite || false,
       isConnected: dapp.isConnected,
+      connectedSources: [],
       chainIds: existingByDomain?.chainIds || [],
       isFeatured: existingByDomain?.isFeatured || false,
       isCustom: existingByDomain?.isCustom ?? true,
@@ -559,34 +890,119 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
   }
 
-  async addDapp(dapp: Dapp) {
+  /**
+   * Picks the best chainId for a WalletConnect dapp out of the chains it approved in its
+   * eip155 namespace. WC sessions can approve multiple chains, and the chain the user is
+   * actually transacting on is not necessarily the first one. Blindly taking `chains[0]`
+   * (or hard-defaulting to mainnet) can strand the dapp on the wrong network, so prefer:
+   *   1. the first approved chain that maps to an ENABLED wallet network,
+   *   2. then the first approved chain that maps to any known wallet network,
+   *   3. then the first approved chain as-is (so a not-yet-loaded custom network still
+   *      round-trips its real chainId instead of being replaced by a default).
+   * Returns `undefined` when there are no candidates, leaving the default handling to the caller.
+   */
+  pickWalletConnectChainId(candidateChainIds?: number[]): number | undefined {
+    if (!candidateChainIds?.length) return undefined
+
+    const enabledChainIds = new Set(this.#networks.networks.map((n) => Number(n.chainId)))
+    const enabledMatch = candidateChainIds.find((chainId) => enabledChainIds.has(Number(chainId)))
+    if (enabledMatch !== undefined) return enabledMatch
+
+    const knownChainIds = new Set(this.#networks.allNetworks.map((n) => Number(n.chainId)))
+    const knownMatch = candidateChainIds.find((chainId) => knownChainIds.has(Number(chainId)))
+    if (knownMatch !== undefined) return knownMatch
+
+    return candidateChainIds[0]
+  }
+
+  /**
+   * Convenience for callers that have a dapp identity (id/url/name/icon) but not a full
+   * Dapp record yet — used by the WalletConnect session setup/restore paths, which need
+   * to register the dapp with `'wc'` as the source even when there's no prior catalog
+   * entry. Defers to `#buildDapp` so existing catalog metadata is preserved.
+   *
+   * `candidateChainIds` are the chains the WC dapp approved in its eip155 namespace; the
+   * dapp's stored chainId is resolved from them via `pickWalletConnectChainId`, falling
+   * back to `identity.chainId` when no candidates are provided.
+   */
+  async addDappFromIdentity(
+    identity: {
+      id: Dapp['id']
+      name: Dapp['name']
+      url: Dapp['url']
+      icon: Dapp['icon']
+      chainId?: Dapp['chainId']
+      candidateChainIds?: number[]
+    },
+    source: ConnectionSource
+  ) {
+    if (!this.isReady) return
+    await this.initialLoadPromise
+
+    const { candidateChainIds, ...identityRest } = identity
+    const resolvedChainId = this.pickWalletConnectChainId(candidateChainIds) ?? identity.chainId
+    const dapp = await this.#buildDapp({
+      ...identityRest,
+      chainId: resolvedChainId,
+      isConnected: true
+    })
+    await this.addDapp(dapp, source)
+  }
+
+  /**
+   * Add a dapp and mark it connected via `source`. `source` defaults to `'injected'`
+   * to keep the existing web/extension call sites (which don't know about sources)
+   * behaving exactly as before. Calling `addDapp` again with a different source
+   * appends it to `connectedSources` rather than overwriting.
+   */
+  async addDapp(dapp: Dapp, source: ConnectionSource = 'injected') {
     if (!this.isReady) return
 
     const existing = this.#dapps.get(dapp.id)
 
     if (existing) {
-      this.updateDapp(dapp.id, { chainId: dapp.chainId, isConnected: dapp.isConnected })
-    } else {
-      this.#dapps.set(dapp.id, dapp)
-
-      await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
-      this.emitUpdate()
-
-      if (dapp.isConnected) {
-        const network = this.#networks.allNetworks.find(
-          (n) => n.chainId.toString() === dapp.chainId?.toString()
-        )
-        const DEFAULT_CHAIN_ID = 1
-
-        await this.broadcastDappSessionEvent(
-          'chainChanged',
-          {
-            chain: networkChainIdToHex(dapp.chainId),
-            networkVersion: network?.chainId?.toString() || DEFAULT_CHAIN_ID.toString()
-          },
-          dapp.id
-        )
+      const mergedSources = mergeSource(existing.connectedSources, source)
+      const dappUpdate: Partial<Dapp> = {
+        chainId: dapp.chainId,
+        connectedSources: mergedSources,
+        isConnected: mergedSources.length > 0
       }
+
+      // An explicit undefined clears preferences; an omitted property preserves them on source merges.
+      if ('accountPreferences' in dapp) {
+        dappUpdate.accountPreferences = dapp.accountPreferences
+      }
+
+      this.updateDapp(dapp.id, dappUpdate)
+      return
+    }
+
+    const sources: ConnectionSource[] = dapp.isConnected ? [source] : []
+    this.#dapps.set(dapp.id, {
+      ...dapp,
+      connectedSources: sources,
+      isConnected: sources.length > 0
+    })
+
+    await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+    this.emitUpdate()
+
+    if (sources.length > 0) {
+      const network = this.#networks.allNetworks.find(
+        (n) => n.chainId.toString() === dapp.chainId?.toString()
+      )
+      const DEFAULT_CHAIN_ID = 1
+
+      await this.broadcastDappSessionEvent(
+        'chainChanged',
+        {
+          chain: dapp.chainId
+            ? networkChainIdToHex(dapp.chainId)
+            : networkChainIdToHex(DEFAULT_CHAIN_ID),
+          networkVersion: network?.chainId?.toString() || DEFAULT_CHAIN_ID.toString()
+        },
+        dapp.id
+      )
     }
   }
 
@@ -596,16 +1012,63 @@ export class DappsController extends EventEmitter implements IDappsController {
     const existing = this.#dapps.get(id)
     if (!existing) return
 
-    // remove the custom dapp if it gets disconnected
-    if (dapp.isConnected !== undefined) {
-      if (existing.isCustom && !dapp.isConnected && existing.isConnected) {
-        this.removeDapp(id)
-        return
-      }
+    const dappPropsToUpdate = { ...dapp }
+
+    // Treat connectedSources as the source of truth and keep isConnected derived from it
+    // so the two cannot drift. Callers may pass either (or both) — connectedSources wins.
+    if (dappPropsToUpdate.connectedSources !== undefined) {
+      dappPropsToUpdate.isConnected = dappPropsToUpdate.connectedSources.length > 0
+    } else if (dappPropsToUpdate.isConnected !== undefined) {
+      // Legacy callers (web/extension code that still passes `isConnected`) — translate
+      // it to a full sources update. `true` → add 'injected' if not already present.
+      const nextSources: ConnectionSource[] = dappPropsToUpdate.isConnected
+        ? mergeSource(existing.connectedSources, 'injected')
+        : []
+      dappPropsToUpdate.connectedSources = nextSources
+      dappPropsToUpdate.isConnected = nextSources.length > 0
     }
 
-    const dappPropsToUpdate = { ...dapp }
+    const wasConnected = (existing.connectedSources?.length ?? 0) > 0
+    const willBeConnected = dappPropsToUpdate.connectedSources
+      ? dappPropsToUpdate.connectedSources.length > 0
+      : wasConnected
+
+    // remove the custom dapp if it gets fully disconnected
+    if (existing.isCustom && wasConnected && !willBeConnected) {
+      this.removeDapp(id)
+      return
+    }
+
     const existingByDomain = this.#dapps.get(getDomainFromUrl(existing.url)!)
+
+    const accountPreferencesToUpdate = dappPropsToUpdate.accountPreferences
+
+    // Notify the dapp of the preference change
+    if ('accountPreferences' in dappPropsToUpdate && !!accountPreferencesToUpdate) {
+      if (
+        !accountPreferencesToUpdate.selectedAccount ||
+        !accountPreferencesToUpdate.accounts.length ||
+        !accountPreferencesToUpdate.accounts.includes(accountPreferencesToUpdate.selectedAccount)
+      ) {
+        this.emitError({
+          message: `Invalid preferences for ${dapp.name}. Contact support if the issue persists.`,
+          error: new Error(
+            'Invalid account preferences' + JSON.stringify(accountPreferencesToUpdate)
+          ),
+          level: 'major'
+        })
+        return
+      }
+
+      const newAccounts = getAccountsForDapp(
+        accountPreferencesToUpdate,
+        this.#selectedAccount.account?.addr
+      )
+
+      // We could add (and had) some logic here to prevent unnecessary updates, but it's not that simple
+      // and an extra update or two won't hurt anyway
+      void this.broadcastDappSessionEvent('accountsChanged', newAccounts, id, true)
+    }
 
     if (!existing.isCustom) {
       dappPropsToUpdate.name = existing.name
@@ -621,9 +1084,155 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
 
     this.#dapps.set(id, { ...existing, ...dappPropsToUpdate })
-    this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+    void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
 
     this.emitUpdate()
+  }
+
+  updateDappToConnect(id: string, data: Partial<Dapp>) {
+    if (!this.dappToConnect || this.dappToConnect.id !== id) {
+      this.emitError({
+        level: 'silent',
+        message: `Trying to update dappToConnect with id ${id}, but current dappToConnect is ${this.dappToConnect?.id}`,
+        error: new Error('updateDappToConnect: id not found')
+      })
+      return
+    }
+
+    this.dappToConnect = { ...this.dappToConnect, ...data }
+    this.emitUpdate()
+  }
+
+  async onSelectedAccountChange(newAccount: string) {
+    Object.values(this.dappSessions).forEach(async (session) => {
+      if (!this.hasPermission(session.id)) return
+
+      const accountPreferences = this.getDapp(session.id)?.accountPreferences
+
+      // Update the last selected account
+      if (
+        accountPreferences?.accounts.includes(newAccount) &&
+        accountPreferences.selectedAccount !== newAccount
+      ) {
+        accountPreferences.selectedAccount = newAccount
+      }
+
+      // Broadcast to dapps that the selected account has changed
+      const accounts = getAccountsForDapp(accountPreferences, newAccount)
+
+      await this.broadcastDappSessionEvent('accountsChanged', accounts, session.id, true)
+    })
+  }
+
+  /**
+   * Tells every connected dapp that the wallet was unlocked. Each dapp receives only the
+   * accounts it is allowed to see, never the accounts of another dapp.
+   */
+  async broadcastUnlock() {
+    await this.initialLoadPromise
+
+    const sessionDappIds = new Set(Object.values(this.dappSessions).map((session) => session.id))
+
+    await Promise.all(
+      Array.from(sessionDappIds).map((dappId) =>
+        this.broadcastDappSessionEvent(
+          'unlock',
+          getAccountsForDapp(
+            this.getDapp(dappId)?.accountPreferences,
+            this.#selectedAccount.account?.addr
+          ),
+          dappId
+        )
+      )
+    )
+  }
+
+  removeAccountData(address: string) {
+    this.#dapps.forEach((dapp) => {
+      if (!dapp.accountPreferences) return
+
+      if (!dapp.accountPreferences.accounts.includes(address)) return
+
+      const newAccounts = dapp.accountPreferences.accounts.filter((a) => a !== address)
+
+      this.#dapps.set(dapp.id, {
+        ...dapp,
+        // Disconnect the dapp if the removed account was the only one with access
+        isConnected: newAccounts.length > 0,
+        // Also delete preferences in this case
+        accountPreferences: newAccounts.length
+          ? {
+              ...dapp.accountPreferences,
+              accounts: newAccounts,
+              selectedAccount:
+                dapp.accountPreferences.selectedAccount === address
+                  ? newAccounts[0]!
+                  : dapp.accountPreferences.selectedAccount
+            }
+          : undefined
+      })
+    })
+
+    this.emitUpdate()
+  }
+
+  /**
+   * Disconnect a single connection source (e.g. only WalletConnect or only injected).
+   * Broadcasts `disconnect` only to the sessions of that source. If no sources remain,
+   * the dapp is fully disconnected (and removed if custom).
+   */
+  async disconnectDappSource(id: string, source: ConnectionSource) {
+    if (!this.isReady) return
+
+    const existing = this.#dapps.get(id)
+    if (!existing) return
+
+    const current = existing.connectedSources ?? []
+    if (!current.includes(source)) return
+
+    const nextSources = current.filter((s) => s !== source)
+
+    await this.broadcastDappSessionEvent('disconnect', undefined, id, false, source)
+
+    this.updateDapp(id, {
+      connectedSources: nextSources,
+      isConnected: nextSources.length > 0
+    })
+  }
+
+  async disconnectAllDapps(source?: ConnectionSource): Promise<Dapp[]> {
+    if (!this.isReady) return []
+
+    const connectedDapps = this.dapps.filter((dapp) => dapp.isConnected)
+    if (!connectedDapps.length) return []
+
+    for (const dapp of connectedDapps) {
+      const existing = this.#dapps.get(dapp.id)
+      if (!existing) continue
+
+      const current = existing.connectedSources ?? []
+      if (source && !current.includes(source)) continue
+
+      const nextSources = source ? current.filter((s) => s !== source) : []
+
+      await this.broadcastDappSessionEvent('disconnect', undefined, dapp.id, false, source)
+
+      // Mirror `updateDapp`: a custom dapp that loses its last source is removed.
+      if (existing.isCustom && nextSources.length === 0) {
+        this.#dapps.delete(dapp.id)
+      } else {
+        this.#dapps.set(dapp.id, {
+          ...existing,
+          connectedSources: nextSources,
+          isConnected: nextSources.length > 0
+        })
+      }
+    }
+
+    await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+    this.emitUpdate()
+
+    return connectedDapps
   }
 
   removeDapp(id: string) {
@@ -635,19 +1244,76 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (!existing.isCustom) return
 
     this.#dapps.delete(id)
-    this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
-    this.broadcastDappSessionEvent('disconnect', undefined, id)
+    void this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+    void this.broadcastDappSessionEvent('disconnect', undefined, id)
 
     this.emitUpdate()
   }
 
-  hasPermission(id: string) {
+  async addToRecentDapps(id: string) {
+    await this.initialLoadPromise
+
+    // Skip non-catalog ids (direct-URL/Google visits that don't match a known dapp).
+    if (!this.#dapps.has(id)) return
+
+    this.#recentDapps = [
+      { id, openedAt: Date.now() },
+      ...this.#recentDapps.filter((entry) => entry.id !== id)
+    ].slice(0, DappsController.MAX_RECENT_DAPPS)
+
+    await this.#storage.set('recentDapps', this.#recentDapps)
+    this.emitUpdate()
+  }
+
+  async clearRecentDapps() {
+    await this.initialLoadPromise
+
+    if (!this.#recentDapps.length) return
+
+    this.#recentDapps = []
+    await this.#storage.set('recentDapps', this.#recentDapps)
+    this.emitUpdate()
+  }
+
+  /**
+   * Remembers that the user rejected a request this app sent. Only user-initiated rejections
+   * belong here - the wallet's own auto-rejections must not count against the app.
+   */
+  recordDappRejection(id: string) {
+    if (!id) return
+
+    this.#dappSpamRecords.set(id, recordRejection(this.#dappSpamRecords.get(id), Date.now()))
+  }
+
+  /** One approved request clears all suspicion the app has accumulated. */
+  clearDappRejections(id: string) {
+    this.#dappSpamRecords.delete(id)
+  }
+
+  shouldOfferToSilenceDapp(id: string): boolean {
+    return shouldOfferSilence(this.#dappSpamRecords.get(id), Date.now())
+  }
+
+  isDappSilenced(id: string): boolean {
+    return isSilenced(this.#dappSpamRecords.get(id), Date.now())
+  }
+
+  silenceDapp(id: string) {
+    if (!id) return
+
+    const record = this.#dappSpamRecords.get(id) ?? getEmptyDappSpamRecord()
+    this.#dappSpamRecords.set(id, { ...record, silencedAt: Date.now() })
+  }
+
+  hasPermission(id: string, source?: ConnectionSource) {
     if (!id) return false
 
     const dapp = this.#dapps.get(id)
     if (!dapp) return false
 
-    return dapp.isConnected
+    const sources = dapp.connectedSources ?? []
+    if (source) return sources.includes(source)
+    return sources.length > 0
   }
 
   getDapp(id: string) {
@@ -662,37 +1328,171 @@ export class DappsController extends EventEmitter implements IDappsController {
     return this.#dapps.get(getDomainFromUrl(url)!)
   }
 
+  isDappDisguisedAsMetaMask(id: string) {
+    return this.#disguisedAsMetaMaskDappIds.includes(id)
+  }
+
+  async setDappDisguisedAsMetaMask(id: string, isDisguisedAsMetaMask: boolean, requestId?: string) {
+    await this.initialLoadPromise
+
+    const isCurrentlyDisguised = this.isDappDisguisedAsMetaMask(id)
+
+    if (isCurrentlyDisguised !== isDisguisedAsMetaMask) {
+      this.#disguisedAsMetaMaskDappIds = isDisguisedAsMetaMask
+        ? [...this.#disguisedAsMetaMaskDappIds, id]
+        : this.#disguisedAsMetaMaskDappIds.filter((dappId) => dappId !== id)
+
+      await this.#storage.set('disguisedAsMetaMaskDapps', this.#disguisedAsMetaMaskDappIds)
+      this.emitUpdate()
+    }
+
+    if (requestId) this.#ui.message.sendUiMessage({ requestId, ok: true })
+  }
+
+  /**
+   * Stamps a dApp handed to the UI with its trust flags, so no consumer has to resolve the hosting
+   * rules on its own. Both flags are only ever meaningful for a dApp the hosting check flagged, so
+   * the platform lookup is skipped for the rest of the catalog - and a trust the user gave before
+   * the dApp's status changed stays on the record without silencing anything.
+   *
+   * `isStatusFromFrameContext` reports a SUSPICIOUS_HOSTING that came from the dApp's frame context
+   * rather than its own hosting - the user's trust does not cover that, so neither flag is set.
+   */
+  #withTrustFlags(dapp: Dapp, isStatusFromFrameContext = false): Dapp {
+    if (dapp.blacklisted !== 'SUSPICIOUS_HOSTING' || isStatusFromFrameContext)
+      return { ...dapp, isTrustedByUser: false, canBeTrustedByUser: false }
+
+    return {
+      ...dapp,
+      isTrustedByUser: !!dapp.isTrustedByUser,
+      canBeTrustedByUser: canBeTrustedByUser(dapp.url)
+    }
+  }
+
+  /**
+   * Marks the dApp at `url` as trusted, which silences the suspicious-hosting warning for it - and
+   * for it alone. Takes the url rather than the id because the decision is made on the hostname.
+   *
+   * Refused for a dApp that shares its hostname with everything else published on the platform
+   * (see canBeTrustedByUser); the UI hides the action there, but this is the check that counts.
+   */
+  async trustDapp(url: string) {
+    if (!this.isReady) return
+    await this.initialLoadPromise
+
+    if (!canBeTrustedByUser(url)) {
+      this.emitError({
+        message: 'This app cannot be marked as trusted.',
+        error: new Error(`trustDapp: ${url} is not on a platform where one app can be trusted`),
+        level: 'silent'
+      })
+      return
+    }
+
+    await this.#setDappTrustedByUser(getDappIdFromUrl(url), true)
+  }
+
+  /** Revokes the trust the user gave a dApp, bringing its suspicious-hosting warning back. */
+  async untrustDapp(id: string) {
+    if (!this.isReady) return
+    await this.initialLoadPromise
+
+    // Canonicalized like every other id lookup, so a trailing-dot id cannot make this a no-op.
+    await this.#setDappTrustedByUser(normalizeHostname(id), false)
+  }
+
+  /**
+   * The trust lives on the dApp's own record, so it is persisted and dropped along with it - a
+   * custom dApp that loses its last connection takes the trust the user gave it with it.
+   *
+   * The connect prompt offers the action before the dApp has a record, so `dappToConnect` is
+   * updated too: it is the object the UI hands back to `addDapp` once the user connects, which is
+   * where the trust given on that screen gets persisted.
+   */
+  async #setDappTrustedByUser(id: string, isTrustedByUser: boolean) {
+    if (this.dappToConnect?.id === id) this.dappToConnect.isTrustedByUser = isTrustedByUser
+
+    const dapp = this.#dapps.get(id)
+    const shouldPersistDapps = !!dapp && !!dapp.isTrustedByUser !== isTrustedByUser
+    if (dapp && shouldPersistDapps) this.#dapps.set(id, { ...dapp, isTrustedByUser })
+
+    this.emitUpdate()
+
+    if (shouldPersistDapps) await this.#storage.set('dappsV2', Array.from(this.#dapps.values()))
+  }
+
+  async #updateDappToConnectSecurityCheck(dapp: Dapp, session: Session) {
+    await this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
+      const intrinsicStatus = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
+
+      // Check whether the dApp is embedded in a dangerous top-level document
+      // (e.g. a phishing page hosting the dApp in an iframe). Context status is
+      // not stored in #dapps so the dApp's global status stays uncontaminated.
+      const contextStatus = this.#getFrameContextStatus(session)
+      // BLACKLISTED on the dApp itself always wins over any session context status.
+      const effectiveStatus =
+        intrinsicStatus === 'BLACKLISTED' ? 'BLACKLISTED' : (contextStatus ?? intrinsicStatus)
+
+      if (this.dappToConnect && this.dappToConnect.id === dapp.id) {
+        this.dappToConnect.blacklisted = effectiveStatus
+        // Remembered so the trust flags can tell a warning about the dApp's own hosting -
+        // which the user may silence - apart from one about the document embedding it.
+        this.#dappToConnectContextStatus = contextStatus
+      }
+
+      // Update #dapps with intrinsic status only — never the context-derived one.
+      const existingDapp = this.#dapps.get(dapp.id)
+      if (existingDapp && existingDapp.blacklisted !== intrinsicStatus) {
+        this.#dapps.set(dapp.id, { ...existingDapp, blacklisted: intrinsicStatus })
+      }
+
+      this.emitUpdate()
+    })
+  }
+
+  /** Enables scam checking and immediately refreshes the pending connection request. */
+  async enableScamCheckerAndRefreshDappToConnect() {
+    const dapp = this.dappToConnect
+    const session = this.#dappToConnectSession
+
+    if (dapp) {
+      dapp.blacklisted = 'LOADING'
+      this.#dappToConnectContextStatus = undefined
+      this.emitUpdate()
+    }
+
+    await this.#featureFlags.setFeatureFlag('scamAndPhishingChecker', true)
+
+    if (!dapp || !session || this.dappToConnect?.id !== dapp.id) return
+
+    await this.#updateDappToConnectSecurityCheck(dapp, session)
+  }
+
   async setDappToConnectIfNeeded(currentRequest: UserRequest | null) {
     try {
       if (currentRequest && currentRequest.kind === 'dappConnect') {
         const { dappPromises } = currentRequest
+        const existingDapp = this.#dapps.get(dappPromises[0].session.id)
         const dapp = await this.#buildDapp({
           id: dappPromises[0].session.id,
           name: dappPromises[0].session.name,
           url: dappPromises[0].session.origin,
           icon: dappPromises[0].session.icon,
-          chainId: 1,
+          chainId: existingDapp?.chainId || 1,
           isConnected: false
         })
         if (!this.dappToConnect || this.dappToConnect.id !== dapp.id) {
           this.dappToConnect = dapp
+          // Don't persist the preferences after the dapp has been disconnected
+          delete this.dappToConnect.accountPreferences
+          this.#dappToConnectContextStatus = undefined
+          this.#dappToConnectSession = dappPromises[0].session
           this.emitUpdate()
 
+          const session = dappPromises[0].session
+
           // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.#phishing.updateDomainsBlacklistedStatus([dapp.url], (blacklistedStatus) => {
-            if (this.dappToConnect && this.dappToConnect.id === dapp.id) {
-              const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
-              this.dappToConnect.blacklisted = status
-            }
-
-            const existingDapp = this.#dapps.get(dapp.id)
-            if (existingDapp && existingDapp.blacklisted !== blacklistedStatus[dapp.id]) {
-              const status = blacklistedStatus[dapp.id] || 'FAILED_TO_GET'
-              this.#dapps.set(dapp.id, { ...existingDapp, blacklisted: status })
-            }
-
-            this.emitUpdate()
-          })
+          this.#updateDappToConnectSecurityCheck(dapp, session)
         }
 
         return
@@ -700,6 +1500,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       if (this.dappToConnect) {
         this.dappToConnect = null
+        this.#dappToConnectContextStatus = undefined
+        this.#dappToConnectSession = undefined
         this.emitUpdate()
       }
     } catch (err: any) {
@@ -711,13 +1513,281 @@ export class DappsController extends EventEmitter implements IDappsController {
     }
   }
 
+  async getCurrentDappAndSendResToUi({
+    requestId,
+    dappId,
+    currentSessionId = ''
+  }: {
+    requestId: string
+    dappId: string
+    currentSessionId?: string
+  }) {
+    const storedDapp = this.#dapps.get(currentSessionId) || this.#dapps.get(dappId) || null
+    const dapp = storedDapp ? this.#withTrustFlags(storedDapp) : null
+
+    const message: GetCurrentDappRes = {
+      type: 'GetCurrentDappRes',
+      requestId,
+      ok: true,
+      res: dapp
+    }
+
+    this.#ui.message.sendUiMessage(message)
+  }
+
+  protected hasUnverifiedDappUrls(dapps: string[]): boolean {
+    const verifiedDappUrlsSet = new Set<string>()
+    for (const dapp of this.#dapps.values()) {
+      if (dapp.blacklisted === 'VERIFIED') {
+        verifiedDappUrlsSet.add(dapp.url.toLowerCase())
+      }
+    }
+
+    return dapps.some((dappUrl) => !!dappUrl && !verifiedDappUrlsSet.has(dappUrl.toLowerCase()))
+  }
+
+  async hasUnverifiedDappsAndSendResToUi({
+    requestId,
+    dapps
+  }: {
+    requestId: string
+    dapps: string[]
+  }) {
+    const hasUnverifiedDapps = this.hasUnverifiedDappUrls(dapps)
+    const message: HasUnverifiedDappsRes = {
+      type: 'HasUnverifiedDappsRes',
+      requestId,
+      ok: true,
+      res: hasUnverifiedDapps
+    }
+
+    this.#ui.message.sendUiMessage(message)
+  }
+
+  /**
+   * Returns SUSPICIOUS_HOSTING when the dApp runs in a tab whose top-level document is dangerous -
+   * a phishing page embedding a legitimate dApp in an iframe, where the dApp's own status looks
+   * clean. `topFrameOrigin` comes from the browser on every request, so the page cannot spoof it.
+   *
+   * `undefined` means no verdict: the dApp is the top frame itself, the platform reports no frame
+   * context (mobile WebViews, WalletConnect), or the top frame is not dangerous. Frames between
+   * the top one and the dApp are not visible without the `webNavigation` permission - not checked.
+   */
+  #getFrameContextStatus(session: Session): BlacklistedStatus | undefined {
+    const { topFrameOrigin } = session
+    if (!topFrameOrigin || topFrameOrigin === session.origin) return undefined
+
+    const status = this.#phishing.getDomainBlacklistedStatus(topFrameOrigin)
+    // A BLACKLISTED top frame is still only a dangerous context for this dApp, so it maps to
+    // SUSPICIOUS_HOSTING - BLACKLISTED belongs to the top frame's own domain, not to this dApp.
+    if (status === 'BLACKLISTED' || status === 'SUSPICIOUS_HOSTING') return 'SUSPICIOUS_HOSTING'
+
+    return undefined
+  }
+
+  #isDappIdInDefaultCatalog(dappId: string): boolean {
+    const storedDapp = this.#dapps.get(dappId)
+
+    // Custom dApps are user-added/connected entries, not default catalog entries.
+    return !!storedDapp && !storedDapp.isCustom
+  }
+
+  /**
+   * True when the app is a default Ambire catalog entry - one we ship and keep an eye on - rather
+   * than one the user added or connected to on their own. Used to decide how much to trust an app
+   * beyond the verification status, e.g. whether to warn about an unlimited approval it requests.
+   */
+  isDappInDefaultCatalog(url: string): boolean {
+    if (!url) return false
+
+    return this.#isDappIdInDefaultCatalog(getDappIdFromUrl(url))
+  }
+
+  /**
+   * Returns the highest-priority dApp verification banner for the provided dApp URLs, or `null` if
+   * the scam checker is disabled or no banner applies.
+   *
+   * Priority order:
+   * 1) dApp is blacklisted (`BLACKLISTED`)
+   * 2) dApp is hosted on a suspicious user-content platform (`SUSPICIOUS_HOSTING`)
+   * 3) dApp verification in progress (`LOADING`)
+   * 4) dApp verification failed / unknown (`FAILED_TO_GET` or missing status)
+   * 5) dApp is verified but not in the default catalog
+   *
+   * Pass `includeDappNamesInText: false` in single-dApp flows (e.g. SignMessage),
+   * where appending the dApp names in the banner text is redundant.
+   */
+  getDappVerificationBanner(
+    dappUrls: string[],
+    {
+      includeDappNamesInText = true,
+      sessionId
+    }: { includeDappNamesInText?: boolean; sessionId?: string } = {}
+  ): DappVerificationBanner | null {
+    if (!this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) return null
+
+    const validDappUrls = dappUrls
+      .map((url) => url?.toLowerCase())
+      .filter((url): url is string => !!url)
+    if (!validDappUrls.length) return null
+
+    const sessionForId = sessionId ? this.dappSessions[sessionId] : undefined
+    const contextStatus = sessionForId ? this.#getFrameContextStatus(sessionForId) : undefined
+
+    const dappVerificationData = validDappUrls.map((url) => {
+      const id = getDappIdFromUrl(url)
+      const dapp = this.#dapps.get(id)
+
+      // BLACKLISTED on the dApp itself always wins over any session context status.
+      const intrinsic = dapp?.blacklisted
+      // The user's trust covers the dApp's own hosting only - never BLACKLISTED, and never a
+      // dangerous frame context, whose danger belongs to the document embedding the dApp. Reported
+      // as VERIFIED so a trusted dApp stands exactly where any other app outside the catalog does,
+      // and still gets the "not in Ambire's catalog" banner below - trust does not vouch for it.
+      const isTrustedByUser =
+        intrinsic === 'SUSPICIOUS_HOSTING' && !contextStatus && !!dapp?.isTrustedByUser
+      return {
+        id,
+        url,
+        // BLACKLISTED on the dApp itself always wins. While the initial storage load is still
+        // pending, #dapps may be empty, so a missing record/status doesn't mean verification
+        // failed - report LOADING instead (e.g. a sign request right after a service worker wake-up).
+        status:
+          intrinsic === 'BLACKLISTED'
+            ? 'BLACKLISTED'
+            : this.initialLoadPromise
+              ? 'LOADING'
+              : isTrustedByUser
+                ? 'VERIFIED'
+                : (contextStatus ?? intrinsic),
+        // The canonical hostname, so the banner names the site the user believes they are on
+        // instead of the fully-qualified spelling a phishing page may navigate to. Falls back to
+        // the raw url for inputs the URL parser rejects, which must not throw here.
+        name: dapp?.name || getNormalizedHostnameFromUrl(url) || url
+      }
+    })
+
+    // Returns the names of dApps matching a predicate (e.g. all dapps with BLACKLISTED status).
+    const getDappNamesByPredicate = (
+      predicate: (item: (typeof dappVerificationData)[number]) => boolean
+    ) =>
+      Array.from(new Set(dappVerificationData.filter(predicate).map((dapp) => dapp.name))).join(
+        ', '
+      )
+
+    // Conditionally appends the matching dApp names, separated by ":" for readability.
+    const withOptionalDappNames = (baseText: string, dappNames: string) => {
+      if (!includeDappNamesInText || !dappNames) return baseText
+
+      const shouldReplaceTrailingPunctuation = baseText.endsWith('.') || baseText.endsWith('!')
+      const withColon = shouldReplaceTrailingPunctuation
+        ? `${baseText.slice(0, -1)}:`
+        : `${baseText}:`
+
+      return `${withColon} ${dappNames}`
+    }
+
+    // 1) dApp is blacklisted
+    const blacklistedDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'BLACKLISTED')
+    if (blacklistedDappNames.length) {
+      return {
+        id: DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED,
+        type: 'error',
+        title: 'Potentially harmful app',
+        text: withOptionalDappNames(
+          "This app didn't pass our safety check. Proceed at your own risk.",
+          blacklistedDappNames
+        )
+      }
+    }
+
+    // 2) dApp is hosted on a user-content platform never used by legitimate DeFi protocols
+    const suspiciousHostingDapps = dappVerificationData.filter(
+      (dapp) => dapp.status === 'SUSPICIOUS_HOSTING'
+    )
+    if (suspiciousHostingDapps.length) {
+      return {
+        id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
+        type: 'warning',
+        title: 'Suspicious app hosting',
+        text: withOptionalDappNames(
+          'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.',
+          '' // We explicitly don't append the dApp name, because here what matters is the suspicious hosting URL, but showing the name could confuse the user, so we simply don't
+        ),
+        // A dApp flagged for the document embedding it cannot be trusted away, so the action is
+        // offered only while the warning is about the dApps' own hosting.
+        trustableDappUrls: contextStatus
+          ? []
+          : suspiciousHostingDapps.map(({ url }) => url).filter((url) => canBeTrustedByUser(url))
+      }
+    }
+
+    // 3) dApp verification in progress
+    const loadingDappNames = getDappNamesByPredicate((dapp) => dapp.status === 'LOADING')
+    if (loadingDappNames.length) {
+      return {
+        id: DAPP_VERIFICATION_BANNER_IDS.LOADING,
+        type: 'warning',
+        title: 'Safety check in progress',
+        text: withOptionalDappNames(
+          "We're still verifying the app. Please wait, or make sure you trust it before signing requests.",
+          loadingDappNames
+        )
+      }
+    }
+
+    // 4) dApp verification failed / unknown
+    const failedToVerifyDappNames = getDappNamesByPredicate(
+      (dapp) => dapp.status === 'FAILED_TO_GET' || !dapp.status
+    )
+    if (failedToVerifyDappNames.length) {
+      return {
+        id: DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN,
+        type: 'warning',
+        title: "App couldn't be verified",
+        text: withOptionalDappNames(
+          "We couldn't verify the app. Make sure you trust it before signing requests.",
+          failedToVerifyDappNames
+        )
+      }
+    }
+
+    // 5) dApp is not in the default catalog
+    const notInCatalogDappNames = getDappNamesByPredicate(
+      (dapp) => dapp.status === 'VERIFIED' && !this.#isDappIdInDefaultCatalog(dapp.id)
+    )
+    if (notInCatalogDappNames.length) {
+      return {
+        id: DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG,
+        type: 'warning',
+        title: "App not in Ambire's catalog",
+        text: withOptionalDappNames(
+          'App is not on the default Ambire App Catalog. Make sure you trust it before signing requests.',
+          notInCatalogDappNames
+        )
+      }
+    }
+
+    return null
+  }
+
   toJSON() {
+    // `categories` derives from `dapps`, and both are part of the state sent to the UI.
+    // Deriving the list once here keeps a single update from filtering the catalog twice.
+    const dapps = this.dapps
+
     return {
       ...this,
       ...super.toJSON(),
-      dapps: this.dapps,
-      categories: this.categories,
+      dapps,
+      recentDapps: this.recentDapps,
+      disguisedAsMetaMaskDappIds: this.disguisedAsMetaMaskDappIds,
+      categories: getDappCategories(dapps),
+      dappToConnect: this.dappToConnect
+        ? this.#withTrustFlags(this.dappToConnect, !!this.#dappToConnectContextStatus)
+        : null,
       isReady: this.isReady,
+      trendingTokens: this.trendingTokens,
       shouldRetryFetchAndUpdate: this.shouldRetryFetchAndUpdate,
       retryFetchAndUpdateInterval: this.retryFetchAndUpdateInterval,
       retryFetchAndUpdateAttempts: this.retryFetchAndUpdateAttempts

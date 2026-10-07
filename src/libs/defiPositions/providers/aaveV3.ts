@@ -1,8 +1,9 @@
-import { JsonRpcProvider, Provider } from 'ethers'
+import { Contract, JsonRpcProvider, Provider } from 'ethers'
 
 import DeFiPositionsDeploylessCode from '../../../../contracts/compiled/DeFiAAVEPosition.json'
 import { Network } from '../../../interfaces/network'
 import { generateUuid } from '../../../utils/uuid'
+import { withTimeout } from '../../../utils/with-timeout'
 import { fromDescriptor } from '../../deployless/deployless'
 import { AAVE_V3 } from '../defiAddresses'
 import { getAssetValue } from '../helpers'
@@ -10,6 +11,8 @@ import { AssetType, Position, PositionAsset, PositionsByProvider } from '../type
 
 const AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER =
   115792089237316195423570985008687907853269984665640564039457584007913129639935n
+
+export const AAVE_STATIC_CALL_TIMEOUT_MS = 15 * 1000
 
 export async function getAAVEPositions(
   userAddr: string,
@@ -20,33 +23,62 @@ export async function getAAVEPositions(
   if (chainId && !AAVE_V3[chainId.toString() as keyof typeof AAVE_V3]) return null
 
   const { poolAddr } = AAVE_V3[chainId.toString() as keyof typeof AAVE_V3]
+  const poolContract = new Contract(
+    poolAddr,
+    ['function getReservesCount() view returns (uint256)'],
+    provider
+  )
 
   const deploylessDeFiPositionsGetter = fromDescriptor(
     provider,
     DeFiPositionsDeploylessCode,
     network.rpcNoStateOverride // Why?
   )
-  const [result0, result1, result2] = await Promise.all([
-    deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 0, 15], {}),
-    deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 15, 30], {}),
-    deploylessDeFiPositionsGetter.call('getAAVEPosition', [userAddr, poolAddr, 30, 45], {})
-  ])
 
-  const accountData = result0.accountData
+  // Raw ethers staticCall has no timeout; without this, a hung RPC can pin DeFi/portfolio updates.
+  const reservesLength = await withTimeout(
+    () => poolContract.getFunction('getReservesCount').staticCall(),
+    {
+      timeoutMs: AAVE_STATIC_CALL_TIMEOUT_MS,
+      message: `Fetching AAVE positions on ${network.name} took too long`
+    }
+  )
+  const PAGE_SIZE = 15
+  const numberOfPages = Math.ceil(Number(reservesLength) / PAGE_SIZE)
+  const promises = []
+  for (let i = 0; i < numberOfPages; i++) {
+    promises.push(
+      deploylessDeFiPositionsGetter.call(
+        'getAAVEPosition',
+        [userAddr, poolAddr, i * 15, (i + 1) * 15],
+        {}
+      )
+    )
+  }
+  const results = await Promise.all(promises)
 
-  const userAssets = [...result0.userBalance, ...result1.userBalance, ...result2.userBalance]
+  const accountData = results[0].accountData
+
+  const userAssets = results
+    .map((r) => r.userBalance)
+    .flat()
     .map(({ addr, ...rest }) => ({
       address: addr,
       aaveAddress: rest.aaveAddr,
       ...rest
     }))
-    .filter((t: any) => t.balance > 0 || t.borrowAssetBalance > 0 || t.stableBorrowAssetBalance > 0)
+    .filter(
+      (t: any) =>
+        t.symbol !== 'error' &&
+        t.name !== 'error' &&
+        (t.balance > 0 || t.borrowAssetBalance > 0 || t.stableBorrowAssetBalance > 0)
+    )
 
   if (accountData.healthFactor === AAVE_NO_HEALTH_FACTOR_MAGIC_NUMBER) {
     accountData.healthFactor = null
   }
 
-  const position = {
+  const position: Position = {
     id: generateUuid(),
     additionalData: {
       healthRate: accountData.healthFactor ? Number(accountData.healthFactor) / 1e18 : null,
@@ -57,7 +89,7 @@ export async function getAAVEPositions(
       name: 'Lending'
     },
     assets: []
-  } as Position
+  }
 
   position.assets = userAssets
     .map((asset: any) => {
@@ -67,10 +99,12 @@ export async function getAAVEPositions(
       const stableBorrow =
         (Number(asset.stableBorrowAssetBalance) / 10 ** Number(asset.decimals)) * -1
 
-      position.additionalData.positionInUSD += (balance + borrow + stableBorrow) * price
-      position.additionalData.deptInUSD += borrow * price
-      position.additionalData.deptInUSD += stableBorrow * price
-      position.additionalData.collateralInUSD += balance * price
+      position.additionalData.positionInUSD =
+        (position.additionalData.positionInUSD || 0) + (balance + borrow + stableBorrow) * price
+      position.additionalData.debtInUSD =
+        (position.additionalData.debtInUSD || 0) + (borrow + stableBorrow) * price
+      position.additionalData.collateralInUSD =
+        (position.additionalData.collateralInUSD || 0) + balance * price
 
       const assetsResult = []
 

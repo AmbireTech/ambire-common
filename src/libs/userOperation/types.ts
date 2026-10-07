@@ -42,6 +42,6 @@ export interface UserOperation {
 }
 
 export interface UserOperationEventData {
-  nonce: Number
+  nonce: number
   success: boolean
 }

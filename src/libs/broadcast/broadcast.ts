@@ -1,4 +1,6 @@
-import { Interface, toQuantity } from 'ethers'
+import { Interface, toQuantity, TransactionResponse } from 'ethers'
+
+import { getGasLimitWithOverhead } from '@/libs/estimate/estimate'
 
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
@@ -8,6 +10,7 @@ import { Hex } from '../../interfaces/hex'
 import { TxnRequest } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
+import { getSafeBroadcastTxn } from '../../libs/safe/helpers'
 import wait from '../../utils/wait'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -22,6 +25,11 @@ export const BROADCAST_OPTIONS = {
   byRelayer: 'relayer', // execute
   byOtherEOA: 'otherEOA', // execute + standard
   delegation: 'delegation' // txn type 4
+}
+
+async function waitBeforeRetry(chainId: bigint) {
+  // wait a bit longer on ethereum as txn confirmations are slower
+  await wait(chainId === 1n ? 2000 : 1000)
 }
 
 export function getByOtherEOATxnData(
@@ -57,11 +65,14 @@ async function estimateGas(
   from: string,
   call: Call,
   nonce: number,
+  chainId: bigint,
+  broadcastOption: string,
+  op: AccountOp,
   error?: Error,
   counter: number = 0
 ): Promise<bigint> {
   // this should happen only in the case of internet issues
-  if (counter > 10) {
+  if (counter > 9) {
     throw new Error(
       `Failed estimating gas for broadcast${
         error ? `: ${getErrorCodeStringFromReason(error.message)}` : ''
@@ -97,25 +108,36 @@ async function estimateGas(
     try {
       hasNonceDiscrepancyOnApproval =
         call.data !== '0x' && !!erc20interface.decodeFunctionData('approve', call.data)
-    } catch (e) {
+    } catch {
       hasNonceDiscrepancyOnApproval = false
     }
   }
 
-  // if there's an error, wait a bit and retry
-  // the error is most likely because of an incorrect RPC pending state
+  // Sequential EOA calls can fail temporarily if the RPC pending state is stale.
   if (gasLimit instanceof Error || hasNonceDiscrepancyOnApproval) {
-    // if the gasLimit is throwing because the smart account is returning INSUFFICIENT_PRIVILEGE,
-    // return the error without retrying
-    if (gasLimit instanceof Error && gasLimit.message.includes('INSUFFICIENT_PRIVILEGE'))
-      throw gasLimit
+    if (gasLimit instanceof Error) {
+      // Other estimation errors are deterministic, so return them immediately.
+      const isGS013 = gasLimit.message.includes('GS013')
+      const isEoaBatch = broadcastOption === BROADCAST_OPTIONS.bySelf && op.calls.length > 1
+      if (!isGS013 && !isEoaBatch) throw gasLimit
+    }
 
-    await wait(1500)
-    return estimateGas(provider, from, call, nonce, gasLimit, counter + 1)
+    await waitBeforeRetry(chainId)
+    return estimateGas(
+      provider,
+      from,
+      call,
+      nonce,
+      chainId,
+      broadcastOption,
+      op,
+      gasLimit,
+      counter + 1
+    )
   }
 
-  // add a 10% overhead to prevent OOG
-  return BigInt(gasLimit) + BigInt(gasLimit) / 10n
+  // add gas overhead to prevent OOG
+  return getGasLimitWithOverhead(BigInt(gasLimit))
 }
 
 export async function getTxnData(
@@ -126,7 +148,35 @@ export async function getTxnData(
   broadcastOption: string,
   nonce: number,
   call?: Call
-): Promise<{ to: Hex; value: bigint; data: Hex; gasLimit?: bigint }> {
+): Promise<{ to: Hex | undefined; value: bigint; data: Hex; gasLimit?: bigint }> {
+  if (account.safeCreation) {
+    const safeData = getSafeBroadcastTxn(op, accountState)
+    const gasFeePayment = op.gasFeePayment as GasFeePayment
+    const simulatedGasLimit = gasFeePayment.simulatedGasLimit
+
+    if (gasFeePayment.isCustomGasLimit) {
+      return {
+        ...safeData,
+        gasLimit: simulatedGasLimit
+      }
+    }
+
+    const estimatedGasLimit = await estimateGas(
+      provider,
+      gasFeePayment.paidBy,
+      safeData,
+      nonce,
+      op.chainId,
+      broadcastOption,
+      op
+    )
+
+    return {
+      ...safeData,
+      gasLimit: estimatedGasLimit > simulatedGasLimit ? estimatedGasLimit : simulatedGasLimit
+    }
+  }
+
   // no need to estimate gas for delegation, it's already estimated
   if (broadcastOption === BROADCAST_OPTIONS.delegation) {
     if (op.calls.length > 1) {
@@ -140,7 +190,7 @@ export async function getTxnData(
 
     if (!call) throw new Error('single txn broadcast misconfig')
     return {
-      to: call.to as Hex,
+      to: call.to as Hex | undefined,
       value: call.value,
       data: call.data as Hex,
       gasLimit: (op.gasFeePayment as GasFeePayment).simulatedGasLimit
@@ -154,11 +204,19 @@ export async function getTxnData(
     // for each one seperately
     let gasLimit: bigint | undefined = (op.gasFeePayment as GasFeePayment).simulatedGasLimit
     if (op.calls.length > 1) {
-      gasLimit = await estimateGas(provider, account.addr, call, nonce)
+      gasLimit = await estimateGas(
+        provider,
+        account.addr,
+        call,
+        nonce,
+        op.chainId,
+        broadcastOption,
+        op
+      )
     }
 
     const singleCallTxn = {
-      to: call.to as Hex,
+      to: call.to as Hex | undefined,
       value: call.value,
       data: call.data as Hex,
       gasLimit
@@ -173,7 +231,10 @@ export async function getTxnData(
       provider,
       (op.gasFeePayment as GasFeePayment).paidBy,
       otherEOACall,
-      nonce
+      nonce,
+      op.chainId,
+      broadcastOption,
+      op
     )
     return { ...otherEOACall, gasLimit }
   }
@@ -212,7 +273,8 @@ export async function buildRawTransaction(
     chainId: network.chainId,
     nonce,
     gasLimit: gasFeePayment.simulatedGasLimit,
-    ...txnData
+    ...txnData,
+    ...(gasFeePayment.isCustomGasLimit ? { gasLimit: gasFeePayment.simulatedGasLimit } : {})
   }
 
   if (gasFeePayment.maxPriorityFeePerGas !== undefined) {
@@ -225,4 +287,20 @@ export async function buildRawTransaction(
   }
 
   return rawTxn
+}
+
+export async function broadcastTransaction(
+  provider: RPCProvider,
+  signedTx: string,
+  chainId: bigint,
+  counter: number = 0
+): Promise<TransactionResponse> {
+  if (counter > 2) throw new Error('broadcast failed')
+  try {
+    return provider.broadcastTransaction(signedTx)
+  } catch (e) {
+    console.log('broadcast failed: ', e)
+    await waitBeforeRetry(chainId)
+    return broadcastTransaction(provider, signedTx, chainId, counter + 1)
+  }
 }

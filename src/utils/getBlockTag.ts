@@ -12,5 +12,7 @@ import { Network } from '../interfaces/network'
  * networks is faster than Ethereum so it shouldn't impact the features
  */
 export function getPendingBlockTagIfSupported(network: Network) {
+  if (network.isColibriEnabled) return 'latest'
+
   return network.chainId === 1n ? 'pending' : 'latest'
 }

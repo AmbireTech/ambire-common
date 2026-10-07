@@ -1,38 +1,19 @@
-import { Account } from '../../interfaces/account'
-import { Network } from '../../interfaces/network'
-import { UserRequest } from '../../interfaces/userRequest'
-import { isSmartAccount } from '../account/account'
-import { AccountOp } from '../accountOp/accountOp'
+import { CallsUserRequest } from '../../interfaces/userRequest'
 
 export const ACCOUNT_SWITCH_USER_REQUEST = 'ACCOUNT_SWITCH_USER_REQUEST'
 
-export const getAccountOpsForSimulation = (
-  account: Account,
-  visibleUserRequests: UserRequest[],
-  networks: Network[]
-): { [key: string]: AccountOp[] } | undefined => {
-  const isSmart = isSmartAccount(account)
-  const accountOps = visibleUserRequests
-    .filter((r) => r.kind === 'calls')
-    .map((a) => a.signAccountOp.accountOp)
-    .filter((op) => {
-      if (op.accountAddr !== account.addr) return false
+/**
+ * Whether to simulate account ops if the request window is closed or the current
+ * request is different.
+ */
+export const getShouldSimulateInTheBackground = (currentReq: CallsUserRequest) => {
+  // simulations should get persisted for all non-Safe accounts
+  if (!currentReq.signAccountOp.account.safeCreation) return true
 
-      const networkData = networks.find((n) => n.chainId === op.chainId)
+  // A Safe request that is being broadcast is no longer waiting in the queue, so its
+  // simulation should stay on the dashboard until the transaction is confirmed
+  if (currentReq.signAccountOp.broadcastStatus === 'LOADING') return true
 
-      // We cannot simulate if the account isn't smart and the network's RPC doesn't support
-      // state override
-      return isSmart || (networkData && !networkData.rpcNoStateOverride)
-    })
-
-  if (!accountOps.length) return undefined
-
-  return accountOps.reduce((acc: any, accountOp) => {
-    const { chainId } = accountOp
-
-    if (!acc[chainId.toString()]) acc[chainId.toString()] = []
-
-    acc[chainId.toString()].push(accountOp)
-    return acc
-  }, {})
+  // we are simulating on the dashboard only pending Safe requests
+  return (currentReq.signAccountOp.accountOp.signed || []).length === 0
 }

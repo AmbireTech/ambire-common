@@ -1,9 +1,10 @@
-import { ZeroAddress } from 'ethers'
-
 import { WARNINGS } from '../../consts/signAccountOp/errorHandling'
 import { Price } from '../../interfaces/assets'
 import { TraceCallDiscoveryStatus, Warning } from '../../interfaces/signAccountOp'
+import { AccountOp } from '../../libs/accountOp/accountOp'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
+import { buildSafeTxGasRefund } from '../../libs/humanizer/erc7730/safeTxGasRefund'
+import { shouldDisplaySafeDelegateCallWarning } from '../../libs/humanizer/modules/Safe'
 import { TokenResult } from '../../libs/portfolio'
 import { getAccountPortfolioTotal, getTotal } from '../../libs/portfolio/helpers'
 import { AccountState } from '../../libs/portfolio/interfaces'
@@ -12,13 +13,7 @@ import { safeTokenAmountAndNumberMultiplication } from '../../utils/numbers/form
 export type SignAccountOpType = 'default' | 'one-click-swap-and-bridge' | 'one-click-transfer'
 
 function getFeeSpeedIdentifier(option: FeePaymentOption, accountAddr: string) {
-  // if the token is native and we're paying with EOA, we do not need
-  // a different identifier as the fee speed calculations will be the same
-  // regardless of the EOA address
-  const paidBy =
-    option.token.address === ZeroAddress && option.paidBy !== accountAddr ? 'EOA' : option.paidBy
-
-  return `${paidBy}:${option.token.address}:${option.token.symbol.toLowerCase()}:${
+  return `${option.paidBy}:${option.token.address}:${option.token.symbol.toLowerCase()}:${
     option.token.flags.onGasTank ? 'gasTank' : 'feeToken'
   }`
 }
@@ -35,16 +30,17 @@ function getTokenUsdAmount(token: TokenResult, gasAmount: bigint): string {
 function getSignificantBalanceDecreaseWarning(
   portfolioState: AccountState,
   chainId: bigint,
-  traceCallDiscoveryStatus: TraceCallDiscoveryStatus
+  discoveryStatus: TraceCallDiscoveryStatus
 ): Warning | null {
   const portfolioNetworkState = portfolioState?.[chainId.toString()]
 
-  if (portfolioNetworkState && portfolioNetworkState.result && !portfolioNetworkState.isLoading) {
-    const totalInUSD = getAccountPortfolioTotal(
-      portfolioState,
-      ['rewards', 'gasTank', 'projectedRewards'],
-      false
-    )
+  // calculate this only after traceCall has ended
+  const isDiscoveryOver =
+    discoveryStatus === TraceCallDiscoveryStatus.Failed ||
+    discoveryStatus === TraceCallDiscoveryStatus.Done
+
+  if (portfolioNetworkState && portfolioNetworkState.result && isDiscoveryOver) {
+    const totalInUSD = getAccountPortfolioTotal(portfolioState, ['rewards', 'gasTank'], false)
     const simulatedTokens = portfolioNetworkState.result.tokens.filter(
       (t) => typeof t.amountPostSimulation === 'bigint'
     )
@@ -79,22 +75,7 @@ function getSignificantBalanceDecreaseWarning(
 
     if (!hasSignificantBalanceDecrease) return null
 
-    // We wait for the discovery process (main.traceCall) to complete before showing WARNINGS.significantBalanceDecrease.
-    // This is important because, in the case of a SWAP to a new token, the new token is not yet part of the portfolio,
-    // which could incorrectly trigger a significant balance drop warning.
-    // To prevent this, we ensure the discovery process is completed first.
-    if (traceCallDiscoveryStatus === TraceCallDiscoveryStatus.Done) {
-      return WARNINGS.significantBalanceDecrease
-    }
-
-    // If the discovery process takes too long (more than 2 seconds) or fails,
-    // we still show a warning, but we indicate that our balance decrease assumption may be incorrect.
-    if (
-      traceCallDiscoveryStatus === TraceCallDiscoveryStatus.Failed ||
-      traceCallDiscoveryStatus === TraceCallDiscoveryStatus.SlowPendingResponse
-    ) {
-      return WARNINGS.possibleBalanceDecrease
-    }
+    return WARNINGS.significantBalanceDecrease
   }
 
   return null
@@ -113,17 +94,69 @@ const getUnknownTokenWarning = (pending: AccountState, chainId: bigint): Warning
 
 const getFeeTokenPriceUnavailableWarning = (
   hasSpeed: boolean,
-  feeTokenHasPrice: boolean
+  feeTokenHasPrice: boolean,
+  areTokenPricesEnabled: boolean
 ): Warning | null => {
-  if (!hasSpeed || feeTokenHasPrice) return null
+  if (!areTokenPricesEnabled || !hasSpeed || feeTokenHasPrice) return null
 
   return WARNINGS.feeTokenPriceUnavailable
+}
+
+function getSafeDelegateCallWarning(accountOp: AccountOp): Warning | null {
+  if (!accountOp.safeTx) return null
+
+  const shouldWarn = shouldDisplaySafeDelegateCallWarning(
+    BigInt(accountOp.safeTx.operation),
+    accountOp.safeTx.to
+  )
+
+  return shouldWarn ? WARNINGS.safeDelegateCall : null
+}
+
+// Reuses the same "sus" gas refund detection the humanizer already applies when a Safe signer
+// signs the raw SafeTx message (see getSafeTxMessageWarnings in libs/humanizer/erc7730/humanize.ts),
+// so the account-op level sign screen (i.e. signing with the Safe account itself) warns about it too.
+// The wording is intentionally its own (not humanizer's getGasRefundWarning text) - this renders
+// as a standalone banner with no adjacent visualization row, so it can't reference "the address
+// below" or "what is shown above" and has to spell out the address itself.
+function getSafeGasRefundWarning(accountOp: AccountOp): Warning | null {
+  if (!accountOp.safeTx) return null
+
+  const gasRefund = buildSafeTxGasRefund(
+    accountOp.safeTx.baseGas,
+    accountOp.safeTx.gasPrice,
+    accountOp.safeTx.gasToken,
+    accountOp.safeTx.refundReceiver
+  )
+  if (!gasRefund) return null
+
+  const text = gasRefund.refundReceiver
+    ? `This transaction also sends a separate payment to ${gasRefund.refundReceiver} as a "gas refund", on top of the transaction itself. Only proceed if you expect this.`
+    : `This transaction also sends a separate payment to whoever broadcasts it, as a "gas refund", on top of the transaction itself. Only proceed if you expect this.`
+
+  return {
+    id: 'safeGasRefund',
+    title: 'Suspicious gas refund detected',
+    text
+  }
+}
+
+const isUnderpriced = (msg: string): boolean => {
+  return (
+    msg.includes('underpriced') ||
+    msg.includes('Fee confirmation failed') ||
+    msg.includes('maxFeePerGas') ||
+    msg.includes('maxPriorityFeePerGas')
+  )
 }
 
 export {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
+  getSafeDelegateCallWarning,
+  getSafeGasRefundWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
-  getUnknownTokenWarning
+  getUnknownTokenWarning,
+  isUnderpriced
 }

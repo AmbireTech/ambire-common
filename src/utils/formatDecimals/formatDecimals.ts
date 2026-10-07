@@ -1,6 +1,5 @@
 export type FormatType = 'value' | 'price' | 'amount' | 'default' | 'precise' | 'noDecimal'
 
-const DEFAULT_DECIMALS = 2
 const DECIMAL_RULES = {
   value: {
     min: 2,
@@ -29,31 +28,8 @@ const DECIMAL_RULES = {
 }
 const TYPES_WITH_DOLLAR_PREFIX: FormatType[] = ['value', 'price']
 
-/**
- * Removes trailing zeros from a decimal string.
- * @example
- * removeTrailingZeros('1.0500') // '1.05'
- */
-const removeTrailingZeros = (decimalStr: string, minDecimals: number = 0) => {
-  if (!decimalStr.includes('.')) return decimalStr // If there's no decimal point, return the original string
-
-  let result = decimalStr
-
-  // Loop from the end of the string until a non-zero character is found
-  while (
-    result.endsWith('0') &&
-    (!minDecimals || result.length - 1 - result.indexOf('.') > minDecimals)
-  ) {
-    result = result.slice(0, -1) // Remove the last character
-  }
-
-  // If the string ends with a decimal point after removing zeros, remove it
-  if (result.endsWith('.')) {
-    result = result.slice(0, -1)
-  }
-
-  return result
-}
+const MAX_SUPPORTED_DECIMALS_BY_FORMATTER = 20
+const cacheForNumberFormatters: { [k: string]: Intl.NumberFormat } = {}
 
 const getIndexOfFirstNonZeroInDecimals = (value: number, type: FormatType) => {
   // Fixes scientific notation when converting to string
@@ -72,23 +48,29 @@ const getPrefix = (widthDollarPrefix: boolean) => (widthDollarPrefix ? '$' : '')
 const formatNumber = (
   value: number,
   withDollarPrefix: boolean,
-  decimals: number,
+  maxDecimals: number,
   sign: string,
   type: FormatType
 ) => {
-  const stringValue = value.toFixed(16)
-  const [integer, decimal] = stringValue.split('.')
-  // Display the number with the determined number of decimals
-  const decimalFormatted = decimal ? decimal.slice(0, decimals) : '0'
-  // Add commas to the integer part of the number. E.g. 1000 -> 1,000
-  const integerFormatted = Number(integer).toLocaleString('en-US', { maximumFractionDigits: 0 })
-  const reconstructedStringValue = `${integerFormatted}.${decimalFormatted}`
-  const stringValueWithoutTrailingZeros = removeTrailingZeros(
-    reconstructedStringValue,
-    type ? DECIMAL_RULES[type].min : undefined
+  // maxDecimals could be less than DECIMAL_RULES[type].min
+  const minimumFractionDigits = Math.min(DECIMAL_RULES[type].min, maxDecimals)
+  const maximumFractionDigits = Math.min(
+    Math.max(minimumFractionDigits, maxDecimals),
+    MAX_SUPPORTED_DECIMALS_BY_FORMATTER
   )
 
-  return `${sign}${getPrefix(withDollarPrefix)}${stringValueWithoutTrailingZeros}`
+  let keyForCache = `${minimumFractionDigits}:${maximumFractionDigits}`
+  if (!cacheForNumberFormatters[keyForCache])
+    cacheForNumberFormatters[keyForCache] = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits,
+      maximumFractionDigits,
+      roundingMode: 'trunc'
+    })
+
+  const formatter = cacheForNumberFormatters[keyForCache]
+  const reconstructedStringValue = formatter.format(value)
+
+  return `${sign}${getPrefix(withDollarPrefix)}${reconstructedStringValue}`
 }
 
 // A function that formats a number to a string with a specific number of decimals.
@@ -97,7 +79,7 @@ const formatDecimals = (value: number | undefined = undefined, type: FormatType 
   const withDollarPrefix = TYPES_WITH_DOLLAR_PREFIX.includes(type || '')
 
   if (value === 0) {
-    if (type === 'amount') return `${getPrefix(withDollarPrefix)}0`
+    if (type === 'amount' || type === 'noDecimal') return `${getPrefix(withDollarPrefix)}0`
 
     return `${getPrefix(withDollarPrefix)}0.00`
   }
@@ -109,11 +91,17 @@ const formatDecimals = (value: number | undefined = undefined, type: FormatType 
   const sign = value < 0 ? '-' : ''
 
   if (type === 'value') {
+    let decimals = DECIMAL_RULES[type].max
+
     if (absoluteValue < 0.01) {
       return `${sign}<$0.01`
     }
 
-    return formatNumber(absoluteValue, withDollarPrefix, DEFAULT_DECIMALS, sign, type)
+    if (absoluteValue > 10000) {
+      decimals = 0
+    }
+
+    return formatNumber(absoluteValue, withDollarPrefix, decimals, sign, type)
   }
 
   if (type === 'amount') {

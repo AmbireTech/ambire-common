@@ -1,6 +1,5 @@
-/* eslint-disable class-methods-use-this */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { ZeroAddress } from 'ethers'
+
 import { Hex } from '../../interfaces/hex'
 import { AccountOp } from '../accountOp/accountOp'
 import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
@@ -72,11 +71,15 @@ export class EOA extends BaseAccount {
     const isError = estimation instanceof Error
     if (isError || !estimation.providerEstimation || !options.op) return 0n
 
+    // add extra gas if the user wants to revoke
+    const isDelegating = options.op.meta && options.op.meta.setDelegation !== undefined
+    const revokeGas = isDelegating ? this.ACTIVATOR_GAS_USED : 0n
+
     const calls = options.op.calls
     if (calls.length === 1) {
       const call = calls[0]! // ! as we check calls.length === 1 one line above
       // a normal transfer is 21k, so just return the providerEstimation
-      if (call.data === '0x') return estimation.providerEstimation.gasUsed
+      if (call.data === '0x') return estimation.providerEstimation.gasUsed + revokeGas
     }
 
     const ambireGasUsed = estimation.ambireEstimation ? estimation.ambireEstimation.gasUsed : 0n
@@ -84,8 +87,7 @@ export class EOA extends BaseAccount {
       estimation.providerEstimation.gasUsed > ambireGasUsed
         ? estimation.providerEstimation.gasUsed
         : ambireGasUsed
-    // add a 10% overhead to prevent OOG
-    return gasUsed + gasUsed / 10n
+    return gasUsed + revokeGas
   }
 
   getBroadcastOption(
@@ -94,6 +96,9 @@ export class EOA extends BaseAccount {
       op: AccountOp
     }
   ): string {
+    if (options.op.meta && options.op.meta.setDelegation !== undefined)
+      return BROADCAST_OPTIONS.delegation
+
     return BROADCAST_OPTIONS.bySelf
   }
 
@@ -116,5 +121,30 @@ export class EOA extends BaseAccount {
   getNonceId(): string {
     // EOAs have only an execution layer nonce
     return this.accountState.eoaNonce!.toString()
+  }
+
+  /**
+   * We always state override when using an EOA as otherwise,
+   * we won't be able to perform the ambire estimation as it works
+   * only with smart accounts
+   */
+  shouldStateOverrideDuringSimulations(): boolean {
+    return true
+  }
+
+  canBroadcastByOtherEOA(): boolean {
+    return false
+  }
+
+  canSetCustomGasPrices(): boolean {
+    return true
+  }
+
+  canSetCustomGas(_feeOption?: FeePaymentOption, accountOp?: AccountOp): boolean {
+    // we do not allow custom gas for a bundle as we can estimate
+    // the gas for the next transaction after the first one has completed
+    if (accountOp && accountOp.calls.length > 1) return false
+
+    return this.canSetCustomGasPrices()
   }
 }

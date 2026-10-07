@@ -1,7 +1,7 @@
 export const PIMLICO = 'pimlico'
 export const BICONOMY = 'biconomy'
 export const ETHERSPOT = 'etherspot'
-export const GELATO = 'gelato'
+export const GELATO = 'gelatov2'
 export const CANDIDE = 'candide'
 export const CUSTOM = 'custom'
 

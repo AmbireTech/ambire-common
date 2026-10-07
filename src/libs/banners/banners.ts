@@ -1,11 +1,14 @@
-import { AccountId } from '../../interfaces/account'
+import { FEE_COLLECTOR } from '@/consts/addresses'
+import { ENS_EXPIRY_WARN_WINDOW_IN_MS } from '@/services/ensDomains/ensDomains'
+
+import { Account, AccountId } from '../../interfaces/account'
 import { Banner, BannerType } from '../../interfaces/banner'
 import { Network } from '../../interfaces/network'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { PositionCountOnDisabledNetworks } from '../defiPositions/types'
 import { HumanizerVisualization } from '../humanizer/interfaces'
-import { getIsBridgeRoute } from '../swapAndBridge/swapAndBridge'
+import { getIsBridgeRoute, getIsIntentRoute } from '../swapAndBridge/swapAndBridge'
 
 export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
   banners.filter((banner) => {
@@ -14,47 +17,10 @@ export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: Ac
     return banner.meta.accountAddr === selectedAccount
   })
 
-const getBridgeActionText = (
-  routeStatus: SwapAndBridgeActiveRoute['routeStatus'],
-  isBridgeTxn: boolean
-) => {
-  if (isBridgeTxn) {
-    return routeStatus === 'completed' ? 'Bridged' : 'Bridge'
-  }
-
-  return routeStatus === 'completed' ? 'Swapped' : 'Swap'
-}
-
-const getBridgeBannerText = (
-  route: SwapAndBridgeActiveRoute,
-  isBridgeTxn: boolean,
-  networks?: Network[]
-) => {
-  const steps = route.route?.steps || []
-  if (!steps[0]) return '' // should never happen
-
-  const actionText = getBridgeActionText(route.routeStatus, isBridgeTxn)
-  const fromAssetSymbol = steps[0].fromAsset.symbol
-  const toAssetSymbol = steps[steps.length - 1].toAsset.symbol
-
-  let assetsText = `${fromAssetSymbol} to ${toAssetSymbol}`
-
-  if (networks) {
-    const fromAssetNetwork = networks.find((n) => Number(n.chainId) === steps[0].fromAsset.chainId)
-    const toAssetNetwork = networks.find(
-      (n) => Number(n.chainId) === steps[steps.length - 1].toAsset.chainId
-    )
-    if (fromAssetNetwork && toAssetNetwork) {
-      assetsText = `${fromAssetSymbol} (on ${fromAssetNetwork.name}) to ${toAssetSymbol} (on ${toAssetNetwork.name})`
-    }
-  }
-
-  return `${actionText} ${assetsText}`
-}
-
-export const getBridgeBanners = (
+export const getIntentBanners = (
   activeRoutes: SwapAndBridgeActiveRoute[],
-  callsUserRequests: CallsUserRequest[]
+  callsUserRequests: CallsUserRequest[],
+  accountAddr: AccountId
 ): Banner[] => {
   const isRouteTurnedIntoAccountOp = (route: SwapAndBridgeActiveRoute) => {
     return callsUserRequests.some((req) => {
@@ -68,7 +34,7 @@ export const getBridgeBanners = (
   }
 
   const filteredRoutes = activeRoutes.filter((route) => {
-    if (!route.route || !getIsBridgeRoute(route.route)) return false
+    if (!route.route || !getIsIntentRoute(route.route)) return false
     if (route.routeStatus !== 'ready' && route.routeStatus !== 'waiting-approval-to-resolve')
       return true
     return !isRouteTurnedIntoAccountOp(route)
@@ -79,42 +45,46 @@ export const getBridgeBanners = (
   const completedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'completed')
   const refundedRoutes = filteredRoutes.filter((r) => r.routeStatus === 'refunded')
   const allRoutes = [...inProgressRoutes, ...failedRoutes, ...completedRoutes, ...refundedRoutes]
+  const onlyBridges = filteredRoutes.every((route) => route.route && getIsBridgeRoute(route.route))
+  const onlySwaps = filteredRoutes.every((route) => route.route && !getIsBridgeRoute(route.route))
+  const actionWordUppercase = onlyBridges ? 'Bridge' : onlySwaps ? 'Swap' : 'Transaction'
+  const actionWordLower = actionWordUppercase.toLowerCase()
 
   let title = ''
   let text = ''
   let type: BannerType
   if (inProgressRoutes.length > 0) {
     type = 'info'
-    title = `Bridge${inProgressRoutes.length > 1 ? 's' : ''} in progress`
-    text = `You have ${inProgressRoutes.length} pending bridge${
+    title = `${actionWordUppercase}${inProgressRoutes.length > 1 ? 's' : ''} in progress`
+    text = `You have ${inProgressRoutes.length} pending ${actionWordLower}${
       inProgressRoutes.length > 1 ? 's' : ''
     }`
   } else if (failedRoutes.length > 0) {
     type = 'error'
-    title = `Failed bridge${failedRoutes.length > 1 ? 's' : ''}`
-    text = `You have ${failedRoutes.length} failed bridge${failedRoutes.length > 1 ? 's' : ''}${
+    title = `Failed ${actionWordLower}${failedRoutes.length > 1 ? 's' : ''}`
+    text = `You have ${failedRoutes.length} failed ${actionWordLower}${failedRoutes.length > 1 ? 's' : ''}${
       completedRoutes.length > 1
-        ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
+        ? ` and ${completedRoutes.length} completed ${actionWordLower}${completedRoutes.length > 1 ? 's' : ''}`
         : ''
     }${
       refundedRoutes.length > 1
-        ? ` and ${refundedRoutes.length} refunded bridge${refundedRoutes.length > 1 ? 's' : ''}`
+        ? ` and ${refundedRoutes.length} refunded ${actionWordLower}${refundedRoutes.length > 1 ? 's' : ''}`
         : ''
     }`
   } else if (refundedRoutes.length > 0) {
     type = 'warning'
-    title = `Refunded bridge${refundedRoutes.length > 1 ? 's' : ''}`
-    text = `You have ${refundedRoutes.length} refunded bridge${
+    title = `Refunded ${actionWordLower}${refundedRoutes.length > 1 ? 's' : ''}`
+    text = `You have ${refundedRoutes.length} refunded ${actionWordLower}${
       refundedRoutes.length > 1 ? 's' : ''
     }${
       completedRoutes.length > 1
-        ? ` and ${completedRoutes.length} completed bridge${completedRoutes.length > 1 ? 's' : ''}`
+        ? ` and ${completedRoutes.length} completed ${actionWordLower}${completedRoutes.length > 1 ? 's' : ''}`
         : ''
     }`
   } else {
     type = 'success'
-    title = `Bridge${completedRoutes.length > 1 ? 's' : ''} completed`
-    text = `You have ${completedRoutes.length} completed bridge${
+    title = `${actionWordUppercase}${completedRoutes.length > 1 ? 's' : ''} completed`
+    text = `You have ${completedRoutes.length} completed ${actionWordLower}${
       completedRoutes.length > 1 ? 's' : ''
     }.`
   }
@@ -127,27 +97,63 @@ export const getBridgeBanners = (
       category: 'bridge-in-progress',
       title,
       text,
+      meta: {
+        accountAddr
+      },
       actions: [
         {
-          label: 'Close',
-          actionName: 'close-bridge',
-          meta: {
-            activeRouteIds: allRoutes.map((r) => r.activeRouteId),
-            isHideStyle: true
-          }
-        },
-        {
-          label: 'View',
-          actionName: 'view-bridge'
+          actionName: 'view-bridge',
+          label: 'View'
         }
-      ]
+      ],
+      dismissAction: {
+        label: 'Dismiss',
+        actionName: 'close-bridge',
+        meta: {
+          activeRouteIds: allRoutes.map((r) => r.activeRouteId),
+          isHideStyle: true
+        }
+      }
     })
   }
 
   return banners
 }
 
-export const getDappUserRequestsBanners = (userRequests: UserRequest[]): Banner[] => {
+export const getSafeMessageRequestBanners = (
+  account: Account,
+  userRequests: UserRequest[]
+): Banner[] => {
+  if (!account.safeCreation) return []
+
+  const requests = userRequests.filter((r) => ['message', 'typedMessage', 'siwe'].includes(r.kind))
+  if (!requests.length) return []
+
+  return [
+    {
+      id: 'safe-message-request-banner',
+      type: 'info',
+      title: `Pending signature request${requests.length > 1 ? 's' : ''}`,
+      text: '',
+      meta: {
+        accountAddr: account.addr
+      },
+      actions: [
+        {
+          actionName: 'open-pending-dapp-requests',
+          label: 'Open'
+        }
+      ]
+    }
+  ]
+}
+
+export const getDappUserRequestsBanners = (
+  account: Account,
+  userRequests: UserRequest[]
+): Banner[] => {
+  if (!!account.safeCreation) return []
+
   const requests = userRequests.filter(
     (r) => !['calls', 'benzin', 'swapAndBridge', 'transfer'].includes(r.kind)
   )
@@ -159,108 +165,127 @@ export const getDappUserRequestsBanners = (userRequests: UserRequest[]): Banner[
       type: 'info',
       title: `You have ${requests.length} pending app request${requests.length > 1 ? 's' : ''}`,
       text: '',
+      meta: {
+        accountAddr: account.addr
+      },
       actions: [
         {
-          label: 'Open',
-          actionName: 'open-pending-dapp-requests'
+          actionName: 'open-pending-dapp-requests',
+          label: 'Open'
         }
       ]
     }
   ]
 }
 
-const getAccountOpBannerText = (
-  activeSwapAndBridgeRoutesForSelectedAccount: SwapAndBridgeActiveRoute[],
-  chainId: bigint,
-  nonSwapAndBridgeTxns: number,
-  networks: Network[]
-) => {
-  const swapsAndBridges: string[] = []
-  const networkSwapAndBridgeRoutes = activeSwapAndBridgeRoutesForSelectedAccount.filter((route) => {
-    return route.route && BigInt(route.route.fromChainId) === chainId
-  })
+const getSafeBanner = ({
+  requests,
+  network,
+  selectedAccount
+}: {
+  requests: CallsUserRequest[]
+  network: Network
+  selectedAccount: Account
+}): Banner | null => {
+  // count the requests for Safe accounts instead of the calls
+  const requestCount = requests.length
+  const firstReq = requests[0]
+  if (requestCount === 0 || !firstReq) return null
 
-  if (networkSwapAndBridgeRoutes.length) {
-    networkSwapAndBridgeRoutes.forEach((route) => {
-      const isBridgeTxn = !!route.route?.steps.some(
-        (s) => s.fromAsset.chainId !== s.toAsset.chainId
-      )
-      const desc = getBridgeBannerText(route, isBridgeTxn, networks)
-
-      swapsAndBridges.push(desc)
-    })
-
-    return `${swapsAndBridges.join(', ')} ${
-      nonSwapAndBridgeTxns
-        ? `and ${nonSwapAndBridgeTxns} other transaction${nonSwapAndBridgeTxns > 1 ? 's' : ''}`
-        : ''
-    }`
+  return {
+    id: `${selectedAccount.addr}-${network.chainId.toString()}`,
+    type: 'info',
+    category: 'pending-to-be-signed-acc-op',
+    // the network is rendered by the UI on a second row, below the title
+    title: requestCount === 1 ? 'Pending transaction' : `${requestCount} Pending transactions`,
+    meta: { chainId: network.chainId, accountAddr: selectedAccount.addr },
+    actions: [
+      {
+        actionName: 'open-accountOp',
+        meta: { requestId: firstReq.id },
+        label: 'Open'
+      }
+    ],
+    dismissAction:
+      requestCount === 1
+        ? {
+            label: 'Reject',
+            actionName: 'reject-accountOp',
+            meta: {
+              err: 'User rejected the transaction request.',
+              requestId: firstReq.id,
+              shouldOpenNextAction: false
+            }
+          }
+        : undefined
   }
-
-  return ''
 }
 
 export const getAccountOpBanners = ({
   callsUserRequestsByNetwork,
   selectedAccount,
-  networks,
-  swapAndBridgeRoutesPendingSignature
+  networks
 }: {
   callsUserRequestsByNetwork: {
     [key: string]: CallsUserRequest[]
   }
-
-  selectedAccount: string
+  selectedAccount: Account
   networks: Network[]
-  swapAndBridgeRoutesPendingSignature: SwapAndBridgeActiveRoute[]
 }): Banner[] => {
   if (!callsUserRequestsByNetwork) return []
+
   const txnBanners: Banner[] = []
 
   Object.entries(callsUserRequestsByNetwork).forEach(([netId, requests]) => {
+    // push all safe request for 1 network in a single banner
+    if (!!selectedAccount.safeCreation) {
+      const network = networks.find((n) => n.chainId.toString() === netId)
+      if (!network) return
+
+      // we're displaying dashboard banners only for requests that
+      // aren't in a signing phase
+      const notSignedRequests = requests.filter(
+        (r) => (r.signAccountOp.accountOp.signed || []).length === 0
+      )
+      if (!notSignedRequests.length) return
+
+      const safeBanner = getSafeBanner({
+        requests: notSignedRequests,
+        network,
+        selectedAccount
+      })
+      if (safeBanner) txnBanners.push(safeBanner)
+      return
+    }
+
     requests.forEach((request) => {
       const network = networks.filter((n) => n.chainId.toString() === netId)[0]!
-      const nonSwapAndBridgeTxns = request.signAccountOp.accountOp.calls.reduce((prev, call) => {
-        const isSwapAndBridge = swapAndBridgeRoutesPendingSignature.some(
-          (route) => route.activeRouteId === call.id
-        )
-
-        if (isSwapAndBridge) return prev
-
-        return prev + 1
-      }, 0)
       const callCount = request.signAccountOp.accountOp.calls.length
-      const text = getAccountOpBannerText(
-        swapAndBridgeRoutesPendingSignature,
-        BigInt(network.chainId),
-        nonSwapAndBridgeTxns,
-        networks
-      )
 
       txnBanners.push({
-        id: `${selectedAccount}-${netId}`,
+        id: `${selectedAccount.addr}-${netId}`,
         type: 'info',
         category: 'pending-to-be-signed-acc-op',
-        title: `${
-          callCount === 1 ? 'Transaction' : `${callCount} Transactions`
-        } waiting to be signed ${network.name ? `on ${network.name}` : ''}`,
-        text,
+        // the network is rendered by the UI on a second row, below the title
+        title: callCount === 1 ? 'Pending transaction' : `${callCount} Pending transactions`,
+        text: '',
+        meta: { chainId: network.chainId, accountAddr: selectedAccount.addr },
         actions: [
           {
-            label: 'Reject',
-            actionName: 'reject-accountOp',
-            meta: {
-              err: 'User rejected the transaction request.',
-              requestId: request.id,
-              shouldOpenNextAction: false
-            }
-          },
-          {
-            label: 'Open',
             actionName: 'open-accountOp',
-            meta: { requestId: request.id }
+            meta: { requestId: request.id },
+            label: 'Open'
           }
-        ]
+        ],
+        dismissAction: {
+          label: 'Reject',
+          actionName: 'reject-accountOp',
+          meta: {
+            err: 'User rejected the transaction request.',
+            requestId: request.id,
+            shouldOpenNextAction: false
+          }
+        }
       })
     })
   })
@@ -279,13 +304,66 @@ export const getKeySyncBanner = (addr: string, email: string, keys: string[]) =>
     text: 'This account has no signing keys added therefore it is in a view-only mode. Make a request for keys sync from another device.',
     actions: [
       {
-        label: 'Sync',
         actionName: 'sync-keys',
-        meta: { email, keys }
+        meta: { email, keys },
+        label: 'Sync'
       }
     ]
   }
   return banner
+}
+
+export const ensExpiryBannerId = 'ens-expiry-banner'
+
+/**
+ * Banner warning that the selected account's own ENS name is expiring soon or is in the grace period.
+ * Escalates from a warning to an error once the name has expired.
+ */
+export const getEnsExpiryBanner = ({
+  accountAddr,
+  ens,
+  expiresAt,
+  gracePeriodEndsAt
+}: {
+  accountAddr: string
+  ens: string
+  expiresAt: number
+  gracePeriodEndsAt: number
+}): Banner | null => {
+  const now = Date.now()
+
+  if (now < expiresAt - ENS_EXPIRY_WARN_WINDOW_IN_MS) return null
+  if (now > gracePeriodEndsAt) return null
+
+  const hasExpired = now > expiresAt
+  const type: BannerType = hasExpired ? 'error' : 'warning'
+
+  return {
+    id: ensExpiryBannerId,
+    type,
+    title: hasExpired
+      ? `Your ENS name ${ens} has expired`
+      : `Your ENS name ${ens} is expiring soon`,
+    text: hasExpired
+      ? 'It is in the grace period. Renew it now - once released, the name can be taken over and funds others send to it could reach someone else.'
+      : 'Renew it to keep ownership. Expired names can be taken over, and funds others send to the name could reach someone else.',
+    actions: [
+      {
+        actionName: 'open-external-url',
+        meta: {
+          url: `https://app.ens.domains/${ens}?referrer=${FEE_COLLECTOR}`
+        },
+        label: 'Renew'
+      }
+    ],
+    dismissAction: {
+      actionName: 'dismiss-ens-expiry-banner',
+      label: 'Dismiss'
+    },
+    meta: {
+      accountAddr
+    }
+  }
 }
 
 export const defiPositionsOnDisabledNetworksBannerId = 'defi-positions-on-disabled-networks-banner'
@@ -323,28 +401,36 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
 
   const disabledNetworksWithDefiPosArray = [...disabledNetworksWithDefiPos]
 
+  const formatNetworkNames = (names: string[]) => {
+    if (names.length === 1) return names[0]
+    if (names.length === 2) return `${names[0]} and ${names[1]}`
+    return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`
+  }
+
+  const formattedNetworkNames = formatNetworkNames(
+    disabledNetworksWithDefiPosArray.map((n) => n.name)
+  )
+
   banners.push({
     id: defiPositionsOnDisabledNetworksBannerId,
     type: 'info',
-    title: 'DeFi positions detected on disabled networks',
-    text: `You have ${totalCount} active DeFi ${totalCount === 1 ? 'position' : 'positions'} on${
-      disabledNetworksWithDefiPosArray.length > 1 ? ' the following disabled networks' : ''
-    }: ${disabledNetworksWithDefiPosArray
-      .map((n) => n.name)
-      .join(', ')}. Would you like to enable ${
+    title: `DeFi ${totalCount === 1 ? 'position' : 'positions'} available on ${formattedNetworkNames}`,
+    text: `Ambire API data providers report ${totalCount} more DeFi ${
+      totalCount === 1 ? 'position' : 'positions'
+    }. Enable ${
       disabledNetworksWithDefiPosArray.length > 1 ? 'these networks' : 'this network'
-    }?`,
+    } to include ${totalCount === 1 ? 'it' : 'them'}?`,
     actions: [
       {
-        label: disabledNetworksWithDefiPosArray.length > 1 ? 'Enable all' : 'Enable',
         actionName: 'enable-networks',
-        meta: { networkChainIds: disabledNetworksWithDefiPosArray.map((n) => n.chainId) }
-      },
-      {
-        label: 'Dismiss',
-        actionName: 'dismiss-defi-positions-banner'
+        meta: { networkChainIds: disabledNetworksWithDefiPosArray.map((n) => n.chainId) },
+        label: totalCount === 1 ? `Enable ${formattedNetworkNames}` : 'Enable All'
       }
     ],
+    dismissAction: {
+      label: 'Dismiss',
+      actionName: 'dismiss-defi-positions-banner'
+    },
     meta: {
       accountAddr
     }
@@ -370,7 +456,6 @@ export function getScamDetectedText(blacklistedItems: HumanizerVisualization[]) 
     label = isSingle ? 'token' : 'tokens'
   }
 
-  // eslint-disable-next-line no-nested-ternary
   const prefix = isSingle
     ? `The destination ${label}`
     : `${blacklistedItemsCount} of the destination ${label}`

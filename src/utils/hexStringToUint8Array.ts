@@ -1,7 +1,6 @@
 function hexStringToUint8Array(hexString: string) {
   // Remove '0x' prefix if present
   if (hexString.startsWith('0x')) {
-    // eslint-disable-next-line no-param-reassign
     hexString = hexString.slice(2)
   }
 

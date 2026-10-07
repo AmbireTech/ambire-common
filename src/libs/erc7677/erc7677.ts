@@ -1,5 +1,7 @@
 import { toBeHex, toQuantity } from 'ethers'
 
+import { generateUuid } from '@/utils/uuid'
+
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Network } from '../../interfaces/network'
 import { getRpcProvider } from '../../services/provider'
@@ -13,6 +15,13 @@ import {
   PaymasterService
 } from './types'
 
+export const AMBIRE_SWAP_POLICY = 'ambireSwapSponsorship'
+
+/**
+ * Currently, only the Gnosis chain is sponsored unconditionally
+ */
+export const AMBIRE_NETWORK_WIDE_SPONSORSHIP_POLICY = 'ambireGnosisSponsorship'
+
 export function getPaymasterService(
   chainId: bigint,
   capabilities?: { paymasterService?: PaymasterCapabilities | PaymasterService }
@@ -22,7 +31,7 @@ export function getPaymasterService(
   // this means it's v2
   if ('url' in capabilities.paymasterService) {
     const paymasterService = capabilities.paymasterService
-    paymasterService.id = new Date().getTime()
+    paymasterService.id = generateUuid()
     return paymasterService
   }
 
@@ -36,8 +45,12 @@ export function getPaymasterService(
   if (!foundChainId) return undefined
 
   const paymasterService = capabilities.paymasterService[foundChainId]
-  paymasterService.id = new Date().getTime()
+  paymasterService.id = generateUuid()
   return paymasterService
+}
+
+export function getAmbireSponsorshipUrl(relayerUrl: string): string {
+  return `${relayerUrl}/v2/sponsorship`
 }
 
 export function getAmbirePaymasterService(
@@ -47,8 +60,11 @@ export function getAmbirePaymasterService(
   if (!baseAcc.isSponsorable()) return undefined
 
   return {
-    url: `${relayerUrl}/v2/sponsorship`,
-    id: new Date().getTime()
+    url: getAmbireSponsorshipUrl(relayerUrl),
+    id: generateUuid(),
+    context: {
+      policyId: AMBIRE_NETWORK_WIDE_SPONSORSHIP_POLICY
+    }
   }
 }
 

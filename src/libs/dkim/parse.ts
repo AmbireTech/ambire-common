@@ -1,37 +1,37 @@
-import isDKIM from "./isDKIM";
+import isDKIM from './isDKIM'
 
 /*
   parse email
   (cross-platform)
 */
-const Signature = require("dkim-signature");
-const processHeader = require("dkim/lib/process-header");
-const processBody = require("dkim/lib/process-body");
+const Signature = require('dkim-signature')
+const processHeader = require('dkim/lib/process-header')
+const processBody = require('dkim/lib/process-body')
 
 const emailToHeaderAndBody = (email: any) => {
-  const boundary = email.indexOf("\r\n\r\n");
+  const boundary = email.indexOf('\r\n\r\n')
   if (boundary === -1) {
-    throw Error("no header boundary found");
+    throw Error('no header boundary found')
   }
 
-  const header = email.slice(0, boundary);
-  const body = email.slice(boundary + 4);
+  const header = email.slice(0, boundary)
+  const body = email.slice(boundary + 4)
 
   return {
     boundary,
     header,
     body
-  };
-};
+  }
+}
 
 const getDkimEntry = (dkim: any) => {
-  const [name, ...rest] = dkim.split(":");
+  const [name, ...rest] = dkim.split(':')
 
   return {
     name,
-    value: rest.join(":").slice(1)
-  };
-};
+    value: rest.join(':').slice(1)
+  }
+}
 
 const getDkims = (header: any) => {
   return header
@@ -39,23 +39,23 @@ const getDkims = (header: any) => {
     .map((h: any, i: any, allHeaders: any) => {
       if (isDKIM(h)) {
         // remove DKIM headers
-        const headers = allHeaders.filter((v: any) => !isDKIM(v));
+        const headers = allHeaders.filter((v: any) => !isDKIM(v))
         // add one DKIM header
-        headers.unshift(h);
+        headers.unshift(h)
 
         return {
           entry: getDkimEntry(h),
           headers
-        };
+        }
       }
 
-      return undefined;
+      return undefined
     })
-    .filter((v: any) => !!v);
-};
+    .filter((v: any) => !!v)
+}
 
 export function parse(email: any) {
-  const { header, body } = emailToHeaderAndBody(email);
+  const { header, body } = emailToHeaderAndBody(email)
 
   const dkims = getDkims(header).map((dkim: any) => {
     // a new field called dara has been introduced to DKIM signature
@@ -65,23 +65,19 @@ export function parse(email: any) {
       Signature.keys.push('dara')
     }
 
-    const signature = Signature.parse(dkim.entry.value);
+    const signature = Signature.parse(dkim.entry.value)
 
-    const sigBody =
-      signature.length != null ? body.slice(0, signature.length) : body;
+    const sigBody = signature.length != null ? body.slice(0, signature.length) : body
 
-    const processedBody = processBody(
-      sigBody,
-      signature.canonical.split("/").pop()
-    );
+    const processedBody = processBody(sigBody, signature.canonical.split('/').pop())
 
     const processedHeader = processHeader(
       dkim.headers,
       signature.headers,
-      signature.canonical.split("/").shift()
-    );
+      signature.canonical.split('/').shift()
+    )
 
-    const algorithm = signature.algorithm.toUpperCase();
+    const algorithm = signature.algorithm.toUpperCase()
 
     return {
       ...dkim,
@@ -89,12 +85,12 @@ export function parse(email: any) {
       processedBody,
       processedHeader,
       algorithm
-    };
-  });
+    }
+  })
 
   return {
     header,
     body,
     dkims
-  };
-};
+  }
+}

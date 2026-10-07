@@ -1,5 +1,8 @@
-import { Account, AccountId, AccountOnchainState } from '../../interfaces/account'
-import { Price } from '../../interfaces/assets'
+import { IRecurringTimeout } from '@/classes/recurringTimeout/recurringTimeout'
+
+import { AccountId, AccountOnchainState } from '../../interfaces/account'
+import { Price, TokenMarketDataByCurrency } from '../../interfaces/assets'
+import { BaseAccount } from '../account/BaseAccount'
 import { AccountOp } from '../accountOp/accountOp'
 import {
   AssetType,
@@ -7,18 +10,35 @@ import {
   PositionsByProvider
 } from '../defiPositions/types'
 
+import type { DeploylessMode } from '../deployless/deployless'
+
 // @TODO: Move most of these interfaces to src/interfaces and
 // figure out how to restructure portfolio/defiPositions types
 
-export interface GetOptionsSimulation {
-  accountOps: AccountOp[]
-  account: Account
+export interface GetOptionsSimulation<T = AccountOp[]> {
+  accountOps: T
+  baseAccount: BaseAccount
   state: AccountOnchainState
+}
+export type DeploylessContractOptions = {
+  mode: DeploylessMode
+  to: string
 }
 export type TokenError = string | '0x'
 
 export type AccountAssetsState = { [chainId: string]: boolean }
 export type SuspectedType = 'suspected' | null
+
+export type ExchangeInfo = {
+  id: string
+  name: string
+  url: string
+  image: string
+}
+
+export type ExchangeInfoMap = {
+  [exchangeId: string]: ExchangeInfo
+}
 
 export type TokenResult = {
   symbol: string
@@ -32,9 +52,25 @@ export type TokenResult = {
   simulationAmount?: bigint
   amountPostSimulation?: bigint
   priceIn: Price[]
+  marketDataIn: TokenMarketDataByCurrency[]
+  meta?: {
+    /**
+     * Ids of exchanges where the token is traded.
+     */
+    exchanges?: string[]
+    website?: string
+  }
   flags: {
     onGasTank: boolean
-    rewardsType: 'wallet-vesting' | 'wallet-rewards' | 'wallet-projected-rewards' | null
+    rewardsType:
+      | 'wallet-vesting'
+      | 'wallet-rewards'
+      /**
+       * @deprecated The wallet no longer adds a projected rewards token to the portfolio.
+       * Kept only for type compatibility.
+       */
+      | 'wallet-projected-rewards'
+      | null
     defiTokenType?: AssetType
     /**
      * A property used to link a token to a specific defi position. It's used
@@ -52,26 +88,86 @@ export type TokenResult = {
   }
 }
 
+/** A token or a collection, for the code that lists both */
+export type PortfolioAsset = TokenResult | CollectionResult
+
 export type GasTankTokenResult = TokenResult & {
   availableAmount: bigint
 }
 
-export interface CollectionResult extends TokenResult {
+export interface CollectionResult extends Omit<TokenResult, 'flags'> {
   name: string
   collectibles: bigint[]
+  /** A collection is never a fee token, on the gas tank or a rewards one */
+  flags: Pick<TokenResult['flags'], 'isHidden' | 'isCustom'>
   postSimulation?: {
     sending?: bigint[]
     receiving?: bigint[]
   }
 }
 
+export type TokenDataCacheValue = Pick<TokenResult, 'marketDataIn' | 'priceIn' | 'meta'>
+
 /**
- * Cache for prices, used to avoid redundant price fetches
- * Map<tokenAddress, [timestamp, prices]>
+ * Cache for token data
+ * <tokenAddress>: [timestamp, data]
  */
-export type PriceCache = Map<string, [number, Price[]]>
+export type TokenDataCache = Map<string, [number, TokenDataCacheValue]>
 
 export type MetaData = { blockNumber?: number; beforeNonce?: bigint; afterNonce?: bigint }
+
+/**
+ * A token's symbol, name and decimals. These practically never change, so the
+ * portfolio remembers them and asks the chain for balances alone on later updates.
+ */
+export type TokenMetadataEntry = {
+  symbol: string
+  name: string
+  decimals: number
+  /**
+   * When the metadata was last read from the chain. Entries older than
+   * TOKEN_METADATA_MAX_AGE_MS are read again.
+   */
+  fetchedAt: number
+}
+
+/**
+ * A collection's name and symbol. Kept apart from TokenMetadataEntry as collections
+ * have no decimals.
+ */
+export type CollectionMetadataEntry = {
+  symbol: string
+  name: string
+  /**
+   * When the metadata was last read from the chain. Entries older than
+   * TOKEN_METADATA_MAX_AGE_MS are read again.
+   */
+  fetchedAt: number
+}
+
+/**
+ * Token metadata for a single network, keyed by checksummed token address.
+ */
+export type KnownTokenMetadata = Map<string, TokenMetadataEntry>
+
+/**
+ * Collection metadata for a single network, keyed by checksummed collection address.
+ */
+export type KnownCollectionMetadata = Map<string, CollectionMetadataEntry>
+
+/**
+ * What getTokens and getNFTs need in order to ask the chain for balances alone.
+ * `needsMetadata` holds the addresses whose metadata must be read on this update,
+ * computed once up front so every page of the same update agrees on it.
+ */
+export type AssetMetadataFetchPlan<T> = {
+  known: Map<string, T>
+  needsMetadata: Set<string>
+}
+
+export type TokenMetadataFetchPlan = AssetMetadataFetchPlan<TokenMetadataEntry>
+
+export type CollectionMetadataFetchPlan = AssetMetadataFetchPlan<CollectionMetadataEntry>
 
 /**
  * ERC-721 hints, returned by the Velcro API
@@ -98,6 +194,31 @@ export interface ERC721s {
   [collectionAddress: string]: bigint[]
 }
 
+export type ExternalAPITokenMarketDataResponse = {
+  /**
+   * The relayer returns baseCurrency and price, while cena returns only usd.
+   */
+  baseCurrency?: string
+  /**
+   * The relayer returns the price in [price]
+   */
+  price?: number
+  /**
+   * cena returns the price in [usd]
+   */
+  usd?: number
+  /**
+   * Despite the name, this is a percentage, not USD value change.
+   */
+  usd_fully_diluted_valuation?: number
+  usd_24h_change: number
+  usd_market_cap: number
+  usd_24h_vol: number
+  total_supply?: number
+  exchanges: string[]
+  homepage?: string[]
+}
+
 /**
  * The portfolio fetches tokens using deployless. We provide
  * "hints" to deployless, so it knows where to look for assets. Hints are
@@ -122,7 +243,7 @@ export interface Hints {
      * not make separate requests for prices.
      */
     prices: {
-      [addr: string]: Price
+      [addr: string]: ExternalAPITokenMarketDataResponse
     }
     /**
      * When true, either the account is empty and static hints are returned,
@@ -155,7 +276,7 @@ export type ExternalHintsAPIResponse = {
  */
 export type ExternalPortfolioDiscoveryResponse = {
   networkId: string
-  chainId: number
+  chainId: number | 'customAppChain'
   accountAddr: string
   erc20s: ExternalHintsAPIResponse['erc20s']
   erc721s: ExternalHintsAPIResponse['erc721s']
@@ -227,7 +348,7 @@ export interface PortfolioLibGetResult {
   discoveryTime: number
   oracleCallTime: number
   priceUpdateTime: number
-  priceCache: PriceCache
+  tokenDataCache: TokenDataCache
   tokens: TokenResult[]
   feeTokens: TokenResult[]
   /**
@@ -238,12 +359,33 @@ export interface PortfolioLibGetResult {
     erc20s: Hints['erc20s']
     erc721s: Hints['erc721s']
   }
+  /**
+   * Metadata read from the chain during this update, for the caller to remember.
+   * Only holds tokens whose metadata was missing or stale, so passing it back on
+   * every update keeps the stored copy fresh without re-reading what is known.
+   */
+  fetchedTokenMetadata: [string, TokenMetadataEntry][]
+  /**
+   * The collection counterpart of `fetchedTokenMetadata`.
+   */
+  fetchedCollectionMetadata: [string, CollectionMetadataEntry][]
   tokenErrors: { error: string; address: string }[]
+  collectionErrors: { error: string; address: string }[]
   collections: CollectionResult[]
   errors: ExtendedErrorWithLevel[]
   blockNumber: number
   beforeNonce: bigint
   afterNonce: bigint
+}
+
+export type PortfolioVerificationStatus = 'loading' | 'success' | 'warning' | 'stale'
+
+export type PortfolioVerification = {
+  provider: 'colibri'
+  status: PortfolioVerificationStatus
+  error?: string
+  blockDiff?: number
+  updatedAt?: number
 }
 
 export interface Total {
@@ -277,15 +419,24 @@ export type PortfolioNetworkResult = CommonResultProps &
     PortfolioLibGetResult,
     | 'collections'
     | 'tokenErrors'
+    | 'collectionErrors'
     | 'blockNumber'
-    | 'priceCache'
+    | 'tokenDataCache'
     | 'toBeLearned'
+    | 'fetchedTokenMetadata'
+    | 'fetchedCollectionMetadata'
     | 'feeTokens'
     | 'priceUpdateTime'
     | 'oracleCallTime'
     | 'discoveryTime'
   > & {
     defiPositions: DefiNetworkState
+    walletStaking?: {
+      shareValue: bigint
+      updatedAt: number
+      /** The xWALLET shares committed to a pending unstake, which can no longer be migrated. */
+      lockedShares?: bigint
+    }
     lastExternalApiUpdateData?: {
       lastUpdate: number
       hasHints: boolean
@@ -357,11 +508,39 @@ export type ProjectedRewardsStats = {
   | 'reasonToNotDisplayProjectedRewards'
 >
 
+export type PortfolioDefiAppsResult = CommonResultProps & {
+  defiPositions: DefiNetworkState
+}
+
+export type InternalPortfolioChain =
+  | 'defiApps'
+  | 'gasTank'
+  | 'rewards'
+  /**
+   * @deprecated The wallet no longer stores projected rewards in the portfolio state.
+   * Kept only for type compatibility.
+   */
+  | 'projectedRewards'
+
 export type PortfolioKeyResult =
   | PortfolioRewardsResult
   | PortfolioGasTankResult
+  /** @deprecated The wallet no longer stores projected rewards in the portfolio state. */
   | PortfolioProjectedRewardsResult
   | PortfolioNetworkResult
+  | PortfolioDefiAppsResult
+
+export type PortfolioRpcInfo = {
+  /** The RPC that produced the currently stored result. */
+  url: string
+  /**
+   * How many blocks behind the stored result the RPC's latest response was.
+   * Absent while the RPC is up to date.
+   */
+  behindBy?: number
+  /** When the RPC first started serving older blocks. Absent while the RPC is up to date. */
+  since?: number
+}
 
 export type NetworkState<T = PortfolioKeyResult> = {
   isReady: boolean
@@ -369,6 +548,8 @@ export type NetworkState<T = PortfolioKeyResult> = {
   criticalError?: ExtendedError
   errors: ExtendedErrorWithLevel[]
   lastSuccessfulUpdate?: number
+  verification?: PortfolioVerification
+  rpcInfo?: PortfolioRpcInfo
   result?: T
   // We store the previously simulated AccountOps only for the pending state.
   // Prior to triggering a pending state update, we compare the newly passed AccountOp[] (updateSelectedAccount) with the cached version.
@@ -379,7 +560,16 @@ export type NetworkState<T = PortfolioKeyResult> = {
 export type AccountState = {
   rewards?: NetworkState<PortfolioRewardsResult>
   gasTank?: NetworkState<PortfolioGasTankResult>
+  /**
+   * @deprecated The wallet no longer reads the projected rewards from the relayer's
+   * `portfolio-additional` endpoint, so this is never set. Kept only for type compatibility.
+   */
   projectedRewards?: NetworkState<PortfolioProjectedRewardsResult>
+  /**
+   * Stores "app" defi positions that are not linked to a specific network and have a slightly different structure (no addresses for assets).
+   * Examples: Polymarket and Hyperliquid positions.
+   */
+  defiApps?: NetworkState<PortfolioDefiAppsResult>
 } & {
   [chainId: string]: NetworkState<PortfolioNetworkResult> | undefined
 }
@@ -391,6 +581,11 @@ export type PortfolioControllerState = {
 
 export interface LimitsOptions {
   erc20: number
+  // describe the limit during simulation only;
+  // simulation is computational heavy and it costs a lot of gas;
+  // putting a stricter limit allows more txns to succeed albeit having
+  // to send more requests
+  erc20Simulation: number
   erc721: number
   erc721TokensInput: number
   erc721Tokens: number
@@ -418,6 +613,46 @@ export type TemporaryTokens = {
 
 type SpecialHintType = 'custom' | 'hidden' | 'learn'
 
+/**
+ * Addresses and symbol patterns that should be excluded from the portfolio.
+ * Addresses are keyed by chainId (string) and must be checksummed.
+ * Symbol patterns are matched case-insensitively as substrings.
+ */
+export interface TokenBlacklist {
+  blacklistAddrs: Record<string, string[]>
+  blacklistBySymbols: string[]
+  updatedAt: number | null
+}
+
+/**
+ * The portfolio has to be updated after a transaction is confirmed as it may change the balance of assets. Transactions
+ * can also have effects on defi positions, thus we have to call the discovery API to refetch the latest position data.
+ * If done immediately after the transaction confirmation, the server may not have indexed the position changes yet, and
+ * if we bypass the cache at that moment, we 1. have stale data; 2. prevent the user from updating manually for the next X
+ * seconds/minutes (as bypassing has a cooldown on the server to prevent abuse). To solve this, we update the portfolio immediately
+ * after a transaction, but we don't bypass the cache. Then we schedule another update after some time, this time bypassing the cache to get
+ * the latest data.
+ */
+export interface ScheduledUpdates {
+  [accountId: string]: {
+    chainId: bigint
+    // true because the structure is currently only used in this case; added as a flag to make it future proof
+    bypassServerSideCache: true
+    /**
+     * Used to determine whether to execute the update when an interval runs. Updated on subsequent schedules. Why:
+     * - An approval transaction is signed -> confirmed. An update is scheduled for after X seconds
+     * - A new transaction is signed -> confirmed before the scheduled update runs. This time the transaction has effect on defi positions, and if we don't
+     * reset the interval, the approval scheduled update will run for no reason, spending resources
+     */
+    scheduledAt: number
+    /**
+     * Set when the runner picks the update up, so a second run doesn't pick it up again while the
+     * portfolio request is still in flight. The entry is removed once the request settles.
+     */
+    isRunning: boolean
+  }[]
+}
+
 export interface GetOptions {
   baseCurrency: string
   /**
@@ -428,9 +663,19 @@ export interface GetOptions {
    */
   blockTag: 'latest' | 'pending' | 'both' | number
   simulation?: GetOptionsSimulation
-  priceCache?: PriceCache
-  priceRecency: number
-  priceRecencyOnFailure?: number
+  tokenDataCache?: TokenDataCache
+  /**
+   * Token metadata the caller already has for this network. Tokens found here are
+   * fetched with their balance only, which makes the response much cheaper to decode.
+   * Leave it out to always read full token data from the chain.
+   */
+  knownTokenMetadata?: KnownTokenMetadata
+  /**
+   * The collection counterpart of `knownTokenMetadata`.
+   */
+  knownCollectionMetadata?: KnownCollectionMetadata
+  tokenDataRecency: number
+  tokenDataRecencyOnFailure?: number
   fetchPinned: boolean
   /**
    * Hints for ERC20 tokens with a type
@@ -455,7 +700,21 @@ export interface GetOptions {
   }
   additionalErc20Hints?: Hints['erc20s']
   additionalErc721Hints?: Hints['erc721s']
+  deployless?: {
+    erc20?: DeploylessContractOptions
+    erc721?: DeploylessContractOptions
+  }
   disableAutoDiscovery?: boolean
+  /**
+   * Dynamic token blacklist fetched from the API, merged with the static
+   * blacklist defined in the portfolio library.
+   */
+  blacklist?: TokenBlacklist
+  /**
+   * Used to prevent blacklisting of Monerium Euro so the assetInfo service can get symbol
+   * and decimals from the portfolio
+   */
+  preventTokenBlacklisting?: true
 }
 
 /**
@@ -549,8 +808,39 @@ export type KnownTokenInfo = {
   chainIds?: number[]
 }
 
+/** Validation results of tokens and collections, keyed by `getAssetCacheKey` */
+export type AssetValidations = {
+  erc20: { [assetKey: string]: Pick<TokenValidationResult, 'isValid' | 'error'> }
+  erc721: { [assetKey: string]: Pick<TokenValidationResult, 'isValid' | 'error' | 'collection'> }
+}
+
+/**
+ * Why an asset was rejected. The UI phrases it, so the wording can be translated
+ * and the messages here stay for the logs.
+ */
+export type AssetValidationReason =
+  | 'network-problem'
+  | 'erc1155-unsupported'
+  | 'not-a-collection'
+  | 'is-a-token'
+  | 'collectible-not-found'
+  | 'collectible-not-owned'
+
 export type TokenValidationResult = {
   isValid: boolean
   standard: string
-  error: { message: string | null; type: 'network' | 'validation' | null }
+  error: {
+    message: string | null
+    type: 'network' | 'validation' | null
+    /** What the UI phrases for the user, see `AssetValidationReason` */
+    reason?: AssetValidationReason | null
+  }
+  /**
+   * Metadata of a valid ERC-721 collection, so it can be previewed before the
+   * user adds it. Not set for ERC-20 tokens.
+   */
+  collection?: {
+    name: string | null
+    symbol: string | null
+  }
 }

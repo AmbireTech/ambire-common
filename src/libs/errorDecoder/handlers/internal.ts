@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
 
 const CONNECTIVITY_REASONS = ['Failed to fetch', 'NetworkError', 'Failed to load']

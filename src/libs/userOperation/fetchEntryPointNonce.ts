@@ -8,7 +8,6 @@ import { RPCProvider } from '../../interfaces/provider'
 export async function fetchNonce(account: Account, provider: RPCProvider): Promise<bigint | null> {
   const epInterface = new Interface(entryPointAbi)
   const failure = () => {
-    // eslint-disable-next-line no-console
     console.error('unable to fetch the entry point nonce, estimateBundler')
     return null
   }

@@ -1,6 +1,3 @@
-/* eslint-disable class-methods-use-this */
-/* eslint-disable no-console */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 import { BICONOMY, BUNDLER } from '../../consts/bundlers'
 import { Network } from '../../interfaces/network'
 import { Bundler } from './bundler'

@@ -1,5 +1,5 @@
 import { AccountState } from '../portfolio/interfaces'
-/* eslint-disable @typescript-eslint/no-use-before-define */
+
 import { PORTFOLIO_STATE } from '../portfolio/testData'
 import { calculateSelectedAccountPortfolio, stripPortfolioState } from './selectedAccount'
 

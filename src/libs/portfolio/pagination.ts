@@ -1,18 +1,8 @@
-import { CollectionResult, MetaData, TokenError, TokenResult } from './interfaces'
+import { MetaData, TokenError } from './interfaces'
 
-export function paginate(input: string[] | [string, bigint[]][], limit: number): any[][] {
-  const pages = []
-  let from = 0
-  for (let i = 1; i <= Math.ceil(input.length / limit); i++) {
-    pages.push(input.slice(from, i * limit))
-    from += limit
-  }
-  return pages
-}
-
-export function flattenResults(
-  everything: Promise<[[string, TokenResult | CollectionResult][], MetaData][]>[]
-): Promise<[[TokenError, TokenResult | CollectionResult][], MetaData | {}]> {
+export function flattenResults<T>(
+  everything: Promise<[[string, T][], MetaData][]>[]
+): Promise<[[TokenError, T][], MetaData | {}]> {
   return Promise.all(everything).then((results) => {
     if (!results || !results.length) {
       return [[], {}]

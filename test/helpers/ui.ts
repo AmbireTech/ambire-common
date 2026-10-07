@@ -46,7 +46,8 @@ const mockUiManager = (eventEmitter?: EventEmitter) => {
         sendToastMessage: () => {},
         sendUiMessage: () => {},
         sendNavigateMessage: () => {}
-      }
+      },
+      resolveViewRoute: () => Promise.resolve(null)
     },
     getWindowId: () => windowId,
     eventEmitter: event

@@ -1,25 +1,68 @@
 import { getAddress, isAddress } from 'ethers'
 
-import { IDomainsController } from '../../interfaces/domains'
+import { Contacts } from '@/interfaces/addressBook'
+
+import EmittableError from '../../classes/EmittableError'
+import {
+  Domains,
+  ExtraReverseData,
+  IDomainsController,
+  ResolvedReverseEntry,
+  ReverseLookupOptions
+} from '../../interfaces/domains'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
+import { Network } from '../../interfaces/network'
 import { RPCProviders } from '../../interfaces/provider'
-import { getEnsAvatar, resolveENSDomain, reverseLookupEns } from '../../services/ensDomains'
+import { IStorageController } from '../../interfaces/storage'
+import { IVerificationController } from '../../interfaces/verification'
+// Import directly from ensDomains.ts, not the barrel (./index.ts). With tslib 2,
+// `export *` re-exports become getter-only bindings that jest.spyOn cannot override,
+// so domains.test.ts must spy on this same direct-file module instance.
+import { NameExpiry, ReverseLookupResult } from '../../services/ensDomains/ensDomains'
+import {
+  DEFAULT_RESOLVERS,
+  getPrimaryName,
+  isNameExpiryStale,
+  matchNameResolver,
+  NameResolver,
+  NameServiceId,
+  ResolveContext,
+  ResolvedNames
+} from '../../services/nameResolvers'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
-
-interface Domains {
-  [address: string]: {
-    ens: string | null
-    ensAvatar?: string | null
-    createdAt?: number
-    updatedAt?: number
-    updateFailedAt?: number
-  }
-}
 
 // 15 minutes
 export const PERSIST_DOMAIN_FOR_IN_MS = 15 * 60 * 1000
 export const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000 // 5 minutes
+
+const REVERSE_LOOKUP_TIMEOUT_MS = 15000
+const RESOLUTION_VERIFY_TIMEOUT_MS = 15000
+
+/**
+ * Only an `EmittableError`'s message is safe to show the user verbatim; it flags a deliberate,
+ * user-facing resolution failure (a resolution mismatch or a disabled network for the owning
+ * service). Every other failure (RPC/timeout) is a plain Error and surfaces the generic message.
+ */
+const getUserFacingResolutionError = (error: any) =>
+  error instanceof EmittableError ? error.message : undefined
+
+export const PERSIST_EXPIRY_OF_SUBNAMES_FOR_IN_MS = 24 * 60 * 60 * 1000
+// Once a name is within the warn window, re-poll its expiry at most this often to catch a renewal.
+export const PERSIST_EXPIRY_FOR_IF_CLOSE_TO_DEADLINE_IN_MS = 1 * 60 * 60 * 1000
+
+/**
+ * Keep the cached expiry only while the primary name it belongs to is unchanged; otherwise drop it
+ * so it refetches. Expiry tracks the primary name, so a change of primary (its name or the service
+ * that owns it) invalidates the cached value regardless of which service is expirable.
+ */
+const carryOverExpiry = (existing: Domains[string] | undefined, nextNames: ResolvedNames) => {
+  const previous = getPrimaryName(existing?.names ?? {})
+  const next = getPrimaryName(nextNames)
+
+  return previous?.id === next?.id && previous?.name === next?.name ? existing?.expiry : undefined
+}
 
 /**
  * Domains controller- responsible for handling the reverse lookup of addresses to ENS names.
@@ -28,57 +71,302 @@ export const PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS = 5 * 60 * 1000 // 5 minutes
 export class DomainsController extends EventEmitter implements IDomainsController {
   #providers: RPCProviders = {}
 
+  #verification?: IVerificationController
+
   #defaultNetworksMode: 'mainnet' | 'testnet' = 'mainnet'
+
+  #storage?: IStorageController
+
+  #featureFlags?: IFeatureFlagsController
+
+  /** Name services the controller resolves against. Defaults to the built-in set; overridable for tests. */
+  #resolvers: NameResolver[]
+
+  #getNetwork: (chainId: bigint) => Network | undefined
 
   /** Stores ENS names, avatars, and metadata (timestamps) indexed by account address */
   domains: Domains = {}
 
   /** Maps domain names to account addresses; necessary because the 'domains' state
    * only indexes by address, making getting an address for an existing domain name inefficient.
+   * And is also problematic if a domain name that has been resolved doesn't have a corresponding address
+   * (because no one owns it). We don't want to keep trying to resolve it every time.
    */
-  ensToAddress: { [ensName: string]: string } = {}
+  domainToAddresses: {
+    [domain: string]: {
+      address: string | undefined
+      type: NameServiceId
+    }
+  } = {}
 
   loadingAddresses: string[] = []
 
   resolveDomainsStatus: { [domain: string]: 'LOADING' | 'RESOLVED' | 'FAILED' | undefined } = {}
 
+  resolveDomainsErrors: { [domain: string]: string | undefined } = {}
+
+  verifiedDomainsStatus: { [domain: string]: 'VERIFIED' | undefined } = {}
+
   #reverseLookupPromises: { [address: string]: Promise<void> | undefined } = {}
+
+  #persisting = false
+
+  #persistScheduled = false
 
   constructor({
     eventEmitterRegistry,
     providers,
-    defaultNetworksMode
+    verification,
+    defaultNetworksMode,
+    storage,
+    featureFlags,
+    resolvers,
+    getNetwork
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     providers: RPCProviders
+    verification?: IVerificationController
     defaultNetworksMode?: 'mainnet' | 'testnet'
+    // Not needed for rewards/benzin as they are used for persistence and privacy opt-outs,
+    // which are not relevant there
+    storage?: IStorageController
+    featureFlags?: IFeatureFlagsController
+    resolvers?: NameResolver[]
+    getNetwork: (chainId: bigint) => Network | undefined
   }) {
     super(eventEmitterRegistry)
 
     this.#providers = providers
+    this.#verification = verification
     if (defaultNetworksMode) this.#defaultNetworksMode = defaultNetworksMode
+    this.#storage = storage
+    this.#featureFlags = featureFlags
+    this.#resolvers = resolvers ?? DEFAULT_RESOLVERS
+    this.#getNetwork = getNetwork
   }
 
-  async batchReverseLookup(addresses: string[]) {
-    const filteredAddresses = addresses.filter((address) => isAddress(address))
-    await Promise.all(filteredAddresses.map((address) => this.reverseLookup(address, false)))
+  #isNetworkEnabled(chainId: bigint): boolean {
+    const network = this.#getNetwork(chainId)
+    return !!network && !network.disabled
+  }
+
+  /**
+   * Initializes the controller with the data persisted in storage
+   * As the domains in storage may be from one time requests in sign message/sign account op, we don't want
+   * to load them all in a public variable which will be sent to the UI. Instead, we filter only the domains
+   * that are in the address book, which includes accounts and address book contacts
+   */
+  async init(contacts: Contacts) {
+    if (!this.#storage) return
+
+    let domainsFromStorage: Domains = {}
+
+    try {
+      // The stored shape is normalized to the current one by a StorageController migration.
+      domainsFromStorage = await this.#storage.get('domainsCache', {})
+    } catch (error: any) {
+      this.emitError({
+        message:
+          'Something went wrong when loading the Domains cache. Please try again or contact support if the problem persists.',
+        level: 'silent',
+        error
+      })
+    }
+
+    const domains: Domains = {}
+
+    for (const [addressInDomains, data] of Object.entries(domainsFromStorage)) {
+      if (!data) continue
+
+      const isExpired = data.expiry && data.expiry.gracePeriodEndsAt < Date.now()
+
+      if (isExpired) {
+        // Drop the expired ENS data (but keep names from other services)
+        data.names.ens = null
+        delete data.avatar
+        delete data.expiry
+        // If we don't delete it the update may be skipped if it's within the TTL
+        delete data.updatedAt
+      }
+
+      const isInContacts = contacts.some(({ address }) => address === addressInDomains)
+      if (isInContacts) domains[addressInDomains] = data
+    }
+
+    this.domains = domains
+
+    this.emitUpdate()
+  }
+
+  get #keepEnsProfilesUpToDate() {
+    return !!this.#featureFlags?.isFeatureEnabled('keepEnsProfilesUpToDate')
+  }
+
+  /** Standalone apps without privacy controls preserve their existing avatar behavior. */
+  get #shouldResolveAvatars() {
+    return !this.#featureFlags || this.#keepEnsProfilesUpToDate
+  }
+
+  /** Resolvers enabled for the current feature-flag state */
+  get #activeResolvers(): NameResolver[] {
+    const featureFlags = this.#featureFlags
+    return this.#resolvers.filter(
+      (resolver) =>
+        !resolver.featureFlag ||
+        !featureFlags ||
+        featureFlags.isFeatureEnabled(resolver.featureFlag)
+    )
+  }
+
+  #context(): ResolveContext {
+    return {
+      getProvider: (chainId: string) =>
+        this.#isNetworkEnabled(BigInt(chainId)) ? this.#providers[chainId] : undefined,
+      networkMode: this.#defaultNetworksMode
+    }
+  }
+
+  #resolverById(id: NameServiceId): NameResolver | undefined {
+    return this.#resolvers.find((resolver) => resolver.id === id)
+  }
+
+  /**
+   * Persists domains in storage. Writing in storage concurrently is not a good practice,
+   * but using a full-blown queue is overkill and not applicable for the domains controller as we
+   * are always storing this.domains. That's why this method awaits the running call (if any), skips
+   * any intermediary calls, and queues the last one (e.g., if 5 calls are made, the running one is awaited and only
+   * the fifth one is executed afterwards)
+   */
+  async #persistDomains() {
+    if (!this.#storage) return
+
+    if (this.#persisting) {
+      this.#persistScheduled = true
+      return
+    }
+
+    this.#persisting = true
+    try {
+      await this.#storage.set('domainsCache', this.domains)
+    } catch (e) {
+      console.warn('domains: failed to persist domains cache', e)
+    } finally {
+      this.#persisting = false
+      if (this.#persistScheduled) {
+        this.#persistScheduled = false
+        void this.#persistDomains()
+      }
+    }
+  }
+
+  /**
+   * A resolve context backed by the Colibri verifier providers instead of the app's RPC providers.
+   * Resolving a domain through it re-runs the exact same service against Colibri's proven state.
+   * A service whose chain has no ready verifier (e.g. Namoshi on Citrea) gets `undefined` here, so
+   * its `resolve` returns null and verification is skipped rather than special-cased per service.
+   */
+  #verificationContext(): ResolveContext {
+    return {
+      getProvider: (chainId: string) =>
+        this.#verification?.getReadyProvider(BigInt(chainId)) ?? undefined,
+      networkMode: this.#defaultNetworksMode
+    }
+  }
+
+  /**
+   * Cross-checks an RPC-resolved address by re-resolving the domain through the same service against
+   * Colibri's proven state. Returns true on a match, false when no ready verifier exists for the
+   * service's chain (verification is skipped), and throws a user-facing error on a genuine mismatch.
+   */
+  async #verifyResolvedAddress(resolver: NameResolver, domain: string, address: string) {
+    const verified = await withTimeout(
+      () => resolver.resolve(domain, this.#verificationContext(), { resolveAvatar: false }),
+      { timeoutMs: RESOLUTION_VERIFY_TIMEOUT_MS }
+    )
+
+    if (!verified) return false
+
+    if (!verified.address && !address) return false
+    if (verified.address && address && getAddress(verified.address) === getAddress(address)) {
+      return true
+    }
+
+    throw new EmittableError({
+      level: 'silent',
+      message: `${resolver.label} resolution mismatch for ${domain}: RPC returned ${address}, Colibri returned ${verified.address}`
+    })
+  }
+
+  async #setResolveDomainFailure(domain: string, error: any) {
+    const message = getUserFacingResolutionError(error)
+
+    if (message) {
+      this.resolveDomainsErrors = {
+        ...this.resolveDomainsErrors,
+        [domain]: message
+      }
+    } else {
+      delete this.resolveDomainsErrors[domain]
+    }
+    this.resolveDomainsStatus[domain] = 'FAILED'
+    await this.forceEmitUpdate()
+    this.resolveDomainsStatus[domain] = undefined
+  }
+
+  async batchReverseLookup(addresses: string[], updateExpiryForAddresses?: string[]) {
+    const normalizedAddresses = this.#normalizeAddresses(addresses)
+    const addressesToLookup = this.#getAddressesToLookup(normalizedAddresses)
+
+    if (addressesToLookup.length) {
+      const batchPromise = this.#reverseLookup(
+        addressesToLookup,
+        false,
+        updateExpiryForAddresses
+      ).finally(() => {
+        addressesToLookup.forEach((address) => {
+          this.#reverseLookupPromises[address] = undefined
+        })
+      })
+
+      addressesToLookup.forEach((address) => {
+        this.#reverseLookupPromises[address] = batchPromise
+      })
+    }
+
+    // Await both the freshly started lookups and any lookups for the requested
+    // addresses that are already in flight (e.g. from an earlier batch or a
+    // single reverseLookup), so callers never resolve before the data is ready.
+    const pendingPromises = normalizedAddresses
+      .map((address) => this.#reverseLookupPromises[address])
+      .filter((promise): promise is Promise<void> => !!promise)
+
+    if (!pendingPromises.length) return
+
+    await Promise.all(pendingPromises)
 
     this.emitUpdate()
   }
 
   /**
-   * Resolves an ENS domain and persists it to state only if resolution succeeds.
+   * Resolves a domain and persists it to state only if resolution succeeds.
    */
-  async resolveDomain({ domain, bip44Item }: { domain: string; bip44Item?: number[][] }) {
-    const ethereumProvider =
-      this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
+  async resolveDomain({ domain }: { domain: string }) {
+    const resolver = matchNameResolver(this.#activeResolvers, domain)
 
-    if (!ethereumProvider) {
-      this.emitError({
-        error: new Error('domains.resolveDomain: Ethereum provider is not available'),
-        message: 'The RPC provider for Ethereum is not available.',
-        level: 'major'
-      })
+    // No service owns this domain (unsupported TLD, or the owning service is disabled). Mark it
+    // failed and emit so a UI awaiting this resolution settles instead of hanging forever. With the
+    // default resolvers this never happens (ENS is the always-active fallback), but a resolver set
+    // without a fallback would otherwise leave the caller's promise unresolved.
+
+    // @TODO: Consider persisting a "no owner" result to avoid repeated lookups for unsupported domains, but only if the domain is valid (e.g., not a random string). Otherwise, we could end up caching a lot of junk.
+    if (!resolver) {
+      await this.#setResolveDomainFailure(domain, new Error(`No resolver for ${domain}`))
+      return
+    }
+
+    const name = resolver.normalize(domain)
+    if (!name) {
+      await this.#setResolveDomainFailure(domain, new Error(`Invalid domain name: ${domain}`))
       return
     }
 
@@ -90,144 +378,365 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
 
     this.resolveDomainsStatus[domain] = 'LOADING'
+    delete this.resolveDomainsErrors[domain]
+    delete this.verifiedDomainsStatus[domain]
     await this.forceEmitUpdate()
 
-    if (this.ensToAddress[domain]) {
-      this.resolveDomainsStatus[domain] = 'RESOLVED'
-      await this.forceEmitUpdate()
-      this.resolveDomainsStatus[domain] = undefined
+    // A fresh resolution needs the owning service's network.
+    const requiredChainId = resolver.requiredChainId(this.#defaultNetworksMode)
+    if (requiredChainId && !this.#isNetworkEnabled(BigInt(requiredChainId))) {
+      const network = this.#getNetwork(BigInt(requiredChainId))
+      await this.#setResolveDomainFailure(
+        domain,
+        new EmittableError({
+          level: 'silent',
+          message: `${network?.name ?? 'The required network'} is disabled. Enable it to resolve ${
+            resolver.label
+          } domains.`
+        })
+      )
       return
     }
 
-    await resolveENSDomain({
-      domain,
-      bip44Item,
-      getResolver: (name) => ethereumProvider.getResolver(name)
-    })
-      .then(async ({ address, avatar }) => {
-        if (address) {
-          this.#saveResolvedDomain({ address, ensAvatar: avatar, domain, type: 'ens' })
+    await resolver
+      .resolve(name, this.#context(), { resolveAvatar: this.#shouldResolveAvatars })
+      .then(async (result) => {
+        if (result?.address) {
+          // Verify before caching, so a mismatch throws into the catch and nothing bad is persisted.
+          const isVerified = await this.#verifyResolvedAddress(resolver, name, result.address)
+          if (isVerified) this.verifiedDomainsStatus[domain] = 'VERIFIED'
+
+          this.domainToAddresses[domain] = {
+            address: getAddress(result.address),
+            type: resolver.id
+          }
+          this.#saveResolvedDomain({
+            address: result.address,
+            avatar: this.#shouldResolveAvatars ? result.avatar : null,
+            expiry: result.expiry,
+            domain: name,
+            type: resolver.id
+          })
         }
         this.resolveDomainsStatus[domain] = 'RESOLVED'
+        delete this.resolveDomainsErrors[domain]
         await this.forceEmitUpdate()
         this.resolveDomainsStatus[domain] = undefined
+
+        // Do it after updating the status to not slow down the UI
+        if (result?.address) {
+          await this.#persistDomains()
+        }
       })
       .catch(async (e) => {
-        console.error(`Failed to resolve ENS domain: ${domain}`, e)
-        this.resolveDomainsStatus[domain] = 'FAILED'
-        await this.forceEmitUpdate()
-        this.resolveDomainsStatus[domain] = undefined
+        console.error(`Failed to resolve domain: ${domain}`, e)
+        this.emitError({
+          error: e,
+          message: `${resolver.label} resolution failed for ${domain}: ${e?.message || e}`,
+          level: 'silent'
+        })
+        await this.#setResolveDomainFailure(domain, e)
       })
   }
 
   /**
-   * Saves an already resolved ENS name for an address.
+   * Saves an already resolved name for an address. Avatar and expiry track the primary name, so they
+   * are only overwritten when the just-resolved service is the primary one.
    */
   #saveResolvedDomain({
     address,
-    ensAvatar,
+    avatar,
+    expiry,
     domain,
     type
   }: {
     address: string
     domain: string
-    ensAvatar: string | null
-    type: 'ens'
+    avatar: string | null
+    expiry?: NameExpiry | null
+    type: NameServiceId
   }) {
     const checksummedAddress = getAddress(address)
-    const { ens: prevEns } = this.domains[checksummedAddress] || { ens: null }
-
     const existing = this.domains[checksummedAddress]
     const now = Date.now()
 
-    this.ensToAddress[domain] = checksummedAddress
+    const names: ResolvedNames = { ...existing?.names, [type]: domain }
+    const primary = getPrimaryName(names)
+    const isPrimary = primary?.id === type
+
     this.domains[checksummedAddress] = {
-      ensAvatar: type === 'ens' ? ensAvatar : (existing?.ensAvatar ?? null),
-      ens: type === 'ens' ? domain : prevEns,
+      names,
+      avatar: isPrimary ? avatar : (existing?.avatar ?? null),
+      expiry: isPrimary
+        ? expiry !== undefined
+          ? expiry
+          : carryOverExpiry(existing, names)
+        : (existing?.expiry ?? undefined),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now
     }
   }
 
-  async reverseLookup(address: string, emitUpdate = true) {
-    if (this.#reverseLookupPromises[address]) {
-      await this.#reverseLookupPromises[address]
+  async reverseLookup(address: string, emitUpdate = true, opts?: ReverseLookupOptions) {
+    if (!isAddress(address)) return
 
+    const checksummedAddress = getAddress(address)
+
+    // If a lookup for this address is already in flight (e.g. via
+    // batchReverseLookup or a concurrent reverseLookup), await it instead of
+    // starting a duplicate, so the caller resolves only once the data is ready.
+    const inFlightPromise = this.#reverseLookupPromises[checksummedAddress]
+    if (inFlightPromise) {
+      await inFlightPromise
       return
     }
 
-    this.#reverseLookupPromises[address] = this.#reverseLookup(address, emitUpdate).finally(() => {
-      this.#reverseLookupPromises[address] = undefined
+    const addressToLookup = this.#getAddressesToLookup([checksummedAddress], opts)[0]
+
+    if (!addressToLookup) return
+
+    this.#reverseLookupPromises[addressToLookup] = this.#reverseLookup(
+      [addressToLookup],
+      emitUpdate,
+      opts?.updateExpiry ? [addressToLookup] : undefined
+    ).finally(() => {
+      this.#reverseLookupPromises[addressToLookup] = undefined
     })
 
-    await this.#reverseLookupPromises[address]
+    await this.#reverseLookupPromises[addressToLookup]
+  }
+
+  #normalizeAddresses(addresses: string[]) {
+    return [
+      ...new Set(
+        addresses
+          .map((address) => {
+            try {
+              return getAddress(address)
+            } catch {
+              return undefined
+            }
+          })
+          .filter((v): v is string => !!v)
+      )
+    ]
+  }
+
+  #isPastTtl(entry: Domains[string] | undefined) {
+    if (!entry) return true
+
+    if (entry?.updateFailedAt)
+      return Date.now() - entry.updateFailedAt > PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
+
+    return Date.now() - (entry?.updatedAt ?? 0) > PERSIST_DOMAIN_FOR_IN_MS
+  }
+
+  #getAddressesToLookup(addresses: string[], opts?: ReverseLookupOptions) {
+    // The `keepEnsProfilesUpToDate` opt-out (off by default = privacy) forces TTL
+    // refreshes everywhere; otherwise the per-call mode decides, defaulting to `whenStale`.
+    const mode = this.#keepEnsProfilesUpToDate
+      ? 'whenStale'
+      : (opts?.privacyUpdateMode ?? 'whenStale')
+
+    if (mode === 'never') return []
+
+    return this.#normalizeAddresses(addresses).filter((checksummedAddress) => {
+      const existing = this.domains[checksummedAddress]
+
+      return (
+        this.#isPastTtl(existing) &&
+        !this.loadingAddresses.includes(checksummedAddress) &&
+        !this.#reverseLookupPromises[checksummedAddress]
+      )
+    })
+  }
+
+  #setLookupFailure(address: string) {
+    const hasBeenResolvedOnce = !!this.domains[address]?.createdAt
+
+    if (hasBeenResolvedOnce) {
+      this.domains[address]!.updateFailedAt = Date.now()
+    } else {
+      this.domains[address] = { names: {}, updateFailedAt: Date.now() }
+    }
   }
 
   /**
-   * Resolves the ENS names for an address if such exist.
+   * Resolves names for one or multiple addresses across every enabled service.
    */
-  async #reverseLookup(address: string, emitUpdate = true) {
-    const ethereumProvider =
-      this.#providers[this.#defaultNetworksMode === 'mainnet' ? '1' : '11155111']
+  async #reverseLookup(
+    addressesToLookup: string[],
+    emitUpdate = true,
+    updateExpiryForAddresses?: string[]
+  ) {
+    if (!addressesToLookup.length) return
 
-    if (!ethereumProvider) {
-      this.emitError({
-        error: new Error('domains.reverseLookup: Ethereum provider is not available'),
-        message: 'The RPC provider for Ethereum is not available.',
-        level: 'major'
-      })
-      return
-    }
-    const checksummedAddress = getAddress(address)
+    const ctx = this.#context()
+    // Skip a service whose network is disabled: without a provider its batch would only fail and
+    // retry forever. Dropping it silently lets the other services resolve (reverse lookup has no
+    // user-facing error).
+    const reverseResolvers = this.#activeResolvers.filter((resolver) => {
+      if (!resolver.capabilities.reverse) return false
+      const requiredChainId = resolver.requiredChainId(this.#defaultNetworksMode)
+      return !requiredChainId || this.#isNetworkEnabled(BigInt(requiredChainId))
+    })
 
-    const hasLastUpdateFailed = !!this.domains[checksummedAddress]?.updateFailedAt
-
-    const hasExpired = hasLastUpdateFailed
-      ? Date.now() - (this.domains[checksummedAddress]?.updateFailedAt ?? 0) >
-        PERSIST_DOMAIN_FOR_FAILED_LOOKUP_IN_MS
-      : Date.now() - (this.domains[checksummedAddress]?.updatedAt ?? 0) > PERSIST_DOMAIN_FOR_IN_MS
-
-    if (!hasExpired || this.loadingAddresses.includes(checksummedAddress)) return
-
-    this.loadingAddresses.push(checksummedAddress)
+    this.loadingAddresses.push(...addressesToLookup)
     this.emitUpdate()
 
     try {
-      let ensAvatar: string | undefined | null
+      // One batched reverse lookup per active service; each resolver uses its own chain/provider.
+      const byResolver = await Promise.all(
+        reverseResolvers.map((resolver) =>
+          withTimeout(() => resolver.reverse(addressesToLookup, ctx), {
+            timeoutMs: REVERSE_LOOKUP_TIMEOUT_MS
+          })
+            .then((result) => ({ resolver, result: result ?? {} }))
+            .catch(
+              () =>
+                ({
+                  resolver,
+                  result: Object.fromEntries(
+                    addressesToLookup.map((address) => [address, { name: null, failed: true }])
+                  )
+                }) as { resolver: NameResolver; result: ReverseLookupResult }
+            )
+        )
+      )
 
-      const ens = await withTimeout(() => reverseLookupEns(checksummedAddress, ethereumProvider))
+      // The highest-priority active service drives the per-address failure state (retry on failure).
+      const primaryResolverId = reverseResolvers[0]?.id
 
-      if (ens) {
-        // We need the ens name to resolve the avatar
-        ensAvatar = await withTimeout(() => getEnsAvatar(ens, ethereumProvider))
-        this.ensToAddress[ens] = checksummedAddress
-      }
+      const resolved: ResolvedReverseEntry[] = addressesToLookup.map((address) => {
+        const primaryEntry = byResolver.find(({ resolver }) => resolver.id === primaryResolverId)
+          ?.result[address]
+        if (!primaryEntry || primaryEntry.failed) return { address, failed: true as const }
 
-      const now = Date.now()
-      const existing = this.domains[checksummedAddress]
-      this.domains[checksummedAddress] = {
-        ens,
-        ensAvatar,
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now
+        const names: ResolvedNames = {}
+        byResolver.forEach(({ resolver, result }) => {
+          const entry = result[address]
+          names[resolver.id] = entry && !entry.failed ? entry.name : null
+        })
+
+        return { address, failed: false as const, names }
+      })
+
+      // Avatars (and, for the selected account, the ENS expiry) can't be resolved in the reverse-lookup
+      // batch - avatars need extra NFT/ipfs handling, expiry needs a separate registrar read. Resolve
+      // them per address here. It's not a big deal, since most accounts won't have names.
+      const extraDataByAddress = Object.fromEntries(
+        await Promise.all(
+          resolved.map(
+            async (entry) =>
+              [
+                entry.address,
+                await this.#resolveExtraData(
+                  entry,
+                  ctx,
+                  !!updateExpiryForAddresses?.includes(entry.address)
+                )
+              ] as const
+          )
+        )
+      )
+
+      for (const entry of resolved) {
+        if (entry.failed) {
+          this.#setLookupFailure(entry.address)
+          continue
+        }
+
+        const { address, names } = entry
+        const primary = getPrimaryName(names)
+        if (primary) this.domainToAddresses[primary.name] = { address, type: primary.id }
+
+        const now = Date.now()
+        const existing = this.domains[address]
+        const extra = extraDataByAddress[address]
+        this.domains[address] = {
+          names,
+          avatar: extra?.avatar ?? null,
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+          expiry: extra?.expiry ?? carryOverExpiry(existing, names)
+        }
       }
     } catch (e: any) {
-      // Fail silently with a console error, no biggie, since that would get retried
-      console.warn('reverse ENS lookup failed', e)
+      console.warn('reverse name lookup failed', e)
 
-      const hasBeenResolvedOnce = !!this.domains[checksummedAddress]?.createdAt
-      if (hasBeenResolvedOnce) {
-        this.domains[checksummedAddress]!.updateFailedAt = Date.now()
-      } else {
-        this.domains[checksummedAddress] = { ens: null, updateFailedAt: Date.now() }
-      }
+      addressesToLookup.forEach((address) => this.#setLookupFailure(address))
+    } finally {
+      this.loadingAddresses = this.loadingAddresses.filter(
+        (loadingAddress) => !addressesToLookup.includes(loadingAddress)
+      )
+
+      if (emitUpdate) this.emitUpdate()
+
+      // Don't slow down the UI
+      await this.#persistDomains()
     }
+  }
 
-    this.loadingAddresses = this.loadingAddresses.filter(
-      (loadingAddress) => loadingAddress !== checksummedAddress
-    )
+  /**
+   * Resolves the avatar (and, when requested, the expiry) for the primary name of a reverse-lookup
+   * result, using that name's own service.
+   */
+  async #resolveExtraData(
+    entry: ResolvedReverseEntry,
+    ctx: ResolveContext,
+    updateExpiry: boolean
+  ): Promise<ExtraReverseData> {
+    if (entry.failed) return { avatar: null, expiry: undefined }
 
-    if (emitUpdate) this.emitUpdate()
+    const primary = getPrimaryName(entry.names)
+    if (!primary) return { avatar: null, expiry: undefined }
+
+    const resolver = this.#resolverById(primary.id)
+    if (!resolver) return { avatar: null, expiry: undefined }
+
+    const [avatar, expiry] = await Promise.all([
+      this.#shouldResolveAvatars && resolver.capabilities.avatar
+        ? withTimeout(() => resolver.getAvatar(primary.name, ctx), {
+            timeoutMs: REVERSE_LOOKUP_TIMEOUT_MS
+          }).catch(() => null)
+        : Promise.resolve(null),
+      updateExpiry && resolver.capabilities.expiry
+        ? this.#fetchExpiryIfStale(entry.address, primary.name, resolver, ctx)
+        : Promise.resolve(undefined)
+    ])
+
+    return { avatar, expiry }
+  }
+
+  /**
+   * Fetches a name's expiry only when the cached value is missing or stale, per the resolver's own
+   * refresh policy. Returns `undefined` when the cache is still good or the read fails, so the caller keeps the cached value.
+   */
+  async #fetchExpiryIfStale(
+    checksummedAddress: string,
+    name: string,
+    resolver: NameResolver,
+    ctx: ResolveContext
+  ): Promise<NameExpiry | null | undefined> {
+    if (!resolver.getExpiry) return undefined
+
+    const cachedExpiry = this.domains[checksummedAddress]?.expiry
+    const shouldRefetch = resolver.shouldRefetchExpiry
+      ? resolver.shouldRefetchExpiry(name, cachedExpiry)
+      : isNameExpiryStale(cachedExpiry)
+    if (!shouldRefetch) return undefined
+
+    try {
+      return await resolver.getExpiry(name, ctx)
+    } catch (e) {
+      this.emitError({
+        error: e as Error,
+        message: `Failed to fetch expiry for ${name}`,
+        level: 'silent'
+      })
+
+      return undefined
+    }
   }
 
   toJSON() {

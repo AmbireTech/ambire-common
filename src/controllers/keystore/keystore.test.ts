@@ -1,11 +1,9 @@
 /* eslint-disable @typescript-eslint/no-floating-promises */
-/* eslint-disable class-methods-use-this */
-/* eslint-disable @typescript-eslint/no-useless-constructor */
-/* eslint-disable max-classes-per-file */
 
-import { ethers, hexlify, randomBytes, Wallet } from 'ethers'
+import { ethers, Wallet } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
+import { InternalSigner, LedgerSigner } from '@test/keystore'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
@@ -14,91 +12,13 @@ import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
-import { Hex } from '../../interfaces/hex'
-import {
-  ExternalKey,
-  IKeystoreController,
-  InternalKey,
-  Key,
-  KeystoreSignerInterface
-} from '../../interfaces/keystore'
-import { getPrivateKeyFromSeed } from '../../libs/keyIterator/keyIterator'
+import { ExternalKey, IKeystoreController, InternalKey } from '../../interfaces/keystore'
+import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
+import wait from '../../utils/wait'
 import { StorageController } from '../storage/storage'
 import { UiController } from '../ui/ui'
 import { KeystoreController } from './keystore'
-
-class InternalSigner {
-  key
-
-  privKey
-
-  constructor(_key: Key, _privKey?: string) {
-    this.key = _key
-    this.privKey = _privKey
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
-    return {
-      yParity: '0x00',
-      r: hexlify(randomBytes(32)) as Hex,
-      s: hexlify(randomBytes(32)) as Hex
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
-    throw new Error('not supported')
-  }
-}
-
-class LedgerSigner {
-  key
-
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  constructor(_key: Key) {
-    this.key = _key
-  }
-
-  signRawTransaction() {
-    return Promise.resolve('')
-  }
-
-  signTypedData() {
-    return Promise.resolve('')
-  }
-
-  signMessage() {
-    return Promise.resolve('')
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  sign7702: KeystoreSignerInterface['sign7702'] = async (s) => {
-    return {
-      yParity: '0x00',
-      r: hexlify(randomBytes(32)) as Hex,
-      s: hexlify(randomBytes(32)) as Hex
-    }
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  signTransactionTypeFour: KeystoreSignerInterface['signTransactionTypeFour'] = async (s) => {
-    throw new Error('not supported')
-  }
-}
 
 const uiManager = mockUiManager().uiManager
 
@@ -120,7 +40,7 @@ describe('KeystoreController', () => {
     expect(keystore).toBeDefined()
   })
 
-  describe('Negative cases', () => {
+  describe('Negative cases - before unlock', () => {
     suppressConsoleBeforeEach()
     test('should not unlock with non-existent secret (when no secrets exist)', async () => {
       await keystore.unlockWithSecret('password', pass)
@@ -140,7 +60,7 @@ describe('KeystoreController', () => {
     expect(await keystore.isReadyToStoreKeys).toBe(true)
   })
 
-  describe('Negative cases', () => {
+  describe('Negative cases - unlocked', () => {
     suppressConsoleBeforeEach()
     test('should not unlock with non-existent secret (when secrets exist)', async () => {
       await keystore.unlockWithSecret('playstation', '')
@@ -187,7 +107,7 @@ describe('KeystoreController', () => {
       {
         addr: new Wallet(privKey).address,
         label: 'Key 1',
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         privateKey: privKey,
         dedicatedToOneSA: false,
         meta: {
@@ -197,7 +117,7 @@ describe('KeystoreController', () => {
       {
         addr: new Wallet(privKey).address,
         label: 'Key 2',
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         privateKey: privKey,
         dedicatedToOneSA: false,
         meta: {
@@ -214,7 +134,7 @@ describe('KeystoreController', () => {
       {
         addr: new Wallet(anotherPrivateKeyNotAddedYet).address,
         label: 'Key 2',
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         privateKey: anotherPrivateKeyNotAddedYet,
         dedicatedToOneSA: false,
         meta: {
@@ -225,7 +145,7 @@ describe('KeystoreController', () => {
       {
         addr: new Wallet(anotherPrivateKeyNotAddedYet).address,
         label: 'Key 2',
-        type: 'internal' as 'internal',
+        type: 'internal' as const,
         privateKey: anotherPrivateKeyNotAddedYet,
         dedicatedToOneSA: false,
         meta: {
@@ -276,7 +196,7 @@ describe('KeystoreController', () => {
       // test key 1
       {
         addr: publicAddress,
-        type: 'trezor' as 'trezor',
+        type: 'trezor' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 1',
         meta: {
@@ -290,7 +210,7 @@ describe('KeystoreController', () => {
       // test key 2 with the same id (public address) as test key 1'
       {
         addr: publicAddress,
-        type: 'trezor' as 'trezor',
+        type: 'trezor' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 2',
         meta: {
@@ -308,7 +228,7 @@ describe('KeystoreController', () => {
       // test key 3
       {
         addr: anotherAddressNotAddedYet,
-        type: 'trezor' as 'trezor',
+        type: 'trezor' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 3',
         meta: {
@@ -322,7 +242,7 @@ describe('KeystoreController', () => {
       // test key 4 with the same private key as key 3',
       {
         addr: anotherAddressNotAddedYet,
-        type: 'trezor' as 'trezor',
+        type: 'trezor' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 4',
         meta: {
@@ -351,7 +271,7 @@ describe('KeystoreController', () => {
     const externalKeysToAddWithDuplicateOnes: ExternalKey[] = [
       {
         addr: keyPublicAddress,
-        type: 'trezor' as 'trezor',
+        type: 'trezor' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 1',
         meta: {
@@ -364,7 +284,7 @@ describe('KeystoreController', () => {
       },
       {
         addr: keyPublicAddress,
-        type: 'trezor' as 'trezor',
+        type: 'trezor' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 2',
         meta: {
@@ -377,7 +297,7 @@ describe('KeystoreController', () => {
       },
       {
         addr: keyPublicAddress,
-        type: 'ledger' as 'ledger',
+        type: 'ledger' as const,
         dedicatedToOneSA: false,
         label: 'Trezor Key 3',
         meta: {
@@ -418,7 +338,7 @@ describe('KeystoreController', () => {
     expect(internalSigner.key.addr).toEqual(keyPublicAddress)
   })
 
-  describe('Negative cases', () => {
+  describe('Negative cases - seeds', () => {
     suppressConsoleBeforeEach()
 
     test('should not get a signer', () => {
@@ -500,6 +420,218 @@ describe('KeystoreController', () => {
     expect(keystore.seeds[0]!.label).toBe('New Label')
     expect(keystore.seeds[0]!.hdPathTemplate).toBe(LEGACY_POPULAR_DERIVATION_TEMPLATE)
   })
+  it('getKeystoreSeed works', async () => {
+    const keyIterator = new KeyIterator(process.env.SEED)
+
+    const keystoreSeed = await keystore.getKeystoreSeed(keyIterator)
+
+    expect(keystoreSeed).toBeDefined()
+    expect(keystoreSeed?.seedPassphrase).toBeNull()
+    expect(keystoreSeed?.seed).toBeDefined()
+    expect(typeof keystoreSeed?.seed).toBe('object')
+  })
+})
+
+describe('KeystoreController recovery phrase backup state', () => {
+  let keystoreCtrl: IKeystoreController
+
+  beforeEach(async () => {
+    const storageCtrl = new StorageController(produceMemoryStore())
+    const uiCtrl = new UiController({ uiManager })
+    keystoreCtrl = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
+    await keystoreCtrl.addSecret('password', pass, '', false)
+    await keystoreCtrl.unlockWithSecret('password', pass)
+  })
+
+  test('a generated phrase is flagged as not backed up', async () => {
+    const tempSeed = await keystoreCtrl.generateTempSeed({})
+    expect(tempSeed.notBackedUp).toBe(true)
+
+    await keystoreCtrl.persistTempSeed()
+
+    expect(keystoreCtrl.seeds.length).toBe(1)
+    expect(keystoreCtrl.seeds[0]!.notBackedUp).toBe(true)
+  })
+
+  test('an imported phrase is not flagged, as the user has already seen it', async () => {
+    await keystoreCtrl.addTempSeed({
+      seed: process.env.SEED,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    await keystoreCtrl.persistTempSeed()
+
+    expect(keystoreCtrl.seeds[0]!.notBackedUp).toBeFalsy()
+  })
+
+  test('markSeedAsBackedUp clears the flag and does not touch other seeds', async () => {
+    await keystoreCtrl.generateTempSeed({})
+    await keystoreCtrl.persistTempSeed()
+    await keystoreCtrl.addTempSeed({
+      seed: process.env.SEED,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      notBackedUp: true
+    })
+    await keystoreCtrl.persistTempSeed()
+
+    expect(keystoreCtrl.seeds.length).toBe(2)
+    const [firstSeed, secondSeed] = keystoreCtrl.seeds
+
+    await keystoreCtrl.markSeedAsBackedUp(secondSeed!.id)
+
+    expect(keystoreCtrl.seeds.find((s) => s.id === secondSeed!.id)?.notBackedUp).toBe(false)
+    expect(keystoreCtrl.seeds.find((s) => s.id === firstSeed!.id)?.notBackedUp).toBe(true)
+  })
+
+  test('markSeedAsBackedUp is a no-op for an unknown phrase id', async () => {
+    await keystoreCtrl.generateTempSeed({})
+    await keystoreCtrl.persistTempSeed()
+
+    await keystoreCtrl.markSeedAsBackedUp('does-not-exist')
+
+    expect(keystoreCtrl.seeds[0]!.notBackedUp).toBe(true)
+  })
+})
+
+describe('KeystoreController signing authentication', () => {
+  let keystoreCtrl: IKeystoreController
+
+  beforeEach(async () => {
+    const storageCtrl = new StorageController(produceMemoryStore())
+    const uiCtrl = new UiController({ uiManager })
+    keystoreCtrl = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
+    await keystoreCtrl.addSecret('password', pass, '', false)
+    await keystoreCtrl.unlockWithSecret('password', pass)
+  })
+
+  test('the correct secret is confirmed and the keystore stays unlocked', async () => {
+    await keystoreCtrl.verifySecret('password', pass)
+
+    expect(keystoreCtrl.signingAuthResult).toMatchObject({ status: 'success', error: null })
+    expect(keystoreCtrl.isUnlocked).toBe(true)
+  })
+
+  // Two in a row are otherwise deeply identical, and the UI's reconciled state hands an unchanged
+  // result back as the same reference - so the screen never learns the second one happened
+  test('a second confirmation is distinguishable from the one before it', async () => {
+    await keystoreCtrl.verifySecret('password', pass)
+    const first = keystoreCtrl.signingAuthResult
+
+    await keystoreCtrl.verifySecret('password', pass)
+    const second = keystoreCtrl.signingAuthResult
+
+    expect(second?.status).toBe('success')
+    expect(second?.id).not.toBe(first?.id)
+  })
+
+  describe('a wrong secret', () => {
+    suppressConsoleBeforeEach()
+
+    test('is rejected without locking the keystore', async () => {
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+
+      expect(keystoreCtrl.signingAuthResult?.status).toBe('failed')
+      expect(keystoreCtrl.signingAuthResult?.error).toBe('Incorrect password. Please try again.')
+      // A failed confirmation must never lock the user out of the session they are already in
+      expect(keystoreCtrl.isUnlocked).toBe(true)
+    })
+
+    test('can be followed by the correct one', async () => {
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+      await keystoreCtrl.verifySecret('password', pass)
+
+      expect(keystoreCtrl.signingAuthResult).toMatchObject({ status: 'success', error: null })
+    })
+
+    test('two failures in a row are distinguishable from each other', async () => {
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+      const first = keystoreCtrl.signingAuthResult
+
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+      const second = keystoreCtrl.signingAuthResult
+
+      expect(second?.status).toBe('failed')
+      expect(second?.id).not.toBe(first?.id)
+    })
+
+    test('is rejected when the secret does not exist at all', async () => {
+      await keystoreCtrl.verifySecret('biometrics', pass)
+
+      expect(keystoreCtrl.signingAuthResult?.status).toBe('failed')
+      expect(keystoreCtrl.isUnlocked).toBe(true)
+    })
+  })
+
+  // The web throws a DOMException named OperationError, native WebCrypto throws whatever its
+  // cipher raised with no name to go by - what the cipher rejected with must not matter
+  describe('the cipher rejecting is a wrong secret whatever it threw', () => {
+    suppressConsoleBeforeEach()
+
+    test.each([
+      [
+        'a named DOMException',
+        Object.assign(new Error('decrypt failed'), { name: 'OperationError' })
+      ],
+      ['nothing to go by', new Error('CipherJob failed')]
+    ])('the platform throws %s', async (_, thrown) => {
+      const decryptSpy = jest.spyOn(crypto.subtle, 'decrypt').mockRejectedValue(thrown)
+
+      await keystoreCtrl.verifySecret('password', pass)
+
+      expect(keystoreCtrl.signingAuthResult?.status).toBe('failed')
+      expect(keystoreCtrl.signingAuthResult?.error).toBe('Incorrect password. Please try again.')
+
+      decryptSpy.mockRestore()
+    })
+  })
+
+  // Telling the user their password is wrong when the platform is what broke leaves them
+  // retrying a password that was right all along
+  describe('a platform failure is not reported as a wrong secret', () => {
+    suppressConsoleBeforeEach()
+
+    test('unlocking says something went wrong instead', async () => {
+      const importKeySpy = jest
+        .spyOn(crypto.subtle, 'importKey')
+        .mockRejectedValue(new Error('WebCrypto is unavailable'))
+
+      await keystoreCtrl.unlockWithSecret('password', pass)
+
+      expect(keystoreCtrl.errorMessage).not.toBe('Incorrect password. Please try again.')
+
+      importKeySpy.mockRestore()
+    })
+  })
+
+  describe('a verification leaves the unlock error alone', () => {
+    suppressConsoleBeforeEach()
+
+    // The two share `errorMessage`, so a failed fingerprint used to put "Incorrect password" on
+    // the password field of the screen behind it
+    test('a wrong secret is reported only through the result', async () => {
+      await keystoreCtrl.verifySecret('password', `${pass}1`)
+
+      expect(keystoreCtrl.signingAuthResult?.error).toBe('Incorrect password. Please try again.')
+      expect(keystoreCtrl.errorMessage).toBe('')
+    })
+
+    // Resetting used to clear `errorMessage` too, so opening a confirmation wiped an error the
+    // user had not read yet. A confirmation that actually passes still clears it, as it should.
+    test('resetting the result leaves an error the user has not read yet', async () => {
+      await keystoreCtrl.unlockWithSecret('password', `${pass}1`)
+      expect(keystoreCtrl.errorMessage).toBe('Incorrect password. Please try again.')
+
+      keystoreCtrl.resetSigningAuthResult()
+
+      expect(keystoreCtrl.errorMessage).toBe('Incorrect password. Please try again.')
+    })
+  })
+
+  test('resetSigningAuthResult clears the outcome', async () => {
+    await keystoreCtrl.verifySecret('password', pass)
+    keystoreCtrl.resetSigningAuthResult()
+
+    expect(keystoreCtrl.signingAuthResult).toBe(null)
+  })
 })
 
 describe('import/export with pub key test', () => {
@@ -551,5 +683,254 @@ describe('import/export with pub key test', () => {
         type: 'internal'
       })
     )
+  })
+})
+
+describe('accounts sync between two devices', () => {
+  const EXTERNAL_ADDR = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+  const exportingPass = 'exportingDevicePass'
+  const importingPass = 'importingDevicePass'
+
+  let exportingKeystore: IKeystoreController
+  let importingKeystore: IKeystoreController
+  let exportedSeedId: string
+
+  const uiCtrl = new UiController({ uiManager })
+
+  const createKeystore = () =>
+    new KeystoreController(
+      'default',
+      new StorageController(produceMemoryStore()),
+      keystoreSigners,
+      uiCtrl
+    )
+
+  // The in-memory store resolves writes immediately, which hides ordering a real
+  // (async) device store would expose
+  const withSlowWrites = (store: ReturnType<typeof produceMemoryStore>) => ({
+    ...store,
+    set: async (key: any, value: any) => {
+      await wait(10)
+
+      return store.set(key, value)
+    }
+  })
+
+  const buildPayload = (keyAddrs: string[]) =>
+    exportingKeystore
+      .exportForSync(keyAddrs)
+      .then((exported) => ({ v: 1 as const, accounts: [], ...exported }))
+
+  beforeEach(async () => {
+    exportingKeystore = createKeystore()
+    await exportingKeystore.addSecret('password', exportingPass, '', false)
+    await exportingKeystore.unlockWithSecret('password', exportingPass)
+
+    await exportingKeystore.addTempSeed({
+      seed: process.env.SEED,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    await exportingKeystore.persistTempSeed()
+    exportedSeedId = exportingKeystore.seeds[0]!.id
+
+    await exportingKeystore.addKeys([
+      {
+        addr: keyPublicAddress,
+        label: 'Key 1',
+        type: 'internal',
+        privateKey: privKey,
+        dedicatedToOneSA: false,
+        meta: { createdAt: new Date().getTime(), fromSeedId: exportedSeedId }
+      }
+    ])
+    await exportingKeystore.addKeysExternallyStored([
+      {
+        addr: EXTERNAL_ADDR,
+        label: 'Ledger Key 1',
+        type: 'ledger',
+        dedicatedToOneSA: false,
+        meta: {
+          deviceId: '1',
+          deviceModel: 'nanoX',
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+          index: 1,
+          createdAt: new Date().getTime()
+        }
+      }
+    ])
+
+    importingKeystore = createKeystore()
+  })
+
+  test('exports the selected keys, their seed and the password wrapped main key', async () => {
+    const exported = await exportingKeystore.exportForSync([keyPublicAddress])
+
+    expect(exported.secret.id).toBe('password')
+    expect(exported.secret.aesEncrypted.cipherType).toBe('AES-GCM')
+    // The private key must leave the device encrypted, exactly as it is stored
+    expect(exported.keys).toHaveLength(1)
+    expect(exported.keys[0]!.addr).toBe(keyPublicAddress)
+    expect(exported.keys[0]!.privKey).toMatchObject({ cipherType: 'AES-GCM' })
+    expect(JSON.stringify(exported)).not.toContain(privKey)
+    // Only the seed the exported key was derived from
+    expect(exported.seeds.map((s) => s.id)).toEqual([exportedSeedId])
+  })
+
+  test('does not export keys that were not selected', async () => {
+    const exported = await exportingKeystore.exportForSync([EXTERNAL_ADDR])
+
+    expect(exported.keys.map((k) => k.addr)).toEqual([EXTERNAL_ADDR])
+    expect(exported.seeds).toHaveLength(0)
+  })
+
+  test('leaves the seed behind when the user opted out of exporting it', async () => {
+    const exported = await exportingKeystore.exportForSync([keyPublicAddress], false)
+
+    expect(exported.keys.map((k) => k.addr)).toEqual([keyPublicAddress])
+    expect(exported.seeds).toHaveLength(0)
+
+    // The key still signs on the other device, it is just no longer tied to a seed
+    await importingKeystore.addSecret('password', importingPass, '', true)
+    await importingKeystore.importFromSync(
+      { v: 1 as const, accounts: [], ...exported },
+      exportingPass
+    )
+
+    expect(importingKeystore.seeds).toHaveLength(0)
+    expect(importingKeystore.keys[0]!.meta.fromSeedId).toBeUndefined()
+  })
+
+  describe('Negative cases', () => {
+    suppressConsoleBeforeEach()
+
+    test('refuses to export from a device without a password', async () => {
+      const biometricsOnlyKeystore = createKeystore()
+      await biometricsOnlyKeystore.addSecret('biometrics', 'biometricsSecret', '', true)
+
+      await expect(biometricsOnlyKeystore.exportForSync([keyPublicAddress])).rejects.toThrow(
+        'Set a password for this device before syncing your accounts.'
+      )
+    })
+
+    test('does not import anything when the password of the other device is wrong', async () => {
+      await importingKeystore.addSecret('password', importingPass, '', true)
+      const payload = await buildPayload([keyPublicAddress])
+
+      await expect(importingKeystore.importFromSync(payload, 'wrongPass')).rejects.toThrow(
+        'Incorrect password. Please try again.'
+      )
+      expect(importingKeystore.keys).toHaveLength(0)
+      expect(importingKeystore.seeds).toHaveLength(0)
+    })
+  })
+
+  test('imports keys and seeds into a device that already has a password', async () => {
+    await importingKeystore.addSecret('password', importingPass, '', true)
+    const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
+
+    await importingKeystore.importFromSync(payload, exportingPass)
+
+    expect(importingKeystore.keys).toHaveLength(2)
+    expect(importingKeystore.keys).toContainEqual(
+      expect.objectContaining({ addr: EXTERNAL_ADDR, type: 'ledger', isExternallyStored: true })
+    )
+    // The key is re-encrypted with the importing device's main key, so it can sign
+    const signer = await importingKeystore.getSigner(keyPublicAddress, 'internal')
+    expect(signer.key.addr).toBe(keyPublicAddress)
+
+    // The seed comes along and the key keeps pointing to it
+    expect(importingKeystore.seeds.map((s) => s.id)).toEqual([exportedSeedId])
+    expect(importingKeystore.keys.find((k) => k.type === 'internal')?.meta.fromSeedId).toBe(
+      exportedSeedId
+    )
+    expect((await importingKeystore.getSavedSeed(exportedSeedId)).seed).toBe(process.env.SEED)
+  })
+
+  test('imports before the device password is set (onboarding) and stores everything once it is', async () => {
+    const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
+
+    await importingKeystore.importFromSync(payload, exportingPass)
+
+    // Nothing can be stored yet, as there is no main key to encrypt with
+    expect(importingKeystore.keys).toHaveLength(0)
+    expect(importingKeystore.seeds).toHaveLength(0)
+
+    await importingKeystore.addSecret('password', importingPass, '', true)
+
+    expect(importingKeystore.keys).toHaveLength(2)
+    expect(importingKeystore.seeds.map((s) => s.id)).toEqual([exportedSeedId])
+    expect(importingKeystore.keys.find((k) => k.type === 'internal')?.meta.fromSeedId).toBe(
+      exportedSeedId
+    )
+    const signer = await importingKeystore.getSigner(keyPublicAddress, 'internal')
+    expect(signer.key.addr).toBe(keyPublicAddress)
+  })
+
+  test('tells the UI about the synced keys right after the import', async () => {
+    const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
+    await importingKeystore.addSecret('password', importingPass, '', true)
+
+    // Without an update the UI keeps the keystore state it had before the sync, which
+    // makes every imported account look view-only
+    const keyCountsSeenByTheUi: number[] = []
+    importingKeystore.onUpdate(() => keyCountsSeenByTheUi.push(importingKeystore.keys.length))
+
+    await importingKeystore.importFromSync(payload, exportingPass)
+
+    expect(importingKeystore.keys).toHaveLength(2)
+    expect(keyCountsSeenByTheUi.at(-1)).toBe(2)
+  })
+
+  test('tells the UI about the synced keys once the onboarding password stores them', async () => {
+    const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
+    // On a real device writes take a moment, so this guards that `addSecret` waits for the
+    // queued keys to be stored and emits afterwards. Without that update the UI keeps
+    // rendering the synced accounts as if they had no keys.
+    const slowKeystore = new KeystoreController(
+      'default',
+      new StorageController(withSlowWrites(produceMemoryStore())),
+      keystoreSigners,
+      uiCtrl
+    )
+    await slowKeystore.importFromSync(payload, exportingPass)
+
+    const keyCountsSeenByTheUi: number[] = []
+    slowKeystore.onUpdate(() => keyCountsSeenByTheUi.push(slowKeystore.keys.length))
+
+    await slowKeystore.addSecret('password', importingPass, '', true)
+
+    expect(slowKeystore.keys).toHaveLength(2)
+    expect(keyCountsSeenByTheUi.at(-1)).toBe(2)
+  })
+
+  test('links the synced keys to a seed the device already has', async () => {
+    await importingKeystore.addSecret('password', importingPass, '', true)
+    // The very same recovery phrase was already imported on this device, under an id of
+    // its own, so the synced keys have to be linked to that one
+    await importingKeystore.addTempSeed({
+      seed: process.env.SEED,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    await importingKeystore.persistTempSeed()
+    const alreadyStoredSeedId = importingKeystore.seeds[0]!.id
+
+    await importingKeystore.importFromSync(await buildPayload([keyPublicAddress]), exportingPass)
+
+    expect(importingKeystore.seeds).toHaveLength(1)
+    expect(importingKeystore.seeds[0]!.id).toBe(alreadyStoredSeedId)
+    expect(importingKeystore.keys.find((k) => k.type === 'internal')?.meta.fromSeedId).toBe(
+      alreadyStoredSeedId
+    )
+  })
+
+  test('syncing the same accounts twice does not duplicate keys or seeds', async () => {
+    await importingKeystore.addSecret('password', importingPass, '', true)
+    const payload = await buildPayload([keyPublicAddress, EXTERNAL_ADDR])
+
+    await importingKeystore.importFromSync(payload, exportingPass)
+    await importingKeystore.importFromSync(payload, exportingPass)
+
+    expect(importingKeystore.keys).toHaveLength(2)
+    expect(importingKeystore.seeds).toHaveLength(1)
   })
 })

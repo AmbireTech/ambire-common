@@ -1,7 +1,7 @@
 import { geckoIdMapper } from '../../consts/coingecko'
 import { Network } from '../../interfaces/network'
-import { QueueElement, Request } from './batcher'
-import { paginate } from './pagination'
+import { QueueElement, Request } from '../../utils/batcher'
+import { paginate } from '../../utils/paginate'
 
 // max tokens per request; we seem to have faster results when it's lower
 const BATCH_LIMIT = 40
@@ -13,13 +13,12 @@ export function geckoResponseIdentifier(tokenAddr: string, network: Network): st
 export function geckoRequestBatcher(queue: QueueElement[]): Request[] {
   const segments: { [key: string]: any[] } = {}
 
-  // eslint-disable-next-line no-restricted-syntax
   for (const queueItem of queue) {
     const geckoId = geckoIdMapper(queueItem.data.address, queueItem.data.network)
     // If we can't determine the Gecko platform ID, we shouldn't make a request to price (cena.ambire.com)
     // since it would return nothing.
     // This can happen when adding a custom network that doesn't have a CoinGecko platform ID.
-    // eslint-disable-next-line no-continue
+
     if (!geckoId && !queueItem.data.network.platformId) continue
 
     let segmentId: string = queueItem.data.baseCurrency
@@ -45,15 +44,19 @@ export function geckoRequestBatcher(queue: QueueElement[]): Request[] {
 
     const mainApiUrl = 'https://cena.ambire.com'
 
+    // The ids are joined by a literal comma, never the pre-encoded %2C. Mobile puts the url
+    // through a percent-encoding pass when it carries characters that are invalid in a url, and
+    // that turns %2C into %252C - cena then reads the list as one malformed id and answers `{}`
+    // with a 200, so the request looks successful and every id in it comes back unpriced.
     let url
     if (key.endsWith('natives'))
       url = `${mainApiUrl}/api/v3/simple/price?ids=${dedup(
         queueSegment.map((x) => geckoIdMapper(x.data.address, x.data.network))
-      ).join('%2C')}&vs_currencies=${baseCurrency}`
+      ).join(',')}&vs_currencies=${baseCurrency}`
     else
       url = `${mainApiUrl}/api/v3/simple/token_price/${geckoPlatform}?contract_addresses=${dedup(
         queueSegment.map((x) => x.data.address)
-      ).join('%2C')}&vs_currencies=${baseCurrency}`
+      ).join(',')}&vs_currencies=${baseCurrency}`
     return { url, queueSegment }
   })
 }

@@ -1,9 +1,22 @@
-import { getAddress, Interface, isAddress, ZeroAddress } from 'ethers'
+import {
+  decodeFunctionData,
+  getAddress,
+  isAddress,
+  parseAbi,
+  toFunctionSelector,
+  zeroAddress
+} from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { Legends } from '../../const/abis/Legends'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getImage, getLabel } from '../../utils'
+import {
+  HexIrCall,
+  getAction,
+  getAddressVisualization,
+  getImage,
+  getLabel,
+  isHexCall
+} from '../../utils'
 
 const ONCHAIN_TXNS_LEGENDS_ADDRESS = '0x1415926535897932384626433832795028841971'
 const OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES = [
@@ -14,9 +27,30 @@ const OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES = [
   '0x35bAc15f98Fa2F496FCb84e269d8d0a408442272'
 ]
 
-const iface = new Interface(Legends)
+// legacy mint function
+const mintLegacyAbi = parseAbi(['function mint(uint256)'])
+const mintAbi = parseAbi(['function mint(uint characterType, uint season)'])
+const getDailyRewardAbi = parseAbi(['function getDailyReward()'])
+const spinWheelAbi = parseAbi(['function spinWheel(uint256 random)'])
+const linkAndAcceptInviteAbi = parseAbi([
+  'function linkAndAcceptInvite(address INVITEE_V2_ACCOUNT, address INVITEE_EOA_OR_V1, address INVITER_V2, bytes signature)'
+])
+const inviteAbi = parseAbi(['function invite(address)'])
+const claimXpFromFeedbackAbi = parseAbi(['function claimXpFromFeedback(string)'])
+const claimBitrefillCodeAbi = parseAbi(['function claimBitrefillCode()'])
+const revealMascotLetterAbi = parseAbi(['function revealMascotLetter()'])
 
-const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) => {
+const mintLegacySelector = toFunctionSelector(mintLegacyAbi[0])
+const mintSelector = toFunctionSelector(mintAbi[0])
+const getDailyRewardSelector = toFunctionSelector(getDailyRewardAbi[0])
+const spinWheelSelector = toFunctionSelector(spinWheelAbi[0])
+const linkAndAcceptInviteSelector = toFunctionSelector(linkAndAcceptInviteAbi[0])
+const inviteSelector = toFunctionSelector(inviteAbi[0])
+const claimXpFromFeedbackSelector = toFunctionSelector(claimXpFromFeedbackAbi[0])
+const claimBitrefillCodeSelector = toFunctionSelector(claimBitrefillCodeAbi[0])
+const revealMascotLetterSelector = toFunctionSelector(revealMascotLetterAbi[0])
+
+const legendsModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const characterTypes: { [season: number]: string[] } = {
     '0': [
       'https://relayer.ambire.com/legends/nft-image/avatar/unknown.png',
@@ -36,36 +70,41 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
       'https://staging-relayer.ambire.com/legends/nft-image/avatar/green-lvl0.png'
     ]
   }
-  const matcher = {
+  const matcher: Record<string, (call: HexIrCall) => any> = {
     // legacy mint function
-    [iface.getFunction('mint(uint256)')?.selector!]: (call: IrCall) => {
-      const [heroType] = iface.parseTransaction(call)!.args
+    [mintLegacySelector]: (call) => {
+      const { args } = decodeFunctionData({ abi: mintLegacyAbi, data: call.data })
+      const [heroType] = args
 
       return [
         getAction('Pick character'),
-        getImage(characterTypes[0][heroType] || characterTypes[0][0]),
+        getImage((characterTypes[0] ?? [])[Number(heroType)] || (characterTypes[0] ?? [])[0] || ''),
         getLabel('for Ambire Rewards')
       ]
     },
-    [iface.getFunction('mint(uint characterType, uint season)')?.selector!]: (call: IrCall) => {
-      const [heroType, season] = iface.parseTransaction(call)!.args
+    [mintSelector]: (call) => {
+      const { args } = decodeFunctionData({ abi: mintAbi, data: call.data })
+      const [heroType, season] = args
 
       return [
         getAction('Pick character'),
-        getImage(characterTypes[season][heroType] || characterTypes[0][0]),
+        getImage(
+          (characterTypes[Number(season)] ?? [])[Number(heroType)] ||
+            (characterTypes[0] ?? [])[0] ||
+            ''
+        ),
         getLabel(`for Ambire Rewards season ${season}`)
       ]
     },
-    [iface.getFunction('getDailyReward')?.selector!]: () => [
-      getAction('Unlock the treasure chest')
-    ],
-    [iface.getFunction('spinWheel')?.selector!]: () => {
+    [getDailyRewardSelector]: () => [getAction('Unlock the treasure chest')],
+    [spinWheelSelector]: () => {
       return [getAction('Unlock the wheel of fortune')]
     },
-    [iface.getFunction('linkAndAcceptInvite')?.selector!]: (call: IrCall) => {
-      const [inviteeV2Account, inviteeEoaOrV1, inviter] = iface.parseTransaction(call)!.args
+    [linkAndAcceptInviteSelector]: (call) => {
+      const { args } = decodeFunctionData({ abi: linkAndAcceptInviteAbi, data: call.data })
+      const [inviteeV2Account, inviteeEoaOrV1, inviter] = args
       const acceptInvitationVisualizationPrefix =
-        inviter !== ZeroAddress
+        inviter !== zeroAddress
           ? [
               getAction('Accept invitation'),
               getLabel('from'),
@@ -81,35 +120,34 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, calls: IrCall[]) =
         getAddressVisualization(inviteeV2Account)
       ]
     },
-    [iface.getFunction('invite')?.selector!]: (call: IrCall) => {
-      const [invitee] = iface.parseTransaction(call)!.args
+    [inviteSelector]: (call) => {
+      const { args } = decodeFunctionData({ abi: inviteAbi, data: call.data })
+      const [invitee] = args
 
       return [getAction('Invite'), getAddressVisualization(invitee), getLabel('to Ambire Rewards')]
     },
-    [iface.getFunction('claimXpFromFeedback')?.selector!]: () => {
+    [claimXpFromFeedbackSelector]: () => {
       return [getAction('Claim XP'), getLabel('from'), getLabel('feedback form', true)]
     },
-    [iface.getFunction('claimBitrefillCode')?.selector!]: () => {
+    [claimBitrefillCodeSelector]: () => {
       return [getAction('Claim'), getLabel('cashback code for'), getLabel('Bitrefill', true)]
     },
-    [iface.getFunction('revealMascotLetter')?.selector!]: () => {
+    [revealMascotLetterSelector]: () => {
       return [getAction('Reveal'), getLabel('a letter from'), getLabel('SHI_T_', true)]
     }
   }
-  const newCalls = calls.map((call) => {
-    if (
-      (call.to &&
-        isAddress(call.to) &&
-        ![ONCHAIN_TXNS_LEGENDS_ADDRESS, ...OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES].includes(
-          getAddress(call.to)
-        )) ||
-      !matcher[call.data.slice(0, 10)]
-    )
-      return call
-    return { ...call, fullVisualization: matcher[call.data.slice(0, 10)](call) }
-  })
-
-  return newCalls
+  if (
+    (call.to &&
+      isAddress(call.to) &&
+      ![ONCHAIN_TXNS_LEGENDS_ADDRESS, ...OLD_AND_CURRENT_LEGENDS_NFT_ADDRESSES].includes(
+        getAddress(call.to)
+      )) ||
+    !isHexCall(call)
+  )
+    return call
+  const match = matcher[call.data.slice(0, 10)]
+  if (!match) return call
+  return { ...call, fullVisualization: match(call) }
 }
 
 export default legendsModule

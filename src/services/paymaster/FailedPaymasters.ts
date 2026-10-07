@@ -1,5 +1,3 @@
-/* eslint-disable no-console */
-
 /*
  * a singleton for recording failed paymaster requests
  */
@@ -12,7 +10,7 @@ import { RPCProvider } from '../../interfaces/provider'
 
 // so the app can fallback to a standard Paymaster if a sponsorship fails
 export class FailedPaymasters {
-  failedSponsorshipIds: number[] = []
+  failedSponsorshipIds: string[] = []
 
   insufficientFundsNetworks: {
     [chainId: number]: {
@@ -20,11 +18,11 @@ export class FailedPaymasters {
     }
   } = {}
 
-  addFailedSponsorship(id: number) {
+  addFailedSponsorship(id: string) {
     this.failedSponsorshipIds.push(id)
   }
 
-  hasFailedSponsorship(id: number): boolean {
+  hasFailedSponsorship(id: string): boolean {
     return this.failedSponsorshipIds.includes(id)
   }
 

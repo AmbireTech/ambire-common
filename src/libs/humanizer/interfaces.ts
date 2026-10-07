@@ -1,8 +1,50 @@
 import { Account } from '../../interfaces/account'
+import { DecodedCall } from '../../interfaces/decodeCall'
 import { BlacklistedStatus } from '../../interfaces/phishing'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
+
+export type HumanizerErc7730Row = {
+  // The ERC-7730 field path this row was built from - used to match against `excludedFieldPaths`.
+  // Absent for rows synthesized outside real ERC-7730 fields (fallback/multicall/Safe rows), which
+  // are never candidates for exclusion anyway.
+  path?: string
+} & (
+  | {
+      // One embedded call of a `calldata` field, rendered inline on a single line and never split
+      // into rows of its own. Holds the nested `erc7730` visualization when that call had a
+      // descriptor, or the flat parts the legacy humanizer modules produced when it had none - so
+      // a module's own wording (e.g. "Swap X for Y") survives instead of being taken apart. Carries
+      // no label: the parts are the whole row.
+      type: 'call'
+      value: HumanizerVisualization[]
+    }
+  | {
+      // Any other field: its label and the single value the ERC-7730 formatter produced for it.
+      type: 'single-value'
+      label: string
+      value: HumanizerVisualization
+    }
+)
+
+export interface HumanizerErc7730Visualization {
+  type: 'erc7730'
+  // The rendered intent, as parts (text/token/address/action/...). `[action]`
+  // (from the spec's plain `intent`) when there's no `interpolatedIntent` or it
+  // failed to resolve; the full structured breakdown otherwise.
+  intent: HumanizerVisualization[]
+  // Paths of fields already rendered inline in `intent` (empty for the plain
+  // `[action]` form). Rows to display = `fields` filtered to exclude these -
+  // recomputed from `fields` rather than stored as a second row array, so a
+  // nested visualization tree doesn't double its own payload at every level.
+  excludedFieldPaths: string[]
+  // Every field turned into a row, regardless of what's excluded above - for
+  // heuristics (spender/recipient detection, swap pairing, layout complexity)
+  // that need full context independent of `intent`.
+  fields: HumanizerErc7730Row[]
+  dapp?: Call['dapp']
+}
 
 // @TODO remove property humanizerMeta
 export type HumanizerVisualization = (
@@ -17,6 +59,7 @@ export type HumanizerVisualization = (
         | 'image'
         | 'link'
         | 'text'
+        | 'break'
       url?: string
       address?: string
       content?: string
@@ -24,6 +67,7 @@ export type HumanizerVisualization = (
       warning?: boolean
       chainId?: bigint
     }
+  | HumanizerErc7730Visualization
   | {
       type: 'token'
       address: string
@@ -31,25 +75,37 @@ export type HumanizerVisualization = (
       chainId?: bigint
     }
 ) & {
-  isHidden?: boolean
   id: number
+  url?: string
+  address?: string
   content?: string
+  value?: bigint
   isBold?: boolean
+  warning?: boolean
+  chainId?: bigint
   verification?: BlacklistedStatus
+  mlMi?: boolean
 }
 export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]
+  isFallback?: boolean
   to?: string
+  /** The call data decoded with the function signature of its selector, when it can be decoded. */
+  decodedCall?: DecodedCall
+  /** The call isn't decoded yet because the function signatures it needs are still being fetched. */
+  isDecodingCall?: boolean
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]
   warnings?: HumanizerWarning[]
+  canHideDropdownArrow?: boolean
 }
 export interface HumanizerWarning {
   content: string
   blocking?: boolean
   code: string
+  address?: string
 }
 export interface Ir {
   calls: IrCall[]
@@ -58,7 +114,7 @@ export interface Ir {
 
 // @TODO make humanizer options interface
 export interface HumanizerCallModule {
-  (AccountOp: AccountOp, calls: IrCall[], humanizerMeta: HumanizerMeta): IrCall[]
+  (accountOp: AccountOp, call: IrCall, humanizerMeta?: HumanizerMeta): IrCall
 }
 
 export interface HumanizerTypedMessageModule {
@@ -72,6 +128,7 @@ export interface AbiFragment {
 }
 
 export interface HumanizerMetaAddress {
+  logo?: string
   name?: string
   // undefined means it is not a token
   token?: { symbol: string; decimals?: number }

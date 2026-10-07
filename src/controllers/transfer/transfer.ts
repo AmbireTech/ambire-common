@@ -1,30 +1,47 @@
 import { formatUnits, isAddress, parseUnits } from 'ethers'
 
+import { BindedRelayerCall } from '@/libs/relayerCall/relayerCall'
+
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
+import { IContractInfoController } from '../../interfaces/contractInfo'
+import { IDappsController } from '../../interfaces/dapp'
 import { AddressState } from '../../interfaces/domains'
+import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { ISignAccountOpController } from '../../interfaces/signAccountOp'
 import { IStorageController } from '../../interfaces/storage'
-import { ITransferController, TransferUpdate } from '../../interfaces/transfer'
-import { IUiController, View } from '../../interfaces/ui'
+import {
+  AddressPoisoningMatch,
+  AmountAdjustmentInfo,
+  ITransferController,
+  TransferUpdate
+} from '../../interfaces/transfer'
+import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
 import { Call } from '../../libs/accountOp/types'
+import { AssetType } from '../../libs/defiPositions/types'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
 import { HumanizerMeta } from '../../libs/humanizer/interfaces'
 import { randomId } from '../../libs/humanizer/utils'
 import { TokenResult } from '../../libs/portfolio'
-import { getTokenAmount, getTokenBalanceInUSD } from '../../libs/portfolio/helpers'
-import { getSanitizedAmount } from '../../libs/transfer/amount'
+import { getTokenAmount, sortTokensByBalanceInUSD } from '../../libs/portfolio/helpers'
+import {
+  getAmountAfterFeeReserve,
+  getAmountAfterFeeSync,
+  getSanitizedAmount
+} from '../../libs/transfer/amount'
 import { getTransferRequestParams } from '../../libs/transfer/userRequest'
 import {
   validateSendTransferAddress,
@@ -32,20 +49,24 @@ import {
   Validation
 } from '../../services/validations'
 import { getIsViewOnly } from '../../utils/accounts'
-import { getAddressFromAddressState } from '../../utils/domains'
+import { getAddressFromAddressState, getDomainFromAddressState } from '../../utils/domains'
 import {
   convertTokenPriceToBigInt,
-  getSafeAmountFromFieldValue
+  getSafeAmountFromFieldValue,
+  truncateFiatAmountDecimals
 } from '../../utils/numbers/formatters'
+import { generateUuid } from '../../utils/uuid'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { OnBroadcastSuccess, SignAccountOpController } from '../signAccountOp/signAccountOp'
+import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
 
 const CONVERSION_PRECISION = 16
 const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
 
-const DEFAULT_ADDRESS_STATE = {
+const DEFAULT_ADDRESS_STATE: AddressState = {
   fieldValue: '',
-  ensAddress: '',
+  resolvedAddress: '',
+  resolvedAddressType: null,
   isDomainResolving: false
 }
 
@@ -63,15 +84,26 @@ const DEFAULT_VALIDATION_FORM_MSGS: {
 }
 
 const HARD_CODED_CURRENCY = 'usd'
-
 const isTransfer = (route: string | undefined) => {
   return route === 'transfer' || route === 'top-up-gas-tank'
 }
 
+type SignAccountOpControllerMethods = {
+  [K in keyof SignAccountOpController as SignAccountOpController[K] extends (...args: any) => any
+    ? K
+    : never]: SignAccountOpController[K]
+}
+
 export class TransferController extends EventEmitter implements ITransferController {
-  #callRelayer: Function
+  #callRelayer: BindedRelayerCall
 
   #storage: IStorageController
+
+  #signAccountOpPreference: SignAccountOpPreferenceController
+
+  #featureFlags: IFeatureFlagsController
+
+  #platform: Platform
 
   #networks: INetworksController
 
@@ -104,7 +136,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   addressState: AddressState = { ...DEFAULT_ADDRESS_STATE }
 
-  isReady = false
+  areDefaultsSet = false
 
   isRecipientAddressUnknown = false
 
@@ -118,6 +150,12 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #shouldSkipTransactionQueuedModal: boolean = false
 
+  #isMaxAmountSelected: boolean = false
+
+  #wasAmountAdjustedForFee: boolean = false
+
+  #maxFeeReservation: { key: string; amount: bigint } | null = null
+
   #accounts: IAccountsController
 
   #keystore: IKeystoreController
@@ -130,11 +168,27 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #phishing: IPhishingController
 
+  #dapps: IDappsController
+
+  #erc7730: IErc7730Controller
+
+  #contractInfo: IContractInfoController
+
   #relayerUrl: string
 
   isRecipientAddressFirstTimeSend: boolean = false
 
   lastSentToRecipientAt: Date | null = null
+
+  // Set only for first-time sends when the recipient matches a known address
+  // by both prefix and suffix, which may indicate address poisoning.
+  addressPoisoningMatch: AddressPoisoningMatch | null = null
+
+  /**
+   * Set when the recipient is a domain (ENS/Namoshi) the user has sent to before, but it now resolves
+   * to a DIFFERENT address than last time (possible expiry/snipe).
+   */
+  recipientDomainAddressChange: { previousAddress: string } | null = null
 
   signAccountOpController: ISignAccountOpController | null = null
 
@@ -162,8 +216,10 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   constructor(
-    callRelayer: Function,
+    callRelayer: BindedRelayerCall,
     storage: IStorageController,
+    signAccountOpPreference: SignAccountOpPreferenceController,
+    featureFlags: IFeatureFlagsController,
     humanizerInfo: HumanizerMeta,
     selectedAccount: ISelectedAccountController,
     networks: INetworksController,
@@ -175,15 +231,21 @@ export class TransferController extends EventEmitter implements ITransferControl
     externalSignerControllers: ExternalSignerControllers,
     providers: IProvidersController,
     phishing: IPhishingController,
+    dapps: IDappsController,
     relayerUrl: string,
     onBroadcastSuccess: OnBroadcastSuccess,
     ui: IUiController,
+    erc7730: IErc7730Controller,
+    contractInfo: IContractInfoController,
+    platform: Platform,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
     super(eventEmitterRegistry)
 
     this.#callRelayer = callRelayer
     this.#storage = storage
+    this.#signAccountOpPreference = signAccountOpPreference
+    this.#featureFlags = featureFlags
     this.#humanizerInfo = humanizerInfo
     this.#selectedAccount = selectedAccount
     this.#networks = networks
@@ -196,9 +258,13 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#externalSignerControllers = externalSignerControllers
     this.#providers = providers
     this.#phishing = phishing
+    this.#dapps = dapps
+    this.#erc7730 = erc7730
+    this.#contractInfo = contractInfo
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#ui = ui
+    this.#platform = platform
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -229,11 +295,20 @@ export class TransferController extends EventEmitter implements ITransferControl
       if (this.#selectedAccount.portfolio.isReadyToVisualize && !this.selectedToken) {
         this.#setDefaultSelectedToken()
 
-        if (this.selectedToken || this.#selectedAccount.portfolio.isAllReady) this.isReady = true
+        if (this.selectedToken || this.#selectedAccount.portfolio.isAllReady)
+          this.areDefaultsSet = true
       }
 
       this.propagateUpdate(forceEmit)
     })
+
+    // isRecipientAddressBlacklisted reads the phishing list, which loads from storage and refreshes
+    // in the background, so the UI has to be told when the answer may have changed
+    this.#phishing.onUpdate((forceEmit) => {
+      if (!this.#currentTransferSessionId || !isAddress(this.recipientAddress)) return
+
+      this.propagateUpdate(forceEmit)
+    }, 'transfer-recipient-phishing-check')
 
     this.emitUpdate()
   }
@@ -244,13 +319,21 @@ export class TransferController extends EventEmitter implements ITransferControl
     const nextIsTopUp = view.currentRoute === 'top-up-gas-tank'
     const searchParams = view.searchParams
 
-    const isFormInitialized = this.hasPersistedState && this.isReady
+    const isFormInitialized = this.hasPersistedState && this.areDefaultsSet
     const isSameMode = this.isTopUp === nextIsTopUp
     const hasNoSearchParams = Object.keys(searchParams || {}).length === 0
 
-    const shouldKeepExistingForm = isFormInitialized && isSameMode && hasNoSearchParams
+    const shouldKeepExistingForm =
+      isFormInitialized && isSameMode && hasNoSearchParams && !isSidePanelView(view)
 
-    if (shouldKeepExistingForm) return
+    if (shouldKeepExistingForm) {
+      if (!this.areDefaultsSet) {
+        this.areDefaultsSet = true
+        this.emitUpdate()
+      }
+
+      return
+    }
 
     const tokenParams =
       searchParams && searchParams.address && searchParams.chainId
@@ -263,7 +346,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.isTopUp = nextIsTopUp
     this.#setTokens()
     this.#setDefaultSelectedToken(tokenParams)
-    this.isReady = true
+    this.areDefaultsSet = true
+    this.emitUpdate()
   }
 
   #ensureTransferSessionId() {
@@ -277,35 +361,36 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   #setTokens() {
-    const tokens = this.#selectedAccount.portfolio.tokens
-      .filter((token) => {
-        const hasAmount = Number(getTokenAmount(token)) > 0
-        const isVisible = !token.flags.isHidden
+    // Indexed once rather than scanned inside the filter below, which runs for every
+    // token the account holds - a large portfolio runs to thousands of them.
+    const networkByChainId = new Map(this.#networks.networks.map((n) => [n.chainId, n]))
 
-        if (this.isTopUp) {
-          const tokenNetwork = this.#networks.networks.find(
-            (network) => network.chainId === token.chainId
-          )
+    const tokens = this.#selectedAccount.portfolio.tokens.filter((token) => {
+      const hasAmount = Number(getTokenAmount(token)) > 0
+      const isVisible = !token.flags.isHidden
 
-          return (
-            hasAmount &&
-            isVisible &&
-            tokenNetwork?.hasRelayer &&
-            token.flags.canTopUpGasTank &&
-            !token.flags.onGasTank
-          )
-        }
+      if (this.isTopUp) {
+        const tokenNetwork = networkByChainId.get(token.chainId)
 
-        return hasAmount && isVisible && !token.flags.onGasTank && !token.flags.rewardsType
-      })
-      .sort((a, b) => {
-        const tokenAinUSD = getTokenBalanceInUSD(a)
-        const tokenBinUSD = getTokenBalanceInUSD(b)
+        return (
+          hasAmount &&
+          isVisible &&
+          tokenNetwork?.hasRelayer &&
+          token.flags.canTopUpGasTank &&
+          !token.flags.onGasTank
+        )
+      }
 
-        return tokenBinUSD - tokenAinUSD
-      })
+      return (
+        hasAmount &&
+        isVisible &&
+        !token.flags.onGasTank &&
+        !token.flags.rewardsType &&
+        token.flags.defiTokenType !== AssetType.Borrow
+      )
+    })
 
-    this.#tokens = tokens
+    this.#tokens = sortTokensByBalanceInUSD(tokens)
 
     if (this.selectedToken) {
       this.selectedToken =
@@ -349,9 +434,10 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.selectedToken.chainId !== newSelectedToken.chainId)
     ) {
       this.selectedToken = newSelectedToken
-
-      // Emit update to reflect possible changes in the UI
-      this.emitUpdate()
+      // 4. Or if the user has no tokens
+    } else if (!newSelectedToken) {
+      this.selectedToken = null
+      this.areDefaultsSet = true
     }
   }
 
@@ -384,6 +470,9 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     if (!token || Number(getTokenAmount(token)) === 0) {
       this.#selectedToken = null
+      this.#isMaxAmountSelected = false
+      this.#wasAmountAdjustedForFee = false
+      this.#resetMaxFeeReservation()
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
       this.amountFieldMode = 'token'
@@ -398,6 +487,9 @@ export class TransferController extends EventEmitter implements ITransferControl
       prevSelectedToken?.address !== token?.address ||
       prevSelectedToken?.chainId !== token?.chainId
     ) {
+      this.#isMaxAmountSelected = false
+      this.#wasAmountAdjustedForFee = false
+      this.#resetMaxFeeReservation()
       if (!token.priceIn.length) this.amountFieldMode = 'token'
       this.#setAmountAndNotifyUI('')
       this.#setAmountInFiatAndNotifyUI('')
@@ -413,12 +505,7 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   get maxAmount(): string {
-    if (
-      !this.selectedToken ||
-      getTokenAmount(this.selectedToken) === 0n ||
-      typeof this.selectedToken.decimals !== 'number'
-    )
-      return '0'
+    if (!this.selectedToken || getTokenAmount(this.selectedToken) === 0n) return '0'
 
     return formatUnits(getTokenAmount(this.selectedToken), this.selectedToken.decimals)
   }
@@ -443,6 +530,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   resetForm(shouldDestroyAccountOp = true) {
+    this.#isMaxAmountSelected = false
+    this.#wasAmountAdjustedForFee = false
     this.amount = ''
     this.amountInFiat = ''
     this.amountFieldMode = 'token'
@@ -464,24 +553,54 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.emitUpdate()
   }
 
+  #fetchRecipientAccountStateIfNeeded() {
+    if (!this.isInitialized) return
+
+    const recipientAcc = this.#accounts.accounts.find((a) => a.addr === this.recipientAddress)
+    if (recipientAcc && this.selectedToken?.chainId) {
+      const state =
+        this.#accounts.accountStates[recipientAcc.addr]?.[this.selectedToken.chainId.toString()]
+      if (!state) {
+        this.#accounts
+          .getOrFetchAccountOnChainState(recipientAcc.addr, this.selectedToken.chainId)
+          .catch((e) => {
+            console.log('Failed to get the account on chain state:', e)
+          })
+      }
+    }
+  }
+
   get validationFormMsgs() {
     if (!this.isInitialized) return DEFAULT_VALIDATION_FORM_MSGS
 
-    const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
+    // A copy, so a failed validation doesn't leak into the shared defaults (e.g. an "Insufficient
+    // amount." error showing up later for an account with no tokens to select)
+    const validationFormMsgsNew = { ...DEFAULT_VALIDATION_FORM_MSGS }
 
     if (this.#humanizerInfo && this.#selectedAccount.account?.addr) {
-      const isEnsAddress = !!this.addressState.ensAddress
+      // if the recipientAcc is an account in the extension
+      // & the account state is not fetched for it, fetch it
+      // so that we could validate the account properly
+      // example: Safe accounts may not be deployed on certain networks
+      const recipientAcc = this.#accounts.accounts.find((a) => a.addr === this.recipientAddress)
 
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
         this.recipientAddress,
-        this.#selectedAccount.account?.addr,
+        this.#selectedAccount.account.addr,
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
-        isEnsAddress,
+        !!this.addressState.resolvedAddress,
         this.addressState.isDomainResolving,
+        this.#networks.networks,
+        this.#accounts.accountStates,
+        recipientAcc,
+        this.selectedToken?.chainId,
         this.isRecipientAddressFirstTimeSend,
-        this.lastSentToRecipientAt
+        this.lastSentToRecipientAt,
+        this.addressPoisoningMatch,
+        this.recipientDomainAddressChange,
+        this.isRecipientAddressBlacklisted
       )
     }
 
@@ -518,7 +637,17 @@ export class TransferController extends EventEmitter implements ITransferControl
   }
 
   get recipientAddress() {
-    return this.addressState.ensAddress || this.addressState.fieldValue
+    return getAddressFromAddressState(this.addressState)
+  }
+
+  /**
+   * Whether the recipient is in the locally stored phishing list. The list is kept up to date by
+   * the PhishingController, so the lookup needs no network request.
+   */
+  get isRecipientAddressBlacklisted() {
+    if (!isAddress(this.recipientAddress)) return false
+
+    return this.#phishing.getAddressBlacklistedStatus(this.recipientAddress) === 'BLACKLISTED'
   }
 
   async update({
@@ -547,15 +676,26 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
 
       this.selectedToken = selectedToken
+      this.#fetchRecipientAccountStateIfNeeded()
     }
     // If we do a regular check the value won't update if it's '' or '0'
     if (typeof amount === 'string') {
+      this.#isMaxAmountSelected = false
+      this.#wasAmountAdjustedForFee = false
+      this.#resetMaxFeeReservation()
       this.#setAmount(amount)
     }
 
     if (shouldSetMaxAmount) {
-      this.amountFieldMode = 'token'
-      this.#setAmount(this.maxAmount, true)
+      const maxAmountAfterFeeReservation = this.#getMaxAmountAfterFeeReservation()
+      if (!Number(maxAmountAfterFeeReservation)) return
+
+      this.#isMaxAmountSelected = true
+      this.#wasAmountAdjustedForFee = maxAmountAfterFeeReservation !== this.maxAmount
+      this.#resetMaxFeeReservation()
+      // Keeps the field in whichever mode the user picked - the max is still set from the exact
+      // token balance, so fiat mode doesn't round it and leave dust behind.
+      this.#setTokenAmount(maxAmountAfterFeeReservation, true)
     }
 
     if (addressState) {
@@ -573,20 +713,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientAddressUnknownAgreed = !this.isRecipientAddressUnknownAgreed
     }
 
-    // Check if the address has been used previously for transactions
-    let found = false
-    let lastTransactionDate = null
-    if (isAddress(this.recipientAddress)) {
-      const result = await this.#activity.hasAccountOpsSentTo(
-        this.recipientAddress,
-        this.#selectedAccount.account?.addr || ''
-      )
-      found = result.found
-      lastTransactionDate = result.lastTransactionDate
-    }
-    this.isRecipientAddressFirstTimeSend =
-      !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
-    this.lastSentToRecipientAt = lastTransactionDate
+    await this.#updateRecipientHistoryAndPoisoning()
 
     await this.syncSignAccountOp()
     this.emitUpdate()
@@ -633,6 +760,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.isRecipientHumanizerKnownTokenOrSmartContract = false
       this.isRecipientAddressFirstTimeSend = false
       this.lastSentToRecipientAt = null
+      this.addressPoisoningMatch = null
+      this.recipientDomainAddressChange = null
       this.isRecipientAddressViewOnly = false
 
       return
@@ -646,6 +775,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     this.checkIsRecipientAddressViewOnly()
     this.checkIsRecipientAddressUnknown()
+    this.#fetchRecipientAccountStateIfNeeded()
   }
 
   #setAmountAndNotifyUI(amount: string) {
@@ -711,16 +841,241 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.selectedToken.decimals
       )
 
-      if (!formattedAmount) return
-
       const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
-      this.amountInFiat = formatUnits(
-        formattedAmount * tokenPriceBigInt,
-        // Shift the decimal point by the number of decimals in the token price
-        this.selectedToken.decimals + tokenPriceDecimals
+      // The fiat field shows this as-is when switched to, so cut it down to a displayable
+      // precision instead of the token's full one (up to 18 decimals)
+      this.amountInFiat = truncateFiatAmountDecimals(
+        formatUnits(
+          formattedAmount * tokenPriceBigInt,
+          // Shift the decimal point by the number of decimals in the token price
+          this.selectedToken.decimals + tokenPriceDecimals
+        )
       )
     }
+  }
+
+  #setTokenAmount(amount: string, isProgrammaticUpdate = false) {
+    const amountFieldMode = this.amountFieldMode
+
+    this.amountFieldMode = 'token'
+    this.#setAmount(amount, isProgrammaticUpdate)
+    this.amountFieldMode = amountFieldMode
+  }
+
+  #getMaxAmountAfterFeeReservation() {
+    if (!this.selectedToken) return this.maxAmount
+
+    const totalTokenAmount = getTokenAmount(this.selectedToken)
+    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
+
+    if (!this.#shouldReserveFeeFromTransferredToken() || !gasFeePayment) {
+      return formatUnits(totalTokenAmount, this.selectedToken.decimals)
+    }
+
+    return formatUnits(
+      getAmountAfterFeeReserve(totalTokenAmount, gasFeePayment.amount),
+      this.selectedToken.decimals
+    )
+  }
+
+  #resetMaxFeeReservation() {
+    this.#maxFeeReservation = null
+  }
+
+  /**
+   * Get an unique key to know when to change the calculations
+   */
+  #getMaxFeeReservationKey() {
+    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
+    const selectedFeeOption = this.signAccountOpController?.selectedOption
+    const selectedToken = this.selectedToken
+
+    if (!gasFeePayment || !selectedFeeOption || !selectedToken) return null
+
+    return [
+      selectedToken.chainId.toString(),
+      selectedToken.address.toLowerCase(),
+      selectedFeeOption.paidBy.toLowerCase(),
+      selectedFeeOption.token.chainId.toString(),
+      selectedFeeOption.token.address.toLowerCase(),
+      selectedFeeOption.token.flags.onGasTank ? 'gas-tank' : 'account',
+      this.signAccountOpController?.selectedFeeSpeed || '',
+      gasFeePayment.broadcastOption
+    ].join(':')
+  }
+
+  /**
+   * The MAX amount you can set was reacting to every small fee estimate change.
+   * When ARB was both the transfer token and fee token, that created a feedback cycle:
+   * fee changes amount, amount re-estimates fee, repeat.
+   * We're changing the MAX same-token fee reservation to keep the highest fee seen for
+   * the current fee token/payer/speed, so the amount can decrease to remain safe
+   * but won’t bounce back upward and retrigger the loop.
+   */
+  #getMaxReservedFeeAmount(feeAmount: bigint) {
+    const key = this.#getMaxFeeReservationKey()
+    if (!key) return feeAmount
+
+    if (
+      !this.#maxFeeReservation ||
+      this.#maxFeeReservation.key !== key ||
+      this.#maxFeeReservation.amount < feeAmount
+    ) {
+      this.#maxFeeReservation = {
+        key,
+        amount: feeAmount
+      }
+    }
+
+    return this.#maxFeeReservation.amount
+  }
+
+  #shouldReserveFeeFromTransferredToken() {
+    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
+    const selectedFeeOption = this.signAccountOpController?.selectedOption
+    const selectedToken = this.selectedToken
+    const accountAddr = this.#selectedAccount.account?.addr.toLowerCase()
+
+    if (!accountAddr || !gasFeePayment || !selectedFeeOption || !selectedToken) return false
+    if (selectedFeeOption.token.flags.onGasTank) return false
+    if (selectedFeeOption.paidBy.toLowerCase() !== accountAddr) return false
+
+    const selectedTokenAddress = selectedToken.address.toLowerCase()
+
+    return (
+      !!accountAddr &&
+      !!gasFeePayment &&
+      !!selectedFeeOption &&
+      selectedFeeOption.paidBy.toLowerCase() === accountAddr &&
+      selectedFeeOption.token.chainId === selectedToken.chainId &&
+      selectedFeeOption.token.address.toLowerCase() === selectedTokenAddress &&
+      gasFeePayment.inToken.toLowerCase() === selectedTokenAddress &&
+      (!gasFeePayment.feeTokenChainId || gasFeePayment.feeTokenChainId === selectedToken.chainId)
+    )
+  }
+
+  #syncAmountWithFeeReservation(forceEmit?: boolean) {
+    if (!this.amount || !this.selectedToken || typeof this.selectedToken.decimals !== 'number')
+      return false
+
+    const totalTokenAmount = getTokenAmount(this.selectedToken)
+    const shouldReserveFee = this.#shouldReserveFeeFromTransferredToken()
+    const gasFeePayment = this.signAccountOpController?.accountOp.gasFeePayment
+    const fee = shouldReserveFee ? gasFeePayment?.amount || 0n : 0n
+    const reservedFee =
+      shouldReserveFee && this.#isMaxAmountSelected ? this.#getMaxReservedFeeAmount(fee) : fee
+
+    if (!shouldReserveFee) {
+      this.#wasAmountAdjustedForFee = false
+      this.#resetMaxFeeReservation()
+    }
+
+    const currentAmount = this.amount
+      ? parseUnits(
+          getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals),
+          this.selectedToken.decimals
+        )
+      : 0n
+    const desiredAmount = getAmountAfterFeeSync({
+      currentAmount,
+      totalAmount: totalTokenAmount,
+      fee,
+      reservedFee,
+      shouldReserveFee,
+      isMaxAmountSelected: this.#isMaxAmountSelected
+    })
+
+    if (desiredAmount === 0n || currentAmount === desiredAmount) return false
+
+    this.#wasAmountAdjustedForFee = shouldReserveFee
+    this.#setTokenAmount(formatUnits(desiredAmount, this.selectedToken.decimals), true)
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.syncSignAccountOp()
+    this.propagateUpdate(forceEmit)
+
+    return true
+  }
+
+  /** Information needed by the UI when the transfer amount was reduced to leave funds for the fee. */
+  get amountAdjustmentInfo(): AmountAdjustmentInfo | null {
+    if (
+      !this.amount ||
+      !this.selectedToken ||
+      !this.#wasAmountAdjustedForFee ||
+      !this.#shouldReserveFeeFromTransferredToken()
+    ) {
+      return null
+    }
+
+    const currentAmount = parseUnits(
+      getSafeAmountFromFieldValue(this.amount, this.selectedToken.decimals),
+      this.selectedToken.decimals
+    )
+    const feeAmount = getTokenAmount(this.selectedToken) - currentAmount
+
+    if (feeAmount <= 0n) return null
+
+    return {
+      feeAmount: formatUnits(feeAmount, this.selectedToken.decimals),
+      tokenSymbol: this.selectedToken.symbol
+    }
+  }
+
+  /** Kept for clients that still render the previous validation-style adjustment message. */
+  get amountAdjustmentWarning(): Validation | null {
+    if (!this.amountAdjustmentInfo) return null
+
+    return {
+      severity: 'warning',
+      message: 'Amount adjusted to cover network fees'
+    }
+  }
+
+  async #updateRecipientHistoryAndPoisoning() {
+    // Check if the address has been used previously for transactions
+    let found = false
+    let lastTransactionDate = null
+    let addressPoisoningMatch = null
+
+    if (isAddress(this.recipientAddress)) {
+      const result = await this.#activity.hasAccountOpsSentTo(
+        this.recipientAddress,
+        this.#selectedAccount.account?.addr || ''
+      )
+      found = result.found
+      lastTransactionDate = result.lastTransactionDate
+      addressPoisoningMatch = result.addressPoisoningMatch
+    }
+
+    this.isRecipientAddressFirstTimeSend =
+      !found && this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
+    this.lastSentToRecipientAt = lastTransactionDate
+
+    this.addressPoisoningMatch = this.isRecipientAddressFirstTimeSend ? addressPoisoningMatch : null
+
+    this.#updateRecipientDomainAddressChange()
+  }
+
+  /**
+   * When the recipient was entered as a domain (ENS/Namoshi) the user has sent to before, warn if it
+   * now resolves to a different address than last time — the name may have expired and been re-pointed.
+   */
+  #updateRecipientDomainAddressChange() {
+    const { resolvedAddressType, resolvedAddress, fieldValue } = this.addressState
+
+    // Don't warn if the user is sending to the address directly
+    if (!resolvedAddressType || !isAddress(resolvedAddress) || isAddress(fieldValue)) {
+      this.recipientDomainAddressChange = null
+      return
+    }
+
+    const previousAddress = this.#activity.getSentToDomainAddress(fieldValue)
+
+    this.recipientDomainAddressChange =
+      previousAddress && previousAddress.toLowerCase() !== resolvedAddress.toLowerCase()
+        ? { previousAddress }
+        : null
   }
 
   get hasPersistedState() {
@@ -746,7 +1101,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       amount: getSafeAmountFromFieldValue(this.amount, this.selectedToken?.decimals),
       selectedToken: this.#selectedToken,
       recipientAddress,
-      amountInFiat: amountInFiatBigInt
+      amountInFiat: amountInFiatBigInt,
+      recipientDomain: getDomainFromAddressState(this.addressState)
     })
 
     if (!userRequestParams) {
@@ -797,7 +1153,7 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     if (!accountState) {
       const error = new Error(
-        `Failed to fetch account on-chain state for network with chainId ${network.chainId}`
+        `Failed to fetch account onchain state for network with chainId ${network.chainId}`
       )
 
       this.emitError({
@@ -812,11 +1168,12 @@ export class TransferController extends EventEmitter implements ITransferControl
     const baseAcc = getBaseAccount(
       this.#selectedAccount.account,
       accountState,
-      this.#keystore.getAccountKeys(this.#selectedAccount.account),
-      network
+      network,
+      this.#featureFlags.isFeatureEnabled('erc4337'),
+      this.#featureFlags.isFeatureEnabled('eip7702')
     )
-
     const accountOp = {
+      id: generateUuid(),
       accountAddr: this.#selectedAccount.account.addr,
       chainId: network.chainId,
       signingKeyAddr: null,
@@ -828,27 +1185,13 @@ export class TransferController extends EventEmitter implements ITransferControl
       calls,
       meta: {
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
-        topUpAmount
+        topUpAmount,
+        allowTransferFeeTokenSelfReserve: true
       }
     }
 
-    // Check if the address has been used previously for transactions
-    let previousTransactionExists = false
-    let lastTransactionDate = null
-    if (isAddress(this.recipientAddress)) {
-      const result = await this.#activity.hasAccountOpsSentTo(
-        this.recipientAddress,
-        this.#selectedAccount.account.addr
-      )
-      previousTransactionExists = result.found
-      lastTransactionDate = result.lastTransactionDate
-    }
-
-    // Update state based on whether there are previous transactions to this address
-    this.isRecipientAddressFirstTimeSend =
-      !previousTransactionExists &&
-      this.recipientAddress.toLowerCase() !== FEE_COLLECTOR.toLowerCase()
-    this.lastSentToRecipientAt = lastTransactionDate
+    await this.#updateRecipientHistoryAndPoisoning()
+    await this.#signAccountOpPreference.initialLoadPromise
     this.signAccountOpController = new SignAccountOpController({
       type: 'one-click-transfer',
       callRelayer: this.#callRelayer,
@@ -856,18 +1199,24 @@ export class TransferController extends EventEmitter implements ITransferControl
       networks: this.#networks,
       keystore: this.#keystore,
       portfolio: this.#portfolio,
+      featureFlags: this.#featureFlags,
+      platform: this.#platform,
+      signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
       account: this.#selectedAccount.account,
       network,
       provider,
       phishing: this.#phishing,
+      dapps: this.#dapps,
+      erc7730: this.#erc7730,
+      contractInfo: this.#contractInfo,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,
       onBroadcastSuccess: async (props) => {
         const { submittedAccountOp } = props
-        this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
+        void this.#portfolio.simulateAccountOp(props.accountOp).then(() => {
           this.#portfolio.markSimulationAsBroadcasted(accountOp.accountAddr, accountOp.chainId)
         })
 
@@ -886,6 +1235,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
 
     this.signAccountOpController.onUpdate((forceEmit) => {
+      this.#syncAmountWithFeeReservation(forceEmit)
+
       this.propagateUpdate(forceEmit)
 
       if (this.signAccountOpController?.broadcastStatus === 'SUCCESS') {
@@ -897,11 +1248,21 @@ export class TransferController extends EventEmitter implements ITransferControl
       }
     }, 'transfer')
 
-    this.signAccountOpController.onError((error) => {
-      if (this.signAccountOpController)
-        this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
+    this.signAccountOpController.onError(async (error) => {
       this.emitError(error)
+
+      if (this.signAccountOpController)
+        await this.#portfolio.overrideSimulationResults(this.signAccountOpController.accountOp)
     })
+  }
+
+  async callSignAccountOpMethod<M extends keyof SignAccountOpControllerMethods>(
+    method: M,
+    args: Parameters<SignAccountOpControllerMethods[M]>
+  ) {
+    if (!this.signAccountOpController) return
+
+    await (this.signAccountOpController[method] as any)(...args)
   }
 
   setUserProceeded(hasProceeded: boolean) {
@@ -933,6 +1294,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     // Always reset the session id
     this.#currentTransferSessionId = null
 
+    // Popup keeps in-progress forms when closed; side panel should start fresh on reopen.
     if (this.hasPersistedState && !isNavigateOut && viewType === 'popup') return
 
     this.reset({ destroyAccountOp: true })
@@ -943,10 +1305,19 @@ export class TransferController extends EventEmitter implements ITransferControl
 
     this.#tokens = []
     this.selectedToken = null
-    this.isReady = false
+    this.areDefaultsSet = false
 
     this.destroyLatestBroadcastedAccountOp(true)
     this.resetForm(destroyAccountOp)
+  }
+
+  /**
+   * Unbrick mechanism.
+   * Use this only when you are sure there's no way to continue, or
+   * a promise waiting to resolve that might change the state
+   */
+  cancelSignReq() {
+    this.signAccountOpController?.cancelSignReq()
   }
 
   // includes the getters in the stringified instance
@@ -964,7 +1335,10 @@ export class TransferController extends EventEmitter implements ITransferControl
       maxAmountInFiat: this.maxAmountInFiat,
       shouldSkipTransactionQueuedModal: this.shouldSkipTransactionQueuedModal,
       hasPersistedState: this.hasPersistedState,
-      isRecipientAddressViewOnly: this.isRecipientAddressViewOnly
+      isRecipientAddressViewOnly: this.isRecipientAddressViewOnly,
+      isRecipientAddressBlacklisted: this.isRecipientAddressBlacklisted,
+      amountAdjustmentInfo: this.amountAdjustmentInfo,
+      amountAdjustmentWarning: this.amountAdjustmentWarning
     }
   }
 }

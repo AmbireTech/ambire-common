@@ -6,10 +6,11 @@ import { SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET } from '../../consts/derivat
 import { SPOOF_SIGTYPE } from '../../consts/signatures'
 import {
   Account,
+  AccountImportInfo,
   AccountOnchainState,
-  AccountOnPage,
   AccountPreferences,
   AccountStates,
+  DerivedAccount,
   ImportStatus
 } from '../../interfaces/account'
 import { KeyIterator } from '../../interfaces/keyIterator'
@@ -38,11 +39,11 @@ import { getAmbireAccountAddress } from '../proxyDeploy/getAmbireAddressTwo'
 interface DKIMRecoveryAccInfo {
   emailFrom: string
   secondaryKey: string
-  waitUntilAcceptAdded?: BigInt
-  waitUntilAcceptRemoved?: BigInt
+  waitUntilAcceptAdded?: bigint
+  waitUntilAcceptRemoved?: bigint
   acceptEmptyDKIMSig?: boolean
   acceptEmptySecondSig?: boolean
-  onlyOneSigTimelock?: BigInt
+  onlyOneSigTimelock?: bigint
 }
 
 // returns to, data
@@ -189,7 +190,8 @@ export const isAmbireV1LinkedAccount = (factoryAddr?: string) =>
 export const isAmbireV2Account = (factoryAddr?: string) =>
   factoryAddr && getAddress(factoryAddr) === AMBIRE_ACCOUNT_FACTORY
 
-export const isSmartAccount = (account?: Account | null) => !!account && !!account.creation
+export const isSmartAccount = (account?: Account | null) =>
+  !!account && (!!account.creation || !!account.safeCreation)
 
 /**
  * Checks if a (basic) EOA account is a derived one,
@@ -217,19 +219,14 @@ export const getAccountImportStatus = ({
   account: Account
   alreadyImportedAccounts: Account[]
   keys: Key[]
-  accountsOnPage?: Omit<AccountOnPage, 'importStatus'>[]
+  accountsOnPage?: DerivedAccount[]
   keyIteratorType?: KeyIterator['type']
-}): ImportStatus => {
-  const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr)
-  if (!isAlreadyImported) return ImportStatus.NotImported
-
+}): AccountImportInfo => {
   // Check if the account has been imported with at least one of the keys
   // that the account was originally associated with, when it was imported.
   const storedAssociatedKeys =
     alreadyImportedAccounts.find((x) => x.addr === account.addr)?.associatedKeys || []
   const importedKeysForThisAcc = keys.filter((key) => storedAssociatedKeys.includes(key.addr))
-  // Could be imported as a view only account (and therefore, without a key)
-  if (!importedKeysForThisAcc.length) return ImportStatus.ImportedWithoutKey
 
   // Merge the `associatedKeys` from the account instances found on the page,
   // with the `associatedKeys` of the account from the extension storage. This
@@ -246,6 +243,23 @@ export const getAccountImportStatus = ({
     ])
   )
 
+  // The stats are key type agnostic on purpose, unlike the import status
+  // below, since they answer how many of this account's keys the user holds.
+  const importInfo = {
+    associatedKeysStats: {
+      total: mergedAssociatedKeys.length,
+      imported: new Set(importedKeysForThisAcc.map((key) => key.addr)).size
+    },
+    importedKeyTypes: Array.from(new Set(importedKeysForThisAcc.map((key) => key.type)))
+  }
+
+  const isAlreadyImported = alreadyImportedAccounts.some(({ addr }) => addr === account.addr)
+  if (!isAlreadyImported) return { ...importInfo, importStatus: ImportStatus.NotImported }
+
+  // Could be imported as a view only account (and therefore, without a key)
+  if (!importedKeysForThisAcc.length)
+    return { ...importInfo, importStatus: ImportStatus.ImportedWithoutKey }
+
   // Same key in this context means not only the same key address, but the
   // same type too. Because user can opt in to import same key address with
   // many different hardware wallets (Trezor, Ledger, GridPlus, etc.) or
@@ -257,15 +271,16 @@ export const getAccountImportStatus = ({
       (keyIteratorType ? key.type === keyIteratorType : true)
   )
   if (associatedKeysAlreadyImported.length) {
-    const associatedKeysNotImportedYet = mergedAssociatedKeys.filter((keyAddr) =>
-      associatedKeysAlreadyImported.some((x) => x.addr !== keyAddr)
+    const associatedKeysNotImportedYet = mergedAssociatedKeys.filter(
+      (keyAddr) => !associatedKeysAlreadyImported.some((x) => x.addr === keyAddr)
     )
 
     const notImportedYetKeysExistInPage = accountsOnPage.some((x) =>
       associatedKeysNotImportedYet.includes(x.account.addr)
     )
 
-    if (notImportedYetKeysExistInPage) return ImportStatus.ImportedWithSomeOfTheKeys
+    if (notImportedYetKeysExistInPage)
+      return { ...importInfo, importStatus: ImportStatus.ImportedWithSomeOfTheKeys }
 
     // Could happen when user imports a smart account with one associated key.
     // Then imports an EOA. Then makes the EOA a second key
@@ -280,14 +295,17 @@ export const getAccountImportStatus = ({
         return ![...incomingAssociatedKeysSet].every((k) => storedAssociatedKeysSet.has(k))
       })
 
-    return associatedKeysFoundOnPageAreDifferent
-      ? ImportStatus.ImportedWithSomeOfTheKeys
-      : ImportStatus.ImportedWithTheSameKeys
+    return {
+      ...importInfo,
+      importStatus: associatedKeysFoundOnPageAreDifferent
+        ? ImportStatus.ImportedWithSomeOfTheKeys
+        : ImportStatus.ImportedWithTheSameKeys
+    }
   }
 
   // Since there are `importedKeysForThisAcc`, as a fallback -
   // for all other scenarios this account has been imported with different keys.
-  return ImportStatus.ImportedWithDifferentKeys
+  return { ...importInfo, importStatus: ImportStatus.ImportedWithDifferentKeys }
 }
 
 export const getDefaultAccountPreferences = (
@@ -310,10 +328,17 @@ export function getUniqueAccountsArray(accounts: Account[]) {
 // use this in cases where you strictly want to enable/disable an action for
 // EOAs (excluding smart and smarter)
 export function isBasicAccount(account: Account, state: AccountOnchainState): boolean {
-  return !account.creation && !state.isSmarterEoa
+  return !account.creation && !account.safeCreation && !state.isSmarterEoa
 }
 
-const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = ['internal', 'lattice', 'trezor']
+const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = ['internal', 'lattice', 'ledger', 'trezor']
+
+/**
+ * Key types that support EIP-7702 but for which EIP-7702 flows are NOT forced.
+ */
+const KEY_TYPES_NOT_MADE_SMARTER_AUTOMATICALLY: Key['type'][] = [
+  'ledger' // can authorize the upgrade only through the extra steps via a custom "Ambire Signer" app
+]
 
 // can the account as a whole become smarter (disregarding chain and state)
 export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
@@ -327,29 +352,47 @@ export function canBecomeSmarter(acc: Account, accKeys: Key[]): boolean {
 export function canBecomeSmarterOnChain(
   network: Network,
   acc: Account,
-  state: AccountOnchainState,
-  accKeys: Key[]
+  state: AccountOnchainState
 ): boolean {
   return (
     has7702(network) &&
     isBasicAccount(acc, state) &&
-    !!accKeys.find((key) => KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type))
+    !!state.importedAccountKeys.find((key) => KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type))
+  )
+}
+
+/**
+ * Whether an account should be upgraded to a smart account on its own, the
+ * moment something would benefit from it (batching calls, for example).
+ * Accounts that can only be upgraded by a key type from
+ * `KEY_TYPES_NOT_MADE_SMARTER_AUTOMATICALLY` stay plain EOAs until the user asks
+ * for the upgrade from the account's smart settings.
+ */
+export function shouldBecomeSmarterAutomatically(accKeys: Key[]): boolean {
+  return !!accKeys.find(
+    (key) =>
+      KEY_TYPES_ABLE_TO_BECOME_SMARTER.includes(key.type) &&
+      !KEY_TYPES_NOT_MADE_SMARTER_AUTOMATICALLY.includes(key.type)
   )
 }
 
 export function hasBecomeSmarter(account: Account, state: AccountStates) {
   if (!state[account.addr]) return false
 
-  const networks = Object.keys(state[account.addr])
+  const networks = Object.keys(state[account.addr]!)
   for (let i = 0; i < networks.length; i++) {
-    const onChainState = state[account.addr][networks[i]]
-    // eslint-disable-next-line no-continue
+    const onChainState = state[account.addr]![networks[i]!]
+
     if (!onChainState) continue
 
     if (onChainState.isSmarterEoa) return true
   }
 
   return false
+}
+
+export function canOrHasBecomeSmarter(account: Account, state: AccountStates, keys: Key[]) {
+  return canBecomeSmarter(account, keys) || hasBecomeSmarter(account, state)
 }
 
 export function shouldUseStateOverrideForEOA(account: Account, state: AccountOnchainState) {

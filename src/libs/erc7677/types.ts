@@ -4,8 +4,12 @@ export interface PaymasterService {
   url: string
   context?: {
     policyId: string
+    swapSponsorship?: {
+      price: number
+      decimals: number
+    }
   }
-  id: number
+  id: string
   failed?: boolean
 }
 
@@ -30,6 +34,8 @@ export type PaymasterEstimationData = {
 export interface PaymasterData {
   paymaster: Hex
   paymasterData: Hex
+  /** safe userOps come with a SAFE_SENDER signature */
+  signature?: Hex | null
 }
 
 export interface PaymasterSuccessReponse extends PaymasterData {

@@ -1,4 +1,3 @@
-// eslint-disable-next-line max-classes-per-file
 import { ethers } from 'hardhat'
 
 import { describe, expect } from '@jest/globals'

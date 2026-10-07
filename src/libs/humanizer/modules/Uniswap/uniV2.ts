@@ -1,169 +1,197 @@
-import { Interface, ZeroAddress } from 'ethers'
+import { decodeFunctionData, parseAbi, toFunctionSelector, zeroAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { UniV2Router } from '../../const/abis'
-import { IrCall } from '../../interfaces'
-import { getAction, getDeadline, getLabel, getToken } from '../../utils'
+import { HexIrCall, getAction, getDeadline, getLabel, getToken } from '../../utils'
 import { HumanizerUniMatcher } from './interfaces'
 import { getUniRecipientText } from './utils'
 
-const uniV2Mapping = (): HumanizerUniMatcher => {
-  const iface = new Interface(UniV2Router)
-  return {
-    // ordered in the same order as the router
-    [iface.getFunction('swapExactTokensForTokens')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ) => {
-      const [amountIn, amountOutMin, path, to, deadline] = iface.parseTransaction(call)?.args || []
-      const outputAsset = path[path.length - 1]
-      return [
-        getAction('Swap'),
-        getToken(path[0], amountIn),
-        getLabel('for at least'),
-        getToken(outputAsset, amountOutMin),
-        ...getUniRecipientText(accountOp.accountAddr, to),
-        getDeadline(deadline)
-      ]
-    },
-    [iface.getFunction('swapTokensForExactTokens')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ) => {
-      const [amountOut, amountInMax, path, to, deadline] = iface.parseTransaction(call)?.args || []
-      const outputAsset = path[path.length - 1]
-      return [
-        getAction('Swap up to'),
-        getToken(path[0], amountInMax),
-        getLabel('for'),
-        getToken(outputAsset, amountOut),
-        ...getUniRecipientText(accountOp.accountAddr, to),
-        getDeadline(deadline)
-      ]
-    },
-    [iface.getFunction('swapExactETHForTokens')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ) => {
-      const { args, value } = iface.parseTransaction(call) || { value: BigInt(0) }
-      const [amountOutMin, path, to, deadline] = args || []
-      const outputAsset = path[path.length - 1]
-      return [
-        getAction('Swap'),
-        getToken(ZeroAddress, value),
-        getLabel('for at least'),
-        getToken(outputAsset, amountOutMin),
-        ...getUniRecipientText(accountOp.accountAddr, to),
-        getDeadline(deadline)
-      ]
-    },
-    [iface.getFunction('swapTokensForExactETH')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ) => {
-      const [amountOut, amountInMax, path, to, deadline] = iface.parseTransaction(call)?.args || []
-      return [
-        getAction('Swap up to'),
-        getToken(path[0], amountInMax),
-        getLabel('for'),
-        getToken(ZeroAddress, amountOut),
-        ...getUniRecipientText(accountOp.accountAddr, to),
-        getDeadline(deadline)
-      ]
-    },
-    [iface.getFunction('swapExactTokensForETH')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ) => {
-      const [amountIn, amountOutMin, path, to, deadline] = iface.parseTransaction(call)?.args || []
-      return [
-        getAction('Swap'),
-        getToken(path[0], amountIn),
-        getLabel('for at least'),
-        getToken(ZeroAddress, amountOutMin),
-        ...getUniRecipientText(accountOp.accountAddr, to),
-        getDeadline(deadline)
-      ]
-    },
-    [iface.getFunction('swapETHForExactTokens')?.selector!]: (
-      accountOp: AccountOp,
-      call: IrCall
-    ) => {
-      const { args, value } = iface.parseTransaction(call) || { value: BigInt(0) }
-      const [amountOut, path, to, deadline] = args || []
-      const outputAsset = path[path.length - 1]
-      return [
-        getAction('Swap up to'),
-        getToken(ZeroAddress, value),
-        getLabel('for'),
-        getToken(outputAsset, amountOut),
-        ...getUniRecipientText(accountOp.accountAddr, to),
-        getDeadline(deadline)
-      ]
-    },
-    // Liquidity
-    [iface.getFunction('addLiquidity')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
-      const [
-        tokenA,
-        tokenB,
-        amountADesired,
-        amountBDesired /* amountAMin */ /* amountBMin */,
-        ,
-        ,
-        to,
-        deadline
-      ] = iface.parseTransaction(call)?.args || []
-      return [
-        getAction('Add liquidity'),
-        getToken(tokenA, amountADesired),
-        getLabel('and'),
-        getToken(tokenB, amountBDesired),
-        ...getUniRecipientText(accountOp.accountAddr, to),
-        getDeadline(deadline)
-      ]
-    },
-    [iface.getFunction('addLiquidityETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
-      const { args, value } = iface.parseTransaction(call) || { args: [], value: BigInt(0) }
-      const [token, amountTokenDesired /* amountTokenMin */ /* amountETHMin */, , , to, deadline] =
-        args
-      return [
-        getAction('Add liquidity'),
-        getToken(token, amountTokenDesired),
-        getLabel('and'),
-        getToken(ZeroAddress, value),
-        ...getUniRecipientText(accountOp.accountAddr, to),
-        getDeadline(deadline)
-      ]
-    },
-    [iface.getFunction('removeLiquidity')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
-      const [tokenA, tokenB /* liquidity */, , amountAMin, amountBMin, to, deadline] =
-        iface.parseTransaction(call)?.args || []
-      return [
-        getAction('Remove liquidity'),
-        getLabel('at least'),
-        getToken(tokenA, amountAMin),
-        getLabel('and'),
-        getToken(tokenB, amountBMin),
-        ...getUniRecipientText(accountOp.accountAddr, to),
-        getDeadline(deadline)
-      ]
-    },
-    [iface.getFunction('removeLiquidityETH')?.selector!]: (accountOp: AccountOp, call: IrCall) => {
-      const [token /* liquidity */, , amountTokenMin, amountETHMin, to, deadline] =
-        iface.parseTransaction(call)?.args || []
-      return [
-        getAction('Remove liquidity'),
-        getLabel('at least'),
-        getToken(token, amountTokenMin),
-        getLabel('and'),
-        getToken(ZeroAddress, amountETHMin),
-        ...getUniRecipientText(accountOp.accountAddr, to),
-        getDeadline(deadline)
-      ]
-    }
-    // NOTE: We currently do not support *WithPermit functions cause they require an ecrecover signature
-    // Uniswap will detect we don't support it cause it will fail on requesting eth_signTypedData_v4
-  }
-}
+const swapExactTokensForTokensAbi = parseAbi([
+  'function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) returns (uint256[] amounts)'
+])
+const swapTokensForExactTokensAbi = parseAbi([
+  'function swapTokensForExactTokens(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline) returns (uint256[] amounts)'
+])
+const swapExactETHForTokensAbi = parseAbi([
+  'function swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline) payable returns (uint256[] amounts)'
+])
+const swapTokensForExactETHAbi = parseAbi([
+  'function swapTokensForExactETH(uint256 amountOut, uint256 amountInMax, address[] path, address to, uint256 deadline) returns (uint256[] amounts)'
+])
+const swapExactTokensForETHAbi = parseAbi([
+  'function swapExactTokensForETH(uint256 amountIn, uint256 amountOutMin, address[] path, address to, uint256 deadline) returns (uint256[] amounts)'
+])
+const swapETHForExactTokensAbi = parseAbi([
+  'function swapETHForExactTokens(uint256 amountOut, address[] path, address to, uint256 deadline) payable returns (uint256[] amounts)'
+])
+const addLiquidityAbi = parseAbi([
+  'function addLiquidity(address tokenA, address tokenB, uint256 amountADesired, uint256 amountBDesired, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) returns (uint256 amountA, uint256 amountB, uint256 liquidity)'
+])
+const addLiquidityETHAbi = parseAbi([
+  'function addLiquidityETH(address token, uint256 amountTokenDesired, uint256 amountTokenMin, uint256 amountETHMin, address to, uint256 deadline) payable returns (uint256 amountToken, uint256 amountETH, uint256 liquidity)'
+])
+const removeLiquidityAbi = parseAbi([
+  'function removeLiquidity(address tokenA, address tokenB, uint256 liquidity, uint256 amountAMin, uint256 amountBMin, address to, uint256 deadline) returns (uint256 amountA, uint256 amountB)'
+])
+const removeLiquidityETHAbi = parseAbi([
+  'function removeLiquidityETH(address token, uint256 liquidity, uint256 amountTokenMin, uint256 amountETHMin, address to, uint256 deadline) returns (uint256 amountToken, uint256 amountETH)'
+])
 
-export { uniV2Mapping }
+export const uniV2Mapping: HumanizerUniMatcher = {
+  // ordered in the same order as the router
+  [toFunctionSelector(swapExactTokensForTokensAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    const { args } = decodeFunctionData({
+      abi: swapExactTokensForTokensAbi,
+      data: call.data
+    })
+    const [, , path, to, deadline] = args
+    const outputAsset = path[path.length - 1]
+    if (!path[0] || !outputAsset) throw new Error('UniV2: missing assets in path')
+    return [
+      getAction('Swap'),
+      getToken(path[0], 0n),
+      getLabel('for'),
+      getToken(outputAsset, 0n),
+      ...getUniRecipientText(accountOp.accountAddr, to),
+      getDeadline(deadline)
+    ]
+  },
+  [toFunctionSelector(swapTokensForExactTokensAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    const { args } = decodeFunctionData({
+      abi: swapTokensForExactTokensAbi,
+      data: call.data
+    })
+    const [, , path, to, deadline] = args
+    const outputAsset = path[path.length - 1]
+    if (!path[0] || !outputAsset) throw new Error('UniV2: missing assets in path')
+
+    return [
+      getAction('Swap'),
+      getToken(path[0], 0n),
+      getLabel('for'),
+      getToken(outputAsset, 0n),
+      ...getUniRecipientText(accountOp.accountAddr, to),
+      getDeadline(deadline)
+    ]
+  },
+  [toFunctionSelector(swapExactETHForTokensAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    const { args } = decodeFunctionData({ abi: swapExactETHForTokensAbi, data: call.data })
+    const [, path, to, deadline] = args
+    const outputAsset = path[path.length - 1]
+    if (!outputAsset) throw new Error('UniV2: missing assets in path')
+
+    return [
+      getAction('Swap'),
+      getToken(zeroAddress, 0n),
+      getLabel('for'),
+      getToken(outputAsset, 0n),
+      ...getUniRecipientText(accountOp.accountAddr, to),
+      getDeadline(deadline)
+    ]
+  },
+  [toFunctionSelector(swapTokensForExactETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    const { args } = decodeFunctionData({ abi: swapTokensForExactETHAbi, data: call.data })
+    const [, , path, to, deadline] = args
+    if (!path[0]) throw new Error('UniV2: missing assets in path')
+
+    return [
+      getAction('Swap'),
+      getToken(path[0], 0n),
+      getLabel('for'),
+      getToken(zeroAddress, 0n),
+      ...getUniRecipientText(accountOp.accountAddr, to),
+      getDeadline(deadline)
+    ]
+  },
+  [toFunctionSelector(swapExactTokensForETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    const { args } = decodeFunctionData({ abi: swapExactTokensForETHAbi, data: call.data })
+    const [, , path, to, deadline] = args
+    if (!path[0]) throw new Error('UniV2: missing assets in path')
+
+    return [
+      getAction('Swap'),
+      getToken(path[0], 0n),
+      getLabel('for'),
+      getToken(zeroAddress, 0n),
+      ...getUniRecipientText(accountOp.accountAddr, to),
+      getDeadline(deadline)
+    ]
+  },
+  [toFunctionSelector(swapETHForExactTokensAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    const { args } = decodeFunctionData({ abi: swapETHForExactTokensAbi, data: call.data })
+    const [, path, to, deadline] = args
+    const outputAsset = path[path.length - 1]
+    if (!outputAsset) throw new Error('UniV2: missing assets in path')
+
+    return [
+      getAction('Swap'),
+      getToken(zeroAddress, 0n),
+      getLabel('for'),
+      getToken(outputAsset, 0n),
+      ...getUniRecipientText(accountOp.accountAddr, to),
+      getDeadline(deadline)
+    ]
+  },
+  // Liquidity
+  [toFunctionSelector(addLiquidityAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    const { args } = decodeFunctionData({ abi: addLiquidityAbi, data: call.data })
+    const [
+      tokenA,
+      tokenB,
+      amountADesired,
+      amountBDesired /* amountAMin */ /* amountBMin */,
+      ,
+      ,
+      to,
+      deadline
+    ] = args
+    return [
+      getAction('Add liquidity'),
+      getToken(tokenA, amountADesired),
+      getLabel('and'),
+      getToken(tokenB, amountBDesired),
+      ...getUniRecipientText(accountOp.accountAddr, to),
+      getDeadline(deadline)
+    ]
+  },
+  [toFunctionSelector(addLiquidityETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    const { args } = decodeFunctionData({ abi: addLiquidityETHAbi, data: call.data })
+    const [token, amountTokenDesired /* amountTokenMin */ /* amountETHMin */, , , to, deadline] =
+      args
+    return [
+      getAction('Add liquidity'),
+      getToken(token, amountTokenDesired),
+      getLabel('and'),
+      getToken(zeroAddress, call.value),
+      ...getUniRecipientText(accountOp.accountAddr, to),
+      getDeadline(deadline)
+    ]
+  },
+  [toFunctionSelector(removeLiquidityAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    const { args } = decodeFunctionData({ abi: removeLiquidityAbi, data: call.data })
+    const [tokenA, tokenB /* liquidity */, , amountAMin, amountBMin, to, deadline] = args
+    return [
+      getAction('Remove liquidity'),
+      getLabel('at least'),
+      getToken(tokenA, amountAMin),
+      getLabel('and'),
+      getToken(tokenB, amountBMin),
+      ...getUniRecipientText(accountOp.accountAddr, to),
+      getDeadline(deadline)
+    ]
+  },
+  [toFunctionSelector(removeLiquidityETHAbi[0])]: (accountOp: AccountOp, call: HexIrCall) => {
+    const { args } = decodeFunctionData({ abi: removeLiquidityETHAbi, data: call.data })
+    const [token /* liquidity */, , amountTokenMin, amountETHMin, to, deadline] = args
+    return [
+      getAction('Remove liquidity'),
+      getLabel('at least'),
+      getToken(token, amountTokenMin),
+      getLabel('and'),
+      getToken(zeroAddress, amountETHMin),
+      ...getUniRecipientText(accountOp.accountAddr, to),
+      getDeadline(deadline)
+    ]
+  }
+  // NOTE: We currently do not support *WithPermit functions cause they require an ecrecover signature
+  // Uniswap will detect we don't support it cause it will fail on requesting eth_signTypedData_v4
+}

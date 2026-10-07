@@ -2,6 +2,7 @@ import { Route as LiFiRoute, Token as LiFiToken } from '@lifi/types'
 
 import { AccountOpIdentifiedBy } from '../libs/accountOp/submittedAccountOp'
 import { TokenResult } from '../libs/portfolio'
+import type { FeeExemptionReason } from '../libs/swapAndBridge/fee'
 import { ControllerInterface } from './controller'
 
 export type ISwapAndBridgeController = ControllerInterface<
@@ -31,7 +32,23 @@ export interface SwapAndBridgeToToken {
   address: string
   icon?: string
   decimals: number
+  priceUSD?: string
 }
+
+/**
+ * LOADING also covers "not requested yet" and "the cached record went stale and is
+ * being refreshed" - in all three cases the UI has nothing to display yet.
+ */
+export type ToTokenMarketDataStatus = 'LOADING' | 'DONE' | 'NOT_FOUND' | 'FAIL'
+
+export interface ToTokenMarketData {
+  status: ToTokenMarketDataStatus
+  /** Ids of the exchanges the token is traded on. Only set on DONE. */
+  exchanges?: string[]
+}
+
+/** Keyed by `getTokenMarketDataKey(chainId, address)`. */
+export type ToTokenMarketDataByToken = { [key: string]: ToTokenMarketData }
 
 export interface SocketAPIQuote {
   fromAsset: SocketAPIToken
@@ -85,6 +102,136 @@ interface BungeeApprovalData {
   userAddress: string
 }
 
+export interface UniswapToken {
+  address: string
+  chainId: number
+  decimals: number
+  name: string
+  symbol: string
+  project?: {
+    logo?: {
+      url?: string
+    }
+  }
+}
+
+export interface UniswapQuote {
+  chainId: number
+  destinationChainId?: number
+  input: {
+    amount: string
+    token: string
+  }
+  output: {
+    amount: string
+    token: string
+    recipient?: string
+  }
+  swapper: string
+  tradeType: 'EXACT_INPUT' | 'EXACT_OUTPUT'
+  quoteId?: string
+  gasFeeUSD?: string
+  gasFee?: string
+  gasUseEstimate?: string
+  priceImpact?: number
+  slippage?: number
+  routeString?: string
+  estimatedFillTimeMs?: number
+  exclusiveRelayer?: string
+  exclusivityDeadline?: number
+  fillDeadline?: number
+  aggregatedOutputs?: {
+    amount: string
+    token: string
+    recipient: string
+    bps: number
+    minAmount?: string
+  }[]
+}
+
+export interface UniswapQuoteResponse {
+  requestId: string
+  routing: 'CLASSIC' | 'BRIDGE' | 'WRAP' | 'UNWRAP' | string
+  quote: UniswapQuote
+  permitData?: any
+}
+
+export interface UniswapTransactionRequest {
+  to: string
+  from: string
+  data: string
+  value: string
+  chainId: number
+}
+
+export interface UniswapSwapResponse {
+  requestId: string
+  swap: UniswapTransactionRequest
+  gasFee?: string
+}
+
+export interface UniswapApprovalResponse {
+  requestId: string
+  approval: UniswapTransactionRequest | null
+  cancel?: UniswapTransactionRequest | null
+}
+
+export interface UniswapStatusResponse {
+  requestId: string
+  swaps: {
+    swapType: string
+    status: 'PENDING' | 'SUCCESS' | 'NOT_FOUND' | 'FAILED' | 'EXPIRED'
+    txHash?: string
+    swapId?: string
+  }[]
+}
+
+export interface CowSwapOrderParameters {
+  sellToken: string
+  buyToken: string
+  receiver: string
+  sellAmount: string
+  buyAmount: string
+  validTo: number
+  appData: string
+  appDataHash?: string
+  feeAmount: string
+  kind: 'sell'
+  partiallyFillable: false
+  sellTokenBalance?: 'erc20'
+  buyTokenBalance?: 'erc20'
+}
+
+export interface CowSwapQuoteResponse {
+  quote: CowSwapOrderParameters & {
+    gasAmount: string
+    gasPrice: string
+    sellTokenPrice: string
+    signingScheme?: 'presign' | 'eip1271'
+  }
+  from?: string
+  expiration: string
+  id?: number
+  verified: boolean
+  protocolFeeBps?: string
+}
+
+export interface CowSwapOrderCreation extends CowSwapOrderParameters {
+  appDataHash: string
+  sellTokenBalance: 'erc20'
+  buyTokenBalance: 'erc20'
+  signingScheme: 'presign' | 'eip1271'
+  signature: '0x'
+  from: string
+  quoteId: number | null
+}
+
+export interface CowSwapRawRoute {
+  quoteResponse: CowSwapQuoteResponse
+  order: CowSwapOrderCreation
+  isEthFlow: boolean
+}
+
 export interface SwapAndBridgeRoute {
   providerId: string
   routeId: string
@@ -103,8 +250,9 @@ export interface SwapAndBridgeRoute {
   steps: SwapAndBridgeStep[]
   inputValueInUsd: number
   outputValueInUsd: number
+  outputValueAfterGasInUsd?: number
   serviceTime: number
-  rawRoute: SocketAPIRoute | LiFiRoute
+  rawRoute: SocketAPIRoute | LiFiRoute | UniswapQuoteResponse | CowSwapRawRoute
   toToken: LiFiToken
   disabled: boolean
   disabledReason?: string
@@ -127,6 +275,9 @@ export interface SwapAndBridgeRoute {
    * @example - Wrapping and unwrapping natives
    */
   withConvenienceFee: boolean
+  /** Why the selected operation has no convenience fee. */
+  feeExemptionReason?: FeeExemptionReason
+  isIntent?: boolean // we add this by ourselves
 }
 
 export interface SocketAPISwapUserTx {
@@ -363,7 +514,12 @@ export interface BungeeRouteStatus {
   bungeeStatusCode: number
 }
 
-export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | 'refunded' | null
+export type SwapAndBridgeRouteStatus = 'ready' | 'completed' | 'failed' | 'refunded' | null
+
+export type SwapAndBridgeRouteStatusResult = {
+  status: SwapAndBridgeRouteStatus
+  txnId?: string | null
+}
 
 export type SocketAPISupportedChain = {
   chainId: number
@@ -447,6 +603,7 @@ export interface BungeeExchangeQuoteResponse {
     suggestedClientSlippage: number
     approvalData: BungeeApprovalData
     txData: BungeeTxData
+    isIntent?: boolean // we add this by ourselves
   }
   destinationChainId: number
   input: {
@@ -462,6 +619,7 @@ export interface BungeeExchangeQuoteResponse {
     estimatedTime?: number
     routeDetails: BungeeRouteDetails
     slippage: number
+    isIntent?: boolean // we add this by ourselves
   }[]
   originChainId: number
   receiverAddress: string
@@ -487,6 +645,7 @@ export interface ProviderQuoteParams {
   isWrapOrUnwrap: boolean
   accountNativeBalance: bigint
   nativeSymbol: string
+  feePercent: number
 }
 
 export interface SwapProvider {
@@ -500,13 +659,17 @@ export interface SwapProvider {
    * null if a successful fetch has not been made yet
    */
   supportedChains: SwapAndBridgeSupportedChain[] | null
+  areChainsSupported?(params: { fromChainId: number; toChainId: number }): boolean
   getSupportedChains(): Promise<SwapAndBridgeSupportedChain[]>
   getToTokenList({
     fromChainId,
-    toChainId
+    toChainId,
+    onUpdate
   }: {
     fromChainId: number
     toChainId: number
+    /** Reports the merged token list whenever another provider completes successfully. */
+    onUpdate?: (tokens: SwapAndBridgeToToken[]) => void
   }): Promise<SwapAndBridgeToToken[]>
   getToken({
     address,
@@ -527,19 +690,37 @@ export interface SwapProvider {
     userAddress,
     sort,
     accountNativeBalance,
-    nativeSymbol
+    nativeSymbol,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote>
   getRouteStatus({
     txHash,
     fromChainId,
     toChainId,
     bridge,
-    providerId
+    providerId,
+    requestId,
+    routeId,
+    rawRoute
   }: {
     txHash: string
     fromChainId: number
     toChainId: number
     bridge?: string
     providerId: string
-  }): Promise<SwapAndBridgeRouteStatus>
+    requestId?: string
+    routeId?: string
+    rawRoute?: SwapAndBridgeRoute['rawRoute']
+  }): Promise<SwapAndBridgeRouteStatusResult>
+}
+
+/** Public metadata used to identify a swap provider in the UI. */
+export interface SwapProviderInfo {
+  id: string
+  name: string
+}
+
+/** A swap provider facade that can also describe the providers it executes. */
+export interface SwapProviderExecutor extends SwapProvider {
+  getProvidersInfo(): SwapProviderInfo[]
 }

@@ -1,6 +1,12 @@
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 import { SelectedAccountForImport } from './account'
-import { ExternalSignerController, Key } from './keystore'
+import { ExternalSignerController, Key, ParsedQrAccount, QrProtocolType } from './keystore'
+
+export type QrWalletConfig = {
+  protocol: QrProtocolType
+  label: string
+  tutorialUrl?: string
+}
 
 export interface KeyIterator {
   type: Key['type']
@@ -9,6 +15,12 @@ export interface KeyIterator {
   walletSDK?: any
   /** Needed for the hardware wallets only */
   controller?: ExternalSignerController
+  /**
+   * Which of the offered derivation paths this wallet can browse. Wallets that hand
+   * over a single extended public key (QR, NFC) are limited to the paths that branch
+   * off it. Undefined means every path is available.
+   */
+  derivableHdPathTemplates?: HD_PATH_TEMPLATE_TYPE[]
   /** Retrieves the the public addresses (accounts) from specific indexes */
   retrieve: (
     fromToArr: { from: number; to: number }[],
@@ -29,10 +41,8 @@ export interface KeyIterator {
       createdAt: number
     }
   }[]
-  getEncryptedSeed?: (encryptor: any) => Promise<{
-    seed: string
-    passphrase: string | null
-  } | null>
   /** Checks if the seed matches the key iterator's seed (optional, for hot wallets) */
-  isSeedMatching?: (seedToCompareWith: string) => boolean
+  isSeedMatching?: (seedToCompareWith: string, passphraseToCompareWith: string | null) => boolean
+  // QR-specific optional fields
+  parsedAccount?: ParsedQrAccount
 }

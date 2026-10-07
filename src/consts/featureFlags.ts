@@ -1,13 +1,81 @@
 export interface FeatureFlags {
   withTransactionManagerController: boolean
   withEmailVaultController: boolean
+  withContinuousUpdatesController: boolean
   testnetMode: boolean
   tokenAndDefiAutoDiscovery: boolean
+  clearSigning: boolean
+  apiForFunctionSelectors: boolean
+  gasTank: boolean
+  networkConfig: boolean
+  ambireSmartAccounts: boolean
+  scamAndPhishingChecker: boolean
+  tokenPrices: boolean
+  /**
+   * Allow the user to opt out of erc4337 which will automatically
+   * disable paying gas in different tokens & gas tank.
+   * For Ambire v2 accounts, it will also disable ETH payments (the user
+   * will need an EOA account just like using a Safe)
+   */
+  erc4337: boolean
+  /**
+   * Allow the user to opt out of upgrading EOA accounts through ERC-7702.
+   * Existing onchain delegations are not revoked when this is disabled.
+   */
+  eip7702: boolean
+  /**
+   * Off by default for privacy: passively bulk-resolving ENS/Namoshi for all
+   * accounts links them together. When enabled, the wallet keeps every account's
+   * ENS profile fresh in the background (the pre-privacy behaviour).
+   */
+  keepEnsProfilesUpToDate: boolean
+  /**
+   * Fetch the price movement and the exchanges of the tokens in the Swap & Bridge
+   * receive list. Requires sending their addresses to our price API, so the user
+   * can opt out of it.
+   */
+  swapAndBridgeTokenInfo: boolean
+  /**
+   * Off by default for privacy: Ledger's signing kit reports every transaction
+   * and typed data signed with a Ledger device to Ledger (network, contract or
+   * recipient address, device model/firmware, app versions and whether it was
+   * blind-signed). When enabled, those reports are sent.
+   */
+  ledgerSigningReports: boolean
+  /**
+   * Find the pending $WALLET withdrawals (unstakes) of the account through
+   * Ambire's relayer logs. Requires sending the account address to the relayer,
+   * so the user can opt out of it. When disabled, the withdrawals are found
+   * only from the locally known transactions and from transaction ids that
+   * the user enters.
+   */
+  walletStakingWithdrawalsLookup: boolean
+  /** Resolve Namoshi names (.btc, .citrea) on Citrea. */
+  namoshiDomains: boolean
+  /** Resolve GNS names (.gwei) on Ethereum. */
+  gnsDomains: boolean
 }
 
 export const defaultFeatureFlags: FeatureFlags = {
   withTransactionManagerController: false,
   withEmailVaultController: true,
+  withContinuousUpdatesController: true,
   testnetMode: false,
-  tokenAndDefiAutoDiscovery: true
+  tokenAndDefiAutoDiscovery: true,
+  clearSigning: true,
+  apiForFunctionSelectors: true,
+  gasTank: true,
+  networkConfig: true,
+  ambireSmartAccounts: true,
+  scamAndPhishingChecker: true,
+  tokenPrices: true,
+  erc4337: true,
+  eip7702: true,
+  keepEnsProfilesUpToDate: false,
+  swapAndBridgeTokenInfo: true,
+  ledgerSigningReports: false,
+  walletStakingWithdrawalsLookup: true,
+  // @TODO: Introduce a setting and flip to false
+  namoshiDomains: true,
+  gnsDomains: true
 }

@@ -1,18 +1,13 @@
-import fetch from 'node-fetch'
+import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
+import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
+import { AccountOnchainState } from '@/interfaces/account'
+import { AccountOpStatus } from '@/libs/accountOp/types'
+import { KeyIterator } from '@/libs/keyIterator/keyIterator'
+import wait from '@/utils/wait'
+import { describe, expect, jest, test } from '@jest/globals'
+import { makeMainController } from '@test/helpers/mainController'
 
-import { describe, expect, test } from '@jest/globals'
-
-import { relayerUrl, velcroUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
-import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
-import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { KeyIterator } from '../../libs/keyIterator/keyIterator'
-import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
-import wait from '../../utils/wait'
 import { MainController } from './main'
-
-const uiManager = mockUiManager().uiManager
 
 describe('Main Controller ', () => {
   const accounts = [
@@ -48,35 +43,12 @@ describe('Main Controller ', () => {
     }
   ]
 
-  const storage = produceMemoryStore()
-  const email = 'unufri@ambire.com'
-  storage.set('accounts', accounts)
   let controller: MainController
-  test('Init controller', async () => {
-    controller = new MainController({
-      appVersion: '5.31.0',
-      platform: 'default',
-      storageAPI: storage,
-      fetch,
-      relayerUrl,
-      liFiApiKey: '',
-      bungeeApiKey: '',
-      featureFlags: {},
-      keystoreSigners: { internal: KeystoreSigner },
-      externalSignerControllers: {},
-      uiManager,
-      velcroUrl
+  beforeAll(async () => {
+    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
     })
-    // eslint-disable-next-line no-promise-executor-return
-    await new Promise((resolve) => {
-      const unsubscribe = controller.onUpdate(() => {
-        unsubscribe()
-        resolve(null)
-      })
-    })
-    // console.dir(controller.accountStates, { depth: null })
-    // @TODO
-    // expect(states).to
+    controller = mainCtrl
   })
 
   // @TODO: We should pass `autoConfirmMagicLink` to emailVault controller initialization
@@ -100,11 +72,8 @@ describe('Main Controller ', () => {
   // })
 
   test('backup keyStore secret emailVault', async () => {
-    // console.log(
-    //   JSON.stringify(controller.emailVault.emailVaultStates[email].availableSecrets, null, 2)
-    // )
-    controller.emailVault?.uploadKeyStoreSecret(email)
-    // eslint-disable-next-line no-promise-executor-return
+    void controller.emailVault?.uploadKeyStoreSecret('unufri@ambire.com')
+
     await new Promise((resolve) => {
       if (controller.emailVault) {
         const unsubscribe = controller.emailVault.onUpdate(() => {
@@ -115,7 +84,110 @@ describe('Main Controller ', () => {
         resolve(null)
       }
     })
-    // console.log(JSON.stringify(controller.emailVault, null, 2))
+    // Assert the emailVault sub-controller is present and its status was updated
+    expect(controller.emailVault).not.toBeNull()
+    expect(controller.emailVault?.statuses).toBeDefined()
+  })
+
+  test('refreshes Safe transactions once while a manual refresh is in progress', async () => {
+    let finishRefresh: (() => void) | undefined
+    let markRefreshAsStarted: (() => void) | undefined
+    const refreshStarted = new Promise<void>((resolve) => {
+      markRefreshAsStarted = resolve
+    })
+    const fetchSafeTxnsSpy = jest.spyOn(controller, 'fetchSafeTxns').mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRefresh = resolve
+          markRefreshAsStarted?.()
+        })
+    )
+
+    const firstRefresh = controller.refreshSafeTxns()
+    await refreshStarted
+    const secondRefresh = controller.refreshSafeTxns()
+
+    expect(controller.statuses.refreshSafeTxns).toBe('LOADING')
+    expect(fetchSafeTxnsSpy).toHaveBeenCalledTimes(1)
+    expect(fetchSafeTxnsSpy).toHaveBeenCalledWith([], true)
+
+    if (!finishRefresh) throw new Error('Safe transaction refresh did not start')
+    finishRefresh()
+    await Promise.all([firstRefresh, secondRefresh])
+
+    expect(controller.statuses.refreshSafeTxns).toBe('INITIAL')
+    fetchSafeTxnsSpy.mockRestore()
+  })
+
+  test('tracks the Safe pending transaction API fetch while it is in progress', async () => {
+    const originalSelectedAccount = controller.selectedAccount.account
+    const account = controller.accounts.accounts[0]
+    if (!account) throw new Error('Expected an account')
+
+    controller.selectedAccount.account = {
+      ...account,
+      creation: null,
+      safeCreation: {
+        factoryAddr: '0x1',
+        singleton: '0x1',
+        saltNonce: '0x00',
+        setupData: '0x',
+        version: '1.4.1'
+      }
+    }
+
+    const accountState: AccountOnchainState = {
+      accountAddr: account.addr,
+      isDeployed: true,
+      eoaNonce: null,
+      nonce: 0n,
+      erc4337Nonce: 0n,
+      associatedKeys: account.associatedKeys,
+      importedAccountKeys: [],
+      balance: 0n,
+      isEOA: false,
+      isErc4337Enabled: false,
+      isErc4337Nonce: false,
+      isV2: false,
+      currentBlock: 0n,
+      isSmarterEoa: false,
+      delegatedContract: null,
+      delegatedContractName: null,
+      threshold: 2,
+      updatedAt: 0
+    }
+    const getAccountStatesSpy = jest
+      .spyOn(controller.accounts, 'getOrFetchAccountStates')
+      .mockResolvedValue({ '1': accountState })
+    let finishFetch: (() => void) | undefined
+    let markFetchAsStarted: (() => void) | undefined
+    const fetchStarted = new Promise<void>((resolve) => {
+      markFetchAsStarted = resolve
+    })
+    const fetchPendingSpy = jest.spyOn(controller.safe, 'fetchPending').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishFetch = () => resolve({})
+          markFetchAsStarted?.()
+        })
+    )
+
+    try {
+      const fetchPromise = controller.fetchSafeTxns([1n])
+      await fetchStarted
+
+      expect(controller.statuses.fetchSafeTxns).toBe('LOADING')
+
+      if (!finishFetch) throw new Error('Safe transaction fetch did not start')
+      finishFetch()
+      await fetchPromise
+
+      expect(controller.statuses.fetchSafeTxns).toBe('INITIAL')
+    } finally {
+      controller.selectedAccount.account = originalSelectedAccount
+      getAccountStatesSpy.mockRestore()
+      fetchPendingSpy.mockRestore()
+    }
   })
 
   // @TODO - have to rewrite this test and it should be part of email vault tests.
@@ -135,33 +207,11 @@ describe('Main Controller ', () => {
   // })
 
   test('should add an account from the account picker and persist it in accounts', async () => {
-    controller = new MainController({
-      appVersion: '5.31.0',
-      platform: 'default',
-      storageAPI: storage,
-      fetch,
-      relayerUrl,
-      liFiApiKey: '',
-      bungeeApiKey: '',
-      featureFlags: {},
-      uiManager,
-      keystoreSigners: { internal: KeystoreSigner },
-      externalSignerControllers: {},
-      velcroUrl
+    const { mainCtrl: controller } = await makeMainController(async (storageCtrl) => {
+      await storageCtrl.set('accounts', accounts)
     })
 
-    let retries = 0
-
-    while (!controller.isReady && retries < 20) {
-      // eslint-disable-next-line no-await-in-loop
-      await wait(100)
-      retries++
-    }
-
-    if (!controller.isReady) {
-      console.error('Controller failed to become ready in time', controller)
-      throw new Error('Controller initialization timeout')
-    }
+    await controller.initialLoadPromise
 
     await controller.keystore.addSecret('password', '12345678', '', true)
     const keyIterator = new KeyIterator(
@@ -178,7 +228,6 @@ describe('Main Controller ', () => {
 
     let retries2 = 0
     while (controller.accountPicker.accountsLoading && retries2 < 20) {
-      // eslint-disable-next-line no-await-in-loop
       await wait(100)
       retries2++
     }
@@ -194,69 +243,32 @@ describe('Main Controller ', () => {
     expect(controller.accounts.accounts.map((a) => a.addr)).toContain(accToSelect.addr)
   })
 
-  // FIXME: This test works when fired standalone, but it throws an error when
-  // run with the rest of the tests. Figure out wtf.
-  test.skip('should add accounts and merge the associated keys of the already added accounts', (done) => {
-    const mainCtrl = new MainController({
-      appVersion: '5.31.0',
-      platform: 'default',
-      storageAPI: storage,
-      fetch,
-      relayerUrl,
-      liFiApiKey: '',
-      bungeeApiKey: '',
-      featureFlags: {},
-      uiManager,
-      keystoreSigners: { internal: KeystoreSigner },
-      externalSignerControllers: {},
-      velcroUrl
-    })
-
-    mainCtrl.accounts.accounts = [
-      {
-        addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
-        associatedKeys: ['0x699380c785819B2f400cb646b12C4C60b4dc7fcA'],
-        initialPrivileges: [
-          [
-            '0x699380c785819B2f400cb646b12C4C60b4dc7fcA',
-            '0x0000000000000000000000000000000000000000000000000000000000000001'
-          ]
-        ],
-        creation: accounts[0]!.creation,
-        preferences: {
-          label: DEFAULT_ACCOUNT_LABEL,
-          pfp: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033'
-        }
-      }
+  test('should add accounts and merge the associated keys of the already added accounts', async () => {
+    const privilege: [string, string] = [
+      '0x699380c785819B2f400cb646b12C4C60b4dc7fcA',
+      '0x0000000000000000000000000000000000000000000000000000000000000001'
     ]
-
-    let emitCounter = 0
-    const unsubscribe = mainCtrl.onUpdate(() => {
-      emitCounter++
-      if (emitCounter === 3) {
-        expect(mainCtrl.accounts.accounts[0]!.associatedKeys.length).toEqual(2)
-        expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
-          '0x699380c785819B2f400cb646b12C4C60b4dc7fcA'
-        )
-        expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
-          '0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'
-        )
-        unsubscribe()
-        done()
+    const existingAccount = {
+      addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
+      associatedKeys: ['0x699380c785819B2f400cb646b12C4C60b4dc7fcA'],
+      initialPrivileges: [privilege],
+      creation: accounts[0]!.creation,
+      preferences: {
+        label: DEFAULT_ACCOUNT_LABEL,
+        pfp: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033'
       }
-    })
+    }
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    mainCtrl.accounts.addAccounts([
+    const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+      await storageCtrl.set('accounts', [existingAccount])
+    })
+    await mainCtrl.initialLoadPromise
+
+    await mainCtrl.accounts.addAccounts([
       {
         addr: '0x0af4DF1eBE058F424F7995BbE02D50C5e74bf033',
         associatedKeys: ['0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'],
-        initialPrivileges: [
-          [
-            '0x699380c785819B2f400cb646b12C4C60b4dc7fcA',
-            '0x0000000000000000000000000000000000000000000000000000000000000001'
-          ]
-        ],
+        initialPrivileges: [privilege],
         creation: accounts[0]!.creation,
         preferences: {
           label: DEFAULT_ACCOUNT_LABEL,
@@ -264,6 +276,96 @@ describe('Main Controller ', () => {
         }
       }
     ])
+
+    expect(mainCtrl.accounts.accounts[0]!.associatedKeys.length).toEqual(2)
+    expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
+      '0x699380c785819B2f400cb646b12C4C60b4dc7fcA'
+    )
+    expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
+      '0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'
+    )
+  })
+
+  describe('updateAccounts', () => {
+    const getAccount = (addr: string) => ({
+      addr,
+      associatedKeys: [],
+      initialPrivileges: [],
+      creation: accounts[0]!.creation,
+      preferences: { label: DEFAULT_ACCOUNT_LABEL, pfp: addr }
+    })
+
+    test('adds selected accounts and removes deselected imported accounts', async () => {
+      const accountToKeep = getAccount('0x1111111111111111111111111111111111111111')
+      const accountToRemove = getAccount('0x2222222222222222222222222222222222222222')
+      const accountToAdd = getAccount('0x3333333333333333333333333333333333333333')
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', [accountToKeep, accountToRemove])
+      })
+      await mainCtrl.initialLoadPromise
+
+      await mainCtrl.updateAccounts({
+        accountsToAdd: [accountToAdd],
+        accountAddressesToRemove: [accountToRemove.addr]
+      })
+
+      expect(mainCtrl.accounts.accounts.map((account) => account.addr)).toEqual([
+        accountToKeep.addr,
+        accountToAdd.addr
+      ])
+    })
+
+    test('ignores removal requests for accounts that are not imported', async () => {
+      const importedAccount = getAccount('0x1111111111111111111111111111111111111111')
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', [importedAccount])
+      })
+      await mainCtrl.initialLoadPromise
+
+      await mainCtrl.updateAccounts({
+        accountsToAdd: [],
+        accountAddressesToRemove: ['0x2222222222222222222222222222222222222222']
+      })
+
+      expect(mainCtrl.accounts.accounts.map((account) => account.addr)).toEqual([
+        importedAccount.addr
+      ])
+    })
+
+    test('does not remove an account that is also being added', async () => {
+      const importedAccount = getAccount('0x1111111111111111111111111111111111111111')
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', [importedAccount])
+      })
+      await mainCtrl.initialLoadPromise
+
+      await mainCtrl.updateAccounts({
+        accountsToAdd: [importedAccount],
+        accountAddressesToRemove: [importedAccount.addr]
+      })
+
+      expect(mainCtrl.accounts.accounts.map((account) => account.addr)).toEqual([
+        importedAccount.addr
+      ])
+    })
+
+    test('selects the first newly imported account when imported accounts come first', async () => {
+      const importedAccount = getAccount('0x1111111111111111111111111111111111111111')
+      const firstNewAccount = getAccount('0x2222222222222222222222222222222222222222')
+      const secondNewAccount = getAccount('0x3333333333333333333333333333333333333333')
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', [importedAccount])
+        await storageCtrl.set('selectedAccount', importedAccount.addr)
+      })
+      await mainCtrl.initialLoadPromise
+
+      await mainCtrl.updateAccounts({
+        accountsToAdd: [importedAccount, firstNewAccount, secondNewAccount],
+        accountAddressesToRemove: []
+      })
+
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(firstNewAccount.addr)
+    })
   })
 
   test('should check if network features get displayed correctly for ethereum', async () => {
@@ -295,5 +397,328 @@ describe('Main Controller ', () => {
 
     const eth3 = controller.networks.networks.find((n) => n.chainId === 1n)!
     expect(eth3.areContractsDeployed).toEqual(true)
+  })
+
+  describe('updateAccountsOpsStatuses', () => {
+    const senderAccount = accounts[0]!.addr
+    const selectedAccountAddr = accounts[1]!.addr
+    const recipientAccount = accounts[2]!.addr
+
+    const flushAsyncUpdates = async () => {
+      await wait(10)
+    }
+
+    const setupController = async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+      })
+
+      // Avoid noisy side effects from this call while keeping the update flow realistic.
+      jest
+        .spyOn(mainCtrl.portfolio, 'reportMissedPortfolioUpdateAfterUpdatedAccountOp')
+        .mockImplementation(() => {})
+
+      jest
+        .spyOn(mainCtrl.swapAndBridge, 'handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate')
+        .mockImplementation(() => {})
+
+      return mainCtrl
+    }
+
+    test('should fetch safe txns when shouldEmitUpdate is false and shouldFetchSafeTxns is true', async () => {
+      const mainCtrl = await setupController()
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: false,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: { [recipientAccount]: [1n] },
+          shouldFetchSafeTxns: true,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [
+            {
+              id: '1',
+              accountAddr: senderAccount,
+              chainId: 1n,
+              status: AccountOpStatus.Success,
+              calls: []
+            } as any
+          ]
+        }
+      })
+
+      const fetchSafeTxnsSpy = jest.spyOn(mainCtrl, 'fetchSafeTxns').mockResolvedValue(undefined)
+      const updateAccountStateSpy = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      const discardSimulationSpy = jest
+        .spyOn(mainCtrl.portfolio, 'discardSimulation')
+        .mockResolvedValue(undefined)
+      const updateSelectedAccountSpy = jest
+        .spyOn(mainCtrl.portfolio, 'updateSelectedAccount')
+        .mockResolvedValue(undefined)
+      const scheduleUpdateSpy = jest
+        .spyOn(mainCtrl.portfolio, 'scheduleUpdate')
+        .mockImplementation(() => {})
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(fetchSafeTxnsSpy).toHaveBeenCalledTimes(1)
+      expect(updateAccountStateSpy).not.toHaveBeenCalled()
+      expect(discardSimulationSpy).not.toHaveBeenCalled()
+      expect(updateSelectedAccountSpy).not.toHaveBeenCalled()
+      expect(scheduleUpdateSpy).not.toHaveBeenCalled()
+    })
+
+    test('should update account state for account address and discard finalized simulations', async () => {
+      const mainCtrl = await setupController()
+
+      const finalizedAccountOp = {
+        id: 'finalized-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+      const pendingAccountOp = {
+        id: 'pending-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Pending,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [pendingAccountOp] })
+
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [pendingAccountOp, finalizedAccountOp]
+        }
+      })
+
+      const updateAccountStateSpy = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      const discardSimulationSpy = jest
+        .spyOn(mainCtrl.portfolio, 'discardSimulation')
+        .mockResolvedValue(undefined)
+      const scheduleUpdateSpy = jest
+        .spyOn(mainCtrl.portfolio, 'scheduleUpdate')
+        .mockImplementation(() => {})
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n])
+      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
+      // A cache-busting update is scheduled for the updated chain.
+      expect(scheduleUpdateSpy).toHaveBeenCalledTimes(1)
+      expect(scheduleUpdateSpy).toHaveBeenCalledWith({
+        accountId: senderAccount,
+        chainId: 1n,
+        bypassServerSideCache: true
+      })
+    })
+
+    test('should call updateSelectedAccount for recipient accounts from portfoliosToUpdate', async () => {
+      const mainCtrl = await setupController()
+
+      const finalizedAccountOp = {
+        id: 'finalized-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: {
+            [recipientAccount]: [1n]
+          },
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [finalizedAccountOp]
+        }
+      })
+
+      jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockResolvedValue(undefined)
+      jest.spyOn(mainCtrl.portfolio, 'discardSimulation').mockResolvedValue(undefined)
+      const updateSelectedAccountSpy = jest
+        .spyOn(mainCtrl.portfolio, 'updateSelectedAccount')
+        .mockResolvedValue(undefined)
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(updateSelectedAccountSpy).toHaveBeenCalledWith(
+        recipientAccount,
+        expect.arrayContaining([expect.objectContaining({ chainId: 1n })])
+      )
+    })
+
+    test('should update account state and discard simulation even when selected account is different', async () => {
+      const mainCtrl = await setupController()
+
+      await mainCtrl.selectedAccount.setAccount(mainCtrl.accounts.accounts[1]!)
+
+      const finalizedAccountOp = {
+        id: 'finalized-op',
+        // Different account than the selected one, but it should still update and discard simulations for it
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [finalizedAccountOp]
+        }
+      })
+
+      const updateAccountStateSpy = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      const discardSimulationSpy = jest
+        .spyOn(mainCtrl.portfolio, 'discardSimulation')
+        .mockResolvedValue(undefined)
+      const scheduleUpdateSpy = jest
+        .spyOn(mainCtrl.portfolio, 'scheduleUpdate')
+        .mockImplementation(() => {})
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(mainCtrl.selectedAccount.account?.addr).toBe(selectedAccountAddr)
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n])
+      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
+      // Scheduling targets the tx account, not the selected one.
+      expect(scheduleUpdateSpy).toHaveBeenCalledWith({
+        accountId: senderAccount,
+        chainId: 1n,
+        bypassServerSideCache: true
+      })
+    })
+
+    test('schedules a cache-busting update for every chain in chainsToUpdate', async () => {
+      const mainCtrl = await setupController()
+
+      const finalizedAccountOp = {
+        id: 'finalized-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n, 10n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [finalizedAccountOp]
+        }
+      })
+
+      const updateAccountStateSpy = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      jest.spyOn(mainCtrl.portfolio, 'discardSimulation').mockResolvedValue(undefined)
+      const scheduleUpdateSpy = jest
+        .spyOn(mainCtrl.portfolio, 'scheduleUpdate')
+        .mockImplementation(() => {})
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n, 10n])
+      expect(scheduleUpdateSpy).toHaveBeenCalledTimes(2)
+      expect(scheduleUpdateSpy).toHaveBeenCalledWith({
+        accountId: senderAccount,
+        chainId: 1n,
+        bypassServerSideCache: true
+      })
+      expect(scheduleUpdateSpy).toHaveBeenCalledWith({
+        accountId: senderAccount,
+        chainId: 10n,
+        bypassServerSideCache: true
+      })
+    })
+
+    test('schedules the update before discarding the simulation', async () => {
+      const mainCtrl = await setupController()
+
+      const finalizedAccountOp = {
+        id: 'finalized-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'pending-op', calls: [] } as any] })
+
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [finalizedAccountOp]
+        }
+      })
+
+      jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockResolvedValue(undefined)
+      const scheduleUpdateSpy = jest
+        .spyOn(mainCtrl.portfolio, 'scheduleUpdate')
+        .mockImplementation(() => {})
+      const discardSimulationSpy = jest
+        .spyOn(mainCtrl.portfolio, 'discardSimulation')
+        .mockResolvedValue(undefined)
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(scheduleUpdateSpy.mock.invocationCallOrder[0]!).toBeLessThan(
+        discardSimulationSpy.mock.invocationCallOrder[0]!
+      )
+    })
   })
 })

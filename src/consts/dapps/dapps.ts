@@ -1,3 +1,5 @@
+import { Dapp } from '@/interfaces/dapp'
+
 export const dappIdsToBeRemoved = new Set([
   'legends.ambire.com', // Remove legends from the list as it was replaced with rewards.ambire.com
   'yearn.finance', // Remove the legacy Yarn Finance URL from the list
@@ -13,10 +15,12 @@ export const dappIdsToBeRemoved = new Set([
   'curve.fi', // curve.fi was moved to curve.finance
   'app.ether.fi', // app.ether.fi was moved to ether.fi
   'core.app', // not supported,
+  'new.bungee.exchange', // got left hanging since Bungee moved to bungee.exchange
+  'multitx.bungee.exchange', // got left hanging since Bungee moved to bungee.exchange
+  'jumper.exchange', // jumper.exchange was moved to jumper.xyz
   // unsupported or outdated protocols returned by DefiLlama
   'bridge.base.org',
   'binance.com',
-  'app.ethena.fi',
   'securitize.io',
   'gold.tether.to',
   'usdtb.money',
@@ -76,19 +80,19 @@ export const featuredDapps = new Set([
   'snapshot.box/#/s:ambire.eth',
   'lido.fi',
   'bitrefill.com',
-  'altitude.fi',
   'drops.bot',
   'app.barterswap.xyz'
 ])
 
 // NOTE: The final dApp list sorting preserves the order of this list
-export const predefinedDapps = [
+export const predefinedDapps: Dapp[] = [
   {
     id: 'rewards.ambire.com',
     url: 'https://rewards.ambire.com',
     name: 'Ambire Rewards',
     icon: 'https://rewards.ambire.com/ambire-connect-icon.png',
-    description: 'Complete quests, earn XP and climb the leaderboard to secure Ambire rewards.',
+    description:
+      'Stake your $WALLET tokens, participate in the WalletDAO, and earn staking rewards.',
     chainIds: [1, 8453, 10, 42161, 534352, 56],
     twitter: 'ambire'
   },
@@ -117,7 +121,7 @@ export const predefinedDapps = [
     name: 'Bitrefill',
     icon: 'https://www.bitrefill.com/android-chrome-192x192.png',
     description: 'The crypto store for digital gift cards, eSIMs, and phone refills.',
-    chains: [1, 137],
+    chainIds: [1, 137],
     category: 'Payments',
     twitter: 'bitrefill'
   },
@@ -166,7 +170,7 @@ export const predefinedDapps = [
     icon: 'https://static.debank.com/image/project/logo_url/ftm_spookyswap/d14381e7154b7cfecaa8ba7887e73b95.png',
     description: 'Farm BOO with Spooky LP Tokens',
     category: 'Dexs',
-    chains: [250, 199, 146, 7332],
+    chainIds: [250, 199, 146, 7332],
     twitter: 'SpookySwap'
   },
   {
@@ -176,7 +180,7 @@ export const predefinedDapps = [
     icon: 'https://static.debank.com/image/project/logo_url/looksrare/45d6664429880a23ba34359c45bab95e.png',
     description: 'Buy & Sell NFTs, Get Rewards',
     category: 'NFT Marketplace',
-    chains: [1],
+    chainIds: [1],
     twitter: 'LooksRareNFT'
   },
   {
@@ -410,6 +414,41 @@ export const predefinedDapps = [
     description: 'Leading DEX on Base Chain with staking and farming.',
     twitter: 'BaseSwapDEX',
     category: 'Dexes'
+  },
+  // DefiLlama returns an empty `url` (flagged as `deadUrl`) for CoW Swap, so it can't come from there
+  {
+    id: 'swap.cow.fi',
+    url: 'https://swap.cow.fi',
+    name: 'CoW Swap',
+    icon: 'https://icons.llamao.fi/icons/protocols/cowswap',
+    description:
+      'CoW Swap finds the lowest prices across all exchanges and aggregators & saves you more by matching Coincidences of Wants (CoWs) and protecting from MEV',
+    twitter: 'CoWSwap',
+    category: 'DEX Aggregator'
+  },
+  // Same as CoW Swap - empty `url` from DefiLlama. The eth.limo gateway serves the `tornadocash.eth`
+  // ENS contenthash, which is controlled by the Tornado Cash governance contract
+  {
+    id: 'tornadocash.eth.limo',
+    url: 'https://tornadocash.eth.limo',
+    name: 'Tornado Cash',
+    icon: 'https://icons.llamao.fi/icons/protocols/tornado-cash',
+    description:
+      'Non-custodial anonymous transactions on Ethereum. Opens the official app through the eth.limo service - the fastest way to load it.',
+    twitter: 'TornadoCash',
+    category: 'Privacy'
+  },
+  // Same `tornadocash.eth` app as above, but the inbrowser.link gateway verifies every file
+  // against its IPFS hash in the browser, so there is no need to trust a gateway server
+  {
+    id: 'tornadocash-eth.ipns.inbrowser.link',
+    url: 'https://tornadocash-eth.ipns.inbrowser.link',
+    name: 'Tornado Cash',
+    icon: 'https://icons.llamao.fi/icons/protocols/tornado-cash',
+    description:
+      'Non-custodial anonymous transactions on Ethereum. Opens the same official app, but your browser checks every file itself, so you do not have to trust a middleman server. Slower to load.',
+    twitter: 'TornadoCash',
+    category: 'Privacy'
   }
 ]
 
@@ -419,7 +458,14 @@ export const defiLlamaProtocolIdsToExclude: string[] = [
 
 export const categoriesNotToFilterOut = ['DEX Aggregator']
 export const categoriesToExclude = ['CEX', 'Developer Tools']
-export const dappsNotToFilterOutByDomain = ['snapshot.box']
+export const dappsNotToFilterOutByDomain = [
+  'snapshot.box',
+  'bungee.exchange',
+  'altitude.fi',
+  'zora.co',
+  'swap.defillama.com',
+  'jumper.xyz'
+]
 
 export const CATEGORY_MAP: Record<string, string> = {
   'AI Agents': 'AI Agents',
@@ -437,11 +483,12 @@ export const CATEGORY_MAP: Record<string, string> = {
   'Cross Chain Bridge': 'Bridges',
   'Cross-Chain': 'Bridges',
   'DAO Tooling': 'DAO Tooling',
-  'DEX Aggregator': 'DEXs',
+  'DEX Aggregator': 'DEX Aggregator',
   DOR: 'DOR',
   'Decentralized BTC': 'BTC Derivatives',
   Derivatives: 'Derivatives',
   Dexes: 'DEXs',
+  Dexs: 'DEXs',
   'Domain Services': 'Domains',
   Domains: 'Domains',
   'Dual-Token Stablecoin': 'Stablecoins',

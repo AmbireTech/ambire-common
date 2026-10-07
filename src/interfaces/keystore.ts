@@ -1,12 +1,10 @@
-import { Transaction, TypedDataField } from 'ethers'
+import { JsonRpcProvider, Transaction, TypedDataField } from 'ethers'
 
 import { EIP7702Auth } from '../consts/7702'
 import { HD_PATH_TEMPLATE_TYPE } from '../consts/derivation'
 // TODO: Handle better to prevent dep cycle
-// eslint-disable-next-line import/no-cycle
 import { GasFeePayment } from '../libs/accountOp/accountOp'
 // TODO: Handle better to prevent dep cycle
-// eslint-disable-next-line import/no-cycle
 import { Call } from '../libs/accountOp/types'
 import { getHdPathFromTemplate } from '../utils/hdPath'
 import { Account } from './account'
@@ -15,7 +13,6 @@ import { Hex } from './hex'
 import { Network } from './network'
 import { EIP7702Signature } from './signatures'
 // TODO: Handle better to prevent dep cycle
-// eslint-disable-next-line import/no-cycle
 import { TypedMessageUserRequest } from './userRequest'
 
 export type IKeystoreController = ControllerInterface<
@@ -35,16 +32,16 @@ export interface ExternalSignerController {
   type: string
   deviceModel: string
   deviceId: string
-  isUnlocked: (path?: string, expectedKeyOnThisPath?: string) => boolean
-  unlock: (
+  isUnlocked?: (path?: string, expectedKeyOnThisPath?: string) => boolean
+  unlock?: (
     path: ReturnType<typeof getHdPathFromTemplate>,
     expectedKeyOnThisPath?: string,
     shouldOpenLatticeConnectorInTab?: boolean // Lattice specific
   ) => Promise<'ALREADY_UNLOCKED' | 'JUST_UNLOCKED'>
-  unlockedPath: string
-  unlockedPathKeyAddr: string
+  unlockedPath?: string
+  unlockedPathKeyAddr?: string
   walletSDK?: any // Either the wallet own SDK or its session, each wallet having specifics
-  cleanUp: () => void // Trezor and Ledger specific
+  cleanUp?: () => void // Trezor and Ledger specific
   signingCleanup?: () => Promise<void> // Trezor and Ledger specific
   isInitiated?: boolean // Trezor specific
   initialLoadPromise?: Promise<void> // Trezor specific
@@ -55,6 +52,18 @@ export interface ExternalSignerController {
   appName?: string // Lattice specific
   creds?: any // Lattice specific
   network?: any // Lattice specific
+  masterFingerprint?: string // Optional for some wallets, but can be used for additional info
+  currentRequest?: QrRequest | null // Qr based specific
+  signingStep?: string //Qr based specific
+  moveToResponseScan?: () => void //Qr based specific
+  submitSignatureResponse?: (payload: string | Uint8Array) => void //Qr based specific
+  parseAndSetAccountFromQR?: (payload: string | Uint8Array) => Promise<ParsedQrAccount> //Qr based specific
+  nfcWalletType?: NfcWalletType // NFC (tap-to-sign card) specific
+  // Mark the start and the end of one account op's signing, so a device that unlocks
+  // with a PIN can keep it for that long and ask for it once instead of once per
+  // signature. NFC (tap-to-sign card) specific.
+  beginPinSession?: () => Promise<void>
+  endPinSession?: () => Promise<void>
 }
 export type ExternalSignerControllers = Partial<{ [key in Key['type']]: ExternalSignerController }>
 
@@ -71,12 +80,33 @@ export interface TxnRequest {
   type?: number
 }
 
+/**
+ * Per-request context passed to {@link KeystoreSignerInterface.signMessage}
+ * and {@link KeystoreSignerInterface.signTypedData}.
+ *
+ * EOA-style signers (Ledger, Trezor, Lattice, QR, internal keystore) can
+ * ignore this entirely — their output is chain-agnostic (ECDSA over the
+ * EIP-191 / EIP-712 hash). Smart-account signers whose signatures are
+ * verified on-chain via ERC-1271 / ERC-6492 (currently PQ1) need to know
+ * which chain the verifier will run on so they can:
+ *   1) decide whether to emit a bare ERC-1271 wrapper or an ERC-6492
+ *      deploy-and-verify blob (based on `eth_getCode(sender)`), and
+ *   2) tell the device which chainId the signed message is bound to.
+ */
+export interface SignMessageContext {
+  chainId: bigint
+  provider: JsonRpcProvider
+}
+
 export interface KeystoreSignerInterface {
   key: Key
   init?: (externalSignerController?: ExternalSignerController) => void
   signRawTransaction: (txnRequest: TxnRequest) => Promise<Transaction['serialized']>
-  signTypedData: (typedMessage: TypedMessageUserRequest['meta']['params']) => Promise<string>
-  signMessage: (hex: string) => Promise<string>
+  signTypedData: (
+    typedMessage: TypedMessageUserRequest['meta']['params'],
+    ctx?: SignMessageContext
+  ) => Promise<string>
+  signMessage: (hex: string, ctx?: SignMessageContext) => Promise<string>
   sign7702: ({
     chainId,
     contract,
@@ -96,6 +126,25 @@ export interface KeystoreSignerInterface {
   getEncryptionPublicKey?: () => Promise<string> // base64 string
   decrypt?: (encryptedData: string) => string // plain text
   signingCleanup?: () => Promise<void>
+  /**
+   * Smart-contract-account-only signers (currently PQ1) cannot produce a
+   * raw EOA transaction. Instead they take the AccountOp's calls list,
+   * package them into the signer's native transaction shape (e.g. an
+   * ERC-4337 UserOperation), sign on-device, and broadcast — returning the
+   * resulting userOpHash + the nonce the op was submitted with, so the
+   * caller can track inclusion and per-op success the same way as any
+   * other bundler broadcast (`identifiedBy: { type: 'UserOperation' }`).
+   * Implementations bypass Ambire's relayer/bundler stack entirely, but
+   * MUST bind the broadcast fees to the user-approved `gasFeePayment` —
+   * the user pays what the fee UI showed, not what the signer's own
+   * pipeline would pick.
+   */
+  broadcastAccountOp?: (params: {
+    chainId: bigint
+    provider: JsonRpcProvider
+    calls: { to: Call['to']; value: Call['value']; data: Call['data'] }[]
+    gasFeePayment: { gasPrice: bigint; maxPriorityFeePerGas?: bigint }
+  }) => Promise<{ userOpHash: Hex; nonce: bigint }>
 }
 
 export type ScryptParams = {
@@ -106,23 +155,33 @@ export type ScryptParams = {
   dkLen: number
 }
 
-export type AESEncrypted = {
-  cipherType: string
+export type AESEncryptedOld = {
+  cipherType?: 'aes-128-ctr'
   ciphertext: string
   iv: string
   mac: string
 }
 
+export type AESGCMEncrypted = {
+  cipherType: 'AES-GCM'
+  ciphertext: string
+  iv: string
+}
+
+export type KeystoreEncryptedPayload = string | AESGCMEncrypted
+
 export type MainKeyEncryptedWithSecret = {
   id: string
   scryptParams: ScryptParams
-  aesEncrypted: AESEncrypted
+  aesEncrypted: AESEncryptedOld | AESGCMEncrypted
 }
 
-export type MainKey = {
+export type MainKeyOld = {
   key: Uint8Array
   iv: Uint8Array
 }
+
+export type MainKey = CryptoKey
 
 export type Key = (InternalKey | ExternalKey) & { isExternallyStored: boolean }
 
@@ -143,9 +202,14 @@ export type InternalKey = {
   }
 }
 
+export type QrWalletType = 'keystone' | 'imtoken' | 'keycard' // We can add more supported QR wallets here in the future, and they will be handled by the QrProtocolAdapter implementations, which are specific to each wallet type
+export type QrProtocolType = 'ur' | 'airgap'
+
+export type NfcWalletType = 'keycard' // We can add more supported NFC (tap-to-sign) cards here in the future
+
 export type ExternalKey = {
   addr: Account['addr']
-  type: 'trezor' | 'ledger' | 'lattice'
+  type: 'trezor' | 'ledger' | 'lattice' | 'qr' | 'nfc' | 'pq1'
   label: string
   dedicatedToOneSA: boolean
   meta: {
@@ -154,11 +218,18 @@ export type ExternalKey = {
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     index: number
     createdAt: number | null
+
+    qrWalletType?: QrWalletType
+    qrProtocol?: QrProtocolType
+    masterFingerprint?: string // BIP32 root fingerprint used to identify/verify the originating hardware wallet account set in QR flows
+    nfcWalletType?: NfcWalletType
     [key: string]: any
   }
 }
 
-export type StoredKey = (InternalKey & { privKey: string }) | (ExternalKey & { privKey: null })
+export type StoredKey =
+  | (InternalKey & { privKey: KeystoreEncryptedPayload })
+  | (ExternalKey & { privKey: null })
 
 export type KeystoreSeed = {
   id: string
@@ -166,6 +237,22 @@ export type KeystoreSeed = {
   seed: string
   seedPassphrase?: string | null
   hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+  notBackedUp?: boolean
+}
+
+export type StoredKeystoreSeed = Omit<KeystoreSeed, 'seed' | 'seedPassphrase'> & {
+  /**
+   * We store the seed entropy (not the seed phrase string) as an encrypted payload
+   */
+  seed: KeystoreEncryptedPayload
+  seedPassphrase?: KeystoreEncryptedPayload | null
+}
+
+export type KeystoreTempSeed = {
+  seed: string
+  seedPassphrase?: string | null
+  hdPathTemplate: HD_PATH_TEMPLATE_TYPE
+  notBackedUp?: boolean
 }
 
 export type KeystoreSignerType = {
@@ -200,3 +287,54 @@ export type KeyPreferences = {
 }
 
 export type EIP712Types = Record<string, TypedDataField[]>
+
+export type ParsedQrImportedAccount = {
+  addr?: string
+  xpub?: string
+  index?: number
+  hdPath?: string
+}
+
+export type ParsedQrAccount = {
+  masterFingerprint?: string
+  walletType?: QrWalletType
+  deviceModel?: string
+  deviceId?: string
+  hdPath?: string // For wallets that don't provide the hdPath on each account, but only a general one for the whole export (like Keystone)
+  /**
+   * The path the wallet says its addresses sit at, relative to the exported key and
+   * with a `*` where the address index goes (e.g. `0/*` for the BIP44 standard chain,
+   * `*` for the Ledger Legacy path). Optional in the QR payload - a wallet that omits
+   * it leaves no way to tell which of the two it exported.
+   */
+  childrenPath?: string
+  accounts: ParsedQrImportedAccount[]
+}
+
+export type QrRequestType =
+  | 'sign-message'
+  | 'sign-typed-data'
+  | 'sign-transaction'
+  | 'import-account'
+
+export type QrRequest = {
+  type: QrRequestType
+  requestId?: string
+  urType?: string
+  urCborHex?: any
+}
+
+/**
+ * The outcome of re-checking a keystore secret without changing the lock state, used by the
+ * signing authentication prompt.
+ */
+export type SigningAuthResult = {
+  status: 'success' | 'failed'
+  /** The user facing reason the check failed, `null` on success. */
+  error: string | null
+  /**
+   * Counts up per check. Two checks in a row otherwise produce an identical result, which the
+   * UI's reconciled state hands back as the same reference - so the second one goes unnoticed.
+   */
+  id: number
+}

@@ -1,33 +1,17 @@
-import fetch from 'node-fetch'
-
 import { expect } from '@jest/globals'
 
-import { relayerUrl, velcroUrl } from '../../../test/config'
-import { produceMemoryStore } from '../../../test/helpers'
-import { mockUiManager } from '../../../test/helpers/ui'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'
-import { Storage } from '../../interfaces/storage'
+import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { defiPositionsOnDisabledNetworksBannerId } from '../../libs/banners/banners'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
-import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { stringify } from '../../libs/richJson/richJson'
 import { DEFAULT_SELECTED_ACCOUNT_PORTFOLIO } from '../../libs/selectedAccount/selectedAccount'
 import wait from '../../utils/wait'
-import { AccountsController } from '../accounts/accounts'
-import { AutoLoginController } from '../autoLogin/autoLogin'
-import { BannerController } from '../banner/banner'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { FeatureFlagsController } from '../featureFlags/featureFlags'
-import { InviteController } from '../invite/invite'
-import { KeystoreController } from '../keystore/keystore'
-import { NetworksController } from '../networks/networks'
-import { PortfolioController } from '../portfolio/portfolio'
-import { ProvidersController } from '../providers/providers'
-import { StorageController } from '../storage/storage'
-import { UiController } from '../ui/ui'
-import { SelectedAccountController } from './selectedAccount'
 
 const accounts = [
   {
@@ -62,7 +46,7 @@ const accounts = [
   }
 ]
 
-const waitSelectedAccCtrlPortfolioAllReady = (selectedAccountCtrl: SelectedAccountController) => {
+const waitSelectedAccCtrlPortfolioAllReady = (selectedAccountCtrl: ISelectedAccountController) => {
   return new Promise((resolve) => {
     const unsubscribe = selectedAccountCtrl.onUpdate(() => {
       if (selectedAccountCtrl.portfolio.isAllReady) {
@@ -92,102 +76,26 @@ const waitNextControllerUpdate = (ctrl: EventEmitter) => {
 }
 
 const prepareTest = async () => {
-  const storage: Storage = produceMemoryStore()
-  let providersCtrl: IProvidersController
-  const storageCtrl = new StorageController(storage)
-  const networksCtrl = new NetworksController({
-    storage: storageCtrl,
-    fetch,
-    relayerUrl,
-    useTempProvider: (props, cb) => {
-      return providersCtrl.useTempProvider(props, cb)
-    },
-    onAddOrUpdateNetworks: () => {}
+  const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+    await storageCtrl.set('accounts', accounts)
+    await storageCtrl.set('selectedAccount', accounts[0]!.addr)
   })
 
-  const { uiManager } = mockUiManager()
-  const uiCtrl = new UiController({ uiManager })
+  await mainCtrl.selectedAccount.initialLoadPromise
+  await mainCtrl.autoLogin.initialLoadPromise
+  await mainCtrl.portfolio.initialLoadPromise
 
-  providersCtrl = new ProvidersController(networksCtrl, storageCtrl, uiCtrl)
-
-  // Purposefully mocking these methods as they are not used
-  // and listeners result in a memory leak warning in tests
-  uiCtrl.addView = jest.fn()
-  uiCtrl.removeView = jest.fn()
-  uiCtrl.uiEvent.on = jest.fn()
-
-  const keystore = new KeystoreController(
-    'default',
-    storageCtrl,
-    { internal: KeystoreSigner },
-    uiCtrl
-  )
-
-  await storageCtrl.set('accounts', accounts)
-  await storageCtrl.set('selectedAccount', accounts[0]!.addr)
-
-  const accountsCtrl = new AccountsController(
-    storageCtrl,
-    providersCtrl,
-    networksCtrl,
-    keystore,
-    () => {},
-    () => {},
-    () => {},
-    relayerUrl,
-    fetch
-  )
-
-  const autoLoginCtrl = new AutoLoginController(
-    storageCtrl,
-    keystore,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    {},
-    new InviteController({ relayerUrl, fetch, storage: storageCtrl })
-  )
-
-  const selectedAccountCtrl = new SelectedAccountController({
-    storage: storageCtrl,
-    accounts: accountsCtrl,
-    keystore,
-    autoLogin: autoLoginCtrl
-  })
-  const featureFlagsCtrl = new FeatureFlagsController({}, storageCtrl)
-  const portfolioCtrl = new PortfolioController(
-    storageCtrl,
-    fetch,
-    providersCtrl,
-    networksCtrl,
-    accountsCtrl,
-    keystore,
-    relayerUrl,
-    velcroUrl,
-    new BannerController(storageCtrl),
-    featureFlagsCtrl
-  )
-
-  await accountsCtrl.initialLoadPromise
-  await accountsCtrl.accountStateInitialLoadPromise
-  await networksCtrl.initialLoadPromise
-  await providersCtrl.initialLoadPromise
-  await autoLoginCtrl.initialLoadPromise
-  await selectedAccountCtrl.initialLoadPromise
-
-  selectedAccountCtrl.initControllers({
-    portfolio: portfolioCtrl,
-    networks: networksCtrl,
-    providers: providersCtrl
-  })
+  // Wait 1 tick because controller update listeners are debounced in the selectedAccount controller
+  await wait(1)
 
   return {
-    selectedAccountCtrl,
-    portfolioCtrl,
-    providersCtrl,
-    autoLoginCtrl,
-    accountsCtrl,
-    storage
+    selectedAccountCtrl: mainCtrl.selectedAccount,
+    portfolioCtrl: mainCtrl.portfolio,
+    providersCtrl: mainCtrl.providers,
+    networksCtrl: mainCtrl.networks,
+    autoLoginCtrl: mainCtrl.autoLogin,
+    accountsCtrl: mainCtrl.accounts,
+    storage: mainCtrl.storage
   }
 }
 
@@ -198,7 +106,7 @@ describe('SelectedAccount Controller', () => {
     jest.clearAllMocks()
     jest.restoreAllMocks()
   })
-  test('should init controllers and set account', async () => {
+  it('should init controllers and set account', async () => {
     const { selectedAccountCtrl, storage } = await prepareTest()
 
     const selectedAccountInStorage = await storage.get('selectedAccount')
@@ -207,7 +115,7 @@ describe('SelectedAccount Controller', () => {
 
     expect(selectedAccountCtrl.areControllersInitialized).toEqual(true)
   })
-  test('should update selected account portfolio', async () => {
+  it('should update selected account portfolio', async () => {
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
 
     await portfolioCtrl.updateSelectedAccount('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8')
@@ -216,7 +124,7 @@ describe('SelectedAccount Controller', () => {
     expect(selectedAccountCtrl.portfolio.totalBalance).toBeGreaterThan(0)
     expect(selectedAccountCtrl.portfolio.tokens.length).toBeGreaterThan(0)
   })
-  test('the portfolio controller state is not mutated when updating the selected account portfolio', async () => {
+  it('the portfolio controller state is not mutated when updating the selected account portfolio', async () => {
     // NOTE! THE TEST ACCOUNT MUST HAVE AAVE DEFI BORROW FOR THIS TEST
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
 
@@ -237,7 +145,7 @@ describe('SelectedAccount Controller', () => {
 
     expect(PORTFOLIO_STATE_AFTER).toEqual(PORTFOLIO_STATE_BEFORE)
   })
-  test('should reset selected account portfolio', async () => {
+  it('should reset selected account portfolio', async () => {
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
 
     await portfolioCtrl.updateSelectedAccount('0x77777777789A8BBEE6C64381e5E89E501fb0e4c8', [
@@ -248,7 +156,7 @@ describe('SelectedAccount Controller', () => {
     selectedAccountCtrl.resetSelectedAccountPortfolio()
     expect(selectedAccountCtrl.portfolio).toEqual(DEFAULT_SELECTED_ACCOUNT_PORTFOLIO)
   })
-  test('should toJSON()', async () => {
+  it('should toJSON()', async () => {
     const { selectedAccountCtrl } = await prepareTest()
     const json = selectedAccountCtrl.toJSON()
     expect(json).toBeDefined()
@@ -362,6 +270,21 @@ describe('SelectedAccount Controller', () => {
     unsubscribe()
   })
 
+  it('the mobile invite key of the selected account reaches its portfolio', async () => {
+    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
+    const accountAddr = accounts[0]!.addr
+    const mobileInviteKey = 'test-mobile-invite-key'
+    const getMobileInviteKeySpy = jest
+      .spyOn(portfolioCtrl, 'getMobileInviteKey')
+      .mockImplementation((addr) => (addr === accountAddr ? mobileInviteKey : undefined))
+
+    await portfolioCtrl.updateSelectedAccount(accountAddr)
+    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+    expect(getMobileInviteKeySpy).toHaveBeenCalledWith(accountAddr)
+    expect(selectedAccountCtrl.portfolio.mobileInviteKey).toBe(mobileInviteKey)
+  })
+
   describe('Banners', () => {
     const accountAddr = accounts[0]!.addr
     beforeEach(() => {
@@ -386,8 +309,9 @@ describe('SelectedAccount Controller', () => {
           usd: 0
         },
         discoveryTime: 0,
-        priceCache: new Map(),
+        tokenDataCache: new Map(),
         tokenErrors: [],
+        collectionErrors: [],
         collections: [],
         blockNumber: 0,
         toBeLearned: {
@@ -408,12 +332,33 @@ describe('SelectedAccount Controller', () => {
       }
     }
 
+    it('A banner is displayed for DeFi positions on a disabled network', async () => {
+      const { selectedAccountCtrl, portfolioCtrl, networksCtrl } = await prepareTest()
+      const disabledChainId = 56n
+      await networksCtrl.updateNetwork({ disabled: true }, disabledChainId)
+      const getDefiPositionsCountSpy = jest
+        .spyOn(portfolioCtrl, 'getDefiPositionsCountOnDisabledNetworks')
+        .mockImplementation((addr) =>
+          addr === accountAddr ? { [disabledChainId.toString()]: 2 } : {}
+        )
+
+      await portfolioCtrl.updateSelectedAccount(accountAddr)
+      await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+      const defiBanner = selectedAccountCtrl.banners.find(
+        ({ id }) => id === defiPositionsOnDisabledNetworksBannerId
+      )
+
+      expect(getDefiPositionsCountSpy).toHaveBeenCalledWith(accountAddr)
+      expect(defiBanner).toBeDefined()
+      await networksCtrl.updateNetwork({ disabled: false }, disabledChainId)
+    })
     it("An RPC banner is displayed when it's not working and the user has assets on it", async () => {
       const { selectedAccountCtrl, portfolioCtrl, providersCtrl } = await prepareTest()
       await portfolioCtrl.updateSelectedAccount(accountAddr)
       providersCtrl.updateProviderIsWorking(1n, false)
       jest.spyOn(portfolioCtrl, 'getNetworksWithAssets').mockImplementation(() => ({ '1': true }))
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
@@ -425,7 +370,7 @@ describe('SelectedAccount Controller', () => {
       await portfolioCtrl.updateSelectedAccount(accountAddr)
       providersCtrl.updateProviderIsWorking(1n, false)
       jest.spyOn(portfolioCtrl, 'getNetworksWithAssets').mockImplementation(() => ({}))
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
@@ -443,7 +388,7 @@ describe('SelectedAccount Controller', () => {
       selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
       selectedAccountCtrl.portfolio.portfolioState['1']!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       expect(
         selectedAccountCtrl.balanceAffectingErrors.find(({ id }) => id === 'rpcs-down')
@@ -464,7 +409,7 @@ describe('SelectedAccount Controller', () => {
       selectedAccountCtrl.portfolio.portfolioState['1']!.criticalError = new Error('Mock error')
       selectedAccountCtrl.portfolio.portfolioState['1']!.lastSuccessfulUpdate = 0
       providersCtrl.updateProviderIsWorking(1n, false)
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       // A portfolio error banner isn't displayed when there is an RPC error banner
       expect(
@@ -475,7 +420,7 @@ describe('SelectedAccount Controller', () => {
       ).not.toBeDefined()
 
       providersCtrl.updateProviderIsWorking(1n, true)
-      await waitNextControllerUpdate(selectedAccountCtrl)
+      await forceBannerRecalculation(providersCtrl)
 
       // The portfolio error banner is displayed when there isn't an RPC error banner
       expect(
@@ -486,10 +431,18 @@ describe('SelectedAccount Controller', () => {
       ).toBeDefined()
     })
     it('Portfolio error banner lastSuccessfulUpdate logic is working properly', async () => {
-      const { selectedAccountCtrl, portfolioCtrl, providersCtrl } = await prepareTest()
+      const { selectedAccountCtrl, portfolioCtrl, providersCtrl, accountsCtrl } =
+        await prepareTest()
       selectedAccountCtrl.resetSelectedAccountPortfolio()
       await portfolioCtrl.updateSelectedAccount(accountAddr)
       await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+      // Mock account state
+      accountsCtrl.accountStates[accountAddr] = {
+        '137': {
+          updatedAt: Date.now()
+        } as any
+      }
 
       // There is a critical error but lastSuccessfulUpdate is less than 10 minutes ago
       selectedAccountCtrl.portfolio.portfolioState['137']!.criticalError = new Error('Mock error')
@@ -516,9 +469,9 @@ describe('SelectedAccount Controller', () => {
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
       // Mock an error
-      jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockImplementation(() => ({
+      jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockImplementation((() => ({
         '1': mockEthereumDefiErrorState
-      }))
+      })) as any)
       jest.spyOn(portfolioCtrl, 'getNetworksWithDefiPositions').mockImplementation(() => ({
         '1': ['AAVE v3', 'Uniswap V3']
       }))
@@ -545,9 +498,9 @@ describe('SelectedAccount Controller', () => {
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
       // Mock an error
-      jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockImplementation(() => ({
+      jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockImplementation((() => ({
         '1': mockEthereumDefiErrorState
-      }))
+      })) as any)
       // This mocks the case where we have fetched the positions but the user has none
       // and there is a critical error but we don't want to show the banner
       jest.spyOn(portfolioCtrl, 'getNetworksWithDefiPositions').mockImplementation(() => ({
@@ -576,9 +529,9 @@ describe('SelectedAccount Controller', () => {
 
       expect(selectedAccountCtrl.balanceAffectingErrors.length).toBe(0)
       // Mock an error
-      jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockImplementation(() => ({
+      jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockImplementation((() => ({
         '1': mockEthereumDefiErrorState
-      }))
+      })) as any)
       // This mocks the case where we have never fetched the positions
       // and there is a critical error but we don't want to show the banner
       jest.spyOn(portfolioCtrl, 'getNetworksWithDefiPositions').mockImplementation(() => ({}))

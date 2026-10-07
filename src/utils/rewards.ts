@@ -1,9 +1,6 @@
-import { WALLET_TOKEN } from '../consts/addresses'
 import {
-  NetworkState,
   PortfolioProjectedRewardsResult,
-  ProjectedRewardsStats,
-  TokenResult
+  ProjectedRewardsStats
 } from '../libs/portfolio/interfaces'
 
 export const calculateRewardsStats = (
@@ -94,62 +91,5 @@ export const calculateRewardsStats = (
     estimatedRewardsUSD,
     multipliers: projectedRewardsResult.multipliers,
     reasonToNotDisplayProjectedRewards
-  }
-}
-
-export const getProjectedRewardsStatsAndToken = (
-  projectedRewards: NetworkState<PortfolioProjectedRewardsResult> | undefined,
-  walletOrStkWalletTokenPrice: number | undefined,
-  currentBalance: number | undefined,
-  stkBalanceUsd: number | undefined,
-  walletEthProvidedLiquidityInUsd: number | undefined
-):
-  | {
-      token: TokenResult
-      data: ProjectedRewardsStats
-    }
-  | undefined => {
-  if (!projectedRewards) return
-
-  const result = projectedRewards?.result
-
-  if (!result) return
-
-  // take the price of stkWALLET/WALLET if available from portfolio, otherwise WALLET from the relayer
-  const walletTokenPrice = walletOrStkWalletTokenPrice || result.walletPrice
-
-  const data = calculateRewardsStats(
-    result,
-    walletTokenPrice,
-    currentBalance,
-    stkBalanceUsd,
-    walletEthProvidedLiquidityInUsd
-  )
-
-  if (!data) return
-
-  let estimatedRewardsBothSeasons = data.estimatedRewards
-
-  if (result.frozenRewardSeason1) {
-    estimatedRewardsBothSeasons += Math.floor(result.frozenRewardSeason1)
-  }
-
-  return {
-    token: {
-      chainId: BigInt(1),
-      amount: BigInt(estimatedRewardsBothSeasons) * BigInt(10 ** 18),
-      address: WALLET_TOKEN,
-      symbol: 'WALLET',
-      name: '$WALLET',
-      decimals: 18,
-      priceIn: [{ baseCurrency: 'usd', price: walletTokenPrice }],
-      flags: {
-        onGasTank: false,
-        rewardsType: 'wallet-projected-rewards' as const,
-        canTopUpGasTank: false,
-        isFeeToken: false
-      }
-    },
-    data
   }
 }

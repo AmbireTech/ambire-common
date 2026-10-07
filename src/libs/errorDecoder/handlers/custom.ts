@@ -1,4 +1,3 @@
-/* eslint-disable class-methods-use-this */
 import { ERROR_PREFIX, PANIC_ERROR_PREFIX } from '../constants'
 import { DecodedError, ErrorHandler, ErrorType } from '../types'
 

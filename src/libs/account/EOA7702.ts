@@ -1,5 +1,5 @@
-/* eslint-disable class-methods-use-this */
-import { Interface } from 'ethers'
+import { Interface, ZeroAddress } from 'ethers'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireAccount7702 from '../../../contracts/compiled/AmbireAccount7702.json'
 import { Hex } from '../../interfaces/hex'
@@ -16,17 +16,11 @@ import { TokenResult } from '../portfolio'
 import { isNative } from '../portfolio/helpers'
 import { UserOperation } from '../userOperation/types'
 import { BaseAccount } from './BaseAccount'
+import { isTransferredTokenFeeOption } from './feeOptions'
 
 // this class describes an EOA that CAN transition to 7702
 // even if it is YET to transition to 7702
 export class EOA7702 extends BaseAccount {
-  // when doing the 7702 activator, we should add the additional gas required
-  // for the authorization list:
-  // PER_EMPTY_ACCOUNT_COST: 25000
-  // access list storage key: 1900
-  // access list address: 2400
-  ACTIVATOR_GAS_USED = 29300n
-
   /**
    * Introduce a public variable we can use to make a simple check on the FE
    * whether this account type is 7702.
@@ -39,10 +33,17 @@ export class EOA7702 extends BaseAccount {
   getEstimationCriticalError(estimation: FullEstimation, op: AccountOp): Error | null {
     // the critical error should be from the provider if we can broadcast in EOA only mode
     if (!this.accountState.isSmarterEoa && op.calls.length === 1) {
-      if (estimation.provider instanceof Error) {
-        return estimation.ambire instanceof Error ? estimation.ambire : estimation.provider
-      }
+      const estimateGasError = estimation.provider instanceof Error
+      const ambireError = estimation.ambire instanceof Error
+      const bundlerError = estimation.bundler instanceof Error
 
+      // if one estimation is succeeding, allow the user to proceed
+      if (!estimateGasError || !ambireError || !bundlerError) return null
+
+      if (ambireError) return estimation.ambire as Error
+      if (estimateGasError) return estimation.provider as Error
+
+      // if only the bundler is failing, allow the estimation
       return null
     }
 
@@ -51,7 +52,7 @@ export class EOA7702 extends BaseAccount {
   }
 
   supportsBundlerEstimation() {
-    return true
+    return this.isErc4337Enabled
   }
 
   /*
@@ -70,7 +71,7 @@ export class EOA7702 extends BaseAccount {
         opt.paidBy === this.account.addr &&
         (isNative(opt.token) ||
           (!isDelegating &&
-            opt.availableAmount > 0n &&
+            (opt.availableAmount > 0n || isTransferredTokenFeeOption(opt, op)) &&
             estimation.bundlerEstimation &&
             estimation.bundlerEstimation.paymaster.isUsable()))
     )
@@ -189,12 +190,36 @@ export class EOA7702 extends BaseAccount {
     return this.network.chainId === 100n
   }
 
+  canUseErc4337(): boolean {
+    return true
+  }
+
   getAtomicStatus(): 'unsupported' | 'supported' | 'ready' {
-    return this.accountState.isSmarterEoa ? 'supported' : 'ready'
+    // always supported to make dapps recognize it correctly
+    return 'supported'
   }
 
   getNonceId(): string {
     // 7702 accounts have an execution layer nonce and an entry point nonce
     return `${this.accountState.eoaNonce!.toString()}-${this.accountState.erc4337Nonce.toString()}`
+  }
+
+  /**
+   * We need to state override if the account still hasn't transitioned
+   */
+  shouldStateOverrideDuringSimulations(): boolean {
+    return !this.accountState.isSmarterEoa
+  }
+
+  canBroadcastByOtherEOA(): boolean {
+    return false
+  }
+
+  canSetCustomGasPrices(feeOption: FeePaymentOption): boolean {
+    return feeOption.token.address === ZeroAddress
+  }
+
+  canSetCustomGas(feeOption: FeePaymentOption): boolean {
+    return this.canSetCustomGasPrices(feeOption)
   }
 }

@@ -1,6 +1,7 @@
 import { getAddress } from 'ethers'
 
 import SwapAndBridgeProviderApiError from '../../classes/SwapAndBridgeProviderApiError'
+import { CITREA_CHAIN_ID } from '../../consts/networks'
 import { CustomResponse, Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   BungeeBuildTxnResponse,
@@ -12,11 +13,13 @@ import {
   SocketAPIToken,
   SwapAndBridgeQuote,
   SwapAndBridgeRoute,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest,
   SwapAndBridgeSupportedChain,
   SwapAndBridgeToToken,
   SwapProvider
 } from '../../interfaces/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
@@ -25,7 +28,6 @@ import {
 import {
   AMBIRE_FEE_TAKER_ADDRESSES,
   ETH_ON_OPTIMISM_LEGACY_ADDRESS,
-  FEE_PERCENT,
   NULL_ADDRESS,
   PROTOCOLS_WITH_CONTRACT_FEE_IN_NATIVE,
   ZERO_ADDRESS
@@ -81,7 +83,6 @@ export class SocketAPI implements SwapProvider {
     }
   }
 
-  // eslint-disable-next-line class-methods-use-this
   async getHealth() {
     // deprecated mechanism
     return true
@@ -100,6 +101,11 @@ export class SocketAPI implements SwapProvider {
 
   resetHealth() {
     this.isHealthy = null
+  }
+
+  /** disable explicitly citrea for socket */
+  areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
+    return fromChainId !== Number(CITREA_CHAIN_ID) && toChainId !== Number(CITREA_CHAIN_ID)
   }
 
   /**
@@ -186,7 +192,9 @@ export class SocketAPI implements SwapProvider {
     })
 
     const chains = response
-      .filter((c) => c.sendingEnabled && c.receivingEnabled)
+      .filter(
+        (c) => c.sendingEnabled && c.receivingEnabled && c.chainId !== Number(CITREA_CHAIN_ID)
+      )
       .map(({ chainId }) => ({
         chainId
       }))
@@ -267,7 +275,8 @@ export class SocketAPI implements SwapProvider {
     userAddress,
     isWrapOrUnwrap,
     accountNativeBalance,
-    nativeSymbol
+    nativeSymbol,
+    feePercent
   }: ProviderQuoteParams): Promise<SwapAndBridgeQuote> {
     if (!fromAsset || !toAsset)
       throw new SwapAndBridgeProviderApiError(
@@ -286,11 +295,15 @@ export class SocketAPI implements SwapProvider {
       enableManual: 'true'
     })
     const feeTakerAddress = AMBIRE_FEE_TAKER_ADDRESSES[fromChainId]
-    const shouldIncludeConvenienceFee =
-      !!feeTakerAddress && !isWrapOrUnwrap && !isNoFeeToken(fromChainId, fromTokenAddress)
-    if (shouldIncludeConvenienceFee) {
+    const feeExemptionReason = getFeeExemptionReason({
+      isWrapOrUnwrap,
+      isFeeExemptToken: isNoFeeToken(fromChainId, fromTokenAddress),
+      isFeeCollectionAvailable: !!feeTakerAddress
+    })
+    const shouldIncludeConvenienceFee = feePercent > 0 && !feeExemptionReason
+    if (shouldIncludeConvenienceFee && feeTakerAddress) {
       params.append('feeTakerAddress', feeTakerAddress)
-      params.append('feeBps', (FEE_PERCENT * 100).toString())
+      params.append('feeBps', (feePercent * 100).toString())
     }
 
     const url = `${this.#bungeQuoteApiUrl}/api/v1/bungee/quote?${params.toString()}`
@@ -311,7 +324,7 @@ export class SocketAPI implements SwapProvider {
     }
 
     let allRoutes = [...response.manualRoutes]
-    if (response.autoRoute) allRoutes.push(response.autoRoute)
+    if (response.autoRoute) allRoutes.push({ ...response.autoRoute, isIntent: true })
     allRoutes = allRoutes.sort((r1, r2) => {
       const a = BigInt(r1.output.amount)
       const b = BigInt(r2.output.amount)
@@ -324,7 +337,7 @@ export class SocketAPI implements SwapProvider {
       toAsset: normalizeIncomingSocketToken(socketToAsset),
       fromChainId,
       toChainId,
-      // @ts-ignore TODO: fix the typescript here
+      // @ts-expect-error TODO: fix the typescript here
       routes: allRoutes.map((route) => {
         const steps = [
           {
@@ -375,6 +388,7 @@ export class SocketAPI implements SwapProvider {
           ...steps[0],
           providerId: 'socket',
           outputValueInUsd: route.output.valueInUsd,
+          outputValueAfterGasInUsd: route.output.effectiveReceivedInUsd,
           routeId: route.quoteId,
           disabled,
           disabledReason,
@@ -397,7 +411,12 @@ export class SocketAPI implements SwapProvider {
           approvalData: 'approvalData' in route ? route.approvalData : undefined,
           txData: 'txData' in route ? route.txData : undefined,
           rawRoute: '', // not needed for socket,
-          withConvenienceFee: shouldIncludeConvenienceFee
+          withConvenienceFee: shouldIncludeConvenienceFee,
+          feeExemptionReason,
+          usedBridgeNames:
+            fromChainId !== route.output.token.chainId
+              ? [route.isIntent ? 'bungeeAutoRoute' : route.routeDetails.name.toLowerCase()]
+              : [route.isIntent ? 'bungeeAutoRoute' : '']
         }
       })
     }
@@ -459,7 +478,7 @@ export class SocketAPI implements SwapProvider {
     }
   }
 
-  async getRouteStatus({ txHash }: { txHash: string }) {
+  async getRouteStatus({ txHash }: { txHash: string }): Promise<SwapAndBridgeRouteStatusResult> {
     const params = new URLSearchParams({
       txHash
     })
@@ -470,14 +489,14 @@ export class SocketAPI implements SwapProvider {
       errorPrefix: 'Unable to get the route status. Please check back later to proceed.'
     })
 
-    if (!response) return null
+    if (!response) return { status: null }
     const res = response[0]
-    if (!res) return null
+    if (!res) return { status: null }
     // everything below 3 is pending on our end
-    if (res.bungeeStatusCode < 3) return null
+    if (res.bungeeStatusCode < 3) return { status: null }
     // 3 and 4 is completed on our end
-    if (res.bungeeStatusCode < 5) return 'completed'
+    if (res.bungeeStatusCode < 5) return { status: 'completed', txnId: res.hash }
     // everything after is refunded
-    return 'refunded'
+    return { status: 'refunded', txnId: res.hash }
   }
 }

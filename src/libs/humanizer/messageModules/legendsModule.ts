@@ -14,16 +14,16 @@ export const legendsMessageModule: HumanizerTypedMessageModule = (message: Messa
   }
   const messageRegex = /Assign 0x[a-fA-F0-9]{40} to Ambire Rewards 0x[a-fA-F0-9]{40}/
   const addressRegex = /0x[a-fA-F0-9]{40}/g
-  if (
-    messageAsText.match(messageRegex) &&
-    messageAsText.match(addressRegex)![0] === message.accountAddr
-  )
+  const addresses = messageAsText.match(addressRegex)
+  const firstAddr = addresses?.[0]
+  const secondAddr = addresses?.[1]
+  if (messageAsText.match(messageRegex) && firstAddr === message.accountAddr && secondAddr)
     return {
       fullVisualization: [
         getAction('Link'),
-        getAddressVisualization(messageAsText.match(addressRegex)![0]),
+        getAddressVisualization(firstAddr),
         getLabel('to'),
-        getAddressVisualization(messageAsText.match(addressRegex)![1]),
+        getAddressVisualization(secondAddr),
         getLabel('for Ambire Rewards', true)
       ]
     }

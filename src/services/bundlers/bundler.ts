@@ -1,8 +1,5 @@
-/* eslint-disable no-restricted-syntax */
-/* eslint-disable class-methods-use-this */
 import { toBeHex } from 'ethers'
 
-/* eslint-disable import/no-extraneous-dependencies */
 import { BUNDLER } from '../../consts/bundlers'
 import { ERC_4337_ENTRYPOINT } from '../../consts/deploy'
 import { Fetch } from '../../interfaces/fetch'

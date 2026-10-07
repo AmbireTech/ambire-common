@@ -69,8 +69,10 @@ describe('socket', () => {
         getAddressVisualization('0xcdc7dfeff461b5ac3468cf9db9525c9afcc66790')
       ]
     ]
-    let irCalls = SocketModule(accountOp, transactions, humanizerInfo as HumanizerMeta)
-    irCalls = AcrossModule(accountOp, irCalls, humanizerInfo as HumanizerMeta)
+    let irCalls = transactions.map((c) =>
+      SocketModule(accountOp, c, humanizerInfo as HumanizerMeta)
+    )
+    irCalls = irCalls.map((c) => AcrossModule(accountOp, c, humanizerInfo as HumanizerMeta))
     compareHumanizerVisualizations(irCalls, expectedVisualization)
   })
 })

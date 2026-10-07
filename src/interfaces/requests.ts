@@ -1,8 +1,17 @@
+import type { EIP712TypedData } from '@safe-global/types-kit'
+
+import { AccountOp } from '../libs/accountOp/accountOp'
 import { TokenResult } from '../libs/portfolio'
 import { ControllerInterface } from './controller'
 import { DappProviderRequest } from './dapp'
-import { SwapAndBridgeActiveRoute } from './swapAndBridge'
-import { CallsUserRequest, RequestExecutionType, RequestPosition } from './userRequest'
+import { Hex } from './hex'
+import { SwapAndBridgeActiveRoute, SwapAndBridgeQuote } from './swapAndBridge'
+import {
+  CallsUserRequest,
+  PendingDappPromise,
+  RequestExecutionType,
+  RequestPosition
+} from './userRequest'
 
 export type IRequestsController = ControllerInterface<
   InstanceType<typeof import('../controllers/requests/requests').RequestsController>
@@ -13,12 +22,7 @@ export type BuildRequest =
       type: 'dappRequest'
       params: {
         request: DappProviderRequest
-        dappPromise: {
-          id: string
-          session: DappProviderRequest['session']
-          resolve: (data: any) => void
-          reject: (data: any) => void
-        }
+        dappPromise: PendingDappPromise
       }
     }
   | {
@@ -27,6 +31,7 @@ export type BuildRequest =
         userRequestParams: {
           calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
           meta: CallsUserRequest['meta']
+          accountOp?: AccountOp
         }
         position?: RequestPosition
         executionType?: RequestExecutionType
@@ -40,6 +45,7 @@ export type BuildRequest =
         amount: string
         amountInFiat: bigint
         recipientAddress: string
+        recipientDomain: string | undefined
         selectedToken: TokenResult
         executionType: RequestExecutionType
       }
@@ -50,6 +56,7 @@ export type BuildRequest =
         openActionWindow: boolean
         activeRouteId?: SwapAndBridgeActiveRoute['activeRouteId']
         windowId?: number
+        quote?: SwapAndBridgeQuote
       }
     }
   | {
@@ -66,5 +73,24 @@ export type BuildRequest =
         recipientAddress: string
         selectedToken: TokenResult
         executionType: RequestExecutionType
+      }
+    }
+  | {
+      type: 'safeSignMessageRequest'
+      params: {
+        chainId: bigint
+        signed: string[]
+        message: Hex | EIP712TypedData
+        messageHash: Hex
+        created: number
+        signatures: Hex[]
+        dappName?: string
+        dappUrl?: string
+      }
+    }
+  | {
+      type: 'onchainSafeRejection'
+      params: {
+        requestId: CallsUserRequest['id']
       }
     }

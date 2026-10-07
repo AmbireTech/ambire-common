@@ -11,15 +11,13 @@ describe('EventEmitter', () => {
     eventEmitter = new EventEmitter()
   })
 
-  it('should unsubscribe from update events', () => {
+  it('should unsubscribe from update events', async () => {
     const mockCallback = jest.fn()
     let unsubscribe = eventEmitter.onUpdate(mockCallback)
 
-    // Trigger an update.
-    // Using 'as any' to access protected method for testing
-    ;(eventEmitter as any).emitUpdate()
-    ;(eventEmitter as any).emitUpdate()
-    ;(eventEmitter as any).emitUpdate()
+    await eventEmitter.forceEmitUpdate()
+    await eventEmitter.forceEmitUpdate()
+    await eventEmitter.forceEmitUpdate()
 
     expect(mockCallback).toHaveBeenCalledTimes(3)
     // `callbacks` is private, change to public if you want to test it
@@ -27,8 +25,7 @@ describe('EventEmitter', () => {
 
     unsubscribe()
 
-    // Trigger another update
-    ;(eventEmitter as any).emitUpdate()
+    await eventEmitter.forceEmitUpdate()
     // Count should remain 3, indicating the callback was not called again
     expect(mockCallback).toHaveBeenCalledTimes(3)
     // `callbacks` is private, change to public if you want to test it
@@ -36,15 +33,15 @@ describe('EventEmitter', () => {
 
     const mockCallback2 = jest.fn()
     unsubscribe = eventEmitter.onUpdate(mockCallback2)
-    ;(eventEmitter as any).emitUpdate()
-    ;(eventEmitter as any).emitUpdate()
-    ;(eventEmitter as any).emitUpdate()
-    ;(eventEmitter as any).emitUpdate()
+    await eventEmitter.forceEmitUpdate()
+    await eventEmitter.forceEmitUpdate()
+    await eventEmitter.forceEmitUpdate()
+    await eventEmitter.forceEmitUpdate()
 
     expect(mockCallback2).toHaveBeenCalledTimes(4)
 
     unsubscribe()
-    ;(eventEmitter as any).emitUpdate()
+    await eventEmitter.forceEmitUpdate()
     expect(mockCallback2).toHaveBeenCalledTimes(4)
     // `callbacks` is private, change to public if you want to test it
     // expect(eventEmitter.callbacks.length).toBe(0)
@@ -89,7 +86,7 @@ describe('EventEmitter', () => {
     emitter.onError(mockErrorCallback)
 
     // Verify they work before destroy
-    // @ts-ignore
+    // @ts-expect-error
     emitter.emitUpdate()
     expect(mockCallback).toHaveBeenCalledTimes(1)
 
@@ -97,9 +94,9 @@ describe('EventEmitter', () => {
     emitter.destroy()
 
     // Try to emit again
-    // @ts-ignore
+    // @ts-expect-error
     emitter.emitUpdate()
-    // @ts-ignore
+    // @ts-expect-error
     emitter.emitError({ level: 'minor', message: 'test', error: new Error() })
 
     // Should not have been called again
@@ -107,6 +104,108 @@ describe('EventEmitter', () => {
     expect(mockErrorCallback).not.toHaveBeenCalled()
     restore()
   })
+  describe('throttled emitUpdate', () => {
+    const THROTTLE_MS = 100
+
+    beforeEach(() => {
+      jest.useFakeTimers()
+    })
+
+    afterEach(() => {
+      jest.clearAllTimers()
+      jest.useRealTimers()
+    })
+
+    const emit = (options?: { throttleMs?: number }) =>
+      // Accessing the protected method for testing
+      (eventEmitter as any).emitUpdate(options)
+
+    it('should emit immediately on the first emit', () => {
+      const cb = jest.fn()
+      eventEmitter.onUpdate(cb)
+
+      emit({ throttleMs: THROTTLE_MS })
+
+      expect(cb).toHaveBeenCalledTimes(1)
+    })
+
+    it('should coalesce multiple throttled emits within the window into one trailing emit', () => {
+      const cb = jest.fn()
+      eventEmitter.onUpdate(cb)
+
+      emit({ throttleMs: THROTTLE_MS }) // leading -> 1
+      emit({ throttleMs: THROTTLE_MS })
+      emit({ throttleMs: THROTTLE_MS })
+      expect(cb).toHaveBeenCalledTimes(1)
+
+      jest.advanceTimersByTime(THROTTLE_MS) // trailing -> 2
+      expect(cb).toHaveBeenCalledTimes(2)
+
+      // Window is reopened after a trailing emit; with nothing pending it must
+      // not fire again and must release the timer.
+      jest.advanceTimersByTime(THROTTLE_MS)
+      expect(cb).toHaveBeenCalledTimes(2)
+    })
+
+    it('should keep throttling a continuous stream to one emit per window', () => {
+      const cb = jest.fn()
+      eventEmitter.onUpdate(cb)
+
+      emit({ throttleMs: THROTTLE_MS }) // leading -> 1
+      emit({ throttleMs: THROTTLE_MS })
+      jest.advanceTimersByTime(THROTTLE_MS) // trailing -> 2
+
+      emit({ throttleMs: THROTTLE_MS })
+      jest.advanceTimersByTime(THROTTLE_MS) // trailing -> 3
+
+      expect(cb).toHaveBeenCalledTimes(3)
+    })
+
+    it('should flush a pending throttled emit immediately on a plain emitUpdate', () => {
+      const cb = jest.fn()
+      eventEmitter.onUpdate(cb)
+
+      emit({ throttleMs: THROTTLE_MS }) // leading -> 1
+      emit({ throttleMs: THROTTLE_MS }) // pending trailing
+
+      emit() // plain emit supersedes the pending trailing -> 2
+      expect(cb).toHaveBeenCalledTimes(2)
+
+      // The superseded trailing emit must not fire afterwards
+      jest.advanceTimersByTime(THROTTLE_MS)
+      expect(cb).toHaveBeenCalledTimes(2)
+    })
+
+    it('should cancel a pending throttled emit on forceEmitUpdate', async () => {
+      const cb = jest.fn()
+      eventEmitter.onUpdate(cb)
+
+      emit({ throttleMs: THROTTLE_MS }) // leading -> 1
+      emit({ throttleMs: THROTTLE_MS }) // pending trailing
+
+      const forced = eventEmitter.forceEmitUpdate()
+      await jest.advanceTimersByTimeAsync(1) // forceEmitUpdate awaits wait(1)
+      await forced
+      expect(cb).toHaveBeenCalledTimes(2)
+
+      jest.advanceTimersByTime(THROTTLE_MS)
+      expect(cb).toHaveBeenCalledTimes(2)
+    })
+
+    it('should not fire a pending throttled emit after destroy', () => {
+      const cb = jest.fn()
+      eventEmitter.onUpdate(cb)
+
+      emit({ throttleMs: THROTTLE_MS }) // leading -> 1
+      emit({ throttleMs: THROTTLE_MS }) // pending trailing
+
+      eventEmitter.destroy()
+
+      jest.advanceTimersByTime(THROTTLE_MS)
+      expect(cb).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('EventEmitter memory leak with nested controllers', () => {
     suppressConsoleBeforeEach()
     const externalClosure = {}
@@ -135,7 +234,7 @@ describe('EventEmitter', () => {
       // The callback can still be executed, proving the old controller is kept alive
       const mockCallback = jest.fn()
       oldController.onError(mockCallback, 'test')
-      // @ts-ignore
+      // @ts-expect-error
       oldController.emitError({
         level: 'minor',
         message: 'test error',

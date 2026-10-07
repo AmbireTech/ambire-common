@@ -25,6 +25,7 @@ export type SelectedAccountPortfolioState = {
           | 'tokens'
           | 'collections'
           | 'tokenErrors'
+          | 'collectionErrors'
           | 'hintsFromExternalAPI'
           | 'priceCache'
           | 'total'
@@ -42,6 +43,14 @@ export type SelectedAccountPortfolioState = {
 export type SelectedAccountPortfolioTokenResult = TokenResultInterface & {
   latestAmount?: bigint
   pendingAmount?: bigint
+}
+
+export type SelectedAccountPortfolioVerification = {
+  provider: 'colibri'
+  status: 'loading' | 'success' | 'warning' | 'stale'
+  blockDiff?: number
+  verifiedChains: string[]
+  failedChains: string[]
 }
 
 export interface SelectedAccountPortfolio {
@@ -73,5 +82,17 @@ export interface SelectedAccountPortfolio {
   defiPositions: PositionsByProvider[]
   networkSimulatedAccountOp: NetworkSimulatedAccountOp
   portfolioState: SelectedAccountPortfolioState
-  projectedRewardsStats: ProjectedRewardsStats | null
+  walletStaking?: PortfolioNetworkResult['walletStaking']
+  verification: SelectedAccountPortfolioVerification | null
+  /**
+   * @deprecated The wallet no longer calculates the projected rewards stats, so this is
+   * never set. Kept only for type compatibility.
+   */
+  projectedRewardsStats?: ProjectedRewardsStats | null
+  /** The account's invite key for the Ambire Mobile app, if the relayer has one for it. */
+  mobileInviteKey?: string
+}
+
+export type SelectedAccountBalanceByAccount = {
+  [accountId: string]: number
 }

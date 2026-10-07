@@ -10,7 +10,12 @@ export const zealyMessageModule: HumanizerTypedMessageModule = (message: Message
     return { fullVisualization: [] }
   let messageAsText: Hex | string = message.content.message
   if (isHexString(message.content.message) && message.content.message.length % 2 === 0) {
-    messageAsText = toUtf8String(message.content.message)
+    try {
+      messageAsText = toUtf8String(message.content.message)
+    } catch (e) {
+      console.log("zealy module: couldn't do toUtf8String on message")
+      return { fullVisualization: [] }
+    }
   }
 
   if (messageAsText.startsWith('zealy.io wants you to sign in with your Ethereum account'))

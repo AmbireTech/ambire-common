@@ -3,6 +3,7 @@ import { formatUnits, isAddress } from 'ethers'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { testnetNetworks } from '../../consts/testnetNetworks'
 import { Account } from '../../interfaces/account'
+import { Contacts } from '../../interfaces/addressBook'
 import { ExtendedAddressState } from '../../interfaces/interop'
 import { Network } from '../../interfaces/network'
 import {
@@ -29,7 +30,6 @@ import { getHumanReadableSwapAndBridgeError } from '../../libs/swapAndBridge/swa
 import { handleAmountConversion } from '../../libs/transaction/conversion'
 import { validateSendTransferAddress } from '../../services/validations'
 import wait from '../../utils/wait'
-import { Contacts } from '../addressBook/addressBook'
 // import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { ControllersTransactionDependencies } from './dependencies'
@@ -47,7 +47,8 @@ const DEFAULT_VALIDATION_FORM_MSGS = {
 
 const DEFAULT_ADDRESS_STATE = {
   fieldValue: '',
-  ensAddress: '',
+  resolvedAddress: '',
+  resolvedAddressType: null,
   interopAddress: '',
   isDomainResolving: false
 }
@@ -481,6 +482,7 @@ export class TransactionFormState extends EventEmitter {
           canTopUpGasTank: false,
           rewardsType: null
         },
+        marketDataIn: [],
         priceIn: price ? [{ baseCurrency: 'usd', price }] : []
       }
 
@@ -582,7 +584,6 @@ export class TransactionFormState extends EventEmitter {
       // remove activeRoutes errors from the previous session
       this.activeRoutes.forEach((r) => {
         if (r.routeStatus !== 'failed') {
-          // eslint-disable-next-line no-param-reassign
           delete r.error
         }
       })
@@ -592,7 +593,6 @@ export class TransactionFormState extends EventEmitter {
 
         // update the activeRoute.route prop for the new session
         this.activeRoutes.forEach((r) => {
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
           this.updateActiveRoute(r.activeRouteId, undefined, true)
         })
       }
@@ -662,13 +662,15 @@ export class TransactionFormState extends EventEmitter {
     const currentActiveRoutes = [...this.activeRoutes]
     const activeRouteIndex = currentActiveRoutes.findIndex((r) => r.activeRouteId === activeRouteId)
 
-    if (activeRouteIndex !== -1) {
+    const currentActiveRoute = currentActiveRoutes[activeRouteIndex]
+
+    if (currentActiveRoute) {
       if (forceUpdateRoute) {
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
         ;(async () => {
-          let route = currentActiveRoutes[activeRouteIndex].route
+          let route = currentActiveRoute.route
           if (this.dependencies.serviceProviderAPI.id === 'socket') {
-            // @ts-ignore TODO: types mismatch by a bit, align types better
+            // @ts-expect-error TODO: types mismatch by a bit, align types better
             route = await this.dependencies.serviceProviderAPI.getActiveRoute(activeRouteId)
           }
           this.updateActiveRoute(activeRouteId, { route })
@@ -677,11 +679,11 @@ export class TransactionFormState extends EventEmitter {
 
       if (activeRoute) {
         currentActiveRoutes[activeRouteIndex] = {
-          ...currentActiveRoutes[activeRouteIndex],
+          ...currentActiveRoute,
           ...activeRoute
         }
       } else {
-        currentActiveRoutes[activeRouteIndex] = { ...currentActiveRoutes[activeRouteIndex] }
+        currentActiveRoutes[activeRouteIndex] = { ...currentActiveRoute }
       }
 
       if (activeRoute?.routeStatus === 'completed') {
@@ -841,16 +843,18 @@ export class TransactionFormState extends EventEmitter {
     const validationFormMsgsNew = DEFAULT_VALIDATION_FORM_MSGS
 
     if (this.#humanizerInfo && this.#selectedAccountData) {
-      const isEnsAddress = !!this.addressState.ensAddress
-
       validationFormMsgsNew.recipientAddress = validateSendTransferAddress(
         this.recipientAddress,
         this.#selectedAccountData.addr,
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
-        isEnsAddress,
-        this.addressState.isDomainResolving
+        !!this.addressState.resolvedAddress,
+        this.addressState.isDomainResolving,
+        this.dependencies.networks.networks,
+        this.dependencies.accounts.accountStates,
+        this.dependencies.accounts.accounts.find((a) => a.addr === this.recipientAddress),
+        this.toChainId ? BigInt(this.toChainId) : undefined
       )
     }
     return validationFormMsgsNew
@@ -858,7 +862,7 @@ export class TransactionFormState extends EventEmitter {
 
   get recipientAddress() {
     return (
-      this.addressState.ensAddress ||
+      this.addressState.resolvedAddress ||
       this.addressState.interopAddress ||
       this.addressState.fieldValue
     )

@@ -1,18 +1,99 @@
-import { getAddress, isAddress, ZeroAddress } from 'ethers'
+import { getAddress, Hex, isAddress, isHex, zeroAddress } from 'viem'
 
-import { HumanizerMeta, HumanizerVisualization, HumanizerWarning } from './interfaces'
+import {
+  HumanizerErc7730Row,
+  HumanizerMeta,
+  HumanizerVisualization,
+  HumanizerWarning,
+  IrCall
+} from './interfaces'
+
+export type HexIrCall = IrCall & { data: Hex }
+
+/** Type guard that narrows an IrCall to one with a valid hex data field. */
+export function isHexCall(call: IrCall): call is HexIrCall {
+  return isHex(call.data)
+}
 
 export function getWarning(
   content: string,
   code: HumanizerWarning['code'],
-  blocking?: boolean
+  blocking?: boolean,
+  address?: string
 ): HumanizerWarning {
-  return { content, blocking, code }
+  return { content, blocking, code, address }
 }
+
+/**
+ * Removes repeated warnings, keeping the first of each kind. Warnings for the same call can come
+ * from more than one source (a humanizer module and an ERC-7730 descriptor), so the same concern
+ * can be reported twice. Two warnings are the same only when their code, text and address all
+ * match - warnings that share a code but say different things are all kept.
+ */
+export const dedupeWarnings = (warnings: HumanizerWarning[]): HumanizerWarning[] => {
+  const warningKeys = new Set<string>()
+
+  return warnings.filter((warning) => {
+    const warningKey = `${warning.code}:${warning.content}:${warning.address || ''}`
+    if (warningKeys.has(warningKey)) return false
+    warningKeys.add(warningKey)
+
+    return true
+  })
+}
+
+/**
+ * Adds warnings to the ones a call already carries, without repeating any. Modules run one after
+ * another over the same call, so a module must never replace what an earlier one found. Returns
+ * undefined when there is nothing to report, so calls without warnings keep their original shape.
+ */
+export const mergeWarnings = (
+  existingWarnings: HumanizerWarning[] | undefined,
+  addedWarnings: HumanizerWarning[]
+): HumanizerWarning[] | undefined => {
+  if (!existingWarnings?.length && !addedWarnings.length) return undefined
+
+  return dedupeWarnings([...(existingWarnings || []), ...addedWarnings])
+}
+
+/**
+ * Marks an approval that has no spending limit. `SignAccountOpController` removes warnings with
+ * this code when the app that made the request is in the default Ambire catalog, so every module
+ * that reports an unlimited approval must use this exact code.
+ */
+export const UNLIMITED_APPROVAL_WARNING_CODE = 'UNLIMITED_APPROVAL'
+
+const MAX_AMOUNT_BY_BITS: { [bits: number]: bigint } = {
+  256: 2n ** 256n - 1n,
+  160: 2n ** 160n - 1n
+}
+
+/**
+ * True when the amount is the largest value its type can hold. Contracts use this value to mean
+ * "no limit". Only the exact maximum counts, so a large but finite approval is not reported.
+ */
+export const isUnlimitedAmount = (amount: bigint, bits: 256 | 160 = 256): boolean =>
+  amount === MAX_AMOUNT_BY_BITS[bits]
+
+/**
+ * Warns that an approval lets the spender take any amount of the token, with no limit. The address
+ * is lowercased to match `getAddressVisualization`, so both spellings of it compare as equal.
+ */
+export const getUnlimitedApprovalWarning = (spender: string): HumanizerWarning =>
+  getWarning(
+    'This app can spend this token from your account with no limit. Continue only if you trust it.',
+    UNLIMITED_APPROVAL_WARNING_CODE,
+    false,
+    spender.toLowerCase()
+  )
+
 export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE_INTEGER)
 
-export function getLabel(content: string, isBold?: boolean): HumanizerVisualization {
-  return { type: 'label', content, id: randomId(), isBold }
+export function getLabel(
+  content: string | bigint | number,
+  isBold?: boolean
+): HumanizerVisualization {
+  return { type: 'label', content: content.toString(), id: randomId(), isBold }
 }
 export function getAction(
   content: string,
@@ -23,6 +104,10 @@ export function getAction(
 export function getImage(content: string): HumanizerVisualization {
   return { type: 'image', content, id: randomId() }
 }
+export function getBreak(): HumanizerVisualization {
+  return { type: 'break', id: randomId() }
+}
+
 export function getAddressVisualization(_address: string): HumanizerVisualization {
   const address = _address.toLowerCase()
   return { type: 'address', address, id: randomId() }
@@ -31,7 +116,6 @@ export function getAddressVisualization(_address: string): HumanizerVisualizatio
 export function getToken(
   _address: string,
   amount: bigint,
-  isHidden?: boolean,
   chainId?: bigint
 ): HumanizerVisualization {
   const address = _address.toLowerCase()
@@ -40,7 +124,6 @@ export function getToken(
     address,
     value: BigInt(amount),
     id: randomId(),
-    isHidden,
     chainId
   }
 }
@@ -49,15 +132,74 @@ export function getTokenWithChain(
   amount: bigint,
   chainId?: bigint
 ): HumanizerVisualization {
-  return getToken(address, amount, undefined, chainId)
+  return getToken(address, amount, chainId)
 }
 
 export function getChain(chainId: bigint): HumanizerVisualization {
   return { type: 'chain', id: randomId(), chainId }
 }
 
-export function getText(text: string): HumanizerVisualization {
-  return { type: 'text', content: text, id: randomId() }
+export function getText(text: string, mlMi?: boolean): HumanizerVisualization {
+  return { type: 'text', content: text, id: randomId(), mlMi }
+}
+
+/** The visualizations a row renders - a `call` row keeps its parts flat, every other row has one. */
+export function getErc7730RowValues(row: HumanizerErc7730Row): HumanizerVisualization[] {
+  return row.type === 'call' ? row.value : [row.value]
+}
+
+/** A `call` row renders an embedded call inline and has no label of its own. */
+export function getErc7730RowLabel(row: HumanizerErc7730Row): string {
+  return row.type === 'call' ? '' : row.label
+}
+
+export function getErc7730Visualization(
+  intent: string | undefined,
+  rows: HumanizerErc7730Row[],
+  dapp?: IrCall['dapp'],
+  // Present only when the format used an `interpolatedIntent` that fully
+  // resolved: `parts` is the structured breakdown to render, `usedFieldPaths`
+  // is which fields (by `HumanizerErc7730Row.path`) it already rendered inline
+  // - see `excludedFieldPaths` on `HumanizerErc7730Visualization`.
+  interpolated?: { parts: HumanizerVisualization[]; usedFieldPaths: string[] }
+): HumanizerVisualization {
+  return {
+    type: 'erc7730',
+    // When interpolation succeeded, show the rich breakdown and exclude
+    // whatever fields it already rendered inline (that can legitimately be
+    // every field, e.g. when the whole template referenced them all).
+    // Otherwise there was nothing rendered inline to exclude anything for, so
+    // this falls back to the plain action with nothing excluded.
+    intent: interpolated?.parts ?? (intent ? [getAction(intent)] : []),
+    excludedFieldPaths: interpolated?.usedFieldPaths ?? [],
+    fields: rows,
+    dapp,
+    id: randomId()
+  }
+}
+
+export function flattenHumanizerVisualizations(
+  visualizations: HumanizerVisualization[] = []
+): HumanizerVisualization[] {
+  return visualizations.flatMap((visualization) => {
+    if (visualization.type !== 'erc7730') return [visualization]
+
+    return [
+      visualization,
+      // `fields` (every field, not just the ones displayed as rows) so nested
+      // values that only show up inline in `intent` (e.g. a token amount) are
+      // still discovered here.
+      ...flattenHumanizerVisualizations(visualization.fields.flatMap(getErc7730RowValues))
+    ]
+  })
+}
+
+export function hasErc7730Humanization(humanization?: IrCall[]): boolean {
+  return !!humanization?.some((call) =>
+    flattenHumanizerVisualizations(call.fullVisualization).some(
+      (visualization) => visualization.type === 'erc7730'
+    )
+  )
 }
 
 export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
@@ -101,10 +243,6 @@ export function getLink(url: string, content: string): HumanizerVisualization {
   return { type: 'link', url, content, id: randomId() }
 }
 
-export function checkIfUnknownAction(v: HumanizerVisualization[] | undefined): boolean {
-  return !!(v && v[0]?.type === 'action' && v?.[0]?.content?.startsWith('Unknown action'))
-}
-
 export function getWrapping(address: string, amount: bigint): HumanizerVisualization[] {
   return [getAction('Wrap'), getToken(address, amount)]
 }
@@ -122,10 +260,40 @@ export function getKnownName(
   return humanizerMeta?.knownAddresses?.[getAddress(address)]?.name
 }
 
+// Looks up a 4-byte function selector across every known ABI (not just the ABI of the call's
+// target contract), since humanizerMeta has no reverse index from contract address to ABI name.
+export function getKnownFunctionName(
+  humanizerMeta: HumanizerMeta | undefined,
+  selector: string
+): string | undefined {
+  const normalizedSelector = selector.toLowerCase()
+  const matchingFragment = Object.values(humanizerMeta?.abis || {})
+    .map((abi) => abi[normalizedSelector])
+    .find((fragment) => fragment?.type === 'function')
+
+  const signaturePrefix = 'function '
+  const functionSignature = matchingFragment?.signature.startsWith(signaturePrefix)
+    ? matchingFragment.signature.slice(signaturePrefix.length)
+    : undefined
+  const functionNameEnd = functionSignature?.indexOf('(') ?? -1
+
+  return functionNameEnd >= 0 ? functionSignature?.slice(0, functionNameEnd).trim() : undefined
+}
+
 export const EMPTY_HUMANIZER_META = { abis: { NO_ABI: {} }, knownAddresses: {} }
 
 export const uintToAddress = (uint: bigint): string =>
   `0x${BigInt(uint).toString(16).slice(-40).padStart(40, '0')}`
 
 export const eToNative = (address: string): string =>
-  address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? ZeroAddress : address
+  address.slice(2).toLocaleLowerCase() === 'e'.repeat(40) ? zeroAddress : address
+
+// tokens before solidity 0.5.0 would accept calldata that is shorter then the specified
+// args in the abi and assume they are 0s
+// other tokens fail onchain, so there is no real danger in padding to the end
+// as long as it is kept in the humanizer
+// applicable only to functions whose args are all static (one 32 byte word each)
+export const padCallData = (data: Hex, staticArgsCount: number): Hex => {
+  const expectedCallLength = 2 + 8 + staticArgsCount * 64
+  return data.padEnd(expectedCallLength, '0') as Hex
+}

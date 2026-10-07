@@ -1,63 +1,169 @@
-import { SignedMessage } from '../controllers/activity/types'
-import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
+import { MagicLinkKeys, SessionKeys } from '@/controllers/emailVault/emailVault'
+import { Contacts } from '@/interfaces/addressBook'
+import { EmailVaultData } from '@/interfaces/emailVault'
+
+import { FeatureFlags } from '../consts/featureFlags'
+import { SentToHistory, SignedMessage } from '../controllers/activity/types'
+import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
+import { Erc7730PersistedRegistryCache } from '../libs/humanizer/erc7730/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
+import { WalletStakingRelayerLog } from '../libs/walletStaking/pendingWithdrawal'
 import {
   AccountAssetsState as PortfolioAccountAssetsState,
-  PreviousHintsStorage
+  LearnedAssets,
+  PreviousHintsStorage,
+  TokenBlacklist
 } from '../libs/portfolio/interfaces'
 import { Account, AccountId, AccountPreferences } from './account'
+import { AutoLoginPoliciesByAccount, AutoLoginSettings } from './autoLogin'
+import { Selectors } from './contractInfo'
 import { ControllerInterface } from './controller'
-import { Dapp } from './dapp'
-import { Key, KeystoreSeed, MainKeyEncryptedWithSecret, StoredKey } from './keystore'
+import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
+import { Domains } from './domains'
+import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
+import type { FeeSpeed } from './signAccountOp'
 export type IStorageController = ControllerInterface<
   InstanceType<typeof import('../controllers/storage/storage').StorageController>
 >
 
+export type AutomaticallyResolvedSafeTxn = {
+  accountAddr?: string
+  chainId?: bigint
+  nonce: bigint
+  txnIds: string[]
+}
+
 export type StorageProps = {
+  // Onboarding
+  invite: object
+  isSetupComplete: boolean
+  onboardingState: object
+  termsState: object
+  themeType: string
+  avatarType: string
+  logLevel: string
+  crashAnalyticsEnabledV2: boolean
+  autoLockTime: number
+  // Activity
+  accountsOps: { [key: string]: { [key: string]: SubmittedAccountOp[] } }
+  externalAccountOps: { [key: string]: { [key: string]: SubmittedAccountOpLike[] } }
+  signedMessages: { [key: AccountId]: SignedMessage[] }
+  sentToHistory: SentToHistory
+  /**
+   * Which backend the transaction history was last written to. Recorded rather than a
+   * "migrated" boolean because it says what is true rather than what happened: a session that
+   * finds 'idb' here but cannot open IndexedDB knows the history exists and is unreachable,
+   * which is indistinguishable from "no transactions yet" otherwise.
+   */
+  activityStorageBackend: 'idb' | 'keyValue'
+  // Migrations
   passedMigrations: string[]
   migrations: string[]
-  networks: { [key: string]: Network }
-  accounts: Account[]
-  networkPreferences?: { [key: string]: Partial<Network> }
-  accountPreferences?: { [key: AccountId]: AccountPreferences }
-  accountsOps: { [key: string]: { [key: string]: SubmittedAccountOp[] } }
-  signedMessages: { [key: AccountId]: SignedMessage[] }
+  // Keystore
+  keyStoreUid: string | null
+  keystoreSecrets: MainKeyEncryptedWithSecret[]
+  keyPreferences: { addr: Key['addr']; type: Key['type']; label: string }[]
+  keystoreKeys: StoredKey[]
+  keystoreSeeds: StoredKeystoreSeed[]
+  // Dapps
+  dappsV2: Dapp[]
+  dapps: Dapp[]
+  recentDapps: RecentDappEntry[]
+  disguisedAsMetaMaskDapps: string[]
+  trending: {
+    updatedAt: number
+    tokens: TrendingToken[]
+  }
+  // Selected account
+  dismissedBanners: (string | number)[]
+  selectedAccount: string | null
+  selectedAccountDismissedBannerIds: { [key: string]: string[] }
+  // Email vault
+  emailVault: {
+    email: { [email: string]: EmailVaultData }
+    criticalError?: Error
+    errors?: Error[]
+  }
+  sessionKeys: SessionKeys
+  magicLinkKeys: MagicLinkKeys
+  emailVaultSetupBannerDismissedAt: number
+  // Portfolio
+  tokenBlacklist: TokenBlacklist
+  learnedAssets: LearnedAssets
   networksWithAssetsByAccount: { [accountId: string]: PortfolioAccountAssetsState }
   networksWithPositionsByAccounts: NetworksWithPositionsByAccounts
   tokenPreferences: TokenPreference[]
   customTokens: CustomToken[]
   previousHints: PreviousHintsStorage
-  keyPreferences: { addr: Key['addr']; type: Key['type']; label: string }[]
-  keystoreKeys: StoredKey[]
-  keystoreSeeds: KeystoreSeed[]
-  dappsV2: Dapp[]
+  // Auto login
+  autoLoginPolicies: AutoLoginPoliciesByAccount
+  autoLoginSettings: AutoLoginSettings
+  // Address book
+  contacts: Contacts
+  // Safe
+  automaticallyResolvedSafeTxns: AutomaticallyResolvedSafeTxn[]
+  rejectedSafeTxns: string[]
+  // Other
+  signAccountOpFeeTokenPreference: {
+    [chainId: string]: string | 'gasTank'
+  }
+  signAccountOpFeeSpeedPreference: {
+    [chainId: string]: FeeSpeed
+  }
+  networks: { [key: string]: Network }
+  accounts: Account[]
+  networkPreferences: { [key: string]: Partial<Network> }
+  accountPreferences: { [key: AccountId]: AccountPreferences }
   lastDappsUpdateVersion: string | null
-  invite: object
   isPinned: boolean
-  isSetupComplete: boolean
-  keyStoreUid: string | null
-  keystoreSecrets: MainKeyEncryptedWithSecret[]
-  onboardingState?: object
+  isPrivacyModeEnabled: boolean
+  isSidePanelModeEnabled: boolean
   phishing: {
     version: number
     updatedAt: number
     domains: string[]
     addresses: string[]
   }
-  selectedAccount: string | null
   swapAndBridgeActiveRoutes: SwapAndBridgeActiveRoute[]
-  termsState?: object
+  disabledSwapProviderIds: string[]
+  // Persisted reverse ENS/Namoshi lookup cache, kept indefinitely so accounts
+  // don't need to be re-resolved after a service worker restart.
+  domainsCache: Domains
+  // Persisted ERC-7730 "clear signing" descriptor cache (calldata/EIP-712 index + resolved
+  // descriptor JSON), so descriptors fetched once from the relayer survive reloads and are
+  // reusable by history/Benzin without a fresh network round trip. Purely a cache - safe to clear.
+  erc7730RegistryCache: Erc7730PersistedRegistryCache
+  flags: Partial<FeatureFlags>
+  isDefaultWallet: boolean
+  shouldSkipTransactionQueuedModal: boolean
+  isBatchingEnabled: boolean
+  surveysRespondedTo: string[]
+  functionSelectors: Selectors
+  // Per-controller debug logging toggles. Only enabled ones are stored
+  debugLogNamespaces: Record<string, boolean>
+  // The $WALLET staking leave logs (in the relayer's shape) of each account's pending withdrawals,
+  // keyed by the lowercase account address. Kept so that the withdrawals are known without the
+  // relayer, e.g. when the user opted out of the withdrawals lookup
+  walletStakingLeaveLogs: { [accountAddr: string]: WalletStakingRelayerLog[] }
 }
 
 export interface Storage {
-  get<K extends keyof StorageProps | string>(
+  // These typescript gymnastics are needed so:
+  // 1. A warning is shown if a defaultValue is not provided (can be undefined)
+  // 2. A warning is shown if a defaultValue is provided but is of the wrong type (can be StorageProps[K])
+  // 3. A warning is shown if a defaultValue is explicitly set to null (can be StorageProps[K] or null), but
+  // the same warning is not shown if a correct default value is provided
+  get<K extends keyof StorageProps>(key: K): Promise<StorageProps[K] | undefined>
+  get<K extends keyof StorageProps>(key: K, defaultValue: StorageProps[K]): Promise<StorageProps[K]>
+  get<K extends keyof StorageProps>(key: K, defaultValue: null): Promise<StorageProps[K] | null>
+  get<K extends keyof StorageProps>(
     key: K,
-    defaultValue?: any
-  ): Promise<K extends keyof StorageProps ? StorageProps[K] : any>
+    defaultValue?: StorageProps[K] | null
+  ): Promise<StorageProps[K] | null | undefined>
   set(key: string, value: any): Promise<null>
   remove(key: string): Promise<null>
 }

@@ -2,17 +2,26 @@ import { isAddress } from 'ethers'
 
 import { Message } from '../../../interfaces/userRequest'
 import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
+import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
-import { getAction, getAddressVisualization, getLabel, getWarning } from '../utils'
+import { getAction, getAddressVisualization, getBreak, getLabel } from '../utils'
 
 export const safeMessageModule: HumanizerTypedMessageModule = (message: Message) => {
   if (message.content.kind === 'message' || typeof message.content.message === 'string')
     return { fullVisualization: [] }
   if (message.content.primaryType !== 'SafeTx') return { fullVisualization: [] }
-  const { to, value, data, operation } = message.content.message
+  const { to, value, data, operation, nonce } = message.content.message
   const { accountAddr } = message
   const { verifyingContract } = message.content.domain
-  const humanizedCalls = genericErc20Humanizer({ accountAddr }, [{ to, value, data }])
+  const humanizedCall = genericErc20Humanizer({ accountAddr }, { to, value, data })
+  const safeStandardHumanization = getSafeHumanization(
+    verifyingContract ?? undefined,
+    to,
+    value,
+    data,
+    0,
+    nonce
+  )
   const fullVisualization: HumanizerVisualization[] = []
   if (!isAddress(verifyingContract)) return {}
   fullVisualization.push(
@@ -20,19 +29,27 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
       getAction('Safe{WALLET} transaction'),
       getLabel('from'),
       getAddressVisualization(verifyingContract)
-    ]
+    ],
+    ...(safeStandardHumanization && safeStandardHumanization.visuals
+      ? [getBreak(), ...safeStandardHumanization.visuals]
+      : [])
   )
-  if (humanizedCalls[0]?.fullVisualization) {
-    fullVisualization.push(...humanizedCalls[0].fullVisualization)
+  if (humanizedCall.fullVisualization) {
+    fullVisualization.push(...humanizedCall.fullVisualization)
   }
-  if (operation === 1) {
+  const delegateCallWarnings = operation !== undefined ? getDelegateCallWarning(operation, to) : []
+  if (delegateCallWarnings.length) {
     return {
       fullVisualization,
-      warnings: [
-        getWarning('Delegate call from Safe{WALLET} account', 'SAFE{WALLET}_DELEGATE_CALL')
-      ]
+      warnings: delegateCallWarnings
     }
   }
 
-  return { fullVisualization }
+  return {
+    fullVisualization,
+    warnings:
+      safeStandardHumanization && safeStandardHumanization.warnings
+        ? safeStandardHumanization.warnings
+        : []
+  }
 }

@@ -4,21 +4,37 @@ import fetch from 'node-fetch'
 import { expect, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
+import { Fetch } from '../../interfaces/fetch'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ContractNamesController, PERSIST_NOT_FOUND_IN_MS } from './contractNames'
 
 const contracts = {
   uniV3Factory: '0x1F98431c8aD98523631AE4a59f267346ea31F984',
   ambireAtETHSofia: '0x3Bd57Bf93dE179d2e47e86319F144d7482503C7d'
 }
-let finishPromise
-let errorPromise
 
 const DEFAULT_DEBOUNCE = 100
 
+const waitForNthUpdate = (ctrl: ContractNamesController, n: number) =>
+  new Promise((resolve) => {
+    let count = 0
+    const unsub = ctrl.onUpdate(() => {
+      if (++count === n) {
+        unsub()
+        resolve(true)
+      }
+    })
+  })
+
 describe('Contract Names', () => {
+  beforeEach(() => jest.useFakeTimers())
+  afterEach(() => {
+    jest.useRealTimers()
+    jest.clearAllTimers()
+  })
+
   it('Successfully find multiple and ignore random', async () => {
     // init
-    jest.useFakeTimers()
     const mockedFetch = jest.fn(fetch)
     const contractNamesController = new ContractNamesController({ fetch: mockedFetch })
     const randomAddress = Wallet.createRandom().address
@@ -40,36 +56,25 @@ describe('Contract Names', () => {
     jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
 
     // make sure the function has been executed
-    finishPromise = new Promise((resolve) => {
-      let emitCounter = 0
-      contractNamesController.onUpdate(() => {
-        emitCounter++
-        if (emitCounter === 2) resolve(true)
-      })
-    })
-    await finishPromise
+    await waitForNthUpdate(contractNamesController, 2)
 
     // asses ok result
     expect(mockedFetch).toHaveBeenCalledTimes(1)
     expect(contractNamesController.contractsPendingToBeFetched.length).toBe(0)
     expect(contractNamesController.contractNames[randomAddress]).toBeTruthy()
-    expect(contractNamesController.contractNames[randomAddress].name).toBeFalsy()
+    expect(contractNamesController.contractNames[randomAddress]!.name).toBeFalsy()
     expect(contractNamesController.contractNames[ZeroAddress]).toBeTruthy()
-    expect(contractNamesController.contractNames[ZeroAddress].name).toBeFalsy()
-    expect(contractNamesController.contractNames[contracts.ambireAtETHSofia].name).toBe(
+    expect(contractNamesController.contractNames[contracts.ambireAtETHSofia]!.name).toBe(
       'EthSofiaNft'
     )
-    expect(contractNamesController.contractNames[contracts.uniV3Factory].name).toBe(
+    expect(contractNamesController.contractNames[contracts.uniV3Factory]!.name).toBe(
       'UniswapV3Factory'
     )
-    jest.useRealTimers()
-    jest.clearAllTimers()
   })
 
   it('Refetch failed addresses', async () => {
     const { restore } = suppressConsole()
     // init
-    jest.useFakeTimers()
     const mockedFetch = jest.fn(fetch)
     const contractNamesController = new ContractNamesController({ fetch: mockedFetch })
     const randomAddress = Wallet.createRandom().address
@@ -80,19 +85,12 @@ describe('Contract Names', () => {
     jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
 
     // make sure the function has been executed
-    finishPromise = new Promise((resolve) => {
-      let emitCounter = 0
-      contractNamesController.onUpdate(() => {
-        emitCounter++
-        if (emitCounter === 2) resolve(true)
-      })
-    })
-    await finishPromise
+    await waitForNthUpdate(contractNamesController, 2)
 
     // asses ok result
     expect(mockedFetch).toHaveBeenCalledTimes(1)
     expect(contractNamesController.contractNames[randomAddress]).toBeTruthy()
-    expect(contractNamesController.contractNames[randomAddress].name).toBeFalsy()
+    expect(contractNamesController.contractNames[randomAddress]!.name).toBeFalsy()
     // time for failed records and errors to be considered stale
     // after that we will refetch the data for those addresses if requested
     jest.advanceTimersByTime(PERSIST_NOT_FOUND_IN_MS)
@@ -102,24 +100,15 @@ describe('Contract Names', () => {
     contractNamesController.getName(randomAddress, 8453n)
     jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
     // make sure the function has been executed
-    finishPromise = new Promise((resolve) => {
-      let emitCounter = 0
-      contractNamesController.onUpdate(() => {
-        emitCounter++
-        if (emitCounter === 2) resolve(true)
-      })
-    })
-    await finishPromise
+    await waitForNthUpdate(contractNamesController, 2)
 
     // make sure an attempt was actually made
     expect(mockedFetch).toHaveBeenCalledTimes(2)
-    jest.useRealTimers()
-    jest.clearAllTimers()
     restore()
   })
+
   it('fetch two times', async () => {
     // init
-    jest.useFakeTimers()
     const mockedFetch = jest.fn(fetch)
     const contractNamesController = new ContractNamesController({ fetch: mockedFetch })
     const randomAddress1 = Wallet.createRandom().address
@@ -131,20 +120,13 @@ describe('Contract Names', () => {
     jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
 
     // make sure the function has been executed
-    finishPromise = new Promise((resolve) => {
-      let emitCounter = 0
-      contractNamesController.onUpdate(() => {
-        emitCounter++
-        if (emitCounter === 2) resolve(true)
-      })
-    })
-    await finishPromise
+    await waitForNthUpdate(contractNamesController, 2)
 
     // asses ok result
     expect(mockedFetch).toHaveBeenCalledTimes(1)
     expect(contractNamesController.contractNames[randomAddress1]).toBeTruthy()
-    expect(contractNamesController.contractNames[randomAddress1].name).toBeFalsy()
-    expect(contractNamesController.contractNames[randomAddress1].retryAfter).toBe(
+    expect(contractNamesController.contractNames[randomAddress1]!.name).toBeFalsy()
+    expect(contractNamesController.contractNames[randomAddress1]!.retryAfter).toBe(
       PERSIST_NOT_FOUND_IN_MS
     )
 
@@ -155,31 +137,24 @@ describe('Contract Names', () => {
     jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
 
     // make sure the function has been executed
-    finishPromise = new Promise((resolve) => {
-      let emitCounter = 0
-      contractNamesController.onUpdate(() => {
-        emitCounter++
-        if (emitCounter === 2) resolve(true)
-      })
-    })
-    await finishPromise
+    await waitForNthUpdate(contractNamesController, 2)
 
     expect(mockedFetch).toHaveBeenCalledTimes(2)
     expect(contractNamesController.contractNames[randomAddress2]).toBeTruthy()
-    expect(contractNamesController.contractNames[randomAddress2].name).toBeFalsy()
-    expect(contractNamesController.contractNames[randomAddress2].retryAfter).toBe(
+    expect(contractNamesController.contractNames[randomAddress2]!.name).toBeFalsy()
+    expect(contractNamesController.contractNames[randomAddress2]!.retryAfter).toBe(
       PERSIST_NOT_FOUND_IN_MS
     )
-    jest.useRealTimers()
-    jest.clearAllTimers()
   })
 
   it('Test address validity handling', async () => {
+    // This test uses real timers since it only checks synchronous validation errors
+    jest.useRealTimers()
     const { restore } = suppressConsole()
     const badCheckSum = '0x026224a2940bfe258D0dbE947919B62fE321F042'
     const randomAddress = Wallet.createRandom().address
     const contractNamesController = new ContractNamesController({ fetch })
-    errorPromise = new Promise((resolve) => {
+    const errorPromise = new Promise((resolve) => {
       // expected error for wrong address format
       contractNamesController.onError(resolve)
     })
@@ -193,5 +168,67 @@ describe('Contract Names', () => {
 
     expect(contractNamesController.contractsPendingToBeFetched.length).toBe(1)
     restore()
+  })
+
+  it('does not queue or fetch contract names when transaction argument decoding is disabled', async () => {
+    const mockedFetch = jest.fn()
+    const featureFlags = {
+      initialLoadPromise: Promise.resolve(),
+      isFeatureEnabled: jest.fn(() => false)
+    } as unknown as IFeatureFlagsController
+    const contractNamesController = new ContractNamesController({
+      fetch: mockedFetch as Fetch,
+      featureFlags
+    })
+    const address = Wallet.createRandom().address
+
+    contractNamesController.getName(address, 1n)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
+    await Promise.resolve()
+
+    expect(contractNamesController.contractsPendingToBeFetched).toEqual([])
+    expect(contractNamesController.contractNames[address]).toBeUndefined()
+    expect(mockedFetch).not.toHaveBeenCalled()
+  })
+
+  it('cancels a queued contract name fetch if transaction argument decoding is disabled', async () => {
+    const address = Wallet.createRandom().address
+    const mockedFetch = jest.fn(async () => ({
+      json: async () => ({
+        contracts: {
+          [address]: { address, name: 'Example contract' }
+        }
+      })
+    }))
+    let isEnabled = true
+    const featureFlags = {
+      initialLoadPromise: Promise.resolve(),
+      isFeatureEnabled: jest.fn(() => isEnabled)
+    } as unknown as IFeatureFlagsController
+    const contractNamesController = new ContractNamesController({
+      fetch: mockedFetch as unknown as Fetch,
+      featureFlags
+    })
+
+    contractNamesController.getName(address, 1n)
+    expect(contractNamesController.contractNames[address]?.isLoading).toBe(true)
+
+    isEnabled = false
+    const cancellationUpdate = waitForNthUpdate(contractNamesController, 1)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
+    await cancellationUpdate
+
+    expect(mockedFetch).not.toHaveBeenCalled()
+    expect(contractNamesController.contractsPendingToBeFetched).toEqual([])
+    expect(contractNamesController.contractNames[address]?.isLoading).toBe(false)
+
+    isEnabled = true
+    contractNamesController.getName(address, 1n)
+    const fetchUpdates = waitForNthUpdate(contractNamesController, 2)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
+    await fetchUpdates
+
+    expect(mockedFetch).toHaveBeenCalledTimes(1)
+    expect(contractNamesController.contractNames[address]?.name).toBe('Example contract')
   })
 })

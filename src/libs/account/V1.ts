@@ -1,6 +1,6 @@
-/* eslint-disable class-methods-use-this */
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Interface } from 'ethers'
+import { Interface, ZeroAddress } from 'ethers'
+
 import AmbireAccount from '../../../contracts/compiled/AmbireAccount.json'
 import AmbireFactory from '../../../contracts/compiled/AmbireFactory.json'
 import { ARBITRUM_CHAIN_ID } from '../../consts/networks'
@@ -13,9 +13,8 @@ import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import { FeePaymentOption, FullEstimation, FullEstimationSummary } from '../estimate/interfaces'
 import { getBroadcastGas } from '../gasPrice/gasPrice'
 import { TokenResult } from '../portfolio'
-import { isNative } from '../portfolio/helpers'
-import { BaseAccount } from './BaseAccount'
 import { getSpoof } from './account'
+import { BaseAccount } from './BaseAccount'
 
 // this class describes a plain EOA that cannot transition
 // to 7702 either because the network or the hardware wallet doesnt' support it
@@ -33,9 +32,21 @@ export class V1 extends BaseAccount {
     estimation: FullEstimationSummary,
     feePaymentOptions: FeePaymentOption[]
   ): FeePaymentOption[] {
-    return feePaymentOptions.filter(
-      (opt) => (isNative(opt.token) && opt.paidBy === this.account.addr) || opt.availableAmount > 0n
+    const options = feePaymentOptions.filter(
+      (opt) => opt.paidBy !== this.account.addr && opt.availableAmount > 0n
     )
+    if (options.length) return options
+
+    // return the native only to display errors
+    const native = feePaymentOptions.find(
+      (opt) =>
+        opt.paidBy === this.account.addr &&
+        opt.token.address === ZeroAddress &&
+        !opt.token.flags.onGasTank
+    )
+    if (!native) throw new Error('no native fee payment option, it should not happen')
+    native.availableAmount = 0n
+    return [native]
   }
 
   getGasUsed(
@@ -108,5 +119,24 @@ export class V1 extends BaseAccount {
     provider: RPCProvider
   ): Promise<bigint> {
     return getRelayerNonce(activity, op, provider)
+  }
+
+  /**
+   * The Ambire estimation is made to work perfectly with Ambire SA
+   */
+  shouldStateOverrideDuringSimulations(): boolean {
+    return false
+  }
+
+  canBroadcastByOtherEOA(): boolean {
+    return true
+  }
+
+  canSetCustomGasPrices(): boolean {
+    return true
+  }
+
+  canSetCustomGas(): boolean {
+    return this.canSetCustomGasPrices()
   }
 }

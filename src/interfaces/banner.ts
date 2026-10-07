@@ -1,3 +1,5 @@
+import { SubmittedAccountOp } from '@/libs/accountOp/submittedAccountOp'
+
 import { ControllerInterface } from './controller'
 import { UserRequest } from './userRequest'
 
@@ -5,7 +7,7 @@ export type IBannerController = ControllerInterface<
   InstanceType<typeof import('../controllers/banner/banner').BannerController>
 >
 
-export type BannerType = 'error' | 'warning' | 'info' | 'info2' | 'success'
+export type BannerType = 'error' | 'warning' | 'info' | 'success'
 export type BannerCategory =
   | 'pending-to-be-signed-acc-op'
   | 'pending-to-be-confirmed-acc-ops'
@@ -19,35 +21,50 @@ export type BannerCategory =
   | 'temp-seed-not-confirmed'
   | 'old-account'
 
+interface BannerRequirements {
+  minBalanceTotal?: number
+  maxBalanceTotal?: number
+  minTxnsTotal?: number
+  maxTxnsTotal?: number
+  minAppVersion?: string
+  whitelistedAddresses?: string[]
+  shouldHaveKeys?: boolean
+}
+
 export interface Banner {
   id: number | string
   type: BannerType | MarketingBannerTypes
   category?: BannerCategory
   title: string
   text?: string
-  actions: Action[]
+  emoji?: string
+  // Force a single action on purpose
+  actions: [Action] | []
+  dismissAction?: Action
   meta?: {
     accountAddr?: string
     startTime?: number
     endTime?: number
+    requirements?: BannerRequirements
+    accountOpsDataForNextUpdate?: Pick<
+      SubmittedAccountOp,
+      'accountAddr' | 'chainId' | 'timestamp' | 'id'
+    >[]
     [key: string]: any
   }
 }
 
 export type MarketingBannerTypes = 'updates' | 'rewards' | 'new' | 'vote' | 'tips' | 'alert'
 
-export type Action =
+export type Action = (
   | {
-      label: 'Open'
       actionName: 'open-pending-dapp-requests'
     }
   | {
-      label: 'Open'
       actionName: 'open-accountOp'
       meta: { requestId: UserRequest['id'] }
     }
   | {
-      label: 'Reject'
       actionName: 'reject-accountOp'
       meta: {
         err: string
@@ -56,76 +73,68 @@ export type Action =
       }
     }
   | {
-      label: 'Sync'
       actionName: 'sync-keys'
       meta: { email: string; keys: string[] }
     }
   | {
-      label: string
       actionName: 'open-external-url'
       meta: { url: string }
     }
   | {
-      label: string
       actionName: 'backup-keystore-secret'
     }
   | {
-      label: 'Reject'
       actionName: 'reject-bridge'
       meta: { activeRouteIds: string[] }
     }
   | {
-      label: 'Proceed to Next Step' | 'Open'
       actionName: 'proceed-bridge'
       meta: { activeRouteId: string }
     }
   | {
-      label: 'Close'
       actionName: 'close-bridge'
       meta: { activeRouteIds: string[]; isHideStyle: boolean }
     }
   | {
-      label: 'Details'
       actionName: 'open-swap-and-bridge-tab'
     }
   | {
-      label: 'Hide'
       actionName: 'hide-activity-banner'
       meta: { timestamp: number; addr: string; chainId: bigint; isHideStyle: boolean }
     }
   | {
-      label: 'Reload'
       actionName: 'update-extension-version'
     }
   | {
-      label: 'Retry'
+      // Mobile-only: apply a downloaded over the air update (bundle) by restarting the app
+      actionName: 'apply-ota-update'
+    }
+  | {
       actionName: 'reload-selected-account'
     }
   | {
-      label: 'Dismiss'
-      actionName: 'dismiss-email-vault'
-    }
-  | {
-      label: 'Dismiss'
       actionName: 'dismiss-7702-banner'
       meta: { accountAddr: string }
     }
   | {
-      label: 'View'
       actionName: 'view-bridge'
     }
   | {
-      label: 'Enable all'
       actionName: 'enable-networks'
       meta: { networkChainIds: bigint[] }
     }
   | {
-      label: 'Enable'
       actionName: 'enable-networks'
       meta: { networkChainIds: bigint[] }
     }
   | {
-      label: 'Dismiss'
       actionName: 'dismiss-defi-positions-banner'
     }
-  | { label: 'Open'; actionName: 'open-link'; meta: { url: string } }
+  | {
+      actionName: 'dismiss-ens-expiry-banner'
+    }
+  | { actionName: 'open-link'; meta: { url: string } }
+  | { actionName: 'survey'; meta: { surveyId: string } }
+) & {
+  label?: string
+}

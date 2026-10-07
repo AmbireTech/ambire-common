@@ -1,5 +1,3 @@
-/* eslint-disable max-classes-per-file */
-
 import { isHexString } from 'ethers'
 
 import { BUNDLER } from '../../consts/bundlers'

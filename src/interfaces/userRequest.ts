@@ -4,15 +4,19 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 // import { AddEthereumChainParameter, WatchAssetParams } from 'viem'
 import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 
+import { Call } from '@/libs/accountOp/types'
+
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
 import { AutoLoginStatus, SiweValidityStatus } from './autoLogin'
-import { DappProviderRequest } from './dapp'
+import { Dapp, DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { ISignAccountOpController } from './signAccountOp'
 import { EIP7702Signature } from './signatures'
+import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from './swapAndBridge'
 
+import type { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
 export interface Message {
@@ -30,13 +34,44 @@ export interface Message {
   signature: EIP7702Signature | string | null
 }
 
-export type DappPromise = {
+/**
+ * What an app's request flow hands over, before it is attached to a user request. The `meta`
+ * a `DappPromise` carries is only known once the payload has been read, so it is added when
+ * the request is built rather than by whoever raised it.
+ */
+export type PendingDappPromise = {
   id: string
   session: DappProviderRequest['session']
-  meta: { isWalletSendCalls?: boolean }
   resolve: (data: any) => void
   reject: (data: any) => void
 }
+
+/** A dapp promise once it is attached to a user request. */
+export type DappPromise = PendingDappPromise & {
+  meta: { isWalletSendCalls?: boolean }
+}
+
+/**
+ * One app request waiting its turn behind the requests it would collide with. `settle` and
+ * `fail` answer the caller that is waiting on `build`, which is a different thing from the
+ * app's own promise - a request can be added successfully and still leave the app waiting for
+ * the user.
+ */
+export type DappRequestQueueItem = {
+  request: DappProviderRequest
+  dappPromise: PendingDappPromise
+  dapp: Dapp | null
+  settle: () => void
+  fail: (error: any) => void
+}
+
+/** One transaction request, validated and ready to go into a batch. */
+export type DappCallsRequestParams = {
+  calls: Call[]
+  meta: CallsUserRequest['meta']
+  dappPromise: CallsUserRequest['dappPromises'][number]
+}
+
 interface UserRequestBase<DP = DappPromise[]> {
   id: string | number
   kind: string
@@ -58,16 +93,29 @@ export interface CallsUserRequest extends UserRequestBase<DappPromise[]> {
     activeRouteId?: string
     isSwapAndBridgeCall?: boolean
     topUpAmount?: bigint
+    safeTxnProps?: { txnId: Hex; signature: Hex; nonce: bigint }
+    safeTx?: SafeMultisigTransactionResponse
+    swapTxn?: SwapAndBridgeSendTxRequest
+    quote?: SwapAndBridgeQuote
   }
   signAccountOp: ISignAccountOpController
 }
 
-export interface PlainTextMessageUserRequest extends UserRequestBase<[DappPromise]> {
+export interface PlainTextMessageUserRequest extends UserRequestBase<[] | [DappPromise]> {
   kind: 'message'
   meta: UserRequestBase['meta'] & {
     params: { message: Hex }
     accountAddr: AccountId
     chainId: bigint
+    keepRequestAlive?: boolean
+    signed?: string[]
+    hash?: Hex
+    created?: number
+    signatures?: Hex[]
+    // set for Safe messages co-signed from another device, where there is no live
+    // dapp session; recovered from the Safe message's `origin` field
+    dappName?: string
+    dappUrl?: string
   }
 }
 
@@ -84,10 +132,14 @@ export interface SiweMessageUserRequest extends UserRequestBase<[DappPromise]> {
     }
     accountAddr: AccountId
     chainId: bigint
+    keepRequestAlive?: boolean
+    signed?: string[]
+    hash?: Hex
+    created?: number
   }
 }
 
-export interface TypedMessageUserRequest extends UserRequestBase<[DappPromise]> {
+export interface TypedMessageUserRequest extends UserRequestBase<[] | [DappPromise]> {
   kind: 'typedMessage'
   meta: UserRequestBase['meta'] & {
     params: {
@@ -98,6 +150,15 @@ export interface TypedMessageUserRequest extends UserRequestBase<[DappPromise]> 
     }
     accountAddr: AccountId
     chainId: bigint
+    keepRequestAlive?: boolean
+    signed?: string[]
+    hash?: Hex
+    created?: number
+    signatures?: Hex[]
+    // set for Safe messages co-signed from another device, where there is no live
+    // dapp session; recovered from the Safe message's `origin` field
+    dappName?: string
+    dappUrl?: string
   }
 }
 

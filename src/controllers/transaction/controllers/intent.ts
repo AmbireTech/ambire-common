@@ -40,7 +40,7 @@ export class IntentController extends EventEmitter {
         outputChainId: currentState.toChainId,
         inputAmount: currentState.fromAmount,
         recipient:
-          currentState.addressState.ensAddress ||
+          currentState.addressState.resolvedAddress ||
           currentState.addressState.interopAddress ||
           currentState.addressState.fieldValue,
         sender: this.dependencies.selectedAccount.account?.addr
@@ -95,7 +95,6 @@ export class IntentController extends EventEmitter {
   // return hasRelevantChanges
   // }
 
-  // eslint-disable-next-line class-methods-use-this
   // public async getQuotes(inputs: any, options?: any) {
   //   // await this.dependencies.interopSDK.getQuotes()
   //   return new Promise((resolve) => {
