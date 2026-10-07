@@ -1,5 +1,3 @@
-import { jest } from '@jest/globals'
-
 import { Fetch } from '../../src/interfaces/fetch'
 
 type HeldResponse = { resolve: () => void; promise: Promise<void> }
