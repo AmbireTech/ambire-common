@@ -39,6 +39,7 @@ There are two patterns:
    // In MainController
    new SwapAndBridgeController({
      portfolioUpdate: (chainIds) => {
+       const networks = this.networks.networks.filter((n) => chainIds.includes(n.chainId))
        this.updateSelectedAccountPortfolio({ networks })
      },
      onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this)
@@ -86,15 +87,56 @@ Most controllers have `initialLoadPromise` that resolves when the controller fin
 ### Example:
 The networks controller that reads the network list from storage (which is async) exposes an `initialLoadPromise` that resolves when the networks are loaded. Then, the providers controller awaits the networks controller's `initialLoadPromise` in its own `initialLoadPromise` before initializing the providers, ensuring it has the network data available. The networks controller also awaits its own `initialLoadPromise` in its methods that read the network list, to ensure the data is loaded before accessing it.
 
+## IndexedDB persistence
+
+> `src/services/storage/README.md` documents the runtime side of this layer — module map,
+> startup order, invariants, and the cost of each operation. This section is the recipe for
+> putting a new controller on IDB; read that one to understand what already runs.
+
+Most controllers persist through `StorageController` (`chrome.storage.local` / `AsyncStorage`), which reads and writes a whole key as one blob. Controllers whose data grows without bound, or whose blob is large enough that richJson-stringifying it hurts, can persist in IndexedDB instead — row-per-record where the access pattern allows it, as a single document where it does not. `ActivityController` is the reference implementation.
+
+IDB is **not available everywhere**. The extension/web background calls `openAmbireIdb()` and passes the connection down through `MainController`; on mobile it passes `undefined`.
+
+**Controllers must contain no IDB-specific logic at all** — no adapter construction, no availability branching, no migration code. That lives in a persistence coordinator in `services/storage/`. The controller receives the connection only to hand it to that coordinator — it never calls a method on it:
+
+```ts
+this.#persistence = new AccountOpsPersistence({
+  storage,
+  idb,
+  getCache: () => this.#accountsOps,
+  onError: ({ message, error }) => this.emitError({ level: 'silent', message, error })
+})
+```
+
+`AccountOpsPersistence` is the worked example. It picks an adapter in `#pickAdapter`, own the data migration, and degrade rather than throw — so the controller just calls methods.
+
+To add IDB persistence to a controller, follow the recipe in `services/storage/README.md` —
+it covers the schema entry, the adapter pair, the coordinator and the startup-window audit.
+
+### Two different things are called "migration"
+
+- **Schema migration** — stores and indexes _inside_ IDB. Declared in `AMBIRE_IDB_SCHEMA` (`services/storage/idbSchema.ts`) and applied by `reconcileSchema()` / `applyMigrations()` in `idbDatabase.ts` during `onupgradeneeded`. `openAmbireIdb()` is awaited before any controller is constructed, so these always complete before the first read.
+- **Data migration** — moving a controller's existing payload _out of_ key-value storage _into_ IDB, once. This is `ensureMigrated()` on the backend, and it runs at controller load time.
+
+### Other things to know
+
+- A `StorageController` migration cannot reach a key that already moved to IDB — it would rewrite the dead legacy copy. Use an `idbDatabase.ts` migration handler instead.
+- Keep the legacy key as a fallback while the IDB path is new, and record which backend is active (`activityStorageBackend`, written by `#recordActiveBackend`).
+- That copy is frozen at migration time. It is a recovery floor, never a source of truth, and decide up front when it gets deleted.
+- `isEmpty()` cannot tell "never migrated" from "wiped, then partially repopulated". Accepted, not worth fixing.
+- Bulk writes must drop malformed legacy rows with a warning, not throw mid-batch. A partial commit makes `isEmpty()` false and disables the retry forever.
+- A `dbVersion` bump is one-way — an older build gets `VersionError` and falls back to key-value. Ship one alone, and land any store you already know you need before release.
+
 ## Other rules:
-- Never use raw `setInterval`. Always use `RecurringTimeout` from `@common/utils/RecurringTimeout`.
+- Never use raw `setInterval`. Always use `RecurringTimeout` from `src/classes/recurringTimeout/recurringTimeout.ts`.
 - Long-running background intervals must be declared in `ContinuousUpdatesController`, which orchestrates their lifecycle based on app state and controller events. If you need a new background loop, add it there and wire its start/stop/restart logic through the existing event subscriptions.
 - Never call `this.storage.set()` in parallel. Always await the previous call before making another one.
+- When adding or changing a storage migration in `StorageController`, make it safe to re-run (it can get skipped or interrupted and run later on data already in the current shape) - follow the rules in the comment above `#loadMigrations` in `src/controllers/storage/storage.ts`.
 - Always use `this.emitError` for error handling in controllers; all emitted errors are reported to Sentry and logged, and non-silent errors are also displayed as toasts in the UI. Public methods must never let errors propagate — use `EmittableError` (thrown inside a `withStatus` wrapper, which auto-emits it) or `try/catch` + `emitError({ level, message, error })` otherwise.
-- Public state is serialized and sent to the UI on every update, so it should be minimal and only include what's necessary for the UI. Do not store large data or sensitive data in public state. Use private fields for that and expose only derived non-sensitive data in public state if needed.
+- Public state is serialized and sent to the UI on every update, so it should be minimal and only include what's necessary for the UI. Do not store large data or sensitive data in public state. Use private fields for that and expose only derived non-sensitive data in public state if needed. Large public state (lists, registries, API responses) is re-serialized on every `emitUpdate`, so it slows down every update of the controller. If the UI needs only a subset of it or needs it only conditionally, serve it through a method the UI calls with `dispatchAndWait`.
 - NEVER write expensive calculations inside getters.
 - NEVER emit updates in getters. Getters should be pure and side-effect free.
-- Getter values are not automatically propagated to the UI. To update a getter value, you need to call `this.emitUpdate()`. Be VERY careful with this - you should NEVER write a getter that depends on data from another controller without subscribing to that controller's updates and calling `this.propagateUpdate(...)` in the subscription callback, otherwise the UI will not update when the underlying data changes.
+- Getter values are not automatically propagated to the UI; call `this.emitUpdate()` to push a new value. A getter that reads another controller's data also needs a subscription to that controller's updates that calls `this.propagateUpdate(...)`, otherwise the UI keeps showing stale data when the underlying data changes.
 - If a controller depends on the state of the UI (e.g., which screen it is on), it should subscribe to `this.ui.uiEvent.on`
 - When retrying failed background fetches, use a retry counter with a maximum number of attempts (reset on success) and an increasing delay. For periodic polling with retry, use `RecurringTimeout` with adaptive intervals (shorter on failure, longer on success). See `PortfolioController.updateExchangeList()`, `DappsController.#retryFetchAndUpdateInterval`, and `ContractNamesController`'s `retryAfter` timestamps for examples.
 - ALWAYS guard async operations that update state with appropriate stale-data checks, such as debounce, unique ID/version checks, or cancellation with `AbortController`, to prevent state corruption from out-of-order or concurrent operations. Examples of these patterns can be found in `SwapAndBridgeController` and `AccountPickerController`.
@@ -113,6 +155,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **AutoLoginController** – Manages SIWE auto-login policies and signatures for dApp sessions.
 - **BannerController** – Aggregates in-app notification banners based on account and app state.
 - **ContinuousUpdatesController** – Orchestrates periodic background updates for multiple controllers (e.g., portfolio and activity)
+- **ContractInfoController** – Fetches and caches function selectors for contracts.
 - **ContractNamesController** – Resolves human-readable names for smart-contract addresses via the relayer.
 - **DappsController** – Manages dApp connections, sessions, verification status, and the dApp catalog.
 - **DebugController** – Toggles per-controller debug logging at runtime (developer tool); persists toggles and hydrates the `debugLogger` module.
@@ -123,14 +166,14 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **EstimationController** – Estimates gas, fees, and payment options for smart-account transactions.
 - **GasPriceController** – Fetches and formats gas-price recommendations and bundler gas speeds.
 - **HintsController** – Owns the portfolio's token/NFT hints (learned assets, to-be-learned assets, custom tokens, token preferences) and their storage; a sub-controller of the PortfolioController.
-- **InviteController** – Verifies invite codes against the Relayer and stores the OG status; the gate itself (`verify`/`grantAccess`) is enforced only by the mobile router, the extension no longer enforces it.
+- **InviteController** – Verifies invite codes against the Relayer and stores the OG status; the gate itself (`verify`/`grantAccess`) is enforced only by the mobile router.
 - **KeystoreController** – Encrypts seeds and private keys under a multi-secret–wrapped main key, manages unlock state, and routes signing to internal or hardware-backed keys.
 - **NetworksController** – Manages blockchain networks and their configuration
 - **ProvidersController** – Initializes and manages JSON-RPC providers for each configured network.
 - **PhishingController** – Maintains and updates a list of phishing domains and addresses to protect users.
 - **PortfolioController** – Fetches and caches token balances, DeFi positions, and price data per account.
 - **PrivacyPoolsController** – Manages Privacy Pools (0xBow) accounts, at most one per recovery phrase, and their shielded notes: syncs pools, reports approved/pending balances, and builds deposit and withdrawal operations.
-- **WalletTokenController** – Loads and validates WALLET-token data for the portfolio, including the cached xWALLET conversion rate.
+- **WalletTokenController** – Loads each account's pending $WALLET withdrawals (from the relayer's leave logs, or, when the user opts out, from local and user-entered transactions) and stores them as leave logs.
 - **RequestsController** – Handles all requests (e.g., signing, connecting to an app, etc.), which come from the app UI and dApps.
 - **SafeController** – Integrates with Safe (Gnosis Safe) multisig wallets for transaction and message fetching.
 - **SelectedAccountController** – Tracks the currently selected account - a regular one, or a Privacy Pools one in its place - and derives its data (e.g., portfolio and auto login policies)
@@ -145,3 +188,4 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **TransactionManagerController** – Coordinates the transaction flow, delegating to form state and intent controllers
 - **TransactionFormState** – Manages the shared transaction form state (amount, tokens, validation)
 - **IntentController** – Handles intent-based transaction quotes and cross-chain swap parameters.
+- **VerificationController** – Verifies RPC portfolio balances by re-fetching them through the Colibri light client at the same block, and tracks each network's verification status.

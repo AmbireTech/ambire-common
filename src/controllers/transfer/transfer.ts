@@ -8,6 +8,7 @@ import { getPrivacyPoolsDepositAsset } from '../../consts/privacyPools'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
+import { IContractInfoController } from '../../interfaces/contractInfo'
 import { IDappsController } from '../../interfaces/dapp'
 import { AddressState } from '../../interfaces/domains'
 import { IErc7730Controller } from '../../interfaces/erc7730'
@@ -16,6 +17,7 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IPrivacyPoolsController } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
@@ -53,7 +55,8 @@ import { getIsViewOnly } from '../../utils/accounts'
 import { getAddressFromAddressState, getDomainFromAddressState } from '../../utils/domains'
 import {
   convertTokenPriceToBigInt,
-  getSafeAmountFromFieldValue
+  getSafeAmountFromFieldValue,
+  truncateFiatAmountDecimals
 } from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -102,6 +105,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   #signAccountOpPreference: SignAccountOpPreferenceController
 
   #featureFlags: IFeatureFlagsController
+
+  #platform: Platform
 
   #networks: INetworksController
 
@@ -187,6 +192,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #erc7730: IErc7730Controller
 
+  #contractInfo: IContractInfoController
+
   #relayerUrl: string
 
   isRecipientAddressFirstTimeSend: boolean = false
@@ -249,6 +256,8 @@ export class TransferController extends EventEmitter implements ITransferControl
     onBroadcastSuccess: OnBroadcastSuccess,
     ui: IUiController,
     erc7730: IErc7730Controller,
+    contractInfo: IContractInfoController,
+    platform: Platform,
     privacyPools?: IPrivacyPoolsController,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
@@ -273,9 +282,11 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#dapps = dapps
     this.#erc7730 = erc7730
     this.#privacyPools = privacyPools
+    this.#contractInfo = contractInfo
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#ui = ui
+    this.#platform = platform
 
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -611,7 +622,8 @@ export class TransferController extends EventEmitter implements ITransferControl
   get validationFormMsgs() {
     if (!this.isInitialized) return DEFAULT_VALIDATION_FORM_MSGS
 
-    // A copy, so the defaults returned before init are not mutated
+    // A copy, so a failed validation doesn't leak into the shared defaults (e.g. an "Insufficient
+    // amount." error showing up later for an account with no tokens to select)
     const validationFormMsgsNew = { ...DEFAULT_VALIDATION_FORM_MSGS }
 
     if (this.privacyPoolsRecipient) {
@@ -776,7 +788,8 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.#isMaxAmountSelected = true
       this.#wasAmountAdjustedForFee = maxAmountAfterFeeReservation !== this.maxAmount
       this.#resetMaxFeeReservation()
-      this.amountFieldMode = 'token'
+      // Keeps the field in whichever mode the user picked - the max is still set from the exact
+      // token balance, so fiat mode doesn't round it and leave dust behind.
       this.#setTokenAmount(maxAmountAfterFeeReservation, true)
     }
 
@@ -980,14 +993,16 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.selectedToken.decimals
       )
 
-      if (!formattedAmount) return
-
       const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
-      this.amountInFiat = formatUnits(
-        formattedAmount * tokenPriceBigInt,
-        // Shift the decimal point by the number of decimals in the token price
-        this.selectedToken.decimals + tokenPriceDecimals
+      // The fiat field shows this as-is when switched to, so cut it down to a displayable
+      // precision instead of the token's full one (up to 18 decimals)
+      this.amountInFiat = truncateFiatAmountDecimals(
+        formatUnits(
+          formattedAmount * tokenPriceBigInt,
+          // Shift the decimal point by the number of decimals in the token price
+          this.selectedToken.decimals + tokenPriceDecimals
+        )
       )
     }
   }
@@ -1429,6 +1444,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       keystore: this.#keystore,
       portfolio: this.#portfolio,
       featureFlags: this.#featureFlags,
+      platform: this.#platform,
       signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
@@ -1438,6 +1454,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       phishing: this.#phishing,
       dapps: this.#dapps,
       erc7730: this.#erc7730,
+      contractInfo: this.#contractInfo,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,

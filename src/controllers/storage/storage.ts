@@ -8,7 +8,13 @@ import { IEventEmitterRegistryController, Statuses } from '../../interfaces/even
 import { IKeystoreController, StoredKey } from '../../interfaces/keystore'
 import { IStorageController, Storage, StorageProps } from '../../interfaces/storage'
 import { getUniqueAccountsArray } from '../../libs/account/account'
-import { getDappNameFromId, normalizeDappConnection } from '../../libs/dapps/helpers'
+import { indexRecipientsFromOps } from '../../libs/activity/sentToHistory'
+import {
+  getDappIdFromUrl,
+  getDappNameFromId,
+  normalizeDappConnection,
+  normalizeHostname
+} from '../../libs/dapps/helpers'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
 import {
@@ -51,6 +57,21 @@ export class StorageController extends EventEmitter implements IStorageControlle
     await this.#storage.set('passedMigrations', [...this.#passedMigrations])
   }
 
+  /**
+   * Runs the storage migrations that are not recorded in `passedMigrations` yet.
+   *
+   * IMPORTANT: every migration must be safe to re-run. It can get skipped on a boot (an earlier
+   * one failed), or interrupted halfway, and then run on a later boot against data the controllers
+   * have been storing in the current shape in the meantime. So a migration must:
+   * - check the shape of each record, not only the `passedMigrations` flag, and migrate only the
+   *   records still in the legacy shape, leaving the rest untouched
+   * - merge into the stored value instead of replacing it, and store nothing when the legacy data
+   *   is missing (never write a default over the current data)
+   * - order its writes so an interrupted run can be completed by the next one (e.g. store last
+   *   whatever makes the legacy data impossible to recognize)
+   * - be covered by tests running it on already-migrated data (nothing changes) and on a mix of
+   *   legacy and current data (only the legacy records change)
+   */
   async #loadMigrations() {
     try {
       this.#passedMigrations = new Set(await this.#storage.get('passedMigrations', []))
@@ -77,8 +98,19 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#fixSelectedAccountDismissedBannerIdsType() // as of version 6.7.3
       await this.#migrateDappsAddConnectionSources() // As of v6.11.0
       await this.#migrateDomainsCacheToNames() // As of v6.14.0
+      await this.#migrateDappsAddMissingIds() // As of v6.21.8
+      await this.#removeFetchingDisabledSelectors() // As of v6.23.0
+      await this.#indexSentToHistoryFromAccountsOps() // As of the accountsOps → IDB release
     } catch (error) {
-      console.error('Storage migration error: ', error)
+      // Reported, because a failed migration skips all the ones after it on every start — and
+      // the failure is invisible in the meantime, which for #indexSentToHistoryFromAccountsOps
+      // means hasAccountOpsSentTo silently misses known recipients and every one warns as
+      // first-time.
+      this.emitError({
+        level: 'silent',
+        message: 'Some of your saved wallet data could not be updated to the latest version.',
+        error: error instanceof Error ? error : new Error(`Storage migration error: ${error}`)
+      })
     }
   }
 
@@ -105,6 +137,37 @@ export class StorageController extends EventEmitter implements IStorageControlle
   // Now, all network properties are pre-calculated and stored in a structured format: { [key: NetworkId]: Network } in the storage.
   // This function migrates the data from the old NetworkPreferences to the new structure
   // to ensure compatibility and prevent breaking the extension after updating to v4.24.0
+  /**
+   * Seed sentToHistory.recipients from existing transaction history.
+   *
+   * hasAccountOpsSentTo answers "have I sent here before" and the address-poisoning lookalike
+   * check from that index alone. It is only written on broadcast, so without this a user with
+   * existing history starts empty — every known recipient reads as first-time and poisoning
+   * warnings silently stop.
+   *
+   * Runs here rather than in ActivityController because migrations complete before any
+   * controller reads, which is also the last moment accountsOps still holds the full history
+   * in key-value storage: ActivityController moves it into IndexedDB during its own load.
+   */
+  async #indexSentToHistoryFromAccountsOps() {
+    const MIGRATION_KEY = 'indexSentToHistoryFromAccountsOps'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const [accountsOps, sentToHistory] = await Promise.all([
+      this.#storage.get('accountsOps', {}),
+      this.#storage.get('sentToHistory', { domains: {}, recipients: {} })
+    ])
+
+    if (Object.keys(accountsOps).length) {
+      indexRecipientsFromOps(sentToHistory, accountsOps)
+      await this.#storage.set('sentToHistory', sentToHistory)
+    }
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
+  }
+
+  // The migrated networks are merged into the stored ones instead of replacing them, because the
+  // networks controller may have already stored networks if this migration got skipped on a boot.
   async #migrateNetworkPreferencesToNetworks() {
     const MIGRATION_KEY = 'migrateNetworkPreferencesToNetworks'
     if (this.#passedMigrations.has(MIGRATION_KEY)) return
@@ -114,10 +177,19 @@ export class StorageController extends EventEmitter implements IStorageControlle
       this.#storage.get('networkPreferences')
     ])
 
-    if (!Object.keys(networks).length && networkPreferences) {
+    if (networkPreferences) {
       const migratedNetworks = await migrateNetworkPreferencesToNetworks(networkPreferences)
+      const storedChainIds = new Set(Object.values(networks).map((n) => String(n.chainId)))
+      const missingNetworks = Object.entries(migratedNetworks).filter(
+        ([, n]) => !storedChainIds.has(String(n.chainId))
+      )
 
-      await this.#storage.set('networks', migratedNetworks)
+      if (missingNetworks.length) {
+        await this.#storage.set('networks', {
+          ...networks,
+          ...Object.fromEntries(missingNetworks)
+        })
+      }
       await this.#storage.remove('networkPreferences')
     }
 
@@ -128,6 +200,8 @@ export class StorageController extends EventEmitter implements IStorageControlle
   // merging the previously separate Account and AccountPreferences interfaces.
   // This change requires a migration due to the introduction of a new controller, AccountsController,
   // which now manages both accounts and their preferences.
+  // Preferences already on an account win over the legacy ones, because they were set after the
+  // accounts controller took over (possible if this migration got skipped on a boot).
   async #migrateAccountPreferencesToAccounts() {
     const MIGRATION_KEY = 'migrateAccountPreferencesToAccounts'
     if (this.#passedMigrations.has(MIGRATION_KEY)) return
@@ -142,11 +216,11 @@ export class StorageController extends EventEmitter implements IStorageControlle
         accounts.map((a: any) => {
           return {
             ...a,
-            // @ts-expect-error expected to warn, because "accountPreferences" are now legacy (now missing)
-            preferences: this.#storage.accountPreferences[a.addr] || {
-              label: DEFAULT_ACCOUNT_LABEL,
-              pfp: a.addr
-            }
+            preferences: a.preferences ||
+              accountPreferences[a.addr] || {
+                label: DEFAULT_ACCOUNT_LABEL,
+                pfp: a.addr
+              }
           }
         })
       )
@@ -160,6 +234,8 @@ export class StorageController extends EventEmitter implements IStorageControlle
   // As of version v4.33.0, user can change the HD path when importing a seed.
   // Migration is needed because previously the HD path was not stored,
   // and the default used was `BIP44_STANDARD_DERIVATION_TEMPLATE`.
+  // Only the seeds still stored in the legacy (plain string) shape are migrated, so a seed added
+  // in the new shape (possible if this migration got skipped on a boot) is kept as it is.
   async #migrateKeystoreSeedsWithoutHdPathTemplate() {
     const MIGRATION_KEY = 'migrateKeystoreSeedsWithoutHdPathTemplate'
     if (this.#passedMigrations.has(MIGRATION_KEY)) return
@@ -167,10 +243,11 @@ export class StorageController extends EventEmitter implements IStorageControlle
     const keystoreSeeds = await this.#storage.get('keystoreSeeds', [])
 
     if (getShouldMigrateKeystoreSeedsWithoutHdPath(keystoreSeeds)) {
-      const migratedKeystoreSeeds = keystoreSeeds.map((seed) => ({
-        seed,
-        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
-      }))
+      const migratedKeystoreSeeds = keystoreSeeds.map((seed) =>
+        typeof seed === 'string'
+          ? { seed, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE }
+          : seed
+      )
 
       await this.#storage.set('keystoreSeeds', migratedKeystoreSeeds)
     }
@@ -248,25 +325,35 @@ export class StorageController extends EventEmitter implements IStorageControlle
   }
 
   // As of version 4.51.0, migrate legacy token preferences to token preferences and custom tokens
+  // Only the legacy entries are migrated, and the result is merged into the stored token preferences
+  // and custom tokens, because new ones may have been stored if this migration got skipped on a boot.
+  // The custom tokens are stored first, so if the migration gets interrupted in between, the legacy
+  // entries are still there for the next run.
   async #migrateTokenPreferences() {
     const MIGRATION_KEY = 'migrateTokenPreferences'
     if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
-    const tokenPreferences = await this.#storage.get('tokenPreferences', [])
+    const [tokenPreferences, customTokens] = await Promise.all([
+      this.#storage.get('tokenPreferences', []) as Promise<LegacyTokenPreference[]>,
+      this.#storage.get('customTokens', [])
+    ])
+    const isLegacyTokenPreference = ({ symbol, decimals, standard }: LegacyTokenPreference) =>
+      !!symbol || !!decimals || !!standard
+    const legacyTokenPreferences = tokenPreferences.filter(isLegacyTokenPreference)
 
-    if (
-      (tokenPreferences as LegacyTokenPreference[]).some(
-        ({ symbol, decimals }) => !!symbol || !!decimals
+    if (legacyTokenPreferences.length) {
+      const getCustomTokenId = ({ address, networkId, chainId }: any) =>
+        `${address}:${networkId ?? chainId}`
+      const storedCustomTokenIds = new Set(customTokens.map(getCustomTokenId))
+      const missingCustomTokens = migrateCustomTokens(legacyTokenPreferences).filter(
+        (token) => !storedCustomTokenIds.has(getCustomTokenId(token))
       )
-    ) {
-      await this.#storage.set(
-        'tokenPreferences',
-        migrateHiddenTokens(tokenPreferences as LegacyTokenPreference[])
-      )
-      await this.#storage.set(
-        'customTokens',
-        migrateCustomTokens(tokenPreferences as LegacyTokenPreference[])
-      )
+
+      await this.#storage.set('customTokens', [...customTokens, ...missingCustomTokens])
+      await this.#storage.set('tokenPreferences', [
+        ...tokenPreferences.filter((preference) => !isLegacyTokenPreference(preference)),
+        ...migrateHiddenTokens(legacyTokenPreferences)
+      ])
     }
 
     await this.#markMigrationPassed(MIGRATION_KEY)
@@ -300,20 +387,51 @@ export class StorageController extends EventEmitter implements IStorageControlle
       this.#storage.get('signedMessages', {})
     ])
 
-    if (!Object.keys(networks).length) {
+    // Only the networks stored in the legacy shape still have an `id` (the networkId). Everything
+    // else - including data stored under a chainId if this migration got skipped on a boot - is
+    // left as it is, since mapping it through a missing networkId would corrupt it.
+    const networkIdToChainId: Record<string, bigint> = Object.fromEntries(
+      Object.values(networks)
+        .filter((network: any) => !!network.id)
+        .map(({ id, chainId }: any) => [id, chainId as bigint])
+    )
+
+    if (!Object.keys(networkIdToChainId).length) {
       await this.#markMigrationPassed(MIGRATION_KEY)
 
       return
     }
 
-    const networkIdToChainId = Object.fromEntries(
-      Object.values(networks).map(({ id, chainId }: any) => [id, chainId as bigint])
-    )
+    // An entry already stored under the chainId wins over the migrated one, because it is the one
+    // the controllers have been reading and updating since.
+    const migrateKeys = <T>(
+      obj: Record<string, T>,
+      migrateValue: (value: T, chainId: bigint) => T = (value) => value
+    ) => {
+      const migratedEntries: Record<string, T> = {}
+      const entriesWithChainId: Record<string, T> = {}
 
-    const migrateKeys = <T>(obj: Record<string, T>) =>
-      Object.fromEntries(
-        Object.entries(obj).map(([networkId, value]) => [networkIdToChainId[networkId], value])
-      )
+      Object.entries(obj).forEach(([key, value]) => {
+        const chainId = networkIdToChainId[key]
+        if (chainId === undefined) {
+          entriesWithChainId[key] = value
+          return
+        }
+
+        migratedEntries[chainId.toString()] = migrateValue(value, chainId)
+      })
+
+      return { ...migratedEntries, ...entriesWithChainId }
+    }
+
+    const migrateItemNetworkId = (item: any) => {
+      const chainId = networkIdToChainId[item?.networkId]
+      if (chainId === undefined) return item
+
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { networkId, ...rest } = item
+      return { ...rest, chainId }
+    }
 
     const migratedPreviousHints = {
       learnedTokens: migrateKeys(previousHints.learnedTokens || {}),
@@ -321,16 +439,10 @@ export class StorageController extends EventEmitter implements IStorageControlle
       fromExternalAPI: {} // No longer used
     }
 
-    const migratedCustomTokens = customTokens.map(({ networkId, ...rest }: any) => ({
-      ...rest,
-      chainId: networkIdToChainId[networkId]
-    }))
+    const migratedCustomTokens = customTokens.map(migrateItemNetworkId)
 
     const migratedTokenPreferences: { address: string; chainId: string; isHidden?: boolean }[] =
-      tokenPreferences.map(({ networkId, ...rest }: any) => ({
-        ...rest,
-        chainId: networkIdToChainId[networkId]
-      }))
+      tokenPreferences.map(migrateItemNetworkId)
 
     const migratedNetworksWithAssetsByAccount = Object.fromEntries(
       Object.entries(networksWithAssetsByAccount).map(([accountId, assetsState]) => [
@@ -349,18 +461,12 @@ export class StorageController extends EventEmitter implements IStorageControlle
     const migratedAccountsOps = Object.fromEntries(
       Object.entries(accountsOps).map(([accountId, opsByNetwork]) => [
         accountId,
-        Object.fromEntries(
-          Object.entries(opsByNetwork).map(([networkId, ops]) => {
-            const chainId = networkIdToChainId[networkId]
-            return [
-              chainId,
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              ops.map(({ networkId, ...rest }: any) => ({
-                ...rest,
-                chainId // Migrate networkId inside SubmittedAccountOp
-              }))
-            ]
-          })
+        migrateKeys(opsByNetwork, (ops, chainId) =>
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          ops.map(({ networkId, ...rest }: any) => ({
+            ...rest,
+            chainId // Migrate networkId inside SubmittedAccountOp
+          }))
         )
       ])
     )
@@ -368,10 +474,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     const migratedSignedMessages = Object.fromEntries(
       Object.entries(signedMessages).map(([accountId, messages]) => [
         accountId,
-        messages.map(({ networkId, ...rest }: any) => ({
-          ...rest,
-          chainId: networkIdToChainId[networkId] // Migrate networkId inside SignedMessage
-        }))
+        messages.map(migrateItemNetworkId) // Migrate networkId inside SignedMessage
       ])
     )
 
@@ -380,7 +483,8 @@ export class StorageController extends EventEmitter implements IStorageControlle
       Object.entries(networks).map(([_, { id, ...rest }]: any) => [rest.chainId.toString(), rest])
     )
 
-    await this.#storage.set('networks', migratedNetworks)
+    // The networks are stored last, because dropping their `id` is what makes the rest of the data
+    // impossible to migrate. If the migration gets interrupted before that, the next run completes it.
     await this.#storage.set('previousHints', migratedPreviousHints)
     await this.#storage.set('customTokens', migratedCustomTokens)
     await this.#storage.set('tokenPreferences', migratedTokenPreferences)
@@ -391,6 +495,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
     )
     await this.#storage.set('accountsOps', migratedAccountsOps)
     await this.#storage.set('signedMessages', migratedSignedMessages)
+    await this.#storage.set('networks', migratedNetworks)
     await this.#markMigrationPassed(MIGRATION_KEY)
   }
 
@@ -596,11 +701,22 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
   // As of version 5.30.0, we've introduced an extended dynamic dapp catalog.
   // This method migrates legacy dapp data to the new format and clears outdated storage.
+  // The migrated dapps are merged into the stored ones instead of replacing them, because the dapps
+  // controller may have already stored the user's latest connections and permissions if this
+  // migration got skipped on a boot. Without legacy dapps there is nothing to migrate.
   async #migrateLegacyDappsToDappsV2() {
     const MIGRATION_KEY = 'migrateLegacyDappsToDappsV2'
     if (this.#passedMigrations.has(MIGRATION_KEY)) return
 
-    const dapps = await this.#storage.get('dapps', [])
+    const [dapps, storedDapps] = await Promise.all([
+      this.#storage.get('dapps'),
+      this.#storage.get('dappsV2', [])
+    ])
+
+    if (!dapps) {
+      await this.#markMigrationPassed(MIGRATION_KEY)
+      return
+    }
 
     const migratedDapps: Dapp[] = []
     dapps.forEach((dapp: Dapp) => {
@@ -622,7 +738,11 @@ export class StorageController extends EventEmitter implements IStorageControlle
       migratedDapps.push(updatedDapp)
     })
 
-    await this.#storage.set('dappsV2', migratedDapps)
+    // Id-less legacy dapps are kept, `migrateDappsAddMissingIds` derives their ids later
+    const storedDappIds = new Set(storedDapps.map((d) => d.id))
+    const missingDapps = migratedDapps.filter((d) => !d.id || !storedDappIds.has(d.id))
+
+    await this.#storage.set('dappsV2', [...storedDapps, ...missingDapps])
     await this.#storage.remove('dapps')
     await this.#markMigrationPassed(MIGRATION_KEY)
   }
@@ -643,6 +763,66 @@ export class StorageController extends EventEmitter implements IStorageControlle
     if (needsMigration) {
       const migratedDapps = dapps.map(normalizeDappConnection)
       await this.#storage.set('dappsV2', migratedDapps)
+    }
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
+  }
+
+  // Dapp ids were derived only in memory (b87b11c32) and reached storage only when a dapp was later
+  // changed. Since 6c4c1036a even that stopped, so older `dappsV2` records may lack one. The dapps
+  // controller used to key such records under `undefined` and saved the connected and custom ones
+  // back on every catalog refresh, so they survived every update. Since the trailing-dot
+  // normalization (607e24fea) the load throws on them instead (Sentry EXTENSION-2QK). Derive the
+  // missing ids from the url.
+  // A record whose derived id is already taken is dropped, because the existing record is the one
+  // lookups resolve to and its permissions are the ones the user reviewed. Existing ids are
+  // compared in their trailing-dot-free form, the one the dapps controller loads them under.
+  async #migrateDappsAddMissingIds() {
+    const MIGRATION_KEY = 'migrateDappsAddMissingIds'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const dapps = await this.#storage.get('dappsV2', [] as Dapp[])
+
+    if (dapps.some((d) => !d.id)) {
+      const takenIds = new Set(dapps.filter((d) => !!d.id).map((d) => normalizeHostname(d.id)))
+      const migratedDapps: Dapp[] = []
+
+      dapps.forEach((dapp) => {
+        if (dapp.id) {
+          migratedDapps.push(dapp)
+          return
+        }
+        if (!dapp.url) return
+
+        const id = getDappIdFromUrl(dapp.url)
+        if (takenIds.has(id)) return
+
+        takenIds.add(id)
+        migratedDapps.push({ ...dapp, id })
+      })
+
+      await this.#storage.set('dappsV2', migratedDapps)
+    }
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
+  }
+
+  // As of v6.23.0, nothing is saved for a function selector while fetching them is turned off.
+  // Older versions saved an empty 'fetching-disabled' entry instead, only so the screen would stop
+  // showing the call as loading. Such an entry never expires now, so it would keep its selector
+  // from ever being fetched.
+  async #removeFetchingDisabledSelectors() {
+    const MIGRATION_KEY = 'removeFetchingDisabledSelectors'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const functionSelectors = await this.#storage.get('functionSelectors', {})
+    const isFetchingDisabledEntry = ({ status }: { status: string }) =>
+      status === 'fetching-disabled'
+    const entries = Object.entries(functionSelectors)
+    const currentEntries = entries.filter(([, entry]) => !isFetchingDisabledEntry(entry))
+
+    if (currentEntries.length !== entries.length) {
+      await this.#storage.set('functionSelectors', Object.fromEntries(currentEntries))
     }
 
     await this.#markMigrationPassed(MIGRATION_KEY)

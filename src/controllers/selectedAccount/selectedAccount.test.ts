@@ -6,6 +6,7 @@ import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { defiPositionsOnDisabledNetworksBannerId } from '../../libs/banners/banners'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { stringify } from '../../libs/richJson/richJson'
@@ -92,6 +93,7 @@ const prepareTest = async () => {
     selectedAccountCtrl: mainCtrl.selectedAccount,
     portfolioCtrl: mainCtrl.portfolio,
     providersCtrl: mainCtrl.providers,
+    networksCtrl: mainCtrl.networks,
     autoLoginCtrl: mainCtrl.autoLogin,
     accountsCtrl: mainCtrl.accounts,
     storage: mainCtrl.storage
@@ -122,31 +124,6 @@ describe('SelectedAccount Controller', () => {
 
     expect(selectedAccountCtrl.portfolio.totalBalance).toBeGreaterThan(0)
     expect(selectedAccountCtrl.portfolio.tokens.length).toBeGreaterThan(0)
-  })
-  it('should update when projected rewards data is unavailable because privacy opt outs are disabled', async () => {
-    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
-
-    jest.spyOn(portfolioCtrl, 'getAccountPortfolioState').mockReturnValue({
-      '1': {
-        isReady: true,
-        isLoading: false,
-        errors: [],
-        result: {
-          tokens: [],
-          total: { usd: 0 },
-          defiPositions: { positionsByProvider: [] }
-        }
-      },
-      projectedRewards: {
-        isReady: true,
-        isLoading: false,
-        errors: [],
-        result: {}
-      }
-    } as any)
-
-    expect(() => selectedAccountCtrl.updateSelectedAccountPortfolio()).not.toThrow()
-    expect(selectedAccountCtrl.portfolio.projectedRewardsStats).toBeNull()
   })
   it('the portfolio controller state is not mutated when updating the selected account portfolio', async () => {
     // NOTE! THE TEST ACCOUNT MUST HAVE AAVE DEFI BORROW FOR THIS TEST
@@ -292,6 +269,21 @@ describe('SelectedAccount Controller', () => {
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
     expect(didSetToFalse).toBe(false)
     unsubscribe()
+  })
+
+  it('the mobile invite key of the selected account reaches its portfolio', async () => {
+    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
+    const accountAddr = accounts[0]!.addr
+    const mobileInviteKey = 'test-mobile-invite-key'
+    const getMobileInviteKeySpy = jest
+      .spyOn(portfolioCtrl, 'getMobileInviteKey')
+      .mockImplementation((addr) => (addr === accountAddr ? mobileInviteKey : undefined))
+
+    await portfolioCtrl.updateSelectedAccount(accountAddr)
+    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+    expect(getMobileInviteKeySpy).toHaveBeenCalledWith(accountAddr)
+    expect(selectedAccountCtrl.portfolio.mobileInviteKey).toBe(mobileInviteKey)
   })
 
   describe('Privacy Pools account', () => {
@@ -509,6 +501,27 @@ describe('SelectedAccount Controller', () => {
       }
     }
 
+    it('A banner is displayed for DeFi positions on a disabled network', async () => {
+      const { selectedAccountCtrl, portfolioCtrl, networksCtrl } = await prepareTest()
+      const disabledChainId = 56n
+      await networksCtrl.updateNetwork({ disabled: true }, disabledChainId)
+      const getDefiPositionsCountSpy = jest
+        .spyOn(portfolioCtrl, 'getDefiPositionsCountOnDisabledNetworks')
+        .mockImplementation((addr) =>
+          addr === accountAddr ? { [disabledChainId.toString()]: 2 } : {}
+        )
+
+      await portfolioCtrl.updateSelectedAccount(accountAddr)
+      await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+      const defiBanner = selectedAccountCtrl.banners.find(
+        ({ id }) => id === defiPositionsOnDisabledNetworksBannerId
+      )
+
+      expect(getDefiPositionsCountSpy).toHaveBeenCalledWith(accountAddr)
+      expect(defiBanner).toBeDefined()
+      await networksCtrl.updateNetwork({ disabled: false }, disabledChainId)
+    })
     it("An RPC banner is displayed when it's not working and the user has assets on it", async () => {
       const { selectedAccountCtrl, portfolioCtrl, providersCtrl } = await prepareTest()
       await portfolioCtrl.updateSelectedAccount(accountAddr)

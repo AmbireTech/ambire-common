@@ -40,11 +40,7 @@ function getSignificantBalanceDecreaseWarning(
     discoveryStatus === TraceCallDiscoveryStatus.Done
 
   if (portfolioNetworkState && portfolioNetworkState.result && isDiscoveryOver) {
-    const totalInUSD = getAccountPortfolioTotal(
-      portfolioState,
-      ['rewards', 'gasTank', 'projectedRewards'],
-      false
-    )
+    const totalInUSD = getAccountPortfolioTotal(portfolioState, ['rewards', 'gasTank'], false)
     const simulatedTokens = portfolioNetworkState.result.tokens.filter(
       (t) => typeof t.amountPostSimulation === 'bigint'
     )

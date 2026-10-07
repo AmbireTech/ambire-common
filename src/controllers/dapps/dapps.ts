@@ -123,6 +123,8 @@ export class DappsController extends EventEmitter implements IDappsController {
 
   #recentDapps: RecentDappEntry[] = []
 
+  #disguisedAsMetaMaskDappIds: string[] = []
+
   dappToConnect: Dapp | null = null
 
   // Set while dappToConnect's status was derived from a dangerous frame context instead of the
@@ -309,6 +311,10 @@ export class DappsController extends EventEmitter implements IDappsController {
       .map((d) => this.#withTrustFlags(d))
   }
 
+  get disguisedAsMetaMaskDappIds(): string[] {
+    return this.#disguisedAsMetaMaskDappIds
+  }
+
   get categories(): string[] {
     return getDappCategories(this.dapps)
   }
@@ -317,18 +323,29 @@ export class DappsController extends EventEmitter implements IDappsController {
     await this.#networks.initialLoadPromise
     await this.#selectedAccount.initialLoadPromise
 
-    const [storedDapps, storedRecentDapps, storedTrending] = await Promise.all([
-      this.#storage.get('dappsV2', predefinedDapps),
-      this.#storage.get('recentDapps', [] as RecentDappEntry[]),
-      this.#storage.get('trending', { updatedAt: 0, tokens: [] as TrendingToken[] })
-    ])
+    const [storedDapps, storedRecentDapps, storedTrending, storedDisguisedAsMetaMaskDapps] =
+      await Promise.all([
+        this.#storage.get('dappsV2', predefinedDapps),
+        this.#storage.get('recentDapps', [] as RecentDappEntry[]),
+        this.#storage.get('trending', { updatedAt: 0, tokens: [] as TrendingToken[] }),
+        this.#storage.get('disguisedAsMetaMaskDapps', [] as string[])
+      ])
     // Normalize on read so a drifted record (e.g. isConnected: true but connectedSources: [])
     // can't show a dapp as connected in the UI while permission checks force a reconnect.
     // Ids are canonicalized as well: a record stored before trailing-dot normalization
     // ("my-dapp.vercel.app.") is unreachable by any lookup, so it would linger as an orphan
     // entry in the UI while its permissions can never be resolved again.
     this.#dapps = new Map()
+    // A record without an id is unreachable by any lookup, and letting it throw here would leave
+    // the controller loading forever. `migrateDappsAddMissingIds` repairs such records, so any
+    // that still show up are skipped and reported.
+    let skippedDappsWithoutIdCount = 0
     storedDapps.forEach((dapp) => {
+      if (!dapp.id) {
+        skippedDappsWithoutIdCount += 1
+        return
+      }
+
       const id = normalizeHostname(dapp.id)
       // The canonical record wins over its trailing-dot duplicate - it is the one every lookup
       // resolves to, and its permissions are the ones the user reviewed for it.
@@ -336,7 +353,17 @@ export class DappsController extends EventEmitter implements IDappsController {
 
       this.#dapps.set(id, normalizeDappConnection({ ...dapp, id }))
     })
+    if (skippedDappsWithoutIdCount) {
+      this.emitError({
+        level: 'silent',
+        message: 'Some saved apps could not be loaded.',
+        error: new Error(
+          `DappsController: skipped ${skippedDappsWithoutIdCount} stored dapp(s) without an id`
+        )
+      })
+    }
     this.#recentDapps = storedRecentDapps
+    this.#disguisedAsMetaMaskDappIds = storedDisguisedAsMetaMaskDapps
     this.#trendingTokens = storedTrending.tokens
     this.#trendingTokensUpdatedAt = storedTrending.updatedAt || null
     this.#isReady = true
@@ -479,7 +506,9 @@ export class DappsController extends EventEmitter implements IDappsController {
         isConnected: prevSources.length > 0,
         connectedSources: prevSources,
         isFeatured: featuredDapps.has(id) || featuredDapps.has(getDomainFromUrl(dapp.url)!),
-        isCustom: !!prevStoredDapp?.isCustom,
+        // Always false, even if the user connected to the app before it was listed - it's part of
+        // the catalog now, so it should be treated (and verified) like any other catalog app.
+        isCustom: false,
         chainId: prevStoredDapp?.chainId || 1,
         favorite: !!prevStoredDapp?.favorite,
         isTrustedByUser: !!prevStoredDapp?.isTrustedByUser,
@@ -1095,6 +1124,29 @@ export class DappsController extends EventEmitter implements IDappsController {
     })
   }
 
+  /**
+   * Tells every connected dapp that the wallet was unlocked. Each dapp receives only the
+   * accounts it is allowed to see, never the accounts of another dapp.
+   */
+  async broadcastUnlock() {
+    await this.initialLoadPromise
+
+    const sessionDappIds = new Set(Object.values(this.dappSessions).map((session) => session.id))
+
+    await Promise.all(
+      Array.from(sessionDappIds).map((dappId) =>
+        this.broadcastDappSessionEvent(
+          'unlock',
+          getAccountsForDapp(
+            this.getDapp(dappId)?.accountPreferences,
+            this.#selectedAccount.account?.addr
+          ),
+          dappId
+        )
+      )
+    )
+  }
+
   removeAccountData(address: string) {
     this.#dapps.forEach((dapp) => {
       if (!dapp.accountPreferences) return
@@ -1274,6 +1326,27 @@ export class DappsController extends EventEmitter implements IDappsController {
     if (!this.isReady) return
 
     return this.#dapps.get(getDomainFromUrl(url)!)
+  }
+
+  isDappDisguisedAsMetaMask(id: string) {
+    return this.#disguisedAsMetaMaskDappIds.includes(id)
+  }
+
+  async setDappDisguisedAsMetaMask(id: string, isDisguisedAsMetaMask: boolean, requestId?: string) {
+    await this.initialLoadPromise
+
+    const isCurrentlyDisguised = this.isDappDisguisedAsMetaMask(id)
+
+    if (isCurrentlyDisguised !== isDisguisedAsMetaMask) {
+      this.#disguisedAsMetaMaskDappIds = isDisguisedAsMetaMask
+        ? [...this.#disguisedAsMetaMaskDappIds, id]
+        : this.#disguisedAsMetaMaskDappIds.filter((dappId) => dappId !== id)
+
+      await this.#storage.set('disguisedAsMetaMaskDapps', this.#disguisedAsMetaMaskDappIds)
+      this.emitUpdate()
+    }
+
+    if (requestId) this.#ui.message.sendUiMessage({ requestId, ok: true })
   }
 
   /**
@@ -1708,6 +1781,7 @@ export class DappsController extends EventEmitter implements IDappsController {
       ...super.toJSON(),
       dapps,
       recentDapps: this.recentDapps,
+      disguisedAsMetaMaskDappIds: this.disguisedAsMetaMaskDappIds,
       categories: getDappCategories(dapps),
       dappToConnect: this.dappToConnect
         ? this.#withTrustFlags(this.dappToConnect, !!this.#dappToConnectContextStatus)

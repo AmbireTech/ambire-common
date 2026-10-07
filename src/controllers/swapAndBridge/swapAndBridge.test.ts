@@ -26,6 +26,7 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
+import { ContractInfoController } from '../contractInfo/contractInfo'
 import { Erc7730Controller } from '../erc7730/erc7730'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { InviteController } from '../invite/invite'
@@ -236,6 +237,12 @@ const erc7730Ctrl = new Erc7730Controller({
   providers: providersCtrl,
   ui: uiCtrl
 })
+const contractInfoCtrl = new ContractInfoController({
+  fetch,
+  storage: storageCtrl,
+  featureFlags: featureFlagsCtrl,
+  ui: uiCtrl
+})
 
 const portfolioCtrl = new PortfolioController(
   storageCtrl,
@@ -247,7 +254,8 @@ const portfolioCtrl = new PortfolioController(
   relayerUrl,
   velcroUrl,
   bannerCtrl,
-  featureFlagsCtrl
+  featureFlagsCtrl,
+  uiCtrl
 )
 
 const safe = new SafeController({
@@ -336,8 +344,10 @@ const buildSwapAndBridgeController = (controllerStorage: StorageController = sto
     storage: controllerStorage,
     signAccountOpPreference,
     featureFlags: featureFlagsCtrl,
+    platform: 'browser-webkit',
     swapProvider: socketAPIMock as any,
     erc7730: erc7730Ctrl,
+    contractInfo: contractInfoCtrl,
     keystore,
     portfolio: portfolioCtrl,
     providers: providersCtrl,
@@ -383,7 +393,9 @@ const transferCtrl = new TransferController(
   relayerUrl,
   () => Promise.resolve(),
   uiCtrl,
-  erc7730Ctrl
+  erc7730Ctrl,
+  contractInfoCtrl,
+  'browser-webkit'
 )
 
 requestsCtrl = new RequestsController({
@@ -395,11 +407,13 @@ requestsCtrl = new RequestsController({
   phishing: phishingCtrl,
   dapps: dappsControllerMock,
   erc7730: erc7730Ctrl,
+  contractInfo: contractInfoCtrl,
   accounts: accountsCtrl,
   networks: networksCtrl,
   providers: providersCtrl,
   storage: storageCtrl,
   featureFlags: featureFlagsCtrl,
+  platform: 'browser-webkit',
   signAccountOpPreference,
   selectedAccount: selectedAccountCtrl,
   keystore,
@@ -614,6 +628,24 @@ describe('SwapAndBridge Controller', () => {
     )
     expect(swapAndBridgeController.fromChainId).toEqual(10)
     expect(swapAndBridgeController.toChainId).toEqual(10)
+  })
+  test('should only require portfolio token prices when token prices are enabled', async () => {
+    const controller = buildSwapAndBridgeController()
+    const tokensWithoutPrices = PORTFOLIO_TOKENS.map((token) => ({ ...token, priceIn: [] }))
+
+    try {
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
+      await controller.updatePortfolioTokenList(tokensWithoutPrices)
+      expect(controller.portfolioTokenList).toEqual([])
+
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', false)
+      await controller.updatePortfolioTokenList(tokensWithoutPrices)
+
+      expect(controller.portfolioTokenList).toHaveLength(tokensWithoutPrices.length)
+      expect(controller.fromSelectedToken).not.toBeNull()
+    } finally {
+      await featureFlagsCtrl.setFeatureFlag('tokenPrices', true)
+    }
   })
   test('should expose the wrap exemption before a quote is available', () => {
     const network = networksCtrl.networks.find(({ chainId }) => chainId === 10n)
@@ -900,13 +932,15 @@ describe('SwapAndBridge Controller', () => {
     const prevToChainId = swapAndBridgeController.toChainId
     const prevFromSelectedTokenAddress = swapAndBridgeController.fromSelectedToken?.address
     const prevToSelectedTokenAddress = swapAndBridgeController.toSelectedToken?.address
-    const fiatBefore = swapAndBridgeController.fromAmountInFiat
     await swapAndBridgeController.switchFromAndToTokens()
     expect(swapAndBridgeController.fromChainId).toEqual(prevToChainId)
     expect(swapAndBridgeController.toChainId).toEqual(prevFromChainId)
     expect(swapAndBridgeController.toSelectedToken?.address).toEqual(prevFromSelectedTokenAddress)
     expect(swapAndBridgeController.fromSelectedToken?.address).toEqual(prevToSelectedTokenAddress)
-    expect(swapAndBridgeController.fromAmountInFiat).toEqual(fiatBefore)
+    // The switched-in token has fewer decimals, so the carried over amount rounds down to
+    // nothing - the fiat amount has to follow it instead of keeping the previous token's value
+    expect(Number(swapAndBridgeController.fromAmount)).toBeLessThan(1e-8)
+    expect(Number(swapAndBridgeController.fromAmountInFiat)).toBe(0)
     await swapAndBridgeController.switchFromAndToTokens()
     expect(swapAndBridgeController.fromChainId).toEqual(prevFromChainId)
     expect(swapAndBridgeController.toChainId).toEqual(prevToChainId)
@@ -1430,6 +1464,17 @@ describe('SwapAndBridge Controller', () => {
     expect(swapAndBridgeController.fromAmount).toEqual('1.0')
     expect(swapAndBridgeController.validateFromAmount.severity).toEqual('success')
   })
+  test('should clear the fiat amount when the amount is cleared to zero', () => {
+    swapAndBridgeController.updateForm({ fromSelectedToken: PORTFOLIO_TOKENS[0] })
+    swapAndBridgeController.updateForm({ fromAmountFieldMode: 'token' })
+
+    swapAndBridgeController.updateForm({ fromAmount: '1' })
+    expect(Number(swapAndBridgeController.fromAmountInFiat)).toBeGreaterThan(0)
+
+    // The amount field turns a cleared input into a '0', so the fiat amount has to follow it
+    swapAndBridgeController.updateForm({ fromAmount: '0' })
+    expect(Number(swapAndBridgeController.fromAmountInFiat)).toBe(0)
+  })
   test('should unload screen', () => {
     swapAndBridgeController.unloadScreen('1')
     expect(swapAndBridgeController.formStatus).toEqual('empty')
@@ -1466,8 +1511,10 @@ describe('SwapAndBridge Controller: to token market data', () => {
       storage: storageCtrl,
       signAccountOpPreference,
       featureFlags: featureFlagsCtrl,
+      platform: 'browser-webkit',
       swapProvider: socketAPIMock as any,
       erc7730: erc7730Ctrl,
+      contractInfo: contractInfoCtrl,
       keystore,
       portfolio: portfolioCtrl,
       providers: providersCtrl,

@@ -50,6 +50,7 @@ import { TransferController } from '@/controllers/transfer/transfer'
 import { TransfersScannerController } from '@/controllers/transfersScanner/transfersScanner'
 import { UiController } from '@/controllers/ui/ui'
 import { VerificationController } from '@/controllers/verification/verification'
+import { WalletTokenController } from '@/controllers/walletToken/walletToken'
 import { Account, IAccountsController } from '@/interfaces/account'
 import { IAccountPickerController } from '@/interfaces/accountPicker'
 import { IActivityController } from '@/interfaces/activity'
@@ -78,6 +79,7 @@ import { IMainController, STATUS_WRAPPED_METHODS } from '@/interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '@/interfaces/network'
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
+import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { IPortfolioController } from '@/interfaces/portfolio'
 import { IPrivacyPoolsController } from '@/interfaces/privacyPools'
 import { IProvidersController } from '@/interfaces/provider'
@@ -95,6 +97,7 @@ import { ITransfersScannerController } from '@/interfaces/transferScanner'
 import { isExtensionOverlayView, IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
 import { IVerificationController } from '@/interfaces/verification'
+import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
 import {
@@ -206,6 +209,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   contractInfo: IContractInfoController
 
+  walletToken: IWalletTokenController
+
   autoLogin: IAutoLoginController
 
   accounts: IAccountsController
@@ -258,7 +263,8 @@ export class MainController extends EventEmitter implements IMainController {
     uiManager,
     privacyPoolsFetch,
     privacyPoolsCircuitsBaseUrl,
-    privacyPoolsProverFactory
+    privacyPoolsProverFactory,
+    idb
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -284,6 +290,7 @@ export class MainController extends EventEmitter implements IMainController {
     privacyPoolsCircuitsBaseUrl: string
     /** Where to generate Privacy Pools proofs if not here - see `PrivacyPoolsController`. */
     privacyPoolsProverFactory?: PrivacyPoolsProverFactory
+    idb?: AmbireIdbDatabase
   }) {
     super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
@@ -404,10 +411,12 @@ export class MainController extends EventEmitter implements IMainController {
         const currentSelectedAcc = this.selectedAccount.account
         if (!currentSelectedAcc) return { status: 'no-selected-account' }
         let totalUsdBalance = this.selectedAccount.portfolio.totalBalance
-        let numberOfTransactions = this.activity.getAccountOpsForAccount({
-          accountAddr: currentSelectedAcc.addr,
-          sortAccOps: false
-        }).length
+        // Not getAccountOpsForAccount().length — that returns the in-memory cache, which
+        // on the IndexedDB backend holds only the bounded startup window, so a heavy
+        // account would report ~20 per chain and match the wrong minTxnsTotal bucket.
+        const numberOfTransactions = this.activity.getTotalOpsCountForAccount(
+          currentSelectedAcc.addr
+        )
         const hasKeys =
           getAccountKeysCount({
             accountAddr: currentSelectedAcc.addr,
@@ -461,6 +470,7 @@ export class MainController extends EventEmitter implements IMainController {
       velcroUrl,
       this.banner,
       this.featureFlags,
+      this.ui,
       eventEmitterRegistry,
       this.verification,
       platform
@@ -531,6 +541,13 @@ export class MainController extends EventEmitter implements IMainController {
       ui: this.ui,
       eventEmitterRegistry
     })
+    this.contractInfo = new ContractInfoController({
+      eventEmitterRegistry,
+      fetch: this.fetch,
+      storage: this.storage,
+      featureFlags: this.featureFlags,
+      ui: this.ui
+    })
     this.signMessage = new SignMessageController(
       this.keystore,
       this.providers,
@@ -540,7 +557,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.invite,
       eventEmitterRegistry,
       this.dapps,
-      this.erc7730
+      this.erc7730,
+      platform
     )
 
     this.activity = new ActivityController(
@@ -557,8 +575,17 @@ export class MainController extends EventEmitter implements IMainController {
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       },
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      idb
     )
+    this.walletToken = new WalletTokenController({
+      eventEmitterRegistry,
+      storage: this.storage,
+      featureFlags: this.featureFlags,
+      providers: this.providers,
+      callRelayer: this.callRelayer,
+      activity: this.activity
+    })
     this.transferScanner = new TransfersScannerController({
       activity: this.activity,
       networks: this.networks,
@@ -589,9 +616,11 @@ export class MainController extends EventEmitter implements IMainController {
       storage: this.storage,
       signAccountOpPreference: this.signAccountOpPreference,
       featureFlags: this.featureFlags,
+      platform,
       phishing: this.phishing,
       dapps: this.dapps,
       erc7730: this.erc7730,
+      contractInfo: this.contractInfo,
       swapProvider: new SwapProviderParallelExecutor(
         [LiFiProvider, SocketProvider, UniswapProvider, CowSwapProvider],
         () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) })),
@@ -651,6 +680,8 @@ export class MainController extends EventEmitter implements IMainController {
       this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
       this.erc7730,
+      this.contractInfo,
+      platform,
       this.privacyPools,
       eventEmitterRegistry
     )
@@ -700,11 +731,13 @@ export class MainController extends EventEmitter implements IMainController {
       phishing: this.phishing,
       dapps: this.dapps,
       erc7730: this.erc7730,
+      contractInfo: this.contractInfo,
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers,
       storage: this.storage,
       featureFlags: this.featureFlags,
+      platform,
       signAccountOpPreference: this.signAccountOpPreference,
       selectedAccount: this.selectedAccount,
       keystore: this.keystore,
@@ -738,13 +771,6 @@ export class MainController extends EventEmitter implements IMainController {
         this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
       },
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
-    })
-
-    this.contractInfo = new ContractInfoController({
-      eventEmitterRegistry,
-      fetch: this.fetch,
-      storage: this.storage,
-      featureFlags: this.featureFlags
     })
 
     this.initialLoadPromise = this.#load().finally(() => {
@@ -961,7 +987,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
-      this.activity.forceEmitUpdate(),
+      this.activity.onSelectedAccountChange(toAccountAddr),
       this.requests.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.swapAndBridge.forceEmitUpdate(),

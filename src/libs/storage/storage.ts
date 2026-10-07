@@ -4,9 +4,13 @@ import { Network } from '../../interfaces/network'
 import { getFeaturesByNetworkProperties, relayerAdditionalNetworks } from '../networks/networks'
 import { LegacyTokenPreference } from '../portfolio/customToken'
 
+/**
+ * Whether any of the seeds is still stored in the legacy (plain string) shape, from before the
+ * HD path template got stored along with the seed (v4.33.0).
+ */
 export const getShouldMigrateKeystoreSeedsWithoutHdPath = (
-  keystoreSeeds: string[] | KeystoreSeed[] | StoredKeystoreSeed[]
-) => !!keystoreSeeds?.length && keystoreSeeds.every((seed) => typeof seed === 'string')
+  keystoreSeeds: (string | KeystoreSeed | StoredKeystoreSeed)[]
+) => !!keystoreSeeds?.some((seed) => typeof seed === 'string')
 
 export const getShouldMigrateKeyMetaNullToKeyMetaCreatedAt = (keystoreKeys: StoredKey[]) =>
   keystoreKeys.some((key) => {

@@ -19,6 +19,7 @@ import { recoverTypedSignature, SignTypedDataVersion } from '@metamask/eth-sig-u
 import { relayerUrl, trezorSlot7v24337Deployed, velcroUrl } from '../../../test/config'
 import { produceMemoryStore, waitForAccountsCtrlFirstLoad } from '../../../test/helpers'
 import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { makeSelectorsApi, waitUntil } from '../../../test/helpers/contractInfo'
 import {
   blacklistedDapp,
   customDapp,
@@ -26,6 +27,7 @@ import {
   getDappRequestData,
   getDappVerificationTestDapps,
   loadingDapp,
+  makeDapp,
   suspiciousHostingDapp,
   verifiedDapp
 } from '../../../test/helpers/dapps'
@@ -39,19 +41,24 @@ import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
+import { DecodedCall } from '../../interfaces/decodeCall'
+import { Fetch } from '../../interfaces/fetch'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, ExternalSignerControllers } from '../../interfaces/keystore'
+import { Platform } from '../../interfaces/platform'
 import { IProvidersController } from '../../interfaces/provider'
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
 import * as broadcastLib from '../../libs/broadcast/broadcast'
+import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../libs/decodeCall'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
+import { ERC7730_DESCRIPTOR_WAIT_MS } from '../../libs/humanizer/erc7730/consts'
 import { HumanizerWarning } from '../../libs/humanizer/interfaces'
-import { UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
+import { hasErc7730Humanization, UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
 import { TokenResult } from '../../libs/portfolio'
 import { AccountState } from '../../libs/portfolio/interfaces'
@@ -76,6 +83,11 @@ import { ActivityController } from '../activity/activity'
 import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
+import {
+  ContractInfoController,
+  FUNCTION_SELECTORS_STORAGE_KEY,
+  SELECTOR_LOADING_DEADLINE_MS
+} from '../contractInfo/contractInfo'
 import { DappsController } from '../dapps/dapps'
 import { Erc7730Controller } from '../erc7730/erc7730'
 import { EstimationController } from '../estimation/estimation'
@@ -466,6 +478,10 @@ const init = async (
     externalSignerControllers?: ExternalSignerControllers
     onBroadcastSuccess?: (params: any) => Promise<void>
     featureFlags?: Partial<FeatureFlags>
+    contractInfoFetch?: Fetch
+    // Lets several controllers share one, like the requests of a real wallet do
+    contractInfo?: ContractInfoController
+    platform?: Platform
     /**
      * Pause the controller the moment it is built, before its estimate and gas price intervals
      * get to run. For tests that drive those intervals themselves.
@@ -570,7 +586,11 @@ const init = async (
   await networksCtrl.initialLoadPromise
   await providersCtrl.initialLoadPromise
 
-  const featureFlagsCtrl = new FeatureFlagsController(options?.featureFlags || {}, storageCtrl)
+  // Only the tests that pass a selectors API fetch selectors, so the rest never wait on the real one
+  const featureFlagsCtrl = new FeatureFlagsController(
+    { apiForFunctionSelectors: !!options?.contractInfoFetch, ...options?.featureFlags },
+    storageCtrl
+  )
   const portfolio = new PortfolioController(
     storageCtrl,
     fetch,
@@ -581,7 +601,8 @@ const init = async (
     'https://staging-relayer.ambire.com',
     velcroUrl,
     bannerCtrl,
-    featureFlagsCtrl
+    featureFlagsCtrl,
+    uiCtrl
   )
   const continuouslyUpdatePhishingSpy = options?.dapps
     ? jest
@@ -744,15 +765,26 @@ const init = async (
     featureFlags: featureFlagsCtrl,
     ui: uiCtrl
   })
+  const contractInfo =
+    options?.contractInfo ||
+    new ContractInfoController({
+      fetch: options?.contractInfoFetch || fetch,
+      storage: storageCtrl,
+      featureFlags: featureFlagsCtrl,
+      ui: uiCtrl
+    })
+  await contractInfo.initialLoadPromise
   const controller = new SignAccountOpTesterController({
     type: options?.type,
     callRelayer: options?.callRelayer as BindedRelayerCall,
     erc7730,
+    contractInfo,
     accounts: accountsCtrl,
     networks: networksCtrl,
     keystore,
     portfolio,
     featureFlags: featureFlagsCtrl,
+    platform: options?.platform ?? 'browser-webkit',
     signAccountOpPreference,
     externalSignerControllers: options?.externalSignerControllers || {},
     account,
@@ -778,7 +810,7 @@ const init = async (
   // have already started their immediate run.
   if (options?.pauseOnInit) controller.pause()
 
-  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl, portfolio }
+  return { controller, storageCtrl, signAccountOpPreference, accountsCtrl, portfolio, contractInfo }
 }
 
 const initDappVerificationBannerTest = async (
@@ -788,13 +820,19 @@ const initDappVerificationBannerTest = async (
     calls,
     callRelayer,
     dappSessionId,
-    sessions
+    sessions,
+    contractInfoFetch,
+    contractInfo,
+    initialSetStorage
   }: {
     isPermit2?: boolean
     calls?: AccountOp['calls']
     callRelayer?: BindedRelayerCall
     dappSessionId?: string
     sessions?: Session[]
+    contractInfoFetch?: Fetch
+    contractInfo?: ContractInfoController
+    initialSetStorage?: (storageCtrl: StorageController) => Promise<void>
   } = {}
 ) => {
   const accountOp = createEOAAccountOp(eoaAccount)
@@ -873,7 +911,14 @@ const initDappVerificationBannerTest = async (
       }
     },
     false,
-    { dapps: getDappVerificationTestDapps(), callRelayer, sessions }
+    {
+      dapps: getDappVerificationTestDapps(),
+      callRelayer,
+      sessions,
+      contractInfoFetch,
+      contractInfo,
+      initialSetStorage
+    }
   )
 }
 
@@ -1545,8 +1590,8 @@ describe('SignAccountOp Controller ', () => {
       isGasTank: false,
       inToken: '0x0000000000000000000000000000000000000000',
       feeTokenChainId: 1n,
-      amount: 7205000n, // ((300 + 300) × 12000) + 5000, i.e. ((baseFee + priorityFee) * gasUsed) + addedNative
-      simulatedGasLimit: 12000n, // 10000 gas used plus 20% overhead
+      amount: 6005000n, // ((baseFee + priorityFee) * gasUsed) + addedNative
+      simulatedGasLimit: 10000n,
       maxPriorityFeePerGas: 300n,
       gasPrice: 600n
     })
@@ -3441,8 +3486,11 @@ describe('traceCall asset discovery', () => {
     const controller = await initTraceCall(onUpdateAfterTraceCallSuccess)
 
     const discovered = ['0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48']
-    const createAccessListDeferred = createDeferred<string[]>()
-    createAccessListCallSpy.mockReturnValue(createAccessListDeferred.promise)
+    const debugTraceCallDeferred = createDeferred<{
+      tokens: string[]
+      nfts: [string, bigint[]][]
+    }>()
+    debugTraceCallSpy.mockReturnValue(debugTraceCallDeferred.promise)
     addTokensToBeLearnedSpy.mockReturnValue(true)
 
     jest.useFakeTimers()
@@ -3453,32 +3501,86 @@ describe('traceCall asset discovery', () => {
 
     // A second request while one is in progress is a no-op (reentrancy guard).
     await (controller as any).traceCall()
-    expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
+    expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
 
     // Resolving discovery learns the assets, fires the success callback and
     // settles on Done.
-    createAccessListDeferred.resolve(discovered)
+    debugTraceCallDeferred.resolve({ tokens: discovered, nfts: [] })
     await traceCallPromise
 
     expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(discovered, 1n)
-    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
-      discovered.map((address) => [address, []]),
-      smartAccount.addr,
-      1n
-    )
+    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith([], smartAccount.addr, 1n)
+    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
     expect(onUpdateAfterTraceCallSuccess).toHaveBeenCalledTimes(1)
     expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
   })
 
-  test('falls back to debug_traceCall when the access list fails and skips the callback when nothing is learned', async () => {
+  test('prefers log-capable discovery and identifies a Uniswap v4 position NFT', async () => {
+    const controller = await initTraceCall()
+    const positionManager = '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e'
+    const mintedPositionId = 12345n
+    const discoveredAddresses = [
+      '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+      '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+      '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+      positionManager
+    ]
+
+    debugTraceCallSpy.mockResolvedValueOnce({
+      tokens: discoveredAddresses,
+      nfts: [[positionManager, [mintedPositionId]]]
+    })
+    addErc721sToBeLearnedSpy.mockReturnValueOnce(true)
+
+    await (controller as any).traceCall()
+
+    expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
+    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
+    expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(discoveredAddresses, 1n)
+    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
+      [[positionManager, [mintedPositionId]]],
+      smartAccount.addr,
+      1n
+    )
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+  })
+
+  test('uses access-list candidates when log-capable discovery methods are unavailable', async () => {
+    const controller = await initTraceCall()
+    const positionManager = '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e'
+
+    createAccessListCallSpy.mockResolvedValueOnce([positionManager])
+    debugTraceCallSpy.mockRejectedValueOnce(new Error('trace failed'))
+    ethSimulateV1Spy.mockRejectedValueOnce(new Error('simulate failed'))
+
+    await (controller as any).traceCall()
+
+    expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith([positionManager], 1n)
+    expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
+      [[positionManager, []]],
+      smartAccount.addr,
+      1n
+    )
+    expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
+
+    controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
+    jest.clearAllMocks()
+
+    await (controller as any).traceCall()
+
+    expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
+  })
+
+  test('uses debug_traceCall first and skips later methods when it succeeds', async () => {
     const onUpdateAfterTraceCallSuccess = jest.fn(async () => {})
     const controller = await initTraceCall(onUpdateAfterTraceCallSuccess)
 
     const emitErrorSpy = jest.fn()
     ;(controller as any).emitError = emitErrorSpy
 
-    getShouldUseAccessListCallSpy.mockReturnValue(true)
-    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
     debugTraceCallSpy.mockResolvedValueOnce({
       tokens: ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
       nfts: []
@@ -3486,11 +3588,10 @@ describe('traceCall asset discovery', () => {
 
     await (controller as any).traceCall()
 
-    // The access list failure is not emitted as an error (it would be reported to
-    // Sentry) because there is a retry/fallback mechanism; discovery falls back to
-    // debug_traceCall and no error is emitted once a fallback succeeds.
     expect(emitErrorSpy).not.toHaveBeenCalled()
     expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
+    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
     expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(
       ['0xdAC17F958D2ee523a2206206994597C13D831ec7'],
       1n
@@ -3500,14 +3601,12 @@ describe('traceCall asset discovery', () => {
     expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
   })
 
-  test('falls back to eth_simulateV1 when both the access list and debug trace fail', async () => {
+  test('falls back to eth_simulateV1 when debug trace fails', async () => {
     const controller = await initTraceCall()
 
     const emitErrorSpy = jest.fn()
     ;(controller as any).emitError = emitErrorSpy
 
-    getShouldUseAccessListCallSpy.mockReturnValue(true)
-    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
     debugTraceCallSpy.mockRejectedValueOnce(new Error('trace failed'))
     ethSimulateV1Spy.mockResolvedValueOnce({
       tokens: ['0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'],
@@ -3518,6 +3617,7 @@ describe('traceCall asset discovery', () => {
 
     expect(debugTraceCallSpy).toHaveBeenCalledTimes(1)
     expect(ethSimulateV1Spy).toHaveBeenCalledTimes(1)
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
     expect(addTokensToBeLearnedSpy).toHaveBeenCalledWith(
       ['0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'],
       1n
@@ -3527,16 +3627,14 @@ describe('traceCall asset discovery', () => {
       smartAccount.addr,
       1n
     )
-    // Neither the access list nor the debug_traceCall failures are emitted as
-    // errors, since eth_simulateV1 (the last fallback) succeeds.
+    // The debug_traceCall failure is not emitted as an error because
+    // eth_simulateV1 succeeds.
     expect(emitErrorSpy).not.toHaveBeenCalled()
     expect(controller.traceCallDiscoveryStatus).toBe(TraceCallDiscoveryStatus.Done)
   })
 
   test('tries the last successful method first on the next discovery', async () => {
     const controller = await initTraceCall()
-
-    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
 
     await (controller as any).traceCall()
 
@@ -3553,8 +3651,6 @@ describe('traceCall asset discovery', () => {
   test('falls back to the other methods when the cached method fails', async () => {
     const controller = await initTraceCall()
 
-    createAccessListCallSpy.mockRejectedValueOnce(new Error('access list failed'))
-
     await (controller as any).traceCall()
 
     controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
@@ -3564,10 +3660,10 @@ describe('traceCall asset discovery', () => {
     await (controller as any).traceCall()
 
     expect(debugTraceCallSpy.mock.invocationCallOrder[0]).toBeLessThan(
-      createAccessListCallSpy.mock.invocationCallOrder[0]!
+      ethSimulateV1Spy.mock.invocationCallOrder[0]!
     )
-    expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
-    expect(ethSimulateV1Spy).not.toHaveBeenCalled()
+    expect(ethSimulateV1Spy).toHaveBeenCalledTimes(1)
+    expect(createAccessListCallSpy).not.toHaveBeenCalled()
   })
 
   test('sets Failed and emits a silent error when discovery throws', async () => {
@@ -3600,6 +3696,10 @@ describe('traceCall asset discovery', () => {
       const controller = await initTraceCall()
 
       getShouldUseAccessListCallSpy.mockReturnValue(useAccessList)
+      if (useAccessList) {
+        debugTraceCallSpy.mockRejectedValue(new Error('trace failed'))
+        ethSimulateV1Spy.mockRejectedValue(new Error('simulate failed'))
+      }
 
       const deferredA = createDeferred<any>()
       const deferredB = createDeferred<any>()
@@ -3612,6 +3712,10 @@ describe('traceCall asset discovery', () => {
 
       armNextCall(deferredA)
       const runA = (controller as any).traceCall()
+      if (useAccessList) {
+        await wait(0)
+        expect(createAccessListCallSpy).toHaveBeenCalledTimes(1)
+      }
 
       // Supersede the in-flight run A with a newer run B.
       controller.traceCallDiscoveryStatus = TraceCallDiscoveryStatus.NotStarted
@@ -3846,6 +3950,8 @@ describe('broadcasting a batch one transaction at a time', () => {
 
   const initBatch = async (overrides?: { callRelayer?: any }) => {
     const submittedAccountOps: any[] = []
+    const broadcastStatusesOnSuccess: SignAccountOpTesterController['broadcastStatus'][] = []
+    let broadcastingController: SignAccountOpTesterController | undefined
     const feePaymentOptions = [
       {
         paidBy: eoaAccount.addr,
@@ -3873,11 +3979,15 @@ describe('broadcasting a batch one transaction at a time', () => {
         callRelayer: overrides?.callRelayer || ((async () => ({})) as any),
         onBroadcastSuccess: async ({ submittedAccountOp }: any) => {
           submittedAccountOps.push(submittedAccountOp)
+          if (broadcastingController) {
+            broadcastStatusesOnSuccess.push(broadcastingController.broadcastStatus)
+          }
         }
       }
     )
+    broadcastingController = controller
 
-    return { controller, submittedAccountOps }
+    return { controller, submittedAccountOps, broadcastStatusesOnSuccess }
   }
 
   /**
@@ -3923,6 +4033,34 @@ describe('broadcasting a batch one transaction at a time', () => {
     expect(submittedAccountOps[0].calls).toHaveLength(3)
     expect(submittedAccountOps[0].identifiedBy.type).toBe('MultipleTxns')
     expect(getPartialBroadcastError(controller)).toBeUndefined()
+  })
+
+  test('stays in the loading broadcast status until the broadcast success handler finishes', async () => {
+    const { controller, submittedAccountOps, broadcastStatusesOnSuccess } = await initBatch()
+    mockBroadcastChain(null)
+
+    expect(controller.broadcastStatus).toBe('INITIAL')
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Closing the request of a signed Safe txn keeps its dashboard simulation only while the
+    // status is still loading. The success handler is where that request gets closed, so
+    // flipping the status before the handler finishes would drop the simulation of every
+    // broadcast Safe txn.
+    expect(submittedAccountOps).toHaveLength(1)
+    expect(broadcastStatusesOnSuccess).toEqual(['LOADING'])
+    expect(controller.broadcastStatus).toBe('INITIAL')
+  })
+
+  test('does not reach the broadcast success handler and leaves the loading status when nothing was sent', async () => {
+    const { controller, submittedAccountOps, broadcastStatusesOnSuccess } = await initBatch()
+    mockBroadcastChain(0)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(submittedAccountOps).toHaveLength(0)
+    expect(broadcastStatusesOnSuccess).toEqual([])
+    expect(controller.broadcastStatus).toBe('INITIAL')
   })
 
   test('keeps every call but reports only the hashes that went out', async () => {
@@ -4138,5 +4276,725 @@ describe('reestimation loop', () => {
     // Without clearing the stopped flag the interval shuts itself down again on its
     // first run, which is what made the retry button do nothing
     expect(estimate).toHaveBeenCalled()
+  })
+})
+
+describe('SignAccountOp signing authentication', () => {
+  const ALICE = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+  const BOB = '0x8f4B2F3e18a4E1Fc5c9d95e1eE5A9B37a55f6A67'
+  const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+
+  const dappA = makeDapp({ id: 'dapp-a.com', name: 'Dapp A', url: 'https://dapp-a.com' })
+  const dappB = makeDapp({ id: 'dapp-b.com', name: 'Dapp B', url: 'https://dapp-b.com' })
+
+  const initSigningAuth = async (
+    calls: AccountOp['calls'],
+    options?: { dapps?: Dapp[]; sentTo?: string[]; platform?: Platform }
+  ) => {
+    const accountOp = createEOAAccountOp(eoaAccount)
+    ;(accountOp.op.calls as any) = calls
+
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: parseEther('1'),
+          symbol: 'ETH',
+          name: 'Ether',
+          chainId: 1n,
+          decimals: 18,
+          priceIn: [],
+          marketDataIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+
+    const { controller } = await init(
+      eoaAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      },
+      false,
+      {
+        dapps: options?.dapps,
+        platform: options?.platform ?? 'mobile-ios',
+        initialSetStorage: async (storageCtrl) => {
+          if (!options?.sentTo?.length) return
+
+          await storageCtrl.set('sentToHistory', {
+            domains: {},
+            recipients: {
+              [eoaAccount.addr]: Object.fromEntries(
+                options.sentTo.map((addr) => [getAddress(addr), Date.now()])
+              )
+            }
+          })
+        }
+      }
+    )
+
+    // The recipients are resolved from the activity, which is read asynchronously
+    await wait(1)
+
+    return controller
+  }
+
+  const erc20 = new Interface(['function transfer(address to, uint256 amount)'])
+
+  test('a recipient the account has never sent to has to be confirmed', async () => {
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x' }])
+
+    expect(controller.signingAuthRequirement).toEqual({
+      firstTimeRecipients: [ALICE],
+      unauthenticatedDapps: []
+    })
+  })
+
+  test('a recipient the account has already sent to does not have to be confirmed', async () => {
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x' }], {
+      sentTo: [ALICE]
+    })
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('reads the recipient of a token transfer, not the token', async () => {
+    const data = erc20.encodeFunctionData('transfer', [BOB, 1n]) as Hex
+    const controller = await initSigningAuth([{ to: USDC, value: 0n, data }])
+
+    expect(controller.signingAuthRequirement?.firstTimeRecipients).toEqual([BOB])
+  })
+
+  // Being added to the wallet does not mean the user meant to send there, and an attacker who
+  // gets an address saved must not be able to have the confirmation skipped because of it
+  test('an account added to the wallet is still a first time recipient', async () => {
+    const controller = await initSigningAuth([{ to: eoaAccount.addr, value: 1n, data: '0x' }])
+
+    expect(controller.signingAuthRequirement?.firstTimeRecipients).toEqual([eoaAccount.addr])
+  })
+
+  test('paying the fee collector is not a first contact', async () => {
+    const controller = await initSigningAuth([{ to: FEE_COLLECTOR, value: 1n, data: '0x' }])
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a contract interaction on its own needs no recipient confirmation', async () => {
+    const controller = await initSigningAuth([{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex }])
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a dapp that has not been authenticated for signing has to be confirmed', async () => {
+    const controller = await initSigningAuth(
+      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      { dapps: [dappA] }
+    )
+
+    expect(controller.signingAuthRequirement).toEqual({
+      firstTimeRecipients: [],
+      unauthenticatedDapps: [{ id: dappA.id, name: dappA.name }]
+    })
+  })
+
+  test('an already authenticated dapp does not have to be confirmed again', async () => {
+    const controller = await initSigningAuth(
+      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      { dapps: [{ ...dappA, signingAuthenticated: true }] }
+    )
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a batch lists every unauthenticated dapp once', async () => {
+    const controller = await initSigningAuth(
+      [
+        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA },
+        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappB },
+        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }
+      ],
+      { dapps: [dappA, dappB] }
+    )
+
+    expect(controller.signingAuthRequirement?.unauthenticatedDapps).toEqual([
+      { id: dappA.id, name: dappA.name },
+      { id: dappB.id, name: dappB.name }
+    ])
+  })
+
+  test('a dapp the catalog does not know is skipped, as the confirmation cannot be remembered', async () => {
+    const controller = await initSigningAuth(
+      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      { dapps: [dappB] }
+    )
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a first time recipient and an unauthenticated dapp are reported together', async () => {
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x', dapp: dappA }], {
+      dapps: [dappA]
+    })
+
+    expect(controller.signingAuthRequirement).toEqual({
+      firstTimeRecipients: [ALICE],
+      unauthenticatedDapps: [{ id: dappA.id, name: dappA.name }]
+    })
+  })
+
+  test('is never required outside of mobile, and the recipients are not looked up', async () => {
+    const hasAccountOpsSentToSpy = jest.spyOn(ActivityController.prototype, 'hasAccountOpsSentTo')
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x', dapp: dappA }], {
+      dapps: [dappA],
+      platform: 'browser-webkit'
+    })
+
+    expect(controller.signingAuthRequirement).toBe(null)
+    expect(hasAccountOpsSentToSpy).not.toHaveBeenCalled()
+
+    hasAccountOpsSentToSpy.mockRestore()
+  })
+})
+
+describe('Call data decoding', () => {
+  const VAULT_CONTRACT = '0x3333333333333333333333333333333333333333'
+  const RECIPIENT = '0x742d35CC6634C0532925a3b844bc1E4C23a39E18'
+  const TRANSFER_SIGNATURE = 'transfer(address,uint256)'
+  const DEPOSIT_SIGNATURE = 'depositToVault(uint256,bytes)'
+  const CLAIM_SIGNATURE = 'claimRewardsFor(address)'
+  const STAKE_SIGNATURE = 'stakeInPool(uint256)'
+  const HARVEST_SIGNATURE = 'harvestAll(uint256[])'
+  const REBALANCE_SIGNATURE = 'rebalanceVault(uint256,uint256)'
+
+  const encode = (signature: string, args: unknown[]) =>
+    new Interface([`function ${signature}`]).encodeFunctionData(signature.split('(')[0]!, args)
+  const selectorOf = (data: string) => data.slice(0, CALLDATA_SELECTOR_HEX_LENGTH)
+  const prefixOf = (selector: string) => selector.slice(0, 6)
+
+  const transferData = encode(TRANSFER_SIGNATURE, [RECIPIENT, 1000n])
+  const toCall = (data: string) => ({ to: VAULT_CONTRACT, value: 0n, data })
+  const depositCall = toCall(encode(DEPOSIT_SIGNATURE, [5n, transferData]))
+  const claimCall = toCall(encode(CLAIM_SIGNATURE, [RECIPIENT]))
+  const stakeCall = toCall(encode(STAKE_SIGNATURE, [7n]))
+  const harvestCall = toCall(encode(HARVEST_SIGNATURE, [[1n, 2n]]))
+  const rebalanceCall = toCall(encode(REBALANCE_SIGNATURE, [3n, 4n]))
+
+  const API_SIGNATURES = Object.fromEntries(
+    [
+      [transferData, TRANSFER_SIGNATURE],
+      [depositCall.data, DEPOSIT_SIGNATURE],
+      [claimCall.data, CLAIM_SIGNATURE],
+      [stakeCall.data, STAKE_SIGNATURE],
+      [harvestCall.data, HARVEST_SIGNATURE],
+      [rebalanceCall.data, REBALANCE_SIGNATURE]
+    ].map(([data, signature]) => [selectorOf(data!), [signature!]])
+  )
+
+  const ERC7730_REGISTRY_PATH = 'registry/test/vault.json'
+
+  // Holds the ERC-7730 lookup until the test lets it through, so the test decides when the
+  // humanization lands. Without `erc7730Descriptor` no descriptors are found, so every call falls
+  // back to the default view.
+  const makeErc7730Relayer = (erc7730Descriptor?: { contract: string; display: unknown }) => {
+    const descriptorLookup = createDeferred<void>()
+    const callRelayer = jest.fn(async (path: string) => {
+      if (path === '/v2/erc7730/account-op') {
+        await descriptorLookup.promise
+        const data = erc7730Descriptor
+          ? { [`eip155:1:${erc7730Descriptor.contract}`]: ERC7730_REGISTRY_PATH }
+          : {}
+        return { success: true, data, errorState: [] }
+      }
+      if (erc7730Descriptor && path === '/v2/erc7730/fetch-descriptor') {
+        return { success: true, display: erc7730Descriptor.display }
+      }
+
+      throw new Error(`Unexpected relayer call: ${path}`)
+    })
+
+    return {
+      callRelayer: callRelayer as unknown as BindedRelayerCall,
+      releaseHumanization: () => descriptorLookup.resolve()
+    }
+  }
+
+  const initWithCalls = async (
+    calls: AccountOp['calls'],
+    options: {
+      contractInfoFetch?: Fetch
+      contractInfo?: ContractInfoController
+      savedSignatures?: Record<string, string>
+      erc7730Descriptor?: Parameters<typeof makeErc7730Relayer>[0]
+    } = {}
+  ) => {
+    const relayer = makeErc7730Relayer(options.erc7730Descriptor)
+    const { controller, contractInfo } = await initDappVerificationBannerTest(customDapp, {
+      calls,
+      callRelayer: relayer.callRelayer,
+      contractInfoFetch: options.contractInfoFetch,
+      contractInfo: options.contractInfo,
+      initialSetStorage: options.savedSignatures
+        ? async (storageCtrl) => {
+            await storageCtrl.set(
+              FUNCTION_SELECTORS_STORAGE_KEY,
+              Object.fromEntries(
+                Object.entries(options.savedSignatures!).map(([selector, signature]) => [
+                  selector,
+                  { status: 'success', data: [{ signature }], updatedAt: Date.now() }
+                ])
+              )
+            )
+          }
+        : undefined
+    })
+
+    return { controller, contractInfo, releaseHumanization: relayer.releaseHumanization }
+  }
+
+  const waitForHumanization = (controller: SignAccountOpController) =>
+    waitUntil(
+      () => !controller.isHumanizing && controller.humanization.length > 0,
+      'the calls are humanized'
+    )
+
+  const getNestedTransfer = (decodedCall: DecodedCall | undefined) =>
+    decodedCall?.args[1]?.val as DecodedCall | string | undefined
+
+  const FAKE_CLOCK_STEP_MS = 10
+  const FAKE_CLOCK_LIMIT_MS = 30 * 1000
+  const LATE_RESULT_SETTLE_MS = 1000
+
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
+  /**
+   * Moves the fake clock forward in small steps until `condition` holds, letting pending promises
+   * settle between steps. Throws with `description` when it doesn't hold in FAKE_CLOCK_LIMIT_MS.
+   */
+  const advanceUntil = async (condition: () => boolean, description: string) => {
+    for (let elapsedMs = 0; !condition(); elapsedMs += FAKE_CLOCK_STEP_MS) {
+      if (elapsedMs > FAKE_CLOCK_LIMIT_MS) throw new Error(`Timed out waiting until ${description}`)
+
+      await jest.advanceTimersByTimeAsync(FAKE_CLOCK_STEP_MS)
+    }
+  }
+
+  /**
+   * Adds `lateCall` next to an already decoded deposit call, on the fake clock, with the selector
+   * API held, and waits until the plain view is shown with `lateCall` loading. The selector
+   * responses are still held when it returns.
+   */
+  const showWithHeldSelectors = async (lateCall: AccountOp['calls'][number]) => {
+    const api = makeSelectorsApi(API_SIGNATURES, { holdResponses: true })
+    const { controller, contractInfo, releaseHumanization } = await initWithCalls([depositCall], {
+      contractInfoFetch: api.fetch,
+      savedSignatures: {
+        [selectorOf(depositCall.data)]: DEPOSIT_SIGNATURE,
+        [selectorOf(transferData)]: TRANSFER_SIGNATURE
+      }
+    })
+    releaseHumanization()
+    await waitForHumanization(controller)
+    expect(api.fetch).not.toHaveBeenCalled()
+
+    jest.useFakeTimers()
+    const startedAt = Date.now()
+    controller.update({ accountOpData: { calls: [depositCall, lateCall] } })
+    await advanceUntil(() => api.requests.length > 0, 'the selector of the new call is requested')
+    await advanceUntil(
+      () => !controller.isHumanizing && controller.humanization.length === 2,
+      'the plain view is shown'
+    )
+    const fallbackHumanization = controller.humanization
+    // No descriptor was found, and the held selectors don't hold the plain view back
+    expect(Date.now() - startedAt).toBeLessThan(ERC7730_DESCRIPTOR_WAIT_MS)
+    expect(fallbackHumanization[0]!.decodedCall?.signature).toBe(DEPOSIT_SIGNATURE)
+    expect(fallbackHumanization[0]!.isDecodingCall).toBeUndefined()
+    expect(fallbackHumanization[1]!.decodedCall).toBeUndefined()
+    expect(fallbackHumanization[1]!.isDecodingCall).toBe(true)
+
+    return { api, controller, contractInfo, fallbackHumanization, startedAt }
+  }
+
+  test('the first humanization it emits already has the calls decoded from saved selectors', async () => {
+    const api = makeSelectorsApi(API_SIGNATURES)
+    const { controller, releaseHumanization } = await initWithCalls([depositCall], {
+      contractInfoFetch: api.fetch,
+      savedSignatures: {
+        [selectorOf(depositCall.data)]: DEPOSIT_SIGNATURE,
+        [selectorOf(transferData)]: TRANSFER_SIGNATURE
+      }
+    })
+    const emittedHumanizations: SignAccountOpController['humanization'][] = []
+    controller.onUpdate(() => emittedHumanizations.push(controller.humanization))
+
+    releaseHumanization()
+    await waitForHumanization(controller)
+
+    const firstEmittedCalls = emittedHumanizations.find((humanization) => humanization.length)
+    expect(firstEmittedCalls![0]!.isFallback).toBe(true)
+    expect(emittedHumanizations.flat().some((call) => call.isDecodingCall)).toBe(false)
+    expect(firstEmittedCalls![0]!.decodedCall?.signature).toBe(DEPOSIT_SIGNATURE)
+    expect((getNestedTransfer(firstEmittedCalls![0]!.decodedCall) as DecodedCall).signature).toBe(
+      TRANSFER_SIGNATURE
+    )
+    expect(api.fetch).not.toHaveBeenCalled()
+
+    controller.destroy()
+  })
+
+  test('shows the plain view without waiting for selectors it has not saved, with the call loading until all of them arrive', async () => {
+    const api = makeSelectorsApi(API_SIGNATURES, { holdResponses: true })
+    const { controller, releaseHumanization } = await initWithCalls([depositCall], {
+      contractInfoFetch: api.fetch
+    })
+    const emittedHumanizations: SignAccountOpController['humanization'][] = []
+    controller.onUpdate(() => emittedHumanizations.push(controller.humanization))
+    releaseHumanization()
+
+    await waitUntil(() => api.requests.length === 1, 'the top level selector is requested')
+    expect(api.requests[0]!.prefixes).toEqual([prefixOf(selectorOf(depositCall.data))])
+    await waitForHumanization(controller)
+    expect(controller.humanization[0]!.isFallback).toBe(true)
+    expect(controller.humanization[0]!.isDecodingCall).toBe(true)
+    expect(controller.humanization[0]!.decodedCall).toBeUndefined()
+    api.heldResponses[0]!.resolve()
+
+    await waitUntil(() => api.requests.length === 2, 'the nested selector is requested')
+    expect(api.requests[1]!.prefixes).toEqual([prefixOf(selectorOf(transferData))])
+    // Still loading, since the nested call can't be decoded yet
+    expect(controller.humanization[0]!.isDecodingCall).toBe(true)
+    const emitsBeforeNestedSelector = emittedHumanizations.length
+    api.heldResponses[1]!.resolve()
+
+    await waitUntil(
+      () => !controller.humanization[0]!.isDecodingCall,
+      'the call stops loading once all of its selectors arrive'
+    )
+    expect(controller.humanization[0]!.decodedCall?.signature).toBe(DEPOSIT_SIGNATURE)
+    expect(
+      (getNestedTransfer(controller.humanization[0]!.decodedCall) as DecodedCall).signature
+    ).toBe(TRANSFER_SIGNATURE)
+    // Decoded and no longer loading in the same update
+    expect(emittedHumanizations.length - emitsBeforeNestedSelector).toBe(1)
+
+    await wait(200)
+    expect(api.requests).toHaveLength(2)
+
+    controller.destroy()
+  })
+
+  test('decodes a call again when its selector arrives after the plain view is shown, emitting the change once', async () => {
+    const { api, controller, fallbackHumanization } = await showWithHeldSelectors(claimCall)
+    const emittedHumanizations = new Set<SignAccountOpController['humanization']>()
+    controller.onUpdate(() => emittedHumanizations.add(controller.humanization))
+
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    await advanceUntil(
+      () => !!controller.humanization[1]!.decodedCall,
+      'the late result is attached'
+    )
+    await jest.advanceTimersByTimeAsync(LATE_RESULT_SETTLE_MS)
+
+    expect(controller.humanization[1]!.decodedCall!.signature).toBe(CLAIM_SIGNATURE)
+    expect(controller.humanization[1]!.isDecodingCall).toBeUndefined()
+    expect(controller.humanization).not.toBe(fallbackHumanization)
+    // The call that was already decoded is kept as it is
+    expect(controller.humanization[0]).toBe(fallbackHumanization[0])
+    expect([...emittedHumanizations]).toEqual([controller.humanization])
+
+    controller.destroy()
+  })
+
+  test('stops showing a call as loading after the loading deadline, and does not emit when its selector then turns out to be unknown', async () => {
+    const unknownCall = toCall(`0xdeadbeef${'00'.repeat(32)}`)
+    const { api, controller, contractInfo, startedAt } = await showWithHeldSelectors(unknownCall)
+
+    await advanceUntil(() => !controller.humanization[1]!.isDecodingCall, 'the call stops loading')
+    const afterDeadlineHumanization = controller.humanization
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(SELECTOR_LOADING_DEADLINE_MS)
+    expect(api.heldResponses.length).toBeGreaterThan(0)
+    expect(afterDeadlineHumanization[1]!.decodedCall).toBeUndefined()
+
+    const emittedHumanizations = new Set<SignAccountOpController['humanization']>()
+    controller.onUpdate(() => emittedHumanizations.add(controller.humanization))
+    const decodeCallData = jest.spyOn(contractInfo, 'decodeCallData')
+
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    await advanceUntil(() => decodeCallData.mock.calls.length > 0, 'the calls are decoded again')
+    await jest.advanceTimersByTimeAsync(LATE_RESULT_SETTLE_MS)
+
+    expect(controller.humanization).toBe(afterDeadlineHumanization)
+    expect([...emittedHumanizations].filter((h) => h !== afterDeadlineHumanization)).toEqual([])
+
+    controller.destroy()
+  })
+
+  test('decodes a call whose selector arrives after the loading deadline', async () => {
+    const { api, controller } = await showWithHeldSelectors(claimCall)
+
+    await advanceUntil(() => !controller.humanization[1]!.isDecodingCall, 'the call stops loading')
+    expect(controller.humanization[1]!.decodedCall).toBeUndefined()
+
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    await advanceUntil(
+      () => !!controller.humanization[1]!.decodedCall,
+      'the late result is attached'
+    )
+
+    expect(controller.humanization[1]!.decodedCall!.signature).toBe(CLAIM_SIGNATURE)
+    expect(controller.humanization[1]!.isDecodingCall).toBeUndefined()
+
+    controller.destroy()
+  })
+
+  test('a newer humanization ignores the selectors an older one was still waiting for', async () => {
+    const api = makeSelectorsApi(API_SIGNATURES, { holdResponses: true })
+    const { controller, contractInfo, releaseHumanization } = await initWithCalls([depositCall], {
+      contractInfoFetch: api.fetch,
+      savedSignatures: { [selectorOf(claimCall.data)]: CLAIM_SIGNATURE }
+    })
+    releaseHumanization()
+    await waitUntil(() => api.requests.length === 1, 'the deposit selector is requested')
+    await waitForHumanization(controller)
+    expect(controller.humanization[0]!.isDecodingCall).toBe(true)
+
+    controller.update({ accountOpData: { calls: [claimCall] } })
+    await waitForHumanization(controller)
+    const newerHumanization = controller.humanization
+    expect(newerHumanization[0]!.decodedCall!.signature).toBe(CLAIM_SIGNATURE)
+    expect(newerHumanization[0]!.isDecodingCall).toBeUndefined()
+
+    const decodeCallData = jest.spyOn(contractInfo, 'decodeCallData')
+    api.heldResponses[0]!.resolve()
+    await waitUntil(() => api.requests.length === 2, 'the nested selector is requested')
+    api.heldResponses[1]!.resolve()
+    await waitUntil(
+      () =>
+        typeof getNestedTransfer(contractInfo.decodeCallData(depositCall.data) || undefined) ===
+        'object',
+      'the older calls can be fully decoded'
+    )
+    await wait(200)
+
+    expect(decodeCallData).not.toHaveBeenCalledWith(claimCall.data)
+    expect(controller.humanization).toBe(newerHumanization)
+
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    controller.destroy()
+  })
+
+  test('calls arriving in the same tick, across ticks and a second later are each fetched once and all decoded', async () => {
+    const api = makeSelectorsApi(API_SIGNATURES)
+    const { controller, releaseHumanization } = await initWithCalls([depositCall], {
+      contractInfoFetch: api.fetch
+    })
+
+    // Same tick as the first call
+    controller.update({ accountOpData: { calls: [depositCall, claimCall] } })
+    controller.update({ accountOpData: { calls: [depositCall, claimCall, stakeCall] } })
+    releaseHumanization()
+
+    await wait(1000)
+    controller.update({
+      accountOpData: { calls: [depositCall, claimCall, stakeCall, harvestCall] }
+    })
+    await wait(0)
+    controller.update({
+      accountOpData: { calls: [depositCall, claimCall, stakeCall, harvestCall, rebalanceCall] }
+    })
+
+    await waitUntil(
+      () =>
+        controller.humanization.length === 5 &&
+        controller.humanization.every((call) => !!call.decodedCall) &&
+        typeof getNestedTransfer(controller.humanization[0]!.decodedCall) === 'object',
+      'all five calls and the nested call are decoded'
+    )
+
+    const requestedPrefixes = api.requests.flatMap(({ prefixes }) => prefixes)
+    expect(requestedPrefixes).toHaveLength(new Set(requestedPrefixes).size)
+    expect(requestedPrefixes.sort()).toEqual(Object.keys(API_SIGNATURES).map(prefixOf).sort())
+    expect(api.requests[0]!.prefixes.sort()).toEqual(
+      [depositCall, claimCall, stakeCall].map(({ data }) => prefixOf(selectorOf(data))).sort()
+    )
+    expect(api.requests).toHaveLength(3)
+    expect(controller.humanization.map((call) => call.decodedCall!.signature)).toEqual([
+      DEPOSIT_SIGNATURE,
+      CLAIM_SIGNATURE,
+      STAKE_SIGNATURE,
+      HARVEST_SIGNATURE,
+      REBALANCE_SIGNATURE
+    ])
+
+    controller.destroy()
+  })
+
+  test('a request switched away from keeps decoding in the background, and shows it once switched back to', async () => {
+    const api = makeSelectorsApi(API_SIGNATURES, { holdResponses: true })
+    const sharedStorage = new StorageController(produceMemoryStore())
+    const sharedContractInfo = new ContractInfoController({
+      fetch: api.fetch,
+      storage: sharedStorage,
+      featureFlags: new FeatureFlagsController({}, sharedStorage),
+      ui: uiCtrl
+    })
+
+    const first = await initWithCalls([depositCall], { contractInfo: sharedContractInfo })
+    first.releaseHumanization()
+    await waitUntil(() => api.requests.length === 1, 'the first request asks for its selector')
+
+    const second = await initWithCalls([depositCall, claimCall], {
+      contractInfo: sharedContractInfo
+    })
+    // Switching to the second request, as RequestsController does
+    first.controller.pause()
+    second.releaseHumanization()
+    await waitUntil(() => api.requests.length === 2, 'the second request asks for its selector')
+    expect(api.requests[1]!.prefixes).toEqual([prefixOf(selectorOf(claimCall.data))])
+
+    const firstEmits: SignAccountOpController['humanization'][] = []
+    first.controller.onUpdate(() => firstEmits.push(first.controller.humanization))
+
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    await waitUntil(
+      () =>
+        api.requests.some(({ prefixes }) => prefixes.includes(prefixOf(selectorOf(transferData)))),
+      'the nested selector is requested'
+    )
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    await waitUntil(
+      () =>
+        !second.controller.isHumanizing &&
+        second.controller.humanization.length === 2 &&
+        second.controller.humanization.every((call) => !!call.decodedCall),
+      'the second request is decoded'
+    )
+    await waitUntil(
+      () => !first.controller.isHumanizing && !!first.controller.humanization[0]?.decodedCall,
+      'the paused request is decoded'
+    )
+    expect(first.controller.isInRegistry()).toBe(false)
+
+    firstEmits.length = 0
+    first.controller.resume()
+    expect(firstEmits.at(-1)![0]!.decodedCall!.signature).toBe(DEPOSIT_SIGNATURE)
+    expect((getNestedTransfer(firstEmits.at(-1)![0]!.decodedCall) as DecodedCall).signature).toBe(
+      TRANSFER_SIGNATURE
+    )
+
+    await wait(200)
+    const nestedTransferRequests = api.requests.filter(({ prefixes }) =>
+      prefixes.includes(prefixOf(selectorOf(transferData)))
+    )
+    expect(nestedTransferRequests).toHaveLength(1)
+    const depositRequests = api.requests.filter(({ prefixes }) =>
+      prefixes.includes(prefixOf(selectorOf(depositCall.data)))
+    )
+    expect(depositRequests).toHaveLength(1)
+
+    first.controller.destroy()
+    second.controller.destroy()
+  })
+
+  test('shows a call with an ERC-7730 descriptor without waiting for its selectors, and decodes it once they arrive', async () => {
+    const api = makeSelectorsApi(API_SIGNATURES, { holdResponses: true })
+    const { controller, releaseHumanization } = await initWithCalls([stakeCall], {
+      contractInfoFetch: api.fetch,
+      erc7730Descriptor: {
+        contract: VAULT_CONTRACT,
+        display: {
+          formats: {
+            'stakeInPool(uint256 amount)': {
+              intent: 'Stake in the pool',
+              fields: [{ path: '#.amount', label: 'Amount', format: 'raw', visible: 'always' }]
+            }
+          }
+        }
+      }
+    })
+    releaseHumanization()
+
+    await waitUntil(() => api.requests.length === 1, 'the selector is requested')
+    await waitForHumanization(controller)
+    const erc7730Humanization = controller.humanization
+    expect(api.heldResponses).toHaveLength(1)
+    expect(hasErc7730Humanization(erc7730Humanization)).toBe(true)
+    expect(erc7730Humanization[0]!.decodedCall).toBeUndefined()
+
+    api.heldResponses[0]!.resolve()
+    await waitUntil(
+      () => !!controller.humanization[0]!.decodedCall,
+      'the call is decoded for its parsed data'
+    )
+    expect(controller.humanization[0]!.decodedCall!.signature).toBe(STAKE_SIGNATURE)
+    expect(controller.humanization[0]!.fullVisualization).toBe(
+      erc7730Humanization[0]!.fullVisualization
+    )
+
+    controller.destroy()
+  })
+
+  test('applies nothing from a humanization that was still in progress when it was destroyed', async () => {
+    const { controller, releaseHumanization } = await initWithCalls([depositCall], {
+      savedSignatures: {
+        [selectorOf(depositCall.data)]: DEPOSIT_SIGNATURE,
+        [selectorOf(transferData)]: TRANSFER_SIGNATURE
+      }
+    })
+    const learnTokens = jest.spyOn(controller, 'learnTokens')
+    expect(controller.isHumanizing).toBe(true)
+
+    controller.destroy()
+    releaseHumanization()
+    await wait(200)
+
+    expect(controller.humanization).toHaveLength(0)
+    expect(learnTokens).not.toHaveBeenCalled()
+  })
+
+  test('leaves the humanization untouched when selectors arrive after it is destroyed', async () => {
+    const { api, controller, contractInfo, fallbackHumanization } =
+      await showWithHeldSelectors(claimCall)
+
+    controller.destroy()
+    api.heldResponses.forEach((heldResponse) => heldResponse.resolve())
+    await advanceUntil(
+      () => contractInfo.decodeCallData(claimCall.data)?.signature === CLAIM_SIGNATURE,
+      'the late selector is saved'
+    )
+    // Past the loading deadline too, so that timer can't change anything either
+    await jest.advanceTimersByTimeAsync(SELECTOR_LOADING_DEADLINE_MS)
+
+    expect(controller.humanization).toBe(fallbackHumanization)
+    expect(controller.humanization[1]!.decodedCall).toBeUndefined()
   })
 })

@@ -35,6 +35,7 @@ import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController, RPCProviders } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { IUiController } from '../../interfaces/ui'
 import { IVerificationController } from '../../interfaces/verification'
 import { isBasicAccount } from '../../libs/account/account'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
@@ -79,6 +80,7 @@ import {
 import {
   AccountAssetsState,
   AccountState,
+  ExchangeInfo,
   ExchangeInfoMap,
   ExtendedError,
   ExtendedErrorWithLevel,
@@ -105,16 +107,31 @@ import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { getFlags } from '../../libs/portfolio/tokenProcessing'
 import { BindedRelayerCall, relayerCall } from '../../libs/relayerCall/relayerCall'
 import { isInternalChain } from '../../libs/selectedAccount/selectedAccount'
+import { getWalletStakingShareValue } from '../../libs/walletStaking/shareValue'
 import batcher from '../../utils/batcher'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { HintsController } from '../hintsController/hintsController'
-import { WalletTokenController } from '../walletToken/walletToken'
 
 const EXTERNAL_API_HINTS_TTL = {
   dynamic: 15 * 60 * 1000,
   static: 60 * 60 * 1000
 }
 const TOKEN_PRICE_CACHE_TTL = 5 * 60 * 1000
+export const EXCHANGE_LIST_URL = 'https://cena.ambire.com/api/v3/exchanges'
+const EXCHANGE_LIST_MAX_RETRIES = 5
+const EXCHANGE_LIST_RETRY_DELAY = 10 * 60 * 1000
+
+/**
+ * Strips the exchange list down to the fields the UI shows, so the rest of the
+ * API response isn't kept in memory.
+ */
+const pickExchangeInfoFields = (exchanges: ExchangeInfoMap): ExchangeInfoMap =>
+  Object.fromEntries(
+    Object.entries(exchanges).map(([exchangeId, { id, name, url, image }]) => [
+      exchangeId,
+      { id, name, url, image } satisfies ExchangeInfo
+    ])
+  )
 
 /**
  * The portfolio controller is responsible for managing and updating the portfolio state.
@@ -180,7 +197,7 @@ export class PortfolioController
    * `portfolio-additional` endpoint. Present only for accounts the relayer has generated
    * one for; used to let the user activate the same account in the mobile app.
    */
-  mobileInviteKeys: { [accountAddr: string]: string } = {}
+  #mobileInviteKeys: { [accountAddr: string]: string } = {}
 
   #portfolioLibs: Map<string, Portfolio>
 
@@ -216,31 +233,37 @@ export class PortfolioController
 
   #featureFlags: IFeatureFlagsController
 
+  #ui: IUiController
+
   /**
    * Handles token learning, temporary tokens, hints and their storage.
    */
   protected hints: HintsController
 
-  #walletToken: WalletTokenController
-
   // Holds the initial load promise, so that one can wait until it completes
   initialLoadPromise?: Promise<void>
 
-  defiSessionIds: string[] = []
+  #defiSessionIds: string[] = []
 
-  defiPositionsCountOnDisabledNetworks: PositionCountOnDisabledNetworks = {}
+  #defiPositionsCountOnDisabledNetworks: PositionCountOnDisabledNetworks = {}
 
-  exchangeState: {
+  #exchangeState: {
     exchanges: ExchangeInfoMap | null
-    updatedAt: number | null
     isLoading: boolean
     retryCount: number
   } = {
     exchanges: null,
-    updatedAt: null,
     isLoading: false,
     retryCount: 0
   }
+
+  #exchangeListRetryTimeout?: ReturnType<typeof setTimeout>
+
+  /**
+   * When the exchange list was last loaded, or null before that. Lets the UI look up
+   * exchanges again once the list arrives, without the list itself being public.
+   */
+  exchangeListUpdatedAt: number | null = null
 
   #blacklist: TokenBlacklist & {
     isLoading: boolean
@@ -273,6 +296,7 @@ export class PortfolioController
     velcroUrl: string,
     banner: IBannerController,
     featureFlags: IFeatureFlagsController,
+    ui: IUiController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
     verification?: IVerificationController,
     platform: Platform = 'default'
@@ -293,9 +317,8 @@ export class PortfolioController
     this.#keystore = keystore
     this.#banner = banner
     this.#featureFlags = featureFlags
+    this.#ui = ui
     this.hints = new HintsController(storage, accounts, keystore)
-    this.#walletToken = new WalletTokenController()
-    this.#walletToken.onError((error) => this.emitError(error))
     // Re-emit hints updates as portfolio updates so the re-exposed getters
     // (customTokens, tokenPreferences) reach the UI when they change.
     this.hints.onUpdate((forceEmit) => this.propagateUpdate(forceEmit))
@@ -394,48 +417,82 @@ export class PortfolioController
   async updateExchangeList() {
     if (
       !this.#featureFlags.isFeatureEnabled('tokenPrices') ||
-      this.exchangeState.isLoading ||
-      this.exchangeState.retryCount >= 5
+      this.#exchangeState.isLoading ||
+      this.#exchangeState.retryCount >= EXCHANGE_LIST_MAX_RETRIES
     )
       return
 
-    this.exchangeState.isLoading = true
-
-    this.emitUpdate()
+    this.#exchangeState.isLoading = true
+    clearTimeout(this.#exchangeListRetryTimeout)
 
     try {
-      const response = await this.#fetch('https://cena.ambire.com/api/v3/exchanges')
+      const response = await this.#fetch(EXCHANGE_LIST_URL)
 
       if (!response.ok) {
         throw new Error(`Failed to fetch exchange list: ${response.statusText}`)
       }
 
-      const exchanges: ExchangeInfoMap = (await response.json()).data
+      const fetchedExchanges: ExchangeInfoMap = (await response.json()).data
 
-      this.exchangeState = {
-        exchanges,
-        updatedAt: Date.now(),
+      this.#exchangeState = {
+        exchanges: pickExchangeInfoFields(fetchedExchanges),
         isLoading: false,
         retryCount: 0
       }
+      this.exchangeListUpdatedAt = Date.now()
+      this.emitUpdate()
     } catch (e: any) {
-      this.exchangeState.isLoading = false
-      this.exchangeState.retryCount += 1
+      this.#exchangeState.isLoading = false
+      this.#exchangeState.retryCount += 1
       this.emitError({
         level: 'silent',
         error: e,
         message: `Error while fetching exchange list: ${e.message}`
       })
 
-      setTimeout(
-        async () => {
-          await this.updateExchangeList()
-        },
-        10 * 60 * 1000
-      )
-    } finally {
-      this.emitUpdate()
+      this.#exchangeListRetryTimeout = setTimeout(async () => {
+        await this.updateExchangeList()
+      }, EXCHANGE_LIST_RETRY_DELAY)
     }
+  }
+
+  /**
+   * Looks up the display info of the given exchanges. Unknown ids are left out, and the
+   * result is empty until the exchange list has loaded.
+   */
+  getExchangesInfo(exchangeIds: string[]): ExchangeInfoMap {
+    const { exchanges } = this.#exchangeState
+    if (!exchanges) return {}
+
+    return exchangeIds.reduce<ExchangeInfoMap>((exchangesInfo, exchangeId) => {
+      const exchange = exchanges[exchangeId]
+      if (exchange) exchangesInfo[exchangeId] = exchange
+      return exchangesInfo
+    }, {})
+  }
+
+  /** Replies to a UI request with {@link getExchangesInfo} for the given exchanges. */
+  getExchangesInfoAndSendResToUi(exchangeIds: string[], requestId: string) {
+    this.#ui.message.sendUiMessage({
+      requestId,
+      ok: true,
+      res: this.getExchangesInfo(exchangeIds)
+    })
+  }
+
+  /** The account's invite key for the Ambire Mobile app, or undefined if it has none. */
+  getMobileInviteKey(accountAddr: string): string | undefined {
+    return this.#mobileInviteKeys[accountAddr]
+  }
+
+  /**
+   * The account's DeFi position counts on networks the user has disabled. Empty until a
+   * full update across all networks has completed.
+   */
+  getDefiPositionsCountOnDisabledNetworks(
+    accountAddr: string
+  ): PositionCountOnDisabledNetworks[string] {
+    return this.#defiPositionsCountOnDisabledNetworks[accountAddr] || {}
   }
 
   private async fetchBlacklist(): Promise<void> {
@@ -1278,8 +1335,6 @@ export class PortfolioController
     let res: any = {
       data: {
         rewards: {},
-        rewardsProjectionDataV2: {},
-        frozenRewardSeason1: 0,
         gasTank: { balance: [] }
       }
     }
@@ -1382,17 +1437,6 @@ export class PortfolioController
       }
     }
 
-    accountState.projectedRewards = {
-      isReady: true,
-      isLoading: false,
-      errors: [],
-      lastSuccessfulUpdate: Date.now(),
-      result: {
-        ...res.data.rewardsProjectionDataV2,
-        frozenRewardSeason1: res.data.frozenRewardSeason1 ? res.data.frozenRewardSeason1 : 0
-      }
-    }
-
     const gasTankTokens: GasTankTokenResult[] = res.data.gasTank.balance.map((t: any) => ({
       ...t,
       amount: BigInt(t.amount || 0),
@@ -1416,9 +1460,9 @@ export class PortfolioController
     }
 
     if (res.data.mobileInviteKey) {
-      this.mobileInviteKeys[accountId] = res.data.mobileInviteKey
+      this.#mobileInviteKeys[accountId] = res.data.mobileInviteKey
     } else {
-      delete this.mobileInviteKeys[accountId]
+      delete this.#mobileInviteKeys[accountId]
     }
 
     this.emitUpdate()
@@ -1559,7 +1603,7 @@ export class PortfolioController
       bypassServerSideCache: !!bypassServerSideCache,
       isManualUpdate: !!isManualUpdate,
       hasKeys,
-      sessionIds: this.defiSessionIds,
+      sessionIds: this.#defiSessionIds,
       hasNonceChangedSinceLastUpdate,
       hasScheduledUpdate,
       maxDataAgeMs: defiMaxDataAgeMs
@@ -1893,13 +1937,13 @@ export class PortfolioController
       this.emitUpdate()
 
       if (verifiedState) {
-        void this.#walletToken
-          .getWalletStakingShareValue({
-            chainId: network.chainId,
-            tokens: combinedTokens,
-            provider: portfolioLib.provider,
-            accountAddr: account.addr
-          })
+        void getWalletStakingShareValue({
+          chainId: network.chainId,
+          tokens: combinedTokens,
+          provider: portfolioLib.provider,
+          accountAddr: account.addr,
+          onError: (error) => this.emitError(error)
+        })
           .then((walletStaking) => {
             if (
               !walletStaking ||
@@ -2255,8 +2299,11 @@ export class PortfolioController
 
           // Read and filter the latest simulation inside the queue so an older confirmed
           // AccountOp cannot discard a newer simulation that was already queued before it.
+          // Safe accounts are refreshed even without a matching simulation, because signed
+          // Safe txns are intentionally not simulated while waiting in the Safe queue.
           if (
             accountOpIdsToDiscardOnNetwork &&
+            !selectedAccount.safeCreation &&
             !simulatedAccountOps?.some((op) => accountOpIdsToDiscardSet.has(op.id))
           )
             return
@@ -2267,7 +2314,7 @@ export class PortfolioController
           // When a new txn comes, pendingToBeConfirmed simulations will be dropped
           // and that's fine as you care about the simulation of your current txn
           const accountOpsToSimulate = accountOpIdsToDiscardOnNetwork
-            ? simulatedAccountOps!.filter((op) => !accountOpIdsToDiscardSet.has(op.id))
+            ? simulatedAccountOps?.filter((op) => !accountOpIdsToDiscardSet.has(op.id))
             : currentAccountOps || simulatedAccountOps
 
           // Even if maxDataAgeMs is set to a non-zero value, we want to force an update when the AccountOps change.
@@ -2355,7 +2402,7 @@ export class PortfolioController
             // Only update this if all networks where updated so we know for sure that the user
             // has disabled the ones in otherNetworksDefiCounts
             if (!networks && discoveryResponse?.data) {
-              this.defiPositionsCountOnDisabledNetworks[accountId] =
+              this.#defiPositionsCountOnDisabledNetworks[accountId] =
                 discoveryResponse.data.otherNetworksDefiCounts || {}
             }
           }
@@ -2581,13 +2628,11 @@ export class PortfolioController
   }
 
   addDefiSession(sessionId: string) {
-    this.defiSessionIds = [...new Set([...this.defiSessionIds, sessionId])]
-    this.emitUpdate()
+    this.#defiSessionIds = [...new Set([...this.#defiSessionIds, sessionId])]
   }
 
   removeDefiSession(sessionId: string) {
-    this.defiSessionIds = this.defiSessionIds.filter((id) => id !== sessionId)
-    this.emitUpdate()
+    this.#defiSessionIds = this.#defiSessionIds.filter((id) => id !== sessionId)
   }
 
   toJSON() {
@@ -2596,7 +2641,11 @@ export class PortfolioController
       ...super.toJSON(),
       customTokens: this.customTokens,
       tokenPreferences: this.tokenPreferences,
-      scheduledUpdateChainIds: this.scheduledUpdateChainIds
+      scheduledUpdateChainIds: this.scheduledUpdateChainIds,
+      // Left out of the UI state. The hints already reach it through customTokens and
+      // tokenPreferences, and the UI never reads the token data cache
+      hints: undefined,
+      tokenDataCache: undefined
     }
   }
 }

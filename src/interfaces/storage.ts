@@ -8,6 +8,7 @@ import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/su
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { Erc7730PersistedRegistryCache } from '../libs/humanizer/erc7730/types'
 import { CustomToken, TokenPreference } from '../libs/portfolio/customToken'
+import { WalletStakingRelayerLog } from '../libs/walletStaking/pendingWithdrawal'
 import {
   AccountAssetsState as PortfolioAccountAssetsState,
   LearnedAssets,
@@ -23,9 +24,9 @@ import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
 import { PrivacyPoolsAccount } from './privacyPools'
-import type { FeeSpeed } from './signAccountOp'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
+import type { FeeSpeed } from './signAccountOp'
 export type IStorageController = ControllerInterface<
   InstanceType<typeof import('../controllers/storage/storage').StorageController>
 >
@@ -53,6 +54,13 @@ export type StorageProps = {
   externalAccountOps: { [key: string]: { [key: string]: SubmittedAccountOpLike[] } }
   signedMessages: { [key: AccountId]: SignedMessage[] }
   sentToHistory: SentToHistory
+  /**
+   * Which backend the transaction history was last written to. Recorded rather than a
+   * "migrated" boolean because it says what is true rather than what happened: a session that
+   * finds 'idb' here but cannot open IndexedDB knows the history exists and is unreachable,
+   * which is indistinguishable from "no transactions yet" otherwise.
+   */
+  activityStorageBackend: 'idb' | 'keyValue'
   // Migrations
   passedMigrations: string[]
   migrations: string[]
@@ -66,6 +74,7 @@ export type StorageProps = {
   dappsV2: Dapp[]
   dapps: Dapp[]
   recentDapps: RecentDappEntry[]
+  disguisedAsMetaMaskDapps: string[]
   trending: {
     updatedAt: number
     tokens: TrendingToken[]
@@ -147,6 +156,10 @@ export type StorageProps = {
   functionSelectors: Selectors
   // Per-controller debug logging toggles. Only enabled ones are stored
   debugLogNamespaces: Record<string, boolean>
+  // The $WALLET staking leave logs (in the relayer's shape) of each account's pending withdrawals,
+  // keyed by the lowercase account address. Kept so that the withdrawals are known without the
+  // relayer, e.g. when the user opted out of the withdrawals lookup
+  walletStakingLeaveLogs: { [accountAddr: string]: WalletStakingRelayerLog[] }
 }
 
 export interface Storage {

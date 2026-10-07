@@ -10,6 +10,7 @@ import {
   getDappRequestData,
   getDappVerificationTestDapps,
   loadingDapp,
+  makeDapp,
   suspiciousHostingDapp,
   verifiedDapp
 } from '../../../test/helpers/dapps'
@@ -186,7 +187,9 @@ describe('SignMessageController', () => {
       {},
       inviteCtrl,
       undefined,
-      dappsCtrl
+      dappsCtrl,
+      undefined,
+      'mobile-ios'
     )
   })
 
@@ -489,6 +492,65 @@ describe('SignMessageController', () => {
       type: 'erc7730',
       intent: [{ type: 'action', content: 'Authorize spending of tokens' }]
     })
+  })
+
+  test('applies nothing from a humanization that was still in progress when it was reset', async () => {
+    const usdc = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+    const registryPath = 'registry/permit/eip712-permit-ethereum-usdc.json'
+    const descriptorResponse = createDeferred<any>()
+    const callRelayer = jest.fn(async (path: string) => {
+      if (path === '/v2/erc7730/eip-712') {
+        return {
+          success: true,
+          data: { [`eip155:1:${usdc}`]: { Permit: [{ path: registryPath }] } },
+          errorState: []
+        }
+      }
+      if (path === '/v2/erc7730/fetch-descriptor') return descriptorResponse.promise
+
+      throw new Error(`Unexpected relayer call: ${path}`)
+    })
+    signMessageController = new SignMessageController(
+      keystoreCtrl,
+      providersCtrl,
+      networksCtrl,
+      accountsCtrl,
+      {},
+      inviteCtrl,
+      undefined,
+      dappsCtrl,
+      makeErc7730Controller(callRelayer, featureFlagsCtrl)
+    )
+    await signMessageController.init({ messageToSign: createPermitTypedMessage() })
+    expect(signMessageController.isHumanizing).toBe(true)
+
+    signMessageController.reset()
+    descriptorResponse.resolve({
+      success: true,
+      display: {
+        formats: {
+          'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)': {
+            intent: 'Authorize spending of tokens',
+            fields: [
+              { path: 'spender', label: 'Spender', format: 'addressName', visible: 'always' }
+            ]
+          }
+        }
+      }
+    })
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(callRelayer).toHaveBeenCalledWith(
+      '/v2/erc7730/fetch-descriptor',
+      'POST',
+      { descriptorPath: `/${registryPath}` },
+      undefined,
+      ERC7730_DESCRIPTOR_WAIT_MS
+    )
+    expect(signMessageController.humanizedMessage).toBeUndefined()
+    expect(signMessageController.isHumanizing).toBe(false)
   })
 
   test('uses fallback humanization without calling the relayer when clear signing is disabled', async () => {
@@ -867,6 +929,102 @@ describe('SignMessageController', () => {
 
     signMessageController.removeAccountData(account.addr)
     expect(signMessageController.isInitialized).toBeFalsy()
+  })
+
+  describe('signing authentication', () => {
+    test('a dapp that has not been confirmed for yet requires it', async () => {
+      await signMessageController.init({
+        messageToSign,
+        dapp: getDappRequestData(verifiedDapp)
+      })
+
+      expect(signMessageController.signingAuthRequirement).toEqual({
+        firstTimeRecipients: [],
+        unauthenticatedDapps: [{ id: verifiedDapp.id, name: verifiedDapp.name }]
+      })
+    })
+
+    test('a SIWE sign in requires it the same way a plain message does', async () => {
+      await signMessageController.init({
+        messageToSign: { ...messageToSign, content: { kind: 'siwe', message: '0x74657374' } },
+        dapp: getDappRequestData(verifiedDapp)
+      })
+
+      expect(signMessageController.signingAuthRequirement).toEqual({
+        firstTimeRecipients: [],
+        unauthenticatedDapps: [{ id: verifiedDapp.id, name: verifiedDapp.name }]
+      })
+    })
+
+    test('a dapp that has already been confirmed for does not require it', async () => {
+      dappsCtrl.updateDapp(verifiedDapp.id, { signingAuthenticated: true })
+
+      await signMessageController.init({
+        messageToSign,
+        dapp: getDappRequestData(verifiedDapp)
+      })
+
+      expect(signMessageController.signingAuthRequirement).toBe(null)
+
+      dappsCtrl.updateDapp(verifiedDapp.id, { signingAuthenticated: false })
+    })
+
+    // The dapp id is the hostname while the domain is the registrable one, so the two differ for
+    // anything not sitting on a bare domain - which is most real dapps
+    test('a dapp on a subdomain requires it, the same as one on a bare domain', async () => {
+      const subdomainDapp = makeDapp({
+        id: 'app.sub-dapp-test.com',
+        name: 'Subdomain Dapp',
+        url: 'https://app.sub-dapp-test.com'
+      })
+      await dappsCtrl.addDapp(subdomainDapp)
+
+      await signMessageController.init({
+        messageToSign,
+        dapp: getDappRequestData(subdomainDapp)
+      })
+
+      expect(signMessageController.signingAuthRequirement).toEqual({
+        firstTimeRecipients: [],
+        unauthenticatedDapps: [{ id: subdomainDapp.id, name: subdomainDapp.name }]
+      })
+    })
+
+    test('a dapp the catalog does not know does not require it, as it cannot be remembered', async () => {
+      await signMessageController.init({
+        messageToSign,
+        dapp: { name: 'Unknown', icon: '', url: 'https://not-in-the-catalog.example' }
+      })
+
+      expect(signMessageController.signingAuthRequirement).toBe(null)
+    })
+
+    test('a message with no dapp behind it does not require it', async () => {
+      await signMessageController.init({ messageToSign })
+
+      expect(signMessageController.signingAuthRequirement).toBe(null)
+    })
+
+    test('a dapp that has not been confirmed for does not require it outside of mobile', async () => {
+      const extensionSignMessageController = new SignMessageController(
+        keystoreCtrl,
+        providersCtrl,
+        networksCtrl,
+        accountsCtrl,
+        {},
+        inviteCtrl,
+        undefined,
+        dappsCtrl,
+        undefined,
+        'browser-webkit'
+      )
+      await extensionSignMessageController.init({
+        messageToSign,
+        dapp: getDappRequestData(verifiedDapp)
+      })
+
+      expect(extensionSignMessageController.signingAuthRequirement).toBe(null)
+    })
   })
 
   describe('dapp verification banners', () => {

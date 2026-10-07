@@ -1,4 +1,4 @@
-import { getAddress } from 'ethers'
+import { getAddress, Interface, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { generateUuid } from '@/utils/uuid'
@@ -83,6 +83,16 @@ const SUBMITTED_ACCOUNT_OP = {
   }
 } as submittedAccountOp.SubmittedAccountOp
 
+const buildSubmittedAccountOp = (
+  overrides: Partial<submittedAccountOp.SubmittedAccountOp> = {}
+): submittedAccountOp.SubmittedAccountOp => ({
+  ...SUBMITTED_ACCOUNT_OP,
+  id: generateUuid(),
+  timestamp: Date.now(),
+  calls: SUBMITTED_ACCOUNT_OP.calls.map((call) => ({ ...call })),
+  ...overrides
+})
+
 const SIGNED_MESSAGE: SignedMessage = {
   fromRequestId: 1,
   accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
@@ -162,6 +172,11 @@ describe('Activity Controller ', () => {
     jest.restoreAllMocks()
     await storageCtrl.remove('accountsOps')
     await storageCtrl.remove('signedMessages')
+    // sentToHistory is durable and deliberately outlives accountsOps — recipient memory is
+    // independent of op retention, so poisoning protection survives history eviction. Tests
+    // that assume "no history" therefore have to clear it explicitly.
+    await storageCtrl.remove('sentToHistory')
+    await (storageCtrl.remove as (key: string) => Promise<void>)('sentToHistoryBackfilled')
   })
 
   describe('AccountsOps', () => {
@@ -183,7 +198,7 @@ describe('Activity Controller ', () => {
         nonce: 226n,
         txnId: '0x1111111111111111111111111111111111111111111111111111111111111111',
         timestamp: 1_700_000_100_000,
-        calls: [{ to: trustedRecipient, value: 0n, data: '0x' }]
+        calls: [{ to: trustedRecipient, value: 1n, data: '0x' }]
       })
 
       const trustedRecipientResult = await controller.hasAccountOpsSentTo(
@@ -325,7 +340,7 @@ describe('Activity Controller ', () => {
         nonce: 227n,
         txnId: '0x2222222222222222222222222222222222222222222222222222222222222222',
         timestamp: 1_700_000_200_000,
-        calls: [{ to: normalizedPoisoningRecipient4to4, value: 0n, data: '0x' }]
+        calls: [{ to: normalizedPoisoningRecipient4to4, value: 1n, data: '0x' }]
       })
 
       const nonFirstTimeSendResult = await controller.hasAccountOpsSentTo(
@@ -360,6 +375,14 @@ describe('Activity Controller ', () => {
 
     test('setAccountOpBalanceChanges stores an empty array after 3 failures', async () => {
       const { controller, sessionId } = await prepareTest()
+      const nftBalanceChanges = [
+        {
+          address: '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e',
+          tokenId: 12345n,
+          chainId: SUBMITTED_ACCOUNT_OP.chainId,
+          balanceChange: 1n
+        }
+      ]
 
       await controller.addAccountOp(SUBMITTED_ACCOUNT_OP)
 
@@ -367,19 +390,24 @@ describe('Activity Controller ', () => {
         SUBMITTED_ACCOUNT_OP.identifiedBy,
         SUBMITTED_ACCOUNT_OP.accountAddr,
         SUBMITTED_ACCOUNT_OP.chainId,
-        new Error('balance changes failed')
+        new Error('balance changes failed'),
+        nftBalanceChanges
       )
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
       expect(
         controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
       ).toBe(1)
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBe(undefined)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.nftBalanceChanges).toEqual(
+        nftBalanceChanges
+      )
 
       await controller.setAccountOpBalanceChanges(
         SUBMITTED_ACCOUNT_OP.identifiedBy,
         SUBMITTED_ACCOUNT_OP.accountAddr,
         SUBMITTED_ACCOUNT_OP.chainId,
-        new Error('balance changes failed')
+        new Error('balance changes failed'),
+        nftBalanceChanges
       )
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
       expect(
@@ -391,7 +419,8 @@ describe('Activity Controller ', () => {
         SUBMITTED_ACCOUNT_OP.identifiedBy,
         SUBMITTED_ACCOUNT_OP.accountAddr,
         SUBMITTED_ACCOUNT_OP.chainId,
-        new Error('balance changes failed')
+        new Error('balance changes failed'),
+        nftBalanceChanges
       )
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toEqual([])
       expect(
@@ -400,6 +429,9 @@ describe('Activity Controller ', () => {
       const balanceChanges = controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges
       expect(balanceChanges).not.toBe(undefined)
       expect(balanceChanges?.length).toBe(0)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.nftBalanceChanges).toEqual(
+        nftBalanceChanges
+      )
     })
 
     test('Pagination and filtration handled correctly', async () => {
@@ -614,7 +646,8 @@ describe('Activity Controller ', () => {
         identifiedBy: {
           type: 'Transaction',
           identifier: '0x891e12877c24a8292fd73fd741897682f38a7bcd497374a6b68e8add89e1c0fb'
-        }
+        },
+        timestamp: Date.now() - 31 * 60 * 1000
       } as submittedAccountOp.SubmittedAccountOp
 
       await controller.addAccountOp(accountOp)
@@ -645,6 +678,84 @@ describe('Activity Controller ', () => {
           gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
         })
       )
+    })
+
+    test('records and learns Uniswap position NFT balance changes from receipt logs', async () => {
+      const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      const positionManager = '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e'
+      const tokenId = 12345n
+      const transferInterface = new Interface([
+        'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)'
+      ])
+      const transferEvent = transferInterface.getEvent('Transfer')
+      if (!transferEvent) throw new Error('Missing Transfer event')
+
+      const transferLog = {
+        address: positionManager,
+        ...transferInterface.encodeEventLog(transferEvent, [
+          ZeroAddress,
+          SUBMITTED_ACCOUNT_OP.accountAddr,
+          tokenId
+        ])
+      }
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockResolvedValue(buildMockReceipt({ logs: [transferLog] }))
+      jest.spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock').mockResolvedValue([
+        [
+          '0x',
+          {
+            address: ZeroAddress,
+            amount: 0n,
+            chainId: 1n,
+            decimals: 18,
+            flags: {
+              canTopUpGasTank: false,
+              isFeeToken: true,
+              onGasTank: false,
+              rewardsType: null
+            },
+            marketDataIn: [],
+            name: 'Ether',
+            priceIn: [],
+            symbol: 'ETH'
+          }
+        ]
+      ])
+      const addErc721sToBeLearnedSpy = jest.spyOn(mainCtrl.portfolio, 'addErc721sToBeLearned')
+      const accountOp = buildSubmittedAccountOp()
+
+      await controller.addAccountOp(accountOp)
+      await controller.updateAccountsOpsStatuses()
+
+      const updatedAccountOp = controller.getAccountOpsForAccount({
+        accountAddr: accountOp.accountAddr
+      })[0]!
+      if (updatedAccountOp.nftBalanceChanges === undefined) {
+        await new Promise<void>((resolve) => {
+          const unsubscribe = controller.onUpdate(() => {
+            if (updatedAccountOp.nftBalanceChanges === undefined) return
+
+            unsubscribe()
+            resolve()
+          })
+        })
+      }
+
+      expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
+        [[getAddress(positionManager), [tokenId]]],
+        accountOp.accountAddr,
+        accountOp.chainId
+      )
+      expect(updatedAccountOp.nftBalanceChanges).toEqual([
+        {
+          address: getAddress(positionManager),
+          tokenId,
+          chainId: accountOp.chainId,
+          balanceChange: 1n
+        }
+      ])
     })
 
     test('`failed` status is set correctly', async () => {
@@ -701,6 +812,137 @@ describe('Activity Controller ', () => {
           gasUsed: controller.accountsOps[sessionId]!.result.items[0]!.gasUsed
         })
       )
+    })
+
+    test('expires unresolved account ops only after 30 minutes', async () => {
+      const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockRejectedValue(new Error('status lookup failed'))
+
+      const recentAccountOp = buildSubmittedAccountOp({
+        timestamp: Date.now() - 29 * 60 * 1000
+      })
+      const expiredAccountOp = buildSubmittedAccountOp({
+        timestamp: Date.now() - 31 * 60 * 1000
+      })
+
+      await controller.addAccountOp(recentAccountOp)
+      await controller.addAccountOp(expiredAccountOp)
+      await controller.updateAccountsOpsStatuses()
+
+      const accountOps = controller.getAccountOpsForAccount({
+        accountAddr: recentAccountOp.accountAddr
+      })
+      expect(accountOps.find(({ id }) => id === recentAccountOp.id)?.status).toBe(
+        AccountOpStatus.BroadcastedButNotConfirmed
+      )
+      expect(accountOps.find(({ id }) => id === expiredAccountOp.id)?.status).toBe(
+        AccountOpStatus.BroadcastButStuck
+      )
+    })
+
+    test('expires an old transaction that remains pending without a receipt', async () => {
+      const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest.spyOn(provider, 'getTransactionReceipt').mockResolvedValue(null)
+      jest.spyOn(provider, 'getTransaction').mockResolvedValue({} as any)
+      const accountOp = buildSubmittedAccountOp({
+        timestamp: Date.now() - 31 * 60 * 1000
+      })
+
+      await controller.addAccountOp(accountOp)
+      await controller.updateAccountsOpsStatuses()
+
+      expect(
+        controller.getAccountOpsForAccount({ accountAddr: accountOp.accountAddr })[0]?.status
+      ).toBe(AccountOpStatus.BroadcastButStuck)
+    })
+
+    test('expires an old account op when its provider is unavailable', async () => {
+      const { controller } = await prepareTest()
+      jest.spyOn(mainCtrl.providers, 'providers', 'get').mockReturnValue({})
+      const accountOp = buildSubmittedAccountOp({
+        timestamp: Date.now() - 31 * 60 * 1000
+      })
+
+      await controller.addAccountOp(accountOp)
+      await controller.updateAccountsOpsStatuses()
+
+      expect(
+        controller.getAccountOpsForAccount({ accountAddr: accountOp.accountAddr })[0]?.status
+      ).toBe(AccountOpStatus.BroadcastButStuck)
+    })
+
+    test('checks old pending account ops even when 50 newer operations are finalized', async () => {
+      const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockRejectedValue(new Error('status lookup failed'))
+      const expiredAccountOp = buildSubmittedAccountOp({
+        timestamp: Date.now() - 31 * 60 * 1000
+      })
+      await controller.addAccountOp(expiredAccountOp)
+
+      for (let i = 0; i < 50; i++) {
+        await controller.addAccountOp(
+          buildSubmittedAccountOp({
+            status: AccountOpStatus.Success,
+            timestamp: Date.now() + i,
+            balanceChanges: []
+          })
+        )
+      }
+
+      await controller.updateAccountsOpsStatuses()
+
+      const accountOps = controller.getAccountOpsForAccount({
+        accountAddr: expiredAccountOp.accountAddr
+      })
+      expect(accountOps.find(({ id }) => id === expiredAccountOp.id)?.status).toBe(
+        AccountOpStatus.BroadcastButStuck
+      )
+    })
+
+    test('expires every unresolved call in an old multiple-transaction account op', async () => {
+      const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockRejectedValue(new Error('status lookup failed'))
+      const accountOp = buildSubmittedAccountOp({
+        identifiedBy: {
+          type: 'MultipleTxns',
+          identifier: '0xtransaction-1-0xtransaction-2'
+        },
+        calls: [
+          {
+            ...SUBMITTED_ACCOUNT_OP.calls[0]!,
+            txnId: '0xtransaction-1',
+            status: AccountOpStatus.BroadcastedButNotConfirmed
+          },
+          {
+            ...SUBMITTED_ACCOUNT_OP.calls[0]!,
+            txnId: '0xtransaction-2',
+            status: AccountOpStatus.BroadcastedButNotConfirmed
+          }
+        ],
+        timestamp: Date.now() - 31 * 60 * 1000
+      })
+
+      await controller.addAccountOp(accountOp)
+      await controller.updateAccountsOpsStatuses()
+
+      const updatedAccountOp = controller.getAccountOpsForAccount({
+        accountAddr: accountOp.accountAddr
+      })[0]!
+      expect(updatedAccountOp.status).toBe(AccountOpStatus.BroadcastButStuck)
+      expect(updatedAccountOp.calls.map(({ status }) => status)).toEqual([
+        AccountOpStatus.BroadcastButStuck,
+        AccountOpStatus.BroadcastButStuck
+      ])
     })
 
     test('should display pending txns banners', async () => {
@@ -1193,7 +1435,7 @@ describe('Activity Controller ', () => {
       // await controller.recordSentToDomain('alice.eth', DOMAIN_ADDR_A, SENT_AT)
       await controller.addAccountOp({
         ...SUBMITTED_ACCOUNT_OP,
-        calls: [{ to: DOMAIN_ADDR_A, recipientDomain: 'alice.eth', value: 0n, data: '0x' }]
+        calls: [{ to: DOMAIN_ADDR_A, recipientDomain: 'alice.eth', value: 1n, data: '0x' }]
       })
 
       // Checksummed, and the domain lookup is case-insensitive.
@@ -1207,15 +1449,40 @@ describe('Activity Controller ', () => {
       await controller.addAccountOp({
         ...SUBMITTED_ACCOUNT_OP,
         timestamp: SENT_AT,
-        calls: [{ to: DOMAIN_ADDR_B, recipientDomain: 'alice.eth', value: 0n, data: '0x' }]
+        calls: [{ to: DOMAIN_ADDR_B, recipientDomain: 'alice.eth', value: 1n, data: '0x' }]
       })
       await controller.addAccountOp({
         ...SUBMITTED_ACCOUNT_OP,
         timestamp: SENT_AT_LATER,
-        calls: [{ to: DOMAIN_ADDR_A, recipientDomain: 'alice.eth', value: 0n, data: '0x' }]
+        calls: [{ to: DOMAIN_ADDR_A, recipientDomain: 'alice.eth', value: 1n, data: '0x' }]
       })
 
       expect(controller.getSentToDomainAddress('alice.eth')).toBe(getAddress(DOMAIN_ADDR_A))
+    })
+
+    it('does not record the target of a contract interaction as sent to', async () => {
+      const { controller } = await prepareTest()
+      // Addresses no other test sends to, as the storage is shared between tests
+      const contract = '0x1111111254EEB25477B68fb85Ed929f73A960582'
+      const spender = '0x000000000022D473030F116dDEE9F6B43aC78BA3'
+
+      await controller.addAccountOp({
+        ...SUBMITTED_ACCOUNT_OP,
+        // approve(spender, 1) on the contract - neither receives funds
+        calls: [
+          {
+            to: contract,
+            value: 0n,
+            data: `0x095ea7b3000000000000000000000000${spender.slice(2).toLowerCase()}0000000000000000000000000000000000000000000000000000000000000001`
+          }
+        ]
+      })
+
+      const { found } = await controller.hasAccountOpsSentTo(
+        contract,
+        SUBMITTED_ACCOUNT_OP.accountAddr
+      )
+      expect(found).toBe(false)
     })
 
     it('stores recipients checksummed', async () => {
@@ -1227,7 +1494,7 @@ describe('Activity Controller ', () => {
         nonce: 302n,
         txnId: '0x4c8a1d6f93b072e5af18c34d9e6072b1f5a83c0d7e29b46f1a0c5d8e3b97f246',
         timestamp: SENT_AT_LATER,
-        calls: [{ to: recipientLower, value: 0n, data: '0x' }]
+        calls: [{ to: recipientLower, value: 1n, data: '0x' }]
       })
 
       const stored = await storage.get('sentToHistory', { domains: {}, recipients: {} })

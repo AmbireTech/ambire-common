@@ -33,6 +33,30 @@ describe('sortSwapAndBridgeRoutes', () => {
     expect(routes.sort(sortSwapAndBridgeRoutes)[0]!.routeId).toBe('higher-output-after-gas')
   })
 
+  it('uses the shared output token price when sorting by output value after gas', () => {
+    const routes = [
+      getRoute({
+        routeId: 'inflated-provider-usd-value',
+        toAmount: '100000000',
+        outputValueInUsd: 110,
+        outputValueAfterGasInUsd: 109,
+        toToken: { decimals: 6 } as SwapAndBridgeRoute['toToken']
+      }),
+      getRoute({
+        routeId: 'higher-output-amount',
+        toAmount: '105000000',
+        outputValueInUsd: 100,
+        outputValueAfterGasInUsd: 98,
+        toToken: { decimals: 6 } as SwapAndBridgeRoute['toToken']
+      })
+    ]
+
+    expect(routes.sort((a, b) => sortSwapAndBridgeRoutes(a, b, 1))[0]!.routeId).toBe(
+      'higher-output-amount'
+    )
+    expect(routes[0]!.outputValueInUsd).toBe(100)
+  })
+
   it('falls back to raw output amounts when a net output value is missing', () => {
     const routes = [
       getRoute({

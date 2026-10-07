@@ -32,6 +32,7 @@ import {
 } from '../../consts/swapAndBridge'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
+import { IContractInfoController } from '../../interfaces/contractInfo'
 import { IDappsController } from '../../interfaces/dapp'
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
@@ -40,6 +41,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -79,13 +81,14 @@ import {
   addCustomTokensIfNeeded,
   convertNullAddressToZeroAddressIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
-  enrichRouteWithOutputUsdPrice,
+  enrichRouteWithOutputTokenPrice,
   getActiveRoutesForAccount,
   getActiveRoutesLowestServiceTime,
   getBannedToTokenList,
   getFeeTokenForSponsorship,
   getIsIntentRoute,
   getIsTokenEligibleForSwapAndBridge,
+  getRouteOutputValuesForSorting,
   getSwapAndBridgeCalls,
   getSwapSponsorship,
   isNoFeeToken,
@@ -142,7 +145,11 @@ type ToTokenMarketDataRecord = {
   data?: TokenDataCacheValue
 }
 
-export const sortSwapAndBridgeRoutes = (r1: SwapAndBridgeRoute, r2: SwapAndBridgeRoute) => {
+export const sortSwapAndBridgeRoutes = (
+  r1: SwapAndBridgeRoute,
+  r2: SwapAndBridgeRoute,
+  outputTokenPriceUSD?: number | null
+) => {
   const isBridge = r1.fromChainId !== r1.toChainId
 
   // the amount threshold in %. If below, we check the time as
@@ -180,13 +187,16 @@ export const sortSwapAndBridgeRoutes = (r1: SwapAndBridgeRoute, r2: SwapAndBridg
       if (bHasBungeeAutoRoute && !aHasBungeeAutoRoute) return -1
     }
 
-    // outputValueAfterGas is just as it name suggest: the value
-    // each provider returns after the gas calculations have been made.
-    // Uniswap is very efficient at this althouhg the rates might be slightly
-    // worse. But slightly worse rates are better than paying a massive
-    // transaction fee for the swap. That's why we're applying this sort
-    const aOutputValueAfterGasInUsd = r1.outputValueAfterGasInUsd
-    const bOutputValueAfterGasInUsd = r2.outputValueAfterGasInUsd
+    // Normalize the output with the shared token price for sorting, while preserving
+    // each provider's reported gas-cost difference. This keeps the comparison fair
+    // without changing the provider USD values displayed in the UI.
+    // Uniswap is very gas-efficient even when its rate is slightly worse. A slightly
+    // worse rate can still be preferable to paying a much larger transaction fee,
+    // which is why routes are sorted by their output value after gas.
+    const aOutputValues = getRouteOutputValuesForSorting(r1, outputTokenPriceUSD)
+    const bOutputValues = getRouteOutputValuesForSorting(r2, outputTokenPriceUSD)
+    const aOutputValueAfterGasInUsd = aOutputValues.outputValueAfterGasInUsd
+    const bOutputValueAfterGasInUsd = bOutputValues.outputValueAfterGasInUsd
     if (
       aOutputValueAfterGasInUsd !== undefined &&
       bOutputValueAfterGasInUsd !== undefined &&
@@ -228,8 +238,8 @@ export const sortSwapAndBridgeRoutes = (r1: SwapAndBridgeRoute, r2: SwapAndBridg
       return sortByTime()
     }
 
-    const aUsd = Number(r1.outputValueInUsd ?? 0)
-    const bUsd = Number(r2.outputValueInUsd ?? 0)
+    const aUsd = Number(aOutputValues.outputValueInUsd ?? 0)
+    const bUsd = Number(bOutputValues.outputValueInUsd ?? 0)
     if (a > b) {
       // if it's not a bridge, just return the higher output route
       if (!isBridge) return -1
@@ -293,6 +303,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #signAccountOpPreference: SignAccountOpPreferenceController
 
   #featureFlags: IFeatureFlagsController
+
+  #platform: Platform
 
   #serviceProviderAPI: SwapProviderExecutor
 
@@ -423,6 +435,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #erc7730: IErc7730Controller
 
+  #contractInfo: IContractInfoController
+
   /**
    * A possibly outdated instance of the SignAccountOpController. Please always
    * read the public getter `signAccountOpController` to get the up-to-date
@@ -486,9 +500,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     storage,
     signAccountOpPreference,
     featureFlags,
+    platform,
     phishing,
     dapps,
     erc7730,
+    contractInfo,
     portfolioUpdate,
     relayerUrl,
     isCurrentSignAccountOpThrowingAnEstimationError,
@@ -513,9 +529,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     storage: IStorageController
     signAccountOpPreference: SignAccountOpPreferenceController
     featureFlags: IFeatureFlagsController
+    platform: Platform
     phishing: IPhishingController
     dapps: IDappsController
     erc7730: IErc7730Controller
+    contractInfo: IContractInfoController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
     isCurrentSignAccountOpThrowingAnEstimationError?: Function
@@ -544,9 +562,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#storage = storage
     this.#signAccountOpPreference = signAccountOpPreference
     this.#featureFlags = featureFlags
+    this.#platform = platform
     this.#phishing = phishing
     this.#dapps = dapps
     this.#erc7730 = erc7730
+    this.#contractInfo = contractInfo
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
     this.#getVisibleUserRequests = getVisibleUserRequests
@@ -705,8 +725,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         getSafeAmountFromFieldValue(fromAmount, this.fromSelectedToken.decimals),
         this.fromSelectedToken.decimals
       )
-
-      if (!formattedAmount) return
 
       const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
 
@@ -1467,10 +1485,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }
 
-    // When the price endpoint is down, tokens come back without a USD price. We must
-    // not exclude them as "priceless" in that case, otherwise switching to an account
-    // with such tokens would wrongly hide them. Skip the price requirement for chains
-    // that currently have a price fetch error.
+    // When price fetching is disabled or the endpoint is down, tokens come back without
+    // a USD price. We must not exclude them as "priceless" in that case, otherwise
+    // switching to an account with such tokens would wrongly hide them. Skip the price
+    // requirement entirely when disabled and for chains with a current price fetch error.
     const chainIdsWithPriceError = new Set<string>()
     const priceError = this.#selectedAccount.balanceAffectingErrors.find(
       (error) => error.id === PORTFOLIO_LIB_ERROR_NAMES.PriceFetchError
@@ -1479,6 +1497,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       const network = this.#networks.networks.find((n) => n.name === networkName)
       if (network) chainIdsWithPriceError.add(network.chainId.toString())
     })
+
+    const areTokenPricesEnabled = this.#featureFlags.isFeatureEnabled('tokenPrices')
 
     const tokens = nextPortfolioTokenList
       .filter(
@@ -1491,7 +1511,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           getIsTokenEligibleForSwapAndBridge(
             token,
             true,
-            !chainIdsWithPriceError.has(token.chainId.toString())
+            areTokenPricesEnabled && !chainIdsWithPriceError.has(token.chainId.toString())
           ) && !token.flags.isHidden
       )
       .map((token) => ({
@@ -2395,7 +2415,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         ])
         // sort the routes by value and them by disabled, making disabled last
         quoteResult.routes = quoteResult.routes
-          .map((route) => enrichRouteWithOutputUsdPrice(route, toTokenPriceUSD))
+          .map((route) => enrichRouteWithOutputTokenPrice(route, toTokenPriceUSD))
           .filter((route) => {
             const hasNoRouteId = !route.routeId
 
@@ -2415,7 +2435,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
             return !hasNoRouteId
           })
-          .sort(sortSwapAndBridgeRoutes)
+          .sort((a, b) => sortSwapAndBridgeRoutes(a, b, toTokenPriceUSD))
           .sort((a, b) => Number(a.disabled === true) - Number(b.disabled === true))
         // select the first enabled route
         quoteResult.selectedRoute = quoteResult.routes.length ? quoteResult.routes[0] : undefined
@@ -3364,6 +3384,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       keystore: this.#keystore,
       portfolio: this.#portfolio,
       featureFlags: this.#featureFlags,
+      platform: this.#platform,
       signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
@@ -3373,6 +3394,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       phishing: this.#phishing,
       dapps: this.#dapps,
       erc7730: this.#erc7730,
+      contractInfo: this.#contractInfo,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,
