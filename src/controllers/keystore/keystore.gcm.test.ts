@@ -896,7 +896,7 @@ describe('CTR to GCM migration', () => {
     const signature = await signer.signMessage(hexlify(message))
 
     const valid = await verifyMessage({
-      address: internalKey.addr,
+      address: internalKey.addr as Hex,
       message: 'Hello, world!',
       signature: signature as Hex
     })

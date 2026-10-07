@@ -517,8 +517,6 @@ describe('Portfolio Controller ', () => {
               stkWalletClaimableBalance: [],
               walletClaimableBalance: []
             },
-            rewardsProjectionDataV2: {},
-            frozenRewardSeason1: 0,
             gasTank: {
               balance: []
             }
