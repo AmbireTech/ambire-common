@@ -258,8 +258,9 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.#isManualUpdate
     )
 
-    newSelectedAccountPortfolio.mobileInviteKey =
-      this.#portfolio.mobileInviteKeys[this.account.addr]
+    newSelectedAccountPortfolio.mobileInviteKey = this.#portfolio.getMobileInviteKey(
+      this.account.addr
+    )
 
     let justLoaded = false
 
@@ -504,7 +505,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
       this.portfolio.isAllReady
     ) {
       const defiPositionsCountOnDisabledNetworks =
-        this.#portfolio.defiPositionsCountOnDisabledNetworks[this.account.addr] || {}
+        this.#portfolio.getDefiPositionsCountOnDisabledNetworks(this.account.addr)
 
       const notDismissedNetworks = this.dismissedBannerIds[defiPositionsOnDisabledNetworksBannerId]
         ? this.#networks.allNetworks.filter(
