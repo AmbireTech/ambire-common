@@ -54,6 +54,7 @@ import {
   CallsUserRequest,
   DappCallsRequestParams,
   DappRequestQueueItem,
+  HeldDappRequest,
   OpenRequestWindowParams,
   PendingDappPromise,
   PlainTextMessageUserRequest,
@@ -64,7 +65,8 @@ import {
   SwapAndBridgeRequest,
   TransferRequest,
   TypedMessageUserRequest,
-  UserRequest
+  UserRequest,
+  WalletAddEthereumChainRequest
 } from '../../interfaces/userRequest'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getAccountOpNonce, isSafeRejectionCall } from '../../libs/accountOp/accountOp'
@@ -77,6 +79,7 @@ import { getDappIdsFromUserRequest } from '../../libs/dapps/dappRequestSpam'
 import { isSigningAuthPlatform } from '../../libs/dapps/helpers'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getShouldSimulateInTheBackground } from '../../libs/main/main'
+import { networkChainIdToHex } from '../../libs/networks/networks'
 import { TokenResult } from '../../libs/portfolio'
 import { PortfolioRewardsResult } from '../../libs/portfolio/interfaces'
 import {
@@ -112,12 +115,6 @@ import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/sig
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
-
-/** How long a resolved transitional request stays, so the app request it was blocking can arrive */
-const TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS = 300
-
-/** The longest a resolved request with a next request waits for that one to be built */
-const NEXT_REQUEST_MAX_WAIT_MS = 10_000
 
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
@@ -240,11 +237,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    */
   #isWalletInitiatedClose = false
 
-  /** Removal timers of resolved transitional requests, cleared when the request goes away sooner */
-  #transitionalRemovalTimeouts = new Map<UserRequest['id'], ReturnType<typeof setTimeout>[]>()
-
-  /** Resolved requests that only wait for their next request to finish building */
-  #requestIdsWaitingOnNextRequest = new Set<UserRequest['id']>()
+  /**
+   * App requests for a disabled network, keyed by the id of the request asking the user to turn
+   * it on. Kept unbuilt, as nothing can be built for a disabled network, and built once it is on.
+   */
+  #dappRequestsWaitingNetworkEnable = new Map<
+    UserRequest['id'],
+    { chainId: bigint; heldRequests: HeldDappRequest[] }
+  >()
 
   private shouldSimulateAccountOps = true
 
@@ -922,7 +922,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       for (const r of this.userRequests) {
-        if (r.kind === 'walletAddEthereumChain') {
+        // A prompt holding app requests is rejected with the view instead, as are its requests
+        if (
+          r.kind === 'walletAddEthereumChain' &&
+          !this.#dappRequestsWaitingNetworkEnable.has(r.id)
+        ) {
           const chainId = r.meta.params[0].chainId
 
           if (!chainId) continue
@@ -1082,9 +1086,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     let didRemoveSkipQueueRequest = false
 
     ids.forEach((id) => {
-      this.#transitionalRemovalTimeouts.get(id)?.forEach(clearTimeout)
-      this.#transitionalRemovalTimeouts.delete(id)
-      this.#requestIdsWaitingOnNextRequest.delete(id)
+      // A network prompt removed without being answered would otherwise leave its apps waiting
+      this.#takeHeldDappRequests(id)?.forEach(({ dappPromise }) =>
+        dappPromise.reject(ethErrors.provider.userRejectedRequest<any>())
+      )
 
       const req = this.userRequests.find((uReq) => uReq.id === id)
 
@@ -1193,63 +1198,38 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       p.resolve(data)
     })
 
+    const heldDappRequests = this.#takeHeldDappRequests(requestId)
+
     // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
     // before being resolved. The timeout prevents the request-window from closing before the actual dApp request arrives
     if (kind === 'unlock' || kind === 'dappConnect') {
       meta.pendingToRemove = true
 
-      this.#transitionalRemovalTimeouts.set(requestId, [
-        setTimeout(async () => {
-          await this.removeUserRequests([requestId])
-          this.emitUpdate()
-        }, TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS)
-      ])
-    } else if (meta.hasNextRequest) {
-      // The app request behind it can take seconds to build, so after the same delay the removal
-      // also waits for that build to finish, up to a limit
+      setTimeout(async () => {
+        await this.removeUserRequests([requestId])
+        this.emitUpdate()
+      }, 300)
+    } else if (heldDappRequests) {
+      // The network is on now, so the requests held for it can be built. The prompt stays until
+      // they are, so the view moves straight to them instead of closing and reopening for them.
       meta.pendingToRemove = true
 
-      this.#transitionalRemovalTimeouts.set(requestId, [
-        setTimeout(async () => {
-          this.#requestIdsWaitingOnNextRequest.add(requestId)
-          await this.#removeRequestsWaitingOnNextRequest()
-        }, TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS),
-        setTimeout(() => this.#removeTransitionalRequests([requestId]), NEXT_REQUEST_MAX_WAIT_MS)
-      ])
+      await Promise.all(
+        heldDappRequests.map(({ request, dappPromise }) =>
+          this.build({ type: 'dappRequest', params: { request, dappPromise } }).catch(
+            (error: any) => dappPromise.reject(error)
+          )
+        )
+      )
+
+      // A built request takes the view over, so the prompt opens the next one only if it is
+      // still shown - e.g. when nothing was built
+      const isPromptShown = this.currentUserRequest?.id === requestId
+      await this.removeUserRequests([requestId], { shouldOpenNextRequest: isPromptShown })
     } else {
       await this.removeUserRequests([requestId])
       this.emitUpdate()
     }
-  }
-
-  /**
-   * Removes the resolved requests waiting on their next request once no app request is being
-   * built, so the view moves straight to the next one instead of closing and reopening for it.
-   * Does nothing while a build is running, as the end of every build calls it again.
-   */
-  async #removeRequestsWaitingOnNextRequest() {
-    if (this.#dappRequestQueues.size || !this.#requestIdsWaitingOnNextRequest.size) return
-
-    await this.#removeTransitionalRequests([...this.#requestIdsWaitingOnNextRequest])
-  }
-
-  /**
-   * Removes resolved transitional requests. Leaves the view alone when another request has
-   * already replaced them on screen.
-   */
-  async #removeTransitionalRequests(requestIds: UserRequest['id'][]) {
-    // Some may already be gone without passing through `removeUserRequests`, e.g. with their account
-    requestIds.forEach((id) => this.#requestIdsWaitingOnNextRequest.delete(id))
-
-    const existingRequestIds = requestIds.filter((id) => this.userRequests.some((r) => r.id === id))
-    if (!existingRequestIds.length) return
-
-    const isTransitionalRequestShown =
-      !!this.currentUserRequest && existingRequestIds.includes(this.currentUserRequest.id)
-
-    await this.removeUserRequests(existingRequestIds, {
-      shouldOpenNextRequest: isTransitionalRequestShown
-    })
   }
 
   /**
@@ -1527,6 +1507,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.#guardHWSigning(true)
 
     const dapp = (await this.#getDapp(request.session.id)) || null
+
+    const disabledNetwork = this.#getDisabledNetworkOfDappRequest(request, dapp)
+    if (disabledNetwork) {
+      await this.#holdUntilNetworkEnabled(disabledNetwork, { request, dappPromise })
+      return
+    }
+
     const key = this.#getDappRequestKey(request, dapp)
 
     if (!key) {
@@ -1535,6 +1522,88 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
 
     await this.#enqueueDappRequest(key, { request, dappPromise, dapp })
+  }
+
+  /** The disabled network an app's sign request is for, if it is for one */
+  #getDisabledNetworkOfDappRequest(
+    request: DappProviderRequest,
+    dapp: Dapp | null
+  ): Network | undefined {
+    const kind = dappRequestMethodToRequestKind(request.method)
+    if (!isSignRequest(kind)) return undefined
+
+    const chainId = kind === 'calls' ? this.#getDappCallsChainId(request, dapp) : dapp?.chainId
+
+    return this.#networks.disabledNetworks.find((n) => Number(n.chainId) === Number(chainId))
+  }
+
+  /**
+   * Holds an app request for a disabled network behind a prompt to turn that network on, like an
+   * account switch holds one for another account. Requests arriving for the same network join the
+   * prompt already there instead of each opening their own.
+   */
+  async #holdUntilNetworkEnabled(network: Network, heldRequest: HeldDappRequest) {
+    // Looked up and set with no await in between, so a request arriving meanwhile finds the prompt
+    const existingPrompt = [...this.#dappRequestsWaitingNetworkEnable.values()].find(
+      (prompt) => prompt.chainId === network.chainId
+    )
+    if (existingPrompt) {
+      existingPrompt.heldRequests.push(heldRequest)
+      return
+    }
+
+    const promptId = generateUuid()
+    this.#dappRequestsWaitingNetworkEnable.set(promptId, {
+      chainId: network.chainId,
+      heldRequests: [heldRequest]
+    })
+
+    try {
+      await this.#addBuiltDappRequest({
+        id: promptId,
+        kind: 'walletAddEthereumChain',
+        meta: {
+          params: [
+            {
+              chainId: networkChainIdToHex(network.chainId),
+              chainName: network.name,
+              rpcUrls: network.rpcUrls,
+              nativeCurrency: { name: network.nativeAssetName, symbol: network.nativeAssetSymbol }
+            }
+          ],
+          hasNextRequest: true
+        },
+        dappPromises: [
+          {
+            id: generateUuid(),
+            session: heldRequest.request.session,
+            meta: {},
+            // Turning the network on is all it asks for - `resolveUserRequest` builds what it held
+            resolve: () => {},
+            // Rejected with the prompt, whether by the user or by the view closing
+            reject: (error: any) =>
+              this.#takeHeldDappRequests(promptId)?.forEach(({ dappPromise }) =>
+                dappPromise.reject(error)
+              )
+          }
+        ]
+      } as WalletAddEthereumChainRequest)
+    } finally {
+      // Never added, e.g. turned away by a pending swap, so nothing would ever answer its apps
+      if (!this.userRequests.some((r) => r.id === promptId)) {
+        this.#takeHeldDappRequests(promptId)?.forEach(({ dappPromise }) =>
+          dappPromise.reject(ethErrors.rpc.internal())
+        )
+      }
+    }
+  }
+
+  /** Hands over the app requests a network prompt holds, and stops holding them */
+  #takeHeldDappRequests(promptId: UserRequest['id']): HeldDappRequest[] | undefined {
+    const heldRequests = this.#dappRequestsWaitingNetworkEnable.get(promptId)?.heldRequests
+    this.#dappRequestsWaitingNetworkEnable.delete(promptId)
+
+    return heldRequests
   }
 
   /**
@@ -1618,8 +1687,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       this.#dappRequestQueues.delete(key)
       queue.splice(0).forEach(({ fail }) => fail(ethErrors.rpc.internal()))
     }
-
-    await this.#removeRequestsWaitingOnNextRequest()
   }
 
   async #buildDappRequestBatch(batch: DappRequestQueueItem[]) {
@@ -1817,8 +1884,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       userRequest = {
         id: generateUuid(),
         kind,
-        // Only the flag the wallet sets itself is taken over, never anything else in `meta`
-        meta: { params: request.params, hasNextRequest: request.meta?.hasNextRequest === true },
+        meta: { params: request.params },
         dappPromises: [{ ...dappPromise, session: request.session, meta: {} }]
       } as UserRequest
     }

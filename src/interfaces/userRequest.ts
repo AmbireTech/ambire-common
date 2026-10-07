@@ -65,6 +65,9 @@ export type DappRequestQueueItem = {
   fail: (error: any) => void
 }
 
+/** An app request held unbuilt until the user turns on the disabled network it is for. */
+export type HeldDappRequest = Pick<DappRequestQueueItem, 'request' | 'dappPromise'>
+
 /** One transaction request, validated and ready to go into a batch. */
 export type DappCallsRequestParams = {
   calls: Call[]
@@ -201,7 +204,7 @@ export interface WalletAddEthereumChainRequest extends UserRequestBase<[DappProm
   meta: UserRequestBase['meta'] & {
     // TODO: impl AddEthereumChainParameter
     params: [any]
-    /** Set when an app request is waiting on this one, so the view moves straight to it */
+    /** Set when it holds app requests until the network is on, so the view moves straight to them */
     hasNextRequest?: boolean
     [key: string]: any
   }
