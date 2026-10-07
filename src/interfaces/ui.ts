@@ -90,7 +90,12 @@ export type UiManager = {
 }
 
 export type PanelManager = {
-  isOpen: () => boolean
+  /**
+   * Whether the panel is open. With a `windowId`, whether it is open in that browser window - each
+   * window has its own panel, so a request from an app in a window without one would otherwise be
+   * sent to a panel the user can't see.
+   */
+  isOpen: (windowId?: number) => boolean
 }
 
 export type WindowId = number
