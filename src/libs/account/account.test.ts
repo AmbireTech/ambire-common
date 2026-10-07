@@ -22,7 +22,8 @@ import {
   getAccountImportStatus,
   getBasicAccount,
   getEmailAccount,
-  getSmartAccount
+  getSmartAccount,
+  shouldBecomeSmarterAutomatically
 } from './account'
 
 const keyPublicAddress = '0x9188fdd757Df66B4F693D624Ed6A13a15Cf717D7'
@@ -595,9 +596,9 @@ describe('Account', () => {
   })
 
   test('Should not classify an unsupported EOA as smarter', () => {
-    const trezorKey = {
+    const qrKey = {
       addr: basicAccount.addr,
-      type: 'trezor',
+      type: 'qr',
       label: 'Account key',
       dedicatedToOneSA: false,
       isExternallyStored: false,
@@ -610,7 +611,57 @@ describe('Account', () => {
       }
     } as Key
 
-    expect(canOrHasBecomeSmarter(basicAccount, {}, [trezorKey])).toBe(false)
+    expect(canOrHasBecomeSmarter(basicAccount, {}, [qrKey])).toBe(false)
+  })
+
+  test('Should let a Trezor or Ledger EOA become smarter, but only when the user asks for it', () => {
+    const hardwareKeyMeta = {
+      createdAt: null,
+      deviceId: 'device-id',
+      deviceModel: 'device-model',
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      index: 0
+    }
+    const trezorKey = {
+      addr: basicAccount.addr,
+      type: 'trezor',
+      label: 'Account key',
+      dedicatedToOneSA: false,
+      isExternallyStored: false,
+      meta: hardwareKeyMeta
+    } as Key
+    const ledgerKey = { ...trezorKey, type: 'ledger' } as Key
+
+    expect(canOrHasBecomeSmarter(basicAccount, {}, [trezorKey])).toBe(true)
+    expect(shouldBecomeSmarterAutomatically([trezorKey])).toBe(false)
+    expect(shouldBecomeSmarterAutomatically([ledgerKey])).toBe(false)
+    expect(shouldBecomeSmarterAutomatically([trezorKey, ledgerKey])).toBe(false)
+  })
+
+  test('Should upgrade an EOA automatically when one of its keys allows it, even alongside a Trezor key', () => {
+    const internalKey = {
+      addr: basicAccount.addr,
+      type: 'internal',
+      label: 'Account key',
+      dedicatedToOneSA: false,
+      isExternallyStored: false,
+      meta: { createdAt: null }
+    } as Key
+    const trezorKey = {
+      ...internalKey,
+      type: 'trezor',
+      meta: {
+        createdAt: null,
+        deviceId: 'device-id',
+        deviceModel: 'device-model',
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        index: 0
+      }
+    } as Key
+
+    expect(shouldBecomeSmarterAutomatically([internalKey])).toBe(true)
+    expect(shouldBecomeSmarterAutomatically([trezorKey, internalKey])).toBe(true)
+    expect(shouldBecomeSmarterAutomatically([])).toBe(false)
   })
 
   test('Should not classify a V2 smart account as an EIP-7702 account', () => {
