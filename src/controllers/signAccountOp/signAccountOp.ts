@@ -1084,38 +1084,6 @@ export class SignAccountOpController
       const rpcGasPrices = this.gasPrice.rpcGasPrices
       if (!gasPrices && !rpcGasPrices) return
 
-      // debug only: prints the hex values as decimals, gas prices in gwei
-      const toDecimal = (hex?: string) => (hex && hex !== '0x' ? BigInt(hex).toString() : hex)
-      const toGwei = (hex?: string) =>
-        hex && hex !== '0x' ? `${formatUnits(BigInt(hex), 'gwei')} gwei` : hex
-      const toReadableGasSpeeds = (speeds?: GasSpeeds) =>
-        speeds &&
-        Object.fromEntries(
-          Object.entries(speeds).map(([speed, { maxFeePerGas, maxPriorityFeePerGas }]) => [
-            speed,
-            {
-              maxFeePerGas: toGwei(maxFeePerGas),
-              maxPriorityFeePerGas: toGwei(maxPriorityFeePerGas)
-            }
-          ])
-        )
-      const bundlerEstimation = this.estimation.estimation?.bundlerEstimation
-      console.log('----')
-      console.log('gasPrices', toReadableGasSpeeds(gasPrices))
-      console.log('rpcGasPrices', toReadableGasSpeeds(rpcGasPrices))
-      console.log(
-        'this.estimation.estimation?.bundlerEstimation',
-        bundlerEstimation && {
-          callGasLimit: toDecimal(bundlerEstimation.callGasLimit),
-          preVerificationGas: toDecimal(bundlerEstimation.preVerificationGas),
-          verificationGasLimit: toDecimal(bundlerEstimation.verificationGasLimit),
-          paymasterVerificationGasLimit: toDecimal(bundlerEstimation.paymasterVerificationGasLimit),
-          paymasterPostOpGasLimit: toDecimal(bundlerEstimation.paymasterPostOpGasLimit),
-          gasPrice: toReadableGasSpeeds(bundlerEstimation.gasPrice),
-          feeCallType: bundlerEstimation.feeCallType
-        }
-      )
-
       this.update({ gasPrices, rpcGasPrices })
     })
 
