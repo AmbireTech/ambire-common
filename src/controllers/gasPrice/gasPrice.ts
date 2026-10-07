@@ -85,6 +85,9 @@ export class GasPriceController extends EventEmitter {
   }
 
   async fetch(emitLevelOnFailure: ErrorRef['level'] = 'silent') {
+    // the strategy depends on the erc4337 feature flag, so wait for the flags to load
+    await this.#featureFlags.initialLoadPromise
+
     const strategy = this.#baseAccount.getGasPriceFetchStrategy(
       this.#featureFlags.isFeatureEnabled('erc4337')
     )
@@ -94,8 +97,6 @@ export class GasPriceController extends EventEmitter {
     // With rpcWithBundlerFallback, the RPC gas prices are still needed for the
     // broadcasts outside the bundler
     if (this.areGasPricesUsedFromBundlerEstimation && strategy !== 'rpcWithBundlerFallback') return
-
-    await this.#featureFlags.initialLoadPromise
 
     if (strategy === 'rpcWithBundlerFallback') {
       await this.#fetchRpcWithBundlerFallback(emitLevelOnFailure)
@@ -150,6 +151,10 @@ export class GasPriceController extends EventEmitter {
       this.emitUpdate()
       return
     }
+
+    // the RPC fetch was aborted because signAccountOp stopped refetching,
+    // so there's no need for a fallback or an error
+    if (this.#getSignAccountOpState().stopRefetching) return
 
     const bundlerGasPrices = await this.#fetchBundlerGasPrices()
 

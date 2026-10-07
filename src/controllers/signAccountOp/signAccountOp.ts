@@ -621,6 +621,7 @@ export class SignAccountOpController
       // Null when the controller is destroyed
       if (!this.gasPrice || this.#stopRefetching) {
         this.#gasPriceInterval.stop()
+        return
       }
 
       await this.gasPrice.fetch('major')
@@ -1082,7 +1083,7 @@ export class SignAccountOpController
       const shouldUseControllerGasPrices =
         !this.gasPrices || !this.estimation.estimation?.bundlerEstimation
       const gasPrices = shouldUseControllerGasPrices ? this.gasPrice.gasPrices : undefined
-      // set only when the account receives both the RPC and the bundler collections
+      // set only with the rpcWithBundlerFallback strategy (see BaseAccount.getGasPriceFetchStrategy)
       const rpcGasPrices = this.gasPrice.rpcGasPrices
       if (!gasPrices && !rpcGasPrices) return
 
@@ -2071,6 +2072,7 @@ export class SignAccountOpController
         !Object.keys(this.feeSpeeds).length ||
         Array.isArray(accountOpData?.calls) ||
         gasPrices ||
+        rpcGasPrices ||
         customGasPrices ||
         typeof customGasLimit !== 'undefined' ||
         this.#paidBy ||
