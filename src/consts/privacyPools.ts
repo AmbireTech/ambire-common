@@ -147,14 +147,14 @@ export const PRIVACY_POOLS_SUPPORTED_CHAIN_IDS = Object.values(PRIVACY_POOLS_CHA
 
 /**
  * The bundler for withdrawals. Always Pimlico, as the SDK prices the userOp with
- * `pimlico_getUserOperationGasPrice`. Uses our key when present to avoid the public rate limit.
+ * `pimlico_getUserOperationGasPrice`. Throws without our key, like the wallet's Pimlico bundler.
  */
 export const getPrivacyPoolsBundlerUrl = (chainId: bigint): string => {
   const apiKey = process.env.REACT_APP_PIMLICO_API_KEY
 
-  return apiKey
-    ? `https://api.pimlico.io/v2/${chainId.toString()}/rpc?apikey=${apiKey}`
-    : `https://public.pimlico.io/v2/${chainId.toString()}/rpc`
+  if (!apiKey) throw new Error('Pimlico API key is not set')
+
+  return `https://api.pimlico.io/v2/${chainId.toString()}/rpc?apikey=${apiKey}`
 }
 
 /**
