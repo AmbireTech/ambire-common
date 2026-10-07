@@ -27,15 +27,18 @@ export class GasPriceController extends EventEmitter {
   }
 
   /**
-   * The gas prices for the account. When the account receives both collections
-   * (see BaseAccount.getGasPriceFetchStrategy), these are the bundler ones,
-   * falling back to the RPC ones if the bundler is not working
+   * The gas prices for the account. With the `rpcWithBundlerFallback` strategy
+   * (see BaseAccount.getGasPriceFetchStrategy), these mirror rpcGasPrices and
+   * signAccountOp uses them only while there's no bundler estimation to take
+   * the bundler gas prices from
    */
   gasPrices?: GasSpeeds
 
   /**
-   * The RPC gas prices. Set only when the account receives both collections
-   * (see BaseAccount.getGasPriceFetchStrategy)
+   * The gas prices for broadcasts outside the bundler. Set only with the
+   * `rpcWithBundlerFallback` strategy (see BaseAccount.getGasPriceFetchStrategy).
+   * Despite the name, they hold the bundler gas prices if the RPC has failed and
+   * the bundler fallback has succeeded, so those broadcasts could still proceed
    */
   rpcGasPrices?: GasSpeeds
 
@@ -53,8 +56,8 @@ export class GasPriceController extends EventEmitter {
    * If the bundler estimation succeeds successfully, we don't want
    * to use the estimation from the gas price controller unless
    * explicitly called from the signAccountOp.
-   * Accounts that receive both collections still fetch the RPC gas prices
-   * (see BaseAccount.getGasPriceFetchStrategy)
+   * Accounts with the `rpcWithBundlerFallback` strategy still fetch their RPC
+   * gas prices (see BaseAccount.getGasPriceFetchStrategy)
    * */
   areGasPricesUsedFromBundlerEstimation: boolean = false
 
@@ -87,8 +90,10 @@ export class GasPriceController extends EventEmitter {
     )
 
     // the bundler estimation supplies the bundler gas prices, so when the account
-    // relies on a single collection, there's nothing left to fetch here
-    if (this.areGasPricesUsedFromBundlerEstimation) return
+    // relies on a single collection, there's nothing left to fetch here.
+    // With rpcWithBundlerFallback, the RPC gas prices are still needed for the
+    // broadcasts outside the bundler
+    if (this.areGasPricesUsedFromBundlerEstimation && strategy !== 'rpcWithBundlerFallback') return
 
     await this.#featureFlags.initialLoadPromise
 
@@ -118,23 +123,29 @@ export class GasPriceController extends EventEmitter {
     // * we're doing a bundler estimate so we'd have a fallback option
     // * ERC-4337 is disabled
     // * the account relies on the RPC only (see BaseAccount.getGasPriceFetchStrategy)
-    const rpcGasPrices = await this.#fetchRpcGasPrices(emitLevelOnFailure, 10000)
-    if (rpcGasPrices) this.gasPrices = rpcGasPrices
+    const rpcGasPrices = await this.#fetchRpcGasPrices(10000)
+    if (rpcGasPrices instanceof Error) this.#emitFetchError(rpcGasPrices, emitLevelOnFailure)
+    else this.gasPrices = rpcGasPrices
     this.updatedAt = Date.now()
 
     this.emitUpdate()
   }
 
   /**
-   * Fetches the RPC and the bundler collections separately, so that
-   * signAccountOp could pick the correct one for each broadcast option
+   * Fetches the RPC gas prices, falling back to the bundler ones if the RPC fails.
+   * Bundler broadcasts don't use these as signAccountOp takes their gas prices
+   * from the bundler estimation (see BaseAccount.shouldUseRpcGasPrices)
    */
   async #fetchRpcWithBundlerFallback(emitLevelOnFailure: ErrorRef['level']) {
-    const rpcGasPrices = await this.#fetchRpcGasPrices(emitLevelOnFailure, 5000)
+    const rpcGasPrices = await this.#fetchRpcGasPrices(5000)
 
     // if there are rpcGasPrices, we save them and proceed. Bundler is the fallback
-    if (rpcGasPrices) {
+    if (!(rpcGasPrices instanceof Error)) {
       this.rpcGasPrices = rpcGasPrices
+      // signAccountOp needs gasPrices when the estimation comes without bundler
+      // gas prices (ERC-4337 transition, bundler failure), otherwise it never
+      // calculates the fees. When it does have them, it ignores these
+      this.gasPrices = rpcGasPrices
       this.updatedAt = Date.now()
       this.emitUpdate()
       return
@@ -142,10 +153,16 @@ export class GasPriceController extends EventEmitter {
 
     const bundlerGasPrices = await this.#fetchBundlerGasPrices()
 
-    // if the bundler succeeds, we override both in this case
+    // if the bundler succeeds, we override both in this case. rpcGasPrices then
+    // hold the bundler gas prices so broadcasts outside the bundler could still
+    // proceed, even though the bundler ones may be higher than the RPC would return
     if (bundlerGasPrices) {
       this.rpcGasPrices = bundlerGasPrices
       this.gasPrices = bundlerGasPrices
+    } else {
+      // show the RPC failure only when the bundler fallback has failed as well,
+      // otherwise the user would see an error while the fees load correctly
+      this.#emitFetchError(rpcGasPrices, emitLevelOnFailure)
     }
 
     this.updatedAt = Date.now()
@@ -186,53 +203,56 @@ export class GasPriceController extends EventEmitter {
     return bundlerGasPrices as GasSpeeds | null
   }
 
-  async #fetchRpcGasPrices(
-    emitLevelOnFailure: ErrorRef['level'],
-    timeout: number
-  ): Promise<GasSpeeds | null> {
+  /**
+   * Fetches the gas prices from the RPC. Doesn't emit errors on failure,
+   * returning them instead, so each caller could decide whether a fallback
+   * is available before showing an error to the user
+   */
+  async #fetchRpcGasPrices(timeout: number): Promise<GasSpeeds | Error> {
     let timeoutId
     const gasPriceData = await Promise.race([
       getGasPriceRecommendations(this.#provider, this.#network, -1, () => {
         return !this.#getSignAccountOpState().stopRefetching
       }),
-      // limit it to 10s so a hanging RPC doesn't block the gas price
-      // refetch, handling it as any other RPC failure
+      // limit it by the passed timeout so a hanging RPC doesn't block the
+      // gas price refetch, handling it as any other RPC failure
       new Promise<never>((_resolve, reject) => {
         timeoutId = setTimeout(
           () => reject(new Error('rpc gas price fetch fail, request too slow')),
           timeout
         )
       })
-    ]).catch((e) => {
-      const signAccountOpState = this.#getSignAccountOpState()
-      // null because the estimation is destroyed with signAccountOp
-      const estimation = signAccountOpState.estimation as EstimationController | null
-
-      // if the gas price data has been fetched once successfully OR an estimation error
-      // is currently being displayed, do not emit another error
-      if (this.gasPrices || this.rpcGasPrices || !estimation || estimation.isRetryingFailure())
-        return null
-
-      const { type } = decodeError(e)
-
-      let message = "We couldn't retrieve the latest network fee information."
-
-      if (type === ErrorType.ConnectivityError) {
-        message = 'Network connection issue prevented us from retrieving the current network fee.'
-      }
-
-      this.emitError({
-        level: emitLevelOnFailure,
-        message,
-        error: new Error(`Failed to fetch gas price on ${this.#network.name}: ${e?.message}`)
-      })
-      return null
-    })
+    ]).catch((e) => (e instanceof Error ? e : new Error(String(e))))
     clearTimeout(timeoutId)
 
-    if (!gasPriceData || !gasPriceData.gasPrice) return null
+    if (gasPriceData instanceof Error) return gasPriceData
+    if (!gasPriceData.gasPrice) return new Error('rpc gas price fetch returned no gas prices')
 
     return gasPriceToBundlerFormat(gasPriceData.gasPrice)
+  }
+
+  #emitFetchError(e: Error, emitLevelOnFailure: ErrorRef['level']) {
+    const signAccountOpState = this.#getSignAccountOpState()
+    // null because the estimation is destroyed with signAccountOp
+    const estimation = signAccountOpState.estimation as EstimationController | null
+
+    // if the gas price data has been fetched once successfully OR an estimation error
+    // is currently being displayed, do not emit another error
+    if (this.gasPrices || this.rpcGasPrices || !estimation || estimation.isRetryingFailure()) return
+
+    const { type } = decodeError(e)
+
+    let message = "We couldn't retrieve the latest network fee information."
+
+    if (type === ErrorType.ConnectivityError) {
+      message = 'Network connection issue prevented us from retrieving the current network fee.'
+    }
+
+    this.emitError({
+      level: emitLevelOnFailure,
+      message,
+      error: new Error(`Failed to fetch gas price on ${this.#network.name}: ${e.message}`)
+    })
   }
 
   destroy() {

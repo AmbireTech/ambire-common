@@ -26,6 +26,12 @@ const gasSpeeds: GasSpeeds = {
   ape: { maxFeePerGas: '0x4', maxPriorityFeePerGas: '0x4' }
 }
 
+// differs from gasSpeeds so tests can tell which source the prices came from
+const bundlerGasSpeeds: GasSpeeds = {
+  ...gasSpeeds,
+  fast: { maxFeePerGas: '0x9', maxPriorityFeePerGas: '0x9' }
+}
+
 const network = { name: 'Ethereum' } as Network
 const provider = {} as RPCProvider
 
@@ -134,59 +140,180 @@ describe('GasPriceController', () => {
     expect(controller.rpcGasPrices).toBeUndefined()
   })
 
-  test('returns both collections when the account uses the RPC and the bundler', async () => {
-    const bundlerGasSpeeds: GasSpeeds = {
-      ...gasSpeeds,
-      fast: { maxFeePerGas: '0x9', maxPriorityFeePerGas: '0x9' }
-    }
-    const fetchGasPrices = jest.fn(async () => bundlerGasSpeeds)
-    jest.mocked(getAvailableBunlders).mockReturnValue([{ fetchGasPrices } as unknown as Bundler])
-    const controller = createController({
-      isErc4337Enabled: true,
-      supportsBundlerEstimation: true,
-      gasPriceFetchStrategy: 'rpcWithBundlerFallback'
+  describe('RPC with a bundler fallback', () => {
+    test('uses the RPC gas prices for both fields and skips the bundler when the RPC succeeds', async () => {
+      const fetchGasPrices = jest.fn(async () => bundlerGasSpeeds)
+      jest.mocked(getAvailableBunlders).mockReturnValue([{ fetchGasPrices } as unknown as Bundler])
+      const controller = createController({
+        isErc4337Enabled: true,
+        supportsBundlerEstimation: true,
+        gasPriceFetchStrategy: 'rpcWithBundlerFallback'
+      })
+
+      await controller.fetch()
+
+      expect(fetchGasPrices).not.toHaveBeenCalled()
+      expect(getGasPriceRecommendations).toHaveBeenCalled()
+      expect(controller.rpcGasPrices).toEqual(gasSpeeds)
+      // mirrors the RPC gas prices so signAccountOp has gas prices while
+      // there's no bundler estimation to take the bundler ones from
+      expect(controller.gasPrices).toEqual(gasSpeeds)
     })
 
-    await controller.fetch()
+    test('still fetches the RPC gas prices when the bundler estimation supplies the bundler ones', async () => {
+      const fetchGasPrices = jest.fn(async () => bundlerGasSpeeds)
+      jest.mocked(getAvailableBunlders).mockReturnValue([{ fetchGasPrices } as unknown as Bundler])
+      const controller = createController({
+        isErc4337Enabled: true,
+        supportsBundlerEstimation: true,
+        gasPriceFetchStrategy: 'rpcWithBundlerFallback'
+      })
+      controller.areGasPricesUsedFromBundlerEstimation = true
 
-    expect(fetchGasPrices).toHaveBeenCalledWith(network)
-    expect(getGasPriceRecommendations).toHaveBeenCalled()
-    expect(controller.gasPrices).toEqual(bundlerGasSpeeds)
-    expect(controller.rpcGasPrices).toEqual(gasSpeeds)
+      await controller.fetch()
+
+      expect(fetchGasPrices).not.toHaveBeenCalled()
+      expect(getGasPriceRecommendations).toHaveBeenCalled()
+      expect(controller.rpcGasPrices).toEqual(gasSpeeds)
+    })
+
+    test('fetches nothing when the bundler estimation supplies the gas prices for other strategies', async () => {
+      const fetchGasPrices = jest.fn(async () => bundlerGasSpeeds)
+      jest.mocked(getAvailableBunlders).mockReturnValue([{ fetchGasPrices } as unknown as Bundler])
+      const controller = createController({
+        isErc4337Enabled: true,
+        supportsBundlerEstimation: true,
+        gasPriceFetchStrategy: 'bundlerWithRpcFallback'
+      })
+      controller.areGasPricesUsedFromBundlerEstimation = true
+
+      await controller.fetch()
+
+      expect(fetchGasPrices).not.toHaveBeenCalled()
+      expect(getGasPriceRecommendations).not.toHaveBeenCalled()
+      expect(controller.gasPrices).toBeUndefined()
+      expect(controller.updatedAt).toBeUndefined()
+    })
+
+    test('stores the bundler gas prices in both fields when the RPC fails', async () => {
+      jest.mocked(getGasPriceRecommendations).mockRejectedValue(new Error('rpc down'))
+      const fetchGasPrices = jest.fn(async () => bundlerGasSpeeds)
+      jest.mocked(getAvailableBunlders).mockReturnValue([{ fetchGasPrices } as unknown as Bundler])
+      const controller = createController({
+        isErc4337Enabled: true,
+        gasPriceFetchStrategy: 'rpcWithBundlerFallback'
+      })
+
+      await controller.fetch()
+
+      expect(fetchGasPrices).toHaveBeenCalledWith(network)
+      expect(controller.rpcGasPrices).toEqual(bundlerGasSpeeds)
+      expect(controller.gasPrices).toEqual(bundlerGasSpeeds)
+    })
+
+    test('replaces the bundler fallback with the RPC gas prices once the RPC recovers', async () => {
+      jest.mocked(getGasPriceRecommendations).mockRejectedValueOnce(new Error('rpc down'))
+      const fetchGasPrices = jest.fn(async () => bundlerGasSpeeds)
+      jest.mocked(getAvailableBunlders).mockReturnValue([{ fetchGasPrices } as unknown as Bundler])
+      const controller = createController({
+        isErc4337Enabled: true,
+        gasPriceFetchStrategy: 'rpcWithBundlerFallback'
+      })
+
+      await controller.fetch()
+      expect(controller.rpcGasPrices).toEqual(bundlerGasSpeeds)
+
+      await controller.fetch()
+
+      expect(fetchGasPrices).toHaveBeenCalledTimes(1)
+      expect(controller.rpcGasPrices).toEqual(gasSpeeds)
+      expect(controller.gasPrices).toEqual(gasSpeeds)
+    })
   })
 
-  test('fetches only provider gas prices when the bundler estimation supplies the bundler ones', async () => {
-    const fetchGasPrices = jest.fn(async () => gasSpeeds)
-    jest.mocked(getAvailableBunlders).mockReturnValue([{ fetchGasPrices } as unknown as Bundler])
-    const controller = createController({
-      isErc4337Enabled: true,
-      supportsBundlerEstimation: true,
-      gasPriceFetchStrategy: 'rpcWithBundlerFallback'
-    })
-    controller.areGasPricesUsedFromBundlerEstimation = true
+  describe('RPC failure with a bundler fallback', () => {
+    const estimation = { isRetryingFailure: () => false } as unknown as EstimationController
 
-    await controller.fetch()
+    test('does not emit an error when the bundler fallback succeeds', async () => {
+      jest.mocked(getGasPriceRecommendations).mockRejectedValue(new Error('rpc down'))
+      const fetchGasPrices = jest.fn(async () => gasSpeeds)
+      jest.mocked(getAvailableBunlders).mockReturnValue([{ fetchGasPrices } as unknown as Bundler])
+      const controller = createController({
+        isErc4337Enabled: true,
+        gasPriceFetchStrategy: 'rpcWithBundlerFallback',
+        estimation
+      })
+      const onError = jest.fn()
+      controller.onError(onError)
 
-    expect(fetchGasPrices).not.toHaveBeenCalled()
-    expect(getGasPriceRecommendations).toHaveBeenCalled()
-    expect(controller.gasPrices).toBeUndefined()
-    expect(controller.rpcGasPrices).toEqual(gasSpeeds)
-  })
+      await controller.fetch('major')
 
-  test('falls back to provider gas prices when the bundler fails for both collections', async () => {
-    const fetchGasPrices = jest.fn(async () => {
-      throw new Error('bundler down')
-    })
-    jest.mocked(getAvailableBunlders).mockReturnValue([{ fetchGasPrices } as unknown as Bundler])
-    const controller = createController({
-      isErc4337Enabled: true,
-      gasPriceFetchStrategy: 'rpcWithBundlerFallback'
+      expect(fetchGasPrices).toHaveBeenCalledWith(network)
+      expect(controller.gasPrices).toEqual(gasSpeeds)
+      expect(controller.rpcGasPrices).toEqual(gasSpeeds)
+      expect(onError).not.toHaveBeenCalled()
     })
 
-    await controller.fetch()
+    test('emits the RPC error once when the bundler fallback fails as well', async () => {
+      jest.mocked(getGasPriceRecommendations).mockRejectedValue(new Error('rpc down'))
+      const fetchGasPrices = jest.fn(async () => {
+        throw new Error('bundler down')
+      })
+      jest.mocked(getAvailableBunlders).mockReturnValue([{ fetchGasPrices } as unknown as Bundler])
+      const controller = createController({
+        isErc4337Enabled: true,
+        gasPriceFetchStrategy: 'rpcWithBundlerFallback',
+        estimation
+      })
+      const onError = jest.fn()
+      controller.onError(onError)
 
-    expect(controller.gasPrices).toEqual(gasSpeeds)
-    expect(controller.rpcGasPrices).toEqual(gasSpeeds)
+      await controller.fetch('major')
+
+      expect(controller.gasPrices).toBeUndefined()
+      expect(controller.rpcGasPrices).toBeUndefined()
+      expect(onError).toHaveBeenCalledTimes(1)
+      expect(controller.emittedErrors[0]?.level).toBe('major')
+      expect(controller.emittedErrors[0]?.error.message).toContain('rpc down')
+    })
+
+    test('emits the RPC error when there are no bundlers to fall back to', async () => {
+      jest.mocked(getGasPriceRecommendations).mockRejectedValue(new Error('rpc down'))
+      jest.mocked(getAvailableBunlders).mockReturnValue([])
+      const controller = createController({
+        isErc4337Enabled: true,
+        gasPriceFetchStrategy: 'rpcWithBundlerFallback',
+        estimation
+      })
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await controller.fetch('major')
+
+      expect(getAvailableBunlders).toHaveBeenCalledWith(network)
+      expect(controller.rpcGasPrices).toBeUndefined()
+      expect(onError).toHaveBeenCalledTimes(1)
+    })
+
+    test('does not emit an error when gas prices were already fetched once', async () => {
+      jest.mocked(getAvailableBunlders).mockReturnValue([])
+      const controller = createController({
+        isErc4337Enabled: true,
+        gasPriceFetchStrategy: 'rpcWithBundlerFallback',
+        estimation
+      })
+      await controller.fetch('major')
+      expect(controller.rpcGasPrices).toEqual(gasSpeeds)
+
+      jest.mocked(getGasPriceRecommendations).mockRejectedValue(new Error('rpc down'))
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await controller.fetch('major')
+
+      expect(controller.rpcGasPrices).toEqual(gasSpeeds)
+      expect(onError).not.toHaveBeenCalled()
+    })
   })
 
   describe('RPC gas price timeout', () => {
@@ -255,22 +382,29 @@ describe('GasPriceController', () => {
       expect(jest.getTimerCount()).toBe(0)
     })
 
-    test('times out the RPC collection independently of the bundler one', async () => {
+    test('falls back to the bundler after a 5s RPC timeout without emitting an error', async () => {
       jest.mocked(getGasPriceRecommendations).mockReturnValue(new Promise(() => {}))
-      const fetchGasPrices = jest.fn(async () => gasSpeeds)
+      const fetchGasPrices = jest.fn(async () => bundlerGasSpeeds)
       jest.mocked(getAvailableBunlders).mockReturnValue([{ fetchGasPrices } as unknown as Bundler])
       const controller = createController({
         isErc4337Enabled: true,
         gasPriceFetchStrategy: 'rpcWithBundlerFallback',
-        estimation: { isRetryingFailure: () => true } as unknown as EstimationController
+        estimation: { isRetryingFailure: () => false } as unknown as EstimationController
       })
+      const onError = jest.fn()
+      controller.onError(onError)
 
-      const fetchPromise = controller.fetch()
-      await jest.advanceTimersByTimeAsync(10000)
+      const fetchPromise = controller.fetch('major')
+      await jest.advanceTimersByTimeAsync(4999)
+      expect(fetchGasPrices).not.toHaveBeenCalled()
+
+      await jest.advanceTimersByTimeAsync(1)
       await fetchPromise
 
-      expect(controller.gasPrices).toEqual(gasSpeeds)
-      expect(controller.rpcGasPrices).toBeUndefined()
+      expect(fetchGasPrices).toHaveBeenCalledWith(network)
+      expect(controller.rpcGasPrices).toEqual(bundlerGasSpeeds)
+      expect(controller.gasPrices).toEqual(bundlerGasSpeeds)
+      expect(onError).not.toHaveBeenCalled()
       expect(jest.getTimerCount()).toBe(0)
     })
   })

@@ -289,15 +289,17 @@ export class SignAccountOpController
   #customSafeNonce: bigint | null = null
 
   /**
-   * The gas prices used for broadcasting. When the account receives both the
-   * RPC and the bundler collections (see BaseAccount.getGasPriceFetchStrategy),
-   * these are the bundler ones and are used for bundler broadcasts only
+   * The gas prices used for broadcasting. With the `rpcWithBundlerFallback` strategy
+   * (see BaseAccount.getGasPriceFetchStrategy), these come from the bundler estimation
+   * and are used for bundler broadcasts only. While there's no bundler estimation,
+   * they're the gasPrice controller ones
    */
   gasPrices?: GasSpeeds
 
   /**
-   * The RPC gas prices, used for broadcasts outside the bundler when the account
-   * receives both collections (see BaseAccount.getGasPriceFetchStrategy)
+   * The gas prices for broadcasts outside the bundler with the `rpcWithBundlerFallback`
+   * strategy (see BaseAccount.getGasPriceFetchStrategy). These are the RPC gas prices,
+   * or the bundler ones if the RPC has failed and the bundler fallback has succeeded
    */
   rpcGasPrices?: GasSpeeds
 
@@ -1879,8 +1881,7 @@ export class SignAccountOpController
           if (!this.hasCustomGasPrices) {
             this.gasPrices = this.estimation.estimation.bundlerGasPrices
           }
-          // if it's not Ethereum, we ignore rpc gas prices
-          this.gasPrice.areGasPricesUsedFromBundlerEstimation = this.#network.chainId !== 1n
+          this.gasPrice.areGasPricesUsedFromBundlerEstimation = true
           // and we're stopping the gas price interval as
           // we will use the bundler gas prices, unless the account
           // also needs the RPC gas prices for its non-bundler broadcasts
@@ -2542,9 +2543,9 @@ export class SignAccountOpController
 
   /**
    * Whether the broadcast option should use the RPC gas prices instead of the
-   * bundler ones. Applicable only when the account receives both collections
+   * bundler ones. Applicable only with the `rpcWithBundlerFallback` strategy
    * (see BaseAccount.getGasPriceFetchStrategy). If the RPC gas prices are not
-   * fetched yet, the bundler ones are used as a fallback
+   * fetched yet, gasPrices are used as a fallback
    */
   #shouldUseRpcGasPrices(broadcastOption: string): boolean {
     if (this.hasCustomGasPrices || !this.rpcGasPrices) return false
@@ -4517,7 +4518,7 @@ export class SignAccountOpController
 
   /**
    * The gas prices used by the selected fee option. They differ from gasPrices
-   * only when the account receives both the RPC and the bundler collections
+   * only with the `rpcWithBundlerFallback` strategy
    * (see BaseAccount.getGasPriceFetchStrategy)
    */
   get selectedOptionGasPrices(): GasSpeeds | undefined {
