@@ -1,3 +1,4 @@
+import { BlacklistedStatus } from '../interfaces/phishing'
 import { Messenger } from '../interfaces/messenger'
 import { getDappIdFromUrl } from '../libs/dapps/helpers'
 
@@ -78,6 +79,15 @@ export class Session {
   when the dApp is the top frame itself, and different when it is embedded in an iframe.
    */
   topFrameOrigin?: string
+
+  /**
+   * The phishing status of `topFrameOrigin`, resolved asynchronously by DappsController.
+   *
+   * Cached because the consumer is a synchronous banner getter. Cleared whenever the origin
+   * changes, so it is only ever absent ("not established yet") — never describing a frame the
+   * session has already navigated away from.
+   */
+  topFrameBlacklisted?: BlacklistedStatus
 
   name: string = ''
 
@@ -161,7 +171,12 @@ export class Session {
     if (frameId === undefined) return
 
     this.frameId = frameId
-    this.topFrameOrigin = getOriginFromUrl(topFrameUrl)
+
+    const nextOrigin = getOriginFromUrl(topFrameUrl)
+    // Dropped before the origin changes: a status resolved for the previous frame would
+    // otherwise be read as describing the new one.
+    if (nextOrigin !== this.topFrameOrigin) this.topFrameBlacklisted = undefined
+    this.topFrameOrigin = nextOrigin
   }
 
   setMessenger(messenger: Messenger, isAmbireNext: boolean) {
