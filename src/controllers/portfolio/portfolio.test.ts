@@ -40,12 +40,13 @@ import {
   TokenResult
 } from '../../libs/portfolio/interfaces'
 import { Portfolio, PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
+import { stringify } from '../../libs/richJson/richJson'
 import { getRpcProvider } from '../../services/provider'
 import { generateUuid } from '../../utils/uuid'
 import wait from '../../utils/wait'
 import { StorageController } from '../storage/storage'
 import { COLIBRI_CATCH_UP_RETRY_INTERVAL } from '../verification/verification'
-import { PortfolioController } from './portfolio'
+import { EXCHANGE_LIST_URL, PortfolioController } from './portfolio'
 
 import type { FeatureFlags } from '../../consts/featureFlags'
 
@@ -401,7 +402,8 @@ const prepareTest = async (opts?: {
     networksCtrl: mainCtrl.networks,
     accountsCtrl: mainCtrl.accounts,
     providersCtrl: mainCtrl.providers,
-    verificationCtrl: mainCtrl.verification
+    verificationCtrl: mainCtrl.verification,
+    uiCtrl: mainCtrl.ui
   }
 }
 
@@ -3765,6 +3767,109 @@ describe('Portfolio Controller ', () => {
     expect(newEthereumPortfolioState.accountOps).not.toBe(undefined)
     expect(newEthereumPortfolioState.accountOps).not.toBe(null)
     expect(newEthereumPortfolioState.accountOps).toStrictEqual(accountOpsOnEthereum['1'])
+  })
+
+  describe('Exchange list and public state', () => {
+    const UNISWAP_EXCHANGE = {
+      id: 'uniswap_v3',
+      name: 'Uniswap V3',
+      url: 'https://app.uniswap.org',
+      image: 'https://example.com/uniswap.png'
+    }
+    const BINANCE_EXCHANGE = {
+      id: 'binance',
+      name: 'Binance',
+      url: 'https://www.binance.com',
+      image: 'https://example.com/binance.png'
+    }
+    // Mirrors the extra fields the real API returns that the UI never reads
+    const mockExchangeListResponse = {
+      data: {
+        [UNISWAP_EXCHANGE.id]: {
+          ...UNISWAP_EXCHANGE,
+          description: 'A decentralized exchange',
+          trust_score: 9,
+          trade_volume_24h_btc: 1234.5
+        },
+        [BINANCE_EXCHANGE.id]: {
+          ...BINANCE_EXCHANGE,
+          description: 'A centralized exchange',
+          trust_score: 10,
+          trade_volume_24h_btc: 98765.4
+        }
+      }
+    }
+
+    const exchangeListFetchOverride = jest.fn(
+      (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        const url = typeof input === 'string' ? input : input.toString()
+
+        if (url === EXCHANGE_LIST_URL)
+          return Promise.resolve({
+            ok: true,
+            statusText: 'OK',
+            json: () => Promise.resolve(mockExchangeListResponse)
+          })
+
+        return fetch(input as any, init as any)
+      }
+    ) as unknown as typeof fetch
+
+    // makeMainController stubs the exchange list fetch out for every other test
+    const loadExchangeList = async (controller: PortfolioController) => {
+      jest.mocked(PortfolioController.prototype.updateExchangeList).mockRestore()
+      await controller.updateExchangeList()
+    }
+
+    test('only the requested exchanges are served, with their display fields, once the list loads', async () => {
+      const { controller, uiCtrl } = await prepareTest({
+        fetchOverride: exchangeListFetchOverride
+      })
+
+      expect(controller.exchangeListUpdatedAt).toBeNull()
+      expect(controller.getExchangesInfo([UNISWAP_EXCHANGE.id])).toEqual({})
+
+      await loadExchangeList(controller)
+
+      const exchangesInfo = controller.getExchangesInfo([UNISWAP_EXCHANGE.id, 'unknown_exchange'])
+      expect(typeof controller.exchangeListUpdatedAt).toBe('number')
+      expect(exchangesInfo).toEqual({ [UNISWAP_EXCHANGE.id]: UNISWAP_EXCHANGE })
+      expect(controller.getExchangesInfo([])).toEqual({})
+
+      const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
+      controller.getExchangesInfoAndSendResToUi([BINANCE_EXCHANGE.id], 'request-1')
+      expect(sendUiMessageSpy).toHaveBeenCalledTimes(1)
+      expect(sendUiMessageSpy).toHaveBeenCalledWith({
+        requestId: 'request-1',
+        ok: true,
+        res: { [BINANCE_EXCHANGE.id]: BINANCE_EXCHANGE }
+      })
+    })
+
+    test('the serialized state leaves out what the UI never reads', async () => {
+      const { controller } = await prepareTest({ fetchOverride: exchangeListFetchOverride })
+      await loadExchangeList(controller)
+      controller.addDefiSession('session-1')
+
+      const serialized = stringify(controller)
+      const serializedKeys = Object.keys(JSON.parse(serialized))
+      ;[
+        'exchangeState',
+        'hints',
+        'mobileInviteKeys',
+        'defiSessionIds',
+        'defiPositionsCountOnDisabledNetworks',
+        'tokenDataCache'
+      ].forEach((hiddenKey) => expect(serializedKeys).not.toContain(hiddenKey))
+      ;[
+        'customTokens',
+        'tokenPreferences',
+        'scheduledUpdateChainIds',
+        'validTokens',
+        'exchangeListUpdatedAt'
+      ].forEach((publicKey) => expect(serializedKeys).toContain(publicKey))
+      expect(serialized).not.toContain(UNISWAP_EXCHANGE.url)
+    })
   })
 
   describe('Blacklisting', () => {
