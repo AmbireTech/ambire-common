@@ -116,6 +116,9 @@ const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
 
+/** How long a resolved transitional request stays, so the app request it was blocking can arrive */
+const TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS = 300
+
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
  * Prior to v2.66.0, all request logic resided in the MainController. To improve scalability, readability,
@@ -1208,7 +1211,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       setTimeout(async () => {
         await this.removeUserRequests([requestId])
         this.emitUpdate()
-      }, 300)
+      }, TRANSITIONAL_REQUEST_REMOVAL_DELAY_MS)
     } else if (heldDappRequests) {
       // The network is on now, so the requests held for it can be built. The prompt stays until
       // they are, so the view moves straight to them instead of closing and reopening for them.
