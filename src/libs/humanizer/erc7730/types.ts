@@ -81,6 +81,16 @@ export type Erc7730Field = {
   params?: Record<string, unknown>
   fields?: Erc7730Field[]
   $ref?: string
+  /**
+   * ERC-7730 v2 `encryption` block. It tells that the field value is a ciphertext handle
+   * (e.g. an FHEVM `bytes32`) and not the real value, so the wallet cannot read or format it.
+   */
+  encryption?: {
+    scheme?: string
+    plaintextType?: string
+    /** The text to show in place of the value that the wallet cannot decrypt */
+    fallbackLabel?: string
+  }
 }
 
 export type Erc7730DisplayFormat = {
