@@ -2468,16 +2468,44 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#userRequestsBeingAdded += 1
 
     try {
-      if (userRequests.length) await this.addUserRequests(userRequests, { skipFocus: true })
+      if (userRequests.length) {
+        try {
+          await this.addUserRequests(userRequests, { skipFocus: true })
+        } catch (error) {
+          this.#failResumedRequest(
+            userRequests.flatMap((r) => r.dappPromises),
+            error
+          )
+        }
+      }
 
       // One at a time, so calls for the same account and chain join one batch (including the one
-      // the account may already have) instead of replacing each other
+      // the account may already have) instead of replacing each other. A failure costs only its
+      // own apps the request, the rest are still added.
       for (const calls of callsParams) {
-        await this.#addCallsUserRequest(calls, { skipFocus: true })
+        try {
+          await this.#addCallsUserRequest(calls, { skipFocus: true })
+        } catch (error) {
+          this.#failResumedRequest(calls.dappPromises, error)
+        }
       }
     } finally {
       this.#userRequestsBeingAdded -= 1
     }
+  }
+
+  /**
+   * Tells the apps that a request held behind a switch couldn't be added back. Nothing else
+   * would ever answer them.
+   */
+  #failResumedRequest(dappPromises: UserRequest['dappPromises'], error: unknown) {
+    this.emitError({
+      level: 'major',
+      message: "The request couldn't be opened after switching accounts. Please try again.",
+      error: error as Error
+    })
+
+    dappPromises.forEach((p) => p.reject(ethErrors.rpc.internal()))
   }
 
   // ! IMPORTANT !
