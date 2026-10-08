@@ -1581,6 +1581,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
         PRIVACY_POOLS_DERIVATION_PATH_PREFIX.slice(0, -1)
       )
     )
+    // Cached as a promise so concurrent calls share one derivation
     this.#privacyPoolsRootNodes.set(seedId, rootNode)
     // Dropped on failure, so the next call retries
     rootNode.catch(() => {
