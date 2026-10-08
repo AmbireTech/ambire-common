@@ -682,7 +682,7 @@ export const addHiddenTokenValueToTotal = (
 }
 
 export const getAccountPortfolioTotal = (
-  accountPortfolio: AccountState,
+  accountPortfolio: AccountState | undefined,
   excludeNetworks: string[] = [],
   excludeHiddenTokens = true
 ) => {
