@@ -788,14 +788,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * without the phrase ever reaching the UI.
    */
   async generateTempSeed({ extraEntropy }: { extraEntropy?: string }): Promise<KeystoreTempSeed> {
-    const entropyGenerator = new EntropyGenerator()
-    const seed = entropyGenerator.generateRandomMnemonic(12, extraEntropy || '').phrase
-
-    this.#tempSeed = {
-      seed,
-      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-      notBackedUp: true
-    }
+    this.#tempSeed = this.#generateNotBackedUpSeed(extraEntropy)
 
     this.emitUpdate()
 
@@ -808,18 +801,20 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * flow may be holding.
    */
   async addGeneratedSeed({ extraEntropy }: { extraEntropy?: string }): Promise<string> {
-    const seed = new EntropyGenerator().generateRandomMnemonic(12, extraEntropy || '').phrase
-
-    const [seedId] = await this.#addSeeds([
-      {
-        seed,
-        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-        notBackedUp: true
-      }
-    ])
+    const [seedId] = await this.#addSeeds([this.#generateNotBackedUpSeed(extraEntropy)])
     if (!seedId) throw new Error('keystore: the generated seed was not stored')
 
     return seedId
+  }
+
+  /**
+   * Generates a new 12-word phrase on the standard derivation path, flagged as not backed up
+   * since the user has not seen it yet.
+   */
+  #generateNotBackedUpSeed(extraEntropy?: string): KeystoreTempSeed {
+    const seed = new EntropyGenerator().generateRandomMnemonic(12, extraEntropy || '').phrase
+
+    return { seed, hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE, notBackedUp: true }
   }
 
   deleteTempSeed(shouldUpdate = true) {
