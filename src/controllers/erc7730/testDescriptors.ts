@@ -11,6 +11,10 @@ import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { Erc7730Controller } from './erc7730'
 
+/** Runtime code of a real SafeProxy v1.4.1, for tests that need a provider to look like a Safe. */
+export const SAFE_PROXY_RUNTIME_CODE =
+  '0x608060405273ffffffffffffffffffffffffffffffffffffffff600054167fa619486e0000000000000000000000000000000000000000000000000000000060003514156050578060005260206000f35b3660008037600080366000845af43d6000803e60008114156070573d6000fd5b3d6000f3fea264697066735822122003d1488ee65e08fa41e58e888a9865554c535f2c77126a82cb4c0f917f31441364736f6c63430007060033'
+
 const controllersByRelayer = new WeakMap<object, Erc7730Controller>()
 
 /** In-memory storage, so a test controller never touches anything persistent. */
