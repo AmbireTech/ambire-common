@@ -778,6 +778,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     )
       return
 
+    // A window opened before the panel must not keep the request once the panel is open. Unless
+    // the caller asked to leave it alone, as closing it mid-signing aborts the signing.
+    if (this.#ui.panel?.isOpen() && params?.reopenIfNeeded !== false) {
+      await this.#moveRequestWindowToPanel()
+      return
+    }
+
     try {
       this.requestWindow.focusWindowPromise = this.#ui.requestView
         .focus(this.requestWindow.windowProps, params)
@@ -797,6 +804,36 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         message:
           'Failed to focus the request window. Please restart your browser if the issue persists.',
         level: 'major',
+        error: err as Error
+      })
+    }
+  }
+
+  /**
+   * Closes the request window and leaves its requests to the panel. The window is forgotten
+   * before it closes, so its `windowRemoved` is not taken for the user refusing the requests.
+   */
+  async #moveRequestWindowToPanel() {
+    const { windowProps } = this.requestWindow
+    if (!windowProps) return
+
+    this.requestWindow.windowProps = null
+    this.requestWindow.loaded = false
+    this.requestWindow.pendingMessage = null
+    this.emitUpdate()
+
+    try {
+      this.requestWindow.closeWindowPromise = this.#ui.requestView
+        .close(windowProps.id)
+        .finally(() => {
+          this.requestWindow.closeWindowPromise = undefined
+        })
+
+      await this.requestWindow.closeWindowPromise
+    } catch (err) {
+      this.emitError({
+        message: 'Failed to close the request window. Please close it manually.',
+        level: 'minor',
         error: err as Error
       })
     }

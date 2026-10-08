@@ -1731,6 +1731,37 @@ describe('RequestsController ', () => {
     expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
     expect(controller.requestWindow.windowProps).toBe(null)
   })
+  test('should move the request from its window into the panel once the panel is open', async () => {
+    const { controller, uiCtrl, getWindowId } = await prepareTest()
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+
+    uiCtrl.panel = { isOpen: () => true }
+    const closeRequestView = jest.spyOn(uiCtrl.requestView, 'close')
+    const focusRequestView = jest.spyOn(uiCtrl.requestView, 'focus')
+
+    await controller.setCurrentUserRequestById(DAPP_CONNECT_REQUEST.id)
+
+    expect(closeRequestView).toHaveBeenCalledWith(getWindowId())
+    expect(focusRequestView).not.toHaveBeenCalled()
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
+    expect(controller.userRequests).toContain(DAPP_CONNECT_REQUEST)
+  })
+  test('should keep the request window that must not be closed while the panel is open', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+
+    uiCtrl.panel = { isOpen: () => true }
+    const closeRequestView = jest.spyOn(uiCtrl.requestView, 'close')
+
+    await controller.focusRequestWindow({ reopenIfNeeded: false })
+
+    expect(closeRequestView).not.toHaveBeenCalled()
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+  })
   test('should reject the active request on close when there is no request window', async () => {
     const { controller, uiCtrl } = await prepareTest()
     uiCtrl.panel = { isOpen: () => true }
