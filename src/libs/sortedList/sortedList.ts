@@ -46,11 +46,18 @@ export const toSortedUnique = (values: readonly string[]): string[] => {
 
 export type SortedListDeltaOp = { op: 'add' | 'remove'; value: string }
 
+// Upper bound on the arguments passed to one concat call, well below the engines' argument limits
+const MAX_CHUNKS_PER_CONCAT = 10_000
+
 /**
  * Applies add/remove operations in the order given and returns a new sorted, duplicate-free list.
  * Equivalent to replaying them on a Set: only the last operation for a value decides whether it
- * ends up in the list. Runs in one linear pass over `sortedList`, so the cost does not depend on
- * how many operations there are.
+ * ends up in the list.
+ *
+ * Each change is located with a binary search, and the untouched runs between changes are copied
+ * with `slice` and joined with `concat`. Both are native bulk copies, which matters on Hermes: a
+ * per-element loop over a few hundred thousand entries takes over 100ms there, and `splice` for
+ * every change is far slower still.
  */
 export const applySortedDelta = (
   sortedList: readonly string[],
@@ -58,31 +65,30 @@ export const applySortedDelta = (
 ): string[] => {
   const lastOpByValue = new Map<string, SortedListDeltaOp['op']>()
   ops.forEach(({ op, value }) => lastOpByValue.set(value, op))
+  const changedValues = toSortedUnique([...lastOpByValue.keys()])
 
-  const valuesToAdd = toSortedUnique(
-    [...lastOpByValue].filter(([, op]) => op === 'add').map(([value]) => value)
-  )
-  const valuesToRemove = toSortedUnique(
-    [...lastOpByValue].filter(([, op]) => op === 'remove').map(([value]) => value)
-  )
+  const chunks: string[][] = []
+  let copiedUntil = 0
 
-  const result: string[] = []
-  let addIndex = 0
+  changedValues.forEach((value) => {
+    const index = lowerBound(sortedList, value)
+    const isPresent = index < sortedList.length && sortedList[index] === value
+    const op = lastOpByValue.get(value)
 
-  sortedList.forEach((value) => {
-    while (addIndex < valuesToAdd.length && valuesToAdd[addIndex]! < value) {
-      result.push(valuesToAdd[addIndex]!)
-      addIndex++
+    if (op === 'add' && !isPresent) {
+      chunks.push(sortedList.slice(copiedUntil, index), [value])
+      copiedUntil = index
     }
-    // Already in the list, so the pending add is a no-op
-    if (addIndex < valuesToAdd.length && valuesToAdd[addIndex] === value) addIndex++
-
-    if (!sortedIncludes(valuesToRemove, value)) result.push(value)
+    if (op === 'remove' && isPresent) {
+      chunks.push(sortedList.slice(copiedUntil, index))
+      copiedUntil = index + 1
+    }
   })
+  chunks.push(sortedList.slice(copiedUntil))
 
-  while (addIndex < valuesToAdd.length) {
-    result.push(valuesToAdd[addIndex]!)
-    addIndex++
+  let result: string[] = []
+  for (let i = 0; i < chunks.length; i += MAX_CHUNKS_PER_CONCAT) {
+    result = result.concat(...chunks.slice(i, i + MAX_CHUNKS_PER_CONCAT))
   }
 
   return result
