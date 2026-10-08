@@ -252,24 +252,25 @@ describe('encrypted values', () => {
     })?.fullVisualization?.[0]
 
   test('shows the fallback text in place of the encrypted amount in the interpolated intent', () => {
-    const titleParts = humanizeConfidentialTransfer('[Encrypted Amount]')?.titleParts
+    const intent = humanizeConfidentialTransfer('[Encrypted Amount]')?.intent
 
-    expect(titleParts?.map(({ type }) => type)).toEqual(['action', 'text', 'text', 'address'])
-    expect(titleParts?.[1]).toMatchObject({ type: 'text', content: '[Encrypted Amount]' })
-    expect(titleParts?.some(({ type }) => type === 'token')).toBe(false)
+    expect(intent?.map(({ type }) => type)).toEqual(['action', 'text', 'text', 'address'])
+    expect(intent?.[1]).toMatchObject({ type: 'text', content: '[Encrypted Amount]' })
+    expect(intent?.some(({ type }) => type === 'token')).toBe(false)
   })
 
   test('shows the fallback text in place of the encrypted amount in the rows', () => {
-    const rows = humanizeConfidentialTransfer('[Encrypted Amount]')?.rows
+    const fields = humanizeConfidentialTransfer('[Encrypted Amount]')?.fields
 
-    expect(rows?.[0].value).toEqual([
-      expect.objectContaining({ type: 'text', content: '[Encrypted Amount]' })
-    ])
+    expect(fields?.[0]).toMatchObject({
+      type: 'single-value',
+      value: { type: 'text', content: '[Encrypted Amount]' }
+    })
   })
 
   test('shows a default text when the descriptor gives no fallback text', () => {
-    const titleParts = humanizeConfidentialTransfer()?.titleParts
+    const intent = humanizeConfidentialTransfer()?.intent
 
-    expect(titleParts?.[1]).toMatchObject({ type: 'text', content: '[Hidden value]' })
+    expect(intent?.[1]).toMatchObject({ type: 'text', content: '[Hidden value]' })
   })
 })
