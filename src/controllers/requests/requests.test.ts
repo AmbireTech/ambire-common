@@ -2375,6 +2375,39 @@ describe('RequestsController ', () => {
         expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
       })
 
+      test('answers an app connected only to the selected account as if the other one is not in the wallet', async () => {
+        const { controller, dappsCtrl } = await prepareTest(true)
+        jest.spyOn(dappsCtrl, 'getDapp').mockReturnValue({
+          ...TEST_DAPP,
+          accountPreferences: {
+            enabled: true,
+            selectedAccount: ACCOUNT_ADDR,
+            accounts: [ACCOUNT_ADDR]
+          }
+        })
+        const [transaction, message] = makeRejectMocks(2)
+
+        await expect(
+          sendTransactionFromOtherAccount(controller, transaction!)
+        ).rejects.toMatchObject({ code: errorCodes.provider.unauthorized })
+        await expect(
+          controller.build({
+            type: 'dappRequest',
+            params: {
+              request: {
+                method: 'personal_sign',
+                params: ['0x48656c6c6f', OTHER_ACCOUNT_ADDR],
+                session: MOCK_SESSION
+              },
+              dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...message! }
+            }
+          })
+        ).rejects.toMatchObject({ code: errorCodes.provider.unauthorized })
+
+        expect(controller.userRequests).toHaveLength(0)
+        expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+      })
+
       test('turns away too many transactions for another account before asking to switch', async () => {
         const { controller } = await prepareTest(true)
         const reject = jest.fn()

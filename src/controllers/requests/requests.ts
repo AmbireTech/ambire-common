@@ -78,7 +78,7 @@ import {
   getSafeMessageRequestBanners
 } from '../../libs/banners/banners'
 import { getDappIdsFromUserRequest } from '../../libs/dapps/dappRequestSpam'
-import { isSigningAuthPlatform } from '../../libs/dapps/helpers'
+import { isAccountAllowedForDapp, isSigningAuthPlatform } from '../../libs/dapps/helpers'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getShouldSimulateInTheBackground } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
@@ -116,6 +116,9 @@ import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/sig
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
+
+const MESSAGE_ACCOUNT_NOT_IN_WALLET_ERROR =
+  "This app asked to sign a message with an account that isn't in your wallet."
 
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
@@ -1648,9 +1651,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       // The batch shares an account as well, which is the one the transactions are prepared
-      // for, selected or not. When it isn't in the wallet, every item is turned away while it
-      // is validated, so each app still hears about its own payload first.
-      const requestAccount = this.#findDappCallsAccount(firstRequest)
+      // for, selected or not. When it isn't in the wallet or the app isn't connected to it,
+      // every item is turned away while it is validated, so each app still hears about its own
+      // payload first.
+      const requestAccount = this.#findDappAccount(firstRequest.params?.[0]?.from, dapp)
       let baseAcc: BaseAccount | null = null
 
       if (requestAccount) {
@@ -1720,14 +1724,19 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   /**
-   * The wallet account a transaction request is sent from, or undefined when its `from` is
-   * missing or isn't an account in the wallet. Matched regardless of letter case, the same way
-   * the batch key reads it.
+   * The wallet account an app request is for, or undefined when the address is missing, isn't
+   * an account in the wallet or isn't one the app is connected to. The app is told the same in
+   * every case, so it can't learn which accounts the wallet holds. Matched regardless of letter
+   * case, the same way the batch key reads it.
    */
-  #findDappCallsAccount(request: DappProviderRequest): Account | undefined {
-    const from = String(request.params?.[0]?.from).toLowerCase()
+  #findDappAccount(address: unknown, dapp: Dapp | null): Account | undefined {
+    const normalizedAddr = String(address).toLowerCase()
+    const account = this.#accounts.accounts.find((a) => a.addr.toLowerCase() === normalizedAddr)
 
-    return this.#accounts.accounts.find((account) => account.addr.toLowerCase() === from)
+    if (!account || !isAccountAllowedForDapp(dapp?.accountPreferences, account.addr))
+      return undefined
+
+    return account
   }
 
   /**
@@ -1842,6 +1851,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
     const msgAddress = getAddress(msg?.[1])
 
+    if (!this.#findDappAccount(msgAddress, dapp))
+      throw ethErrors.provider.unauthorized(MESSAGE_ACCOUNT_NOT_IN_WALLET_ERROR)
+
     const network = this.#networks.networks.find((n) => Number(n.chainId) === Number(dapp?.chainId))
 
     if (!network) {
@@ -1952,6 +1964,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       throw ethErrors.rpc.invalidRequest('No msg request to sign')
     }
     const msgAddress = getAddress(msg?.[0])
+
+    if (!this.#findDappAccount(msgAddress, dapp))
+      throw ethErrors.provider.unauthorized(MESSAGE_ACCOUNT_NOT_IN_WALLET_ERROR)
 
     const network = this.#networks.networks.find((n) => Number(n.chainId) === Number(dapp?.chainId))
 
