@@ -1,5 +1,4 @@
 import { ethErrors } from 'eth-rpc-errors'
-import { getBytes } from 'ethers'
 
 import EmittableError from '@/classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
@@ -15,6 +14,7 @@ import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
 import { SignedMessage } from '@/controllers/activity/types'
 import { AddressBookController } from '@/controllers/addressBook/addressBook'
+import { AppDataSyncController } from '@/controllers/appDataSync/appDataSync'
 import { AutoLoginController } from '@/controllers/autoLogin/autoLogin'
 import { AccountData, BannerController } from '@/controllers/banner/banner'
 import { ContinuousUpdatesController } from '@/controllers/continuousUpdates/continuousUpdates'
@@ -54,6 +54,7 @@ import { Account, IAccountsController } from '@/interfaces/account'
 import { IAccountPickerController } from '@/interfaces/accountPicker'
 import { IActivityController } from '@/interfaces/activity'
 import { IAddressBookController } from '@/interfaces/addressBook'
+import { IAppDataSyncController } from '@/interfaces/appDataSync'
 import { IAutoLoginController } from '@/interfaces/autoLogin'
 import { Banner, IBannerController } from '@/interfaces/banner'
 import { IContractInfoController } from '@/interfaces/contractInfo'
@@ -104,14 +105,6 @@ import {
   SubmittedAccountOp
 } from '@/libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '@/libs/accountOp/types'
-import {
-  ACCOUNTS_SYNC_FEATURE_FLAGS,
-  ACCOUNTS_SYNC_PAYLOAD_VERSION,
-  AccountsSyncExportOptions,
-  AccountsSyncPayload,
-  parseAccountsSyncPayload,
-  serializeAccountsSyncPayload
-} from '@/libs/accountsSync/accountsSync'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
@@ -221,6 +214,8 @@ export class MainController extends EventEmitter implements IMainController {
   banner: IBannerController
 
   survey: ISurveyController
+
+  appDataSync: IAppDataSyncController
 
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
@@ -628,6 +623,16 @@ export class MainController extends EventEmitter implements IMainController {
       getVisibleUserRequests: () => this.requests.visibleUserRequests || [],
       onBroadcastSuccess: this.commonHandlerForBroadcastSuccess.bind(this),
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
+      ui: this.ui
+    })
+    this.appDataSync = new AppDataSyncController({
+      eventEmitterRegistry,
+      keystore: this.keystore,
+      accounts: this.accounts,
+      networks: this.networks,
+      addressBook: this.addressBook,
+      featureFlags: this.featureFlags,
+      swapAndBridge: this.swapAndBridge,
       ui: this.ui
     })
     this.transfer = new TransferController(
@@ -1718,146 +1723,6 @@ export class MainController extends EventEmitter implements IMainController {
 
   async updateAccounts(accountsUpdate: AccountsUpdate) {
     await this.withStatus('updateAccounts', async () => this.#updateAccounts(accountsUpdate))
-  }
-
-  /**
-   * Runs an accounts sync step and replies to the UI request that triggered it, so the
-   * UI can await the result instead of watching a transient status.
-   */
-  async #withSyncResponse(
-    callName: 'exportAccountsForSync' | 'importAccountsFromSync',
-    requestId: string | undefined,
-    fn: () => Promise<any>
-  ) {
-    await this.withStatus(callName, async () => {
-      try {
-        const res = await fn()
-
-        if (requestId) this.ui.message.sendUiMessage({ requestId, ok: true, res })
-      } catch (error: any) {
-        // Rethrown, so that `withStatus` emits (and reports) the error as usual
-        if (requestId)
-          this.ui.message.sendUiMessage({
-            requestId,
-            ok: false,
-            error: error?.message || `${callName} failed`
-          })
-
-        throw error
-      }
-    })
-  }
-
-  /**
-   * Prepares the selected accounts and the keys controlling them for the other Ambire
-   * product and returns the payload, which the UI displays as animated QR codes.
-   * Everything sensitive leaves this device encrypted, see `keystore.exportForSync`.
-   *
-   * `includeSeeds` lets the user leave the recovery phrases of the selected accounts
-   * behind, in which case only the accounts and their keys are sent over. The settings,
-   * the networks and the Address Book travel only if the user chose them, and they can
-   * also be synced without any accounts.
-   */
-  async exportAccountsForSync(
-    addrs: Account['addr'][],
-    { includeSeeds, appSettings, includeNetworks, includeContacts }: AccountsSyncExportOptions,
-    requestId?: string
-  ) {
-    await this.#withSyncResponse('exportAccountsForSync', requestId, async () => {
-      const accounts = this.accounts.accounts.filter((account) => addrs.includes(account.addr))
-
-      if (!accounts.length && !appSettings && !includeNetworks && !includeContacts)
-        throw new EmittableError({
-          level: 'expected',
-          message: 'Select what you want to sync.',
-          error: new Error('main: nothing to sync')
-        })
-
-      const keyAddrs = Array.from(new Set(accounts.flatMap((account) => account.associatedKeys)))
-      const { secret, keys, seeds } = await this.keystore.exportForSync(keyAddrs, includeSeeds)
-
-      return serializeAccountsSyncPayload({
-        v: ACCOUNTS_SYNC_PAYLOAD_VERSION,
-        secret,
-        accounts,
-        keys,
-        seeds,
-        ...(appSettings && {
-          settings: {
-            featureFlags: Object.fromEntries(
-              ACCOUNTS_SYNC_FEATURE_FLAGS.map((flag) => [
-                flag,
-                this.featureFlags.isFeatureEnabled(flag)
-              ])
-            ),
-            disabledSwapProviderIds: this.swapAndBridge.getDisabledSwapProviderIds(),
-            app: appSettings
-          }
-        }),
-        ...(includeNetworks && { networks: this.networks.allNetworks }),
-        // The wallet's own accounts are contacts too, but each device derives them itself
-        ...(includeContacts && {
-          contacts: this.addressBook.contacts.filter((contact) => !contact.isWalletAccount)
-        })
-      })
-    })
-  }
-
-  /**
-   * Takes over the accounts and keys scanned from the other Ambire product's QR codes,
-   * along with the settings, networks and contacts if the user chose to sync them. Those
-   * are merged: what comes from the other product overrides what is here, the rest stays.
-   * `payload` is the hex encoded data assembled from the scanned codes and `password`
-   * is the device password of the product that exported them, needed only when the
-   * payload holds private keys or recovery phrases.
-   */
-  async importAccountsFromSync(
-    { payload, password }: { payload: string; password?: string },
-    requestId?: string
-  ) {
-    await this.#withSyncResponse('importAccountsFromSync', requestId, async () => {
-      let parsedPayload: AccountsSyncPayload
-      try {
-        parsedPayload = parseAccountsSyncPayload(getBytes(payload))
-      } catch (error: any) {
-        throw new EmittableError({
-          level: 'expected',
-          message:
-            'The scanned QR codes do not contain Ambire accounts, or not all of them were scanned. Please try again.',
-          error: error instanceof Error ? error : new Error('main: invalid accounts sync payload')
-        })
-      }
-
-      // The accounts are added only if the keys made it in, so that the user doesn't
-      // end up with accounts they cannot sign with
-      await this.keystore.importFromSync(parsedPayload, password)
-
-      const { networks, contacts, settings } = parsedPayload
-      // Before the accounts, so their first update already runs on the synced networks
-      if (networks) await this.networks.mergeNetworks(networks)
-
-      if (parsedPayload.accounts.length)
-        await this.#updateAccounts({
-          accountsToAdd: parsedPayload.accounts,
-          accountAddressesToRemove: []
-        })
-
-      // After the accounts, so the ones that are contacts here already are skipped
-      if (contacts) await this.addressBook.mergeContacts(contacts)
-
-      // The app settings (like the theme) are kept by the app, so it applies them itself
-      if (settings) {
-        const featureFlags = ACCOUNTS_SYNC_FEATURE_FLAGS.reduce(
-          (flags, flag) =>
-            typeof settings.featureFlags[flag] === 'boolean'
-              ? { ...flags, [flag]: settings.featureFlags[flag] }
-              : flags,
-          {}
-        )
-        await this.featureFlags.setFeatureFlags(featureFlags)
-        await this.swapAndBridge.setDisabledSwapProviderIds(settings.disabledSwapProviderIds)
-      }
-    })
   }
 
   async reloadSelectedAccount(options?: {

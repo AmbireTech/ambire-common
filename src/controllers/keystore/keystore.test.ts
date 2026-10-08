@@ -686,7 +686,7 @@ describe('import/export with pub key test', () => {
   })
 })
 
-describe('accounts sync between two devices', () => {
+describe('app data sync between two devices', () => {
   const EXTERNAL_ADDR = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
   const exportingPass = 'exportingDevicePass'
   const importingPass = 'importingDevicePass'

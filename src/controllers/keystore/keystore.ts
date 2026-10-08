@@ -56,7 +56,7 @@ import {
 import { Platform } from '../../interfaces/platform'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
-import { AccountsSyncPayload, isSyncPasswordRequired } from '../../libs/accountsSync/accountsSync'
+import { AppDataSyncPayload, isSyncPasswordRequired } from '../../libs/appDataSync/appDataSync'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
@@ -408,7 +408,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Unwraps the main key of another device from a scanned accounts sync payload, with the
+   * Unwraps the main key of another device from a scanned app data sync payload, with the
    * same wrong password handling as unlocking this device.
    */
   async #unwrapSyncedMainKey(
@@ -796,7 +796,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   /**
    * Adds seeds to the keystore in a single storage write and returns the ids they are
    * stored with, in the order they were passed. An `id` can be passed per seed to
-   * preserve the id it already had on another device (accounts sync), so that the
+   * preserve the id it already had on another device (app data sync), so that the
    * synced keys' `meta.fromSeedId` keeps pointing to it.
    */
   async #addSeeds(
@@ -1315,7 +1315,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   async exportForSync(
     keyAddrs: Key['addr'][],
     includeSeeds: boolean = true
-  ): Promise<Pick<AccountsSyncPayload, 'secret' | 'keys' | 'seeds'>> {
+  ): Promise<Pick<AppDataSyncPayload, 'secret' | 'keys' | 'seeds'>> {
     await this.initialLoadPromise
 
     const keys = this.#keystoreKeys.filter((key) => keyAddrs.includes(key.addr))
@@ -1374,7 +1374,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * Without anything encrypted in the payload (hardware wallet keys only, or no keys at
    * all) there is nothing to unlock, so no password is needed.
    */
-  async importFromSync(payload: AccountsSyncPayload, password?: string) {
+  async importFromSync(payload: AppDataSyncPayload, password?: string) {
     await this.initialLoadPromise
 
     const { secret, keys, seeds } = payload

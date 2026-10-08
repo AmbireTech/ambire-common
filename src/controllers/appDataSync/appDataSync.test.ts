@@ -6,8 +6,8 @@ import { makeMainController } from '../../../test/helpers/mainController'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { AccountsSyncExportOptions } from '../../libs/accountsSync/accountsSync'
-import { MainController } from './main'
+import { AppDataSyncExportOptions } from '../../libs/appDataSync/appDataSync'
+import { MainController } from '../main/main'
 
 const EXPORTING_PASS = 'exportingDevicePass'
 const IMPORTING_PASS = 'importingDevicePass'
@@ -80,7 +80,7 @@ const makeImportingDevice = async ({ withPassword }: { withPassword: boolean }) 
   return mainCtrl
 }
 
-const ACCOUNTS_ONLY: AccountsSyncExportOptions = {
+const ACCOUNTS_ONLY: AppDataSyncExportOptions = {
   includeSeeds: true,
   includeNetworks: false,
   includeContacts: false
@@ -89,11 +89,11 @@ const ACCOUNTS_ONLY: AccountsSyncExportOptions = {
 const exportPayload = async (
   mainCtrl: MainController,
   addrs: string[],
-  options: AccountsSyncExportOptions = ACCOUNTS_ONLY
+  options: AppDataSyncExportOptions = ACCOUNTS_ONLY
 ) => {
   const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
 
-  await mainCtrl.exportAccountsForSync(addrs, options, 'request-1')
+  await mainCtrl.appDataSync.exportData(addrs, options, 'request-1')
 
   const response = (sendUiMessage.mock.calls[0]?.[0] || {}) as { ok?: boolean; res?: string }
   sendUiMessage.mockRestore()
@@ -103,13 +103,13 @@ const exportPayload = async (
   return response.res as string
 }
 
-describe('MainController accounts sync', () => {
+describe('AppDataSyncController', () => {
   test('exports only the selected accounts and imports them on the other device', async () => {
     const exportingDevice = await makeExportingDevice()
     const payload = await exportPayload(exportingDevice, [accounts[0]!.addr])
 
     const importingDevice = await makeImportingDevice({ withPassword: true })
-    await importingDevice.importAccountsFromSync({ payload, password: EXPORTING_PASS })
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
 
     expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([accounts[0]!.addr])
     // Preferences travel along, so the account looks the same on both devices
@@ -127,7 +127,7 @@ describe('MainController accounts sync', () => {
     )
 
     const importingDevice = await makeImportingDevice({ withPassword: false })
-    await importingDevice.importAccountsFromSync({ payload, password: EXPORTING_PASS })
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
 
     // The accounts are already there, the keys wait for a main key to be encrypted with
     expect(importingDevice.accounts.accounts).toHaveLength(accounts.length)
@@ -148,7 +148,7 @@ describe('MainController accounts sync', () => {
     const payload = await exportPayload(exportingDevice, [VIEW_ONLY_ADDR])
 
     const importingDevice = await makeImportingDevice({ withPassword: true })
-    await importingDevice.importAccountsFromSync({ payload, password: EXPORTING_PASS })
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
 
     expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([VIEW_ONLY_ADDR])
     // It stays a watched account on this device too
@@ -160,7 +160,7 @@ describe('MainController accounts sync', () => {
     const payload = await exportPayload(exportingDevice, [LEDGER_ADDR])
 
     const importingDevice = await makeImportingDevice({ withPassword: true })
-    await importingDevice.importAccountsFromSync({ payload, password: EXPORTING_PASS })
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
 
     expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([LEDGER_ADDR])
     expect(importingDevice.keystore.keys).toEqual([
@@ -173,8 +173,8 @@ describe('MainController accounts sync', () => {
     const payload = await exportPayload(exportingDevice, [accounts[0]!.addr])
 
     const importingDevice = await makeImportingDevice({ withPassword: true })
-    await importingDevice.importAccountsFromSync({ payload, password: EXPORTING_PASS })
-    await importingDevice.importAccountsFromSync({ payload, password: EXPORTING_PASS })
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
 
     expect(importingDevice.accounts.accounts).toHaveLength(1)
     expect(importingDevice.keystore.keys).toHaveLength(1)
@@ -212,7 +212,7 @@ describe('MainController accounts sync', () => {
     await importingDevice.addressBook.addContact('Old name', RENAMED_CONTACT_ADDR)
     await importingDevice.addressBook.addContact('Carol', UNTOUCHED_CONTACT_ADDR)
 
-    await importingDevice.importAccountsFromSync({ payload, password: EXPORTING_PASS })
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
 
     const findNetwork = (chainId: bigint) =>
       importingDevice.networks.allNetworks.find((n) => n.chainId === chainId)
@@ -254,10 +254,10 @@ describe('MainController accounts sync', () => {
 
     // A device still on the get started screen: no accounts and no password yet
     const importingDevice = await makeImportingDevice({ withPassword: false })
-    await importingDevice.importAccountsFromSync({ payload })
+    await importingDevice.appDataSync.importData({ payload })
 
-    expect(importingDevice.statuses.importAccountsFromSync).toBe('INITIAL')
-    expect(importingDevice.emittedErrors).toHaveLength(0)
+    expect(importingDevice.appDataSync.statuses.importData).toBe('INITIAL')
+    expect(importingDevice.appDataSync.emittedErrors).toHaveLength(0)
     expect(importingDevice.accounts.accounts).toHaveLength(0)
     expect(importingDevice.keystore.keys).toHaveLength(0)
     expect(importingDevice.featureFlags.flags.ledgerSigningReports).toBe(true)
@@ -272,7 +272,7 @@ describe('MainController accounts sync', () => {
     const payload = await exportPayload(exportingDevice, [LEDGER_ADDR])
 
     const importingDevice = await makeImportingDevice({ withPassword: true })
-    await importingDevice.importAccountsFromSync({ payload })
+    await importingDevice.appDataSync.importData({ payload })
 
     expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([LEDGER_ADDR])
     expect(importingDevice.keystore.keys.map((k) => k.addr)).toEqual([LEDGER_ADDR])
@@ -285,7 +285,7 @@ describe('MainController accounts sync', () => {
     const payload = await exportPayload(exportingDevice, [accounts[0]!.addr])
 
     const importingDevice = await makeImportingDevice({ withPassword: true })
-    await importingDevice.importAccountsFromSync({ payload, password: EXPORTING_PASS })
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
 
     expect(importingDevice.featureFlags.flags.ledgerSigningReports).toBe(false)
     expect(importingDevice.addressBook.contacts.filter((c) => !c.isWalletAccount)).toEqual([])
@@ -299,9 +299,9 @@ describe('MainController accounts sync', () => {
       const payload = await exportPayload(exportingDevice, [accounts[0]!.addr])
 
       const importingDevice = await makeImportingDevice({ withPassword: true })
-      await importingDevice.importAccountsFromSync({ payload, password: 'wrongPass' })
+      await importingDevice.appDataSync.importData({ payload, password: 'wrongPass' })
 
-      expect(importingDevice.emittedErrors.at(-1)?.message).toBe(
+      expect(importingDevice.appDataSync.emittedErrors.at(-1)?.message).toBe(
         'Incorrect password. Please try again.'
       )
       expect(importingDevice.accounts.accounts).toHaveLength(0)
@@ -311,12 +311,12 @@ describe('MainController accounts sync', () => {
     test('adds no accounts when the scanned data is not a sync payload', async () => {
       const importingDevice = await makeImportingDevice({ withPassword: true })
 
-      await importingDevice.importAccountsFromSync({
+      await importingDevice.appDataSync.importData({
         payload: '0x010203',
         password: IMPORTING_PASS
       })
 
-      expect(importingDevice.emittedErrors.at(-1)?.message).toContain(
+      expect(importingDevice.appDataSync.emittedErrors.at(-1)?.message).toContain(
         'do not contain Ambire accounts'
       )
       expect(importingDevice.accounts.accounts).toHaveLength(0)
@@ -326,9 +326,11 @@ describe('MainController accounts sync', () => {
       const exportingDevice = await makeExportingDevice()
       const sendUiMessage = jest.spyOn(exportingDevice.ui.message, 'sendUiMessage')
 
-      await exportingDevice.exportAccountsForSync([], ACCOUNTS_ONLY, 'request-1')
+      await exportingDevice.appDataSync.exportData([], ACCOUNTS_ONLY, 'request-1')
 
-      expect(exportingDevice.emittedErrors.at(-1)?.message).toBe('Select what you want to sync.')
+      expect(exportingDevice.appDataSync.emittedErrors.at(-1)?.message).toBe(
+        'Select what you want to sync.'
+      )
       expect(sendUiMessage).toHaveBeenCalledWith({
         requestId: 'request-1',
         ok: false,

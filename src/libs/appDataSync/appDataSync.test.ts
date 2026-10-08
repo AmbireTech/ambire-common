@@ -6,12 +6,12 @@ import { networks as predefinedNetworks } from '@/consts/networks'
 import { CIPHER } from '@/libs/keystore/keystore'
 
 import {
-  ACCOUNTS_SYNC_PAYLOAD_VERSION,
-  AccountsSyncPayload,
+  APP_DATA_SYNC_PAYLOAD_VERSION,
+  AppDataSyncPayload,
   isSyncPasswordRequired,
-  parseAccountsSyncPayload,
-  serializeAccountsSyncPayload
-} from './accountsSync'
+  parseAppDataSyncPayload,
+  serializeAppDataSyncPayload
+} from './appDataSync'
 
 const ACCOUNT_CREATION = {
   factoryAddr: AMBIRE_ACCOUNT_FACTORY,
@@ -34,8 +34,8 @@ const gcmPayload = (byteLength: number) => ({
   iv: `0x${'cd'.repeat(12)}`
 })
 
-const buildPayload = (): AccountsSyncPayload => ({
-  v: ACCOUNTS_SYNC_PAYLOAD_VERSION,
+const buildPayload = (): AppDataSyncPayload => ({
+  v: APP_DATA_SYNC_PAYLOAD_VERSION,
   secret: {
     id: 'password',
     scryptParams: { salt: `0x${'ef'.repeat(32)}`, N: 131072, r: 8, p: 1, dkLen: 64 },
@@ -88,9 +88,9 @@ const buildPayload = (): AccountsSyncPayload => ({
 })
 
 const serializeAndParse = (payload: any) =>
-  parseAccountsSyncPayload(getBytes(serializeAccountsSyncPayload(payload)))
+  parseAppDataSyncPayload(getBytes(serializeAppDataSyncPayload(payload)))
 
-describe('accountsSync payload', () => {
+describe('appDataSync payload', () => {
   it('round-trips a payload with internal keys, external keys and seeds', () => {
     const payload = buildPayload()
 
@@ -98,7 +98,7 @@ describe('accountsSync payload', () => {
   })
 
   it('rejects data that is not compressed at all', () => {
-    expect(() => parseAccountsSyncPayload(new Uint8Array([1, 2, 3]))).toThrow(
+    expect(() => parseAppDataSyncPayload(new Uint8Array([1, 2, 3]))).toThrow(
       'failed to decompress the payload'
     )
   })
@@ -106,11 +106,11 @@ describe('accountsSync payload', () => {
   it('rejects an uncompressed payload, which no Ambire product produces', () => {
     const uncompressed = toUtf8Bytes(JSON.stringify(buildPayload()))
 
-    expect(() => parseAccountsSyncPayload(uncompressed)).toThrow('failed to decompress the payload')
+    expect(() => parseAppDataSyncPayload(uncompressed)).toThrow('failed to decompress the payload')
   })
 
   it('rejects compressed data that is not a sync payload', () => {
-    expect(() => parseAccountsSyncPayload(gzip(toUtf8Bytes('not json')))).toThrow(
+    expect(() => parseAppDataSyncPayload(gzip(toUtf8Bytes('not json')))).toThrow(
       'not a valid sync payload'
     )
   })
@@ -120,14 +120,14 @@ describe('accountsSync payload', () => {
     // code would try to exhaust the memory of the device scanning it
     const bomb = gzip(new Uint8Array(3 * 1024 * 1024))
 
-    expect(() => parseAccountsSyncPayload(bomb)).toThrow('too large to be a sync payload')
+    expect(() => parseAppDataSyncPayload(bomb)).toThrow('too large to be a sync payload')
   })
 
   it('compresses the payload well below its JSON size', () => {
     const payload = buildPayload()
     const jsonSize = toUtf8Bytes(JSON.stringify(payload)).length
-    // `serializeAccountsSyncPayload` returns a hex string, so 2 chars per wire byte
-    const wireSize = (serializeAccountsSyncPayload(payload).length - 2) / 2
+    // `serializeAppDataSyncPayload` returns a hex string, so 2 chars per wire byte
+    const wireSize = (serializeAppDataSyncPayload(payload).length - 2) / 2
 
     expect(wireSize).toBeLessThan(jsonSize / 2)
   })
@@ -297,7 +297,7 @@ describe('accountsSync payload', () => {
   })
 
   describe('settings, networks and contacts', () => {
-    const buildFullPayload = (): AccountsSyncPayload => ({
+    const buildFullPayload = (): AppDataSyncPayload => ({
       ...buildPayload(),
       settings: {
         featureFlags: { tokenPrices: false, ledgerSigningReports: true },

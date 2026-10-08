@@ -242,7 +242,7 @@ export const decryptStoredSeed = async (
 }
 
 /**
- * Unwraps the main key of another device from a scanned accounts sync payload. Imported
+ * Unwraps the main key of another device from a scanned app data sync payload. Imported
  * as non-extractable and for decryption only, so that its raw bytes never reach the
  * importing app and it cannot be used to encrypt anything - decrypting the synced keys
  * and seeds is all it is ever needed for.

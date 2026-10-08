@@ -16,7 +16,5 @@ export const STATUS_WRAPPED_METHODS = {
   selectAccount: 'INITIAL',
   accountPickerSetInitParamsFromNewSeed: 'INITIAL',
   fetchSafeTxns: 'INITIAL',
-  refreshSafeTxns: 'INITIAL',
-  exportAccountsForSync: 'INITIAL',
-  importAccountsFromSync: 'INITIAL'
+  refreshSafeTxns: 'INITIAL'
 } as const

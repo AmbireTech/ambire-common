@@ -1114,7 +1114,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   /**
-   * Replaces the providers the user has switched off (used by accounts sync). Ids of
+   * Replaces the providers the user has switched off (used by app data sync). Ids of
    * providers this product does not offer are dropped.
    */
   async setDisabledSwapProviderIds(disabledSwapProviderIds: string[]) {

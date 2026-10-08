@@ -632,7 +632,7 @@ describe('CTR to GCM migration', () => {
     expect(keystoreCtrl.isPasswordUnlockRequired).toBe(true)
 
     // A biometrics unlock migrates the biometrics secret only, so the password secret
-    // (the one accounts sync needs on GCM) stays on the legacy cipher
+    // (the one app data sync needs on GCM) stays on the legacy cipher
     await keystoreCtrl.unlockWithSecret('biometrics', MOCK_MIGRATION_PASS)
 
     expect(keystoreCtrl.isUnlocked).toBe(true)
