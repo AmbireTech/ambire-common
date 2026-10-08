@@ -82,7 +82,7 @@ export const createKohakuStorage = ({
 }
 
 /**
- * Derives plugin keys without giving the unaudited plugin the recovery phrase, unlike the SDK's
+ * Derives plugin keys without giving the plugin the recovery phrase, unlike the SDK's
  * `MnemonicKeystore`. `deriveKey` must whitelist its paths - see
  * `KeystoreController.derivePrivacyPoolsKey`.
  *

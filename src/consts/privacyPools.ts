@@ -16,7 +16,7 @@ export const PRIVACY_POOLS_NATIVE_ASSET_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeee
  * the change of its nth withdrawal.
  *
  * Security boundary: `KeystoreController.derivePrivacyPoolsKey` refuses any path outside it, since
- * the unaudited plugin asks for arbitrary paths and could otherwise reach the user's EVM keys.
+ * the plugin asks for arbitrary paths and could otherwise reach the user's EVM keys.
  */
 export const PRIVACY_POOLS_DERIVATION_PATH_PREFIX = "m/28784'/1'/"
 

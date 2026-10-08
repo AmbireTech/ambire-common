@@ -145,7 +145,7 @@ const readBatchCalls = ({
  * Decodes a prepared paymaster withdrawal and checks it against the request, returning what it
  * does - to show it from the payload rather than from the request.
  *
- * Security boundary: the unaudited SDK builds and signs the userOp in one call, so this is the one
+ * Security boundary: the SDK builds and signs the userOp in one call, so this is the one
  * place to verify, from the bytes the paymaster and pool act on, the token, the recipient, the
  * amount and the fee recipient. Any mismatch is refused before the user is asked to send it.
  *

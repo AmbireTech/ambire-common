@@ -1548,7 +1548,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   /**
    * Derives one Privacy Pools note secret from a stored recovery phrase, so the phrase never
-   * reaches `@kohaku-eth/privacy-pools`, whose bundled keystore would keep it (an unaudited alpha).
+   * reaches `@kohaku-eth/privacy-pools`, whose bundled keystore would keep it.
    *
    * The prefix check is the security boundary: the SDK chooses the paths, so without it a bug or a
    * malicious bump could get the user's EVM keys.
