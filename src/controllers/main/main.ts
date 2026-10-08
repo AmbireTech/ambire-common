@@ -105,7 +105,9 @@ import {
 } from '@/libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import {
+  ACCOUNTS_SYNC_FEATURE_FLAGS,
   ACCOUNTS_SYNC_PAYLOAD_VERSION,
+  AccountsSyncExportOptions,
   AccountsSyncPayload,
   parseAccountsSyncPayload,
   serializeAccountsSyncPayload
@@ -1752,11 +1754,12 @@ export class MainController extends EventEmitter implements IMainController {
    * Everything sensitive leaves this device encrypted, see `keystore.exportForSync`.
    *
    * `includeSeeds` lets the user leave the recovery phrases of the selected accounts
-   * behind, in which case only the accounts and their keys are sent over.
+   * behind, in which case only the accounts and their keys are sent over. The settings,
+   * the networks and the Address Book travel only if the user chose them as well.
    */
   async exportAccountsForSync(
     addrs: Account['addr'][],
-    includeSeeds: boolean = true,
+    { includeSeeds, appSettings, includeNetworks, includeContacts }: AccountsSyncExportOptions,
     requestId?: string
   ) {
     await this.#withSyncResponse('exportAccountsForSync', requestId, async () => {
@@ -1777,13 +1780,32 @@ export class MainController extends EventEmitter implements IMainController {
         secret,
         accounts,
         keys,
-        seeds
+        seeds,
+        ...(appSettings && {
+          settings: {
+            featureFlags: Object.fromEntries(
+              ACCOUNTS_SYNC_FEATURE_FLAGS.map((flag) => [
+                flag,
+                this.featureFlags.isFeatureEnabled(flag)
+              ])
+            ),
+            disabledSwapProviderIds: this.swapAndBridge.getDisabledSwapProviderIds(),
+            app: appSettings
+          }
+        }),
+        ...(includeNetworks && { networks: this.networks.allNetworks }),
+        // The wallet's own accounts are contacts too, but each device derives them itself
+        ...(includeContacts && {
+          contacts: this.addressBook.contacts.filter((contact) => !contact.isWalletAccount)
+        })
       })
     })
   }
 
   /**
-   * Takes over the accounts and keys scanned from the other Ambire product's QR codes.
+   * Takes over the accounts and keys scanned from the other Ambire product's QR codes,
+   * along with the settings, networks and contacts if the user chose to sync them. Those
+   * are merged: what comes from the other product overrides what is here, the rest stays.
    * `payload` is the hex encoded data assembled from the scanned codes and `password`
    * is the device password of the product that exported them.
    */
@@ -1807,10 +1829,31 @@ export class MainController extends EventEmitter implements IMainController {
       // The accounts are added only if the keys made it in, so that the user doesn't
       // end up with accounts they cannot sign with
       await this.keystore.importFromSync(parsedPayload, password)
+
+      const { networks, contacts, settings } = parsedPayload
+      // Before the accounts, so their first update already runs on the synced networks
+      if (networks) await this.networks.mergeNetworks(networks)
+
       await this.#updateAccounts({
         accountsToAdd: parsedPayload.accounts,
         accountAddressesToRemove: []
       })
+
+      // After the accounts, so the ones that are contacts here already are skipped
+      if (contacts) await this.addressBook.mergeContacts(contacts)
+
+      // The app settings (like the theme) are kept by the app, so it applies them itself
+      if (settings) {
+        const featureFlags = ACCOUNTS_SYNC_FEATURE_FLAGS.reduce(
+          (flags, flag) =>
+            typeof settings.featureFlags[flag] === 'boolean'
+              ? { ...flags, [flag]: settings.featureFlags[flag] }
+              : flags,
+          {}
+        )
+        await this.featureFlags.setFeatureFlags(featureFlags)
+        await this.swapAndBridge.setDisabledSwapProviderIds(settings.disabledSwapProviderIds)
+      }
     })
   }
 

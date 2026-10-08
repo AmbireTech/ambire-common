@@ -6,6 +6,7 @@ import { makeMainController } from '../../../test/helpers/mainController'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import { AccountsSyncExportOptions } from '../../libs/accountsSync/accountsSync'
 import { MainController } from './main'
 
 const EXPORTING_PASS = 'exportingDevicePass'
@@ -23,6 +24,9 @@ const toAccount = (addr: string, label: string) => ({
 })
 
 const VIEW_ONLY_ADDR = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+const RENAMED_CONTACT_ADDR = '0x64c5f3c58E024170166F85aFE6e291088a2c2968'
+const NEW_CONTACT_ADDR = '0x085f8A348f6fBc6F8d8FC3f1e427473436506D65'
+const UNTOUCHED_CONTACT_ADDR = '0x8DC9b3e1F5b0Dc9F6b2e0d3D0Ba0A5a32B0E7C4B'
 const LEDGER_ADDR = '0x1A2C3802A9eC12725678dAF23DbFD13134e5893A'
 
 const accounts = [
@@ -76,10 +80,20 @@ const makeImportingDevice = async ({ withPassword }: { withPassword: boolean }) 
   return mainCtrl
 }
 
-const exportPayload = async (mainCtrl: MainController, addrs: string[]) => {
+const ACCOUNTS_ONLY: AccountsSyncExportOptions = {
+  includeSeeds: true,
+  includeNetworks: false,
+  includeContacts: false
+}
+
+const exportPayload = async (
+  mainCtrl: MainController,
+  addrs: string[],
+  options: AccountsSyncExportOptions = ACCOUNTS_ONLY
+) => {
   const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
 
-  await mainCtrl.exportAccountsForSync(addrs, true, 'request-1')
+  await mainCtrl.exportAccountsForSync(addrs, options, 'request-1')
 
   const response = (sendUiMessage.mock.calls[0]?.[0] || {}) as { ok?: boolean; res?: string }
   sendUiMessage.mockRestore()
@@ -166,6 +180,80 @@ describe('MainController accounts sync', () => {
     expect(importingDevice.keystore.keys).toHaveLength(1)
   })
 
+  test('merges the settings, networks and contacts the user chose to sync', async () => {
+    const exportingDevice = await makeExportingDevice()
+    const [ethereum, otherNetwork] = exportingDevice.networks.allNetworks
+    await exportingDevice.networks.mergeNetworks([
+      { ...ethereum!, rpcUrls: [...ethereum!.rpcUrls, 'https://synced.example'] },
+      { ...otherNetwork!, disabled: false }
+    ])
+    await exportingDevice.featureFlags.setFeatureFlags({
+      gasTank: false,
+      erc4337: false,
+      tokenPrices: false,
+      ledgerSigningReports: true
+    })
+    await exportingDevice.addressBook.addContact('New name', RENAMED_CONTACT_ADDR)
+    await exportingDevice.addressBook.addContact('Bob', NEW_CONTACT_ADDR)
+
+    const payload = await exportPayload(exportingDevice, [accounts[0]!.addr], {
+      includeSeeds: true,
+      appSettings: { themeType: 'dark' },
+      includeNetworks: true,
+      includeContacts: true
+    })
+
+    const importingDevice = await makeImportingDevice({ withPassword: true })
+    await importingDevice.featureFlags.setFeatureFlags({ testnetMode: true })
+    await importingDevice.networks.mergeNetworks([{ ...otherNetwork!, disabled: true }])
+    // The Address Book has no contacts without a selected account
+    await importingDevice.accounts.addAccounts([accounts[3]!])
+    await importingDevice.selectedAccount.setAccount(importingDevice.accounts.accounts[0]!)
+    await importingDevice.addressBook.addContact('Old name', RENAMED_CONTACT_ADDR)
+    await importingDevice.addressBook.addContact('Carol', UNTOUCHED_CONTACT_ADDR)
+
+    await importingDevice.importAccountsFromSync({ payload, password: EXPORTING_PASS })
+
+    const findNetwork = (chainId: bigint) =>
+      importingDevice.networks.allNetworks.find((n) => n.chainId === chainId)
+    expect(findNetwork(ethereum!.chainId)?.rpcUrls).toContain('https://synced.example')
+    // The exporting device has it enabled, so the synced copy overrides this one
+    expect(findNetwork(otherNetwork!.chainId)?.disabled).toBeFalsy()
+
+    expect(importingDevice.featureFlags.flags).toMatchObject({
+      gasTank: false,
+      erc4337: false,
+      tokenPrices: false,
+      ledgerSigningReports: true,
+      // Not a privacy opt-out, so it stays as this device has it
+      testnetMode: true
+    })
+
+    const contactNames = Object.fromEntries(
+      importingDevice.addressBook.contacts
+        .filter((c) => !c.isWalletAccount)
+        .map((c) => [c.address, c.name])
+    )
+    expect(contactNames).toEqual({
+      [RENAMED_CONTACT_ADDR]: 'New name',
+      [NEW_CONTACT_ADDR]: 'Bob',
+      [UNTOUCHED_CONTACT_ADDR]: 'Carol'
+    })
+  })
+
+  test('sends no settings, networks or contacts unless the user chose them', async () => {
+    const exportingDevice = await makeExportingDevice()
+    await exportingDevice.featureFlags.setFeatureFlags({ ledgerSigningReports: true })
+    await exportingDevice.addressBook.addContact('Bob', NEW_CONTACT_ADDR)
+    const payload = await exportPayload(exportingDevice, [accounts[0]!.addr])
+
+    const importingDevice = await makeImportingDevice({ withPassword: true })
+    await importingDevice.importAccountsFromSync({ payload, password: EXPORTING_PASS })
+
+    expect(importingDevice.featureFlags.flags.ledgerSigningReports).toBe(false)
+    expect(importingDevice.addressBook.contacts.filter((c) => !c.isWalletAccount)).toEqual([])
+  })
+
   describe('Negative cases', () => {
     suppressConsoleBeforeEach()
 
@@ -201,7 +289,7 @@ describe('MainController accounts sync', () => {
       const exportingDevice = await makeExportingDevice()
       const sendUiMessage = jest.spyOn(exportingDevice.ui.message, 'sendUiMessage')
 
-      await exportingDevice.exportAccountsForSync([], true, 'request-1')
+      await exportingDevice.exportAccountsForSync([], ACCOUNTS_ONLY, 'request-1')
 
       expect(exportingDevice.emittedErrors.at(-1)?.message).toBe(
         'Select at least one account to sync.'

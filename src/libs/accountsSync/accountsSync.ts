@@ -9,13 +9,18 @@ import {
 } from 'ethers'
 import { gzip, Inflate } from 'pako'
 
+import { FeatureFlags } from '../../consts/featureFlags'
 import { Account } from '../../interfaces/account'
+import { Contacts } from '../../interfaces/addressBook'
 import {
   MainKeyEncryptedWithSecret,
   StoredKey,
   StoredKeystoreSeed
 } from '../../interfaces/keystore'
+import { Network } from '../../interfaces/network'
 import { CIPHER, SCRYPT_PARAMS, tryParseGcmPayload } from '../keystore/keystore'
+import { sanityCheckImportantNetworkProperties } from '../networks/networks'
+import { parse, stringify } from '../richJson/richJson'
 
 /**
  * The UR type used to transport the accounts sync payload over animated QR codes.
@@ -23,6 +28,46 @@ import { CIPHER, SCRYPT_PARAMS, tryParseGcmPayload } from '../keystore/keystore'
 export const ACCOUNTS_SYNC_UR_TYPE = 'ambire-account-sync'
 
 export const ACCOUNTS_SYNC_PAYLOAD_VERSION = 1
+
+/**
+ * The feature flags the user controls from the privacy opt-outs settings. Only these
+ * travel with the synced settings, the rest are internal to each product.
+ */
+export const ACCOUNTS_SYNC_FEATURE_FLAGS = [
+  'networkConfig',
+  'tokenAndDefiAutoDiscovery',
+  'clearSigning',
+  'apiForFunctionSelectors',
+  'ambireSmartAccounts',
+  'scamAndPhishingChecker',
+  'swapAndBridgeTokenInfo',
+  'walletStakingWithdrawalsLookup',
+  'gasTank',
+  'erc4337',
+  'tokenPrices',
+  'eip7702',
+  'keepEnsProfilesUpToDate',
+  'ledgerSigningReports'
+] as const satisfies (keyof FeatureFlags)[]
+
+/**
+ * Settings that the products share: the privacy opt-outs kept in ambire-common and the
+ * ones each app keeps on its own (like the theme), which the app applies itself.
+ */
+export type AccountsSyncSettings = {
+  featureFlags: Partial<Pick<FeatureFlags, (typeof ACCOUNTS_SYNC_FEATURE_FLAGS)[number]>>
+  disabledSwapProviderIds: string[]
+  app: { [key: string]: string | boolean }
+}
+
+/** What else, besides the selected accounts, the user chose to send to the other product */
+export type AccountsSyncExportOptions = {
+  includeSeeds: boolean
+  /** The app's own settings, present only when the user chose to sync the settings */
+  appSettings?: AccountsSyncSettings['app']
+  includeNetworks: boolean
+  includeContacts: boolean
+}
 
 /**
  * Everything needed to move accounts (and the keys controlling them) from one
@@ -38,6 +83,12 @@ export type AccountsSyncPayload = {
   accounts: Account[]
   keys: StoredKey[]
   seeds: StoredKeystoreSeed[]
+  /** Missing when the user did not choose to sync the settings */
+  settings?: AccountsSyncSettings
+  /** Missing when the user did not choose to sync the networks */
+  networks?: Network[]
+  /** The manually added contacts. Missing when the user did not choose to sync them */
+  contacts?: Contacts
 }
 
 const requireGcmPayload = (payload: any, what: string) => {
@@ -133,6 +184,48 @@ const validateSeeds = (seeds: any) => {
   })
 }
 
+const isPlainObject = (value: any) => !!value && typeof value === 'object' && !Array.isArray(value)
+
+const validateSettings = (settings: any) => {
+  if (settings === undefined) return
+  if (!isPlainObject(settings)) throw new Error('accountsSync: invalid settings')
+
+  const { featureFlags, disabledSwapProviderIds, app } = settings
+  if (
+    !isPlainObject(featureFlags) ||
+    !Object.values(featureFlags).every((v) => typeof v === 'boolean')
+  )
+    throw new Error('accountsSync: invalid feature flags')
+  if (
+    !Array.isArray(disabledSwapProviderIds) ||
+    !disabledSwapProviderIds.every((id) => typeof id === 'string')
+  )
+    throw new Error('accountsSync: invalid disabled swap providers')
+  if (
+    !isPlainObject(app) ||
+    !Object.values(app).every((v) => typeof v === 'string' || typeof v === 'boolean')
+  )
+    throw new Error('accountsSync: invalid app settings')
+}
+
+const validateNetworks = (networks: any) => {
+  if (networks === undefined) return
+  if (!Array.isArray(networks) || !networks.every(sanityCheckImportantNetworkProperties))
+    throw new Error('accountsSync: invalid networks')
+}
+
+const validateContacts = (contacts: any) => {
+  if (contacts === undefined) return
+  if (!Array.isArray(contacts)) throw new Error('accountsSync: invalid contacts')
+
+  contacts.forEach((contact) => {
+    if (!contact || !isAddress(contact.address))
+      throw new Error('accountsSync: invalid contact address')
+    if (typeof contact.name !== 'string' || !contact.name.trim())
+      throw new Error(`accountsSync: invalid name of contact ${contact.address}`)
+  })
+}
+
 /**
  * A payload takes a few hundred bytes per account, so this leaves room for far more
  * accounts than anyone holds, while keeping a hostile QR code from inflating into
@@ -175,10 +268,11 @@ const decompress = (bytes: Uint8Array): Uint8Array => {
 /**
  * Serializes the payload to the hex encoded bytes carried by the animated QR codes.
  * Gzipped first, because JSON full of hex strings compresses 3x or better, and every
- * byte saved is one less QR frame the other device has to catch.
+ * byte saved is one less QR frame the other device has to catch. Rich JSON, because
+ * the networks hold bigints.
  */
 export const serializeAccountsSyncPayload = (payload: AccountsSyncPayload): string =>
-  hexlify(gzip(toUtf8Bytes(JSON.stringify(payload))))
+  hexlify(gzip(toUtf8Bytes(stringify(payload))))
 
 /**
  * Parses and validates the bytes assembled from the scanned animated QR codes.
@@ -192,7 +286,7 @@ export const parseAccountsSyncPayload = (bytes: Uint8Array): AccountsSyncPayload
 
   let payload: any
   try {
-    payload = JSON.parse(toUtf8String(decompressed))
+    payload = parse(toUtf8String(decompressed))
   } catch {
     throw new Error('accountsSync: the scanned data is not a valid sync payload')
   }
@@ -204,6 +298,9 @@ export const parseAccountsSyncPayload = (bytes: Uint8Array): AccountsSyncPayload
   validateAccounts(payload.accounts)
   validateKeys(payload.keys)
   validateSeeds(payload.seeds)
+  validateSettings(payload.settings)
+  validateNetworks(payload.networks)
+  validateContacts(payload.contacts)
 
   return payload
 }

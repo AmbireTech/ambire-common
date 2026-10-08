@@ -443,7 +443,7 @@ export function hasRelayerSupport(network: Network) {
 /**
  * Validates a single network object against some of the Network interface requirements.
  */
-function sanityCheckImportantNetworkProperties(network: Network) {
+export function sanityCheckImportantNetworkProperties(network: Network) {
   if (!network || typeof network !== 'object') return false
 
   if (typeof network.chainId !== 'bigint') return false
