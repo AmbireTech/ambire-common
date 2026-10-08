@@ -7,7 +7,7 @@ import {
   getTestErc7730Descriptors,
   getTestErc7730Errors,
   getTestErc7730MessageDescriptor,
-  SAFE_PROXY_RUNTIME_CODE
+  SAFE_PROXY_V1_4_1_RUNTIME_CODE
 } from '../../../controllers/erc7730/testDescriptors'
 import { AccountOp } from '../../accountOp/accountOp'
 import { resolveErc7730Call } from './registry'
@@ -380,7 +380,7 @@ describe('ERC-7730 registry cache', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     })
     const provider = {
-      getCode: jest.fn(async () => SAFE_PROXY_RUNTIME_CODE),
+      getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(async (address: string, slot: bigint) => {
         expect(address).toBe(safeProxy)
         expect(slot).toBe(0n)
@@ -524,7 +524,7 @@ describe('ERC-7730 registry cache', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     })
     const provider = {
-      getCode: jest.fn(async () => SAFE_PROXY_RUNTIME_CODE),
+      getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(async (address: string, slot: bigint) => {
         expect(address).toBe(safeProxy)
         expect(slot).toBe(0n)
@@ -603,7 +603,7 @@ describe('ERC-7730 registry cache', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     })
     const provider = {
-      getCode: jest.fn(async () => SAFE_PROXY_RUNTIME_CODE),
+      getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(() => new Promise(() => {}))
     }
     const safeTxMessage = {

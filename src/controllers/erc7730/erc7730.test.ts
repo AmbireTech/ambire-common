@@ -9,7 +9,7 @@ import {
   ERC7730_MAX_CACHED_DESCRIPTORS
 } from '../../libs/humanizer/erc7730/consts'
 import { Erc7730Controller } from './erc7730'
-import { SAFE_PROXY_RUNTIME_CODE } from './testDescriptors'
+import { SAFE_PROXY_V1_4_1_RUNTIME_CODE } from './testDescriptors'
 
 const CONTRACT_ADDRESS = '0x1111111111111111111111111111111111111111'
 const REGISTRY_PATH = 'registry/test/controller.json'
@@ -368,13 +368,13 @@ describe('Erc7730Controller', () => {
     })
 
     test('does not follow a SafeProxy to a singleton that is not a known Safe', async () => {
-      const { descriptors } = await resolveProxyCall(SAFE_PROXY_RUNTIME_CODE, LIFI_DIAMOND)
+      const { descriptors } = await resolveProxyCall(SAFE_PROXY_V1_4_1_RUNTIME_CODE, LIFI_DIAMOND)
 
       expect(descriptors).toEqual({})
     })
 
     test('follows a SafeProxy to a known Safe singleton', async () => {
-      const { descriptors } = await resolveProxyCall(SAFE_PROXY_RUNTIME_CODE, SAFE_SINGLETON)
+      const { descriptors } = await resolveProxyCall(SAFE_PROXY_V1_4_1_RUNTIME_CODE, SAFE_SINGLETON)
 
       expect(descriptors[0]?.path).toBe(SAFE_PATH)
     })
