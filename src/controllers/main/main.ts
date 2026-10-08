@@ -1755,7 +1755,8 @@ export class MainController extends EventEmitter implements IMainController {
    *
    * `includeSeeds` lets the user leave the recovery phrases of the selected accounts
    * behind, in which case only the accounts and their keys are sent over. The settings,
-   * the networks and the Address Book travel only if the user chose them as well.
+   * the networks and the Address Book travel only if the user chose them, and they can
+   * also be synced without any accounts.
    */
   async exportAccountsForSync(
     addrs: Account['addr'][],
@@ -1765,11 +1766,11 @@ export class MainController extends EventEmitter implements IMainController {
     await this.#withSyncResponse('exportAccountsForSync', requestId, async () => {
       const accounts = this.accounts.accounts.filter((account) => addrs.includes(account.addr))
 
-      if (!accounts.length)
+      if (!accounts.length && !appSettings && !includeNetworks && !includeContacts)
         throw new EmittableError({
           level: 'expected',
-          message: 'Select at least one account to sync.',
-          error: new Error('main: no accounts to sync')
+          message: 'Select what you want to sync.',
+          error: new Error('main: nothing to sync')
         })
 
       const keyAddrs = Array.from(new Set(accounts.flatMap((account) => account.associatedKeys)))
@@ -1807,10 +1808,11 @@ export class MainController extends EventEmitter implements IMainController {
    * along with the settings, networks and contacts if the user chose to sync them. Those
    * are merged: what comes from the other product overrides what is here, the rest stays.
    * `payload` is the hex encoded data assembled from the scanned codes and `password`
-   * is the device password of the product that exported them.
+   * is the device password of the product that exported them, needed only when the
+   * payload holds private keys or recovery phrases.
    */
   async importAccountsFromSync(
-    { payload, password }: { payload: string; password: string },
+    { payload, password }: { payload: string; password?: string },
     requestId?: string
   ) {
     await this.#withSyncResponse('importAccountsFromSync', requestId, async () => {
@@ -1834,10 +1836,11 @@ export class MainController extends EventEmitter implements IMainController {
       // Before the accounts, so their first update already runs on the synced networks
       if (networks) await this.networks.mergeNetworks(networks)
 
-      await this.#updateAccounts({
-        accountsToAdd: parsedPayload.accounts,
-        accountAddressesToRemove: []
-      })
+      if (parsedPayload.accounts.length)
+        await this.#updateAccounts({
+          accountsToAdd: parsedPayload.accounts,
+          accountAddressesToRemove: []
+        })
 
       // After the accounts, so the ones that are contacts here already are skipped
       if (contacts) await this.addressBook.mergeContacts(contacts)

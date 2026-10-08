@@ -8,6 +8,7 @@ import { CIPHER } from '@/libs/keystore/keystore'
 import {
   ACCOUNTS_SYNC_PAYLOAD_VERSION,
   AccountsSyncPayload,
+  isSyncPasswordRequired,
   parseAccountsSyncPayload,
   serializeAccountsSyncPayload
 } from './accountsSync'
@@ -173,9 +174,17 @@ describe('accountsSync payload', () => {
     expect(() => serializeAndParse(payload)).toThrow('unsupported payload cipherType')
   })
 
-  it('rejects a payload without accounts', () => {
-    expect(() => serializeAndParse({ ...buildPayload(), accounts: [] })).toThrow(
-      'no accounts in the payload'
+  it('rejects a payload with nothing to sync', () => {
+    expect(() =>
+      serializeAndParse({ ...buildPayload(), accounts: [], keys: [], seeds: [] })
+    ).toThrow('nothing to sync in the payload')
+  })
+
+  it('rejects encrypted keys that come without the password protected main key', () => {
+    const { secret, ...withoutSecret } = buildPayload()
+
+    expect(() => serializeAndParse(withoutSecret)).toThrow(
+      'missing the password protected main key'
     )
   })
 
@@ -277,6 +286,16 @@ describe('accountsSync payload', () => {
     expect(serializeAndParse(viewOnlyPayload)).toEqual(viewOnlyPayload)
   })
 
+  it('needs the password only for private keys and recovery phrases', () => {
+    const payload = buildPayload()
+
+    expect(isSyncPasswordRequired(payload)).toBe(true)
+    expect(isSyncPasswordRequired({ ...payload, keys: [] })).toBe(true)
+    // Hardware wallet keys are stored on the device, so there is nothing to decrypt
+    expect(isSyncPasswordRequired({ keys: [payload.keys[1]!], seeds: [] })).toBe(false)
+    expect(isSyncPasswordRequired({ keys: [], seeds: [] })).toBe(false)
+  })
+
   describe('settings, networks and contacts', () => {
     const buildFullPayload = (): AccountsSyncPayload => ({
       ...buildPayload(),
@@ -295,6 +314,37 @@ describe('accountsSync payload', () => {
 
       expect(parsed).toEqual(payload)
       expect(typeof parsed.networks![0]!.chainId).toBe('bigint')
+    })
+
+    it('accepts only the settings, networks and contacts, without accounts or a password', () => {
+      const { secret, ...payload } = {
+        ...buildFullPayload(),
+        accounts: [],
+        keys: [],
+        seeds: []
+      }
+      const parsed = serializeAndParse(payload)
+
+      expect(parsed).toEqual(payload)
+      expect(isSyncPasswordRequired(parsed)).toBe(false)
+    })
+
+    it('accepts just one of them', () => {
+      const { secret, settings, networks, ...payload } = {
+        ...buildFullPayload(),
+        accounts: [],
+        keys: [],
+        seeds: []
+      }
+
+      expect(serializeAndParse(payload).contacts).toEqual(payload.contacts)
+    })
+
+    it('still pins the scrypt params of a main key nothing needs', () => {
+      const payload: any = { ...buildFullPayload(), accounts: [], keys: [], seeds: [] }
+      payload.secret.scryptParams = { ...payload.secret.scryptParams, N: 2 ** 21 }
+
+      expect(() => serializeAndParse(payload)).toThrow('invalid scrypt params')
     })
 
     it('leaves out what the user did not choose to sync', () => {

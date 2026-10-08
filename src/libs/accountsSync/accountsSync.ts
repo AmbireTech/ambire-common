@@ -79,7 +79,9 @@ export type AccountsSyncExportOptions = {
  */
 export type AccountsSyncPayload = {
   v: typeof ACCOUNTS_SYNC_PAYLOAD_VERSION
-  secret: MainKeyEncryptedWithSecret
+  /** Missing when there is nothing encrypted to sync, see `isSyncPasswordRequired` */
+  secret?: MainKeyEncryptedWithSecret
+  /** Empty when the user synced only the settings, networks or Address Book */
   accounts: Account[]
   keys: StoredKey[]
   seeds: StoredKeystoreSeed[]
@@ -90,6 +92,17 @@ export type AccountsSyncPayload = {
   /** The manually added contacts. Missing when the user did not choose to sync them */
   contacts?: Contacts
 }
+
+/**
+ * Whether the payload holds anything encrypted (private keys or recovery phrases), which
+ * only the password of the exporting device can unlock. Without it, the import needs
+ * no password at all.
+ */
+export const isSyncPasswordRequired = ({
+  keys,
+  seeds
+}: Pick<AccountsSyncPayload, 'keys' | 'seeds'>): boolean =>
+  keys.some((key) => key.type === 'internal') || !!seeds.length
 
 const requireGcmPayload = (payload: any, what: string) => {
   if (!tryParseGcmPayload(payload))
@@ -136,8 +149,7 @@ const isPrivilege = (privilege: any) =>
   Array.isArray(privilege) && isAddress(privilege[0]) && isHexString(privilege[1])
 
 const validateAccounts = (accounts: any) => {
-  if (!Array.isArray(accounts) || !accounts.length)
-    throw new Error('accountsSync: no accounts in the payload')
+  if (!Array.isArray(accounts)) throw new Error('accountsSync: invalid accounts')
 
   accounts.forEach((account) => {
     if (!account || !isAddress(account.addr)) throw new Error('accountsSync: invalid account addr')
@@ -294,13 +306,19 @@ export const parseAccountsSyncPayload = (bytes: Uint8Array): AccountsSyncPayload
   if (payload?.v !== ACCOUNTS_SYNC_PAYLOAD_VERSION)
     throw new Error(`accountsSync: unsupported payload version ${payload?.v}`)
 
-  validateSecret(payload.secret)
   validateAccounts(payload.accounts)
   validateKeys(payload.keys)
   validateSeeds(payload.seeds)
+  // Validated whenever present, so its scrypt params are pinned even if nothing needs it
+  if (isSyncPasswordRequired(payload) || payload.secret !== undefined)
+    validateSecret(payload.secret)
   validateSettings(payload.settings)
   validateNetworks(payload.networks)
   validateContacts(payload.contacts)
+
+  const hasSomethingToSync =
+    !!payload.accounts.length || !!payload.settings || !!payload.networks || !!payload.contacts
+  if (!hasSomethingToSync) throw new Error('accountsSync: nothing to sync in the payload')
 
   return payload
 }

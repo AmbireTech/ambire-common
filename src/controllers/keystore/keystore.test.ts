@@ -800,12 +800,59 @@ describe('accounts sync between two devices', () => {
     expect(importingKeystore.keys[0]!.meta.fromSeedId).toBeUndefined()
   })
 
+  test('exports hardware wallet keys without the main key, as nothing needs decrypting', async () => {
+    const exported = await exportingKeystore.exportForSync([EXTERNAL_ADDR])
+
+    expect(exported.secret).toBeUndefined()
+  })
+
+  test('exports hardware wallet keys even from a device without a password', async () => {
+    const biometricsOnlyKeystore = createKeystore()
+    await biometricsOnlyKeystore.addSecret('biometrics', 'biometricsSecret', '', true)
+
+    await expect(biometricsOnlyKeystore.exportForSync([])).resolves.toEqual({
+      keys: [],
+      seeds: []
+    })
+  })
+
+  test('imports hardware wallet keys without a password', async () => {
+    await importingKeystore.addSecret('password', importingPass, '', true)
+    const payload = await buildPayload([EXTERNAL_ADDR])
+
+    await importingKeystore.importFromSync(payload)
+
+    expect(importingKeystore.keys).toEqual([
+      expect.objectContaining({ addr: EXTERNAL_ADDR, type: 'ledger', isExternallyStored: true })
+    ])
+  })
+
   describe('Negative cases', () => {
     suppressConsoleBeforeEach()
 
-    test('refuses to export from a device without a password', async () => {
+    test('does not import encrypted keys without the password of the other device', async () => {
+      await importingKeystore.addSecret('password', importingPass, '', true)
+      const payload = await buildPayload([keyPublicAddress])
+
+      await expect(importingKeystore.importFromSync(payload)).rejects.toThrow(
+        'the synced keys need the password of the other device'
+      )
+      expect(importingKeystore.keys).toHaveLength(0)
+    })
+
+    test('refuses to export private keys from a device without a password', async () => {
       const biometricsOnlyKeystore = createKeystore()
       await biometricsOnlyKeystore.addSecret('biometrics', 'biometricsSecret', '', true)
+      await biometricsOnlyKeystore.addKeys([
+        {
+          addr: keyPublicAddress,
+          label: 'Key 1',
+          type: 'internal',
+          privateKey: privKey,
+          dedicatedToOneSA: false,
+          meta: { createdAt: new Date().getTime() }
+        }
+      ])
 
       await expect(biometricsOnlyKeystore.exportForSync([keyPublicAddress])).rejects.toThrow(
         'Set a password for this device before syncing your accounts.'

@@ -241,6 +241,43 @@ describe('MainController accounts sync', () => {
     })
   })
 
+  test('syncs the settings, networks and contacts without any accounts or a password', async () => {
+    const exportingDevice = await makeExportingDevice()
+    await exportingDevice.featureFlags.setFeatureFlags({ ledgerSigningReports: true })
+    await exportingDevice.addressBook.addContact('Bob', NEW_CONTACT_ADDR)
+    const payload = await exportPayload(exportingDevice, [], {
+      includeSeeds: true,
+      appSettings: { themeType: 'dark' },
+      includeNetworks: true,
+      includeContacts: true
+    })
+
+    // A device still on the get started screen: no accounts and no password yet
+    const importingDevice = await makeImportingDevice({ withPassword: false })
+    await importingDevice.importAccountsFromSync({ payload })
+
+    expect(importingDevice.statuses.importAccountsFromSync).toBe('INITIAL')
+    expect(importingDevice.emittedErrors).toHaveLength(0)
+    expect(importingDevice.accounts.accounts).toHaveLength(0)
+    expect(importingDevice.keystore.keys).toHaveLength(0)
+    expect(importingDevice.featureFlags.flags.ledgerSigningReports).toBe(true)
+    // The Address Book lists nothing without a selected account, so this reads storage
+    expect(await importingDevice.storage.get('contacts', [])).toEqual([
+      expect.objectContaining({ name: 'Bob', address: NEW_CONTACT_ADDR })
+    ])
+  })
+
+  test('syncs a hardware wallet account without asking for a password', async () => {
+    const exportingDevice = await makeExportingDevice()
+    const payload = await exportPayload(exportingDevice, [LEDGER_ADDR])
+
+    const importingDevice = await makeImportingDevice({ withPassword: true })
+    await importingDevice.importAccountsFromSync({ payload })
+
+    expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([LEDGER_ADDR])
+    expect(importingDevice.keystore.keys.map((k) => k.addr)).toEqual([LEDGER_ADDR])
+  })
+
   test('sends no settings, networks or contacts unless the user chose them', async () => {
     const exportingDevice = await makeExportingDevice()
     await exportingDevice.featureFlags.setFeatureFlags({ ledgerSigningReports: true })
@@ -285,19 +322,17 @@ describe('MainController accounts sync', () => {
       expect(importingDevice.accounts.accounts).toHaveLength(0)
     })
 
-    test('exports nothing when no account is selected', async () => {
+    test('exports nothing when nothing is selected', async () => {
       const exportingDevice = await makeExportingDevice()
       const sendUiMessage = jest.spyOn(exportingDevice.ui.message, 'sendUiMessage')
 
       await exportingDevice.exportAccountsForSync([], ACCOUNTS_ONLY, 'request-1')
 
-      expect(exportingDevice.emittedErrors.at(-1)?.message).toBe(
-        'Select at least one account to sync.'
-      )
+      expect(exportingDevice.emittedErrors.at(-1)?.message).toBe('Select what you want to sync.')
       expect(sendUiMessage).toHaveBeenCalledWith({
         requestId: 'request-1',
         ok: false,
-        error: 'Select at least one account to sync.'
+        error: 'Select what you want to sync.'
       })
     })
   })
