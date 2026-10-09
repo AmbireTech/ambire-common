@@ -2857,6 +2857,18 @@ describe('DappsController', () => {
     const SCAM_CHECKER_DOMAINS_URL = 'https://cena.ambire.com/api/v3/scamchecker/domains'
     const AAVE_ID = 'aave.com'
 
+    // CI runs with IS_TESTING, which makes the phishing check skip both the local list and the
+    // scam checker and answer VERIFIED - the very path these tests are about would not run
+    let isTestingEnv: string | undefined
+    beforeEach(() => {
+      isTestingEnv = process.env.IS_TESTING
+      delete process.env.IS_TESTING
+    })
+    afterEach(() => {
+      if (isTestingEnv === undefined) return
+      process.env.IS_TESTING = isTestingEnv
+    })
+
     /**
      * Records the status `getStatus` returns after every microtask until stopped. Any `await`
      * inside the rebuild is a point where other code - e.g. an incoming sign-in request - could
