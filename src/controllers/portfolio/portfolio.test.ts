@@ -4365,5 +4365,54 @@ describe('Portfolio Controller ', () => {
       expect(networkParams).toContain('1')
       expect(networkParams).toContain('customAppChain')
     })
+
+    test('b is 0 before the first fetch and then the rounded total balance on all networks', async () => {
+      const discoveryUrls: string[] = []
+      // Only discovery is mocked, as the update also needs the real relayer responses
+      const fetchOverride = jest.fn(
+        (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+          const url = typeof input === 'string' ? input : input.toString()
+          if (!url.includes('/portfolio?')) return fetch(input, init)
+
+          discoveryUrls.push(url)
+          return Promise.resolve(createJsonResponse(getPortfolioResponseByNetworks(url)))
+        }
+      ) as unknown as typeof fetch
+
+      const { controller } = await prepareTest({
+        fetchOverride,
+        awaitInitialLoad: false
+      })
+      const polygon = networks.find((network) => network.chainId === 137n)!
+
+      await controller.updateSelectedAccount(account.addr, [ethereum, polygon])
+
+      expect(discoveryUrls).toHaveLength(1)
+      expect(new URL(discoveryUrls[0]!).searchParams.get('b')).toBe('0')
+
+      const accountState = controller.getAccountPortfolioState(account.addr)
+      const ethereumResult = accountState['1']?.result
+      const polygonResult = accountState['137']?.result
+      if (!ethereumResult || !polygonResult)
+        throw new Error(`Missing portfolio results. Chains in state: ${Object.keys(accountState)}`)
+
+      Object.values(accountState).forEach((networkState) => {
+        if (networkState?.result) networkState.result.total = { usd: 0 }
+      })
+      ethereumResult.total = { usd: 12.6 }
+      polygonResult.total = { usd: 30.3 }
+
+      // @ts-expect-error test
+      await controller.batchedPortfolioDiscovery({
+        chainId: 1n,
+        accountAddr: account.addr,
+        baseCurrency: 'usd',
+        defiUpdateMode: defiPositionsLib.DefiUpdateMode.Default
+      })
+
+      expect(discoveryUrls).toHaveLength(2)
+      expect(new URL(discoveryUrls[1]!).searchParams.get('networks')).toBe('1')
+      expect(new URL(discoveryUrls[1]!).searchParams.get('b')).toBe('43')
+    })
   })
 })
