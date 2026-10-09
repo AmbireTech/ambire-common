@@ -261,7 +261,6 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners,
     externalSignerControllers,
     uiManager,
-    privacyPoolsFetch,
     privacyPoolsCircuitsBaseUrl,
     privacyPoolsProverFactory,
     idb
@@ -281,11 +280,6 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
-    /**
-     * Fetch for the Privacy Pools services. Separate from `fetch` so its requests carry nothing
-     * identifying the wallet, like the instance id sent to Ambire's APIs.
-     */
-    privacyPoolsFetch: Fetch
     /** Base URL of the Privacy Pools circuit artifacts, a build asset only the platform knows. */
     privacyPoolsCircuitsBaseUrl: string
     /** Where to generate Privacy Pools proofs if not here - see `PrivacyPoolsController`. */
@@ -453,7 +447,7 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       selectedAccount: this.selectedAccount,
       storage: this.storage,
-      fetch: privacyPoolsFetch,
+      fetch: this.fetch,
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       proverFactory: privacyPoolsProverFactory,
       onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)

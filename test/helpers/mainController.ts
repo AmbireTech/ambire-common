@@ -171,7 +171,6 @@ export const makeMainController = async (
     externalSignerControllers: overrides.externalSignerControllers ?? {},
     uiManager,
     eventEmitterRegistry,
-    privacyPoolsFetch: fetch,
     privacyPoolsCircuitsBaseUrl: ''
   })
 
