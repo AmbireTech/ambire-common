@@ -2850,4 +2850,124 @@ describe('DappsController', () => {
       nowSpy.mockRestore()
     })
   })
+
+  // Auto-login signs while an app's status reads LOADING, so a catalog rebuild - which recreates
+  // every catalog app as LOADING - must not leave a window where a request can see that status.
+  describe('scam check during an app catalog rebuild', () => {
+    const SCAM_CHECKER_DOMAINS_URL = 'https://cena.ambire.com/api/v3/scamchecker/domains'
+    const AAVE_ID = 'aave.com'
+
+    /**
+     * Records the status `getStatus` returns after every microtask until stopped. Any `await`
+     * inside the rebuild is a point where other code - e.g. an incoming sign-in request - could
+     * run, so a status the sampler never sees is one no such code can see either.
+     */
+    const startStatusSampler = (getStatus: () => Dapp['blacklisted'] | undefined) => {
+      const seenStatuses = new Set<Dapp['blacklisted'] | undefined>()
+      let isStopped = false
+      const samplingPromise = (async () => {
+        let iteration = 0
+        while (!isStopped) {
+          seenStatuses.add(getStatus())
+          iteration++
+          // Yield to the event loop now and then, so timers and I/O are not starved
+          await (iteration % 100
+            ? Promise.resolve()
+            : new Promise((resolve) => {
+                setImmediate(resolve)
+              }))
+        }
+      })()
+
+      return {
+        seenStatuses,
+        stop: async () => {
+          isStopped = true
+          await samplingPromise
+        }
+      }
+    }
+
+    const rebuildCatalogWhileSampling = async (localPhishingDomains: string[]) => {
+      const scamCheckerRequestedDomains: string[] = []
+      const { controller, mainCtrl } = await prepareTest(
+        async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', [
+            ...predefinedDapps,
+            makeDapp({
+              id: AAVE_ID,
+              name: 'AAVE',
+              url: 'https://aave.com',
+              blacklisted: 'BLACKLISTED'
+            })
+          ])
+          // Differs from the app version, so loading rebuilds the catalog
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+          if (localPhishingDomains.length) {
+            await storageCtrl.set('phishing', {
+              version: 1,
+              updatedAt: Date.now(),
+              domains: localPhishingDomains,
+              addresses: []
+            })
+          }
+        },
+        async (url: string, options?: { body?: string }) => {
+          if (url === 'https://api.llama.fi/protocols') {
+            return { ok: true, status: 200, json: async () => mockDapps }
+          }
+          if (url === 'https://api.llama.fi/v2/chains') {
+            return { ok: true, status: 200, json: async () => mockChains }
+          }
+          if (url === SCAM_CHECKER_DOMAINS_URL) {
+            const { domains } = JSON.parse(options?.body || '{}') as { domains: string[] }
+            scamCheckerRequestedDomains.push(...domains)
+            // A real network round trip, during which other code gets to run
+            await new Promise((resolve) => {
+              setTimeout(resolve, 20)
+            })
+            return {
+              ok: true,
+              status: 200,
+              json: async () =>
+                Object.fromEntries(domains.map((domain) => [domain, domain === AAVE_ID]))
+            }
+          }
+
+          return { ok: false, status: 500, json: async () => ({}) }
+        },
+        true
+      )
+
+      const sampler = startStatusSampler(() => controller.getDapp(AAVE_ID)?.blacklisted)
+      // The local phishing list is read from storage long before the catalog finishes downloading
+      await mainCtrl.phishing.init()
+      await controller.init()
+      await controller.fetchAndUpdatePromise
+      await sampler.stop()
+
+      return { controller, seenStatuses: sampler.seenStatuses, scamCheckerRequestedDomains }
+    }
+
+    test('an app checked against the local phishing list is never seen as LOADING', async () => {
+      const { controller, seenStatuses, scamCheckerRequestedDomains } =
+        await rebuildCatalogWhileSampling([AAVE_ID])
+
+      // The catalog was really rebuilt from the downloaded list
+      expect(controller.dapps.some((d) => d.name === 'Lido')).toBe(true)
+      expect(scamCheckerRequestedDomains).toEqual([])
+      expect(seenStatuses.has('LOADING')).toBe(false)
+      expect(controller.getDapp(AAVE_ID)?.blacklisted).toBe('BLACKLISTED')
+    })
+
+    // Control: proves the sampler does catch LOADING when there is a window to catch
+    test('an app is seen as LOADING while the scam checker is asked, when the local list is empty', async () => {
+      const { controller, seenStatuses, scamCheckerRequestedDomains } =
+        await rebuildCatalogWhileSampling([])
+
+      expect(scamCheckerRequestedDomains).toContain(AAVE_ID)
+      expect(seenStatuses.has('LOADING')).toBe(true)
+      expect(controller.getDapp(AAVE_ID)?.blacklisted).toBe('BLACKLISTED')
+    })
+  })
 })
