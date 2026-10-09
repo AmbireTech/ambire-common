@@ -91,7 +91,6 @@ import {
   getAccountOpNonce,
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
-import { getUnauthenticatedDapps, isSigningAuthPlatform } from '../../libs/dapps/helpers'
 import {
   AccountOpIdentifiedBy,
   getAccountOpRecipients,
@@ -105,6 +104,7 @@ import {
   broadcastTransaction,
   buildRawTransaction
 } from '../../libs/broadcast/broadcast'
+import { getUnauthenticatedDapps, isSigningAuthPlatform } from '../../libs/dapps/helpers'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
@@ -213,6 +213,7 @@ export const MAX_REESTIMATES = 20
 
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
+  rpcGasPrices?: GasSpeeds
   customGasPrices?: GasSpeeds
   customGasLimit?: bigint
   feeToken?: TokenResult
@@ -287,7 +288,20 @@ export class SignAccountOpController
 
   #customSafeNonce: bigint | null = null
 
+  /**
+   * The gas prices used for broadcasting. With the `rpcWithBundlerFallback` strategy
+   * (see BaseAccount.getGasPriceFetchStrategy), these come from the bundler estimation
+   * and are used for bundler broadcasts only. While there's no bundler estimation,
+   * they're the gasPrice controller ones
+   */
   gasPrices?: GasSpeeds
+
+  /**
+   * The gas prices for broadcasts outside the bundler with the `rpcWithBundlerFallback`
+   * strategy (see BaseAccount.getGasPriceFetchStrategy). These are the RPC gas prices,
+   * or the bundler ones if the RPC has failed and the bundler fallback has succeeded
+   */
+  rpcGasPrices?: GasSpeeds
 
   hasCustomGasPrices: boolean = false
 
@@ -607,6 +621,7 @@ export class SignAccountOpController
       // Null when the controller is destroyed
       if (!this.gasPrice || this.#stopRefetching) {
         this.#gasPriceInterval.stop()
+        return
       }
 
       await this.gasPrice.fetch('major')
@@ -1065,9 +1080,14 @@ export class SignAccountOpController
       // if gas prices are not set OR there's no bundler estimation,
       // use the gas prices from the controller.
       // otherwise, we're good as gas price also come from the bundlerEstimation
-      if (!this.gasPrices || !this.estimation.estimation?.bundlerEstimation) {
-        this.update({ gasPrices: this.gasPrice.gasPrices })
-      }
+      const shouldUseControllerGasPrices =
+        !this.gasPrices || !this.estimation.estimation?.bundlerEstimation
+      const gasPrices = shouldUseControllerGasPrices ? this.gasPrice.gasPrices : undefined
+      // set only with the rpcWithBundlerFallback strategy (see BaseAccount.getGasPriceFetchStrategy)
+      const rpcGasPrices = this.gasPrice.rpcGasPrices
+      if (!gasPrices && !rpcGasPrices) return
+
+      this.update({ gasPrices, rpcGasPrices })
     })
 
     this.gasPrice.onError((error: ErrorRef) => {
@@ -1733,6 +1753,19 @@ export class SignAccountOpController
     this.#reestimateCounter += 1
   }
 
+  #startGasPriceIntervalIfNoCustomPrices() {
+    if (this.hasCustomGasPrices) {
+      this.#gasPriceInterval.stop()
+      return
+    }
+
+    this.#gasPriceInterval.start({
+      // Refetch immediately if the gas prices are stale
+      runImmediately:
+        !this.gasPrice.updatedAt || Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
+    })
+  }
+
   /**
    * Refetches the gas price immediately and silently
    * (no errors emitted in case of failure). Also
@@ -1790,6 +1823,7 @@ export class SignAccountOpController
 
   update({
     gasPrices,
+    rpcGasPrices,
     customGasPrices,
     customGasLimit,
     feeToken,
@@ -1829,16 +1863,7 @@ export class SignAccountOpController
 
       if (this.estimation.status === EstimationStatus.Success) {
         // Start the gas price interval in case it was stopped earlier
-        if (!this.hasCustomGasPrices) {
-          this.#gasPriceInterval.start({
-            // Refetch immediately if the gas prices are stale
-            runImmediately:
-              !this.gasPrice.updatedAt ||
-              Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
-          })
-        } else {
-          this.#gasPriceInterval.stop()
-        }
+        this.#startGasPriceIntervalIfNoCustomPrices()
 
         const estimation = this.estimation.estimation as FullEstimationSummary
         if (estimation.ambireEstimation && !isSpeedUpTransaction) {
@@ -1857,22 +1882,23 @@ export class SignAccountOpController
           if (!this.hasCustomGasPrices) {
             this.gasPrices = this.estimation.estimation.bundlerGasPrices
           }
-          // and we're stopping the gas price interval as
-          // we will use the bundler gas prices
-          this.#gasPriceInterval.stop()
           this.gasPrice.areGasPricesUsedFromBundlerEstimation = true
-        } else {
-          // if there's an estimate, but no bundlerGasPrices, resume the gas price
-          // controller refetch as there's no other way to fetch gas prices
-          if (!this.hasCustomGasPrices) {
-            this.#gasPriceInterval.start({
-              runImmediately:
-                !this.gasPrice.updatedAt ||
-                Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
-            })
+          // and we're stopping the gas price interval as
+          // we will use the bundler gas prices, unless the account
+          // also needs the RPC gas prices for its non-bundler broadcasts
+          if (
+            this.baseAccount.getGasPriceFetchStrategy(
+              this.#featureFlags.isFeatureEnabled('erc4337')
+            ) === 'rpcWithBundlerFallback'
+          ) {
+            this.#startGasPriceIntervalIfNoCustomPrices()
           } else {
             this.#gasPriceInterval.stop()
           }
+        } else {
+          // if there's an estimate, but no bundlerGasPrices, resume the gas price
+          // controller refetch as there's no other way to fetch gas prices
+          this.#startGasPriceIntervalIfNoCustomPrices()
           this.gasPrice.areGasPricesUsedFromBundlerEstimation = false
         }
       }
@@ -1946,6 +1972,10 @@ export class SignAccountOpController
         this.#gasPriceInterval.stop()
       } else if (gasPrices && !this.hasCustomGasPrices) {
         this.gasPrices = gasPrices
+      }
+
+      if (rpcGasPrices) {
+        this.rpcGasPrices = rpcGasPrices
       }
 
       if (typeof customGasLimit !== 'undefined') {
@@ -2042,6 +2072,7 @@ export class SignAccountOpController
         !Object.keys(this.feeSpeeds).length ||
         Array.isArray(accountOpData?.calls) ||
         gasPrices ||
+        rpcGasPrices ||
         customGasPrices ||
         typeof customGasLimit !== 'undefined' ||
         this.#paidBy ||
@@ -2145,6 +2176,7 @@ export class SignAccountOpController
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
+    this.rpcGasPrices = undefined
     this.hasCustomGasPrices = false
     this.gasFeeChangedConfirmationRequired = false
     this.previousFee = null
@@ -2481,34 +2513,51 @@ export class SignAccountOpController
    * That way we get a better bundler userOp acceptance rate and a
    * normal, intuitive UX
    */
-  #getIncreasedPrices(): GasSpeeds | null {
-    if (!this.gasPrices) return null
+  #getIncreasedPrices(gasPrices?: GasSpeeds): GasSpeeds | null {
+    if (!gasPrices) return null
 
     // no increase if the user has set them
-    if (this.hasCustomGasPrices) return this.gasPrices
+    if (this.hasCustomGasPrices) return gasPrices
 
     // no increase if there's no bundlerEstimation as this means
     // we're not using erc-4337 for broadcast
-    if (!this.estimation.estimation?.bundlerEstimation) return this.gasPrices
+    if (!this.estimation.estimation?.bundlerEstimation) return gasPrices
 
     return {
       slow: {
-        maxFeePerGas: this.gasPrices.slow.maxFeePerGas,
-        maxPriorityFeePerGas: this.gasPrices.slow.maxPriorityFeePerGas
+        maxFeePerGas: gasPrices.slow.maxFeePerGas,
+        maxPriorityFeePerGas: gasPrices.slow.maxPriorityFeePerGas
       },
       medium: {
-        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.medium.maxFeePerGas), 5n),
-        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.medium.maxPriorityFeePerGas), 5n)
+        maxFeePerGas: this.#addExtra(BigInt(gasPrices.medium.maxFeePerGas), 5n),
+        maxPriorityFeePerGas: this.#addExtra(BigInt(gasPrices.medium.maxPriorityFeePerGas), 5n)
       },
       fast: {
-        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.fast.maxFeePerGas), 7n),
-        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.fast.maxPriorityFeePerGas), 7n)
+        maxFeePerGas: this.#addExtra(BigInt(gasPrices.fast.maxFeePerGas), 7n),
+        maxPriorityFeePerGas: this.#addExtra(BigInt(gasPrices.fast.maxPriorityFeePerGas), 7n)
       },
       ape: {
-        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.ape.maxFeePerGas), 10n),
-        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.ape.maxPriorityFeePerGas), 10n)
+        maxFeePerGas: this.#addExtra(BigInt(gasPrices.ape.maxFeePerGas), 10n),
+        maxPriorityFeePerGas: this.#addExtra(BigInt(gasPrices.ape.maxPriorityFeePerGas), 10n)
       }
     }
+  }
+
+  /**
+   * Whether the broadcast option should use the RPC gas prices instead of the
+   * bundler ones. Applicable only with the `rpcWithBundlerFallback` strategy
+   * (see BaseAccount.getGasPriceFetchStrategy). If the RPC gas prices are not
+   * fetched yet, gasPrices are used as a fallback
+   */
+  #shouldUseRpcGasPrices(broadcastOption: string): boolean {
+    if (this.hasCustomGasPrices || !this.rpcGasPrices) return false
+    if (
+      this.baseAccount.getGasPriceFetchStrategy(this.#featureFlags.isFeatureEnabled('erc4337')) !==
+      'rpcWithBundlerFallback'
+    )
+      return false
+
+    return this.baseAccount.shouldUseRpcGasPrices(broadcastOption)
   }
 
   get #feeSpeedsLoading() {
@@ -2560,9 +2609,21 @@ export class SignAccountOpController
         return
       }
 
+      // each available fee option should declare its estimation method
+      const broadcastOption = this.baseAccount.getBroadcastOption(option, {
+        op: this.accountOp,
+        isSponsored: this.isSponsored
+      })
+
       const nativeRatio = this.#getNativeToFeeTokenRatio(option.token)
-      const increasedGasPrices = this.#getIncreasedPrices()
-      if (!nativeRatio || !this.gasPrices || !increasedGasPrices) {
+      const shouldUseRpcGasPrices = this.#shouldUseRpcGasPrices(broadcastOption)
+      const gasPrices = shouldUseRpcGasPrices ? this.rpcGasPrices : this.gasPrices
+      // the RPC gas prices are used only for broadcasts outside erc-4337,
+      // so they should not be increased
+      const increasedGasPrices = shouldUseRpcGasPrices
+        ? gasPrices
+        : this.#getIncreasedPrices(gasPrices)
+      if (!nativeRatio || !gasPrices || !increasedGasPrices) {
         this.feeSpeeds[identifier] = []
         return
       }
@@ -2573,19 +2634,13 @@ export class SignAccountOpController
         op: this.accountOp
       })
 
-      // each available fee option should declare it's estimation method
-      const broadcastOption = this.baseAccount.getBroadcastOption(option, {
-        op: this.accountOp,
-        isSponsored: this.isSponsored
-      })
-
       const speeds = ['slow', 'medium', 'fast', 'ape']
       for (let i = 0; i < speeds.length; i++) {
         // we have two prices:
         // receivedPrices, from old lib/bundler
         // and increasedPrices, which we use for the fee only
         const speed = speeds[i] as FeeSpeed
-        const receivedPrices = this.gasPrices[speed]
+        const receivedPrices = gasPrices[speed]
         const increasedPrices = increasedGasPrices[speed]
 
         let amount
@@ -4463,6 +4518,22 @@ export class SignAccountOpController
     return this.baseAccount.canBroadcastByItself()
   }
 
+  /**
+   * The gas prices used by the selected fee option. They differ from gasPrices
+   * only with the `rpcWithBundlerFallback` strategy
+   * (see BaseAccount.getGasPriceFetchStrategy)
+   */
+  get selectedOptionGasPrices(): GasSpeeds | undefined {
+    if (!this.selectedOption) return this.gasPrices
+
+    const broadcastOption = this.baseAccount.getBroadcastOption(this.selectedOption, {
+      op: this.accountOp,
+      isSponsored: this.isSponsored
+    })
+
+    return this.#shouldUseRpcGasPrices(broadcastOption) ? this.rpcGasPrices : this.gasPrices
+  }
+
   get canSetCustomGasPrices(): boolean {
     if (!this.selectedOption) return false
 
@@ -4529,6 +4600,7 @@ export class SignAccountOpController
       isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress,
       banners: this.banners,
       canAccountBroadcastByItself: this.canAccountBroadcastByItself,
+      selectedOptionGasPrices: this.selectedOptionGasPrices,
       canSetCustomGasPrices: this.canSetCustomGasPrices,
       canSetCustomGas: this.canSetCustomGas,
       isErc4337Enabled: this.isErc4337Enabled,
