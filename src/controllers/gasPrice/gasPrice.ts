@@ -5,7 +5,11 @@ import { RPCProvider } from '../../interfaces/provider'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { decodeError } from '../../libs/errorDecoder'
 import { ErrorType } from '../../libs/errorDecoder/types'
-import { gasPriceToBundlerFormat, getGasPriceRecommendations } from '../../libs/gasPrice/gasPrice'
+import {
+  GasRecommendation,
+  gasPriceToBundlerFormat,
+  getGasPriceRecommendations
+} from '../../libs/gasPrice/gasPrice'
 import { getAvailableBunlders } from '../../services/bundlers/getBundler'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { EstimationController } from '../estimation/estimation'
@@ -19,6 +23,13 @@ export class GasPriceController extends EventEmitter {
   #baseAccount: BaseAccount
 
   #featureFlags: IFeatureFlagsController
+
+  /**
+   * The RPC gas price request that is still in flight. The timeout in #fetchRpcGasPrices
+   * only stops waiting for it - the request itself keeps going until the provider gives up
+   * (5 min by default). Later fetches wait for it instead of piling up new requests
+   */
+  #pendingRpcGasPriceRequest: Promise<{ gasPrice: GasRecommendation[] }> | null = null
 
   #getSignAccountOpState: () => {
     estimation: EstimationController
@@ -214,13 +225,25 @@ export class GasPriceController extends EventEmitter {
    * is available before showing an error to the user
    */
   async #fetchRpcGasPrices(timeout: number): Promise<GasSpeeds | Error> {
+    if (!this.#pendingRpcGasPriceRequest) {
+      this.#pendingRpcGasPriceRequest = getGasPriceRecommendations(
+        this.#provider,
+        this.#network,
+        -1,
+        () => {
+          return !this.#getSignAccountOpState().stopRefetching
+        }
+      ).finally(() => {
+        this.#pendingRpcGasPriceRequest = null
+      })
+    }
+
     let timeoutId
     const gasPriceData = await Promise.race([
-      getGasPriceRecommendations(this.#provider, this.#network, -1, () => {
-        return !this.#getSignAccountOpState().stopRefetching
-      }),
+      this.#pendingRpcGasPriceRequest,
       // limit it by the passed timeout so a hanging RPC doesn't block the
-      // gas price refetch, handling it as any other RPC failure
+      // gas price refetch, handling it as any other RPC failure. The request
+      // stays pending and the next fetch races its own timeout against it
       new Promise<never>((_resolve, reject) => {
         timeoutId = setTimeout(
           () => reject(new Error('rpc gas price fetch fail, request too slow')),

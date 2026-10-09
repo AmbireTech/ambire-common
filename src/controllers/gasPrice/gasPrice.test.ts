@@ -373,6 +373,90 @@ describe('GasPriceController', () => {
       expect(onError).not.toHaveBeenCalled()
     })
 
+    test('waits for a pending RPC request instead of starting a new one', async () => {
+      let resolveRequest!: (value: Awaited<ReturnType<typeof getGasPriceRecommendations>>) => void
+      jest.mocked(getGasPriceRecommendations).mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveRequest = resolve
+        })
+      )
+      const controller = createController({
+        isErc4337Enabled: false,
+        estimation: { isRetryingFailure: () => true } as unknown as EstimationController
+      })
+
+      // two fetches time out while the same request hangs
+      for (let i = 0; i < 2; i++) {
+        const fetchPromise = controller.fetch()
+        await jest.advanceTimersByTimeAsync(10000)
+        await fetchPromise
+      }
+      expect(getGasPriceRecommendations).toHaveBeenCalledTimes(1)
+      expect(controller.gasPrices).toBeUndefined()
+
+      // the hanging request answers while a later fetch waits for it
+      const fetchPromise = controller.fetch()
+      await jest.advanceTimersByTimeAsync(1000)
+      resolveRequest({ gasPrice: [{ name: 'slow', gasPrice: 1n }] })
+      await fetchPromise
+
+      expect(getGasPriceRecommendations).toHaveBeenCalledTimes(1)
+      expect(controller.gasPrices).toEqual(gasSpeeds)
+      expect(jest.getTimerCount()).toBe(0)
+
+      // once it has settled, the next fetch starts a new request
+      await controller.fetch()
+      expect(getGasPriceRecommendations).toHaveBeenCalledTimes(2)
+    })
+
+    test('starts a new RPC request once the pending one fails', async () => {
+      let rejectRequest!: (error: Error) => void
+      jest.mocked(getGasPriceRecommendations).mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectRequest = reject
+        })
+      )
+      const controller = createController({
+        isErc4337Enabled: false,
+        estimation: { isRetryingFailure: () => true } as unknown as EstimationController
+      })
+
+      const timedOutFetch = controller.fetch()
+      await jest.advanceTimersByTimeAsync(10000)
+      await timedOutFetch
+
+      // fails after the fetch has stopped waiting for it
+      rejectRequest(new Error('rpc down'))
+      await jest.advanceTimersByTimeAsync(0)
+
+      await controller.fetch()
+
+      expect(getGasPriceRecommendations).toHaveBeenCalledTimes(2)
+      expect(controller.gasPrices).toEqual(gasSpeeds)
+    })
+
+    test('shares the pending RPC request with the bundler fallback strategy', async () => {
+      jest.mocked(getGasPriceRecommendations).mockReturnValueOnce(new Promise(() => {}))
+      const fetchGasPrices = jest.fn(async () => gasSpeeds)
+      jest.mocked(getAvailableBunlders).mockReturnValue([{ fetchGasPrices } as unknown as Bundler])
+      const controller = createController({
+        isErc4337Enabled: true,
+        gasPriceFetchStrategy: 'rpcWithBundlerFallback',
+        estimation: { isRetryingFailure: () => true } as unknown as EstimationController
+      })
+
+      for (let i = 0; i < 3; i++) {
+        const fetchPromise = controller.fetch()
+        await jest.advanceTimersByTimeAsync(5000)
+        await fetchPromise
+      }
+
+      expect(getGasPriceRecommendations).toHaveBeenCalledTimes(1)
+      // the bundler fallback keeps the fees available meanwhile
+      expect(fetchGasPrices).toHaveBeenCalledTimes(3)
+      expect(controller.rpcGasPrices).toEqual(gasSpeeds)
+    })
+
     test('clears the timeout when the RPC responds in time', async () => {
       const controller = createController({ isErc4337Enabled: false })
 
