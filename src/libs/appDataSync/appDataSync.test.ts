@@ -181,6 +181,7 @@ describe('appDataSync payload', () => {
   })
 
   it('rejects encrypted keys that come without the password protected main key', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { secret, ...withoutSecret } = buildPayload()
 
     expect(() => serializeAndParse(withoutSecret)).toThrow(
@@ -317,6 +318,7 @@ describe('appDataSync payload', () => {
     })
 
     it('accepts only the settings, networks and contacts, without accounts or a password', () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { secret, ...payload } = {
         ...buildFullPayload(),
         accounts: [],
@@ -330,6 +332,7 @@ describe('appDataSync payload', () => {
     })
 
     it('accepts just one of them', () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { secret, settings, networks, ...payload } = {
         ...buildFullPayload(),
         accounts: [],
