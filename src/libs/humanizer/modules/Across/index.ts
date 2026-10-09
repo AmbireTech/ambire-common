@@ -24,9 +24,13 @@ const depositWithSpokePoolAbi = parseAbi([
   'function deposit(address spokePool,address recipient,address originToken,uint256 amount,uint256 destinationChainId,int64 relayerFeePct,uint32 quoteTimestamp,bytes message,uint256 maxCount) payable'
 ])
 
+const depositV3Selector = toFunctionSelector(depositV3Abi[0])
+const depositSelector = toFunctionSelector(depositAbi[0])
+const depositWithSpokePoolSelector = toFunctionSelector(depositWithSpokePoolAbi[0])
+
 const AcrossModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const matcher: Record<string, (call: HexIrCall) => any> = {
-    [toFunctionSelector(depositV3Abi[0])]: (call) => {
+    [depositV3Selector]: (call) => {
       const { args } = decodeFunctionData({ abi: depositV3Abi, data: call.data })
       const [
         ,
@@ -51,7 +55,7 @@ const AcrossModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
         ...getRecipientText(accOp.accountAddr, recipient)
       ]
     },
-    [toFunctionSelector(depositAbi[0])]: (call) => {
+    [depositSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: depositAbi, data: call.data })
       const [recipient, originToken, amount, destinationChainId] = args
       return [
@@ -62,7 +66,7 @@ const AcrossModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
         ...getRecipientText(accOp.accountAddr, recipient)
       ]
     },
-    [toFunctionSelector(depositWithSpokePoolAbi[0])]: (call) => {
+    [depositWithSpokePoolSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: depositWithSpokePoolAbi, data: call.data })
       const [, recipient, originToken, amount, destinationChainId] = args
 

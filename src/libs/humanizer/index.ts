@@ -1,15 +1,14 @@
-import humanizerInfo from '../../consts/humanizer/humanizerInfo.json'
 import { Message } from '../../interfaces/userRequest'
 import { AccountOp } from '../accountOp/accountOp'
 import { parse, stringify } from '../richJson/richJson'
-import { humanizerCallModules } from './callModules'
+import { humanizeCallWithModules, humanizerCallModules } from './callModules'
 import {
   Erc7730CallDescriptors,
   Erc7730ResolvedDescriptor,
   humanizeCallWithErc7730,
   humanizeMessageWithErc7730
 } from './erc7730'
-import { HumanizerMeta, IrCall, IrMessage } from './interfaces'
+import { IrCall, IrMessage } from './interfaces'
 import {
   cowSwapModule,
   eip7702AuthorizationModule,
@@ -58,18 +57,9 @@ type HumanizeMessageOptions = {
 const humanizeAccountOp = (_accountOp: AccountOp, options?: HumanizeAccountOpOptions): IrCall[] => {
   const accountOp = parse(stringify(_accountOp))
 
-  let currentCalls: IrCall[] = accountOp.calls.map((originalCall: IrCall) => {
-    let currentCall: IrCall = originalCall
-    humanizerCallModules.forEach((hm) => {
-      try {
-        currentCall = hm(accountOp, currentCall, humanizerInfo as HumanizerMeta)
-      } catch (error) {
-        console.error(error)
-        // No action is needed here; we only update `currentCall` if the module successfully resolves it.
-      }
-    })
-    return currentCall
-  })
+  let currentCalls: IrCall[] = accountOp.calls.map((originalCall: IrCall) =>
+    humanizeCallWithModules(accountOp, originalCall)
+  )
 
   if (options?.erc7730Descriptors) {
     currentCalls = currentCalls.map((call, index) => {

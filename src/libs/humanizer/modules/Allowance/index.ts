@@ -32,9 +32,15 @@ export const getAllowanceResetText = (resetTimeMin: bigint): string => {
   return `Every ${resetTimeMin.toString()} minutes`
 }
 
+const setAllowanceSelector = toFunctionSelector(setAllowanceAbi[0])
+const addDelegateSelector = toFunctionSelector(addDelegateAbi[0])
+const removeDelegateSelector = toFunctionSelector(removeDelegateAbi[0])
+const deleteAllowanceSelector = toFunctionSelector(deleteAllowanceAbi[0])
+const executeAllowanceTransferSelector = toFunctionSelector(executeAllowanceTransferAbi[0])
+
 export const getSetAllowanceResetText = (call: IrCall): string | null => {
   if (!isHexCall(call)) return null
-  if (call.data.slice(0, 10) !== toFunctionSelector(setAllowanceAbi[0])) return null
+  if (call.data.slice(0, 10) !== setAllowanceSelector) return null
 
   const { args } = decodeFunctionData({ abi: setAllowanceAbi, data: call.data })
   const [, , , resetTimeMin] = args
@@ -44,7 +50,7 @@ export const getSetAllowanceResetText = (call: IrCall): string | null => {
 
 const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall => {
   const matcher: Record<string, (call: HexIrCall) => IrCall | undefined> = {
-    [toFunctionSelector(setAllowanceAbi[0])]: (call) => {
+    [setAllowanceSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: setAllowanceAbi, data: call.data })
       const [delegate, token, allowanceAmount, resetTimeMin] = args
 
@@ -58,7 +64,7 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
 
       return { ...call, fullVisualization }
     },
-    [toFunctionSelector(addDelegateAbi[0])]: (call) => {
+    [addDelegateSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: addDelegateAbi, data: call.data })
       const [delegate] = args
 
@@ -66,7 +72,7 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
 
       return { ...call, fullVisualization }
     },
-    [toFunctionSelector(removeDelegateAbi[0])]: (call) => {
+    [removeDelegateSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: removeDelegateAbi, data: call.data })
       const [delegate, removeAllowances] = args
 
@@ -75,7 +81,7 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
 
       return { ...call, fullVisualization }
     },
-    [toFunctionSelector(deleteAllowanceAbi[0])]: (call) => {
+    [deleteAllowanceSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: deleteAllowanceAbi, data: call.data })
       const [delegate, token] = args
 
@@ -87,7 +93,7 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
 
       return { ...call, fullVisualization }
     },
-    [toFunctionSelector(executeAllowanceTransferAbi[0])]: (call) => {
+    [executeAllowanceTransferSelector]: (call) => {
       const { args } = decodeFunctionData({
         abi: executeAllowanceTransferAbi,
         data: call.data

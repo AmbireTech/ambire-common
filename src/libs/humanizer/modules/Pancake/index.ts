@@ -29,12 +29,14 @@ const approveAbi = parseAbi([
   'function approve(address token, address spender, uint160 amount, uint48 expiration)'
 ])
 
+const approveSelector = toFunctionSelector(approveAbi[0])
+
 const PancakeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const matcher: Record<
     string,
     (call: HexIrCall) => { visualizations: HumanizerVisualization[]; warning?: HumanizerWarning }
   > = {
-    [toFunctionSelector(approveAbi[0])]: (call) => {
+    [approveSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: approveAbi, data: padCallData(call.data, 4) })
       const [token, spender, amount, expiration] = args
       const expirationHumanization = expiration > 0 ? getDeadline(expiration) : getLabel('now')

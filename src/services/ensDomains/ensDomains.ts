@@ -1,4 +1,4 @@
-import { isAddress, labelhash, namehash } from 'viem'
+import { Address, isAddress, labelhash, namehash } from 'viem'
 import { getEnsAddress, getEnsAvatar as viemGetEnsAvatar, getEnsName, normalize } from 'viem/ens'
 
 import { RPCProvider } from '@/interfaces/provider'
@@ -65,8 +65,10 @@ async function resolveENSDomain({
   provider: RPCProvider
   domain: string
   options?: {
+    /** Whether to resolve the avatar record. Defaults to true. */
+    resolveAvatar?: boolean
     /** Universal resolver to query. Defaults to the ENS one. */
-    universalResolverAddress?: string
+    universalResolverAddress?: Address
     /**
      * Registrar/NameWrapper config for reading the registration expiry. Omit to use the ENS
      * defaults; pass `null` for services without an ENS registrar (they have no expiry to read).
@@ -83,11 +85,14 @@ async function resolveENSDomain({
 
   const client = getViemClientForProvider(provider)
   const universalResolverAddress = options?.universalResolverAddress ?? ENS_UNIVERSAL_RESOLVER
+  const skipAvatar = options?.resolveAvatar === false
   const skipExpiry = options?.expiry === null
 
   const [address, avatar, expiry] = await Promise.all([
     getEnsAddress(client, { name: normalizedDomainName, universalResolverAddress }),
-    viemGetEnsAvatar(client, { name: normalizedDomainName, universalResolverAddress }),
+    skipAvatar
+      ? Promise.resolve(null)
+      : viemGetEnsAvatar(client, { name: normalizedDomainName, universalResolverAddress }),
     skipExpiry
       ? Promise.resolve(null)
       : getEnsExpiry(provider, {
@@ -117,7 +122,7 @@ async function reverseLookupEns(
   addresses: string[],
   provider: RPCProvider,
   options?: {
-    universalResolverAddress?: string
+    universalResolverAddress?: Address
   }
 ): Promise<ReverseLookupResult> {
   if (!addresses.length) return {}
@@ -200,7 +205,7 @@ async function getEnsAvatar(
   name: string,
   provider: RPCProvider,
   options?: {
-    universalResolverAddress?: string
+    universalResolverAddress?: Address
   }
 ) {
   const normalizedName = normalize(name)

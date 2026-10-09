@@ -26,6 +26,7 @@ import {
   getDappRequestData,
   getDappVerificationTestDapps,
   loadingDapp,
+  makeDapp,
   suspiciousHostingDapp,
   verifiedDapp
 } from '../../../test/helpers/dapps'
@@ -34,26 +35,27 @@ import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
+import { FeatureFlags } from '../../consts/featureFlags'
+import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { ExternalSignerController, ExternalSignerControllers } from '../../interfaces/keystore'
+import { Platform } from '../../interfaces/platform'
 import { IProvidersController } from '../../interfaces/provider'
 import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
-import { BROADCAST_OPTIONS } from '../../libs/broadcast/broadcast'
-// Namespace import, so the broadcast helpers can be stood in for with jest.spyOn
 import * as broadcastLib from '../../libs/broadcast/broadcast'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
 import * as estimationLib from '../../libs/estimate/estimate'
 import { FullEstimationSummary } from '../../libs/estimate/interfaces'
-import { clearErc7730RegistryCache } from '../../libs/humanizer'
 import { HumanizerWarning } from '../../libs/humanizer/interfaces'
 import { UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
+import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { TokenResult } from '../../libs/portfolio'
 import { AccountState } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_STATE } from '../../libs/portfolio/testData'
@@ -78,9 +80,9 @@ import { AddressBookController } from '../addressBook/addressBook'
 import { AutoLoginController } from '../autoLogin/autoLogin'
 import { BannerController } from '../banner/banner'
 import { DappsController } from '../dapps/dapps'
+import { Erc7730Controller } from '../erc7730/erc7730'
 import { EstimationController } from '../estimation/estimation'
-import { EstimationStatus } from '../estimation/types'
-import { FeatureFlags } from '../../consts/featureFlags'
+import { EstimationFailureKind, EstimationStatus } from '../estimation/types'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import { InviteController } from '../invite/invite'
@@ -96,7 +98,7 @@ import { SurveyController } from '../survey/survey'
 import { UiController } from '../ui/ui'
 import { clearDiscoverTxnTokensCache } from './discoverTxnTokens'
 import { getFeeSpeedIdentifier, SignAccountOpType } from './helper'
-import { FeeSpeed, SigningStatus } from './signAccountOp'
+import { FeeSpeed, MAX_REESTIMATES, SignAccountOpController, SigningStatus } from './signAccountOp'
 import { SignAccountOpPreferenceController } from './signAccountOpPreference'
 import { SignAccountOpTesterController } from './signAccountOpTester'
 
@@ -467,6 +469,12 @@ const init = async (
     externalSignerControllers?: ExternalSignerControllers
     onBroadcastSuccess?: (params: any) => Promise<void>
     featureFlags?: Partial<FeatureFlags>
+    platform?: Platform
+    /**
+     * Pause the controller the moment it is built, before its estimate and gas price intervals
+     * get to run. For tests that drive those intervals themselves.
+     */
+    pauseOnInit?: boolean
   }
 ) => {
   const storage: Storage = produceMemoryStore()
@@ -557,7 +565,8 @@ const init = async (
     storage: storageCtrl,
     accounts: accountsCtrl,
     autoLogin: autoLoginCtrl,
-    banner: bannerCtrl
+    banner: bannerCtrl,
+    ui: uiCtrl
   })
   const addressBookCtrl = new AddressBookController(storageCtrl, accountsCtrl, selectedAccountCtrl)
   await accountsCtrl.initialLoadPromise
@@ -589,7 +598,8 @@ const init = async (
     fetch,
     storage: storageCtrl,
     addressBook: addressBookCtrl,
-    ui: uiCtrl
+    ui: uiCtrl,
+    featureFlags: featureFlagsCtrl
   })
   if (options?.dapps) {
     await phishing.init()
@@ -667,6 +677,7 @@ const init = async (
     networksCtrl,
     portfolio,
     safe,
+    featureFlagsCtrl,
     () => Promise.resolve()
   )
   const estimationController = new EstimationController(
@@ -685,11 +696,17 @@ const init = async (
   estimationController.availableFeeOptions = estimationOrMock.ambireEstimation
     ? estimationOrMock.ambireEstimation.feePaymentOptions
     : estimationOrMock.providerEstimation!.feePaymentOptions
-  const gasPriceController = new GasPriceController(network, provider, baseAccount, () => ({
-    estimation: estimationController,
-    readyToSign: true,
-    stopRefetching: false
-  }))
+  const gasPriceController = new GasPriceController(
+    network,
+    provider,
+    baseAccount,
+    () => ({
+      estimation: estimationController,
+      readyToSign: true,
+      stopRefetching: false
+    }),
+    featureFlagsCtrl
+  )
   gasPriceController.gasPrices = gasPricesOrMock
   const dappsControllerMock = {
     onUpdate: () => () => {},
@@ -709,7 +726,8 @@ const init = async (
       networks: networksCtrl,
       phishing,
       ui: uiCtrl,
-      selectedAccount: selectedAccountCtrl
+      selectedAccount: selectedAccountCtrl,
+      featureFlags: featureFlagsCtrl
     })
     await realDappsController.init()
 
@@ -722,14 +740,24 @@ const init = async (
     fetchAndUpdateSpy.mockRestore()
     dapps = realDappsController
   }
+  // A real controller over the test's storage, not a stub - the ERC-7730 tests assert on
+  // descriptor caching, which is exactly what this controller owns.
+  const erc7730 = new Erc7730Controller({
+    storage: storageCtrl,
+    callRelayer,
+    featureFlags: featureFlagsCtrl,
+    ui: uiCtrl
+  })
   const controller = new SignAccountOpTesterController({
     type: options?.type,
     callRelayer: options?.callRelayer as BindedRelayerCall,
+    erc7730,
     accounts: accountsCtrl,
     networks: networksCtrl,
     keystore,
     portfolio,
     featureFlags: featureFlagsCtrl,
+    platform: options?.platform ?? 'browser-webkit',
     signAccountOpPreference,
     externalSignerControllers: options?.externalSignerControllers || {},
     account,
@@ -750,6 +778,10 @@ const init = async (
     hasNewEstimation: true,
     gasPrices: gasPricesOrMock
   })
+
+  // Must happen before the first await, otherwise the intervals scheduled by the constructor
+  // have already started their immediate run.
+  if (options?.pauseOnInit) controller.pause()
 
   return { controller, storageCtrl, signAccountOpPreference, accountsCtrl, portfolio }
 }
@@ -1512,7 +1544,7 @@ describe('SignAccountOp Controller ', () => {
 
     expect(controller.accountOp.gasFeePayment).toEqual({
       paidBy: eoaAccount.addr,
-      broadcastOption: BROADCAST_OPTIONS.bySelf,
+      broadcastOption: broadcastLib.BROADCAST_OPTIONS.bySelf,
       paidByKeyType: 'internal',
       isCustomGasLimit: false,
       isGasTank: false,
@@ -2265,7 +2297,7 @@ describe('Negative cases', () => {
 
     expect(controller.accountOp.gasFeePayment!.paidBy).toEqual(eoaSigner.keyPublicAddress)
     expect(controller.accountOp.gasFeePayment!.broadcastOption).toEqual(
-      BROADCAST_OPTIONS.byOtherEOA
+      broadcastLib.BROADCAST_OPTIONS.byOtherEOA
     )
     expect(controller.accountOp.gasFeePayment!.isGasTank).toEqual(false)
     expect(controller.accountOp.gasFeePayment!.inToken).toEqual(
@@ -2992,8 +3024,6 @@ test('Signing [V1 with EOA payment]: working case', async () => {
 
 describe('ERC-7730 humanization', () => {
   test('shows loading, uses ERC-7730 data, caches it and fetches a shared batch descriptor once', async () => {
-    clearErc7730RegistryCache()
-
     const tokenAddress = '0x1111111111111111111111111111111111111111'
     const spender = '0x2222222222222222222222222222222222222222'
     const registryPath = 'registry/test/approve.json'
@@ -3073,17 +3103,17 @@ describe('ERC-7730 humanization', () => {
       controller.humanization.forEach((humanizedCall, index) => {
         expect(humanizedCall.fullVisualization?.[0]).toMatchObject({
           type: 'erc7730',
-          title: 'Approve with ERC-7730',
-          rows: [
+          intent: [expect.objectContaining({ content: 'Approve with ERC-7730' })],
+          fields: [
             {
+              type: 'single-value',
               label: 'Spender',
-              value: [{ type: 'address', address: spender }]
+              value: { type: 'address', address: spender }
             },
             {
+              type: 'single-value',
               label: 'Amount',
-              value: [
-                { type: 'token', address: tokenAddress, value: BigInt(index + 1), chainId: 1n }
-              ]
+              value: { type: 'token', address: tokenAddress, value: BigInt(index + 1), chainId: 1n }
             }
           ]
         })
@@ -3099,7 +3129,7 @@ describe('ERC-7730 humanization', () => {
       expect(callRelayer).not.toHaveBeenCalled()
       expect(controller.humanization[0]?.fullVisualization?.[0]).toMatchObject({
         type: 'erc7730',
-        title: 'Approve with ERC-7730'
+        intent: [expect.objectContaining({ content: 'Approve with ERC-7730' })]
       })
     } finally {
       controller.destroy()
@@ -3107,8 +3137,6 @@ describe('ERC-7730 humanization', () => {
   })
 
   test('falls back to the old humanizer when no ERC-7730 descriptor is available', async () => {
-    clearErc7730RegistryCache()
-
     const callRelayer = jest.fn(async (path: string, method?: string) => {
       if (path === '/v2/erc7730/account-op') {
         expect(method).toBe('GET')
@@ -3289,7 +3317,9 @@ describe('dapp verification banners', () => {
         id: DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING,
         type: 'warning',
         title: 'Suspicious app hosting',
-        text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.'
+        text: 'This app is hosted on a shared platform commonly used for phishing. Be careful - do not sign unless you are certain you trust it.',
+        // The dApp is on its own vercel.app subdomain, so the user may mark it as trusted.
+        trustableDappUrls: [suspiciousHostingDapp.url]
       }
     ])
   })
@@ -4066,5 +4096,561 @@ describe('broadcasting a batch one transaction at a time', () => {
     // failure is the whole story.
     expect(submittedAccountOps).toHaveLength(0)
     expect(getPartialBroadcastError(controller)).toBeUndefined()
+  })
+})
+
+describe('reestimation loop', () => {
+  const loopGasPrices = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+
+  const initLoop = async () => {
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: nativeFeeToken
+      }
+    ]
+    // Building the controller normally fires one estimate straight away, on the real clock. That
+    // request is still waiting on the network when takeOverLoop switches to fake timers, so it
+    // finishes somewhere in the middle of the loop below, where it counts as a reestimate even
+    // though it never called the spy. The loop then reaches its limit one attempt short.
+    // pauseOnInit keeps that first estimate from starting at all.
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 25000n, feePaymentOptions },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      loopGasPrices,
+      false,
+      { pauseOnInit: true }
+    )
+
+    // The gas price loop is not under test and would otherwise hit the network
+    jest.spyOn(controller.gasPrice, 'fetch').mockImplementation(async () => {})
+
+    return controller
+  }
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+    jest.useRealTimers()
+  })
+
+  /**
+   * Hands the estimate loop over to the fake clock. The interval scheduled while
+   * the controller was built belongs to the real one, so without this no tick
+   * ever fires and every assertion below would pass on an idle loop.
+   */
+  const takeOverLoop = (controller: SignAccountOpController) => {
+    jest.useFakeTimers()
+    controller.pause()
+    controller.resume()
+  }
+
+  /** Advances far enough to cover the give-up limit, including its growing waits. */
+  const runLoop = async (ticks: number) => {
+    for (let i = 0; i < ticks; i += 1) {
+      await jest.advanceTimersByTimeAsync(ESTIMATE_UPDATE_INTERVAL)
+    }
+  }
+
+  const TICKS_PAST_GIVE_UP = 200
+
+  /** Stands in for an attempt that ended with the given failure. */
+  const mockFailingEstimate = (controller: SignAccountOpController, kind: EstimationFailureKind) =>
+    jest.spyOn(controller.estimation, 'estimate').mockImplementation(async () => {
+      controller.estimation.status = EstimationStatus.Error
+      controller.estimation.failureKind = kind
+      controller.estimation.hasEstimated = true
+    })
+
+  test('stops asking once the failure cannot be fixed by asking again', async () => {
+    const controller = await initLoop()
+    const estimate = mockFailingEstimate(controller, EstimationFailureKind.Permanent)
+
+    takeOverLoop(controller)
+    await runLoop(TICKS_PAST_GIVE_UP)
+
+    // The account is gone or the network is off - the answer will not change,
+    // so there is no reason to keep the user's providers busy
+    expect(estimate).toHaveBeenCalledTimes(1)
+  })
+
+  test('keeps asking while the failure may resolve on its own', async () => {
+    const controller = await initLoop()
+    const estimate = mockFailingEstimate(controller, EstimationFailureKind.Retriable)
+
+    takeOverLoop(controller)
+    await runLoop(TICKS_PAST_GIVE_UP)
+
+    // A connection that came back would produce a different answer, so the loop
+    // keeps going until it hits the give-up limit
+    expect(estimate).toHaveBeenCalledTimes(MAX_REESTIMATES + 1)
+  })
+
+  test('gives up on a request the user left open', async () => {
+    const controller = await initLoop()
+    const estimate = jest
+      .spyOn(controller.estimation, 'estimate')
+      .mockImplementation(async () => {})
+
+    takeOverLoop(controller)
+    await runLoop(TICKS_PAST_GIVE_UP)
+    const callsAfterGivingUp = estimate.mock.calls.length
+
+    expect(callsAfterGivingUp).toBe(MAX_REESTIMATES + 1)
+
+    await runLoop(TICKS_PAST_GIVE_UP)
+
+    // Confirms it really stopped rather than merely slowed down
+    expect(estimate.mock.calls.length).toBe(callsAfterGivingUp)
+  })
+
+  test('retry resumes a loop that had stopped refetching', async () => {
+    const controller = await initLoop()
+    const estimate = jest
+      .spyOn(controller.estimation, 'estimate')
+      .mockImplementation(async () => {})
+
+    // pause leaves refetching stopped, the same state the give-up limit leaves behind
+    controller.pause()
+
+    jest.useFakeTimers()
+    await runLoop(2)
+    expect(estimate).not.toHaveBeenCalled()
+
+    await controller.retry('estimate')
+    await runLoop(1)
+
+    // Without clearing the stopped flag the interval shuts itself down again on its
+    // first run, which is what made the retry button do nothing
+    expect(estimate).toHaveBeenCalled()
+  })
+})
+
+describe('SignAccountOp signing authentication', () => {
+  const ALICE = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+  const BOB = '0x8f4B2F3e18a4E1Fc5c9d95e1eE5A9B37a55f6A67'
+  const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
+
+  const dappA = makeDapp({ id: 'dapp-a.com', name: 'Dapp A', url: 'https://dapp-a.com' })
+  const dappB = makeDapp({ id: 'dapp-b.com', name: 'Dapp B', url: 'https://dapp-b.com' })
+
+  const initSigningAuth = async (
+    calls: AccountOp['calls'],
+    options?: { dapps?: Dapp[]; sentTo?: string[]; platform?: Platform }
+  ) => {
+    const accountOp = createEOAAccountOp(eoaAccount)
+    ;(accountOp.op.calls as any) = calls
+
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: parseEther('1'),
+          symbol: 'ETH',
+          name: 'Ether',
+          chainId: 1n,
+          decimals: 18,
+          priceIn: [],
+          marketDataIn: [],
+          flags: {
+            onGasTank: false,
+            rewardsType: null,
+            canTopUpGasTank: true,
+            isFeeToken: true
+          }
+        }
+      }
+    ]
+
+    const { controller } = await init(
+      eoaAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      {
+        slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+        medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+        fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+        ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+      },
+      false,
+      {
+        dapps: options?.dapps,
+        platform: options?.platform ?? 'mobile-ios',
+        initialSetStorage: async (storageCtrl) => {
+          if (!options?.sentTo?.length) return
+
+          await storageCtrl.set('sentToHistory', {
+            domains: {},
+            recipients: {
+              [eoaAccount.addr]: Object.fromEntries(
+                options.sentTo.map((addr) => [getAddress(addr), Date.now()])
+              )
+            }
+          })
+        }
+      }
+    )
+
+    // The recipients are resolved from the activity, which is read asynchronously
+    await wait(1)
+
+    return controller
+  }
+
+  const erc20 = new Interface(['function transfer(address to, uint256 amount)'])
+
+  test('a recipient the account has never sent to has to be confirmed', async () => {
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x' }])
+
+    expect(controller.signingAuthRequirement).toEqual({
+      firstTimeRecipients: [ALICE],
+      unauthenticatedDapps: []
+    })
+  })
+
+  test('a recipient the account has already sent to does not have to be confirmed', async () => {
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x' }], {
+      sentTo: [ALICE]
+    })
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('reads the recipient of a token transfer, not the token', async () => {
+    const data = erc20.encodeFunctionData('transfer', [BOB, 1n]) as Hex
+    const controller = await initSigningAuth([{ to: USDC, value: 0n, data }])
+
+    expect(controller.signingAuthRequirement?.firstTimeRecipients).toEqual([BOB])
+  })
+
+  // Being added to the wallet does not mean the user meant to send there, and an attacker who
+  // gets an address saved must not be able to have the confirmation skipped because of it
+  test('an account added to the wallet is still a first time recipient', async () => {
+    const controller = await initSigningAuth([{ to: eoaAccount.addr, value: 1n, data: '0x' }])
+
+    expect(controller.signingAuthRequirement?.firstTimeRecipients).toEqual([eoaAccount.addr])
+  })
+
+  test('paying the fee collector is not a first contact', async () => {
+    const controller = await initSigningAuth([{ to: FEE_COLLECTOR, value: 1n, data: '0x' }])
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a contract interaction on its own needs no recipient confirmation', async () => {
+    const controller = await initSigningAuth([{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex }])
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a dapp that has not been authenticated for signing has to be confirmed', async () => {
+    const controller = await initSigningAuth(
+      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      { dapps: [dappA] }
+    )
+
+    expect(controller.signingAuthRequirement).toEqual({
+      firstTimeRecipients: [],
+      unauthenticatedDapps: [{ id: dappA.id, name: dappA.name }]
+    })
+  })
+
+  test('an already authenticated dapp does not have to be confirmed again', async () => {
+    const controller = await initSigningAuth(
+      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      { dapps: [{ ...dappA, signingAuthenticated: true }] }
+    )
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a batch lists every unauthenticated dapp once', async () => {
+    const controller = await initSigningAuth(
+      [
+        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA },
+        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappB },
+        { to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }
+      ],
+      { dapps: [dappA, dappB] }
+    )
+
+    expect(controller.signingAuthRequirement?.unauthenticatedDapps).toEqual([
+      { id: dappA.id, name: dappA.name },
+      { id: dappB.id, name: dappB.name }
+    ])
+  })
+
+  test('a dapp the catalog does not know is skipped, as the confirmation cannot be remembered', async () => {
+    const controller = await initSigningAuth(
+      [{ to: USDC, value: 0n, data: '0x095ea7b3' as Hex, dapp: dappA }],
+      { dapps: [dappB] }
+    )
+
+    expect(controller.signingAuthRequirement).toBe(null)
+  })
+
+  test('a first time recipient and an unauthenticated dapp are reported together', async () => {
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x', dapp: dappA }], {
+      dapps: [dappA]
+    })
+
+    expect(controller.signingAuthRequirement).toEqual({
+      firstTimeRecipients: [ALICE],
+      unauthenticatedDapps: [{ id: dappA.id, name: dappA.name }]
+    })
+  })
+
+  test('is never required outside of mobile, and the recipients are not looked up', async () => {
+    const hasAccountOpsSentToSpy = jest.spyOn(ActivityController.prototype, 'hasAccountOpsSentTo')
+    const controller = await initSigningAuth([{ to: ALICE, value: 1n, data: '0x', dapp: dappA }], {
+      dapps: [dappA],
+      platform: 'browser-webkit'
+    })
+
+    expect(controller.signingAuthRequirement).toBe(null)
+    expect(hasAccountOpsSentToSpy).not.toHaveBeenCalled()
+
+    hasAccountOpsSentToSpy.mockRestore()
+  })
+})
+
+describe('RPC gas prices with a bundler fallback', () => {
+  suppressConsoleBeforeEach()
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  const toGasSpeeds = (base: bigint): GasSpeeds => ({
+    slow: { maxFeePerGas: toBeHex(base) as Hex, maxPriorityFeePerGas: toBeHex(base / 2n) as Hex },
+    medium: {
+      maxFeePerGas: toBeHex(base * 2n) as Hex,
+      maxPriorityFeePerGas: toBeHex(base) as Hex
+    },
+    fast: {
+      maxFeePerGas: toBeHex(base * 3n) as Hex,
+      maxPriorityFeePerGas: toBeHex((base * 3n) / 2n) as Hex
+    },
+    ape: {
+      maxFeePerGas: toBeHex(base * 4n) as Hex,
+      maxPriorityFeePerGas: toBeHex(base * 2n) as Hex
+    }
+  })
+  const rpcGasPrices = toGasSpeeds(1000n)
+  const bundlerGasPrices = toGasSpeeds(5000n)
+  const customGasPrices = toGasSpeeds(9000n)
+
+  const getSpeed = (
+    controller: SignAccountOpController,
+    paidBy: string,
+    speed: FeeSpeed,
+    feeToken: TokenResult = nativeFeeToken
+  ) => {
+    const option = controller.estimation.availableFeeOptions.find(
+      (o) => o.paidBy === paidBy && o.token.address === feeToken.address
+    )!
+    return controller.feeSpeeds[getFeeSpeedIdentifier(option, controller.accountOp.accountAddr)]!.find(
+      ({ type }) => type === speed
+    )!
+  }
+
+  /**
+   * Builds a smart account signAccountOp with two native fee options: the account paying
+   * by itself and an EOA paying for it (a broadcast outside the bundler). The estimation
+   * comes with bundler gas prices, as a successful bundler estimation would.
+   * A Safe pays by itself through the bundler, making it the default account here
+   */
+  const initSmartAccount = async (
+    chainId: bigint,
+    feeToken: TokenResult,
+    account: Account = safeAccount
+  ) => {
+    // the gas prices are driven by the test, not fetched from the network
+    const fetchSpy = jest.spyOn(GasPriceController.prototype, 'fetch').mockResolvedValue(undefined)
+    const option = {
+      availableAmount: 1000000000000000000n,
+      gasUsed: 25000n,
+      addedNative: 0n,
+      token: feeToken
+    }
+    const feePaymentOptions = [
+      { ...option, paidBy: account.addr },
+      { ...option, paidBy: eoaAccount.addr }
+    ]
+    const paymaster = {
+      isUsable: () => false,
+      isSponsored: () => false,
+      getEstimationData: () => null
+    } as unknown as AbstractPaymaster
+
+    const { controller } = await init(
+      account,
+      createAccountOp(account, chainId),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 25000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 25000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        bundlerEstimation: {
+          callGasLimit: toBeHex(30000n),
+          preVerificationGas: toBeHex(50000n),
+          verificationGasLimit: toBeHex(100000n),
+          paymasterVerificationGasLimit: toBeHex(0n),
+          paymasterPostOpGasLimit: toBeHex(0n),
+          gasPrice: bundlerGasPrices,
+          paymaster,
+          flags: {}
+        },
+        bundlerGasPrices,
+        flags: {},
+        updatedAt: Date.now()
+      },
+      bundlerGasPrices,
+      false,
+      // otherwise the estimate interval runs a real estimation right away and puts the
+      // mocked one in a loading state, which skips the fee speeds calculation
+      { pauseOnInit: true }
+    )
+
+    return { controller, fetchSpy }
+  }
+
+  test('uses the RPC gas prices for an EOA paying on Ethereum and the bundler ones for the Safe itself', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+
+    // as the gas price controller would pass them
+    controller.update({ rpcGasPrices })
+
+    // broadcast by another EOA: the RPC gas prices, with no increase on top
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Fast).gasPrice).toBe(
+      BigInt(rpcGasPrices.fast.maxFeePerGas)
+    )
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Fast).maxPriorityFeePerGas).toBe(
+      BigInt(rpcGasPrices.fast.maxPriorityFeePerGas)
+    )
+    // broadcast by the bundler: the bundler gas prices
+    expect(getSpeed(controller, safeAccount.addr, FeeSpeed.Fast).gasPrice).toBe(
+      BigInt(bundlerGasPrices.fast.maxFeePerGas)
+    )
+  })
+
+  test('exposes the gas prices of the selected fee option', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+    controller.update({ rpcGasPrices })
+
+    controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    expect(controller.selectedOptionGasPrices).toEqual(rpcGasPrices)
+    expect(controller.toJSON().selectedOptionGasPrices).toEqual(rpcGasPrices)
+
+    controller.update({ feeToken: nativeFeeToken, paidBy: safeAccount.addr })
+    expect(controller.selectedOptionGasPrices).toEqual(bundlerGasPrices)
+  })
+
+  test('falls back to the bundler gas prices until the RPC ones are fetched', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+
+    expect(controller.rpcGasPrices).toBeUndefined()
+    // slow is not increased, so it equals the bundler collection
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Slow).gasPrice).toBe(
+      BigInt(bundlerGasPrices.slow.maxFeePerGas)
+    )
+  })
+
+  test('a gas price controller update does not overwrite the bundler estimation gas prices', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+
+    // the gas price controller mirrors the RPC gas prices in both of its fields
+    controller.gasPrice.gasPrices = rpcGasPrices
+    controller.gasPrice.rpcGasPrices = rpcGasPrices
+    await controller.emitGasPriceUpdate()
+
+    expect(controller.gasPrices).toEqual(bundlerGasPrices)
+    expect(controller.rpcGasPrices).toEqual(rpcGasPrices)
+    expect(getSpeed(controller, safeAccount.addr, FeeSpeed.Fast).gasPrice).toBe(
+      BigInt(bundlerGasPrices.fast.maxFeePerGas)
+    )
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Fast).gasPrice).toBe(
+      BigInt(rpcGasPrices.fast.maxFeePerGas)
+    )
+  })
+
+  test('marks the gas prices as coming from the bundler estimation on Ethereum', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+
+    // the flag is truthful, and the strategy is what keeps the RPC fetch going
+    // (see the gasPrice controller tests)
+
+    expect(controller.gasPrice.areGasPricesUsedFromBundlerEstimation).toBe(true)
+    expect(
+      controller.baseAccount.getGasPriceFetchStrategy(controller.isErc4337Enabled)
+    ).toBe('rpcWithBundlerFallback')
+  })
+
+  test('custom gas prices override both collections', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+    controller.update({ rpcGasPrices })
+
+    controller.update({ customGasPrices })
+
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Fast).gasPrice).toBe(
+      BigInt(customGasPrices.fast.maxFeePerGas)
+    )
+    expect(getSpeed(controller, safeAccount.addr, FeeSpeed.Fast).gasPrice).toBe(
+      BigInt(customGasPrices.fast.maxFeePerGas)
+    )
+    controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    expect(controller.selectedOptionGasPrices).toEqual(customGasPrices)
+  })
+
+  test('ignores the RPC gas prices outside Ethereum', async () => {
+    // the test environment has no Polygon state for the Safe, so use an Ambire smart
+    // account, which prefers the bundler outside Ethereum just the same
+    const { controller } = await initSmartAccount(137n, nativeFeeTokenPolygon, smartAccount)
+    expect(
+      controller.baseAccount.getGasPriceFetchStrategy(controller.isErc4337Enabled)
+    ).toBe('bundlerWithRpcFallback')
+
+    controller.update({ rpcGasPrices })
+
+    // slow is not increased, so it equals the bundler collection
+    expect(
+      getSpeed(controller, eoaAccount.addr, FeeSpeed.Slow, nativeFeeTokenPolygon).gasPrice
+    ).toBe(BigInt(bundlerGasPrices.slow.maxFeePerGas))
+    controller.update({ feeToken: nativeFeeTokenPolygon, paidBy: eoaAccount.addr })
+    expect(controller.selectedOptionGasPrices).toEqual(bundlerGasPrices)
   })
 })

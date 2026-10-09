@@ -229,20 +229,29 @@ const getConditionalOrderVisualization = (
   ]
 }
 
+const swapSelector = toFunctionSelector(swapAbi[0])
+const settleSelector = toFunctionSelector(settleAbi[0])
+const setPreSignatureSelector = toFunctionSelector(setPreSignatureAbi[0])
+const invalidateOrderSelector = toFunctionSelector(invalidateOrderAbi[0])
+const freeFilledAmountStorageSelector = toFunctionSelector(freeFilledAmountStorageAbi[0])
+const freePreSignatureStorageSelector = toFunctionSelector(freePreSignatureStorageAbi[0])
+const createSelector = toFunctionSelector(createAbi[0])
+const createWithContextSelector = toFunctionSelector(createWithContextAbi[0])
+
 const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const matcher: Record<string, (call: HexIrCall) => HumanizerVisualization[]> = {
-    [toFunctionSelector(swapAbi[0])]: (call) => {
+    [swapSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: swapAbi, data: call.data })
       const [, tokens, order] = args
 
       return [getAction('Swap'), ...getOrderVisualization(accountOp, tokens, order)]
     },
-    [toFunctionSelector(settleAbi[0])]: (call) => {
+    [settleSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: settleAbi, data: call.data })
       const [tokens, , trades] = args
       return getSettlementVisualization(accountOp, tokens, trades)
     },
-    [toFunctionSelector(setPreSignatureAbi[0])]: (call) => {
+    [setPreSignatureSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: setPreSignatureAbi, data: call.data })
       const [orderUid, signed] = args
 
@@ -251,31 +260,31 @@ const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) 
         ...getOrderUidVisualization(orderUid)
       ]
     },
-    [toFunctionSelector(invalidateOrderAbi[0])]: (call) => {
+    [invalidateOrderSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: invalidateOrderAbi, data: call.data })
       const [orderUid] = args
 
       return [getAction('Cancel CowSwap order'), ...getOrderUidVisualization(orderUid)]
     },
-    [toFunctionSelector(freeFilledAmountStorageAbi[0])]: (call) => {
+    [freeFilledAmountStorageSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: freeFilledAmountStorageAbi, data: call.data })
       const [orderUids] = args
 
       return [getAction('Clear CowSwap filled amount storage'), getLabel(orderUids.length)]
     },
-    [toFunctionSelector(freePreSignatureStorageAbi[0])]: (call) => {
+    [freePreSignatureStorageSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: freePreSignatureStorageAbi, data: call.data })
       const [orderUids] = args
 
       return [getAction('Clear CowSwap pre-signature storage'), getLabel(orderUids.length)]
     },
-    [toFunctionSelector(createAbi[0])]: (call) => {
+    [createSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: createAbi, data: call.data })
       const [params] = args
 
       return getConditionalOrderVisualization(accountOp, params)
     },
-    [toFunctionSelector(createWithContextAbi[0])]: (call) => {
+    [createWithContextSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: createWithContextAbi, data: call.data })
       const [params] = args
 

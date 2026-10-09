@@ -37,9 +37,16 @@ const swapTokensForExactTokensAbi = parseAbi([
   'function swapTokensForExactTokens(uint256 amountOut,uint256 amountInMax,(uint256[],uint8[],address[]) path,address to,uint256 deadline) returns (uint256[])'
 ])
 
+const swapExactNATIVEForTokensSelector = toFunctionSelector(swapExactNATIVEForTokensAbi[0])
+const swapNATIVEForExactTokensSelector = toFunctionSelector(swapNATIVEForExactTokensAbi[0])
+const swapExactTokensForNATIVESelector = toFunctionSelector(swapExactTokensForNATIVEAbi[0])
+const swapTokensForExactNATIVESelector = toFunctionSelector(swapTokensForExactNATIVEAbi[0])
+const swapExactTokensForTokensSelector = toFunctionSelector(swapExactTokensForTokensAbi[0])
+const swapTokensForExactTokensSelector = toFunctionSelector(swapTokensForExactTokensAbi[0])
+
 const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const matcher = {
-    [toFunctionSelector(swapExactNATIVEForTokensAbi[0])]: (call: HexIrCall) => {
+    [swapExactNATIVEForTokensSelector]: (call: HexIrCall) => {
       const { args } = decodeFunctionData({
         abi: swapExactNATIVEForTokensAbi,
         data: call.data
@@ -57,7 +64,7 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) =>
         getDeadline(deadline)
       ]
     },
-    [toFunctionSelector(swapNATIVEForExactTokensAbi[0])]: (call: HexIrCall) => {
+    [swapNATIVEForExactTokensSelector]: (call: HexIrCall) => {
       const { args } = decodeFunctionData({
         abi: swapNATIVEForExactTokensAbi,
         data: call.data
@@ -75,7 +82,7 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) =>
         getDeadline(deadline)
       ]
     },
-    [toFunctionSelector(swapExactTokensForNATIVEAbi[0])]: (call: HexIrCall) => {
+    [swapExactTokensForNATIVESelector]: (call: HexIrCall) => {
       const { args } = decodeFunctionData({
         abi: swapExactTokensForNATIVEAbi,
         data: call.data
@@ -94,7 +101,7 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) =>
         getDeadline(deadline)
       ]
     },
-    [toFunctionSelector(swapTokensForExactNATIVEAbi[0])]: (call: HexIrCall) => {
+    [swapTokensForExactNATIVESelector]: (call: HexIrCall) => {
       const { args } = decodeFunctionData({
         abi: swapTokensForExactNATIVEAbi,
         data: call.data
@@ -113,7 +120,7 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) =>
         getDeadline(deadline)
       ]
     },
-    [toFunctionSelector(swapExactTokensForTokensAbi[0])]: (call: HexIrCall) => {
+    [swapExactTokensForTokensSelector]: (call: HexIrCall) => {
       const { args } = decodeFunctionData({
         abi: swapExactTokensForTokensAbi,
         data: call.data
@@ -132,7 +139,7 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) =>
         getDeadline(deadline)
       ]
     },
-    [toFunctionSelector(swapTokensForExactTokensAbi[0])]: (call: HexIrCall) => {
+    [swapTokensForExactTokensSelector]: (call: HexIrCall) => {
       const { args } = decodeFunctionData({
         abi: swapTokensForExactTokensAbi,
         data: call.data

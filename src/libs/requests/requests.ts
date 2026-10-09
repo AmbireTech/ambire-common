@@ -3,9 +3,9 @@ import { generateUuid } from '@/utils/uuid'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import {
   CallsUserRequest,
-  SignUserRequest,
   SwitchAccountRequest,
-  UserRequest
+  UserRequest,
+  UserRequestWaitingAccountSwitch
 } from '../../interfaces/userRequest'
 
 export const dappRequestMethodToRequestKind = (method: DappProviderRequest['method']) => {
@@ -84,7 +84,7 @@ export const buildSwitchAccountUserRequest = ({
   selectedAccountAddr,
   dappPromises
 }: {
-  nextUserRequest: SignUserRequest
+  nextUserRequest: UserRequestWaitingAccountSwitch
   selectedAccountAddr: string
   dappPromises: UserRequest['dappPromises']
 }): SwitchAccountRequest => {
@@ -109,3 +109,13 @@ export const sumTopUps = (userRequests: UserRequest[]): bigint | undefined => {
       .reduce((a, b) => a! + b!, 0n) ?? undefined
   )
 }
+
+/**
+ * True for a Safe transaction that at least one owner has already signed. Such a transaction
+ * waits in the Safe queue for the other owners, so the wallet should open it only when the
+ * user picks it.
+ */
+export const isSignedSafeCallsRequest = (request: UserRequest): boolean =>
+  request.kind === 'calls' &&
+  !!request.signAccountOp.account.safeCreation &&
+  !!request.signAccountOp.accountOp.signed?.length
