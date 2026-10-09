@@ -105,6 +105,19 @@ export const isSyncPasswordRequired = ({
 }: Pick<AppDataSyncPayload, 'keys' | 'seeds'>): boolean =>
   keys.some((key) => key.type === 'internal') || !!seeds.length
 
+/**
+ * The keys that travel along with the selected accounts. A Safe's owners are accounts
+ * of their own, so their keys travel only if the user selected those accounts as well.
+ */
+export const getAppDataSyncKeyAddrs = (accounts: Account[]): Account['associatedKeys'] =>
+  Array.from(
+    new Set(
+      accounts
+        .filter((account) => !account.safeCreation)
+        .flatMap((account) => account.associatedKeys)
+    )
+  )
+
 const requireGcmPayload = (payload: any, what: string) => {
   if (!tryParseGcmPayload(payload))
     throw new Error(`appDataSync: ${what} is not encrypted with ${CIPHER}`)
