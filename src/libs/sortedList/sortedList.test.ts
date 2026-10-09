@@ -1,6 +1,12 @@
 import { describe, expect, test } from '@jest/globals'
 
-import { applySortedDelta, isSortedUnique, sortedIncludes, toSortedUnique } from './sortedList'
+import {
+  applySortedDelta,
+  isSortedUnique,
+  SortedListDeltaOp,
+  sortedIncludes,
+  toSortedUnique
+} from './sortedList'
 
 /** Replays the ops on a Set, which is the behavior applySortedDelta must match. */
 const applyWithSet = (list: string[], ops: { op: 'add' | 'remove'; value: string }[]) => {
@@ -102,9 +108,9 @@ describe('sortedList', () => {
     })
     test('handles a delta with more changes than fit in one concat call', () => {
       const base = Array.from({ length: 30_000 }, (_, i) => `site${String(i).padStart(6, '0')}.com`)
-      const ops = base.flatMap((value, i) => {
-        if (i % 3 === 0) return [{ op: 'remove' as const, value }]
-        if (i % 3 === 1) return [{ op: 'add' as const, value: `${value}-new` }]
+      const ops = base.flatMap((value, i): SortedListDeltaOp[] => {
+        if (i % 3 === 0) return [{ op: 'remove', value }]
+        if (i % 3 === 1) return [{ op: 'add', value: `${value}-new` }]
         return []
       })
       const result = applySortedDelta(base, ops)

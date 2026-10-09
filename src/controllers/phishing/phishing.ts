@@ -267,9 +267,10 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     this.#version = phishing.version
     this.#updatedAt = phishing.updatedAt
 
-    // Lists stored before they were kept sorted are sorted in memory on load. They are not written
-    // back here: writing the whole list is the slowest step of loading, and the next update stores
-    // the sorted list anyway, after which every load only pays for the check.
+    // The stored lists are sorted - by the PhishingController when it stores them, and by the
+    // sortPhishingLists storage migration for lists stored before that. The check is kept anyway
+    // because it is cheap, and an unsorted list would make the binary search silently miss listed
+    // domains and addresses.
     const areDomainsSorted = isSortedUnique(phishing.domains)
     const areAddressesSorted = isSortedUnique(phishing.addresses)
     this.#domains = areDomainsSorted ? phishing.domains : toSortedUnique(phishing.domains)

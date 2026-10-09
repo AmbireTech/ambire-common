@@ -29,7 +29,8 @@ const ALL_MIGRATION_KEYS = [
   'migrateDappsAddConnectionSources',
   'migrateDomainsCacheToNames',
   'migrateDappsAddMissingIds',
-  'indexSentToHistoryFromAccountsOps'
+  'indexSentToHistoryFromAccountsOps',
+  'sortPhishingLists'
 ]
 
 // Wraps a memory store and counts how many times each key is read and how many
@@ -206,6 +207,73 @@ describe('StorageController', () => {
       const second = new StorageController(memStorage)
       const after = await second.get('dappsV2', [])
       expect((after as any[])[0].connectedSources).toBeUndefined()
+    })
+  })
+
+  describe('sortPhishingLists', () => {
+    const MIGRATION_KEY = 'sortPhishingLists'
+    const CHECKSUMMED_ADDRESS = '0x20A9Ff01B49cD8967Cdd8081C547236EED1D1a4e'
+    const LOWERCASE_ADDRESS = CHECKSUMMED_ADDRESS.toLowerCase()
+
+    test('sorts and dedupes the lists, lowercases addresses and keeps version and updatedAt', async () => {
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {
+        phishing: {
+          version: 7,
+          updatedAt: 123,
+          domains: ['zz-scam.io', 'aa-scam.org', 'zz-scam.io'],
+          addresses: [
+            LOWERCASE_ADDRESS,
+            CHECKSUMMED_ADDRESS,
+            '0x1a633538b169b41052bfc40b0c973ac1bff31a4e'
+          ]
+        }
+      })
+
+      expect(await storageCtrl.get('phishing', null)).toEqual({
+        version: 7,
+        updatedAt: 123,
+        domains: ['aa-scam.org', 'zz-scam.io'],
+        addresses: ['0x1a633538b169b41052bfc40b0c973ac1bff31a4e', LOWERCASE_ADDRESS]
+      })
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+
+    test('does not write a list that is already in the current shape', async () => {
+      const counting = produceCountingStore()
+      const current = {
+        version: 7,
+        updatedAt: 123,
+        domains: ['aa-scam.org', 'zz-scam.io'],
+        addresses: [LOWERCASE_ADDRESS]
+      }
+      await counting.store.set('phishing', current)
+      await counting.store.set(
+        'passedMigrations',
+        ALL_MIGRATION_KEYS.filter((key) => key !== MIGRATION_KEY)
+      )
+      counting.reset()
+
+      const storageCtrl = new StorageController(counting.store)
+      expect(await storageCtrl.get('phishing', null)).toEqual(current)
+      // The single write is the `passedMigrations` marker, `phishing` is left as it was
+      expect(counting.setCount()).toBe(1)
+    })
+
+    test('writes nothing when there is no list yet, but still marks the migration passed', async () => {
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {})
+
+      expect(await storageCtrl.get('phishing', null)).toBe(null)
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+
+    test('leaves a malformed list as it is instead of throwing', async () => {
+      const malformed = { version: 1, updatedAt: 1, domains: 'not-a-list', addresses: [] }
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {
+        phishing: malformed
+      })
+
+      expect(await storageCtrl.get('phishing', null)).toEqual(malformed)
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
     })
   })
 
