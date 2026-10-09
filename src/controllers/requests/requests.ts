@@ -1784,8 +1784,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         : getAmbirePaymasterService(baseAcc, this.#relayerUrl)
 
     return {
+      // Only the fields a dApp is meant to send are copied. Spreading the whole object would let a
+      // dApp set internal fields of the call (e.g. `fullVisualization`, `isFallback`, `status`)
+      // and the humanizer would later trust them as its own output.
       calls: calls.map((c) => ({
-        ...c,
+        to: c.to,
         data: c.data?.toLowerCase() || '0x',
         value: c.value ? getBigInt(c.value) : 0n,
         dapp: dapp ?? undefined,

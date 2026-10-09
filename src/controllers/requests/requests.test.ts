@@ -2727,7 +2727,7 @@ describe('RequestsController ', () => {
 
     const buildEthSendTx = (
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
-      txParams: { from: string; to?: string; value?: string; data?: string }
+      txParams: { from: string; to?: string; value?: string; data?: string } & Record<string, unknown>
     ) =>
       controller.build({
         type: 'dappRequest',
@@ -2748,7 +2748,7 @@ describe('RequestsController ', () => {
 
     const buildWalletSendCalls = (
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
-      calls: { to?: string; value?: string; data?: string }[]
+      calls: ({ to?: string; value?: string; data?: string } & Record<string, unknown>)[]
     ) =>
       controller.build({
         type: 'dappRequest',
@@ -2806,6 +2806,55 @@ describe('RequestsController ', () => {
       await expect(
         buildEthSendTx(controller, { from: FROM, to: VALID_TO, value: '0x0' })
       ).resolves.toBeUndefined()
+    })
+
+    describe('internal call fields a dApp must not be able to set', () => {
+      const INTERNAL_FIELDS = {
+        fullVisualization: [{ type: 'action', content: 'Sign In with Ethereum' }],
+        isFallback: false,
+        warnings: [{ content: 'fake', code: 'fake' }],
+        status: 'rejected',
+        txnId: '0x1234',
+        activeRouteId: 'some-route',
+        recipientDomain: 'vitalik.eth',
+        validationError: 'fake',
+        gas: '0x5208'
+      }
+      const getBuiltCalls = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+        controller.userRequests.flatMap((r) =>
+          r.kind === 'calls' ? r.signAccountOp.accountOp.calls : []
+        )
+
+      test('eth_sendTransaction keeps only to, data and value', async () => {
+        const { controller } = await prepareTest(true)
+
+        await buildEthSendTx(controller, {
+          from: FROM,
+          to: VALID_TO,
+          value: '0x1',
+          data: '0xABCD',
+          ...INTERNAL_FIELDS
+        })
+
+        const [call] = getBuiltCalls(controller)
+        expect(call).toBeDefined()
+        expect(call).toMatchObject({ to: VALID_TO, value: 1n, data: '0xabcd' })
+        Object.keys(INTERNAL_FIELDS).forEach((field) => expect(call).not.toHaveProperty(field))
+        expect(call).not.toHaveProperty('from')
+      })
+
+      test('wallet_sendCalls keeps only to, data and value', async () => {
+        const { controller } = await prepareTest(true)
+
+        await buildWalletSendCalls(controller, [
+          { to: VALID_TO, value: '0x1', data: '0xabcd', ...INTERNAL_FIELDS }
+        ])
+
+        const [call] = getBuiltCalls(controller)
+        expect(call).toBeDefined()
+        expect(call).toMatchObject({ to: VALID_TO, value: 1n, data: '0xabcd' })
+        Object.keys(INTERNAL_FIELDS).forEach((field) => expect(call).not.toHaveProperty(field))
+      })
     })
 
     test('rejects wallet_sendCalls when any call has odd-length hex data', async () => {
