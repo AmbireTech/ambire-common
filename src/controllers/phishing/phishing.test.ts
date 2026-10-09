@@ -167,19 +167,14 @@ describe('PhishingController', () => {
       expect(controller.getDomainBlacklistedStatus('https://mm-safe.com')).toBe('VERIFIED')
     })
 
-    test('a list stored unsorted is sorted and written back once, keeping its version', async () => {
+    test('a list stored unsorted is sorted in memory but not written back on load', async () => {
       const { controller, mainCtrl } = await prepareTest(UNSORTED_DOMAINS, UNSORTED_ADDRESSES, true)
+      const storageSetSpy = jest.spyOn(mainCtrl.storage, 'set')
 
       await controller.init()
-      const stored = await mainCtrl.storage.get('phishing', null)
 
-      expect(stored).toEqual(
-        expect.objectContaining({
-          version: 1,
-          domains: ['aa-scam.org', 'foourmemez.com', 'zz-scam.io'],
-          addresses: [...UNSORTED_ADDRESSES].sort()
-        })
-      )
+      expect(storageSetSpy.mock.calls.filter(([key]) => key === 'phishing')).toHaveLength(0)
+      expect(controller.getDomainBlacklistedStatus('https://aa-scam.org')).toBe('BLACKLISTED')
     })
 
     test('a list stored sorted is not written again on load', async () => {

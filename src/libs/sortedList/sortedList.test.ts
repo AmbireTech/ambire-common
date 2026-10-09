@@ -100,6 +100,18 @@ describe('sortedList', () => {
       expect(applySortedDelta([], [{ op: 'add', value: 'a.com' }])).toEqual(['a.com'])
       expect(applySortedDelta(list, [])).toEqual(list)
     })
+    test('handles a delta with more changes than fit in one concat call', () => {
+      const base = Array.from({ length: 30_000 }, (_, i) => `site${String(i).padStart(6, '0')}.com`)
+      const ops = base.flatMap((value, i) => {
+        if (i % 3 === 0) return [{ op: 'remove' as const, value }]
+        if (i % 3 === 1) return [{ op: 'add' as const, value: `${value}-new` }]
+        return []
+      })
+      const result = applySortedDelta(base, ops)
+
+      expect(result).toEqual(applyWithSet(base, ops))
+      expect(isSortedUnique(result)).toBe(true)
+    })
     test('matches replaying the ops on a Set for random deltas', () => {
       const values = Array.from({ length: 40 }, (_, i) => `site${i}.com`)
       let seed = 42
