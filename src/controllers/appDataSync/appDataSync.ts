@@ -16,6 +16,7 @@ import {
   APP_DATA_SYNC_PAYLOAD_VERSION,
   AppDataSyncExportOptions,
   AppDataSyncPayload,
+  getAppDataSyncKeyAddrs,
   parseAppDataSyncPayload,
   serializeAppDataSyncPayload
 } from '@/libs/appDataSync/appDataSync'
@@ -131,8 +132,10 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
           error: new Error('appDataSync: nothing to sync')
         })
 
-      const keyAddrs = Array.from(new Set(accounts.flatMap((account) => account.associatedKeys)))
-      const { secret, keys, seeds } = await this.#keystore.exportForSync(keyAddrs, includeSeeds)
+      const { secret, keys, seeds } = await this.#keystore.exportForSync(
+        getAppDataSyncKeyAddrs(accounts),
+        includeSeeds
+      )
 
       return serializeAppDataSyncPayload({
         v: APP_DATA_SYNC_PAYLOAD_VERSION,
