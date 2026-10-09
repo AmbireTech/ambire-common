@@ -200,16 +200,22 @@ const humanizerOrder = ({ items, payment, end }: Order) => {
   ]
 }
 
+const fulfillBasicOrderEfficientSelector = toFunctionSelector(fulfillBasicOrderEfficientAbi[0])
+const fulfillBasicOrderSelector = toFunctionSelector(fulfillBasicOrderAbi[0])
+const fulfillAvailableAdvancedOrdersSelector = toFunctionSelector(
+  fulfillAvailableAdvancedOrdersAbi[0]
+)
+const fulfillAdvancedOrderSelector = toFunctionSelector(fulfillAdvancedOrderAbi[0])
+
 export const openSeaModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   if (!call.to || !isHexCall(call)) return call
   if (
-    [
-      toFunctionSelector(fulfillBasicOrderEfficientAbi[0]),
-      toFunctionSelector(fulfillBasicOrderAbi[0])
-    ].some((sel) => call.data.startsWith(sel))
+    [fulfillBasicOrderEfficientSelector, fulfillBasicOrderSelector].some((sel) =>
+      call.data.startsWith(sel)
+    )
   ) {
     let argsParam: any
-    if (call.data.startsWith(toFunctionSelector(fulfillBasicOrderAbi[0]))) {
+    if (call.data.startsWith(fulfillBasicOrderSelector)) {
       const { args } = decodeFunctionData({ abi: fulfillBasicOrderAbi, data: call.data })
       argsParam = args[0]
     } else {
@@ -235,7 +241,7 @@ export const openSeaModule: HumanizerCallModule = (accountOp: AccountOp, call: I
     }
   }
 
-  if (call.data.startsWith(toFunctionSelector(fulfillAvailableAdvancedOrdersAbi[0]))) {
+  if (call.data.startsWith(fulfillAvailableAdvancedOrdersSelector)) {
     const { args } = decodeFunctionData({
       abi: fulfillAvailableAdvancedOrdersAbi,
       data: call.data
@@ -261,7 +267,7 @@ export const openSeaModule: HumanizerCallModule = (accountOp: AccountOp, call: I
     const fullVisualization = totalOrders.map(humanizerOrder).flat()
     return { ...call, fullVisualization }
   }
-  if (call.data.startsWith(toFunctionSelector(fulfillAdvancedOrderAbi[0]))) {
+  if (call.data.startsWith(fulfillAdvancedOrderSelector)) {
     const { args } = decodeFunctionData({
       abi: fulfillAdvancedOrderAbi,
       data: call.data

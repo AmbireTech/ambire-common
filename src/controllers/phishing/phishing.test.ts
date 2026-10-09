@@ -7,7 +7,8 @@ import {
   PHISHING_ACTIVE_UPDATE_INTERVAL,
   PHISHING_INACTIVE_UPDATE_INTERVAL
 } from '../../consts/intervals'
-import { PhishingController, SUSPICIOUS_HOSTING_DOMAINS } from './phishing'
+import { canBeTrustedByUser, PhishingController } from './phishing'
+import { SUSPICIOUS_HOSTING_DOMAINS } from './suspiciousHostingDomains'
 
 // Seeds the phishing DB (domains + addresses) so #domains and #addresses are populated.
 const prepareTest = async (
@@ -43,6 +44,70 @@ describe('PhishingController', () => {
   test('should initialize', async () => {
     const { controller } = await prepareTest()
     expect(controller).toBeDefined()
+  })
+
+  test('should enable the scam and phishing checker by default', async () => {
+    const { controller, mainCtrl } = await prepareTest()
+
+    expect(mainCtrl.featureFlags.isFeatureEnabled('scamAndPhishingChecker')).toBe(true)
+    expect(controller.updatePhishingInterval.running).toBe(true)
+  })
+
+  test('should resolve domain checks without fetching and skip address checks when the checker is disabled', async () => {
+    const fetchMock = jest.fn()
+    const { mainCtrl } = await makeMainController(undefined, {
+      skipDappsAndPhishingInit: true,
+      overrides: {
+        fetch: fetchMock,
+        featureFlags: { scamAndPhishingChecker: false }
+      }
+    })
+    const controller = mainCtrl.phishing
+
+    await controller.init()
+    expect(controller.updatePhishingInterval.running).toBe(false)
+
+    jest.restoreAllMocks()
+    fetchMock.mockClear()
+    const domainCallback = jest.fn()
+    const addressCallback = jest.fn()
+
+    await controller.continuouslyUpdatePhishing()
+    await controller.updateDomainsBlacklistedStatus(['https://example.com'], domainCallback)
+    await controller.updateAddressesBlacklistedStatus(
+      ['0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'],
+      addressCallback
+    )
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(domainCallback).toHaveBeenCalledWith({ 'example.com': 'FAILED_TO_GET' })
+    expect(addressCallback).not.toHaveBeenCalled()
+  })
+
+  test('should check addresses when the checker is enabled', async () => {
+    const address = '0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e'
+    const { controller } = await prepareTest([], [address])
+    const callback = jest.fn()
+
+    await controller.updateAddressesBlacklistedStatus([address], callback)
+
+    expect(callback).toHaveBeenCalledWith({ [address]: 'BLACKLISTED' })
+  })
+
+  test('should stop updates when disabled and restart immediately when re-enabled', async () => {
+    const { controller, mainCtrl } = await prepareTest()
+    const stopSpy = jest.spyOn(controller.updatePhishingInterval, 'stop')
+
+    await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+    expect(stopSpy).toHaveBeenCalled()
+
+    const restartSpy = jest.spyOn(controller.updatePhishingInterval, 'restart')
+    await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', true)
+
+    expect(restartSpy).toHaveBeenCalledWith({
+      timeout: PHISHING_INACTIVE_UPDATE_INTERVAL,
+      runImmediately: true
+    })
   })
 
   describe('deferred init', () => {
@@ -339,7 +404,7 @@ describe('PhishingController', () => {
     test('getDomainBlacklistedStatus returns SUSPICIOUS_HOSTING for all domains in SUSPICIOUS_HOSTING_DOMAINS', async () => {
       const { controller } = await prepareTest()
 
-      for (const domain of SUSPICIOUS_HOSTING_DOMAINS) {
+      for (const { hostSuffix: domain } of SUSPICIOUS_HOSTING_DOMAINS) {
         expect(controller.getDomainBlacklistedStatus(`https://${domain}/some/path`)).toBe(
           'SUSPICIOUS_HOSTING'
         )
@@ -425,13 +490,59 @@ describe('PhishingController', () => {
       const results: Record<string, string> = {}
 
       await controller.updateDomainsBlacklistedStatus(
-        SUSPICIOUS_HOSTING_DOMAINS.map((d) => `https://${d}/fake-dapp`),
+        SUSPICIOUS_HOSTING_DOMAINS.map(({ hostSuffix }) => `https://${hostSuffix}/fake-dapp`),
         (statuses) => Object.assign(results, statuses)
       )
 
-      for (const domain of SUSPICIOUS_HOSTING_DOMAINS) {
+      for (const { hostSuffix: domain } of SUSPICIOUS_HOSTING_DOMAINS) {
         expect(results[domain]).toBe('SUSPICIOUS_HOSTING')
       }
+    })
+  })
+
+  describe('canBeTrustedByUser', () => {
+    test('allows a dApp on its own subdomain of a platform that hands out one per app', () => {
+      expect(canBeTrustedByUser('https://my-dapp.vercel.app')).toBe(true)
+      expect(canBeTrustedByUser('https://my-dapp.pages.dev/swap')).toBe(true)
+      expect(canBeTrustedByUser('https://bafkrei.ipfs.dweb.link')).toBe(true)
+      // GitHub Pages gives the subdomain to the account and the path to the repo. The account owns
+      // the whole hostname either way, so the hostname is the smallest honest unit of trust.
+      expect(canBeTrustedByUser('https://my-account.github.io/my-dapp')).toBe(true)
+    })
+
+    test("refuses the platform's own hostname, which every app there shares", () => {
+      expect(canBeTrustedByUser('https://vercel.app')).toBe(false)
+      expect(canBeTrustedByUser('https://github.io')).toBe(false)
+      // The path form of a gateway - the hostname is the gateway, shared by all content it serves.
+      expect(canBeTrustedByUser('https://dweb.link/ipfs/bafkrei')).toBe(false)
+      expect(canBeTrustedByUser('https://ipfs.io/ipfs/bafkrei')).toBe(false)
+    })
+
+    test('refuses every platform where unrelated apps share one hostname', () => {
+      const sharedHostnamePlatforms = SUSPICIOUS_HOSTING_DOMAINS.filter(
+        ({ isAppPerSubdomain }) => !isAppPerSubdomain
+      )
+      expect(sharedHostnamePlatforms.length).toBeGreaterThan(0)
+
+      for (const { hostSuffix } of sharedHostnamePlatforms) {
+        expect(canBeTrustedByUser(`https://${hostSuffix}`)).toBe(false)
+        expect(canBeTrustedByUser(`https://${hostSuffix}/some-dapp`)).toBe(false)
+      }
+    })
+
+    test('refuses a dApp that is not on a shared hosting platform at all', () => {
+      expect(canBeTrustedByUser('https://app.uniswap.org')).toBe(false)
+      expect(canBeTrustedByUser('https://google.com')).toBe(false)
+    })
+
+    test('matches the canonical hostname, so a trailing dot cannot dodge the check', () => {
+      expect(canBeTrustedByUser('https://my-dapp.vercel.app./swap')).toBe(true)
+      expect(canBeTrustedByUser('https://sites.google.com./my-dapp')).toBe(false)
+    })
+
+    test('refuses an unparsable url', () => {
+      expect(canBeTrustedByUser('not a url')).toBe(false)
+      expect(canBeTrustedByUser('')).toBe(false)
     })
   })
 

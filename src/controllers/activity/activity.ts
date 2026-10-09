@@ -11,6 +11,7 @@ import { Account, AccountId, IAccountsController } from '../../interfaces/accoun
 import { IActivityController } from '../../interfaces/activity'
 import { Banner } from '../../interfaces/banner'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
@@ -287,6 +288,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
   #safe: ISafeController
 
+  #featureFlags: IFeatureFlagsController
+
   #onContractsDeployed: (network: Network) => Promise<void>
 
   #callRelayer: Function
@@ -323,6 +326,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     networks: INetworksController,
     portfolio: IPortfolioController,
     safe: ISafeController,
+    featureFlags: IFeatureFlagsController,
     onContractsDeployed: (network: Network) => Promise<void>,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
@@ -336,6 +340,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
     this.#networks = networks
     this.#portfolio = portfolio
     this.#safe = safe
+    this.#featureFlags = featureFlags
     this.#onContractsDeployed = onContractsDeployed
     this.#initialLoadPromise = this.#load().finally(() => {
       this.#initialLoadPromise = undefined
@@ -698,6 +703,13 @@ export class ActivityController extends EventEmitter implements IActivityControl
     await Promise.all(promises)
   }
 
+  /** Returns the account ops that the account submitted from this device on one network. */
+  async getInternalAccountOps(accountAddr: string, chainId: bigint): Promise<SubmittedAccountOp[]> {
+    await this.#initialLoadPromise
+
+    return this.#accountsOps[accountAddr]?.[chainId.toString()] || []
+  }
+
   removeNetworkData(chainId: bigint) {
     Object.keys(this.accountsOps).forEach(async (sessionId) => {
       const state = this.accountsOps[sessionId]
@@ -882,8 +894,11 @@ export class ActivityController extends EventEmitter implements IActivityControl
         chainId
       )
       if (shouldLearnTokens) {
-        const scamFilter = new ScamFilter({ fetch: this.#fetch, network })
-        const tokensWithAPrice = await scamFilter.filterTokensWithoutAPrice(foundTokens)
+        const tokensWithAPrice = await new ScamFilter({
+          fetch: this.#fetch,
+          network,
+          isTokenPricesEnabled: () => this.#featureFlags.isFeatureEnabled('tokenPrices') !== false
+        }).filterTokensWithoutAPrice(foundTokens)
         this.#portfolio.addTokensToBeLearned(tokensWithAPrice, chainId)
       }
       const tokenAddrs = getBalanceChangeTokenAddresses(foundTokens)

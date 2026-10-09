@@ -1,5 +1,3 @@
-import { JsonRpcProvider } from 'ethers'
-
 import { BUNDLER } from '../consts/bundlers'
 import {
   ChainlistNetwork,
@@ -8,13 +6,14 @@ import {
   NetworkFeature,
   RelayerNetwork
 } from '../interfaces/network'
+import { FetchJsonRpcProvider } from '../services/provider/fetchJsonRpcProvider'
 
 const hardcodedRpcUrls: { [chainId: string]: string } = {
   '11155111': 'https://eth-sepolia.public.blastapi.io'
 }
 
 const checkIsRpcUrlWorking = async (rpcUrl: string) => {
-  const provider = new JsonRpcProvider(rpcUrl)
+  const provider = new FetchJsonRpcProvider(rpcUrl)
 
   try {
     await provider.getBlockNumber()

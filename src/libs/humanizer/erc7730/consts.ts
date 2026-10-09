@@ -22,3 +22,8 @@ export const SAFE_PROXY_SINGLETON_SLOT = 0n
 // itself decodes all the levels, so that the warnings of the deeply embedded calls are
 // not lost, but showing all of them makes the transaction impossible to read.
 export const MAX_DISPLAYED_NESTED_CALLDATA_DEPTH = 4
+
+// Descriptors are the bulk of the cached data and the whole blob is rewritten whenever a new one
+// arrives, so the count is capped and the least recently used are dropped past it. Sized to stay
+// well inside the extension's storage quota at a few tens of KB per descriptor.
+export const ERC7730_MAX_CACHED_DESCRIPTORS = 150

@@ -8,6 +8,8 @@ import {
   RawTrendingToken,
   TrendingToken
 } from '../../interfaces/dapp'
+import { Platform } from '../../interfaces/platform'
+import { UnauthenticatedDapp } from '../../interfaces/signingAuth'
 
 /**
  * Strips the trailing dot(s) a hostname may carry when written in fully-qualified form
@@ -62,11 +64,29 @@ const getDappIconFromUrl = (url: string, dapps: Dapp[]): string => {
   return dapps.find((d) => d.id === id)?.icon || ''
 }
 
-const getDomainFromUrl = (url: string) => {
-  const predefinedDapp = predefinedDapps.find((d) => d.url === url)
-  if (predefinedDapp) return predefinedDapp.id
+// Indexed once instead of scanning the predefined list on every call. This runs per dapp
+// while the catalog is being derived, which is on every update of the dapps controller.
+const predefinedDappIdByUrl = new Map(predefinedDapps.map((d) => [d.url, d.id]))
 
-  return getDomain(url)
+/**
+ * Resolved domains, kept because `getDomain` walks a public-suffix trie and the catalog
+ * is re-derived per dapp on every update of the dapps controller. The result depends only
+ * on the url, so a cached entry can never go stale, and the keys are bounded by the dapps
+ * the app has seen.
+ */
+const domainByUrl = new Map<string, string | null>()
+
+const getDomainFromUrl = (url: string) => {
+  const predefinedDappId = predefinedDappIdByUrl.get(url)
+  if (predefinedDappId) return predefinedDappId
+
+  const cached = domainByUrl.get(url)
+  if (cached !== undefined) return cached
+
+  const domain = getDomain(url)
+  domainByUrl.set(url, domain)
+
+  return domain
 }
 
 const formatDappName = (name: string) => {
@@ -158,6 +178,29 @@ function unifyDefiLlamaDappUrl(url: string) {
   }
 }
 
+/** Whether signing requests can ask for the password/biometrics confirmation - mobile only. */
+export function isSigningAuthPlatform(platform?: Platform): boolean {
+  return platform === 'mobile-android' || platform === 'mobile-ios'
+}
+
+/**
+ * Which of these stored dapps the user has not yet confirmed their password/biometrics to sign
+ * for, deduplicated and in the order they came in. A dapp the catalog does not know (`undefined`)
+ * is skipped: there is nowhere to remember the confirmation, so asking would repeat on every request.
+ */
+export function getUnauthenticatedDapps(dapps: (Dapp | undefined)[]): UnauthenticatedDapp[] {
+  const unauthenticatedDapps: UnauthenticatedDapp[] = []
+
+  dapps.forEach((dapp) => {
+    if (!dapp || dapp.signingAuthenticated) return
+    if (unauthenticatedDapps.some(({ id }) => id === dapp.id)) return
+
+    unauthenticatedDapps.push({ id: dapp.id, name: dapp.name })
+  })
+
+  return unauthenticatedDapps
+}
+
 /**
  * Returns the list of all accounts that should be returned to a dapp based on the dapp's
  * account preferences.
@@ -177,6 +220,22 @@ export function getAccountsForDapp(
   }
 
   return extensionSelectedAccountAddr ? [extensionSelectedAccountAddr] : []
+}
+
+/**
+ * Whether a dapp may send requests for the account. A dapp the user connected to only some
+ * accounts may use only those. Any other dapp follows the selected account, so it may ask for
+ * any account in the wallet.
+ */
+export function isAccountAllowedForDapp(
+  preferences: Dapp['accountPreferences'],
+  accountAddr: string
+): boolean {
+  if (!preferences?.enabled) return true
+
+  const normalizedAddr = accountAddr.toLowerCase()
+
+  return preferences.accounts.some((account) => account.toLowerCase() === normalizedAddr)
 }
 
 // Reconcile a dapp to the per-source connection invariant: `connectedSources` is the source of
