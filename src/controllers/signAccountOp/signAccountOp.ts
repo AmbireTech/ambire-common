@@ -2609,7 +2609,7 @@ export class SignAccountOpController
         return
       }
 
-      // each available fee option should declare it's estimation method
+      // each available fee option should declare its estimation method
       const broadcastOption = this.baseAccount.getBroadcastOption(option, {
         op: this.accountOp,
         isSponsored: this.isSponsored
