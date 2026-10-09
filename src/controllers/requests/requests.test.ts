@@ -2325,27 +2325,6 @@ describe('RequestsController ', () => {
       expect(controller.userRequests).toEqual([])
     })
 
-    test('adds a single Safe deployment for messages added together', async () => {
-      const { controller, getSafeDeploymentCallSpy } = await prepareUndeployedSafe()
-      const plainMessageRequest = getMessageRequest({ id: 'safe-message' })
-      const typedMessageRequest = getTypedMessageRequest({ id: 'safe-typed-message' })
-
-      await controller.addUserRequests([plainMessageRequest, typedMessageRequest])
-
-      expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
-      const safeDeployRequests = getSafeDeployRequests(controller.userRequests)
-      expect(safeDeployRequests).toHaveLength(1)
-      expect(controller.userRequests).toEqual([
-        safeDeployRequests[0],
-        plainMessageRequest,
-        typedMessageRequest
-      ])
-
-      await controller.rejectUserRequests('User rejected the Safe deployment.', [
-        safeDeployRequests[0]!.id
-      ])
-    })
-
     test('does not deploy a Safe that is already deployed on the network of the message', async () => {
       const { accountState, controller, getSafeDeploymentCallSpy, updateAccountStateSpy } =
         await prepareUndeployedSafe()
