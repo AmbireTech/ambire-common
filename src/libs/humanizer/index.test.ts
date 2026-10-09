@@ -1,6 +1,7 @@
 import {
   getTestErc7730Descriptors,
-  getTestErc7730MessageDescriptor
+  getTestErc7730MessageDescriptor,
+  SAFE_PROXY_V1_4_1_RUNTIME_CODE
 } from '../../controllers/erc7730/testDescriptors'
 import { ethers, getAddress, ZeroAddress } from 'ethers'
 import { encodeFunctionData } from 'viem'
@@ -2083,7 +2084,7 @@ describe('ERC-7730 descriptors', () => {
       oracle: '0x663becd10dae6c4a3dcd89f1d76c1174199639b9',
       irm: '0x46415998764c29ab2a25cbea6254146d50d22687',
       lltv: 86145408065551n
-    }
+    } as const
     const morphoAccountOp: AccountOp = {
       ...accountOp,
       accountAddr: owner,
@@ -2248,11 +2249,11 @@ describe('ERC-7730 descriptors', () => {
       oracle: '0xf1561bc4b3d1ba49053986fb9ee88d4fe22d0cf4',
       irm: '0x870ac11d48b15db9a138cf899d20f13f79ba00bc',
       lltv: 86145408065551n
-    }
+    } as const
     const withdrawalMarketParams = {
       ...supplyMarketParams,
       collateralToken: '0xdddd770badd886df3864029e4b377b5f6a2b6b83'
-    }
+    } as const
     const iface = new ethers.Interface([
       'function multicall((address to, bytes data, uint256 value, bool skipRevert, bytes32 callbackHash)[] bundle)'
     ])
@@ -2820,6 +2821,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
     const provider = {
+      getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(async (address: string) => {
         expect(address.toLowerCase()).toBe(safeProxy)
 
@@ -2930,6 +2932,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
     const provider = {
+      getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(async () => ethers.zeroPadValue(safeSingleton, 32))
     }
     const descriptorPath = 'registry/safe/calldata-SafeL2-1.4.1.json'
@@ -3017,6 +3020,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
     const provider = {
+      getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(async (address: string) => {
         expect(address.toLowerCase()).toBe(safeProxy)
 
@@ -4420,6 +4424,7 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     })
     const provider = {
+      getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(async (address: string, slot: bigint) => {
         expect(address).toBe(safeProxy)
         expect(slot).toBe(0n)

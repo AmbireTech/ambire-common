@@ -32,6 +32,7 @@ import {
 } from '../../consts/swapAndBridge'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
+import { IContractInfoController } from '../../interfaces/contractInfo'
 import { IDappsController } from '../../interfaces/dapp'
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
@@ -40,6 +41,7 @@ import { Fetch } from '../../interfaces/fetch'
 import { ExternalSignerControllers, IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
@@ -302,6 +304,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #featureFlags: IFeatureFlagsController
 
+  #platform: Platform
+
   #serviceProviderAPI: SwapProviderExecutor
 
   #activeRoutes: SwapAndBridgeActiveRoute[] = []
@@ -431,6 +435,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   #erc7730: IErc7730Controller
 
+  #contractInfo: IContractInfoController
+
   /**
    * A possibly outdated instance of the SignAccountOpController. Please always
    * read the public getter `signAccountOpController` to get the up-to-date
@@ -494,9 +500,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     storage,
     signAccountOpPreference,
     featureFlags,
+    platform,
     phishing,
     dapps,
     erc7730,
+    contractInfo,
     portfolioUpdate,
     relayerUrl,
     isCurrentSignAccountOpThrowingAnEstimationError,
@@ -521,9 +529,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     storage: IStorageController
     signAccountOpPreference: SignAccountOpPreferenceController
     featureFlags: IFeatureFlagsController
+    platform: Platform
     phishing: IPhishingController
     dapps: IDappsController
     erc7730: IErc7730Controller
+    contractInfo: IContractInfoController
     relayerUrl: string
     portfolioUpdate?: (chainsToUpdate: Network['chainId'][]) => void
     isCurrentSignAccountOpThrowingAnEstimationError?: Function
@@ -552,9 +562,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#storage = storage
     this.#signAccountOpPreference = signAccountOpPreference
     this.#featureFlags = featureFlags
+    this.#platform = platform
     this.#phishing = phishing
     this.#dapps = dapps
     this.#erc7730 = erc7730
+    this.#contractInfo = contractInfo
     this.#relayerUrl = relayerUrl
     this.#getUserRequests = getUserRequests
     this.#getVisibleUserRequests = getVisibleUserRequests
@@ -3372,6 +3384,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       keystore: this.#keystore,
       portfolio: this.#portfolio,
       featureFlags: this.#featureFlags,
+      platform: this.#platform,
       signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
@@ -3381,6 +3394,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       phishing: this.#phishing,
       dapps: this.#dapps,
       erc7730: this.#erc7730,
+      contractInfo: this.#contractInfo,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,

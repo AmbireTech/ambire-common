@@ -220,6 +220,72 @@ describe('Safe', () => {
     })
   })
 
+  describe('createProxyWithNonce / createProxyWithNonceL2', () => {
+    const factory = '0x14F2982D601c9458F93bd70B218933A6f8165e7b'
+    const singleton = '0xFf51A5898e281Db6DfC7855790607438dF2ca44b'
+    const setupAbi = parseAbi([
+      'function setup(address[] _owners,uint256 _threshold,address to,bytes data,address fallbackHandler,address paymentToken,uint256 payment,address paymentReceiver)'
+    ])
+    const initializer = encodeFunctionData({
+      abi: setupAbi,
+      args: [
+        ['0x900C7589200010D6C6eCaaE5B06EBe653bc2D82a'],
+        1n,
+        zeroAddress,
+        '0x',
+        zeroAddress,
+        zeroAddress,
+        0n,
+        zeroAddress
+      ]
+    })
+
+    const encode = (functionName: 'createProxyWithNonce' | 'createProxyWithNonceL2') =>
+      encodeFunctionData({
+        abi: parseAbi([
+          `function ${functionName}(address _singleton, bytes initializer, uint256 saltNonce)`
+        ]),
+        functionName,
+        args: [singleton, initializer, 1n]
+      })
+
+    test.each(['createProxyWithNonce', 'createProxyWithNonceL2'] as const)(
+      'humanizes %s as a Safe account creation with its setup',
+      (functionName) => {
+        const result = getSafeHumanization(accountOp.accountAddr, factory, 0n, encode(functionName))
+        expect(result?.visuals?.[0]).toMatchObject({
+          type: 'action',
+          content: 'Create Safe account'
+        })
+        expect(result?.visuals).toContainEqual(
+          expect.objectContaining({ type: 'action', content: 'Account setup' })
+        )
+        expect(result?.visuals).toContainEqual(
+          expect.objectContaining({
+            type: 'address',
+            address: '0x900c7589200010d6c6ecaae5b06ebe653bc2d82a'
+          })
+        )
+      }
+    )
+
+    test('keeps the action label when the initializer cannot be decoded', () => {
+      const result = getSafeHumanization(
+        accountOp.accountAddr,
+        factory,
+        0n,
+        encodeFunctionData({
+          abi: parseAbi([
+            'function createProxyWithNonce(address _singleton, bytes initializer, uint256 saltNonce)'
+          ]),
+          args: [singleton, '0xb63e800d', 1n]
+        })
+      )
+      expect(result?.visuals).toHaveLength(1)
+      expect(result?.visuals?.[0]).toMatchObject({ type: 'action', content: 'Create Safe account' })
+    })
+  })
+
   describe('setDomainVerifier', () => {
     const setDomainVerifierAbi = parseAbi([
       'function setDomainVerifier(bytes32 domainSeparator, address newVerifier)'

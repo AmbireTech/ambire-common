@@ -8,6 +8,7 @@ import {
   RawTrendingToken,
   TrendingToken
 } from '../../interfaces/dapp'
+import { Platform } from '../../interfaces/platform'
 import { UnauthenticatedDapp } from '../../interfaces/signingAuth'
 
 /**
@@ -177,6 +178,11 @@ function unifyDefiLlamaDappUrl(url: string) {
   }
 }
 
+/** Whether signing requests can ask for the password/biometrics confirmation - mobile only. */
+export function isSigningAuthPlatform(platform?: Platform): boolean {
+  return platform === 'mobile-android' || platform === 'mobile-ios'
+}
+
 /**
  * Which of these stored dapps the user has not yet confirmed their password/biometrics to sign
  * for, deduplicated and in the order they came in. A dapp the catalog does not know (`undefined`)
@@ -214,6 +220,22 @@ export function getAccountsForDapp(
   }
 
   return extensionSelectedAccountAddr ? [extensionSelectedAccountAddr] : []
+}
+
+/**
+ * Whether a dapp may send requests for the account. A dapp the user connected to only some
+ * accounts may use only those. Any other dapp follows the selected account, so it may ask for
+ * any account in the wallet.
+ */
+export function isAccountAllowedForDapp(
+  preferences: Dapp['accountPreferences'],
+  accountAddr: string
+): boolean {
+  if (!preferences?.enabled) return true
+
+  const normalizedAddr = accountAddr.toLowerCase()
+
+  return preferences.accounts.some((account) => account.toLowerCase() === normalizedAddr)
 }
 
 // Reconcile a dapp to the per-source connection invariant: `connectedSources` is the source of

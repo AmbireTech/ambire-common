@@ -45,6 +45,7 @@ import {
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
+import { IContractInfoController } from '../../interfaces/contractInfo'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
@@ -59,6 +60,7 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
@@ -90,7 +92,6 @@ import {
   getAccountOpNonce,
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
-import { getUnauthenticatedDapps } from '../../libs/dapps/helpers'
 import {
   AccountOpIdentifiedBy,
   getAccountOpRecipients,
@@ -104,6 +105,8 @@ import {
   broadcastTransaction,
   buildRawTransaction
 } from '../../libs/broadcast/broadcast'
+import { getUnauthenticatedDapps, isSigningAuthPlatform } from '../../libs/dapps/helpers'
+import { withDecodedCalls } from '../../libs/decodeCall'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
@@ -127,6 +130,7 @@ import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
 import { getSafeTxn } from '../../libs/safe/helpers'
 import {
+  canHotOwnersMeetSafeThreshold,
   confirm,
   getAlreadySignedOwners,
   getImportedSignersThatHaveNotSigned,
@@ -171,6 +175,7 @@ import { ZERO_ADDRESS } from '../../services/socket/constants'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
 import { withTimeout } from '../../utils/with-timeout'
+import { SELECTOR_LOADING_DEADLINE_MS } from '../contractInfo/contractInfo'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { GasPriceController } from '../gasPrice/gasPrice'
@@ -247,6 +252,13 @@ export class SignAccountOpController
 
   #erc7730: IErc7730Controller
 
+  #contractInfo: IContractInfoController
+
+  // Call datas of the current humanization whose selectors are still being fetched
+  #callDatasWithPendingSelectors: Set<string> = new Set()
+
+  #selectorLoadingTimeout?: ReturnType<typeof setTimeout>
+
   #accounts: IAccountsController
 
   #keystore: IKeystoreController
@@ -254,6 +266,8 @@ export class SignAccountOpController
   #portfolio: IPortfolioController
 
   #featureFlags: IFeatureFlagsController
+
+  #platform: Platform
 
   #signAccountOpPreference: SignAccountOpPreferenceController
 
@@ -467,11 +481,13 @@ export class SignAccountOpController
     type,
     callRelayer,
     erc7730,
+    contractInfo,
     accounts,
     networks,
     keystore,
     portfolio,
     featureFlags,
+    platform,
     signAccountOpPreference,
     externalSignerControllers,
     account,
@@ -491,11 +507,13 @@ export class SignAccountOpController
     type?: SignAccountOpType
     callRelayer: BindedRelayerCall
     erc7730: IErc7730Controller
+    contractInfo: IContractInfoController
     accounts: IAccountsController
     networks: INetworksController
     keystore: IKeystoreController
     portfolio: IPortfolioController
     featureFlags: IFeatureFlagsController
+    platform: Platform
     signAccountOpPreference: SignAccountOpPreferenceController
     externalSignerControllers: ExternalSignerControllers
     account: Account
@@ -515,10 +533,12 @@ export class SignAccountOpController
     this.#type = type || 'default'
     this.#callRelayer = callRelayer
     this.#erc7730 = erc7730
+    this.#contractInfo = contractInfo
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#featureFlags = featureFlags
+    this.#platform = platform
     this.#signAccountOpPreference = signAccountOpPreference
     this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
     this.selectedFeeSpeed =
@@ -650,6 +670,9 @@ export class SignAccountOpController
    * account still counts; only the fee collector is left out, as the app picks it, not the user.
    */
   async #updateFirstTimeRecipients() {
+    // Only the signing authentication reads them, so elsewhere the activity lookups are skipped
+    if (!isSigningAuthPlatform(this.#platform)) return
+
     const accountOpId = this.#accountOp.id
     const recipients = getAccountOpRecipients(this.#accountOp)
       .map(({ address }) => address)
@@ -688,8 +711,17 @@ export class SignAccountOpController
   /**
    * Why this account op needs the password/biometrics confirmation, or `null` when it does not.
    * Read live for the dapps, whose stored flag can change while the request is on screen.
+   * Mobile only. A Safe needs it only when its hot owners can meet the threshold on their own.
    */
   get signingAuthRequirement(): SigningAuthRequirement | null {
+    if (!isSigningAuthPlatform(this.#platform)) return null
+
+    if (
+      this.account.safeCreation &&
+      !canHotOwnersMeetSafeThreshold(this.accountKeyStoreKeys, this.threshold)
+    )
+      return null
+
     const unauthenticatedDapps = getUnauthenticatedDapps(
       this.#accountOp.calls.map((call) =>
         call.dapp?.id ? this.#dapps.getDapp(call.dapp.id) : undefined
@@ -1066,8 +1098,16 @@ export class SignAccountOpController
     this.#gasPriceInterval.start({ runImmediately: true, timeout: GAS_PRICE_UPDATE_INTERVAL })
   }
 
+  #withDecodedCalls(humanization: IrCall[]) {
+    return withDecodedCalls(
+      humanization,
+      (data) => this.#contractInfo.decodeCallData(data),
+      (data) => this.#callDatasWithPendingSelectors.has(data)
+    )
+  }
+
   #setHumanization(humanization: IrCall[], existingHumanizationId?: number) {
-    this.#humanization = humanization
+    this.#humanization = this.#withDecodedCalls(humanization)
     this.isHumanizing = false
     const currentHumanizationId = existingHumanizationId ?? this.createHumanizationId()
     this.humanizationId = currentHumanizationId
@@ -1160,7 +1200,60 @@ export class SignAccountOpController
     return true
   }
 
+  #clearSelectorLoading() {
+    clearTimeout(this.#selectorLoadingTimeout)
+    this.#selectorLoadingTimeout = undefined
+    this.#callDatasWithPendingSelectors.clear()
+  }
+
+  #onCallDataSelectorsSettled(humanizationId: number, data: string) {
+    if (!this.isCurrentHumanization(humanizationId)) return
+
+    this.#callDatasWithPendingSelectors.delete(data)
+    if (!this.#callDatasWithPendingSelectors.size) this.#clearSelectorLoading()
+    this.#redecodeHumanization(humanizationId)
+  }
+
+  /**
+   * Fetches the selectors of every call without holding back the humanization. Each call shows
+   * as loading until its own selectors arrive, or until SELECTOR_LOADING_DEADLINE_MS passes, and
+   * is decoded again once they do.
+   */
+  #fetchSelectorsForCalls(humanizationId: number) {
+    this.#clearSelectorLoading()
+    const callDatas = [...new Set(this.accountOp.calls.map(({ data }) => data))]
+    callDatas.forEach((data) => this.#callDatasWithPendingSelectors.add(data))
+
+    this.#selectorLoadingTimeout = setTimeout(() => {
+      this.#selectorLoadingTimeout = undefined
+      this.#callDatasWithPendingSelectors.clear()
+      this.#redecodeHumanization(humanizationId)
+    }, SELECTOR_LOADING_DEADLINE_MS)
+
+    // Fetched one call data at a time so each call stops loading on its own. They still share
+    // requests, since selectors asked for close together are batched.
+    callDatas.forEach((data) => {
+      this.#contractInfo
+        .fetchSelectorsForCallDatas([data])
+        .then(() => this.#onCallDataSelectorsSettled(humanizationId, data))
+        .catch((error) => {
+          this.emitError({
+            level: 'silent',
+            message: 'Could not show the details of this transaction.',
+            error:
+              error instanceof Error
+                ? error
+                : new Error('signAccountOp: decoding the calls with fetched selectors failed')
+          })
+        })
+    })
+  }
+
   async #applyDescriptorFirstHumanization(humanizationId: number) {
+    // Started alongside the descriptors so the decoded fallback is ready for any call that turns
+    // out to have no descriptor, without the descriptors ever waiting on it
+    this.#fetchSelectorsForCalls(humanizationId)
+
     await this.applyDescriptorFirstHumanization({
       humanizationId,
       fetchDescriptor: () => this.#erc7730.getDescriptorsForAccountOp(this.accountOp),
@@ -1169,6 +1262,20 @@ export class SignAccountOpController
       applyFallbackHumanization: (currentHumanizationId) =>
         this.#setFallbackHumanization(currentHumanizationId)
     })
+  }
+
+  /**
+   * Decodes the shown calls again for selectors that arrived after they were shown, or once they
+   * stop loading, emitting only when that changed any of them.
+   */
+  #redecodeHumanization(humanizationId: number) {
+    if (!this.isCurrentHumanization(humanizationId) || this.isHumanizing) return
+
+    const humanization = this.#withDecodedCalls(this.#humanization)
+    if (humanization === this.#humanization) return
+
+    this.#humanization = humanization
+    this.emitUpdate()
   }
 
   humanize() {
@@ -2118,6 +2225,8 @@ export class SignAccountOpController
     this.#simulateAndEstimateOrSimulateInterval.stop()
     this.#gasPriceInterval.stop()
     this.#stopRefetching = true
+    this.stopHumanization()
+    this.#clearSelectorLoading()
     // Destroy sub-controllers
     this.estimation.destroy()
     this.gasPrice.destroy()

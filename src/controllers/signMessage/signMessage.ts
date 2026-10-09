@@ -20,6 +20,7 @@ import {
   KeystoreSignerInterface
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
+import { Platform } from '../../interfaces/platform'
 import { IProvidersController } from '../../interfaces/provider'
 import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import {
@@ -28,12 +29,17 @@ import {
   SignMessageUpdateParams
 } from '../../interfaces/signMessage'
 import { AuthorizationUserRequest, Message } from '../../interfaces/userRequest'
-import { getDappIdFromUrl, getUnauthenticatedDapps } from '../../libs/dapps/helpers'
+import {
+  getDappIdFromUrl,
+  getUnauthenticatedDapps,
+  isSigningAuthPlatform
+} from '../../libs/dapps/helpers'
 import { humanizeMessage } from '../../libs/humanizer'
 import { buildSafeMessageOrigin } from '../../libs/safe/helpers'
 import {
   addMessage,
   addMessageSignature,
+  canHotOwnersMeetSafeThreshold,
   getImportedSignersThatHaveNotSigned,
   sortSigs
 } from '../../libs/safe/safe'
@@ -84,6 +90,8 @@ export class SignMessageController
   #dapps?: IDappsController
 
   #erc7730?: IErc7730Controller
+
+  #platform?: Platform
 
   // Bumped when init() starts and whenever reset() is called; async operations
   // capture it and re-check after each await, so obsolete requests can't update
@@ -145,7 +153,8 @@ export class SignMessageController
     invite: IInviteController,
     eventEmitterRegistry?: IEventEmitterRegistryController,
     dapps?: IDappsController,
-    erc7730?: IErc7730Controller
+    erc7730?: IErc7730Controller,
+    platform?: Platform
   ) {
     super(eventEmitterRegistry)
 
@@ -157,6 +166,7 @@ export class SignMessageController
     this.#invite = invite
     this.#dapps = dapps
     this.#erc7730 = erc7730
+    this.#platform = platform
     this.status = SignMessageStatus.Initial
 
     // `banners` is derived from DappsController state (the dapp verification status), so its
@@ -268,6 +278,7 @@ export class SignMessageController
 
   reset() {
     this.#signingGeneration += 1
+    this.stopHumanization()
     if (!this.isInitialized) return
 
     this.#onAbortOperation()
@@ -803,10 +814,22 @@ export class SignMessageController
   /**
    * Why this message needs the password/biometrics confirmation, or `null` when it does not. Only
    * a dapp the catalog knows can require it - elsewhere the confirmation cannot be remembered.
+   * Mobile only. A Safe needs it only when its hot owners can meet the threshold on their own.
    */
   get signingAuthRequirement(): SigningAuthRequirement | null {
     const dapps = this.#dapps
-    if (!dapps || !this.dapp?.url) return null
+    if (!isSigningAuthPlatform(this.#platform) || !dapps || !this.dapp?.url) return null
+
+    if (this.#account?.safeCreation && this.messageToSign) {
+      const accountState =
+        this.#accounts.accountStates[this.#account.addr]?.[this.messageToSign.chainId.toString()]
+      // A state that is not loaded yet falls through to the dapp check, so it never skips the prompt
+      if (
+        accountState &&
+        !canHotOwnersMeetSafeThreshold(accountState.importedAccountKeys, accountState.threshold)
+      )
+        return null
+    }
 
     // Looked up by dapp id, which is what dapps are stored under - looking up by the registrable
     // domain silently found nothing for every dapp on a subdomain
