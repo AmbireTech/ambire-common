@@ -1838,6 +1838,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   /**
+   * Whether the scam checker flags the app, or the page embedding it, as unsafe. Auto-login signs
+   * without showing anything, so a flagged app must go through the regular sign-in prompt instead,
+   * where the user sees the warning.
+   */
+  async #isDappFlaggedAsUnsafe(session: DappProviderRequest['session']): Promise<boolean> {
+    // While the dApps are still loading from storage, a blacklisted dApp would read as LOADING
+    await this.#dapps.initialLoadPromise
+
+    return this.#dapps.isDappFlaggedAsUnsafe(session.origin, session.sessionId)
+  }
+
+  /**
    * A `personal_sign` request as either a plain message or a SIWE one. Returns null when the
    * message was signed by auto-login and the app already has its answer.
    */
@@ -1905,7 +1917,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // The signing authentication is mobile only, so elsewhere no app is ever confirmed for
         if (
           autoLoginStatus === 'active' &&
-          (!isSigningAuthPlatform(this.#platform) || dapp?.signingAuthenticated)
+          (!isSigningAuthPlatform(this.#platform) || dapp?.signingAuthenticated) &&
+          !(await this.#isDappFlaggedAsUnsafe(request.session))
         ) {
           // Sign and respond
           const signedMessage = await this.#autoLogin.autoLogin({
