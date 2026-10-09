@@ -4,9 +4,9 @@ import { AccountStates } from '../../interfaces/account'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import {
   CallsUserRequest,
-  SignUserRequest,
   SwitchAccountRequest,
-  UserRequest
+  UserRequest,
+  UserRequestWaitingAccountSwitch
 } from '../../interfaces/userRequest'
 
 export const dappRequestMethodToRequestKind = (method: DappProviderRequest['method']) => {
@@ -85,7 +85,7 @@ export const buildSwitchAccountUserRequest = ({
   selectedAccountAddr,
   dappPromises
 }: {
-  nextUserRequest: SignUserRequest
+  nextUserRequest: UserRequestWaitingAccountSwitch
   selectedAccountAddr: string
   dappPromises: UserRequest['dappPromises']
 }): SwitchAccountRequest => {

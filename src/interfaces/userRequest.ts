@@ -16,6 +16,7 @@ import { ISignAccountOpController } from './signAccountOp'
 import { EIP7702Signature } from './signatures'
 import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from './swapAndBridge'
 
+import type { AccountOp } from '../libs/accountOp/accountOp'
 import type { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
@@ -263,6 +264,34 @@ export type SignUserRequest =
   | TypedMessageUserRequest
   | SiweMessageUserRequest
   | AuthorizationUserRequest
+
+/** What a transaction batch is built from, before it gets a SignAccountOpController of its own. */
+export type CallsUserRequestParams = {
+  calls: Call[]
+  meta: CallsUserRequest['meta']
+  accountOp?: AccountOp
+  dappPromises?: CallsUserRequest['dappPromises']
+  dappSessionId?: string
+}
+
+/**
+ * Transactions held back until the user switches to the account they are for. They are kept
+ * unbuilt so they join that account's batch only once the user is looking at it.
+ */
+export type CallsWaitingAccountSwitch = CallsUserRequestParams & {
+  kind: 'calls'
+  dappPromises: CallsUserRequest['dappPromises']
+}
+
+/**
+ * A sign request for an account other than the selected one, waiting for the user to switch.
+ * Calls are handled separately on purpose as creating a SignAccountOp controller for them
+ * may not be needed - a request may land in the controller of an already existing batch.
+ * That's why we store the "raw" params and do whatever once the user handles it.
+ */
+export type UserRequestWaitingAccountSwitch =
+  | Exclude<SignUserRequest, CallsUserRequest>
+  | CallsWaitingAccountSwitch
 
 export type RequestPosition = 'first' | 'last'
 

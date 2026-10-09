@@ -11,6 +11,12 @@ import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
 import { FeatureFlagsController } from '../featureFlags/featureFlags'
 import { Erc7730Controller } from './erc7730'
 
+/** Runtime code of a real SafeProxy v1.4.1, so a mocked provider looks like a deployed Safe.
+ * The proxy version is fixed here on purpose: its keccak256 must match a hash in
+ * KNOWN_SAFE_PROXY_CODE_HASHES (consts/safe.ts) for the Safe singleton lookup to follow it. */
+export const SAFE_PROXY_V1_4_1_RUNTIME_CODE =
+  '0x608060405273ffffffffffffffffffffffffffffffffffffffff600054167fa619486e0000000000000000000000000000000000000000000000000000000060003514156050578060005260206000f35b3660008037600080366000845af43d6000803e60008114156070573d6000fd5b3d6000f3fea264697066735822122003d1488ee65e08fa41e58e888a9865554c535f2c77126a82cb4c0f917f31441364736f6c63430007060033'
+
 const controllersByRelayer = new WeakMap<object, Erc7730Controller>()
 
 /** In-memory storage, so a test controller never touches anything persistent. */

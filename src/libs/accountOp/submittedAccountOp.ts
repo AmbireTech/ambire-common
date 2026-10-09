@@ -67,6 +67,13 @@ export type BalanceChange = Pick<
   balanceChange: bigint
 }
 
+export type NftBalanceChange = {
+  address: string
+  chainId: bigint
+  tokenId: bigint
+  balanceChange: bigint
+}
+
 export interface SubmittedAccountOp extends AccountOp {
   txnId?: string
   nonce: bigint
@@ -78,6 +85,7 @@ export interface SubmittedAccountOp extends AccountOp {
   blockHash?: string
   gasUsed?: string
   balanceChanges?: BalanceChange[]
+  nftBalanceChanges?: NftBalanceChange[]
   balanceChangesFetchRetryCount?: number
 }
 
@@ -115,6 +123,7 @@ export interface SubmittedAccountOpLike
       | 'blockHash'
       | 'gasUsed'
       | 'balanceChanges'
+      | 'nftBalanceChanges'
       | 'balanceChangesFetchRetryCount'
     >,
     Partial<SubmittedAccountOpActionFields> {

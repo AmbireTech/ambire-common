@@ -494,6 +494,65 @@ describe('SignMessageController', () => {
     })
   })
 
+  test('applies nothing from a humanization that was still in progress when it was reset', async () => {
+    const usdc = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+    const registryPath = 'registry/permit/eip712-permit-ethereum-usdc.json'
+    const descriptorResponse = createDeferred<any>()
+    const callRelayer = jest.fn(async (path: string) => {
+      if (path === '/v2/erc7730/eip-712') {
+        return {
+          success: true,
+          data: { [`eip155:1:${usdc}`]: { Permit: [{ path: registryPath }] } },
+          errorState: []
+        }
+      }
+      if (path === '/v2/erc7730/fetch-descriptor') return descriptorResponse.promise
+
+      throw new Error(`Unexpected relayer call: ${path}`)
+    })
+    signMessageController = new SignMessageController(
+      keystoreCtrl,
+      providersCtrl,
+      networksCtrl,
+      accountsCtrl,
+      {},
+      inviteCtrl,
+      undefined,
+      dappsCtrl,
+      makeErc7730Controller(callRelayer, featureFlagsCtrl)
+    )
+    await signMessageController.init({ messageToSign: createPermitTypedMessage() })
+    expect(signMessageController.isHumanizing).toBe(true)
+
+    signMessageController.reset()
+    descriptorResponse.resolve({
+      success: true,
+      display: {
+        formats: {
+          'Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)': {
+            intent: 'Authorize spending of tokens',
+            fields: [
+              { path: 'spender', label: 'Spender', format: 'addressName', visible: 'always' }
+            ]
+          }
+        }
+      }
+    })
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0)
+    })
+
+    expect(callRelayer).toHaveBeenCalledWith(
+      '/v2/erc7730/fetch-descriptor',
+      'POST',
+      { descriptorPath: `/${registryPath}` },
+      undefined,
+      ERC7730_DESCRIPTOR_WAIT_MS
+    )
+    expect(signMessageController.humanizedMessage).toBeUndefined()
+    expect(signMessageController.isHumanizing).toBe(false)
+  })
+
   test('uses fallback humanization without calling the relayer when clear signing is disabled', async () => {
     const callRelayer = jest.fn(async () => {
       throw new Error('The relayer should not be called')
