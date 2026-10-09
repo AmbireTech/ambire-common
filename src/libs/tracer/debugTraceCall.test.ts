@@ -165,7 +165,8 @@ describe('Debug tracecall detection for transactions', () => {
       delegatedContractName: null,
       updatedAt: Date.now(),
       importedAccountKeys: [],
-      threshold: 0
+      threshold: 0,
+      safeVersion: null
     }
   })
 

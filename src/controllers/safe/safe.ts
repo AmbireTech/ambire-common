@@ -1,4 +1,4 @@
-import { getAddress, toBeHex } from 'ethers'
+import { getAddress } from 'ethers'
 
 import { FETCH_SAFE_TXNS } from '../../consts/intervals'
 import {
@@ -18,6 +18,7 @@ import {
   ExtendedSafeMessage,
   fetchAllPending,
   fetchExecutedTransactions,
+  findDeployData,
   getApiKit,
   getMessage,
   getSafeAccountByOwner,
@@ -26,7 +27,7 @@ import {
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-import type { SafeCreationInfoResponse, SafeInfoResponse, SafeMessage } from '@safe-global/api-kit'
+import type { SafeInfoResponse, SafeMessage } from '@safe-global/api-kit'
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 const SAFE_OWNER_SEARCH_TTL = 5 * 60 * 1000
@@ -72,7 +73,6 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   safeInfo?: SafeAccountCreation & {
     deployedOn: bigint[]
-    version: string
     address: Hex
     owners: Hex[]
     // does the safe need special conditions to send/sign txns
@@ -139,39 +139,38 @@ export class SafeController extends EventEmitter implements ISafeController {
     if (!deployedOn) {
       this.importError = {
         address: safeAddr,
-        message: `The Safe account is not deployed on any of your enabled networks that have Safe support: ${safeNetworks.map((n) => n.name).join(', ')}. Please deploy it from Safe Global on at least one network before continuing`
+        message: `The Safe account isn't active on any of your enabled networks that support Safe: ${safeNetworks.map((n) => n.name).join(', ')}. Please activate it in the Safe app on at least one of them before continuing.`
       }
       return
     }
 
     const apiKit = getApiKit(deployedOn.chainId)
-    const [safeInfo, safeCreationInfo]: [
-      SafeInfoResponse | Error,
-      SafeCreationInfoResponse | Error
-    ] = await Promise.all([
-      apiKit.getSafeInfo(safeAddr).catch((e) => e),
-      apiKit.getSafeCreationInfo(safeAddr).catch((e) => e)
-    ])
-    if (safeInfo instanceof Error || safeCreationInfo instanceof Error) {
+    const provider = this.#providers.providers[deployedOn.chainId.toString()]!
+    const [safeInfo, safeCreation]: [SafeInfoResponse | Error, SafeAccountCreation | Error] =
+      await Promise.all([
+        apiKit.getSafeInfo(safeAddr).catch((e) => e),
+        findDeployData(safeAddr, deployedOn.chainId, provider)
+      ])
+    if (safeInfo instanceof Error) {
       this.importError = {
         address: safeAddr,
         message: 'Failed to retrieve information about the Safe. Please try again'
       }
       return
     }
+    if (safeCreation instanceof Error) {
+      this.importError = {
+        address: safeAddr,
+        message: safeCreation.message
+      }
+      return
+    }
 
-    const setupData = safeCreationInfo.setupData as Hex
     this.safeInfo = {
-      version: safeInfo.version,
+      ...safeCreation,
       address: safeInfo.address as Hex,
       owners: safeInfo.owners as Hex[],
       deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId),
-      factoryAddr: safeCreationInfo.factoryAddress as Hex,
-      singleton: safeCreationInfo.singleton as Hex,
-      saltNonce: safeCreationInfo.saltNonce
-        ? (toBeHex(BigInt(safeCreationInfo.saltNonce), 32) as Hex)
-        : (toBeHex(0, 32) as Hex),
-      setupData,
       requiresModules: safeInfo.owners.length === 1 && safeInfo.owners[0] === safeNullOwner
     }
   }

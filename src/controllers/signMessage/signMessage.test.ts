@@ -78,6 +78,7 @@ const accountOnchainState: AccountOnchainState = {
   delegatedContract: null,
   delegatedContractName: null,
   threshold: 1,
+  safeVersion: null,
   updatedAt: 0
 }
 
@@ -304,8 +305,7 @@ describe('SignMessageController', () => {
         factoryAddr: account.addr as Hex,
         singleton: account.addr as Hex,
         saltNonce: '0x00',
-        setupData: '0x',
-        version: '1.4.1'
+        setupData: '0x'
       }
     }
     const safeAccountsCtrl = {

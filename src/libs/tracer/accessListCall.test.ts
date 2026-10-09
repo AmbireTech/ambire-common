@@ -47,14 +47,13 @@ function makeAccount(overrides: Partial<Account> = {}): Account {
   }
 }
 
-function makeSafeAccount(version = '1.4.1', overrides: Partial<Account> = {}): Account {
+function makeSafeAccount(overrides: Partial<Account> = {}): Account {
   return makeAccount({
     safeCreation: {
       factoryAddr: '0x3333333333333333333333333333333333333333',
       singleton: '0x4444444444444444444444444444444444444444',
       saltNonce: '0x01',
-      setupData: '0x',
-      version
+      setupData: '0x'
     },
     ...overrides
   })
@@ -79,6 +78,7 @@ function makeAccountState(overrides: Partial<AccountOnchainState> = {}): Account
     delegatedContract: null,
     delegatedContractName: null,
     threshold: 1,
+    safeVersion: null,
     updatedAt: Date.now(),
     ...overrides
   }
@@ -135,23 +135,45 @@ describe('accessListCall helpers', () => {
 
   describe('getShouldUseAccessListCall', () => {
     it('returns true for Safe with supported version', () => {
-      const account = makeSafeAccount('1.4.1')
-      expect(getShouldUseAccessListCall(account, false)).toBe(true)
+      const account = makeSafeAccount()
+      const state = makeAccountState({ safeVersion: '1.4.1' })
+      expect(getShouldUseAccessListCall(account, state, false)).toBe(true)
     })
 
     it('returns false for Safe with unsupported version', () => {
-      const account = makeSafeAccount('1.6.0')
-      expect(getShouldUseAccessListCall(account, false)).toBe(false)
+      const account = makeSafeAccount()
+      const state = makeAccountState({ safeVersion: '1.6.0' })
+      expect(getShouldUseAccessListCall(account, state, false)).toBe(false)
+    })
+
+    it('returns false for Safe whose version could not be read', () => {
+      const account = makeSafeAccount()
+      const state = makeAccountState({ safeVersion: null })
+      expect(getShouldUseAccessListCall(account, state, false)).toBe(false)
+    })
+
+    it('decides per chain based on the Safe version in the account state', () => {
+      const account = makeSafeAccount()
+      const supportedChainState = makeAccountState({ safeVersion: '1.3.0' })
+      const unsupportedChainState = makeAccountState({ safeVersion: '1.1.1' })
+      expect(getShouldUseAccessListCall(account, supportedChainState, false)).toBe(true)
+      expect(getShouldUseAccessListCall(account, unsupportedChainState, false)).toBe(false)
     })
 
     it('returns true for non-safe without state override need', () => {
       const account = makeAccount()
-      expect(getShouldUseAccessListCall(account, false)).toBe(true)
+      expect(getShouldUseAccessListCall(account, makeAccountState(), false)).toBe(true)
     })
 
     it('returns false for non-safe with state override need', () => {
       const account = makeAccount()
-      expect(getShouldUseAccessListCall(account, true)).toBe(false)
+      expect(getShouldUseAccessListCall(account, makeAccountState(), true)).toBe(false)
+    })
+
+    it('ignores the account state Safe version for non-safe accounts', () => {
+      const account = makeAccount()
+      const state = makeAccountState({ safeVersion: '1.4.1' })
+      expect(getShouldUseAccessListCall(account, state, true)).toBe(false)
     })
   })
 
@@ -195,12 +217,12 @@ describe('accessListCall helpers', () => {
 
   describe('getSafeAccessListCallParams', () => {
     it('builds direct simulate payload for single call', () => {
-      const account = makeSafeAccount('1.4.1')
+      const account = makeSafeAccount()
       const op = makeAccountOp({
         calls: [{ to: '0x5555555555555555555555555555555555555555', value: 7n, data: '0x1234' }]
       })
       const baseAcc = makeBaseAccount(account)
-      const state = makeAccountState({ isDeployed: true })
+      const state = makeAccountState({ isDeployed: true, safeVersion: '1.4.1' })
 
       const params = getSafeAccessListCallParams(baseAcc, op, state)
       expect(params).toBeTruthy()
@@ -217,7 +239,7 @@ describe('accessListCall helpers', () => {
     })
 
     it('builds multisend simulate payload for batched calls', () => {
-      const account = makeSafeAccount('1.5.0')
+      const account = makeSafeAccount()
       const op = makeAccountOp({
         calls: [
           { to: '0x5555555555555555555555555555555555555555', value: 1n, data: '0x12' },
@@ -225,7 +247,7 @@ describe('accessListCall helpers', () => {
         ]
       })
       const baseAcc = makeBaseAccount(account)
-      const state = makeAccountState({ isDeployed: true })
+      const state = makeAccountState({ isDeployed: true, safeVersion: '1.5.0' })
 
       const params = getSafeAccessListCallParams(baseAcc, op, state)
       expect(params).toBeTruthy()
@@ -262,9 +284,9 @@ describe('accessListCall helpers', () => {
         makeAccountState({ isDeployed: true })
       )
       const undeployedSafeParams = getSafeAccessListCallParams(
-        makeBaseAccount(makeSafeAccount('1.4.1')),
+        makeBaseAccount(makeSafeAccount()),
         makeAccountOp(),
-        makeAccountState({ isDeployed: false })
+        makeAccountState({ isDeployed: false, safeVersion: '1.4.1' })
       )
 
       expect(nonSafeParams).toBeNull()
@@ -272,13 +294,42 @@ describe('accessListCall helpers', () => {
     })
 
     it('Should not throw for unsupported Safe versions and should return null', () => {
-      const account = makeSafeAccount('1.6.0')
+      const account = makeSafeAccount()
       const baseAcc = makeBaseAccount(account)
-      const state = makeAccountState({ isDeployed: true })
+      const state = makeAccountState({ isDeployed: true, safeVersion: '1.6.0' })
       const op = makeAccountOp()
 
       expect(() => getSafeAccessListCallParams(baseAcc, op, state)).not.toThrow()
       expect(getSafeAccessListCallParams(baseAcc, op, state)).toBeNull()
+    })
+
+    it('returns null when the Safe version could not be read on this chain', () => {
+      const baseAcc = makeBaseAccount(makeSafeAccount())
+      const state = makeAccountState({ isDeployed: true, safeVersion: null })
+
+      expect(getSafeAccessListCallParams(baseAcc, makeAccountOp(), state)).toBeNull()
+    })
+
+    it('selects the simulate accessor from the chain specific Safe version', () => {
+      const baseAcc = makeBaseAccount(makeSafeAccount())
+      const op = makeAccountOp()
+      const v13Params = getSafeAccessListCallParams(
+        baseAcc,
+        op,
+        makeAccountState({ isDeployed: true, safeVersion: '1.3.0' })
+      )
+      const v15Params = getSafeAccessListCallParams(
+        baseAcc,
+        op,
+        makeAccountState({ isDeployed: true, safeVersion: '1.5.0' })
+      )
+
+      expect(safeIface.decodeFunctionData('simulateAndRevert', v13Params!.data)[0]).toBe(
+        safeSimulateTxAccessor['v1.3.0']
+      )
+      expect(safeIface.decodeFunctionData('simulateAndRevert', v15Params!.data)[0]).toBe(
+        safeSimulateTxAccessor['v1.5.0']
+      )
     })
   })
 

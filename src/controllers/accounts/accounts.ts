@@ -18,7 +18,8 @@ import {
   AccountStates,
   AmbireSmartAccountIdentityCreateRequest,
   AmbireSmartAccountIdentityCreateResponse,
-  IAccountsController
+  IAccountsController,
+  SafeAccountCreation
 } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
@@ -350,6 +351,18 @@ export class AccountsController extends EventEmitter implements IAccountsControl
       return { ...acc, preferences: account.preferences }
     })
 
+    this.emitUpdate()
+    await this.#storage.set('accounts', this.accounts)
+  }
+
+  /** Saves recovered Safe creation data on an imported account. */
+  async updateSafeCreation(addr: Account['addr'], safeCreation: SafeAccountCreation) {
+    const accountIndex = this.accounts.findIndex((account) => account.addr === addr)
+    if (accountIndex === -1) return
+
+    this.accounts = this.accounts.map((account, index) =>
+      index === accountIndex ? { ...account, safeCreation } : account
+    )
     this.emitUpdate()
     await this.#storage.set('accounts', this.accounts)
   }
