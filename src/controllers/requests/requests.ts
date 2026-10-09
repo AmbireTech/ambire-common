@@ -1201,6 +1201,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       p.resolve(data)
     })
 
+    const heldForChainId = this.#dappRequestsWaitingNetworkEnable.get(requestId)?.chainId
     const heldDappRequests = this.#takeHeldDappRequests(requestId)
 
     // These requests are transitionary initiated internally (not dApp requests) that block dApp requests
@@ -1219,8 +1220,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       await Promise.all(
         heldDappRequests.map(({ request, dappPromise }) =>
-          this.build({ type: 'dappRequest', params: { request, dappPromise } }).catch(
-            (error: any) => dappPromise.reject(error)
+          this.#buildDappProviderRequest(request, dappPromise, heldForChainId).catch((error: any) =>
+            dappPromise.reject(error)
           )
         )
       )
@@ -1387,16 +1388,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.initialLoadPromise
 
     if (type === 'dappRequest') {
-      try {
-        await this.#processDappRequest(params.request, params.dappPromise)
-      } catch (e: any) {
-        this.emitError({
-          error: e,
-          message: `Error processing app request${e.message ? `: ${e.message}` : '.'}`,
-          level: 'major'
-        })
-        throw e
-      }
+      await this.#buildDappProviderRequest(params.request, params.dappPromise)
     }
 
     if (type === 'calls') {
@@ -1492,14 +1484,38 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
+  /** Builds an app request and tells the user when that fails. Rethrows, so the app hears why. */
+  async #buildDappProviderRequest(
+    request: DappProviderRequest,
+    dappPromise: PendingDappPromise,
+    heldForChainId?: bigint
+  ) {
+    try {
+      await this.#processDappRequest(request, dappPromise, heldForChainId)
+    } catch (e: any) {
+      this.emitError({
+        error: e,
+        message: `Error processing app request${e.message ? `: ${e.message}` : '.'}`,
+        level: 'major'
+      })
+      throw e
+    }
+  }
+
   /**
    * The one place every app request passes through, whatever brought it in - the injected
    * provider, the mobile WebView or WalletConnect. Requests that would collide with one another
    * are queued behind the one being built and built together; everything else builds straight
    * through. Resolves once the request has been added (or answered on the spot), and rejects
    * with what the app should be told, which is what `rpcFlow` turns into the RPC error.
+   * `heldForChainId` is the network a request waited on to be turned on. The request is built
+   * on it even when the app has moved to another network since.
    */
-  async #processDappRequest(request: DappProviderRequest, dappPromise: PendingDappPromise) {
+  async #processDappRequest(
+    request: DappProviderRequest,
+    dappPromise: PendingDappPromise,
+    heldForChainId?: bigint
+  ) {
     await this.initialLoadPromise
 
     if (this.#dapps.isDappSilenced(request.session.id)) {
@@ -1509,7 +1525,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
     await this.#guardHWSigning(true)
 
-    const dapp = (await this.#getDapp(request.session.id)) || null
+    const currentDapp = (await this.#getDapp(request.session.id)) || null
+    const dapp =
+      currentDapp && heldForChainId !== undefined
+        ? { ...currentDapp, chainId: Number(heldForChainId) }
+        : currentDapp
 
     const disabledNetwork = this.#getDisabledNetworkOfDappRequest(request, dapp)
     if (disabledNetwork) {

@@ -2079,6 +2079,53 @@ describe('RequestsController ', () => {
         callsRequest!.signAccountOp.destroy()
       })
 
+      test('builds the held requests on the network they were sent for, even after the app moves', async () => {
+        const { controller, dappsCtrl, enableNetwork } = await prepareDisabledNetworkTest()
+        const [txPromise, messagePromise, typedMessagePromise] = makeRejectMocks(3)
+
+        await sendTransaction(controller, txPromise!)
+        await controller.build({
+          type: 'dappRequest',
+          params: {
+            request: {
+              method: 'personal_sign',
+              params: ['0x68656c6c6f', FROM],
+              session: MOCK_SESSION
+            },
+            dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...messagePromise! }
+          }
+        })
+        await controller.build({
+          type: 'dappRequest',
+          params: {
+            request: {
+              method: 'eth_signTypedData_v4',
+              params: [
+                FROM,
+                JSON.stringify({
+                  ...TYPED_DATA,
+                  domain: { ...TYPED_DATA.domain, chainId: Number(BASE_CHAIN_ID) }
+                })
+              ],
+              session: MOCK_SESSION
+            },
+            dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...typedMessagePromise! }
+          }
+        })
+        const prompt = controller.currentUserRequest!
+
+        // The app moves to Ethereum while the prompt for Base is open
+        dappsCtrl.updateDapp(MOCK_SESSION.id, { chainId: 1 })
+        enableNetwork()
+        await controller.resolveUserRequest(null, prompt.id)
+
+        const builtOn = controller.userRequests.map((r) => `${r.kind}:${String(r.meta.chainId)}`)
+        expect(builtOn.sort()).toEqual(['calls:8453', 'message:8453', 'typedMessage:8453'])
+        expect(typedMessagePromise!.reject).not.toHaveBeenCalled()
+
+        controller.userRequests.forEach((r) => r.kind === 'calls' && r.signAccountOp.destroy())
+      })
+
       test('rejects the held requests with the prompt, and prompts again for the next one', async () => {
         const { controller } = await prepareDisabledNetworkTest()
         const [rejected, next] = makeRejectMocks(2)
