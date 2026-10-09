@@ -52,6 +52,8 @@ import {
 } from '../../interfaces/ui'
 import {
   CallsUserRequest,
+  CallsUserRequestParams,
+  CallsWaitingAccountSwitch,
   DappCallsRequestParams,
   DappRequestQueueItem,
   OpenRequestWindowParams,
@@ -64,8 +66,10 @@ import {
   SwapAndBridgeRequest,
   TransferRequest,
   TypedMessageUserRequest,
-  UserRequest
+  UserRequest,
+  UserRequestWaitingAccountSwitch
 } from '../../interfaces/userRequest'
+import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getAccountOpNonce, isSafeRejectionCall } from '../../libs/accountOp/accountOp'
 import {
@@ -74,7 +78,7 @@ import {
   getSafeMessageRequestBanners
 } from '../../libs/banners/banners'
 import { getDappIdsFromUserRequest } from '../../libs/dapps/dappRequestSpam'
-import { isSigningAuthPlatform } from '../../libs/dapps/helpers'
+import { isAccountAllowedForDapp, isSigningAuthPlatform } from '../../libs/dapps/helpers'
 import { getAmbirePaymasterService, getPaymasterService } from '../../libs/erc7677/erc7677'
 import { getShouldSimulateInTheBackground } from '../../libs/main/main'
 import { TokenResult } from '../../libs/portfolio'
@@ -112,6 +116,9 @@ import type { OnBroadcastFailed, OnBroadcastSuccess } from '../signAccountOp/sig
 const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
+
+const MESSAGE_ACCOUNT_NOT_IN_WALLET_ERROR =
+  "This app asked to sign a message with an account that isn't in your wallet."
 
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
@@ -190,7 +197,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
   userRequests: UserRequest[] = []
 
-  userRequestsWaitingAccountSwitch: UserRequest[] = []
+  userRequestsWaitingAccountSwitch: UserRequestWaitingAccountSwitch[] = []
 
   requestWindow: {
     windowProps: WindowProps
@@ -452,12 +459,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     {
       position = 'last',
       executionType = 'open-request-window',
-      allowAccountSwitch = false,
       skipFocus = false
     }: {
       position?: RequestPosition
       executionType?: RequestExecutionType
-      allowAccountSwitch?: boolean
       skipFocus?: boolean
     } = {}
   ) {
@@ -494,13 +499,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       ) {
         this.#rejectAmbireOperationTypedDataRequest(req as TypedMessageUserRequest)
         continue
-      }
-
-      if (allowAccountSwitch && isSignRequest(kind)) {
-        if ((meta as SignUserRequest['meta']).accountAddr !== this.#selectedAccount.account?.addr) {
-          await this.#addSwitchAccountUserRequest(req as SignUserRequest)
-          return
-        }
       }
 
       if (kind === 'calls') {
@@ -850,13 +848,24 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * example) so the apps that lose their requests are not treated as having been refused.
    */
   async closeRequestWindow({ isUserInitiated = true }: { isUserInitiated?: boolean } = {}) {
+    // Taken before waiting on the view, as a request can come up in the meantime that nobody
+    // asked to close. Closing a window clears the current request and calls this method again,
+    // and that call must not find the next request on screen and dismiss it.
+    const requestShownAtCall = this.currentUserRequest
+    const requestIdsAtCall = new Set(this.userRequests.map((r) => r.id))
+
     await this.#awaitPendingPromises()
 
     if (!this.requestWindow.windowProps) {
       // Rendered inline (in the panel), so closing means dismissing the active request.
-      // Guarded, because clearing the current request calls this method too.
-      if (this.currentUserRequest)
-        await this.#handleRequestWindowClose(undefined, { isUserInitiated })
+      // Guarded, because clearing the current request calls this method too, and because
+      // another close may have dismissed it already.
+      if (requestShownAtCall && this.userRequests.includes(requestShownAtCall)) {
+        await this.#handleRequestWindowClose(undefined, {
+          requestIdsSnapshot: requestIdsAtCall,
+          isUserInitiated
+        })
+      }
 
       return
     }
@@ -1102,6 +1111,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     } = options || {}
 
     const userRequestsToAdd: UserRequest[] = []
+    const callsToAddAfterAccountSwitch: CallsWaitingAccountSwitch[] = []
     const safeRejectIds: string[] = []
     let didRemoveCurrentUserRequest = false
     let didRemoveSkipQueueRequest = false
@@ -1136,9 +1146,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
       if (kind === 'switchAccount') {
         const requestsToAddOrRemove = this.userRequestsWaitingAccountSwitch.filter(
-          (r) =>
-            isSignRequest(r.kind) &&
-            (r as SignUserRequest).meta.accountAddr === this.#selectedAccount.account?.addr
+          (r) => r.meta.accountAddr === this.#selectedAccount.account?.addr
         )
 
         requestsToAddOrRemove.forEach((r) => {
@@ -1158,6 +1166,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             return
           }
 
+          if (r.kind === 'calls') {
+            callsToAddAfterAccountSwitch.push(r)
+            return
+          }
+
           userRequestsToAdd.push(r)
         })
       }
@@ -1172,9 +1185,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // reject all Safe txns so they do not appear by accident again
     if (safeRejectIds.length) await this.#safe.rejectTxnId(safeRejectIds)
 
-    if (userRequestsToAdd.length) {
-      await this.addUserRequests(userRequestsToAdd, { skipFocus: true })
-    }
+    await this.#resumeRequestsWaitingAccountSwitch(userRequestsToAdd, callsToAddAfterAccountSwitch)
 
     if (!this.visibleUserRequests.length) {
       await this.#setCurrentUserRequest(null)
@@ -1350,10 +1361,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       r.dappPromises.forEach((p) => p.reject(ethErrors.provider.userRejectedRequest<any>(err)))
     })
 
-    const callsUserRequestsToReject = [
-      ...userRequestsToReject,
-      ...waitingUserRequestsToReject
-    ].filter((r) => r.kind === 'calls') as CallsUserRequest[]
+    const callsUserRequestsToReject = userRequestsToReject.filter(
+      (r): r is CallsUserRequest => r.kind === 'calls'
+    )
 
     // do not await overrideSimulationResults as the Reject handle becomes slow
     void Promise.all(
@@ -1362,9 +1372,6 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       )
     )
 
-    waitingUserRequestsToReject.forEach((r) => {
-      if (r.kind === 'calls') r.signAccountOp.destroy()
-    })
     this.userRequestsWaitingAccountSwitch = this.userRequestsWaitingAccountSwitch.filter(
       (r) => !waitingUserRequestsToReject.includes(r)
     )
@@ -1392,12 +1399,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
 
     if (type === 'calls') {
-      const { userRequestParams, executionType, ...rest } = params
-      const userRequest = await this.#createOrUpdateCallsUserRequest(
-        userRequestParams,
-        executionType
-      )
-      if (userRequest) await this.addUserRequests([userRequest], { executionType, ...rest })
+      const { userRequestParams, ...addOptions } = params
+      await this.#addCallsUserRequest(userRequestParams, addOptions)
     }
 
     if (type === 'transferRequest') {
@@ -1647,24 +1650,33 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         throw ethErrors.provider.chainDisconnected('Transaction failed - unknown network')
       }
 
-      const accountState = await this.#accounts.getOrFetchAccountOnChainState(
-        this.#selectedAccount.account.addr,
-        network.chainId
-      )
+      // The batch shares an account as well, which is the one the transactions are prepared
+      // for, selected or not. When it isn't in the wallet or the app isn't connected to it,
+      // every item is turned away while it is validated, so each app still hears about its own
+      // payload first.
+      const requestAccount = this.#findDappAccount(firstRequest.params?.[0]?.from, dapp)
+      let baseAcc: BaseAccount | null = null
 
-      if (!accountState) {
-        throw ethErrors.rpc.internal(
-          'Transaction failed - unable to fetch account state for the selected account'
+      if (requestAccount) {
+        const accountState = await this.#accounts.getOrFetchAccountOnChainState(
+          requestAccount.addr,
+          network.chainId
+        )
+
+        if (!accountState) {
+          throw ethErrors.rpc.internal(
+            'Transaction failed - unable to fetch account state for the requested account'
+          )
+        }
+
+        baseAcc = getBaseAccount(
+          requestAccount,
+          accountState,
+          network,
+          this.#featureFlags.isFeatureEnabled('erc4337'),
+          this.#featureFlags.isFeatureEnabled('eip7702')
         )
       }
-
-      const baseAcc = getBaseAccount(
-        this.#selectedAccount.account,
-        accountState,
-        network,
-        this.#featureFlags.isFeatureEnabled('erc4337'),
-        this.#featureFlags.isFeatureEnabled('eip7702')
-      )
 
       const built: { item: DappRequestQueueItem; params: DappCallsRequestParams }[] = []
 
@@ -1680,16 +1692,17 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       const last = built[built.length - 1]!
 
-      const userRequest = await this.#createOrUpdateCallsUserRequest({
-        calls: built.flatMap(({ params }) => params.calls),
-        // The batch shares an account and a chain; of what is left, the newest request wins,
-        // which is what merging them one by one used to end up with.
-        meta: last.params.meta,
-        dappPromises: built.map(({ params }) => params.dappPromise),
-        dappSessionId: last.item.request.session.sessionId
-      })
-
-      if (userRequest) await this.#addBuiltDappRequest(userRequest)
+      await this.#addCallsUserRequest(
+        {
+          calls: built.flatMap(({ params }) => params.calls),
+          // The batch shares an account and a chain; of what is left, the newest request wins,
+          // which is what merging them one by one used to end up with.
+          meta: last.params.meta,
+          dappPromises: built.map(({ params }) => params.dappPromise),
+          dappSessionId: last.item.request.session.sessionId
+        },
+        { allowAccountSwitch: true }
+      )
 
       built.forEach(({ item }) => item.settle())
     } catch (error) {
@@ -1711,19 +1724,40 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   }
 
   /**
+   * The wallet account an app request is for, or undefined when the address is missing, isn't
+   * an account in the wallet or isn't one the app is connected to. The app is told the same in
+   * every case, so it can't learn which accounts the wallet holds. Matched regardless of letter
+   * case, the same way the batch key reads it.
+   */
+  #findDappAccount(address: unknown, dapp: Dapp | null): Account | undefined {
+    const normalizedAddr = String(address).toLowerCase()
+    const account = this.#accounts.accounts.find((a) => a.addr.toLowerCase() === normalizedAddr)
+
+    if (!account || !isAccountAllowedForDapp(dapp?.accountPreferences, account.addr))
+      return undefined
+
+    return account
+  }
+
+  /**
    * Validates one transaction request and turns it into the calls and meta a user request is
    * built from. Throws the RPC error the app should be told when the payload doesn't hold up.
    */
   #normalizeDappCallsRequest(
     { request, dappPromise, dapp }: DappRequestQueueItem,
     network: Network,
-    baseAcc: ReturnType<typeof getBaseAccount>
+    baseAcc: BaseAccount | null
   ): DappCallsRequestParams {
     if (!request.params?.[0])
       throw ethErrors.rpc.invalidParams('The transaction request has no parameters.')
 
     const isWalletSendCalls = !!request.params[0].calls
     const accountAddr = getAddress(request.params[0].from)
+
+    if (!baseAcc)
+      throw ethErrors.provider.unauthorized(
+        "This app asked to send a transaction from an account that isn't in your wallet."
+      )
 
     if (isWalletSendCalls && !request.params[0].calls.length)
       throw ethErrors.provider.unsupportedMethod({
@@ -1816,6 +1850,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       throw ethErrors.rpc.invalidRequest('No msg request to sign')
     }
     const msgAddress = getAddress(msg?.[1])
+
+    if (!this.#findDappAccount(msgAddress, dapp))
+      throw ethErrors.provider.unauthorized(MESSAGE_ACCOUNT_NOT_IN_WALLET_ERROR)
 
     const network = this.#networks.networks.find((n) => Number(n.chainId) === Number(dapp?.chainId))
 
@@ -1928,6 +1965,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
     const msgAddress = getAddress(msg?.[0])
 
+    if (!this.#findDappAccount(msgAddress, dapp))
+      throw ethErrors.provider.unauthorized(MESSAGE_ACCOUNT_NOT_IN_WALLET_ERROR)
+
     const network = this.#networks.networks.find((n) => Number(n.chainId) === Number(dapp?.chainId))
 
     if (!network) {
@@ -1992,24 +2032,23 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     } as TypedMessageUserRequest
   }
 
-  /** Puts a built app request in front of the user, or behind an account switch if it needs one. */
+  /**
+   * Puts a built app request that isn't a transaction in front of the user, or behind an
+   * account switch if it needs one. Transactions go through `#addCallsUserRequest` instead.
+   */
   async #addBuiltDappRequest(userRequest: UserRequest) {
     const [firstDappPromise] = userRequest.dappPromises
 
     let position: RequestPosition = 'last'
 
-    if (userRequest.kind !== 'calls') {
-      const otherUserRequestFromSameDapp = this.userRequests.find((r) =>
-        r.dappPromises.some((p) =>
-          userRequest.dappPromises
-            .map((promise) => promise.session.origin)
-            .includes(p.session.origin)
-        )
+    const otherUserRequestFromSameDapp = this.userRequests.find((r) =>
+      r.dappPromises.some((p) =>
+        userRequest.dappPromises.map((promise) => promise.session.origin).includes(p.session.origin)
       )
+    )
 
-      if (!otherUserRequestFromSameDapp && !!firstDappPromise?.session.origin) {
-        position = 'first'
-      }
+    if (!otherUserRequestFromSameDapp && !!firstDappPromise?.session.origin) {
+      position = 'first'
     }
 
     const isASignOperationRequestedForAnotherAccount =
@@ -2027,7 +2066,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       return
     }
 
-    await this.#addSwitchAccountUserRequest(userRequest as SignUserRequest)
+    await this.#addSwitchAccountUserRequest(userRequest as UserRequestWaitingAccountSwitch)
   }
 
   async #buildIntentUserRequest({
@@ -2403,7 +2442,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     })
   }
 
-  async #addSwitchAccountUserRequest(req: SignUserRequest) {
+  async #addSwitchAccountUserRequest(req: UserRequestWaitingAccountSwitch) {
     const switchAccountUserRequest = buildSwitchAccountUserRequest({
       nextUserRequest: req,
       selectedAccountAddr: req.meta.accountAddr,
@@ -2415,6 +2454,58 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       position: 'last',
       executionType: 'open-request-window'
     })
+  }
+
+  /** Adds back the requests a switch request held, once the user is on the account they are for. */
+  async #resumeRequestsWaitingAccountSwitch(
+    userRequests: UserRequest[],
+    callsParams: CallsWaitingAccountSwitch[]
+  ) {
+    if (!userRequests.length && !callsParams.length) return
+
+    // The switch request is already gone, so the view is empty until these are back, which is
+    // not a reason to close it. Closing it would also refuse the app whose request is coming back.
+    this.#userRequestsBeingAdded += 1
+
+    try {
+      if (userRequests.length) {
+        try {
+          await this.addUserRequests(userRequests, { skipFocus: true })
+        } catch (error) {
+          this.#failResumedRequest(
+            userRequests.flatMap((r) => r.dappPromises),
+            error
+          )
+        }
+      }
+
+      // One at a time, so calls for the same account and chain join one batch (including the one
+      // the account may already have) instead of replacing each other. A failure costs only its
+      // own apps the request, the rest are still added.
+      for (const calls of callsParams) {
+        try {
+          await this.#addCallsUserRequest(calls, { skipFocus: true })
+        } catch (error) {
+          this.#failResumedRequest(calls.dappPromises, error)
+        }
+      }
+    } finally {
+      this.#userRequestsBeingAdded -= 1
+    }
+  }
+
+  /**
+   * Tells the apps that a request held behind a switch couldn't be added back. Nothing else
+   * would ever answer them.
+   */
+  #failResumedRequest(dappPromises: UserRequest['dappPromises'], error: unknown) {
+    this.emitError({
+      level: 'major',
+      message: "The request couldn't be opened after switching accounts. Please try again.",
+      error: error as Error
+    })
+
+    dappPromises.forEach((p) => p.reject(ethErrors.rpc.internal()))
   }
 
   // ! IMPORTANT !
@@ -2439,6 +2530,67 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     ]
   }
 
+  /**
+   * Adds the calls to the batch of the account they are for, creating one if it has none. With
+   * `allowAccountSwitch`, calls for an account other than the selected one wait behind a
+   * request to switch to it instead, so they never join a batch the user isn't looking at.
+   */
+  async #addCallsUserRequest(
+    params: CallsUserRequestParams,
+    {
+      executionType,
+      allowAccountSwitch = false,
+      ...addOptions
+    }: {
+      executionType?: RequestExecutionType
+      allowAccountSwitch?: boolean
+      position?: RequestPosition
+      skipFocus?: boolean
+    } = {}
+  ) {
+    if (allowAccountSwitch && params.meta.accountAddr !== this.#selectedAccount.account?.addr) {
+      // Checked again against the batch they join once the user switches, but a request that
+      // is over the cap on its own is turned away now rather than after the user has switched
+      if (this.#rejectDappCallsOverCap(params.calls.length, params.dappPromises ?? [])) return
+
+      await this.#addSwitchAccountUserRequest({
+        ...params,
+        kind: 'calls',
+        dappPromises: params.dappPromises ?? []
+      })
+      return
+    }
+
+    const userRequest = await this.#createOrUpdateCallsUserRequest(params, executionType)
+    if (userRequest) await this.addUserRequests([userRequest], { executionType, ...addOptions })
+  }
+
+  /**
+   * Turns the apps away when a batch would hold more than `MAX_DAPP_CALLS_PER_REQUEST` calls,
+   * and tells the user why. Returns whether it did. Calls the wallet adds on its own (no app
+   * promises) are never capped.
+   */
+  #rejectDappCallsOverCap(
+    callsCount: number,
+    dappPromises: CallsUserRequest['dappPromises']
+  ): boolean {
+    if (!dappPromises.length || callsCount <= MAX_DAPP_CALLS_PER_REQUEST) return false
+
+    const errorMessage = `This app tried to send too many transactions at once. Up to ${MAX_DAPP_CALLS_PER_REQUEST} can wait for your approval at a time.`
+
+    this.emitError({
+      level: 'major',
+      message: errorMessage,
+      error: new Error(
+        `requestsController: an app asked for ${callsCount} calls on one request, over the ${MAX_DAPP_CALLS_PER_REQUEST} cap`
+      )
+    })
+
+    dappPromises.forEach((p) => p.reject(ethErrors.rpc.limitExceeded({ message: errorMessage })))
+
+    return true
+  }
+
   async #createOrUpdateCallsUserRequest(
     {
       calls,
@@ -2446,24 +2598,23 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       accountOp: providedAccountOp,
       dappPromises = [],
       dappSessionId
-    }: {
-      calls: Call[]
-      meta: CallsUserRequest['meta']
-      accountOp?: AccountOp
-      dappPromises?: CallsUserRequest['dappPromises']
-      dappSessionId?: string
-    },
+    }: CallsUserRequestParams,
     executionType: RequestExecutionType = 'open-request-window',
     { accountOpNonce }: { accountOpNonce?: bigint } = {}
   ) {
     let callUserRequest: CallsUserRequest | undefined
+    const isSafeAccount = !!this.#accounts.accounts.find((a) => a.addr === meta.accountAddr)
+      ?.safeCreation
     const existingUserRequest = this.userRequests.find(
       (r) =>
         r.kind === 'calls' &&
         // done like this so 1) a safe onchain rejection tx is not bundled with a normal batch
-        // 2) a fetched rejection is bundled with the current local present rejection
-        isSafeRejectionCall(calls, meta.accountAddr) ===
-          isSafeRejectionCall(r.signAccountOp.accountOp.calls, meta.accountAddr) &&
+        // 2) a fetched rejection is bundled with the current local present rejection.
+        // Only for Safes - any other account would get a second request under the same id as
+        // its batch, which replaces the batch and drops what was in it
+        (!isSafeAccount ||
+          isSafeRejectionCall(calls, meta.accountAddr) ===
+            isSafeRejectionCall(r.signAccountOp.accountOp.calls, meta.accountAddr)) &&
         r.meta.accountAddr === meta.accountAddr &&
         r.meta.chainId === meta.chainId &&
         (accountOpNonce === undefined ||
@@ -2481,23 +2632,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // Cap just in case an app decides to send a lot of requests at once
     const callsAlreadyWaiting = existingUserRequest?.signAccountOp.accountOp.calls.length ?? 0
 
-    if (dappPromises.length && callsAlreadyWaiting + calls.length > MAX_DAPP_CALLS_PER_REQUEST) {
-      const errorMessage = `This app tried to send too many transactions at once. Up to ${MAX_DAPP_CALLS_PER_REQUEST} can wait for your approval at a time.`
-
-      this.emitError({
-        level: 'major',
-        message: errorMessage,
-        error: new Error(
-          `requestsController: an app asked for ${
-            callsAlreadyWaiting + calls.length
-          } calls on one request, over the ${MAX_DAPP_CALLS_PER_REQUEST} cap`
-        )
-      })
-
-      dappPromises.forEach((p) => p.reject(ethErrors.rpc.limitExceeded({ message: errorMessage })))
-
-      return
-    }
+    if (this.#rejectDappCallsOverCap(callsAlreadyWaiting + calls.length, dappPromises)) return
 
     if (existingUserRequest) {
       // Prevent updating the signAccountOp if a signing or broadcasting process is already in progress for the same account and chain.

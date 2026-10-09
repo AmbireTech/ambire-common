@@ -1,6 +1,7 @@
 import {
   getTestErc7730Descriptors,
-  getTestErc7730MessageDescriptor
+  getTestErc7730MessageDescriptor,
+  SAFE_PROXY_V1_4_1_RUNTIME_CODE
 } from '../../controllers/erc7730/testDescriptors'
 import { ethers, getAddress, ZeroAddress } from 'ethers'
 import { encodeFunctionData } from 'viem'
@@ -2820,6 +2821,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
     const provider = {
+      getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(async (address: string) => {
         expect(address.toLowerCase()).toBe(safeProxy)
 
@@ -2930,6 +2932,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
     const provider = {
+      getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(async () => ethers.zeroPadValue(safeSingleton, 32))
     }
     const descriptorPath = 'registry/safe/calldata-SafeL2-1.4.1.json'
@@ -3017,6 +3020,7 @@ describe('ERC-7730 descriptors', () => {
       ]
     }
     const provider = {
+      getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(async (address: string) => {
         expect(address.toLowerCase()).toBe(safeProxy)
 
@@ -4420,6 +4424,7 @@ describe('ERC-7730 descriptors', () => {
       throw new Error(`Unexpected ERC-7730 relayer call: ${path}`)
     })
     const provider = {
+      getCode: jest.fn(async () => SAFE_PROXY_V1_4_1_RUNTIME_CODE),
       getStorage: jest.fn(async (address: string, slot: bigint) => {
         expect(address).toBe(safeProxy)
         expect(slot).toBe(0n)
