@@ -272,6 +272,7 @@ const prepareTest = async (
     safeCtrl: mainCtrl.safe,
     activityCtrl: mainCtrl.activity,
     controller: mainCtrl.requests,
+    networksCtrl: mainCtrl.networks,
     getSignAccountOp,
     getCallsRequest,
     event: eventEmitter,
@@ -2519,6 +2520,149 @@ describe('RequestsController ', () => {
         expect(controller.currentUserRequest).toBe(null)
         expect(sideEffects.closeCount()).toBe(1)
         expect(controller.requestWindow.windowProps).toBe(null)
+      })
+    })
+
+    describe('for a disabled network', () => {
+      const BASE_CHAIN_ID = 8453n
+
+      /** Connects the app to Base and disables it, returning a switch that turns it back on */
+      const prepareDisabledNetworkTest = async () => {
+        const testCtx = await prepareTest(true)
+        testCtx.dappsCtrl.updateDapp(MOCK_SESSION.id, { chainId: Number(BASE_CHAIN_ID) })
+        const base = testCtx.networksCtrl.allNetworks.find((n) => n.chainId === BASE_CHAIN_ID)!
+        base.disabled = true
+
+        return {
+          ...testCtx,
+          enableNetwork: () => {
+            base.disabled = false
+          }
+        }
+      }
+
+      test('holds a transaction behind a prompt and moves straight to it once the network is on', async () => {
+        const { controller, uiCtrl, enableNetwork } = await prepareDisabledNetworkTest()
+        const sideEffects = watchSideEffects(uiCtrl)
+        const [promise] = makeRejectMocks(1)
+
+        await sendTransaction(controller, promise!)
+
+        // Nothing can be built for a disabled network, so only the prompt is there
+        expect(controller.userRequests.map((r) => r.kind)).toEqual(['walletAddEthereumChain'])
+        const prompt = controller.currentUserRequest!
+        expect(prompt.kind).toBe('walletAddEthereumChain')
+        expect(prompt.meta.hasNextRequest).toBe(true)
+        expect(prompt.meta.params[0].chainId).toBe('0x2105')
+
+        enableNetwork()
+        await controller.resolveUserRequest(null, prompt.id)
+
+        const [callsRequest] = controller.userRequests as CallsUserRequest[]
+        expect(controller.userRequests).toHaveLength(1)
+        expect(callsRequest!.meta.chainId).toBe(BASE_CHAIN_ID)
+        expect(controller.currentUserRequest).toBe(callsRequest)
+        // The view goes from the prompt to the transaction without closing on the way
+        expect(sideEffects.openCount()).toBe(1)
+        expect(sideEffects.closeCount()).toBe(0)
+        expect(promise!.reject).not.toHaveBeenCalled()
+
+        callsRequest!.signAccountOp.destroy()
+      })
+
+      test('holds requests arriving at once for the same network behind one prompt', async () => {
+        const { controller, enableNetwork } = await prepareDisabledNetworkTest()
+        const promises = makeRejectMocks(3)
+
+        await Promise.all(promises.map((promise) => sendTransaction(controller, promise)))
+
+        expect(controller.userRequests.map((r) => r.kind)).toEqual(['walletAddEthereumChain'])
+
+        enableNetwork()
+        await controller.resolveUserRequest(null, controller.currentUserRequest!.id)
+
+        const [callsRequest] = controller.userRequests as CallsUserRequest[]
+        expect(controller.userRequests).toHaveLength(1)
+        // Built together, the way they would have been had the network been on
+        expect(callsRequest!.signAccountOp.accountOp.calls).toHaveLength(3)
+        expect(callsRequest!.dappPromises).toHaveLength(3)
+
+        callsRequest!.signAccountOp.destroy()
+      })
+
+      test('builds the held requests on the network they were sent for, even after the app moves', async () => {
+        const { controller, dappsCtrl, enableNetwork } = await prepareDisabledNetworkTest()
+        const [txPromise, messagePromise, typedMessagePromise] = makeRejectMocks(3)
+
+        await sendTransaction(controller, txPromise!)
+        await controller.build({
+          type: 'dappRequest',
+          params: {
+            request: {
+              method: 'personal_sign',
+              params: ['0x68656c6c6f', FROM],
+              session: MOCK_SESSION
+            },
+            dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...messagePromise! }
+          }
+        })
+        await controller.build({
+          type: 'dappRequest',
+          params: {
+            request: {
+              method: 'eth_signTypedData_v4',
+              params: [
+                FROM,
+                JSON.stringify({
+                  ...TYPED_DATA,
+                  domain: { ...TYPED_DATA.domain, chainId: Number(BASE_CHAIN_ID) }
+                })
+              ],
+              session: MOCK_SESSION
+            },
+            dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...typedMessagePromise! }
+          }
+        })
+        const prompt = controller.currentUserRequest!
+
+        // The app moves to Ethereum while the prompt for Base is open
+        dappsCtrl.updateDapp(MOCK_SESSION.id, { chainId: 1 })
+        enableNetwork()
+        await controller.resolveUserRequest(null, prompt.id)
+
+        const builtOn = controller.userRequests.map((r) => `${r.kind}:${String(r.meta.chainId)}`)
+        expect(builtOn.sort()).toEqual(['calls:8453', 'message:8453', 'typedMessage:8453'])
+        expect(typedMessagePromise!.reject).not.toHaveBeenCalled()
+
+        controller.userRequests.forEach((r) => r.kind === 'calls' && r.signAccountOp.destroy())
+      })
+
+      test('rejects the held requests with the prompt, and prompts again for the next one', async () => {
+        const { controller } = await prepareDisabledNetworkTest()
+        const [rejected, next] = makeRejectMocks(2)
+
+        await sendTransaction(controller, rejected!)
+        await controller.rejectUserRequests('User rejected', [controller.currentUserRequest!.id])
+
+        expect(rejected!.reject).toHaveBeenCalled()
+        expect(controller.userRequests).toHaveLength(0)
+
+        // Joining the rejected prompt would leave this one waiting forever
+        await sendTransaction(controller, next!)
+        expect(controller.userRequests.map((r) => r.kind)).toEqual(['walletAddEthereumChain'])
+        expect(next!.reject).not.toHaveBeenCalled()
+      })
+
+      test('rejects the held requests when the view closes, even with the network turned on', async () => {
+        const { controller, enableNetwork } = await prepareDisabledNetworkTest()
+        const [promise] = makeRejectMocks(1)
+
+        await sendTransaction(controller, promise!)
+        enableNetwork()
+        await controller.closeRequestWindow()
+
+        expect(promise!.reject).toHaveBeenCalled()
+        expect(controller.userRequests).toHaveLength(0)
       })
     })
   })
