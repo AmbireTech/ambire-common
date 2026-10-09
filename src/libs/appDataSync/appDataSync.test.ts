@@ -2,14 +2,16 @@ import { getBytes, getCreate2Address, keccak256, toUtf8Bytes } from 'ethers'
 import { gzip } from 'pako'
 
 import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
+import { networks as predefinedNetworks } from '@/consts/networks'
 import { CIPHER } from '@/libs/keystore/keystore'
 
 import {
-  ACCOUNTS_SYNC_PAYLOAD_VERSION,
-  AccountsSyncPayload,
-  parseAccountsSyncPayload,
-  serializeAccountsSyncPayload
-} from './accountsSync'
+  APP_DATA_SYNC_PAYLOAD_VERSION,
+  AppDataSyncPayload,
+  isSyncPasswordRequired,
+  parseAppDataSyncPayload,
+  serializeAppDataSyncPayload
+} from './appDataSync'
 
 const ACCOUNT_CREATION = {
   factoryAddr: AMBIRE_ACCOUNT_FACTORY,
@@ -32,8 +34,8 @@ const gcmPayload = (byteLength: number) => ({
   iv: `0x${'cd'.repeat(12)}`
 })
 
-const buildPayload = (): AccountsSyncPayload => ({
-  v: ACCOUNTS_SYNC_PAYLOAD_VERSION,
+const buildPayload = (): AppDataSyncPayload => ({
+  v: APP_DATA_SYNC_PAYLOAD_VERSION,
   secret: {
     id: 'password',
     scryptParams: { salt: `0x${'ef'.repeat(32)}`, N: 131072, r: 8, p: 1, dkLen: 64 },
@@ -86,9 +88,9 @@ const buildPayload = (): AccountsSyncPayload => ({
 })
 
 const serializeAndParse = (payload: any) =>
-  parseAccountsSyncPayload(getBytes(serializeAccountsSyncPayload(payload)))
+  parseAppDataSyncPayload(getBytes(serializeAppDataSyncPayload(payload)))
 
-describe('accountsSync payload', () => {
+describe('appDataSync payload', () => {
   it('round-trips a payload with internal keys, external keys and seeds', () => {
     const payload = buildPayload()
 
@@ -96,7 +98,7 @@ describe('accountsSync payload', () => {
   })
 
   it('rejects data that is not compressed at all', () => {
-    expect(() => parseAccountsSyncPayload(new Uint8Array([1, 2, 3]))).toThrow(
+    expect(() => parseAppDataSyncPayload(new Uint8Array([1, 2, 3]))).toThrow(
       'failed to decompress the payload'
     )
   })
@@ -104,11 +106,11 @@ describe('accountsSync payload', () => {
   it('rejects an uncompressed payload, which no Ambire product produces', () => {
     const uncompressed = toUtf8Bytes(JSON.stringify(buildPayload()))
 
-    expect(() => parseAccountsSyncPayload(uncompressed)).toThrow('failed to decompress the payload')
+    expect(() => parseAppDataSyncPayload(uncompressed)).toThrow('failed to decompress the payload')
   })
 
   it('rejects compressed data that is not a sync payload', () => {
-    expect(() => parseAccountsSyncPayload(gzip(toUtf8Bytes('not json')))).toThrow(
+    expect(() => parseAppDataSyncPayload(gzip(toUtf8Bytes('not json')))).toThrow(
       'not a valid sync payload'
     )
   })
@@ -118,14 +120,14 @@ describe('accountsSync payload', () => {
     // code would try to exhaust the memory of the device scanning it
     const bomb = gzip(new Uint8Array(3 * 1024 * 1024))
 
-    expect(() => parseAccountsSyncPayload(bomb)).toThrow('too large to be a sync payload')
+    expect(() => parseAppDataSyncPayload(bomb)).toThrow('too large to be a sync payload')
   })
 
   it('compresses the payload well below its JSON size', () => {
     const payload = buildPayload()
     const jsonSize = toUtf8Bytes(JSON.stringify(payload)).length
-    // `serializeAccountsSyncPayload` returns a hex string, so 2 chars per wire byte
-    const wireSize = (serializeAccountsSyncPayload(payload).length - 2) / 2
+    // `serializeAppDataSyncPayload` returns a hex string, so 2 chars per wire byte
+    const wireSize = (serializeAppDataSyncPayload(payload).length - 2) / 2
 
     expect(wireSize).toBeLessThan(jsonSize / 2)
   })
@@ -172,9 +174,18 @@ describe('accountsSync payload', () => {
     expect(() => serializeAndParse(payload)).toThrow('unsupported payload cipherType')
   })
 
-  it('rejects a payload without accounts', () => {
-    expect(() => serializeAndParse({ ...buildPayload(), accounts: [] })).toThrow(
-      'no accounts in the payload'
+  it('rejects a payload with nothing to sync', () => {
+    expect(() =>
+      serializeAndParse({ ...buildPayload(), accounts: [], keys: [], seeds: [] })
+    ).toThrow('nothing to sync in the payload')
+  })
+
+  it('rejects encrypted keys that come without the password protected main key', () => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { secret, ...withoutSecret } = buildPayload()
+
+    expect(() => serializeAndParse(withoutSecret)).toThrow(
+      'missing the password protected main key'
     )
   })
 
@@ -274,5 +285,126 @@ describe('accountsSync payload', () => {
     const viewOnlyPayload = { ...buildPayload(), keys: [], seeds: [] }
 
     expect(serializeAndParse(viewOnlyPayload)).toEqual(viewOnlyPayload)
+  })
+
+  it('needs the password only for private keys and recovery phrases', () => {
+    const payload = buildPayload()
+
+    expect(isSyncPasswordRequired(payload)).toBe(true)
+    expect(isSyncPasswordRequired({ ...payload, keys: [] })).toBe(true)
+    // Hardware wallet keys are stored on the device, so there is nothing to decrypt
+    expect(isSyncPasswordRequired({ keys: [payload.keys[1]!], seeds: [] })).toBe(false)
+    expect(isSyncPasswordRequired({ keys: [], seeds: [] })).toBe(false)
+  })
+
+  describe('settings, networks and contacts', () => {
+    const buildFullPayload = (): AppDataSyncPayload => ({
+      ...buildPayload(),
+      settings: {
+        featureFlags: { tokenPrices: false, ledgerSigningReports: true },
+        disabledSwapProviderIds: ['lifi'],
+        app: { themeType: 'dark', crashAnalyticsEnabled: false }
+      },
+      networks: predefinedNetworks.slice(0, 2),
+      contacts: [{ name: 'Alice', address: EOA_ADDR }]
+    })
+
+    it('round-trips them, keeping the bigints of the networks', () => {
+      const payload = buildFullPayload()
+      const parsed = serializeAndParse(payload)
+
+      expect(parsed).toEqual(payload)
+      expect(typeof parsed.networks![0]!.chainId).toBe('bigint')
+    })
+
+    it('accepts only the settings, networks and contacts, without accounts or a password', () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { secret, ...payload } = {
+        ...buildFullPayload(),
+        accounts: [],
+        keys: [],
+        seeds: []
+      }
+      const parsed = serializeAndParse(payload)
+
+      expect(parsed).toEqual(payload)
+      expect(isSyncPasswordRequired(parsed)).toBe(false)
+    })
+
+    it('accepts just one of them', () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { secret, settings, networks, ...payload } = {
+        ...buildFullPayload(),
+        accounts: [],
+        keys: [],
+        seeds: []
+      }
+
+      expect(serializeAndParse(payload).contacts).toEqual(payload.contacts)
+    })
+
+    it('still pins the scrypt params of a main key nothing needs', () => {
+      const payload: any = { ...buildFullPayload(), accounts: [], keys: [], seeds: [] }
+      payload.secret.scryptParams = { ...payload.secret.scryptParams, N: 2 ** 21 }
+
+      expect(() => serializeAndParse(payload)).toThrow('invalid scrypt params')
+    })
+
+    it('leaves out what the user did not choose to sync', () => {
+      const parsed = serializeAndParse(buildPayload())
+
+      expect(parsed.settings).toBeUndefined()
+      expect(parsed.networks).toBeUndefined()
+      expect(parsed.contacts).toBeUndefined()
+    })
+
+    it('rejects a feature flag that is not a boolean', () => {
+      const payload: any = buildFullPayload()
+      payload.settings.featureFlags.tokenPrices = 'no'
+
+      expect(() => serializeAndParse(payload)).toThrow('invalid feature flags')
+    })
+
+    it('rejects disabled swap providers that are not ids', () => {
+      const payload: any = buildFullPayload()
+      payload.settings.disabledSwapProviderIds = [{ id: 'lifi' }]
+
+      expect(() => serializeAndParse(payload)).toThrow('invalid disabled swap providers')
+    })
+
+    it('rejects app settings that are not plain values', () => {
+      const payload: any = buildFullPayload()
+      payload.settings.app = { themeType: { nested: 'dark' } }
+
+      expect(() => serializeAndParse(payload)).toThrow('invalid app settings')
+    })
+
+    it('rejects a network without a chainId it could be stored under', () => {
+      const payload: any = buildFullPayload()
+      payload.networks[0] = { ...payload.networks[0], chainId: '1' }
+
+      expect(() => serializeAndParse(payload)).toThrow('invalid networks')
+    })
+
+    it('rejects a network whose RPC urls are not strings', () => {
+      const payload: any = buildFullPayload()
+      payload.networks[0] = { ...payload.networks[0], rpcUrls: [42] }
+
+      expect(() => serializeAndParse(payload)).toThrow('invalid networks')
+    })
+
+    it('rejects a contact with an invalid address', () => {
+      const payload: any = buildFullPayload()
+      payload.contacts[0].address = '0x1234'
+
+      expect(() => serializeAndParse(payload)).toThrow('invalid contact address')
+    })
+
+    it('rejects a contact without a name', () => {
+      const payload: any = buildFullPayload()
+      payload.contacts[0].name = '   '
+
+      expect(() => serializeAndParse(payload)).toThrow(`invalid name of contact ${EOA_ADDR}`)
+    })
   })
 })

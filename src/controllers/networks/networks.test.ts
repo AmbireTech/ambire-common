@@ -635,3 +635,63 @@ describe('Networks Controller - add or update network info', () => {
     })
   })
 })
+
+describe('Networks Controller - merge networks from another device', () => {
+  const CUSTOM_NETWORK: Network = {
+    ...predefinedNetworks[0]!,
+    chainId: 123456789n,
+    name: 'Custom network',
+    rpcUrls: ['https://custom.example'],
+    selectedRpcUrl: 'https://custom.example',
+    predefined: false
+  }
+
+  beforeEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  test('overrides the networks it receives and leaves the others untouched', async () => {
+    const { controller, onAddOrUpdateNetworks } = buildNetworksController()
+    await controller.initialLoadPromise
+    await settleBackgroundSync(controller)
+
+    const [ethereum, untouched] = controller.allNetworks
+    const syncedEthereum = {
+      ...ethereum!,
+      rpcUrls: [...ethereum!.rpcUrls, 'https://synced.example'],
+      selectedRpcUrl: 'https://synced.example',
+      disabled: true
+    }
+
+    await controller.mergeNetworks([syncedEthereum, CUSTOM_NETWORK])
+
+    const byChainId = (chainId: bigint) => controller.allNetworks.find((n) => n.chainId === chainId)
+    expect(byChainId(ethereum!.chainId)).toMatchObject({
+      selectedRpcUrl: 'https://synced.example',
+      disabled: true
+    })
+    expect(byChainId(CUSTOM_NETWORK.chainId)?.name).toBe('Custom network')
+    expect(byChainId(untouched!.chainId)).toEqual(untouched)
+    // The RPC providers of the merged networks get replaced
+    expect(onAddOrUpdateNetworks).toHaveBeenCalledWith([
+      expect.objectContaining({ chainId: ethereum!.chainId }),
+      expect.objectContaining({ chainId: CUSTOM_NETWORK.chainId })
+    ])
+    // Persisted, so a restart keeps them
+    expect(Object.keys(await controller.getNetworksInStorage())).toContain(
+      CUSTOM_NETWORK.chainId.toString()
+    )
+  })
+
+  test('does nothing when there are no networks to merge', async () => {
+    const { controller, onAddOrUpdateNetworks } = buildNetworksController()
+    await controller.initialLoadPromise
+    await settleBackgroundSync(controller)
+    const networksBefore = controller.allNetworks
+
+    await controller.mergeNetworks([])
+
+    expect(controller.allNetworks).toEqual(networksBefore)
+    expect(onAddOrUpdateNetworks).not.toHaveBeenCalled()
+  })
+})

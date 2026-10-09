@@ -152,6 +152,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **AddressBookController** – Manages user contacts, combining manually added entries with wallet accounts.
 - **AccountPickerController** – Handles importing and deriving accounts from seeds, hardware wallets, and external keys.
 - **AccountsController** – Stores and manages wallet accounts, their preferences, and on-chain account state.
+- **AppDataSyncController** – Exports and imports the wallet's data (accounts and keys, settings, networks, Address Book) between the extension and the mobile app via QR codes, letting each controller merge its own part.
 - **AutoLoginController** – Manages SIWE auto-login policies and signatures for dApp sessions.
 - **BannerController** – Aggregates in-app notification banners based on account and app state.
 - **ContinuousUpdatesController** – Orchestrates periodic background updates for multiple controllers (e.g., portfolio and activity)

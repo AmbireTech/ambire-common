@@ -1113,6 +1113,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     await this.#setDisabledSwapProviderIds(disabledSwapProviderIds)
   }
 
+  /**
+   * Replaces the providers the user has switched off (used by app data sync). Ids of
+   * providers this product does not offer are dropped.
+   */
+  async setDisabledSwapProviderIds(disabledSwapProviderIds: string[]) {
+    const availableProviderIds = new Set(this.swapProviders.map(({ id }) => id))
+
+    await this.#setDisabledSwapProviderIds(
+      [...new Set(disabledSwapProviderIds)].filter((id) => availableProviderIds.has(id))
+    )
+  }
+
   async #setDisabledSwapProviderIds(disabledSwapProviderIds: string[]) {
     const hasSameDisabledProviders =
       disabledSwapProviderIds.length === this.disabledSwapProviderIds.length &&
