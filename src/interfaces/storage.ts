@@ -23,6 +23,7 @@ import { Dapp, RecentDappEntry, TrendingToken } from './dapp'
 import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
+import { PrivacyPoolsAccount } from './privacyPools'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
 import type { FeeSpeed } from './signAccountOp'
@@ -81,6 +82,8 @@ export type StorageProps = {
   // Selected account
   dismissedBanners: (string | number)[]
   selectedAccount: string | null
+  /** Seed id of the selected Privacy Pools account. Exclusive with `selectedAccount`. */
+  selectedPrivacyPoolsAccount: string | null
   selectedAccountDismissedBannerIds: { [key: string]: string[] }
   // Email vault
   emailVault: {
@@ -107,6 +110,14 @@ export type StorageProps = {
   // Safe
   automaticallyResolvedSafeTxns: AutomaticallyResolvedSafeTxn[]
   rejectedSafeTxns: string[]
+  // Privacy Pools
+  /**
+   * The SDK's per-chain state as one blob, as the SDK invents its storage keys at runtime. Values
+   * are serialized stores (megabytes each on mainnet) that spare a full rescan from deployment.
+   */
+  privacyPoolsState: { [key: string]: string }
+  /** The wallet's Privacy Pools accounts, at most one per stored recovery phrase. */
+  privacyPoolsAccounts: PrivacyPoolsAccount[]
   // Other
   signAccountOpFeeTokenPreference: {
     [chainId: string]: string | 'gasTank'

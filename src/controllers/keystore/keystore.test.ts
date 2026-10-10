@@ -482,6 +482,61 @@ describe('KeystoreController recovery phrase backup state', () => {
     expect(keystoreCtrl.seeds.find((s) => s.id === firstSeed!.id)?.notBackedUp).toBe(true)
   })
 
+  test('a phrase generated and stored at once is flagged like a generated temp seed', async () => {
+    const seedId = await keystoreCtrl.addGeneratedSeed({})
+
+    expect(keystoreCtrl.seeds.map((seed) => seed.id)).toEqual([seedId])
+    expect(keystoreCtrl.seeds[0]!.notBackedUp).toBe(true)
+    expect(keystoreCtrl.seeds[0]!.hdPathTemplate).toBe(BIP44_STANDARD_DERIVATION_TEMPLATE)
+    // Stored encrypted and recoverable, as a valid phrase
+    const { seed } = await keystoreCtrl.getSavedSeed(seedId)
+    expect(seed.split(' ')).toHaveLength(12)
+  })
+
+  test('generating a stored phrase leaves the temp seed of another flow alone', async () => {
+    await keystoreCtrl.addTempSeed({
+      seed: process.env.SEED,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+
+    await keystoreCtrl.addGeneratedSeed({})
+    await keystoreCtrl.persistTempSeed()
+
+    expect(keystoreCtrl.seeds).toHaveLength(2)
+    expect(keystoreCtrl.seeds.filter((seed) => seed.notBackedUp)).toHaveLength(1)
+  })
+
+  test('derives a Privacy Pools key exactly as from the phrase itself', async () => {
+    const seedId = await keystoreCtrl.addGeneratedSeed({})
+    const { seed } = await keystoreCtrl.getSavedSeed(seedId)
+    const path = "m/28784'/1'/0'/0'/3'/0'"
+
+    const key = await keystoreCtrl.derivePrivacyPoolsKey(seedId, path)
+    // Derived again from the node kept since the first one
+    const keyAgain = await keystoreCtrl.derivePrivacyPoolsKey(seedId, path)
+
+    const expectedKey = ethers.HDNodeWallet.fromMnemonic(
+      ethers.Mnemonic.fromPhrase(seed),
+      path
+    ).privateKey
+    expect(key).toBe(expectedKey)
+    expect(keyAgain).toBe(expectedKey)
+  })
+
+  test('refuses a key outside the Privacy Pools paths, and any key once locked', async () => {
+    const seedId = await keystoreCtrl.addGeneratedSeed({})
+    await keystoreCtrl.derivePrivacyPoolsKey(seedId, "m/28784'/1'/0'/0'/0'/0'")
+
+    await expect(keystoreCtrl.derivePrivacyPoolsKey(seedId, "m/44'/60'/0'/0/0")).rejects.toThrow(
+      "refusing to derive a key outside Privacy Pools' paths"
+    )
+
+    keystoreCtrl.lock()
+    await expect(
+      keystoreCtrl.derivePrivacyPoolsKey(seedId, "m/28784'/1'/0'/0'/0'/0'")
+    ).rejects.toThrow('keystore: not unlocked')
+  })
+
   test('markSeedAsBackedUp is a no-op for an unknown phrase id', async () => {
     await keystoreCtrl.generateTempSeed({})
     await keystoreCtrl.persistTempSeed()
