@@ -331,13 +331,14 @@ export function isBasicAccount(account: Account, state: AccountOnchainState): bo
   return !account.creation && !account.safeCreation && !state.isSmarterEoa
 }
 
-const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = ['internal', 'lattice', 'ledger']
+const KEY_TYPES_ABLE_TO_BECOME_SMARTER: Key['type'][] = ['internal', 'lattice', 'ledger', 'trezor']
 
 /**
  * Key types that support EIP-7702 but for which EIP-7702 flows are NOT forced.
  */
 const KEY_TYPES_NOT_MADE_SMARTER_AUTOMATICALLY: Key['type'][] = [
-  'ledger' // can authorize the upgrade only through the extra steps via a custom "Ambire Signer" app
+  'ledger', // can authorize the upgrade only through the extra steps via a custom "Ambire Signer" app
+  'trezor' // can authorize the upgrade only with "experimental features" turned on on the device
 ]
 
 // can the account as a whole become smarter (disregarding chain and state)
