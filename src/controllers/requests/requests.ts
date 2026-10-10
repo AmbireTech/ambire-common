@@ -16,7 +16,11 @@ import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
-import { SAFE_NETWORKS } from '../../consts/safe'
+import {
+  SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE,
+  SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE,
+  SAFE_NETWORKS
+} from '../../consts/safe'
 import { MAX_DAPP_CALLS_PER_REQUEST } from '../../consts/safeguards/dappRequestSpam'
 import {
   Account,
@@ -132,8 +136,6 @@ const STATUS_WRAPPED_METHODS = {
   buildSwapAndBridgeUserRequest: 'INITIAL'
 } as const
 
-const SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE =
-  "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
 const SAFE_DEPLOYMENT_NOT_CONFIRMED_MESSAGE =
   'Your Safe account is still being activated on this network. Wait a moment, then try again.'
 const SAFE_DEPLOYMENT_FAILED_MESSAGE =
@@ -143,6 +145,10 @@ const SAFE_DEPLOYMENT_STUCK_MESSAGE =
 
 const MESSAGE_ACCOUNT_NOT_IN_WALLET_ERROR =
   "This app asked to sign a message with an account that isn't in your wallet."
+
+type SafeDeploymentRequestResult =
+  | { success: false; error: string }
+  | { success: true; alreadyDeployed: boolean }
 
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
@@ -252,6 +258,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * built, keyed by what they collide on.
    */
   #dappRequestQueues = new Map<string, DappRequestQueueItem[]>()
+
+  #safeDeploymentRequestsInFlight = new Map<string, Promise<SafeDeploymentRequestResult>>()
 
   /**
    * Requests that have been built and are about to be added. Prevents opening and closing
@@ -1677,6 +1685,193 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     }
   }
 
+  #replyToSafeDeploymentRequest(
+    uiRequestId: string | undefined,
+    result: SafeDeploymentRequestResult
+  ) {
+    if (!uiRequestId) return
+
+    this.#ui.message.sendUiMessage(
+      result.success
+        ? {
+            requestId: uiRequestId,
+            ok: true,
+            res: { alreadyDeployed: result.alreadyDeployed }
+          }
+        : {
+            requestId: uiRequestId,
+            ok: false,
+            error: result.error
+          }
+    )
+  }
+
+  /**
+   * Builds a standalone Safe deployment request from the account's saved creation data.
+   * Replies to the requesting UI so Deploy settings can show preparation failures in the
+   * affected network row instead of closing without an explanation.
+   */
+  async buildSafeDeploymentRequest(
+    accountAddr: Account['addr'],
+    chainId: bigint,
+    uiRequestId?: string
+  ) {
+    await this.initialLoadPromise
+
+    const inFlightKey = `${accountAddr.toLowerCase()}:${chainId.toString()}`
+    let requestInFlight = this.#safeDeploymentRequestsInFlight.get(inFlightKey)
+
+    if (!requestInFlight) {
+      requestInFlight = this.#prepareSafeDeploymentRequest(accountAddr, chainId).finally(() => {
+        this.#safeDeploymentRequestsInFlight.delete(inFlightKey)
+      })
+      this.#safeDeploymentRequestsInFlight.set(inFlightKey, requestInFlight)
+    }
+
+    const result = await requestInFlight
+    this.#replyToSafeDeploymentRequest(uiRequestId, result)
+
+    return result.success
+  }
+
+  async #prepareSafeDeploymentRequest(
+    accountAddr: Account['addr'],
+    chainId: bigint
+  ): Promise<SafeDeploymentRequestResult> {
+    try {
+      let account = this.#accounts.accounts.find((candidate) => candidate.addr === accountAddr)
+      const network = this.#networks.networks.find((candidate) => candidate.chainId === chainId)
+      const provider = this.#providers.providers[chainId.toString()]
+
+      if (!account?.safeCreation || !network || !provider) {
+        this.emitError({
+          level: 'silent',
+          message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE,
+          error: new Error(
+            `buildSafeDeploymentRequest: missing Safe account (${!account?.safeCreation}), network (${!network}) or provider (${!provider}) for ${accountAddr} on chain ${chainId.toString()}`
+          )
+        })
+        return { success: false, error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE }
+      }
+
+      const accountState = await this.#accounts.forceFetchPendingState(accountAddr, chainId)
+      if (accountState.isDeployed) {
+        return { success: true, alreadyDeployed: true }
+      }
+
+      if (await this.#focusPendingSafeDeployment(accountAddr, chainId)) {
+        return { success: true, alreadyDeployed: false }
+      }
+
+      if (!hasCompleteSafeCreationData(account.safeCreation)) {
+        const safeCreation = await this.#recoverSafeCreation(
+          account,
+          this.#getPossibleSafeDeploymentSourceNetworks(accountAddr)
+        )
+        if (safeCreation) account = { ...account, safeCreation }
+      }
+
+      if (!hasCompleteSafeCreationData(account.safeCreation)) {
+        return { success: false, error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE }
+      }
+
+      const deploymentCall = await getSafeDeploymentCall(account, provider)
+      if (!deploymentCall) {
+        return { success: false, error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE }
+      }
+
+      // An app or the wallet may have queued the deployment while this one was being prepared.
+      // Checked right before creating the request, with no await in between, as adding a
+      // second deployment of the same Safe to the transaction would make it fail
+      if (await this.#focusPendingSafeDeployment(accountAddr, chainId)) {
+        return { success: true, alreadyDeployed: false }
+      }
+
+      const deploymentParams: CallsUserRequestParams = {
+        calls: [deploymentCall],
+        meta: { accountAddr, chainId, isSafeDeploy: true }
+      }
+
+      // The deployment of an account other than the selected one waits, unbuilt, behind
+      // a request to switch to it
+      if (accountAddr !== this.#selectedAccount.account?.addr) {
+        await this.#addCallsUserRequest(deploymentParams, { allowAccountSwitch: true })
+        return { success: true, alreadyDeployed: false }
+      }
+
+      const deploymentRequest = await this.#createOrUpdateCallsUserRequest(deploymentParams)
+
+      if (!deploymentRequest) {
+        return { success: false, error: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE }
+      }
+
+      const isDeploymentRequestAdded = () =>
+        this.userRequests.some((request) => request.id === deploymentRequest.id)
+
+      try {
+        await this.addUserRequests([deploymentRequest])
+      } catch (error) {
+        if (!isDeploymentRequestAdded()) deploymentRequest.signAccountOp.destroy()
+        throw error
+      }
+
+      if (!isDeploymentRequestAdded()) {
+        deploymentRequest.signAccountOp.destroy()
+        return { success: false, error: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE }
+      }
+
+      return { success: true, alreadyDeployed: false }
+    } catch (error) {
+      // Most likely a temporary failure (e.g. the network didn't respond), so the user is
+      // asked to try again instead of being sent to the Safe app
+      this.emitError({
+        level: 'silent',
+        message: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE,
+        error: error instanceof Error ? error : new Error(String(error)),
+        sendCrashReport: true
+      })
+      return { success: false, error: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE }
+    }
+  }
+
+  /**
+   * Brings to the front the pending deployment of the Safe on the specified chain, or the
+   * request to switch to the Safe if the deployment is waiting for it.
+   * Returns whether there is a pending deployment.
+   */
+  async #focusPendingSafeDeployment(accountAddr: Account['addr'], chainId: bigint) {
+    const deploymentWaitingAccountSwitch = this.userRequestsWaitingAccountSwitch.find(
+      (request) =>
+        request.kind === 'calls' &&
+        !!request.meta.isSafeDeploy &&
+        request.meta.accountAddr === accountAddr &&
+        request.meta.chainId === chainId
+    )
+    if (deploymentWaitingAccountSwitch) {
+      const switchAccountRequest = this.userRequests.find(
+        (request) => request.id === deploymentWaitingAccountSwitch.meta.switchAccountRequestId
+      )
+      if (switchAccountRequest) await this.#focusUserRequestIfVisible(switchAccountRequest)
+      return true
+    }
+
+    const pendingDeploymentRequest = this.#getSafeDeployRequest(accountAddr, chainId)
+    if (!pendingDeploymentRequest) return false
+
+    await this.#focusUserRequestIfVisible(pendingDeploymentRequest)
+    return true
+  }
+
+  /**
+   * Brings a request to the front, (re)opening the request window if the user closed it.
+   * Requests of an account other than the selected one stay where they are.
+   */
+  async #focusUserRequestIfVisible(request: UserRequest) {
+    if (!this.visibleUserRequests.includes(request)) return
+
+    await this.#setCurrentUserRequest(request)
+  }
+
   /** Builds or focuses a Safe transaction that rejects another transaction onchain. */
   async #buildOnchainSafeRejection(requestId: UserRequest['id']) {
     const request = this.userRequests.find((userRequest) => userRequest.id === requestId)
@@ -3050,6 +3245,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             r.signAccountOp.accountOp.txnId &&
             meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId))
     ) as CallsUserRequest | undefined
+
+    // A Safe is deployed once per chain, so a pending deployment is reused as it is. Adding
+    // the deployment to it a second time would make the whole transaction fail
+    if (meta.isSafeDeploy && existingUserRequest) {
+      // Being signed or broadcast already - there is nothing to add it to
+      if (existingUserRequest.signAccountOp.signAndBroadcastPromise) return
+      return existingUserRequest
+    }
 
     // Cap just in case an app decides to send a lot of requests at once
     const callsAlreadyWaiting = existingUserRequest?.signAccountOp.accountOp.calls.length ?? 0
