@@ -10,6 +10,7 @@ import {
   COWSWAP_TOKEN_LIST_URL,
   COWSWAP_VAULT_RELAYER_ADDRESS
 } from './constants'
+import { getCowSwapOrderStruct, getCowSwapOrderUid } from './helper'
 
 const settlementInterface = new Interface(['function setPreSignature(bytes orderUid, bool signed)'])
 const ethFlowInterface = new Interface([
@@ -399,6 +400,29 @@ describe('CowSwapAPI', () => {
     expect(signed).toBe(true)
   })
 
+  it('attaches the pre-signed order, which hashes back to the pre-signed order ID', async () => {
+    const api = new CowSwapAPI({ fetch: makeQuoteFetch() as any, apiKey: cowSwapApiKey })
+    const route = (await api.quote(makeQuoteParams())).routes[0]!
+    const rawRoute = route.rawRoute as any
+
+    const transaction = await api.startRoute(route)
+    const [orderUid] = settlementInterface.decodeFunctionData('setPreSignature', transaction.txData)
+
+    expect(transaction.cowSwapOrder).toEqual(getCowSwapOrderStruct(rawRoute.order))
+    expect(transaction.cowSwapOrder).toMatchObject({
+      sellToken: tokenIn,
+      buyToken: tokenOut,
+      receiver: userAddress,
+      sellAmount: '1000000',
+      appData: rawRoute.order.appDataHash,
+      kind: 'sell',
+      partiallyFillable: false
+    })
+    expect(
+      getCowSwapOrderUid({ chainId: 1, order: transaction.cowSwapOrder!, owner: userAddress })
+    ).toBe(orderUid)
+  })
+
   it('uses the existing no-fee policy for wrap and unwrap operations', async () => {
     const fetch = makeQuoteFetch()
     const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
@@ -533,6 +557,8 @@ describe('CowSwapAPI', () => {
     expect(ethFlowOrder.validTo).toBe(BigInt(rawRoute.order.validTo))
     expect(ethFlowOrder.partiallyFillable).toBe(false)
     expect(ethFlowOrder.quoteId).toBe(7n)
+    // the ETH Flow calldata already contains the whole order, so nothing is attached
+    expect(transaction.cowSwapOrder).toBeUndefined()
   })
 
   it('waits for the order service to index a newly mined ETH Flow order', async () => {

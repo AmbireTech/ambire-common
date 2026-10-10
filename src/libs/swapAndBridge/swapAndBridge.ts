@@ -470,7 +470,8 @@ const getSwapAndBridgeCalls = async (
     to: userTx.txTarget,
     value: BigInt(userTx.value),
     data: userTx.txData,
-    activeRouteId: userTx.activeRouteId
+    activeRouteId: userTx.activeRouteId,
+    ...(userTx.cowSwapOrder ? { cowSwapOrder: userTx.cowSwapOrder } : {})
   })
 
   return calls

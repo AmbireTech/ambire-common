@@ -1,7 +1,10 @@
-import { encodeFunctionData, parseAbi } from 'viem'
+import { encodeFunctionData, encodePacked, Hex, hashTypedData, parseAbi, zeroAddress } from 'viem'
+
+import { describe, expect, jest, test } from '@jest/globals'
 
 import CowSwapModule from '.'
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
+import { CowSwapOrderStruct } from '../../../../interfaces/swapAndBridge'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerMeta } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
@@ -150,6 +153,305 @@ describe('CowSwap', () => {
       [getAction('Pre-sign CowSwap order'), ...orderUidVisualization],
       [getAction('Cancel CowSwap order'), ...orderUidVisualization]
     ])
+  })
+
+  describe('pre-sign and cancel calls that carry their order', () => {
+    const presignedOrder: CowSwapOrderStruct = {
+      sellToken,
+      buyToken,
+      receiver: accountAddr,
+      sellAmount: sellAmount.toString(),
+      buyAmount: buyAmount.toString(),
+      validTo: Number(validTo),
+      appData: '0x767a9774c9a589f88b23530486fb7d8836613b44a3e82e01ba1351e9c68584b2',
+      feeAmount: '0',
+      kind: 'sell',
+      partiallyFillable: false,
+      sellTokenBalance: 'erc20',
+      buyTokenBalance: 'erc20'
+    }
+    const orderTypes = {
+      Order: [
+        { name: 'sellToken', type: 'address' },
+        { name: 'buyToken', type: 'address' },
+        { name: 'receiver', type: 'address' },
+        { name: 'sellAmount', type: 'uint256' },
+        { name: 'buyAmount', type: 'uint256' },
+        { name: 'validTo', type: 'uint32' },
+        { name: 'appData', type: 'bytes32' },
+        { name: 'feeAmount', type: 'uint256' },
+        { name: 'kind', type: 'string' },
+        { name: 'partiallyFillable', type: 'bool' },
+        { name: 'sellTokenBalance', type: 'string' },
+        { name: 'buyTokenBalance', type: 'string' }
+      ]
+    } as const
+
+    // Computed with viem, independently of the ethers-based helper the module verifies with
+    const getExpectedOrderUid = (
+      order: CowSwapOrderStruct,
+      { owner = accountAddr, chainId = 8453 }: { owner?: string; chainId?: number } = {}
+    ) => {
+      const orderDigest = hashTypedData({
+        domain: {
+          name: 'Gnosis Protocol',
+          version: 'v2',
+          chainId,
+          verifyingContract: cowSwapSettlement
+        },
+        types: orderTypes,
+        primaryType: 'Order',
+        message: {
+          ...order,
+          sellToken: order.sellToken as Hex,
+          buyToken: order.buyToken as Hex,
+          receiver: order.receiver as Hex,
+          sellAmount: BigInt(order.sellAmount),
+          buyAmount: BigInt(order.buyAmount),
+          appData: order.appData as Hex,
+          feeAmount: BigInt(order.feeAmount)
+        }
+      })
+
+      return encodePacked(
+        ['bytes32', 'address', 'uint32'],
+        [orderDigest, owner as Hex, order.validTo]
+      )
+    }
+    const getPreSignCall = (
+      uid: Hex,
+      signed: boolean,
+      cowSwapOrder: CowSwapOrderStruct | undefined
+    ) => ({
+      to: cowSwapSettlement,
+      value: 0n,
+      data: encodeFunctionData({
+        abi: setPreSignatureAbi,
+        functionName: 'setPreSignature',
+        args: [uid, signed]
+      }),
+      cowSwapOrder
+    })
+    const getOrderUidFallbackVisualization = (uid: Hex) => [
+      getAction('Pre-sign CowSwap order'),
+      getLabel(`with order ID ${uid.slice(0, 8)}...${uid.slice(-6)}`),
+      getDeadline(validTo)
+    ]
+
+    test('shows the order of a pre-sign call instead of its order ID when it matches', () => {
+      const irCall = CowSwapModule(
+        accountOp,
+        getPreSignCall(getExpectedOrderUid(presignedOrder), true, presignedOrder),
+        humanizerInfo as HumanizerMeta
+      )
+
+      compareHumanizerVisualizations(
+        [irCall],
+        [
+          [
+            getAction('Swap'),
+            getToken(sellToken, sellAmount, 8453n),
+            getLabel('for at least'),
+            getToken(buyToken, buyAmount, 8453n),
+            getDeadline(validTo)
+          ]
+        ]
+      )
+      expect(irCall.preferredOverErc7730).toBe(true)
+    })
+
+    test('shows a buy order as buying an exact amount for at most the sell amount', () => {
+      const buyOrder: CowSwapOrderStruct = { ...presignedOrder, kind: 'buy' }
+
+      const irCall = CowSwapModule(
+        accountOp,
+        getPreSignCall(getExpectedOrderUid(buyOrder), true, buyOrder),
+        humanizerInfo as HumanizerMeta
+      )
+
+      compareHumanizerVisualizations(
+        [irCall],
+        [
+          [
+            getAction('Buy'),
+            getToken(buyToken, buyAmount, 8453n),
+            getLabel('for at most'),
+            getToken(sellToken, sellAmount, 8453n),
+            getDeadline(validTo)
+          ]
+        ]
+      )
+    })
+
+    test('shows which order is cancelled by un-pre-signing or invalidating it', () => {
+      const uid = getExpectedOrderUid(presignedOrder)
+      const transactions = [
+        getPreSignCall(uid, false, presignedOrder),
+        {
+          to: cowSwapSettlement,
+          value: 0n,
+          data: encodeFunctionData({
+            abi: invalidateOrderAbi,
+            functionName: 'invalidateOrder',
+            args: [uid]
+          }),
+          cowSwapOrder: presignedOrder
+        }
+      ]
+      const cancelledOrderVisualization = [
+        getAction('Cancel CowSwap order'),
+        getLabel('to swap'),
+        getToken(sellToken, sellAmount, 8453n),
+        getLabel('for at least'),
+        getToken(buyToken, buyAmount, 8453n),
+        getDeadline(validTo)
+      ]
+
+      const irCalls = transactions.map((c) =>
+        CowSwapModule(accountOp, c, humanizerInfo as HumanizerMeta)
+      )
+
+      compareHumanizerVisualizations(irCalls, [
+        cancelledOrderVisualization,
+        cancelledOrderVisualization
+      ])
+      irCalls.forEach((irCall) => expect(irCall.preferredOverErc7730).toBe(true))
+    })
+
+    test('shows the fee, partial fills and a recipient other than the account', () => {
+      const otherReceiver = '0x0f5ce9ee0d6c8b41cd6d1e0e5c1c8c7f1a1b2c3d'
+      const order: CowSwapOrderStruct = {
+        ...presignedOrder,
+        receiver: otherReceiver,
+        feeAmount: feeAmount.toString(),
+        partiallyFillable: true
+      }
+
+      const irCall = CowSwapModule(
+        accountOp,
+        getPreSignCall(getExpectedOrderUid(order), true, order),
+        humanizerInfo as HumanizerMeta
+      )
+
+      compareHumanizerVisualizations(
+        [irCall],
+        [
+          [
+            getAction('Swap'),
+            getToken(sellToken, sellAmount, 8453n),
+            getLabel('for at least'),
+            getToken(buyToken, buyAmount, 8453n),
+            getLabel('plus a fee of'),
+            getToken(sellToken, feeAmount, 8453n),
+            getLabel('that can be filled in parts'),
+            ...getRecipientText(accountAddr, otherReceiver),
+            getDeadline(validTo)
+          ]
+        ]
+      )
+    })
+
+    test('treats a zero receiver as the account and the native token placeholder as the native token', () => {
+      const order: CowSwapOrderStruct = {
+        ...presignedOrder,
+        receiver: zeroAddress,
+        buyToken: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE'
+      }
+
+      const irCall = CowSwapModule(
+        accountOp,
+        getPreSignCall(getExpectedOrderUid(order), true, order),
+        humanizerInfo as HumanizerMeta
+      )
+
+      compareHumanizerVisualizations(
+        [irCall],
+        [
+          [
+            getAction('Swap'),
+            getToken(sellToken, sellAmount, 8453n),
+            getLabel('for at least'),
+            getToken(zeroAddress, buyAmount, 8453n),
+            getDeadline(validTo)
+          ]
+        ]
+      )
+    })
+
+    test('falls back to the order ID when the attached order was altered', () => {
+      const uid = getExpectedOrderUid(presignedOrder)
+      const alteredOrders: CowSwapOrderStruct[] = [
+        { ...presignedOrder, buyAmount: (buyAmount * 2n).toString() },
+        { ...presignedOrder, sellAmount: (sellAmount / 2n).toString() },
+        { ...presignedOrder, receiver: '0x0f5ce9ee0d6c8b41cd6d1e0e5c1c8c7f1a1b2c3d' },
+        { ...presignedOrder, buyToken: sellToken, sellToken: buyToken },
+        { ...presignedOrder, kind: 'buy' },
+        { ...presignedOrder, validTo: Number(validTo) + 1 },
+        { ...presignedOrder, appData: `0x${'00'.repeat(32)}` }
+      ]
+
+      const irCalls = alteredOrders.map((order) =>
+        CowSwapModule(accountOp, getPreSignCall(uid, true, order), humanizerInfo as HumanizerMeta)
+      )
+
+      compareHumanizerVisualizations(
+        irCalls,
+        alteredOrders.map(() => getOrderUidFallbackVisualization(uid))
+      )
+      irCalls.forEach((irCall) => expect(irCall.preferredOverErc7730).toBeUndefined())
+    })
+
+    test('falls back to the order ID when the order belongs to another account or network', () => {
+      const otherOwnerUid = getExpectedOrderUid(presignedOrder, {
+        owner: '0x0f5ce9ee0d6c8b41cd6d1e0e5c1c8c7f1a1b2c3d'
+      })
+      const otherChainUid = getExpectedOrderUid(presignedOrder, { chainId: 1 })
+
+      const irCalls = [otherOwnerUid, otherChainUid].map((uid) =>
+        CowSwapModule(
+          accountOp,
+          getPreSignCall(uid, true, presignedOrder),
+          humanizerInfo as HumanizerMeta
+        )
+      )
+
+      compareHumanizerVisualizations(irCalls, [
+        getOrderUidFallbackVisualization(otherOwnerUid),
+        getOrderUidFallbackVisualization(otherChainUid)
+      ])
+    })
+
+    test('falls back to the order ID when the attached order has an unknown kind', () => {
+      const order = { ...presignedOrder, kind: 'limit' } as unknown as CowSwapOrderStruct
+      const uid = getExpectedOrderUid(order)
+
+      const irCall = CowSwapModule(
+        accountOp,
+        getPreSignCall(uid, true, order),
+        humanizerInfo as HumanizerMeta
+      )
+
+      compareHumanizerVisualizations([irCall], [getOrderUidFallbackVisualization(uid)])
+    })
+
+    test('falls back to the order ID without throwing when the attached order is malformed', () => {
+      const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+      const uid = getExpectedOrderUid(presignedOrder)
+      const malformedOrder = { ...presignedOrder, sellToken: 'not-an-address' }
+
+      try {
+        const irCall = CowSwapModule(
+          accountOp,
+          getPreSignCall(uid, true, malformedOrder),
+          humanizerInfo as HumanizerMeta
+        )
+
+        compareHumanizerVisualizations([irCall], [getOrderUidFallbackVisualization(uid)])
+        expect(consoleErrorSpy).toHaveBeenCalled()
+      } finally {
+        consoleErrorSpy.mockRestore()
+      }
+    })
   })
 
   describe('ComposableCoW conditional orders', () => {

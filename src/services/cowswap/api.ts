@@ -5,6 +5,7 @@ import {
   computeOrderUid,
   ethFlowInterface,
   getApiNetwork,
+  getCowSwapOrderStruct,
   getOutputValueInUsd,
   getProtocolFeeAmount,
   getWrappedNativeTokenAddress,
@@ -637,7 +638,8 @@ export class CowSwapAPI implements SwapProvider {
       txTarget: COWSWAP_SETTLEMENT_ADDRESS,
       userTxIndex: 0,
       value: '0',
-      txData: settlementInterface.encodeFunctionData('setPreSignature', [route.routeId, true])
+      txData: settlementInterface.encodeFunctionData('setPreSignature', [route.routeId, true]),
+      cowSwapOrder: getCowSwapOrderStruct(rawRoute.order)
     }
   }
 

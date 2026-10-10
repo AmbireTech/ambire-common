@@ -8,6 +8,8 @@ import {
   zeroAddress
 } from 'viem'
 
+import { CowSwapOrderStruct } from '../../../../interfaces/swapAndBridge'
+import { getCowSwapOrderUid } from '../../../../services/cowswap/helper'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../../interfaces'
 import {
@@ -126,6 +128,61 @@ const getOrderUidVisualization = (orderUid: string): HumanizerVisualization[] =>
   else return [label]
 }
 
+const NATIVE_TOKEN_PLACEHOLDER_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
+
+/**
+ * Returns the order attached to a pre-sign or cancel call only if it hashes to `orderUid` for the
+ * acting account on this network - the order ID commits to every field of the order, so a match
+ * proves the attached order is exactly the one the transaction refers to.
+ */
+const getVerifiedOrderStruct = (
+  accountOp: AccountOp,
+  call: HexIrCall,
+  orderUid: string
+): CowSwapOrderStruct | null => {
+  const order = call.cowSwapOrder
+  if (!order || (order.kind !== 'sell' && order.kind !== 'buy')) return null
+
+  let expectedOrderUid: string
+  try {
+    expectedOrderUid = getCowSwapOrderUid({
+      chainId: accountOp.chainId,
+      order,
+      owner: accountOp.accountAddr
+    })
+  } catch (error) {
+    console.error('CowSwap humanizer: the order attached to the call could not be encoded', error)
+    return null
+  }
+
+  return expectedOrderUid.toLowerCase() === orderUid.toLowerCase() ? order : null
+}
+
+const getOrderStructVisualization = (
+  accountOp: AccountOp,
+  order: CowSwapOrderStruct
+): HumanizerVisualization[] => {
+  const { chainId, accountAddr } = accountOp
+  const buyTokenAddress =
+    order.buyToken.toLowerCase() === NATIVE_TOKEN_PLACEHOLDER_ADDRESS ? zeroAddress : order.buyToken
+  const sellTokenVisualization = getToken(order.sellToken, BigInt(order.sellAmount), chainId)
+  const buyTokenVisualization = getToken(buyTokenAddress, BigInt(order.buyAmount), chainId)
+  const feeAmount = BigInt(order.feeAmount)
+  const receiver = order.receiver.toLowerCase() === zeroAddress ? accountAddr : order.receiver
+
+  return [
+    ...(order.kind === 'sell'
+      ? [sellTokenVisualization, getLabel('for at least'), buyTokenVisualization]
+      : [buyTokenVisualization, getLabel('for at most'), sellTokenVisualization]),
+    ...(feeAmount > 0n
+      ? [getLabel('plus a fee of'), getToken(order.sellToken, feeAmount, chainId)]
+      : []),
+    ...(order.partiallyFillable ? [getLabel('that can be filled in parts')] : []),
+    ...getRecipientText(accountAddr, receiver),
+    getDeadline(order.validTo)
+  ]
+}
+
 const getOrderVisualization = (
   accountOp: AccountOp,
   tokens: readonly string[],
@@ -238,6 +295,46 @@ const freePreSignatureStorageSelector = toFunctionSelector(freePreSignatureStora
 const createSelector = toFunctionSelector(createAbi[0])
 const createWithContextSelector = toFunctionSelector(createWithContextAbi[0])
 
+// Pre-sign and cancel calls contain only the order ID. When the call carries the order it refers
+// to and that order hashes to the same ID, show the order itself instead of its ID
+const humanizeOrderUidCallWithVerifiedOrder = (
+  accountOp: AccountOp,
+  call: HexIrCall
+): IrCall | null => {
+  if (!call.cowSwapOrder) return null
+
+  const selector = call.data.slice(0, 10)
+  let orderUid: string
+  let isCancellation: boolean
+  if (selector === setPreSignatureSelector) {
+    const { args } = decodeFunctionData({ abi: setPreSignatureAbi, data: call.data })
+    const [decodedOrderUid, signed] = args
+    orderUid = decodedOrderUid
+    isCancellation = !signed
+  } else if (selector === invalidateOrderSelector) {
+    const { args } = decodeFunctionData({ abi: invalidateOrderAbi, data: call.data })
+    const [decodedOrderUid] = args
+    orderUid = decodedOrderUid
+    isCancellation = true
+  } else {
+    return null
+  }
+
+  const order = getVerifiedOrderStruct(accountOp, call, orderUid)
+  if (!order) return null
+
+  const orderVisualization = getOrderStructVisualization(accountOp, order)
+  const actionVisualization = isCancellation
+    ? [getAction('Cancel CowSwap order'), getLabel(order.kind === 'sell' ? 'to swap' : 'to buy')]
+    : [getAction(order.kind === 'sell' ? 'Swap' : 'Buy')]
+
+  return {
+    ...call,
+    fullVisualization: [...actionVisualization, ...orderVisualization],
+    preferredOverErc7730: true
+  }
+}
+
 const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const matcher: Record<string, (call: HexIrCall) => HumanizerVisualization[]> = {
     [swapSelector]: (call) => {
@@ -299,10 +396,14 @@ const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) 
   )
     return call
 
+  const hexCall = { ...call, to: call.to || zeroAddress }
+  const callWithVerifiedOrder = humanizeOrderUidCallWithVerifiedOrder(accountOp, hexCall)
+  if (callWithVerifiedOrder) return callWithVerifiedOrder
+
   const match = matcher[call.data.slice(0, 10)]
   if (!match) return call
 
-  return { ...call, fullVisualization: match({ ...call, to: call.to || zeroAddress }) }
+  return { ...call, fullVisualization: match(hexCall) }
 }
 
 export default CowSwapModule
