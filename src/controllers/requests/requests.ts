@@ -1759,30 +1759,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         return { success: true, alreadyDeployed: true }
       }
 
-      const deploymentWaitingAccountSwitch = this.userRequestsWaitingAccountSwitch.find(
-        (request) =>
-          request.kind === 'calls' &&
-          !!request.meta.isSafeDeploy &&
-          request.meta.accountAddr === accountAddr &&
-          request.meta.chainId === chainId
-      )
-      if (deploymentWaitingAccountSwitch) {
-        const switchAccountRequest = this.userRequests.find(
-          (request) => request.id === deploymentWaitingAccountSwitch.meta.switchAccountRequestId
-        )
-        if (switchAccountRequest) await this.#focusUserRequestIfVisible(switchAccountRequest)
-        return { success: true, alreadyDeployed: false }
-      }
-
-      const existingDeploymentRequest = this.userRequests.find(
-        (request): request is CallsUserRequest =>
-          request.kind === 'calls' &&
-          !!request.meta.isSafeDeploy &&
-          request.meta.accountAddr === accountAddr &&
-          request.meta.chainId === chainId
-      )
-      if (existingDeploymentRequest) {
-        await this.#focusUserRequestIfVisible(existingDeploymentRequest)
+      if (await this.#focusPendingSafeDeployment(accountAddr, chainId)) {
         return { success: true, alreadyDeployed: false }
       }
 
@@ -1801,6 +1778,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const deploymentCall = await getSafeDeploymentCall(account, provider)
       if (!deploymentCall) {
         return { success: false, error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE }
+      }
+
+      // An app or the wallet may have queued the deployment while this one was being prepared.
+      // Checked right before creating the request, with no await in between, as adding a
+      // second deployment of the same Safe to the transaction would make it fail
+      if (await this.#focusPendingSafeDeployment(accountAddr, chainId)) {
+        return { success: true, alreadyDeployed: false }
       }
 
       const deploymentParams: CallsUserRequestParams = {
@@ -1848,6 +1832,34 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       })
       return { success: false, error: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE }
     }
+  }
+
+  /**
+   * Brings to the front the pending deployment of the Safe on the specified chain, or the
+   * request to switch to the Safe if the deployment is waiting for it.
+   * Returns whether there is a pending deployment.
+   */
+  async #focusPendingSafeDeployment(accountAddr: Account['addr'], chainId: bigint) {
+    const deploymentWaitingAccountSwitch = this.userRequestsWaitingAccountSwitch.find(
+      (request) =>
+        request.kind === 'calls' &&
+        !!request.meta.isSafeDeploy &&
+        request.meta.accountAddr === accountAddr &&
+        request.meta.chainId === chainId
+    )
+    if (deploymentWaitingAccountSwitch) {
+      const switchAccountRequest = this.userRequests.find(
+        (request) => request.id === deploymentWaitingAccountSwitch.meta.switchAccountRequestId
+      )
+      if (switchAccountRequest) await this.#focusUserRequestIfVisible(switchAccountRequest)
+      return true
+    }
+
+    const pendingDeploymentRequest = this.#getSafeDeployRequest(accountAddr, chainId)
+    if (!pendingDeploymentRequest) return false
+
+    await this.#focusUserRequestIfVisible(pendingDeploymentRequest)
+    return true
   }
 
   /**
@@ -3233,6 +3245,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             r.signAccountOp.accountOp.txnId &&
             meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId))
     ) as CallsUserRequest | undefined
+
+    // A Safe is deployed once per chain, so a pending deployment is reused as it is. Adding
+    // the deployment to it a second time would make the whole transaction fail
+    if (meta.isSafeDeploy && existingUserRequest) {
+      // Being signed or broadcast already - there is nothing to add it to
+      if (existingUserRequest.signAccountOp.signAndBroadcastPromise) return
+      return existingUserRequest
+    }
 
     // Cap just in case an app decides to send a lot of requests at once
     const callsAlreadyWaiting = existingUserRequest?.signAccountOp.accountOp.calls.length ?? 0

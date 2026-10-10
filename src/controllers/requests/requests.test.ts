@@ -1633,7 +1633,7 @@ describe('RequestsController ', () => {
     unsubscribe()
   })
 
-  test('BUG: does not add a second deployment call to a deployment an app transaction queued meanwhile', async () => {
+  test('does not add a second deployment call to a deployment an app transaction queued meanwhile', async () => {
     const { accountsCtrl, controller } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
@@ -1688,6 +1688,66 @@ describe('RequestsController ', () => {
     expect(deploymentRequests).toHaveLength(1)
     // Deploying the same Safe twice in one transaction makes the whole transaction fail
     expect(deploymentRequests[0]!.signAccountOp.accountOp.calls).toHaveLength(1)
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
+
+  test('does not add a second deployment call when both wait for the same account switch', async () => {
+    const { accountsCtrl, controller, selectedAccountCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const safeAccount = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
+    safeAccount.safeCreation!.setupData = '0x1234'
+    await selectedAccountCtrl.setAccount(
+      accountsCtrl.accounts.find((candidate) => candidate.addr !== accountAddr)!
+    )
+    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
+      to: '0x1234567890123456789012345678901234567890',
+      value: 0n,
+      data: '0x1234'
+    })
+
+    // A transaction for the Safe is already waiting for the switch, so once the user switches
+    // it's added first and queues its own deployment of the Safe
+    await controller.build({
+      type: 'calls',
+      params: {
+        allowAccountSwitch: true,
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, data: '0x', value: 0n }],
+          meta: { accountAddr, chainId }
+        }
+      }
+    })
+    await controller.buildSafeDeploymentRequest(accountAddr, chainId)
+    expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(2)
+
+    await selectedAccountCtrl.setAccount(safeAccount)
+    const switchAccountRequests = controller.userRequests.filter(
+      (request) => request.kind === 'switchAccount'
+    )
+    for (const switchAccountRequest of switchAccountRequests) {
+      await controller.resolveUserRequest(null, switchAccountRequest.id)
+    }
+
+    expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+    const deploymentRequests = controller.userRequests.filter(
+      (request): request is CallsUserRequest =>
+        request.kind === 'calls' && !!request.meta.isSafeDeploy
+    )
+    expect(deploymentRequests).toHaveLength(1)
+    // Deploying the same Safe twice in one transaction makes the whole transaction fail
+    expect(deploymentRequests[0]!.signAccountOp.accountOp.calls).toHaveLength(1)
+    expect(
+      controller.userRequests.filter(
+        (request) => request.kind === 'calls' && !request.meta.isSafeDeploy
+      )
+    ).toHaveLength(1)
 
     controller.userRequests.forEach((request) => {
       if (request.kind === 'calls') request.signAccountOp.destroy()
