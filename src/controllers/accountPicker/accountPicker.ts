@@ -987,6 +987,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       const deviceIds: { [key in ExternalKey['type']]: string } = {
         ledger: this.#externalSignerControllers.ledger?.deviceId || '',
         trezor: this.#externalSignerControllers.trezor?.deviceId || '',
+        onekey: this.#externalSignerControllers.onekey?.deviceId || '',
         lattice: this.#externalSignerControllers?.lattice?.deviceId || '',
         qr: this.#externalSignerControllers.qr?.deviceId || '',
         nfc: this.#externalSignerControllers.nfc?.deviceId || '',
@@ -996,6 +997,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       const deviceModels: { [key in ExternalKey['type']]: string } = {
         ledger: this.#externalSignerControllers.ledger?.deviceModel || '',
         trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
+        onekey: this.#externalSignerControllers.onekey?.deviceModel || '',
         lattice: this.#externalSignerControllers.lattice?.deviceModel || '',
         qr: this.#externalSignerControllers.qr?.deviceModel || '',
         nfc: this.#externalSignerControllers.nfc?.deviceModel || '',

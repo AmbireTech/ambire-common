@@ -1389,6 +1389,43 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  async #handleAccountPickerInitOneKey(
+    OneKeyKeyIterator: any, // TODO: KeyIterator type mismatch
+    preferredDeviceId?: string
+  ) {
+    try {
+      const oneKeyCtrl = this.#externalSignerControllers.onekey
+
+      if (!oneKeyCtrl?.connect) {
+        const message =
+          'Could not initialize connection with your OneKey device. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      await oneKeyCtrl.connect(preferredDeviceId)
+
+      const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
+      await this.accountPicker.setInitParams({
+        keyIterator: new OneKeyKeyIterator({ controller: oneKeyCtrl }),
+        hdPathTemplate,
+        pageSize: 5,
+        shouldAddNextAccountAutomatically: false
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not unlock the OneKey device. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountPickerInitOneKey(
+    OneKeyKeyIterator: any, // TODO: KeyIterator type mismatch
+    preferredDeviceId?: string
+  ) {
+    await this.withStatus('handleAccountPickerInitOneKey', async () =>
+      this.#handleAccountPickerInitOneKey(OneKeyKeyIterator, preferredDeviceId)
+    )
+  }
+
   async #handleAccountPickerInitLattice(
     LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
   ) {
