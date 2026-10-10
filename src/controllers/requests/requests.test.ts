@@ -6,7 +6,10 @@ import { describe, expect, test } from '@jest/globals'
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
-import { SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE } from '../../consts/safe'
+import {
+  SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE,
+  SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+} from '../../consts/safe'
 import {
   DAPP_REJECTS_BEFORE_OFFERING_SILENCE,
   DAPP_SILENCE_DURATION,
@@ -1566,6 +1569,131 @@ describe('RequestsController ', () => {
     deploymentRequest.signAccountOp.destroy()
   })
 
+  test('reopens the pending Safe deployment request when it is asked for again', async () => {
+    const { accountsCtrl, controller } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const account = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
+    account.safeCreation!.setupData = '0x1234'
+    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
+      to: '0x1234567890123456789012345678901234567890',
+      value: 0n,
+      data: '0x1234'
+    })
+
+    await controller.buildSafeDeploymentRequest(accountAddr, chainId)
+    const deploymentRequest = controller.userRequests[0]
+    if (deploymentRequest?.kind !== 'calls') throw new Error('Expected a calls request')
+    expect(controller.currentUserRequest).toBe(deploymentRequest)
+
+    // Already the current request, but the user may have closed the request window since
+    const openRequestWindowSpy = jest.spyOn(controller, 'openRequestWindow')
+    await expect(controller.buildSafeDeploymentRequest(accountAddr, chainId)).resolves.toBe(true)
+
+    expect(controller.userRequests).toEqual([deploymentRequest])
+    expect(controller.currentUserRequest).toBe(deploymentRequest)
+    expect(openRequestWindowSpy).toHaveBeenCalledTimes(1)
+
+    deploymentRequest.signAccountOp.destroy()
+  })
+
+  test('asks to try again when preparing the Safe deployment fails unexpectedly', async () => {
+    const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    jest
+      .spyOn(accountsCtrl, 'forceFetchPendingState')
+      .mockRejectedValue(new Error('The network did not respond'))
+    const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+    const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
+    const errorListener = jest.fn()
+    const unsubscribe = controller.onError(errorListener)
+
+    await expect(
+      controller.buildSafeDeploymentRequest(accountAddr, chainId, 'deploy-settings-request')
+    ).resolves.toBe(false)
+
+    expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+    expect(controller.userRequests).toEqual([])
+    expect(sendUiMessageSpy).toHaveBeenCalledWith({
+      requestId: 'deploy-settings-request',
+      ok: false,
+      error: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE
+    })
+    expect(errorListener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'silent',
+        message: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE
+      })
+    )
+
+    unsubscribe()
+  })
+
+  test('BUG: does not add a second deployment call to a deployment an app transaction queued meanwhile', async () => {
+    const { accountsCtrl, controller } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const account = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
+    account.safeCreation!.setupData = '0x1234'
+    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    const deploymentCall = {
+      to: '0x1234567890123456789012345678901234567890',
+      value: 0n,
+      data: '0x1234' as Hex
+    }
+    let releaseDeploymentCall!: () => void
+    let signalDeploymentCallStarted!: () => void
+    const deploymentCallGate = new Promise<void>((resolve) => {
+      releaseDeploymentCall = resolve
+    })
+    const deploymentCallStarted = new Promise<void>((resolve) => {
+      signalDeploymentCallStarted = resolve
+    })
+    jest
+      .spyOn(safeLib, 'getSafeDeploymentCall')
+      .mockImplementationOnce(async () => {
+        signalDeploymentCallStarted()
+        await deploymentCallGate
+        return deploymentCall
+      })
+      .mockResolvedValue(deploymentCall)
+
+    const deploySettingsRequest = controller.buildSafeDeploymentRequest(accountAddr, chainId)
+    await deploymentCallStarted
+
+    // A transaction the wallet builds while Deploy settings is still preparing queues its own
+    // deployment of the same Safe on the same network
+    await controller.build({
+      type: 'calls',
+      params: {
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, data: '0x', value: 0n }],
+          meta: { accountAddr, chainId }
+        }
+      }
+    })
+    releaseDeploymentCall()
+    await deploySettingsRequest
+
+    const deploymentRequests = controller.userRequests.filter(
+      (request): request is CallsUserRequest =>
+        request.kind === 'calls' && !!request.meta.isSafeDeploy
+    )
+    expect(deploymentRequests).toHaveLength(1)
+    // Deploying the same Safe twice in one transaction makes the whole transaction fail
+    expect(deploymentRequests[0]!.signAccountOp.accountOp.calls).toHaveLength(1)
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
+
   test('coalesces concurrent Safe deployment requests for the same account and network', async () => {
     const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -1728,10 +1856,7 @@ describe('RequestsController ', () => {
   })
 
   test('asks to switch to a Safe that is not selected before building its deployment from Deploy settings', async () => {
-    const { accountsCtrl, controller, selectedAccountCtrl, uiCtrl } = await prepareTest(
-      false,
-      true
-    )
+    const { accountsCtrl, controller, selectedAccountCtrl, uiCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     const safeAccount = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
@@ -1770,12 +1895,16 @@ describe('RequestsController ', () => {
       res: { alreadyDeployed: false }
     })
 
-    // Asking again reuses the waiting deployment instead of queueing a second switch
+    // Asking again reuses the waiting deployment instead of queueing a second switch, and
+    // brings the switch request back in case the user closed the request window
+    const openRequestWindowSpy = jest.spyOn(controller, 'openRequestWindow')
     await expect(controller.buildSafeDeploymentRequest(accountAddr, chainId)).resolves.toBe(true)
 
     expect(controller.userRequests).toHaveLength(1)
     expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(1)
     expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
+    expect(controller.currentUserRequest).toBe(switchAccountRequest)
+    expect(openRequestWindowSpy).toHaveBeenCalledTimes(1)
 
     await selectedAccountCtrl.setAccount(safeAccount)
     await controller.resolveUserRequest(null, switchAccountRequest!.id)

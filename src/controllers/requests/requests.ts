@@ -16,7 +16,11 @@ import { SwapAndBridgeFormStatus } from '@/libs/swapAndBridge/constants'
 
 import EmittableError from '../../classes/EmittableError'
 import SwapAndBridgeError from '../../classes/SwapAndBridgeError'
-import { SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE, SAFE_NETWORKS } from '../../consts/safe'
+import {
+  SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE,
+  SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE,
+  SAFE_NETWORKS
+} from '../../consts/safe'
 import { MAX_DAPP_CALLS_PER_REQUEST } from '../../consts/safeguards/dappRequestSpam'
 import {
   Account,
@@ -142,7 +146,9 @@ const SAFE_DEPLOYMENT_STUCK_MESSAGE =
 const MESSAGE_ACCOUNT_NOT_IN_WALLET_ERROR =
   "This app asked to sign a message with an account that isn't in your wallet."
 
-type SafeDeploymentRequestResult = { success: false } | { success: true; alreadyDeployed: boolean }
+type SafeDeploymentRequestResult =
+  | { success: false; error: string }
+  | { success: true; alreadyDeployed: boolean }
 
 /**
  * The RequestsController is responsible for building and managing different user request types (within a request window).
@@ -1695,7 +1701,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         : {
             requestId: uiRequestId,
             ok: false,
-            error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+            error: result.error
           }
     )
   }
@@ -1738,7 +1744,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const provider = this.#providers.providers[chainId.toString()]
 
       if (!account?.safeCreation || !network || !provider) {
-        return { success: false }
+        this.emitError({
+          level: 'silent',
+          message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE,
+          error: new Error(
+            `buildSafeDeploymentRequest: missing Safe account (${!account?.safeCreation}), network (${!network}) or provider (${!provider}) for ${accountAddr} on chain ${chainId.toString()}`
+          )
+        })
+        return { success: false, error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE }
       }
 
       const accountState = await this.#accounts.forceFetchPendingState(accountAddr, chainId)
@@ -1746,14 +1759,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         return { success: true, alreadyDeployed: true }
       }
 
-      const isDeploymentWaitingAccountSwitch = this.userRequestsWaitingAccountSwitch.some(
+      const deploymentWaitingAccountSwitch = this.userRequestsWaitingAccountSwitch.find(
         (request) =>
           request.kind === 'calls' &&
           !!request.meta.isSafeDeploy &&
           request.meta.accountAddr === accountAddr &&
           request.meta.chainId === chainId
       )
-      if (isDeploymentWaitingAccountSwitch) return { success: true, alreadyDeployed: false }
+      if (deploymentWaitingAccountSwitch) {
+        const switchAccountRequest = this.userRequests.find(
+          (request) => request.id === deploymentWaitingAccountSwitch.meta.switchAccountRequestId
+        )
+        if (switchAccountRequest) await this.#focusUserRequestIfVisible(switchAccountRequest)
+        return { success: true, alreadyDeployed: false }
+      }
 
       const existingDeploymentRequest = this.userRequests.find(
         (request): request is CallsUserRequest =>
@@ -1763,12 +1782,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           request.meta.chainId === chainId
       )
       if (existingDeploymentRequest) {
-        if (
-          this.visibleUserRequests.includes(existingDeploymentRequest) &&
-          this.currentUserRequest?.id !== existingDeploymentRequest.id
-        ) {
-          await this.#setCurrentUserRequest(existingDeploymentRequest)
-        }
+        await this.#focusUserRequestIfVisible(existingDeploymentRequest)
         return { success: true, alreadyDeployed: false }
       }
 
@@ -1781,12 +1795,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       if (!hasCompleteSafeCreationData(account.safeCreation)) {
-        return { success: false }
+        return { success: false, error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE }
       }
 
       const deploymentCall = await getSafeDeploymentCall(account, provider)
       if (!deploymentCall) {
-        return { success: false }
+        return { success: false, error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE }
       }
 
       const deploymentParams: CallsUserRequestParams = {
@@ -1804,7 +1818,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const deploymentRequest = await this.#createOrUpdateCallsUserRequest(deploymentParams)
 
       if (!deploymentRequest) {
-        return { success: false }
+        return { success: false, error: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE }
       }
 
       const isDeploymentRequestAdded = () =>
@@ -1819,19 +1833,31 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       if (!isDeploymentRequestAdded()) {
         deploymentRequest.signAccountOp.destroy()
-        return { success: false }
+        return { success: false, error: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE }
       }
 
       return { success: true, alreadyDeployed: false }
     } catch (error) {
+      // Most likely a temporary failure (e.g. the network didn't respond), so the user is
+      // asked to try again instead of being sent to the Safe app
       this.emitError({
         level: 'silent',
-        message: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE,
+        message: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE,
         error: error instanceof Error ? error : new Error(String(error)),
         sendCrashReport: true
       })
-      return { success: false }
+      return { success: false, error: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE }
     }
+  }
+
+  /**
+   * Brings a request to the front, (re)opening the request window if the user closed it.
+   * Requests of an account other than the selected one stay where they are.
+   */
+  async #focusUserRequestIfVisible(request: UserRequest) {
+    if (!this.visibleUserRequests.includes(request)) return
+
+    await this.#setCurrentUserRequest(request)
   }
 
   /** Builds or focuses a Safe transaction that rejects another transaction onchain. */
