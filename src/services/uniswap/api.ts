@@ -43,6 +43,8 @@ import {
 
 const erc20Interface = new Interface(ERC20.abi)
 
+const GATEWAY_TIMEOUT_STATUS = 504
+
 type UniswapTokenListEntry = {
   address: string
   chainId: number
@@ -307,20 +309,11 @@ export class UniswapAPI implements SwapProvider {
     )
   }
 
-  async #handleResponse<T>({
-    fetchPromise,
-    errorPrefix
-  }: {
-    fetchPromise: Promise<CustomResponse>
-    errorPrefix: string
-  }): Promise<T> {
-    this.#ensureApiKey()
-
-    let response: CustomResponse
+  async #withRequestTimeout(fetchPromise: Promise<CustomResponse>): Promise<CustomResponse> {
+    let timeoutPromise: NodeJS.Timeout | undefined
 
     try {
-      let timeoutPromise: NodeJS.Timeout | undefined
-      response = await Promise.race([
+      return await Promise.race([
         fetchPromise,
         new Promise<CustomResponse>((_, reject) => {
           timeoutPromise = setTimeout(() => {
@@ -332,8 +325,31 @@ export class UniswapAPI implements SwapProvider {
           }, this.#requestTimeoutMs)
         })
       ])
-
+    } finally {
       if (timeoutPromise) clearTimeout(timeoutPromise)
+    }
+  }
+
+  async #handleResponse<T>({
+    fetchPromise,
+    retryFetch,
+    errorPrefix
+  }: {
+    fetchPromise: Promise<CustomResponse>
+    /** Sent once more after a 504, with its own timeout. */
+    retryFetch?: () => Promise<CustomResponse>
+    errorPrefix: string
+  }): Promise<T> {
+    this.#ensureApiKey()
+
+    let response: CustomResponse
+
+    try {
+      response = await this.#withRequestTimeout(fetchPromise)
+
+      if (response.status === GATEWAY_TIMEOUT_STATUS && retryFetch) {
+        response = await this.#withRequestTimeout(retryFetch())
+      }
     } catch (e: any) {
       if (e instanceof SwapAndBridgeProviderApiError) throw e
 
@@ -402,9 +418,12 @@ export class UniswapAPI implements SwapProvider {
       sort: 'tvl'
     })
     const url = `${UNISWAP_API_BASE_URL}/tokens?${params.toString()}`
+    const fetchTokens = () => this.#fetch(url, { headers: this.#headers })
 
     const response = await this.#handleResponse<{ tokens?: UniswapTokenListEntry[] }>({
-      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      fetchPromise: fetchTokens(),
+      // Uniswap keeps ranking the tokens after a 504, so a retry usually works
+      retryFetch: fetchTokens,
       errorPrefix:
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })

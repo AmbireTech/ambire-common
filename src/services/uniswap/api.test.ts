@@ -105,6 +105,49 @@ describe('UniswapAPI', () => {
     ).resolves.toEqual([])
   })
 
+  describe("when the token list request times out on Uniswap's gateway", () => {
+    // The gateway answers with an HTML page, not JSON
+    const gatewayTimeoutResponse = {
+      ok: false,
+      status: 504,
+      json: async () => {
+        throw new SyntaxError('Unexpected token < in JSON at position 0')
+      }
+    }
+    const usdc = {
+      address: tokenIn,
+      chainId: 1,
+      decimals: 6,
+      logoURI: '',
+      name: 'USD Coin',
+      symbol: 'USDC'
+    }
+
+    it('requests the list once more and returns the tokens of the retry', async () => {
+      const fetch = jest
+        .fn<() => Promise<any>>()
+        .mockResolvedValueOnce(gatewayTimeoutResponse)
+        .mockResolvedValueOnce(makeResponse({ tokens: [usdc] }))
+      const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
+
+      const tokens = await uniswapApi.getToTokenList({ fromChainId: 1, toChainId: 1 })
+
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(fetch.mock.calls[1]).toEqual(fetch.mock.calls[0])
+      expect(tokens.map(({ symbol }) => symbol)).toContain('USDC')
+    })
+
+    it('fails without retrying again when the retry times out too', async () => {
+      const fetch = jest.fn(async () => gatewayTimeoutResponse)
+      const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
+
+      await expect(uniswapApi.getToTokenList({ fromChainId: 1, toChainId: 1 })).rejects.toThrow(
+        'Unable to retrieve the list of supported receive tokens'
+      )
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+  })
+
   it('does not request tokens for an unsupported network pair', async () => {
     const fetch = jest.fn()
     const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
