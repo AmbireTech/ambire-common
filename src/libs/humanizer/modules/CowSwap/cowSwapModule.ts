@@ -301,7 +301,9 @@ const humanizeOrderUidCallWithVerifiedOrder = (
   accountOp: AccountOp,
   call: HexIrCall
 ): IrCall | null => {
-  if (!call.cowSwapOrder) return null
+  // The order ID commits to the settlement contract (it's the EIP-712 verifying contract), so a
+  // matching order proves nothing about a call to any other contract
+  if (!call.cowSwapOrder || call.to?.toLowerCase() !== COW_SWAP_SETTLEMENT_ADDRESS) return null
 
   const selector = call.data.slice(0, 10)
   let orderUid: string

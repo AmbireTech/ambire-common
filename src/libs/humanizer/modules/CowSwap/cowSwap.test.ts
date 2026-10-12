@@ -421,6 +421,34 @@ describe('CowSwap', () => {
       ])
     })
 
+    test('verifies the order when the settlement address is checksummed, as our swap builds it', () => {
+      const irCall = CowSwapModule(
+        accountOp,
+        {
+          ...getPreSignCall(getExpectedOrderUid(presignedOrder), true, presignedOrder),
+          to: '0x9008D19f58AAbD9eD0D60971565AA8510560ab41'
+        },
+        humanizerInfo as HumanizerMeta
+      )
+
+      expect(irCall.preferredOverErc7730).toBe(true)
+    })
+
+    test('falls back to the order ID when the call is not to the settlement contract', () => {
+      const uid = getExpectedOrderUid(presignedOrder)
+
+      // ComposableCoW is also handled by this module, but the order ID only commits to the
+      // settlement contract, so a matching order must not be shown for a call to it
+      const irCall = CowSwapModule(
+        accountOp,
+        { ...getPreSignCall(uid, true, presignedOrder), to: composableCow },
+        humanizerInfo as HumanizerMeta
+      )
+
+      compareHumanizerVisualizations([irCall], [getOrderUidFallbackVisualization(uid)])
+      expect(irCall.preferredOverErc7730).toBeUndefined()
+    })
+
     test('falls back to the order ID when the attached order has an unknown kind', () => {
       const order = { ...presignedOrder, kind: 'limit' } as unknown as CowSwapOrderStruct
       const uid = getExpectedOrderUid(order)
