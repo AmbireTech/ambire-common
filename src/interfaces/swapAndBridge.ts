@@ -226,6 +226,30 @@ export interface CowSwapOrderCreation extends CowSwapOrderParameters {
   quoteId: number | null
 }
 
+/**
+ * A CoW Swap order exactly as its order ID commits to it - the fields of the EIP-712 `Order`
+ * struct that the settlement contract hashes. Pre-sign and cancel transactions contain only the
+ * order ID, so this is attached to their call to let the humanizer show the order itself. The
+ * humanizer displays it only after recomputing the order ID from it, so a struct that doesn't
+ * match the transaction is never shown.
+ */
+export interface CowSwapOrderStruct {
+  sellToken: string
+  buyToken: string
+  /** The zero address means the order pays out to its owner */
+  receiver: string
+  sellAmount: string
+  buyAmount: string
+  validTo: number
+  /** The hash of the order's app data, not the app data JSON itself */
+  appData: string
+  feeAmount: string
+  kind: 'sell' | 'buy'
+  partiallyFillable: boolean
+  sellTokenBalance: 'erc20' | 'external' | 'internal'
+  buyTokenBalance: 'erc20' | 'internal'
+}
+
 export interface CowSwapRawRoute {
   quoteResponse: CowSwapQuoteResponse
   order: CowSwapOrderCreation
@@ -445,6 +469,8 @@ export type SwapAndBridgeSendTxRequest = {
   txTarget: string
   userTxIndex: number
   value: string
+  /** The CoW Swap order that `txData` pre-signs, so the humanizer can show it instead of its ID */
+  cowSwapOrder?: CowSwapOrderStruct
 }
 
 export type ActiveRoute = {
