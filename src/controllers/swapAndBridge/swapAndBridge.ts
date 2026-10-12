@@ -161,6 +161,11 @@ type ToTokenList = {
    * Use this array in all UI and presentation layers.
    */
   tokens: SwapAndBridgeToToken[]
+  /**
+   * Signature of the portfolio tokens `tokens` was last derived from, so a portfolio refresh
+   * that does not affect this list does not rebuild it.
+   */
+  portfolioSignature: string
 }
 
 type RequestedToToken = {
@@ -421,12 +426,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   /** A "to" token to select once a provider returns it, e.g. a preselected one. */
   #requestedToToken: RequestedToToken | null = null
-
-  /**
-   * Signature of the portfolio tokens the "to" token list was last derived from, so a
-   * portfolio refresh that does not affect that list does not rebuild it.
-   */
-  #toTokenPortfolioSignature: string = ''
 
   /**
    * Lowercased fields the "to" token search matches against, cached per token so that a
@@ -818,11 +817,9 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
           // redone when the portfolio tokens it actually reads have changed - or when its cached
           // copy of the provider's list is due for a refetch. Without this, every portfolio
           // refresh rebuilt an identical list and took the JS thread away from the screen.
-          const portfolioSignature = this.#getToTokenPortfolioSignature()
-
           if (
-            portfolioSignature !== this.#toTokenPortfolioSignature ||
-            this.#isToTokenApiListStale()
+            this.#isToTokenApiListStale() ||
+            this.#getToTokenPortfolioSignature() !== this.#currentToTokenList?.portfolioSignature
           ) {
             await this.updateToTokenList(false)
           }
@@ -1478,17 +1475,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   }
 
   reset(shouldEmit?: boolean) {
-    const toTokenListKey = this.#toTokenListKey
+    const toTokenList = this.#currentToTokenList
 
     this.resetForm()
 
     this.portfolioTokenList = []
-    if (toTokenListKey && this.#toTokenList[toTokenListKey]) {
-      this.#toTokenList[toTokenListKey].tokens = []
+    if (toTokenList) {
+      toTokenList.tokens = []
+      // The derived list is gone, so the signature no longer describes one - forget it,
+      // or the next portfolio update with the same tokens would skip rebuilding it.
+      toTokenList.portfolioSignature = ''
     }
-    // The derived list is gone, so the signature no longer describes one - forget it,
-    // or the next portfolio update with the same tokens would skip rebuilding it.
-    this.#toTokenPortfolioSignature = ''
 
     this.fromChainId = 1
     this.fromSelectedToken = null
@@ -1685,6 +1682,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         apiTokens: [],
         addedTokens: [],
         tokens: [],
+        portfolioSignature: '',
         lastUpdate: 0
       }
 
@@ -1831,7 +1829,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     toTokenList.tokens = this.#getToTokens(fromChainId, toChainId)
     // Committed here rather than where the rebuild is decided, so it describes the portfolio
     // the list was actually derived from.
-    this.#toTokenPortfolioSignature = this.#getToTokenPortfolioSignature(toChainId)
+    toTokenList.portfolioSignature = this.#getToTokenPortfolioSignature(toChainId)
   }
 
   /** Keeps a token looked up by address in its list, so it survives later provider answers. */
