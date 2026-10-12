@@ -24,9 +24,14 @@ describe('UniswapAPI', () => {
   it('supports Uniswap chains and excludes Citrea', async () => {
     const uniswapApi = new UniswapAPI({ fetch: jest.fn() as any, apiKey: 'test-key' })
 
-    expect(uniswapApi.areChainsSupported({ fromChainId: 1, toChainId: 8453 })).toBe(true)
+    expect(uniswapApi.areChainsSupported({ fromChainId: 8453, toChainId: 8453 })).toBe(true)
+    // As of v2.111.3, Uniswap bridges (cross-chain routes) are temporarily disabled
+    expect(uniswapApi.areChainsSupported({ fromChainId: 1, toChainId: 8453 })).toBe(false)
     expect(
-      uniswapApi.areChainsSupported({ fromChainId: Number(CITREA_CHAIN_ID), toChainId: 1 })
+      uniswapApi.areChainsSupported({
+        fromChainId: Number(CITREA_CHAIN_ID),
+        toChainId: Number(CITREA_CHAIN_ID)
+      })
     ).toBe(false)
 
     const chains = await uniswapApi.getSupportedChains()
@@ -214,6 +219,9 @@ describe('UniswapAPI', () => {
       })
     )
     const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
+    // As of v2.111.3, Uniswap bridges are temporarily disabled in areChainsSupported.
+    // Keep the Across tagging covered so it works once bridging is re-enabled
+    jest.spyOn(uniswapApi, 'areChainsSupported').mockReturnValue(true)
 
     const quote = await uniswapApi.quote({
       fromAsset: {
