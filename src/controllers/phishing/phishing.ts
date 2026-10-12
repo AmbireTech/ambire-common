@@ -15,12 +15,7 @@ import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishin
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 import { getDappIdFromUrl, getNormalizedHostnameFromUrl } from '../../libs/dapps/helpers'
-import {
-  applySortedDelta,
-  isSortedUnique,
-  sortedIncludes,
-  toSortedUnique
-} from '../../libs/sortedList/sortedList'
+import { applySortedDelta, sortedIncludes, toSortedUnique } from '../../libs/sortedList/sortedList'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SUSPICIOUS_HOSTING_DOMAINS } from './suspiciousHostingDomains'
@@ -266,15 +261,8 @@ export class PhishingController extends EventEmitter implements IPhishingControl
 
     this.#version = phishing.version
     this.#updatedAt = phishing.updatedAt
-
-    // The stored lists are sorted - by the PhishingController when it stores them, and by the
-    // sortPhishingLists storage migration for lists stored before that. The check is kept anyway
-    // because it is cheap, and an unsorted list would make the binary search silently miss listed
-    // domains and addresses.
-    const areDomainsSorted = isSortedUnique(phishing.domains)
-    const areAddressesSorted = isSortedUnique(phishing.addresses)
-    this.#domains = areDomainsSorted ? phishing.domains : toSortedUnique(phishing.domains)
-    this.#addresses = areAddressesSorted ? phishing.addresses : toSortedUnique(phishing.addresses)
+    this.#addresses = phishing.addresses
+    this.#domains = phishing.domains
 
     if (this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) {
       this.updatePhishingInterval.start({ runImmediately: true })
