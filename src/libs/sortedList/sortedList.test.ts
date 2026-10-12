@@ -1,6 +1,12 @@
 import { describe, expect, test } from '@jest/globals'
 
-import { applySortedDelta, isSortedUnique, sortedIncludes, toSortedUnique } from './sortedList'
+import {
+  applySortedDelta,
+  isSortedUnique,
+  SortedListDeltaOp,
+  sortedIncludes,
+  toSortedUnique
+} from './sortedList'
 
 /** Replays the ops on a Set, which is the behavior applySortedDelta must match. */
 const applyWithSet = (list: string[], ops: { op: 'add' | 'remove'; value: string }[]) => {
@@ -99,6 +105,18 @@ describe('sortedList', () => {
     test('works on an empty list and with no ops', () => {
       expect(applySortedDelta([], [{ op: 'add', value: 'a.com' }])).toEqual(['a.com'])
       expect(applySortedDelta(list, [])).toEqual(list)
+    })
+    test('handles a delta with more changes than fit in one concat call', () => {
+      const base = Array.from({ length: 30_000 }, (_, i) => `site${String(i).padStart(6, '0')}.com`)
+      const ops = base.flatMap((value, i): SortedListDeltaOp[] => {
+        if (i % 3 === 0) return [{ op: 'remove', value }]
+        if (i % 3 === 1) return [{ op: 'add', value: `${value}-new` }]
+        return []
+      })
+      const result = applySortedDelta(base, ops)
+
+      expect(result).toEqual(applyWithSet(base, ops))
+      expect(isSortedUnique(result)).toBe(true)
     })
     test('matches replaying the ops on a Set for random deltas', () => {
       const values = Array.from({ length: 40 }, (_, i) => `site${i}.com`)
