@@ -1,4 +1,4 @@
-import { concat } from 'ethers'
+import { concat, isAddress, ZeroAddress } from 'ethers'
 
 import AmbireAccountState from '../../../contracts/compiled/AmbireAccountState.json'
 import { ProviderError } from '../../classes/ProviderError'
@@ -22,6 +22,15 @@ const hasAmbireDelegation = (code?: string) => {
     if (hasCode) break
   }
   return hasCode
+}
+
+/**
+ * The singleton an undeployed Safe will be deployed with. Incomplete Safe creation
+ * data stores '0x' placeholders, so fall back to the zero address to keep the call encodable
+ */
+const getSafeSingletonParam = (account: Account) => {
+  const singleton = account.safeCreation?.singleton
+  return singleton && isAddress(singleton) ? singleton : ZeroAddress
 }
 
 export async function getAccountState(
@@ -49,7 +58,8 @@ export async function getAccountState(
         ? ['0x0000000000000000000000000000000000000000', '0x']
         : getAccountDeployParams(account)),
       ERC_4337_ENTRYPOINT,
-      !!account.safeCreation
+      !!account.safeCreation,
+      getSafeSingletonParam(account)
     ]
   })
 
@@ -144,6 +154,7 @@ export async function getAccountState(
       delegatedContract,
       delegatedContractName,
       threshold: Number(accResult.threshold),
+      safeVersion: accResult.safeVersion || null,
       updatedAt: Date.now()
     }
   })

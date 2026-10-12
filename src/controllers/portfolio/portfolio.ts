@@ -68,6 +68,7 @@ import getAccountNetworksWithAssets from '../../libs/portfolio/getNetworksWithAs
 import {
   convertApiTokenDataToTokenDataCache,
   formatExternalHintsAPIResponse,
+  getAccountPortfolioTotal,
   getHintsError,
   getTokenDataCacheKey,
   getTotal,
@@ -365,12 +366,14 @@ export class PortfolioController
             (x) => x.data.baseCurrency === baseCurrency && x.data.accountAddr === accountAddr
           )
           // As of v4.36.0, for metric purposes, pass the account keys count as an
-          // additional param for the batched velcro discovery requests.
+          // additional param for the batched velcro discovery requests. The account's
+          // last known total balance on all networks is passed for the same reason.
           const accountKeysCount = getAccountKeysCount({
             accountAddr,
             keys: this.#keystore.keys,
             accounts: this.#accounts.accounts
           })
+          const totalBalance = Math.round(getAccountPortfolioTotal(this.#state[accountAddr]))
 
           // Analytics should not be polluted with inactive extensions
           const activeParam = this.#keystore.isUnlocked ? '&a=1' : ''
@@ -396,7 +399,7 @@ export class PortfolioController
             .map((x) => x.data.chainId)
             .join(
               ','
-            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${defiParam}&sigs=${accountKeysCount}${activeParam}`
+            )}&account=${accountAddr}&baseCurrency=${baseCurrency}${defiParam}&sigs=${accountKeysCount}&b=${totalBalance}${activeParam}`
 
           return { url, queueSegment }
         })

@@ -1,11 +1,12 @@
 import { generateUuid } from '@/utils/uuid'
 
+import { AccountStates } from '../../interfaces/account'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import {
   CallsUserRequest,
-  SignUserRequest,
   SwitchAccountRequest,
-  UserRequest
+  UserRequest,
+  UserRequestWaitingAccountSwitch
 } from '../../interfaces/userRequest'
 
 export const dappRequestMethodToRequestKind = (method: DappProviderRequest['method']) => {
@@ -84,7 +85,7 @@ export const buildSwitchAccountUserRequest = ({
   selectedAccountAddr,
   dappPromises
 }: {
-  nextUserRequest: SignUserRequest
+  nextUserRequest: UserRequestWaitingAccountSwitch
   selectedAccountAddr: string
   dappPromises: UserRequest['dappPromises']
 }): SwitchAccountRequest => {
@@ -119,3 +120,12 @@ export const isSignedSafeCallsRequest = (request: UserRequest): boolean =>
   request.kind === 'calls' &&
   !!request.signAccountOp.account.safeCreation &&
   !!request.signAccountOp.accountOp.signed?.length
+
+// todo: description
+export const isWaitingForSafeDeployment = (
+  request: UserRequest,
+  accountStates: AccountStates
+): boolean =>
+  request.kind === 'calls' &&
+  !!request.signAccountOp.account.safeCreation &&
+  !accountStates[request.meta.accountAddr]?.[request.meta.chainId.toString()]?.isDeployed

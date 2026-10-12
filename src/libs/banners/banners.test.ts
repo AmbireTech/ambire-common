@@ -70,8 +70,7 @@ describe('getSafeMessageRequestBanners', () => {
       factoryAddr: '0x0',
       singleton: '0x0',
       saltNonce: '0x0',
-      setupData: '0x0',
-      version: '1.4.1'
+      setupData: '0x0'
     }
     const safeAccount: Account = { ...account, safeCreation }
     const messageRequest: PlainTextMessageUserRequest = {
