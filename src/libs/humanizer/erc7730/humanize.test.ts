@@ -204,3 +204,73 @@ describe('warnings from nested calls', () => {
     )
   })
 })
+
+describe('encrypted values', () => {
+  const confidentialTransferAbi = parseAbi([
+    'function confidentialTransfer(address to, bytes32 amount)'
+  ])
+  const confidentialUsdc = '0xe978F22157048E5DB8E5d07971376e86671672B2'
+  // An FHEVM ciphertext handle - read as a number it is 77 digits long
+  const encryptedAmountHandle = '0x8411de8d5aaf1d2d0aa9a3c27d30ea1a85d9fca1d4d1ef4dc4b1a1c3e2a40500'
+
+  // Mirrors registry/zama/calldata-ConfidentialWrapper.json
+  const getConfidentialWrapperDescriptor = (fallbackLabel?: string): Erc7730Descriptor => ({
+    display: {
+      definitions: {
+        encryptedAmount: {
+          label: 'Amount',
+          format: 'tokenAmount',
+          params: { tokenPath: '@.to' },
+          encryption: { scheme: 'fhevm', plaintextType: 'uint64', fallbackLabel }
+        }
+      },
+      formats: {
+        'confidentialTransfer(address to,bytes32 amount)': {
+          intent: 'Confidential transfer',
+          interpolatedIntent: 'Confidential transfer of {amount} to {to}',
+          fields: [
+            { path: 'amount', $ref: '$.display.definitions.encryptedAmount' },
+            { path: 'to', label: 'Receiver', format: 'addressName' }
+          ]
+        }
+      }
+    }
+  })
+
+  const confidentialTransferCall: Call = {
+    to: confidentialUsdc,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: confidentialTransferAbi,
+      args: [RECEIVER, encryptedAmountHandle]
+    })
+  }
+
+  const humanizeConfidentialTransfer = (fallbackLabel?: string) =>
+    humanizeCallWithErc7730(confidentialTransferCall, 1n as AccountOp['chainId'], RECEIVER, {
+      descriptor: getConfidentialWrapperDescriptor(fallbackLabel)
+    })?.fullVisualization?.[0]
+
+  test('shows the fallback text in place of the encrypted amount in the interpolated intent', () => {
+    const intent = humanizeConfidentialTransfer('[Encrypted Amount]')?.intent
+
+    expect(intent?.map(({ type }) => type)).toEqual(['action', 'text', 'text', 'address'])
+    expect(intent?.[1]).toMatchObject({ type: 'text', content: '[Encrypted Amount]' })
+    expect(intent?.some(({ type }) => type === 'token')).toBe(false)
+  })
+
+  test('shows the fallback text in place of the encrypted amount in the rows', () => {
+    const fields = humanizeConfidentialTransfer('[Encrypted Amount]')?.fields
+
+    expect(fields?.[0]).toMatchObject({
+      type: 'single-value',
+      value: { type: 'text', content: '[Encrypted Amount]' }
+    })
+  })
+
+  test('shows a default text when the descriptor gives no fallback text', () => {
+    const intent = humanizeConfidentialTransfer()?.intent
+
+    expect(intent?.[1]).toMatchObject({ type: 'text', content: '[Hidden value]' })
+  })
+})

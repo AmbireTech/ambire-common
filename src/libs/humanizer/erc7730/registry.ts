@@ -153,6 +153,13 @@ const validateDescriptorField = (field: unknown, path: string): field is Erc7730
     throwInvalidRelayerResource(path)
   }
 
+  const { encryption } = descriptorField
+  if (encryption !== undefined) {
+    if (!isPlainObject(encryption)) throwInvalidRelayerResource(path)
+    if (encryption.fallbackLabel !== undefined && typeof encryption.fallbackLabel !== 'string')
+      throwInvalidRelayerResource(path)
+  }
+
   const { fields } = descriptorField
   if (fields !== undefined) {
     if (!Array.isArray(fields)) throwInvalidRelayerResource(path)

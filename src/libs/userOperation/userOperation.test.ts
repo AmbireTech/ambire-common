@@ -46,8 +46,7 @@ const safeAccDeployed: Account = {
     factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
     singleton: '0x41675C099F32341bf84BFc5382aF534df5C7461a',
     saltNonce: '0x00',
-    setupData: '0x',
-    version: 'v1.4.1'
+    setupData: '0x'
   },
   associatedKeys: ['0xBd84Cc40a5b5197B5B61919c22A55e1c46d2A3bb'],
   preferences: {
@@ -74,6 +73,7 @@ const safeAccountState: AccountOnchainState = {
   delegatedContract: null,
   delegatedContractName: null,
   threshold: 1,
+  safeVersion: '1.4.1',
   updatedAt: 0
 }
 
