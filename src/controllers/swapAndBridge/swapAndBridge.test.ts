@@ -1082,7 +1082,7 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController.reset()
     await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
   })
-  test('should stop keeping a preselected to token after the user selects another one', async () => {
+  test('should keep a to token the user selected when the from token network changes', async () => {
     const toTokenAddr = '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58' // USDT
     const userSelectedToTokenAddr = '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22' // cbETH
     const fromToken = PORTFOLIO_TOKENS[2]! // ETH on Optimism
@@ -1101,8 +1101,8 @@ describe('SwapAndBridge Controller', () => {
 
     await swapAndBridgeController.updateForm({ fromSelectedToken: fromTokenOnAnotherChain })
 
-    // The default behavior applies again - the to token gets reset on a from network change
-    expect(swapAndBridgeController.toSelectedToken).toBeNull()
+    expect(swapAndBridgeController.fromChainId).toEqual(8453)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(userSelectedToTokenAddr)
 
     swapAndBridgeController.reset()
     await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
@@ -1172,6 +1172,32 @@ describe('SwapAndBridge Controller', () => {
       release()
       await Promise.all([preselectPromise, refreshPromise])
 
+      expect(swapAndBridgeController.toChainId).toEqual(toChainId)
+      expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+    })
+
+    test('is selected from the new list when the from token network changes while the list loads', async () => {
+      const toChainId = 534352
+      const fromToken = PORTFOLIO_TOKENS[2]! // ETH on Optimism
+      const fromTokenOnAnotherChain = PORTFOLIO_TOKENS[1]! // cbBTC on Base
+      const { requested, release } = holdToTokenList()
+      swapAndBridgeController.reset()
+
+      const preselectPromise = swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+        preselectedToken: { address: fromToken.address, chainId: fromToken.chainId },
+        preselectedToToken: { address: toTokenAddr, chainId: BigInt(toChainId) }
+      })
+      await requested
+
+      const fromChangePromise = swapAndBridgeController.updateForm({
+        fromSelectedToken: fromTokenOnAnotherChain
+      })
+      await wait(0)
+
+      release()
+      await Promise.all([preselectPromise, fromChangePromise])
+
+      expect(swapAndBridgeController.fromChainId).toEqual(Number(fromTokenOnAnotherChain.chainId))
       expect(swapAndBridgeController.toChainId).toEqual(toChainId)
       expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
     })

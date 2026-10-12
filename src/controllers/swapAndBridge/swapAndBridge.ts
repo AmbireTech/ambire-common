@@ -417,13 +417,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
    */
   #cachedSupportedChains: CachedSupportedChains = { lastFetched: 0, data: [] }
 
-  /**
-   * A "to" token preselected from outside Swap & Bridge (e.g. from the trending tokens list).
-   * Kept so it can be re-selected after the automatic "to" token list reset (which happens on
-   * every "from" network change), until the user changes the "to" token or network themselves.
-   */
-  #preselectedToToken: { address: string; chainId: number } | null = null
-
   /** A "to" token to select once a provider returns it, e.g. a preselected one. */
   #requestedToToken: RequestedToToken | null = null
 
@@ -1318,10 +1311,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       isToSelectionByUser = false
     } = updateProps || {}
 
-    if (isToSelectionByUser) {
-      this.#preselectedToToken = null
-      this.#requestedToToken = null
-    }
+    if (isToSelectionByUser) this.#requestedToToken = null
 
     const chainId = toChainId ?? this.toChainId
     let toSelectedTokenAddr: string | undefined
@@ -1337,6 +1327,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       fromAmount && props.toSelectedTokenAddr && fromSelectedToken && toChainId
 
     let shouldUpdateToTokenList = false
+    let isToNetworkChanged = false
 
     // fromAmountFieldMode must be set before fromAmount so it
     // works correctly when both are set at the same time
@@ -1397,15 +1388,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (toChainId) {
       if (this.toChainId !== Number(toChainId)) {
         this.toChainId = Number(toChainId)
+        isToNetworkChanged = true
         shouldUpdateToTokenList = true
       }
     }
 
-    // Only valid while the "to" network is still the one the token was preselected on
-    const preselectedToTokenAddrToRestore =
-      this.#preselectedToToken?.chainId === this.toChainId
-        ? this.#preselectedToToken.address
-        : undefined
+    // A "to" token still loading stays on its network after a "from" network change,
+    // so it is requested again in the new list
+    const pendingToTokenAddr = isToNetworkChanged ? undefined : this.#requestedToToken?.address
 
     const toTokensKey = this.#toTokenListKey
     const toTokenList = toTokensKey ? this.#toTokenList[toTokensKey] : undefined
@@ -1440,9 +1430,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     await Promise.all([
       shouldUpdateToTokenList || shouldSelectToTokenFromList
         ? // we put toSelectedTokenAddr so that "retry" btn functionality works
+          // Only a "to" network change makes the selected "to" token invalid
           this.updateToTokenList(
-            shouldUpdateToTokenList,
-            nextToToken?.address || toSelectedTokenAddr || preselectedToTokenAddrToRestore
+            isToNetworkChanged,
+            nextToToken?.address || toSelectedTokenAddr || pendingToTokenAddr
           )
         : undefined,
       updateQuote
@@ -1461,7 +1452,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     this.#setFromAmountAndNotifyUI('')
     this.#setFromAmountInFiatAndNotifyUI('')
     this.toSelectedToken = null
-    this.#preselectedToToken = null
     this.#requestedToToken = null
     this.quote = null
     this.updateQuoteStatus = 'INITIAL'
@@ -1511,13 +1501,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // until the user manually selects a new token
     const isSelectedTokenFalsyBeforeListUpdate = !this.fromSelectedToken && !!this.toSelectedToken
     const { preselectedToken, preselectedToToken, fromAmount } = params || {}
-
-    if (preselectedToToken) {
-      this.#preselectedToToken = {
-        address: preselectedToToken.address,
-        chainId: Number(preselectedToToken.chainId)
-      }
-    }
 
     // When price fetching is disabled or the endpoint is down, tokens come back without
     // a USD price. We must not exclude them as "priceless" in that case, otherwise
@@ -1604,12 +1587,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
         {
           fromSelectedToken: nextFromSelectedToken,
           toSelectedTokenAddr: preselectedToToken?.address,
-          // Keep the preselected token's network while its list loads
+          // Keep the network of a selected "to" token, or of one still loading
           toChainId:
             preselectedToToken?.chainId ??
-            (!this.toSelectedToken
-              ? (this.#preselectedToToken?.chainId ?? nextFromSelectedToken?.chainId)
-              : undefined),
+            (this.toSelectedToken || this.isToTokenSelectionPending
+              ? undefined
+              : nextFromSelectedToken?.chainId),
           fromAmount
         },
         {
@@ -2443,8 +2426,6 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   async switchFromAndToTokens() {
     this.switchTokensStatus = 'LOADING'
-    // The user takes over the "to" token by switching the sides
-    this.#preselectedToToken = null
     this.#emitUpdateIfNeeded()
 
     const prevFromSelectedToken = this.fromSelectedToken ? { ...this.fromSelectedToken } : null
