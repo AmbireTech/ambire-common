@@ -439,6 +439,7 @@ export class MainController extends EventEmitter implements IMainController {
       velcroUrl,
       this.banner,
       this.featureFlags,
+      this.ui,
       eventEmitterRegistry,
       this.verification,
       platform
@@ -508,6 +509,13 @@ export class MainController extends EventEmitter implements IMainController {
       providers: this.providers,
       ui: this.ui,
       eventEmitterRegistry
+    })
+    this.contractInfo = new ContractInfoController({
+      eventEmitterRegistry,
+      fetch: this.fetch,
+      storage: this.storage,
+      featureFlags: this.featureFlags,
+      ui: this.ui
     })
     this.signMessage = new SignMessageController(
       this.keystore,
@@ -581,6 +589,7 @@ export class MainController extends EventEmitter implements IMainController {
       phishing: this.phishing,
       dapps: this.dapps,
       erc7730: this.erc7730,
+      contractInfo: this.contractInfo,
       swapProvider: new SwapProviderParallelExecutor(
         [LiFiProvider, SocketProvider, UniswapProvider, CowSwapProvider],
         () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) })),
@@ -640,6 +649,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
       this.erc7730,
+      this.contractInfo,
       platform,
       eventEmitterRegistry
     )
@@ -689,6 +699,7 @@ export class MainController extends EventEmitter implements IMainController {
       phishing: this.phishing,
       dapps: this.dapps,
       erc7730: this.erc7730,
+      contractInfo: this.contractInfo,
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers,
@@ -728,13 +739,6 @@ export class MainController extends EventEmitter implements IMainController {
         this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
       },
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
-    })
-
-    this.contractInfo = new ContractInfoController({
-      eventEmitterRegistry,
-      fetch: this.fetch,
-      storage: this.storage,
-      featureFlags: this.featureFlags
     })
 
     this.initialLoadPromise = this.#load().finally(() => {
@@ -1527,10 +1531,13 @@ export class MainController extends EventEmitter implements IMainController {
     const updatedAccountsOpsByAccount =
       await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
 
+    const safeDeployStatusUpdates: Promise<void>[] = []
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+
+          safeDeployStatusUpdates.push(this.requests.handleSafeDeployStatusUpdate(op))
 
           // we scan for logs only if Success & a dapp interaction has been made
           // because only a dapp interaction might have a receiving txn after;
@@ -1556,6 +1563,7 @@ export class MainController extends EventEmitter implements IMainController {
         })
       }
     )
+    await Promise.all(safeDeployStatusUpdates)
 
     Object.entries(updatedAccountsOpsByAccount).forEach(
       async ([
@@ -2094,7 +2102,6 @@ export class MainController extends EventEmitter implements IMainController {
       txnId: null,
       userOpHash: null
     }
-
     if (submittedAccountOp) {
       meta.txnId = submittedAccountOp.txnId
       meta.identifiedBy = submittedAccountOp.identifiedBy

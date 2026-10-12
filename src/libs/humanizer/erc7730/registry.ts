@@ -13,6 +13,7 @@ import { execTransactionAbi } from '../../../consts/safe'
 import { Message } from '../../../interfaces/userRequest'
 import { AccountOp } from '../../accountOp/accountOp'
 import { Call } from '../../accountOp/types'
+import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../decodeCall'
 import { decodeMultiSend, SuccessfullyDecoded } from '../../safe/helpers'
 import { getAbiBytesCalldataWithPadding, multiSendInterface } from './calldata'
 import { getEip712EncodeTypeHash } from './eip712'
@@ -51,7 +52,6 @@ const permit2ApproveInterface = new Interface([
   'function approve(address token, address spender, uint160 amount, uint48 expiration)'
 ])
 const ABI_WORD_HEX_LENGTH = 64
-const CALLDATA_SELECTOR_HEX_LENGTH = 10
 const EXEC_TRANSACTION_STATIC_WORDS = 10
 const ERC2612_PERMIT_ENCODE_TYPE_HASH =
   '0x6e71edae12b1b97f4d1f60370fef10105fa2faae0126114a169c64845d6126c9'
@@ -151,6 +151,13 @@ const validateDescriptorField = (field: unknown, path: string): field is Erc7730
     throwInvalidRelayerResource(path)
   if (descriptorField.format !== undefined && typeof descriptorField.format !== 'string') {
     throwInvalidRelayerResource(path)
+  }
+
+  const { encryption } = descriptorField
+  if (encryption !== undefined) {
+    if (!isPlainObject(encryption)) throwInvalidRelayerResource(path)
+    if (encryption.fallbackLabel !== undefined && typeof encryption.fallbackLabel !== 'string')
+      throwInvalidRelayerResource(path)
   }
 
   const { fields } = descriptorField
