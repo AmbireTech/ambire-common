@@ -44,7 +44,7 @@ import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import { BuildRequest, IRequestsController } from '../../interfaces/requests'
-import { ISafeController } from '../../interfaces/safe'
+import { ISafeController, SafeDeploymentRequestError } from '../../interfaces/safe'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import {
@@ -147,7 +147,7 @@ const MESSAGE_ACCOUNT_NOT_IN_WALLET_ERROR =
   "This app asked to sign a message with an account that isn't in your wallet."
 
 type SafeDeploymentRequestResult =
-  | { success: false; error: string }
+  | { success: false; error: SafeDeploymentRequestError }
   | { success: true; alreadyDeployed: boolean }
 
 /**
@@ -1751,7 +1751,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             `buildSafeDeploymentRequest: missing Safe account (${!account?.safeCreation}), network (${!network}) or provider (${!provider}) for ${accountAddr} on chain ${chainId.toString()}`
           )
         })
-        return { success: false, error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE }
+        return { success: false, error: 'unavailable' }
       }
 
       const accountState = await this.#accounts.forceFetchPendingState(accountAddr, chainId)
@@ -1772,12 +1772,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       }
 
       if (!hasCompleteSafeCreationData(account.safeCreation)) {
-        return { success: false, error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE }
+        return { success: false, error: 'unavailable' }
       }
 
       const deploymentCall = await getSafeDeploymentCall(account, provider)
       if (!deploymentCall) {
-        return { success: false, error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE }
+        return { success: false, error: 'unavailable' }
       }
 
       // An app or the wallet may have queued the deployment while this one was being prepared.
@@ -1802,7 +1802,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const deploymentRequest = await this.#createOrUpdateCallsUserRequest(deploymentParams)
 
       if (!deploymentRequest) {
-        return { success: false, error: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE }
+        return { success: false, error: 'preparation-failed' }
       }
 
       const isDeploymentRequestAdded = () =>
@@ -1817,7 +1817,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
 
       if (!isDeploymentRequestAdded()) {
         deploymentRequest.signAccountOp.destroy()
-        return { success: false, error: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE }
+        return { success: false, error: 'preparation-failed' }
       }
 
       return { success: true, alreadyDeployed: false }
@@ -1830,7 +1830,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         error: error instanceof Error ? error : new Error(String(error)),
         sendCrashReport: true
       })
-      return { success: false, error: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE }
+      return { success: false, error: 'preparation-failed' }
     }
   }
 

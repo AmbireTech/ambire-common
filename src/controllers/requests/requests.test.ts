@@ -6,10 +6,7 @@ import { describe, expect, test } from '@jest/globals'
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
-import {
-  SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE,
-  SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
-} from '../../consts/safe'
+import { SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE } from '../../consts/safe'
 import {
   DAPP_REJECTS_BEFORE_OFFERING_SILENCE,
   DAPP_SILENCE_DURATION,
@@ -1621,7 +1618,7 @@ describe('RequestsController ', () => {
     expect(sendUiMessageSpy).toHaveBeenCalledWith({
       requestId: 'deploy-settings-request',
       ok: false,
-      error: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE
+      error: 'preparation-failed'
     })
     expect(errorListener).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1865,7 +1862,7 @@ describe('RequestsController ', () => {
     expect(sendUiMessageSpy).toHaveBeenCalledWith({
       requestId: 'deploy-settings-request',
       ok: false,
-      error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+      error: 'unavailable'
     })
   })
 
@@ -1889,7 +1886,7 @@ describe('RequestsController ', () => {
     expect(sendUiMessageSpy).toHaveBeenCalledWith({
       requestId: 'deploy-settings-request',
       ok: false,
-      error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+      error: 'unavailable'
     })
   })
 
