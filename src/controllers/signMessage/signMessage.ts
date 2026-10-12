@@ -706,6 +706,11 @@ export class SignMessageController
         }
       }
 
+      // A flagged app never gets an auto-login policy, whatever the toggle was left at
+      if (this.messageToSign.content.kind === 'siwe' && this.isAutoLoginBlockedByScamChecker) {
+        this.messageToSign.content.isAutoLoginEnabledByUser = false
+      }
+
       this.signedMessage = {
         ...this.messageToSign,
         timestamp: new Date().getTime(),
@@ -811,6 +816,16 @@ export class SignMessageController
   }
 
   /**
+   * Whether auto-login can't be turned on for the requesting app, because the scam checker flags
+   * it as unsafe. Clears as soon as the user trusts the app from the warning.
+   */
+  get isAutoLoginBlockedByScamChecker(): boolean {
+    if (!this.#dapps || !this.dapp?.url) return false
+
+    return this.#dapps.isDappFlaggedAsUnsafe(this.dapp.url.toLowerCase(), this.dapp.sessionId)
+  }
+
+  /**
    * Why this message needs the password/biometrics confirmation, or `null` when it does not. Only
    * a dapp the catalog knows can require it - elsewhere the confirmation cannot be remembered.
    * Mobile only. A Safe needs it only when its hot owners can meet the threshold on their own.
@@ -845,6 +860,7 @@ export class SignMessageController
       ...this,
       ...super.toJSON(),
       banners: this.banners,
+      isAutoLoginBlockedByScamChecker: this.isAutoLoginBlockedByScamChecker,
       signingAuthRequirement: this.signingAuthRequirement
     }
   }
