@@ -22,8 +22,12 @@ const PAYMASTER_DATA_TYPE = 'tuple(address adapter, bytes adapterData)'
 const ADAPTER_DATA_TYPE =
   'tuple(tuple(address processooor, bytes data) withdrawal, tuple(uint256[2] pA, uint256[2][2] pB, uint256[2] pC, uint256[8] pubSignals) proof)'
 
-/** `withdrawal.data`, as the adapter decodes it to split the funds. */
-const FEE_DATA_TYPE = 'tuple(address recipient, address feeRecipient, uint256 fee)'
+/**
+ * `withdrawal.data`, as the adapter decodes it to split the funds. `refundRecipient` gets the part
+ * of the fee gas does not use, in the paymaster's postOp.
+ */
+const FEE_DATA_TYPE =
+  'tuple(address recipient, address feeRecipient, uint256 fee, address refundRecipient)'
 
 const WITHDRAWN_VALUE_SIGNAL_INDEX = 2
 
@@ -147,7 +151,8 @@ const readBatchCalls = ({
  *
  * Security boundary: the SDK builds and signs the userOp in one call, so this is the one
  * place to verify, from the bytes the paymaster and pool act on, the token, the recipient, the
- * amount and the fee recipient. Any mismatch is refused before the user is asked to send it.
+ * amount, the fee recipient and the refund recipient. Any mismatch is refused before the user is
+ * asked to send it.
  *
  * A single deposit is paid straight to the recipient with no calls; a batch goes through the
  * single-use sender - see `readBatchCalls`.
@@ -209,6 +214,9 @@ export const readPaymasterWithdrawal = ({
     throw new Error('privacyPools: the withdrawal is routed through an unexpected adapter')
   if (!isSameAddress(feeData.feeRecipient, paymaster.paymasterAddress))
     throw new Error('privacyPools: the withdrawal fee goes to an unexpected address')
+  // Also for a batch, whose payout goes to the single-use sender, out of the wallet's reach
+  if (!isSameAddress(feeData.refundRecipient, recipient))
+    throw new Error('privacyPools: the withdrawal refunds unused gas to an unexpected address')
 
   const fee = BigInt(feeData.fee)
   const sponsoredValue = BigInt(pubSignals[WITHDRAWN_VALUE_SIGNAL_INDEX])

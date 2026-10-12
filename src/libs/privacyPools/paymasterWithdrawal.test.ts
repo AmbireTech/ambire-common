@@ -11,10 +11,10 @@ import {
 const RECIPIENT = getAddress('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')
 const ATTACKER = getAddress('0x0000000000000000000000000000000000000bad')
 const POOL = '0xf241d57c6debae225c0f2e6ea1529373c9a9c9fb'
-const ADAPTER = getAddress('0x0a230D83f16209E2692494a0ae139aAD8C96bde9')
+const ADAPTER = getAddress('0x521F578Ac6E894939364Dc27c7e6978Ecf7b7926')
 /** The USDC pool, which has an adapter of its own. */
 const USDC_POOL = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
-const USDC_ADAPTER = getAddress('0x16B7d484c634985FbafaaaC6f3ee14e9eFDa4889')
+const USDC_ADAPTER = getAddress('0x841E8F12FDbB2c55c9E054B4c6d07c2743E09cFC')
 const PAYMASTER = getAddress('0xe06CB96C57D2442f8F60F5017354BC08F7e91308')
 const ENTRY_POINT = getAddress('0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108')
 const SENDER = getAddress('0xA3a4D83896ec4b595668fA3d5430157cd235F720')
@@ -56,6 +56,7 @@ const encodePaymasterData = ({
   recipient = RECIPIENT,
   feeRecipient = PAYMASTER,
   fee = FEE,
+  refundRecipient = RECIPIENT,
   withdrawnValue = AMOUNT
 }: {
   adapter?: string
@@ -63,11 +64,12 @@ const encodePaymasterData = ({
   recipient?: string
   feeRecipient?: string
   fee?: bigint
+  refundRecipient?: string
   withdrawnValue?: bigint
 } = {}) => {
   const data = coder.encode(
-    ['tuple(address recipient, address feeRecipient, uint256 fee)'],
-    [{ recipient, feeRecipient, fee }]
+    ['tuple(address recipient, address feeRecipient, uint256 fee, address refundRecipient)'],
+    [{ recipient, feeRecipient, fee, refundRecipient }]
   )
   const adapterData = coder.encode(
     [
@@ -198,6 +200,16 @@ describe('libs/privacyPools/paymasterWithdrawal', () => {
     ).toThrow(/fee goes to an unexpected address/)
   })
 
+  it('refuses a withdrawal that refunds unused gas to anyone but the recipient', () => {
+    expect(() =>
+      read(buildWithdrawal({}, encodePaymasterData({ refundRecipient: ATTACKER })))
+    ).toThrow(/refunds unused gas to an unexpected address/)
+    // The zero address keeps the refund with the paymaster
+    expect(() =>
+      read(buildWithdrawal({}, encodePaymasterData({ refundRecipient: NATIVE })))
+    ).toThrow(/refunds unused gas to an unexpected address/)
+  })
+
   it('refuses a withdrawal routed through another adapter', () => {
     expect(() => read(buildWithdrawal({}, encodePaymasterData({ processooor: ATTACKER })))).toThrow(
       /unexpected adapter/
@@ -280,6 +292,21 @@ describe('libs/privacyPools/paymasterWithdrawal', () => {
         tokenAddress: USDC,
         noteCount: 2
       })
+    })
+
+    it('refuses a batch that refunds unused gas to the sender', () => {
+      expect(() =>
+        read(
+          buildBatchWithdrawal(
+            undefined,
+            encodePaymasterData({
+              recipient: SENDER,
+              refundRecipient: SENDER,
+              withdrawnValue: SPONSORED_VALUE
+            })
+          )
+        )
+      ).toThrow(/refunds unused gas to an unexpected address/)
     })
 
     it('refuses a sponsored deposit paid to anyone but the sender', () => {

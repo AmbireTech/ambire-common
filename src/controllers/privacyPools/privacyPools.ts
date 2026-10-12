@@ -24,6 +24,7 @@ import {
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
+import { Hex } from '../../interfaces/hex'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import {
@@ -1398,8 +1399,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         this.#getProtocol(chainId, seedId)
       )
 
+      // Checked by `isAddress` above
+      const sdkRecipient = recipient as Hex
       // Prices gas, proves and signs the userOp. Always a batch (a batch of one equals a plain
       // withdrawal): the SDK's plain withdrawal may pick a pending deposit, failing the proof.
+      // The unused gas is refunded to the recipient, which is the SDK's default too, so a
+      // different default can't leave it on a batch's single-use sender.
       const privateOp = await kohakuDebugPhase(
         debugTrace,
         'sdk.prepareUnshield (sync + proofs + gas + signing)',
@@ -1409,8 +1414,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
               asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(tokenAddress) },
               amount
             },
-            recipient as any,
-            { mode: 'paymaster', batch: true }
+            sdkRecipient,
+            { mode: 'paymaster', batch: true, refundRecipient: sdkRecipient }
           )
       )
       debugSummary.treeSizes = readKohakuDebugTreeSizes(() => protocol.dumpState())
@@ -1450,9 +1455,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
             expectedFee: feeEstimate.expectedFee.toString(),
             gasUsed: feeEstimate.gasUsed.toString(),
             gasCostWei: feeEstimate.gasCost.toString(),
-            gasCostEth: formatUnits(feeEstimate.gasCost, 18),
-            // A batch's refund goes to the single-use sender, so the user pays the whole cap
-            strandedOnSender: feeEstimate.senderRefund.toString()
+            gasCostEth: formatUnits(feeEstimate.gasCost, 18)
           }
         : 'unavailable'
 

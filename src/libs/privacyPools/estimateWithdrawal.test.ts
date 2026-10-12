@@ -12,7 +12,7 @@ import {
 // Taken from a real ETH withdrawal on Ethereum (tx 0x7bda295d…e518)
 const SENDER = getAddress('0xA3a4D83896ec4b595668fA3d5430157cd235F720')
 const RECIPIENT = getAddress('0x8300Fa08E29e3fCaC7013fc760EeEf3026D4e23e')
-const ADAPTER = getAddress('0x0a230D83f16209E2692494a0ae139aAD8C96bde9')
+const ADAPTER = getAddress('0x521F578Ac6E894939364Dc27c7e6978Ecf7b7926')
 const PAYMASTER = getAddress('0xe06CB96C57D2442f8F60F5017354BC08F7e91308')
 const ENTRY_POINT = getAddress('0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108')
 const SIMPLE_7702 = getAddress('0xe6Cae83BdE06E4c305530e199D7217f42808555B')
@@ -180,23 +180,22 @@ describe('estimatePaymasterWithdrawalFee', () => {
     await expect(estimate(provider)).resolves.toMatchObject({ expectedFee: FEE })
   })
 
-  test('reports the gas the userOp used and a refund stranded on the sender', async () => {
-    const strandedRefund = 123n
+  test('reports the gas the userOp used, and counts only a refund to the recipient', async () => {
     const { provider } = mockProvider({
       status: '0x1',
       logs: [
         ...withdrawalLogs(NATIVE_TRANSFERS, 5n * 10n ** 15n, 0n),
-        transferLog(NATIVE_TRANSFERS, PAYMASTER, SENDER, strandedRefund),
+        // Out of the recipient's reach, so it does not lower the fee
+        transferLog(NATIVE_TRANSFERS, PAYMASTER, SENDER, 123n),
         // Not from the paymaster, so not a refund
-        transferLog(NATIVE_TRANSFERS, ADAPTER, SENDER, 7n)
+        transferLog(NATIVE_TRANSFERS, ADAPTER, RECIPIENT, 7n)
       ]
     })
 
     await expect(estimate(provider)).resolves.toEqual({
       expectedFee: FEE,
       gasUsed: 804167n,
-      gasCost: 823625286561441n,
-      senderRefund: strandedRefund
+      gasCost: 823625286561441n
     })
   })
 

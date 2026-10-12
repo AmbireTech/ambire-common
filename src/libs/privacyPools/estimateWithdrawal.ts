@@ -104,8 +104,6 @@ export type PrivacyPoolsWithdrawalFeeEstimate = {
   gasUsed: bigint
   /** What that gas cost the paymaster, in wei. */
   gasCost: bigint
-  /** A batch's refund, paid to the single-use sender, where nobody can reach it. */
-  senderRefund: bigint
 }
 
 /**
@@ -113,8 +111,7 @@ export type PrivacyPoolsWithdrawalFeeEstimate = {
  * the latest block, as the bundler will submit it.
  *
  * The proof's fee is a cap (all gas limits at the max gas price, plus a margin); the paymaster
- * refunds the unspent part to the recipient. A batch's refund goes to the single-use sender after
- * it has forwarded the funds, so its expected fee is the whole fee.
+ * refunds the unspent part to the recipient - a batch's too, as `readPaymasterWithdrawal` checks.
  *
  * A simulated call carries no 7702 authorization, so the sender's delegated code is set by a state
  * override; everything else is real on-chain state.
@@ -199,25 +196,23 @@ export const estimatePaymasterWithdrawalFee = async ({
     ? SIMULATED_NATIVE_TRANSFER_ADDRESS
     : tokenAddress
   // The adapter pays the recipient too, so only what comes from the paymaster is the refund
-  const sumRefundsTo = (refundRecipient: string) =>
-    logs.reduce((sum, log) => {
-      // Three topics: an ERC-20 transfer. An NFT's shares the signature but indexes a fourth
-      if (
-        !isSameAddress(log.address, refundTokenAddress) ||
-        log.topics[0] !== TRANSFER_TOPIC ||
-        log.topics.length !== 3
-      )
-        return sum
+  const refund = logs.reduce((sum, log) => {
+    // Three topics: an ERC-20 transfer. An NFT's shares the signature but indexes a fourth
+    if (
+      !isSameAddress(log.address, refundTokenAddress) ||
+      log.topics[0] !== TRANSFER_TOPIC ||
+      log.topics.length !== 3
+    )
+      return sum
 
-      const transfer = TRANSFER_INTERFACE.parseLog(log)
-      if (!transfer) return sum
+    const transfer = TRANSFER_INTERFACE.parseLog(log)
+    if (!transfer) return sum
 
-      const { from, to, value } = transfer.args
-      if (!isSameAddress(from, paymasterAddress) || !isSameAddress(to, refundRecipient)) return sum
+    const { from, to, value } = transfer.args
+    if (!isSameAddress(from, paymasterAddress) || !isSameAddress(to, recipient)) return sum
 
-      return sum + BigInt(value)
-    }, 0n)
-  const refund = sumRefundsTo(recipient)
+    return sum + BigInt(value)
+  }, 0n)
 
   if (refund > fee)
     throw new Error('privacyPools: the simulated refund is larger than the withdrawal fee')
@@ -225,7 +220,6 @@ export const estimatePaymasterWithdrawalFee = async ({
   return {
     expectedFee: fee - refund,
     gasUsed: BigInt(userOperationResult.actualGasUsed),
-    gasCost: BigInt(userOperationResult.actualGasCost),
-    senderRefund: sumRefundsTo(userOperation.sender)
+    gasCost: BigInt(userOperationResult.actualGasCost)
   }
 }

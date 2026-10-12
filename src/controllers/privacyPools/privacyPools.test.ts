@@ -112,18 +112,20 @@ const encodeBatchCalls = (sponsoredValue: bigint) =>
  * where `readPaymasterWithdrawal` checks them. The proof itself is never verified off chain.
  *
  * As a batch, it spends two deposits: the sponsored one is paid to the sender, which forwards it.
+ * The unused gas is refunded to the recipient either way.
  */
 const buildPreparedWithdrawal = ({ isBatch = false }: { isBatch?: boolean } = {}) => {
   const coder = AbiCoder.defaultAbiCoder()
   const adapter = ETHEREUM_PAYMASTER.poolAdapters[ETHEREUM_ETH_POOL]!
   const sponsoredValue = isBatch ? (WITHDRAWAL_AMOUNT * 3n) / 5n : WITHDRAWAL_AMOUNT
   const feeData = coder.encode(
-    ['tuple(address recipient, address feeRecipient, uint256 fee)'],
+    ['tuple(address recipient, address feeRecipient, uint256 fee, address refundRecipient)'],
     [
       {
         recipient: isBatch ? WITHDRAWAL_SENDER : WITHDRAWAL_RECIPIENT,
         feeRecipient: ETHEREUM_PAYMASTER.paymasterAddress,
-        fee: WITHDRAWAL_FEE
+        fee: WITHDRAWAL_FEE,
+        refundRecipient: WITHDRAWAL_RECIPIENT
       }
     ]
   )
@@ -170,7 +172,7 @@ const buildPreparedWithdrawal = ({ isBatch = false }: { isBatch?: boolean } = {}
 
 /**
  * What a node answers when it runs that withdrawal and the paymaster refunds part of the fee - to
- * whoever the withdrawal was paid out to.
+ * the recipient, unless another address is given.
  */
 const successfulSimulation = (refundRecipient = WITHDRAWAL_RECIPIENT) => [
   {
@@ -1525,24 +1527,24 @@ describe('PrivacyPoolsController', () => {
       await prepareSignedWithdrawal()
 
       const [protocol] = protocols
-      expect(protocol?.unshieldOptions).toEqual({ mode: 'paymaster', batch: true })
+      expect(protocol?.unshieldOptions).toEqual({
+        mode: 'paymaster',
+        batch: true,
+        refundRecipient: WITHDRAWAL_RECIPIENT
+      })
     })
 
     describe('combining deposits', () => {
       it('describes it by the forward to the recipient, not by the single-use sender', async () => {
-        simulateWithdrawal = async () => successfulSimulation(WITHDRAWAL_SENDER)
-
         const { controller } = await prepareSignedWithdrawal({ isBatch: true })
 
-        // Its refund goes to the single-use sender, so the recipient gets the amount net of the cap
+        // Its refund goes to the recipient too, so they get the amount net of the expected fee
         expect(describeHumanization(controller.operation?.humanization)).toEqual(
-          humanizedSend(WITHDRAWAL_AMOUNT - WITHDRAWAL_FEE)
+          humanizedSend(WITHDRAWAL_AMOUNT - (WITHDRAWAL_FEE - WITHDRAWAL_REFUND))
         )
       })
 
-      it('shows the whole fee, since the refund goes to the single-use sender', async () => {
-        simulateWithdrawal = async () => successfulSimulation(WITHDRAWAL_SENDER)
-
+      it('shows the fee net of the refund, which goes to the recipient', async () => {
         const { controller } = await prepareSignedWithdrawal({ isBatch: true })
 
         expect(controller.operation).toMatchObject({
@@ -1551,9 +1553,17 @@ describe('PrivacyPoolsController', () => {
           quote: {
             feeAmount: WITHDRAWAL_FEE,
             amountAfterFee: WITHDRAWAL_AMOUNT - WITHDRAWAL_FEE,
-            expectedFeeAmount: WITHDRAWAL_FEE
+            expectedFeeAmount: WITHDRAWAL_FEE - WITHDRAWAL_REFUND
           }
         })
+      })
+
+      it('does not count a refund to the single-use sender', async () => {
+        simulateWithdrawal = async () => successfulSimulation(WITHDRAWAL_SENDER)
+
+        const { controller } = await prepareSignedWithdrawal({ isBatch: true })
+
+        expect(controller.operation?.quote?.expectedFeeAmount).toBe(WITHDRAWAL_FEE)
       })
 
       const batchNotConfirmedError =
