@@ -15,24 +15,13 @@ import { BlacklistedStatus, IPhishingController } from '../../interfaces/phishin
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
 import { getDappIdFromUrl, getNormalizedHostnameFromUrl } from '../../libs/dapps/helpers'
-import {
-  applySortedDelta,
-  isSortedUnique,
-  sortedIncludes,
-  toSortedUnique
-} from '../../libs/sortedList/sortedList'
+import { applySortedDelta, sortedIncludes, toSortedUnique } from '../../libs/sortedList/sortedList'
 import { fetchWithTimeout } from '../../utils/fetch'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SUSPICIOUS_HOSTING_DOMAINS } from './suspiciousHostingDomains'
 
 const SCAMCHECKER_BASE_URL = 'https://cena.ambire.com/api/v3/scamchecker'
 const PHISHING_ACTIVE_VIEW_TYPES = new Set(['request-window', 'popup', 'tab'])
-
-// TEMP(benchmark): timing logs for comparing the sorted-list approach on a real device. Remove
-// before merging.
-const logPhishingTiming = (label: string, startedAt: number) => {
-  console.log(`[PhishingBench] ${label}: ${(performance.now() - startedAt).toFixed(1)}ms`)
-}
 
 function isSuspiciousHostingDomain(url: string): boolean {
   // The canonical hostname, so a fully-qualified host ("my-dapp.vercel.app.") is matched against
@@ -263,41 +252,17 @@ export class PhishingController extends EventEmitter implements IPhishingControl
   async #load() {
     await this.#featureFlags.initialLoadPromise
 
-    let startedAt = performance.now()
     const phishing = await this.#storage.get('phishing', {
       version: 0,
       updatedAt: 0,
       domains: [],
       addresses: []
     })
-    logPhishingTiming(
-      `load: storage.get (domains=${phishing.domains.length}, addresses=${phishing.addresses.length})`,
-      startedAt
-    )
 
     this.#version = phishing.version
     this.#updatedAt = phishing.updatedAt
-
-    startedAt = performance.now()
-    // Lists stored before they were kept sorted are sorted once and written back, so every later
-    // load only pays for the check.
-    const isStoredListSorted =
-      isSortedUnique(phishing.domains) && isSortedUnique(phishing.addresses)
-    this.#domains = isStoredListSorted ? phishing.domains : toSortedUnique(phishing.domains)
-    this.#addresses = isStoredListSorted ? phishing.addresses : toSortedUnique(phishing.addresses)
-    logPhishingTiming(`load: sorted check (wasSorted=${isStoredListSorted})`, startedAt)
-
-    if (!isStoredListSorted) {
-      startedAt = performance.now()
-      // Awaited before the update interval starts, so the two writes never run in parallel
-      await this.#storage.set('phishing', {
-        version: this.#version,
-        updatedAt: phishing.updatedAt,
-        domains: this.#domains,
-        addresses: this.#addresses
-      })
-      logPhishingTiming('load: one-time sorted re-save', startedAt)
-    }
+    this.#addresses = phishing.addresses
+    this.#domains = phishing.domains
 
     if (this.#featureFlags.isFeatureEnabled('scamAndPhishingChecker')) {
       this.updatePhishingInterval.start({ runImmediately: true })
@@ -394,7 +359,6 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       if (typeof phishing.toVersion !== 'number')
         throw new Error(`Phishing delta has no version to move to (url: ${res.url})`)
 
-      const startedAt = performance.now()
       this.#domains = applySortedDelta(
         this.#domains,
         domains.map(({ op, domain }: PhishingDeltaEntry) => ({ op, value: domain! }))
@@ -408,7 +372,6 @@ export class PhishingController extends EventEmitter implements IPhishingControl
           value: address!.toLowerCase()
         }))
       )
-      logPhishingTiming(`update: apply delta (ops=${domains.length + addresses.length})`, startedAt)
 
       this.#version = phishing.toVersion
     } else {
@@ -420,16 +383,11 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       if (addresses.some((address) => typeof address !== 'string'))
         throw new Error(`Phishing snapshot holds addresses that are not strings (url: ${res.url})`)
 
-      const startedAt = performance.now()
       this.#version = phishing.version
       this.#domains = toSortedUnique(domains)
       // Normalized to lowercase so getAddressBlacklistedStatus can do a plain lookup, regardless
       // of the casing the relayer used.
       this.#addresses = toSortedUnique(addresses.map((address: string) => address.toLowerCase()))
-      logPhishingTiming(
-        `update: full snapshot sort (domains=${domains.length}, addresses=${addresses.length})`,
-        startedAt
-      )
     }
 
     this.#shouldSyncDapps = true
@@ -438,7 +396,6 @@ export class PhishingController extends EventEmitter implements IPhishingControl
     const updatedAt = Date.now()
     this.#updatedAt = updatedAt
 
-    const writeStartedAt = performance.now()
     // The lists are replaced, never mutated, so they can be handed to storage without a copy
     await this.#storage.set('phishing', {
       version: this.#version,
@@ -446,7 +403,6 @@ export class PhishingController extends EventEmitter implements IPhishingControl
       domains: this.#domains,
       addresses: this.#addresses
     })
-    logPhishingTiming('update: storage.set', writeStartedAt)
 
     if (this.updatePhishingInterval.currentTimeout === PHISHING_FAILED_TO_GET_UPDATE_INTERVAL) {
       this.updatePhishingInterval.updateTimeout({ timeout: PHISHING_INACTIVE_UPDATE_INTERVAL })
