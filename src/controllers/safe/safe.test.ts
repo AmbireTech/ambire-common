@@ -4,15 +4,24 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals'
 
 import { Hex } from '../../interfaces/hex'
 import { SafeAccountByOwner } from '../../interfaces/safe'
-import { findDeployData, getApiKit, getSafeAccountByOwner } from '../../libs/safe/safe'
+import {
+  fetchAllPending,
+  findDeployData,
+  getApiKit,
+  getSafeAccountByOwner
+} from '../../libs/safe/safe'
 import { SafeController } from './safe'
 
 jest.mock('../../libs/safe/safe', () => ({
   ...jest.requireActual('../../libs/safe/safe'),
+  fetchAllPending: jest.fn(),
   findDeployData: jest.fn(),
   getApiKit: jest.fn(),
   getSafeAccountByOwner: jest.fn()
 }))
+
+// The pause between requests to the Safe API is not what is tested
+jest.mock('../../utils/wait', () => jest.fn(async () => {}))
 
 const OWNER = '0xD8293ad21678c6F09Da139b4B62D38e514a03B78'
 const OTHER_OWNER = '0x94b0080a00579c1307b0ef2c499ad98a8ce58e58'
@@ -334,5 +343,192 @@ describe('SafeController findSafesByOwner', () => {
       getAddress(SAFE_A)
     ])
     expect(getOwnerSearch(controller)?.status).toBe('DONE')
+  })
+})
+
+describe('SafeController pending counts', () => {
+  const NOT_A_SAFE = '0x0000000000000000000000000000000000000004'
+  const safeCreation = { factoryAddr: '0x', singleton: '0x', setupData: '0x', saltNonce: '0x' }
+  const safeAccount = (addr: string) => ({ addr, safeCreation, associatedKeys: [OWNER] })
+
+  const createPendingCountsController = ({
+    accountStates
+  }: {
+    accountStates: Record<string, Record<string, { isDeployed: boolean; threshold: number }>>
+  }) => {
+    const accounts = {
+      accounts: [
+        safeAccount(SAFE_A),
+        safeAccount(SAFE_B),
+        { addr: NOT_A_SAFE, associatedKeys: [] }
+      ],
+      accountStates,
+      initialLoadPromise: Promise.resolve(),
+      getOrFetchAccountStates: jest.fn(async (addr: string) => accountStates[addr])
+    }
+    const controller = new SafeController({
+      accounts: accounts as any,
+      networks: {
+        initialLoadPromise: Promise.resolve(),
+        networks: [{ chainId: 1n }, { chainId: 10n }, { chainId: 8453n }]
+      } as any,
+      providers: { providers: {} } as any,
+      storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any
+    })
+
+    return { controller, accounts }
+  }
+
+  const pendingResponse = (
+    chainId: bigint,
+    txnsCount: number,
+    confirmationsPerMessage: number[]
+  ) => ({
+    [chainId.toString()]: {
+      txns: Array.from({ length: txnsCount }, (_, i) => ({ safeTxHash: `0x${i}` })),
+      messages: confirmationsPerMessage.map((confirmations, i) => ({
+        messageHash: `0x${i}`,
+        created: new Date().toISOString(),
+        confirmations: Array.from({ length: confirmations }, () => ({}))
+      }))
+    }
+  })
+
+  beforeEach(() => {
+    jest.mocked(fetchAllPending).mockReset()
+    jest
+      .mocked(fetchAllPending)
+      .mockImplementation(async (networks) => pendingResponse(networks[0]!.chainId, 1, []) as any)
+  })
+
+  it('counts the pending txns and the messages that still need signatures, per chain', async () => {
+    const { controller } = createPendingCountsController({
+      accountStates: { [SAFE_A]: { '1': { isDeployed: true, threshold: 2 } } }
+    })
+    await controller.initialLoadPromise
+    // the message with 2 of 2 confirmations is complete, so it's not pending
+    jest.mocked(fetchAllPending).mockResolvedValueOnce(pendingResponse(1n, 2, [1, 2]) as any)
+
+    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 2 }])
+
+    expect(controller.pendingCountBySafe[SAFE_A]).toEqual({ '1': 3 })
+  })
+
+  it('updates only the chain that was fetched and keeps the counts of the others', async () => {
+    const { controller } = createPendingCountsController({
+      accountStates: {
+        [SAFE_A]: {
+          '1': { isDeployed: true, threshold: 1 },
+          '10': { isDeployed: true, threshold: 1 }
+        }
+      }
+    })
+    await controller.initialLoadPromise
+    jest.mocked(fetchAllPending).mockResolvedValueOnce(pendingResponse(1n, 2, []) as any)
+    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 1 }])
+    jest.mocked(fetchAllPending).mockResolvedValueOnce(pendingResponse(10n, 0, []) as any)
+
+    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 10n, threshold: 1 }])
+
+    expect(controller.pendingCountBySafe[SAFE_A]).toEqual({ '1': 2, '10': 0 })
+  })
+
+  it('fetches the other Safes on their deployed chains only, skipping the selected one and non-Safes', async () => {
+    const { controller } = createPendingCountsController({
+      accountStates: {
+        [SAFE_A]: { '1': { isDeployed: true, threshold: 1 } },
+        [SAFE_B]: {
+          '1': { isDeployed: true, threshold: 1 },
+          '10': { isDeployed: false, threshold: 0 },
+          '8453': { isDeployed: true, threshold: 2 }
+        }
+      }
+    })
+    await controller.initialLoadPromise
+
+    await controller.updateOtherSafesPendingCounts(SAFE_A)
+
+    expect(jest.mocked(fetchAllPending).mock.calls).toEqual([
+      [[{ chainId: 1n, threshold: 1 }], SAFE_B],
+      [[{ chainId: 8453n, threshold: 2 }], SAFE_B]
+    ])
+    expect(controller.pendingCountBySafe).toEqual({ [SAFE_B]: { '1': 1, '8453': 1 } })
+  })
+
+  it('skips a Safe whose counts are younger than 5 minutes and fetches it again after', async () => {
+    const { controller } = createPendingCountsController({
+      accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1 } } }
+    })
+    await controller.initialLoadPromise
+    const now = Date.now()
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(now)
+
+    try {
+      await controller.updateOtherSafesPendingCounts(SAFE_A)
+      dateNowSpy.mockReturnValue(now + 5 * 60 * 1000 - 1)
+      await controller.updateOtherSafesPendingCounts(SAFE_A)
+      expect(fetchAllPending).toHaveBeenCalledTimes(1)
+
+      dateNowSpy.mockReturnValue(now + 5 * 60 * 1000)
+      await controller.updateOtherSafesPendingCounts(SAFE_A)
+      expect(fetchAllPending).toHaveBeenCalledTimes(2)
+    } finally {
+      dateNowSpy.mockRestore()
+    }
+  })
+
+  it('tracks when each Safe was fetched separately', async () => {
+    const { controller } = createPendingCountsController({ accountStates: {} })
+    await controller.initialLoadPromise
+
+    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 1 }])
+
+    expect(controller.shouldSkipFetchPending(SAFE_A)).toBe(true)
+    expect(controller.shouldSkipFetchPending(SAFE_B)).toBe(false)
+  })
+
+  it('keeps the last counts and goes on with the next chain when a fetch fails', async () => {
+    const { controller } = createPendingCountsController({
+      accountStates: {
+        [SAFE_B]: {
+          '1': { isDeployed: true, threshold: 1 },
+          '10': { isDeployed: true, threshold: 1 }
+        }
+      }
+    })
+    await controller.initialLoadPromise
+    jest.mocked(fetchAllPending).mockResolvedValueOnce(pendingResponse(1n, 4, []) as any)
+    await controller.fetchPending(SAFE_B as Hex, [{ chainId: 1n, threshold: 1 }])
+    const onError = jest.fn()
+    controller.onError(onError)
+    jest
+      .mocked(fetchAllPending)
+      .mockRejectedValueOnce(new Error('Too many requests'))
+      .mockResolvedValueOnce(pendingResponse(10n, 1, []) as any)
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 5 * 60 * 1000)
+
+    try {
+      await controller.updateOtherSafesPendingCounts(SAFE_A)
+    } finally {
+      dateNowSpy.mockRestore()
+    }
+
+    expect(controller.pendingCountBySafe[SAFE_B]).toEqual({ '1': 4, '10': 1 })
+    expect(onError).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs a single update at a time', async () => {
+    const { controller, accounts } = createPendingCountsController({
+      accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1 } } }
+    })
+    await controller.initialLoadPromise
+
+    await Promise.all([
+      controller.updateOtherSafesPendingCounts(SAFE_A),
+      controller.updateOtherSafesPendingCounts(SAFE_A)
+    ])
+
+    expect(accounts.getOrFetchAccountStates).toHaveBeenCalledTimes(1)
+    expect(fetchAllPending).toHaveBeenCalledTimes(1)
   })
 })

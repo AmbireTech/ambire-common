@@ -802,15 +802,25 @@ export class MainController extends EventEmitter implements IMainController {
             await this.keystore.updateKeystoreKeys()
           }
         )
+        // A view added or focused while the wallet was locked fetched nothing for the other
+        // Safes. The other operations that set this status are cheap here, as recently
+        // fetched Safes are skipped.
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#fetchAllSafesPending()
       }
     })
 
     this.ui.uiEvent.on('addView', async (view: View) => {
+      if (this.keystore.isUnlocked) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#fetchAllSafesPending()
+      }
       if (isExtensionOverlayView(view)) await this.onPopupOpen(view.id)
     })
 
     this.ui.uiEvent.on('viewFocus', () => {
-      this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#fetchAllSafesPending()
     })
   }
 
@@ -1788,6 +1798,19 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     return this.#fetchSafeTxnsPromise
+  }
+
+  /**
+   * Fetches the pending txns of the selected Safe, and then the pending counts of the other
+   * Safes, one after the other so they don't compete for the Safe API's rate limit
+   */
+  async #fetchAllSafesPending() {
+    await this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
+
+    // do not make Safe requests for the other Safes if the wallet is locked
+    if (!this.keystore.isUnlocked) return
+
+    await this.safe.updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
   }
 
   async refreshSafeTxns() {
