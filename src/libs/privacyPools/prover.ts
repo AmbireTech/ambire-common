@@ -1,14 +1,72 @@
-import { Prover } from '@fatsolutions/privacy-pools-core-circuits'
+import {
+  CircuitInputSignalsMap,
+  CircuitName,
+  CircuitPublicSignalsMap,
+  Prover
+} from '@fatsolutions/privacy-pools-core-circuits'
 
 import { PRIVACY_POOLS_CIRCUIT_PATHS } from '../../consts/privacyPools'
 
 type KohakuProver = Awaited<ReturnType<typeof Prover>>
 
+type KohakuProveResult = Awaited<ReturnType<KohakuProver['prove']>>
+
+/** What a platform prover may be given besides the circuit inputs. */
+export type PrivacyPoolsProveOptions = {
+  /** Aborted when the operation the proof is for is cancelled. A prover may ignore it. */
+  signal?: AbortSignal
+}
+
 /**
- * The only part of a prover the SDK calls. Narrowed so a platform can prove elsewhere, e.g. in the
- * extension's offscreen document, on several threads.
+ * The only part of a prover the SDK calls, plus `options`, which the SDK never passes - see
+ * `withCancellableProving`. Narrowed so a platform can prove elsewhere, e.g. in the extension's
+ * offscreen document, on several threads.
  */
-export type PrivacyPoolsProver = Pick<KohakuProver, 'prove'>
+export type PrivacyPoolsProver = {
+  prove: <C extends CircuitName>(
+    circuit: C,
+    signals: CircuitInputSignalsMap[C],
+    options?: PrivacyPoolsProveOptions
+  ) => Promise<
+    Omit<KohakuProveResult, 'mappedSignals'> & { mappedSignals: CircuitPublicSignalsMap[C] }
+  >
+}
+
+/** The error a cancelled proof fails with. */
+export const PRIVACY_POOLS_PROOF_CANCELLED_MESSAGE = 'privacyPools: the proof was cancelled'
+
+const throwIfCancelled = (signal: AbortSignal | undefined) => {
+  if (signal?.aborted) throw new Error(PRIVACY_POOLS_PROOF_CANCELLED_MESSAGE)
+}
+
+/**
+ * Lets a cancelled operation stop at its proofs, the slow part. The SDK has no way to cancel, so
+ * `getSignal` is read on every proof, for the operation proving at that moment.
+ *
+ * Fails a proof asked for once cancelled. A prover that stops mid-proof (the offscreen one) fails
+ * at once; one that cannot (the in-process one) is waited for and its result dropped, so a
+ * cancelled proof never runs beside the next operation's.
+ */
+export const withCancellableProving =
+  (
+    proverFactory: PrivacyPoolsProverFactory,
+    getSignal: () => AbortSignal | null
+  ): PrivacyPoolsProverFactory =>
+  async () => {
+    const prover = await proverFactory()
+
+    const prove: PrivacyPoolsProver['prove'] = async (circuit, signals) => {
+      const signal = getSignal() ?? undefined
+      throwIfCancelled(signal)
+
+      const result = await prover.prove(circuit, signals, { signal })
+      throwIfCancelled(signal)
+
+      return result
+    }
+
+    return { prove }
+  }
 
 /** Called by the SDK once per operation. Should reuse one prover rather than build a new one. */
 export type PrivacyPoolsProverFactory = () => Promise<PrivacyPoolsProver>

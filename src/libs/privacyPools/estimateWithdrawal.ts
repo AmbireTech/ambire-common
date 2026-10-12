@@ -96,6 +96,17 @@ const packUserOperation = (userOperation: PrivacyPoolsSerializedUserOperation) =
   }
 }
 
+/**
+ * Thrown when the simulation ran and the withdrawal failed in it - unlike a node that could not
+ * run it. A proof can go stale, e.g. once the association set's root moves on.
+ */
+export class PrivacyPoolsWithdrawalWouldFailError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
+    this.name = 'PrivacyPoolsWithdrawalWouldFailError'
+  }
+}
+
 /** What running a prepared withdrawal showed it will cost. */
 export type PrivacyPoolsWithdrawalFeeEstimate = {
   /** The fee locked into the proof minus what the paymaster refunds to the recipient. */
@@ -116,7 +127,8 @@ export type PrivacyPoolsWithdrawalFeeEstimate = {
  * A simulated call carries no 7702 authorization, so the sender's delegated code is set by a state
  * override; everything else is real on-chain state.
  *
- * Throws when the node cannot simulate it or the withdrawal would fail.
+ * Throws when the node cannot simulate it, or `PrivacyPoolsWithdrawalWouldFailError` when the
+ * withdrawal would fail.
  */
 export const estimatePaymasterWithdrawalFee = async ({
   provider,
@@ -176,7 +188,7 @@ export const estimatePaymasterWithdrawalFee = async ({
   const call: SimulatedCall | undefined = response?.[0]?.calls?.[0]
   if (!call) throw new Error('privacyPools: the withdrawal simulation returned no result')
   if (BigInt(call.status) !== 1n)
-    throw new Error(
+    throw new PrivacyPoolsWithdrawalWouldFailError(
       `privacyPools: the withdrawal would fail on chain (${call.error?.message || 'reverted'})`,
       { cause: call.error?.data }
     )
@@ -190,7 +202,9 @@ export const estimatePaymasterWithdrawalFee = async ({
     throw new Error('privacyPools: the withdrawal simulation emitted no user operation')
   const userOperationResult = ENTRY_POINT_INTERFACE.parseLog(userOperationEvent)?.args
   if (!userOperationResult?.success)
-    throw new Error('privacyPools: the withdrawal would revert on chain')
+    throw new PrivacyPoolsWithdrawalWouldFailError(
+      'privacyPools: the withdrawal would revert on chain'
+    )
 
   const refundTokenAddress = isPrivacyPoolsNativeAsset(tokenAddress)
     ? SIMULATED_NATIVE_TRANSFER_ADDRESS

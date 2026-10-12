@@ -64,7 +64,11 @@ import {
   withKohakuDebugProver,
   withKohakuDebugTiming
 } from '../../libs/privacyPools/kohakuDebug'
-import { createProverFactory, PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
+import {
+  createProverFactory,
+  PrivacyPoolsProverFactory,
+  withCancellableProving
+} from '../../libs/privacyPools/prover'
 import { createPrivacyPoolsDataService } from '../../libs/privacyPools/dataService'
 import { encodePrivacyPoolsDeposit, readPrivacyPoolsDeposit } from '../../libs/privacyPools/deposit'
 import { readEntrypointAssetConfig } from '../../libs/privacyPools/entrypointAssetConfig'
@@ -74,6 +78,7 @@ import { toPrivacyPoolsSdkError } from '../../libs/privacyPools/sdkError'
 import {
   PrivacyPoolsSerializedUserOperation,
   PrivacyPoolsWithdrawalFeeEstimate,
+  PrivacyPoolsWithdrawalWouldFailError,
   estimatePaymasterWithdrawalFee
 } from '../../libs/privacyPools/estimateWithdrawal'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
@@ -91,6 +96,16 @@ const SYNC_MAX_AGE_MS = 10 * 60 * 1000
 
 /** After this, a proved withdrawal is shown with only its fee cap. */
 const WITHDRAWAL_ESTIMATION_TIMEOUT_MS = 8 * 1000
+
+/**
+ * A proved withdrawal older than this is run again before it is sent: its gas price and the roots
+ * it was proved against are fixed in it, while the chain moves on. Like the regular Send's
+ * re-estimation interval.
+ */
+const WITHDRAWAL_RECHECK_AFTER_MS = 30 * 1000
+
+/** Shown in the confirmation sheet when a proved withdrawal can no longer be sent as it is. */
+const STALE_WITHDRAWAL_MESSAGE = 'This transfer has expired. Go back to prepare it again.'
 
 /** The Send screen of a Privacy Pools account, whose form outlives a closed popup. */
 const SEND_ROUTE = 'privacy-pools-send'
@@ -116,6 +131,33 @@ const ERC20_INTERFACE = new Interface([
  * passed alongside, so the two can never disagree.
  */
 type AssetRef = { tokenAddress: string }
+
+type WithdrawalSimulationParams = AssetRef & {
+  chainId: string
+  userOperation: PrivacyPoolsSerializedUserOperation
+  paymaster: PrivacyPoolsPaymasterConfig
+  recipient: string
+  /** The fee locked into the proof. */
+  fee: bigint
+}
+
+/**
+ * A proved-but-unsent withdrawal, with what was read from its payload and when it was last known to
+ * go through: when proved, or when run again since.
+ */
+type PendingWithdrawal = {
+  privateOp: PreparedPaymasterWithdrawal
+  paymasterWithdrawal: ReturnType<typeof readPaymasterWithdrawal>
+  checkedAt: number
+}
+
+/**
+ * Running a proved withdrawal on the latest block: it 'ran', it 'would-fail', or it is
+ * 'unavailable' - the node cannot run it, or did not answer in time.
+ */
+type WithdrawalSimulation =
+  | { status: 'ran'; estimate: PrivacyPoolsWithdrawalFeeEstimate }
+  | { status: 'would-fail' | 'unavailable'; error: Error | null }
 
 /**
  * A paymaster-sponsored withdrawal: an ERC-4337 userOp signed by its single-use sender. Narrowed
@@ -149,6 +191,25 @@ const toReadableWithdrawalError = (error: unknown) => {
     error: sdkError
   })
 }
+
+const WITHDRAWAL_CANCELLED_MESSAGE = 'privacyPools: the withdrawal was cancelled'
+
+const throwIfWithdrawalCancelled = (signal: AbortSignal) => {
+  if (signal.aborted) throw new Error(WITHDRAWAL_CANCELLED_MESSAGE)
+}
+
+/** Waits for `promise`, but fails as soon as `signal` aborts. `promise` itself runs on. */
+const untilWithdrawalCancelled = <T>(promise: Promise<T>, signal: AbortSignal): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(new Error(WITHDRAWAL_CANCELLED_MESSAGE))
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
+
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
 
 /**
  * Privacy Pools state: one plugin per (chain, recovery phrase) and its notes. Scoped by phrase, as note secrets are derived from it - accounts without one (hardware,
@@ -249,7 +310,20 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #broadcastDeposits = new Map<bigint, number>()
 
   /** The proved-but-unsent withdrawal. Private: it holds the proof and the signed userOp. */
-  #pendingWithdrawal: PreparedPaymasterWithdrawal | null = null
+  #pendingWithdrawal: PendingWithdrawal | null = null
+
+  /** Cancels the withdrawal being prepared, if any. See `#dropUnsentWithdrawal`. */
+  #preparationAbortController: AbortController | null = null
+
+  /** The signal of the withdrawal proving now, which its proofs are cancelled by. */
+  #provingSignal: AbortSignal | null = null
+
+  /**
+   * Settles once the last started withdrawal preparation has stopped. The SDK cannot be stopped
+   * between proofs, nor an in-process proof midway, so a cancelled preparation may still run for a
+   * while; the next one waits for it rather than prove beside it on the same plugin.
+   */
+  #preparationQueue: Promise<void> = Promise.resolve()
 
   #proverFactory: PrivacyPoolsProverFactory
 
@@ -340,8 +414,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#onAccountsRemoved = onAccountsRemoved
     this.#ui.uiEvent.on('updateView', this.#onUpdateView)
     this.#ui.uiEvent.on('removeView', this.#onRemoveView)
-    this.#proverFactory = withKohakuDebugProver(
-      proverFactory ?? createProverFactory(circuitsBaseUrl)
+    this.#proverFactory = withCancellableProving(
+      withKohakuDebugProver(proverFactory ?? createProverFactory(circuitsBaseUrl)),
+      () => this.#provingSignal
     )
 
     // Cleared when done so the resolved promise isn't carried in the state sent to the UI.
@@ -390,6 +465,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         if (selectedAccountId === this.#selectedAccountId) return
 
         this.#selectedAccountId = selectedAccountId
+        // The form it was proved from is gone; one being sent finishes, hidden
+        this.#dropUnsentWithdrawal()
         this.#clearSendForm()
         this.propagateUpdate(forceEmit)
       }, 'privacyPools'),
@@ -484,7 +561,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /**
    * The withdrawal in flight, or the last one until dismissed. Hidden, not dropped, while another
-   * phrase is selected: it cannot be stopped mid-proof, and switching back must show it.
+   * phrase is selected: one being sent cannot be stopped, and switching back must show how it
+   * went. One not sent yet is dropped on switching - see `#dropUnsentWithdrawal`.
    */
   get operation(): PrivacyPoolsOperation | null {
     if (this.#operation?.seedId !== this.#getSelectedSeedId()) return null
@@ -1322,7 +1400,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return operation
   }
 
-  /** Updates the operation unless a lock or a newer one replaced it meanwhile. */
+  /** Updates the operation unless a lock, a cancel or a newer one replaced it meanwhile. */
   #updateOperation(operation: PrivacyPoolsOperation): boolean {
     if (this.#operation?.id !== operation.id) return false
 
@@ -1365,20 +1443,46 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return this.#ui.views.some((view) => view.currentRoute === SEND_ROUTE)
   }
 
+  /** Drops the form and the withdrawal proved, or being proved, from it. */
+  #leaveSendForm() {
+    const hasDroppedWithdrawal = this.#dropUnsentWithdrawal()
+    const hasClearedForm = this.#clearSendForm()
+
+    if (hasDroppedWithdrawal || hasClearedForm) this.emitUpdate()
+  }
+
   // Leaving the screen for another route drops the form, as on the regular Send
   #onUpdateView = (view: View) => {
     if (view.previousRoute !== SEND_ROUTE || view.currentRoute === SEND_ROUTE) return
     if (this.#hasSendViewOpen()) return
 
-    this.resetSendForm()
+    this.#leaveSendForm()
   }
 
-  // A closed popup keeps the form, while the side panel and a tab start fresh on reopen
+  // A closed popup keeps the form, and the proof keeps running for it, while the side panel and a
+  // tab start fresh on reopen
   #onRemoveView = (view: View) => {
     if (view.currentRoute !== SEND_ROUTE || this.#hasSendViewOpen()) return
     if (view.type === 'popup' && this.hasPersistedSendForm) return
 
-    this.resetSendForm()
+    this.#leaveSendForm()
+  }
+
+  /**
+   * Drops a withdrawal not sent yet: cancels one being proved and forgets a proved one, whose proof
+   * is for a form no longer shown. One being sent is left to finish. Returns whether there was one.
+   */
+  #dropUnsentWithdrawal(): boolean {
+    this.#preparationAbortController?.abort()
+    this.#preparationAbortController = null
+
+    const operation = this.#operation
+    if (operation?.status !== 'pending' || operation.phase === 'broadcasting') return false
+
+    this.#operation = null
+    this.#discardPending()
+
+    return true
   }
 
   dismissOperation() {
@@ -1396,7 +1500,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * A single-use sender derived from the phrase submits an ERC-4337 userOp whose gas a paymaster
    * pays, taking a fee from the withdrawn amount - so no user-owned address pays gas.
    *
-   * Not in `withStatus`: proving is long and cannot be aborted. Progress is in `operation`.
+   * Not in `withStatus`: proving is long. Progress is in `operation`. Leaving the form cancels it -
+   * see `#dropUnsentWithdrawal`.
    */
   async prepareWithdrawal({
     chainId,
@@ -1449,6 +1554,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       amount,
       recipient
     })
+    const abortController = new AbortController()
+    this.#preparationAbortController = abortController
+    const { signal } = abortController
+    const previousPreparation = this.#preparationQueue
+    let finishPreparation = () => {}
+    this.#preparationQueue = new Promise<void>((resolve) => {
+      finishPreparation = resolve
+    })
 
     const isNative = isPrivacyPoolsNativeAsset(tokenAddress)
     const debugTrace = startKohakuDebugTrace('withdraw', { chainId, tokenAddress, isNative })
@@ -1460,17 +1573,27 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     }
 
     try {
+      // Not raced with the signal: a cancelled preparation must stop before this one proves
+      await previousPreparation
+      throwIfWithdrawalCancelled(signal)
+      this.#provingSignal = signal
+
       const poolAddress = await kohakuDebugPhase(debugTrace, 'assertPoolIsSponsored', () =>
         this.#assertPoolIsSponsored(chainId, tokenAddress)
       )
+      throwIfWithdrawalCancelled(signal)
 
       // The SDK syncs before proving, outside the queue, so only wait for queued syncs rather than
-      // run beside them. No sync of our own: it would only double the wait.
-      await kohakuDebugPhase(debugTrace, 'waitForQueuedSync', () => this.#syncQueue)
+      // run beside them. No sync of our own: it would only double the wait. Stops waiting once
+      // cancelled, as a first sync can take minutes.
+      await kohakuDebugPhase(debugTrace, 'waitForQueuedSync', () =>
+        untilWithdrawalCancelled(this.#syncQueue, signal)
+      )
 
       const protocol = await kohakuDebugPhase(debugTrace, 'getProtocol', () =>
         this.#getProtocol(chainId, seedId)
       )
+      throwIfWithdrawalCancelled(signal)
 
       // Checked by `isAddress` above
       const sdkRecipient = recipient as Hex
@@ -1522,6 +1645,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
           fee
         })
       )
+      throwIfWithdrawalCancelled(signal)
       const expectedFeeAmount = feeEstimate?.expectedFee ?? null
       debugSummary.simulation = feeEstimate
         ? {
@@ -1551,15 +1675,26 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
           expectedFeeAmount
         })
       })
-      // Not kept if a lock superseded it
-      if (isStillCurrent) this.#pendingWithdrawal = privateOp
+      // Not kept if a lock or a cancel superseded it
+      if (isStillCurrent)
+        this.#pendingWithdrawal = { privateOp, paymasterWithdrawal, checkedAt: Date.now() }
     } catch (error: any) {
-      debugSummary.failed = String(error?.message || error)
-      this.#failOperation(
-        operation,
-        toReadableWithdrawalError(error),
-        'The transfer could not be prepared. Please try again.'
-      )
+      // Whatever it failed with: the user left, so there is nothing to tell them
+      if (signal.aborted) {
+        debugSummary.cancelled = true
+      } else {
+        debugSummary.failed = String(error?.message || error)
+        this.#failOperation(
+          operation,
+          toReadableWithdrawalError(error),
+          'The transfer could not be prepared. Please try again.'
+        )
+      }
+    } finally {
+      if (this.#provingSignal === signal) this.#provingSignal = null
+      if (this.#preparationAbortController === abortController)
+        this.#preparationAbortController = null
+      finishPreparation()
     }
 
     endKohakuDebugTrace(debugTrace, debugSummary)
@@ -1582,26 +1717,37 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * the bundler checks it again. The bundler checks only the sponsored part of a batch, though, so
    * `prepareWithdrawal` refuses a batch this cannot run.
    */
-  async #getExpectedWithdrawalFee({
+  async #getExpectedWithdrawalFee(
+    params: WithdrawalSimulationParams
+  ): Promise<PrivacyPoolsWithdrawalFeeEstimate | null> {
+    const simulation = await this.#simulateWithdrawal(params)
+    if (simulation.status === 'ran') return simulation.estimate
+
+    if (simulation.error)
+      this.emitError({
+        message: 'Could not work out the exact network fee, so the most it can cost is shown.',
+        level: 'silent',
+        error: simulation.error
+      })
+
+    return null
+  }
+
+  /** Runs a proved withdrawal on the latest block, as the bundler will submit it. */
+  async #simulateWithdrawal({
     chainId,
     userOperation,
     paymaster,
     recipient,
     tokenAddress,
     fee
-  }: AssetRef & {
-    chainId: string
-    userOperation: PrivacyPoolsSerializedUserOperation
-    paymaster: PrivacyPoolsPaymasterConfig
-    recipient: string
-    fee: bigint
-  }): Promise<PrivacyPoolsWithdrawalFeeEstimate | null> {
+  }: WithdrawalSimulationParams): Promise<WithdrawalSimulation> {
     const network = this.#networks.networks.find((n) => n.chainId.toString() === chainId)
     // The sender only has code to run through a state override
-    if (!network || network.rpcNoStateOverride) return null
+    if (!network || network.rpcNoStateOverride) return { status: 'unavailable', error: null }
 
     try {
-      return await withTimeout(
+      const estimate = await withTimeout(
         () =>
           estimatePaymasterWithdrawalFee({
             provider: this.#getProvider(chainId),
@@ -1617,18 +1763,121 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
           message: 'privacyPools: the withdrawal fee estimation timed out'
         }
       )
+
+      return { status: 'ran', estimate }
     } catch (error: any) {
-      this.emitError({
-        message: 'Could not work out the exact network fee, so the most it can cost is shown.',
-        level: 'silent',
+      return {
+        status:
+          error instanceof PrivacyPoolsWithdrawalWouldFailError ? 'would-fail' : 'unavailable',
         error:
           error instanceof Error
             ? error
             : new Error('privacyPools: withdrawal fee estimation failed')
+      }
+    }
+  }
+
+  /** Whether a proved withdrawal has gone unchecked long enough for the chain to have moved on. */
+  #isDueForCheck({ checkedAt }: PendingWithdrawal) {
+    return Date.now() - checkedAt >= WITHDRAWAL_RECHECK_AFTER_MS
+  }
+
+  /**
+   * Runs a proved withdrawal again. Stale when it fails on the latest block (e.g. the association
+   * set's root moved on), or the network's base fee has outgrown the gas price signed into it,
+   * which no bundler would submit at. `estimate` is its fee as of now, when it could be run.
+   *
+   * One that cannot be checked is not stale: a stale one is refused by the bundler before anything
+   * is spent, while calling it stale would send the user back to prove again over a flaky node.
+   */
+  async #checkWithdrawal(
+    operation: PrivacyPoolsOperation,
+    { privateOp }: PendingWithdrawal
+  ): Promise<{ isStale: boolean; estimate: PrivacyPoolsWithdrawalFeeEstimate | null }> {
+    const paymaster = getPrivacyPoolsChainConfig(BigInt(operation.chainId))?.paymaster
+    if (!paymaster || !operation.quote) return { isStale: false, estimate: null }
+
+    const { userOperation } = privateOp.withdrawal
+
+    try {
+      const latestBlock = await this.#getProvider(operation.chainId).getBlock('latest')
+      const baseFee = latestBlock?.baseFeePerGas
+      if (baseFee != null && BigInt(userOperation.maxFeePerGas) < baseFee)
+        return { isStale: true, estimate: null }
+    } catch (error: any) {
+      this.emitError({
+        message: 'Could not check the network fee of the transfer again.',
+        level: 'silent',
+        error: error instanceof Error ? error : new Error('privacyPools: base fee read failed')
+      })
+    }
+
+    const simulation = await this.#simulateWithdrawal({
+      chainId: operation.chainId,
+      userOperation,
+      paymaster,
+      recipient: operation.recipient,
+      tokenAddress: operation.tokenAddress,
+      fee: operation.quote.feeAmount
+    })
+    if (simulation.status === 'ran') return { isStale: false, estimate: simulation.estimate }
+
+    if (simulation.status === 'unavailable' && simulation.error)
+      this.emitError({
+        message: 'Could not check the transfer again.',
+        level: 'silent',
+        error: simulation.error
       })
 
-      return null
+    return { isStale: simulation.status === 'would-fail', estimate: null }
+  }
+
+  /** Drops a stale withdrawal. Nothing was sent: the sheet says so and goes back to the form. */
+  #failStaleWithdrawal(operation: PrivacyPoolsOperation) {
+    this.#discardPending()
+    this.#updateOperation({
+      ...operation,
+      status: 'failed',
+      phase: 'ready',
+      error: STALE_WITHDRAWAL_MESSAGE
+    })
+    this.emitUpdate()
+  }
+
+  /**
+   * Runs the proved withdrawal again when its confirmation sheet opens a while after it was proved,
+   * as in a popup reopened on it, so the sheet shows whether it still goes through and its fee as
+   * of now. Like the regular Send's re-estimation. Sending checks it again if it is due by then.
+   */
+  async recheckWithdrawal(): Promise<void> {
+    // `operation`, so another phrase's is left alone
+    const operation = this.operation
+    const pendingWithdrawal = this.#pendingWithdrawal
+    if (operation?.status !== 'pending' || operation.phase !== 'ready' || !pendingWithdrawal) return
+    if (!this.#isDueForCheck(pendingWithdrawal)) return
+
+    const { isStale, estimate } = await this.#checkWithdrawal(operation, pendingWithdrawal)
+    // Sent, dropped or proved again meanwhile
+    if (this.#pendingWithdrawal !== pendingWithdrawal) return
+
+    if (isStale) {
+      this.#failStaleWithdrawal(operation)
+      return
     }
+    // Not run, so it is still due: sending checks it again
+    if (!estimate || !operation.quote) return
+
+    this.#pendingWithdrawal = { ...pendingWithdrawal, checkedAt: Date.now() }
+    const expectedFeeAmount = estimate.expectedFee
+    this.#updateOperation({
+      ...operation,
+      quote: { ...operation.quote, expectedFeeAmount },
+      humanization: humanizePrivacyPoolsWithdrawal({
+        withdrawal: pendingWithdrawal.paymasterWithdrawal,
+        expectedFeeAmount
+      })
+    })
+    this.emitUpdate()
   }
 
   /** A transfer out goes through an ERC-4337 bundler, which the user can opt out of. */
@@ -1675,9 +1924,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   async broadcastWithdrawal(): Promise<void> {
     // `operation`, so another phrase's cannot be sent
     const operation = this.operation
-    const privateOp = this.#pendingWithdrawal
+    const pendingWithdrawal = this.#pendingWithdrawal
 
-    if (!operation || !privateOp)
+    if (!operation || !pendingWithdrawal)
       throw new EmittableError({
         message: 'There is no transfer ready to send.',
         level: 'expected',
@@ -1694,6 +1943,19 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     // Sent once: the sender is single-use (nonce 0), so a retry could only fail or duplicate. A
     // failed send is prepared again from scratch.
     this.#discardPending()
+    const { privateOp } = pendingWithdrawal
+
+    if (
+      this.#isDueForCheck(pendingWithdrawal) &&
+      (await this.#checkWithdrawal(operation, pendingWithdrawal)).isStale
+    ) {
+      // Nothing was sent: the sheet says so and goes back to the form, to prove it again
+      this.#failStaleWithdrawal(operation)
+      return
+    }
+
+    // A lock while checking: not sent, as nothing derived from the phrase may outlive it
+    if (this.#operation?.id !== operation.id) return
 
     try {
       const host = this.#getHost(this.#getProvider(operation.chainId), seedId)
@@ -1826,10 +2088,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /**
    * On lock, drops everything derived from any phrase; chain history stays (see
    * `PrivacyPoolsChainHistory`). A running sync cannot be stopped, so it finishes in the queue and
-   * `#generation` makes it discard its results.
+   * `#generation` makes it discard its results. A withdrawal being proved is cancelled.
    */
   #teardown() {
     this.#generation += 1
+    this.#preparationAbortController?.abort()
+    this.#preparationAbortController = null
     this.#protocols.clear()
     this.#providerInstances.clear()
     this.#sagaHydratedKeys.clear()

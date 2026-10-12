@@ -177,7 +177,10 @@ const buildPreparedWithdrawal = ({ isBatch = false }: { isBatch?: boolean } = {}
  * What a node answers when it runs that withdrawal and the paymaster refunds part of the fee - to
  * the recipient, unless another address is given.
  */
-const successfulSimulation = (refundRecipient = WITHDRAWAL_RECIPIENT) => [
+const successfulSimulation = (
+  refundRecipient = WITHDRAWAL_RECIPIENT,
+  refund = WITHDRAWAL_REFUND
+) => [
   {
     calls: [
       {
@@ -188,7 +191,7 @@ const successfulSimulation = (refundRecipient = WITHDRAWAL_RECIPIENT) => [
             ...SIMULATION_LOGS_INTERFACE.encodeEventLog('Transfer', [
               ETHEREUM_PAYMASTER.paymasterAddress,
               refundRecipient,
-              WITHDRAWAL_REFUND
+              refund
             ])
           },
           {
@@ -224,6 +227,10 @@ let notesBySeed: { [seedId: string]: { label: bigint; amount: bigint; approved: 
 let preparedWithdrawal: ReturnType<typeof buildPreparedWithdrawal> | null = null
 /** What `prepareUnshield` throws instead, when set - the SDK's thunks throw plain objects, not `Error`s. */
 let prepareUnshieldFailure: unknown = null
+/** Whether `prepareUnshield` proves through the controller's prover first, as the SDK does. */
+let isProvingOnUnshield = false
+/** The latest block's base fee. A proved withdrawal signs 1 gwei as its most per gas. */
+let latestBaseFee = 10n ** 8n
 /** How the node answers `eth_simulateV1`. */
 let simulateWithdrawal: () => Promise<unknown> = async () => successfulSimulation()
 let rpcNoStateOverride = false
@@ -291,6 +298,10 @@ class FakeProtocol {
   async prepareUnshield(_assets: unknown, _to: unknown, options: unknown) {
     this.syncCountWhenProving = this.syncCount
     this.unshieldOptions = options
+    if (isProvingOnUnshield) {
+      const prover = await this.params.proverFactory()
+      await prover.prove('withdraw', { existingSecret: 1n })
+    }
     if (prepareUnshieldFailure) throw prepareUnshieldFailure
     if (preparedWithdrawal) return preparedWithdrawal
 
@@ -433,7 +444,7 @@ class FakeProviders extends EventEmitter {
     '1': {
       getNetwork: async () => ({ chainId: 1n }),
       call: fakeProviderCall,
-      getBlock: async () => ({ baseFeePerGas: 10n ** 8n }),
+      getBlock: async () => ({ baseFeePerGas: latestBaseFee }),
       send: jest.fn(async (method: string) => {
         if (method === 'eth_simulateV1') return simulateWithdrawal()
 
@@ -528,6 +539,8 @@ describe('PrivacyPoolsController', () => {
     preparedDepositTarget = ETHEREUM_ENTRYPOINT
     preparedWithdrawal = null
     prepareUnshieldFailure = null
+    isProvingOnUnshield = false
+    latestBaseFee = 10n ** 8n
     simulateWithdrawal = async () => successfulSimulation()
     rpcNoStateOverride = false
     entrypointPool = ETHEREUM_ETH_POOL
@@ -1567,6 +1580,206 @@ describe('PrivacyPoolsController', () => {
       await broadcasting
     })
 
+    describe('sent a while after it was proved', () => {
+      const RECHECK_AFTER_MS = 30 * 1000
+      let now: number
+
+      beforeEach(() => {
+        now = Date.now()
+        jest.spyOn(Date, 'now').mockImplementation(() => now)
+        jest.mocked(createPPv1Broadcaster).mockClear()
+      })
+
+      afterEach(() => {
+        jest.mocked(Date.now).mockRestore()
+      })
+
+      const countSimulations = (providers: FakeProviders) =>
+        providers.providers['1'].send.mock.calls.filter(([method]) => method === 'eth_simulateV1')
+          .length
+
+      const mockBroadcast = () => {
+        const broadcast = jest.fn(async () => {})
+        jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast } as any)
+
+        return broadcast
+      }
+
+      const sendSuccessfully = async (controller: PrivacyPoolsController) => {
+        const broadcasting = controller.broadcastWithdrawal()
+        await waitUntil(() => controller.operation?.status === 'success')
+        await releaseSync('seed-a')
+        await broadcasting
+      }
+
+      const getShownErrors = (controller: PrivacyPoolsController) =>
+        controller.emittedErrors.filter(({ level }) => level !== 'silent')
+
+      it('sends one proved just now without running it again', async () => {
+        const { controller, providers } = await prepareSignedWithdrawal()
+        const simulations = countSimulations(providers)
+        const broadcast = mockBroadcast()
+
+        now += RECHECK_AFTER_MS - 1
+        await sendSuccessfully(controller)
+
+        expect(countSimulations(providers)).toBe(simulations)
+        expect(broadcast).toHaveBeenCalledTimes(1)
+      })
+
+      it('runs an older one again, and sends it when it still goes through', async () => {
+        const { controller, providers } = await prepareSignedWithdrawal()
+        const simulations = countSimulations(providers)
+        const broadcast = mockBroadcast()
+
+        now += RECHECK_AFTER_MS
+        await sendSuccessfully(controller)
+
+        expect(countSimulations(providers)).toBe(simulations + 1)
+        expect(broadcast).toHaveBeenCalledTimes(1)
+      })
+
+      const expectSentBackToPrepareAgain = async (controller: PrivacyPoolsController) => {
+        expect(controller.operation).toMatchObject({
+          status: 'failed',
+          // Nothing was sent, which the sheet tells by the phase
+          phase: 'ready',
+          error: 'This transfer has expired. Go back to prepare it again.'
+        })
+        expect(createPPv1Broadcaster).not.toHaveBeenCalled()
+        // Nothing to pick up, so no sync
+        expect(runningSyncs).toHaveLength(0)
+        // Its proof is gone: only a new one can be sent
+        await expect(controller.broadcastWithdrawal()).rejects.toThrow(
+          'There is no transfer ready to send.'
+        )
+        controller.dismissOperation()
+        expect(controller.operation).toBeNull()
+      }
+
+      it('does not send an older one whose gas price the network fee has outgrown', async () => {
+        const { controller } = await prepareSignedWithdrawal()
+        const shownErrors = getShownErrors(controller).length
+
+        now += RECHECK_AFTER_MS
+        latestBaseFee = 2n * 10n ** 9n
+        await controller.broadcastWithdrawal()
+
+        // Shown in the sheet, not as a toast
+        expect(getShownErrors(controller)).toHaveLength(shownErrors)
+        await expectSentBackToPrepareAgain(controller)
+      })
+
+      it('does not send an older one that would now fail, as over a root that moved on', async () => {
+        const { controller } = await prepareSignedWithdrawal()
+
+        now += RECHECK_AFTER_MS
+        simulateWithdrawal = async () => [
+          { calls: [{ status: '0x0', error: { message: 'execution reverted' } }] }
+        ]
+        await controller.broadcastWithdrawal()
+
+        await expectSentBackToPrepareAgain(controller)
+      })
+
+      it('sends an older one it cannot run again, leaving a stale one to the bundler', async () => {
+        const { controller } = await prepareSignedWithdrawal()
+        const broadcast = mockBroadcast()
+
+        now += RECHECK_AFTER_MS
+        simulateWithdrawal = async () => {
+          throw new Error('the node is down')
+        }
+        await sendSuccessfully(controller)
+
+        expect(broadcast).toHaveBeenCalledTimes(1)
+        expect(controller.emittedErrors.at(-1)).toMatchObject({ level: 'silent' })
+      })
+
+      describe('on opening the screen again', () => {
+        it('leaves one proved just now alone', async () => {
+          const { controller, providers } = await prepareSignedWithdrawal()
+          const simulations = countSimulations(providers)
+
+          now += RECHECK_AFTER_MS - 1
+          await controller.recheckWithdrawal()
+
+          expect(countSimulations(providers)).toBe(simulations)
+        })
+
+        it('runs an older one again, shows what it costs now, and sends it without running it again', async () => {
+          const { controller, providers } = await prepareSignedWithdrawal()
+          const simulations = countSimulations(providers)
+
+          now += RECHECK_AFTER_MS
+          const refundNow = WITHDRAWAL_REFUND / 2n
+          simulateWithdrawal = async () => successfulSimulation(WITHDRAWAL_RECIPIENT, refundNow)
+          await controller.recheckWithdrawal()
+
+          expect(countSimulations(providers)).toBe(simulations + 1)
+          expect(controller.operation).toMatchObject({
+            status: 'pending',
+            phase: 'ready',
+            quote: { feeAmount: WITHDRAWAL_FEE, expectedFeeAmount: WITHDRAWAL_FEE - refundNow }
+          })
+
+          const broadcast = mockBroadcast()
+          await sendSuccessfully(controller)
+
+          expect(countSimulations(providers)).toBe(simulations + 1)
+          expect(broadcast).toHaveBeenCalledTimes(1)
+        })
+
+        it('sends the user back to prepare again an older one gone stale', async () => {
+          const { controller } = await prepareSignedWithdrawal()
+
+          now += RECHECK_AFTER_MS
+          latestBaseFee = 2n * 10n ** 9n
+          await controller.recheckWithdrawal()
+
+          await expectSentBackToPrepareAgain(controller)
+        })
+
+        it('keeps an older one it cannot run again, for Send to check it again', async () => {
+          const { controller, providers } = await prepareSignedWithdrawal()
+          const simulations = countSimulations(providers)
+
+          now += RECHECK_AFTER_MS
+          simulateWithdrawal = async () => {
+            throw new Error('the node is down')
+          }
+          await controller.recheckWithdrawal()
+          expect(controller.operation).toMatchObject({ status: 'pending', phase: 'ready' })
+
+          simulateWithdrawal = async () => successfulSimulation()
+          mockBroadcast()
+          await sendSuccessfully(controller)
+
+          expect(countSimulations(providers)).toBe(simulations + 2)
+        })
+      })
+
+      it('does not send one checked across a lock', async () => {
+        const { controller, keystore } = await prepareSignedWithdrawal()
+        now += RECHECK_AFTER_MS
+        const answer = createDeferred()
+        simulateWithdrawal = async () => {
+          await answer.promise
+
+          return successfulSimulation()
+        }
+
+        const broadcasting = controller.broadcastWithdrawal()
+        await waitUntil(() => controller.operation?.phase === 'broadcasting')
+        keystore.isUnlocked = false
+        keystore.fireUpdate()
+        answer.resolve()
+        await broadcasting
+
+        expect(createPPv1Broadcaster).not.toHaveBeenCalled()
+      })
+    })
+
     /** The proved transfer's clear-signing card, without the ids the humanizer draws at random. */
     const describeHumanization = (humanization: IrCall | null | undefined) => {
       const card = humanization?.fullVisualization?.[0]
@@ -1765,6 +1978,190 @@ describe('PrivacyPoolsController', () => {
       })
     })
   })
+  describe('cancelling a transfer', () => {
+    const SEND_ROUTE = 'privacy-pools-send'
+
+    const startWithdrawal = (controller: PrivacyPoolsController) =>
+      controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        amount: WITHDRAWAL_AMOUNT,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+
+    /**
+     * A prover whose proofs run until the test finishes them. Like the in-process one, it ignores
+     * the signal it is given, so a cancelled proof still runs to the end.
+     */
+    const createGatedProver = () => {
+      const proofs: { signal?: AbortSignal; gate: Deferred }[] = []
+      const proverFactory = jest.fn(
+        async () =>
+          ({
+            prove: async (
+              _circuit: unknown,
+              _signals: unknown,
+              options?: { signal?: AbortSignal }
+            ) => {
+              const gate = createDeferred()
+              proofs.push({ signal: options?.signal, gate })
+              await gate.promise
+
+              return { proof: {}, publicSignals: [], mappedSignals: {} }
+            }
+          }) as any
+      )
+
+      return { proverFactory, proofs }
+    }
+
+    /** A transfer from seed-a, proving from a filled Send form. */
+    const startProving = async (viewType: View['type'] = 'side-panel') => {
+      isProvingOnUnshield = true
+      preparedWithdrawal = buildPreparedWithdrawal()
+      const { proverFactory, proofs } = createGatedProver()
+      const test = await prepareTest({ proverFactory })
+      test.selectedAccount.select('seed-a')
+      test.ui.open('view-1', viewType, 'dashboard')
+      test.ui.navigate('view-1', SEND_ROUTE)
+      test.controller.updateSendForm({ recipientFieldValue: WITHDRAWAL_RECIPIENT, amount: '0.1' })
+
+      const preparing = startWithdrawal(test.controller)
+      await waitUntil(() => proofs.length === 1)
+
+      return { ...test, proofs, preparing }
+    }
+
+    it('cancels a transfer being proved on leaving the screen, without telling the user it failed', async () => {
+      const { controller, ui, proofs, preparing } = await startProving()
+      const errorCount = controller.emittedErrors.length
+
+      ui.navigate('view-1', 'dashboard')
+
+      expect(proofs[0]!.signal?.aborted).toBe(true)
+      expect(controller.operation).toBeNull()
+
+      // A proof that cannot stop midway finishes, and is dropped
+      proofs[0]!.gate.resolve()
+      await preparing
+
+      expect(controller.operation).toBeNull()
+      expect(controller.emittedErrors).toHaveLength(errorCount)
+      await expect(controller.broadcastWithdrawal()).rejects.toThrow(
+        'There is no transfer ready to send.'
+      )
+    })
+
+    it('keeps proving for a closed popup, which reopens on its form', async () => {
+      const { controller, ui, proofs, preparing } = await startProving('popup')
+
+      ui.close('view-1')
+      expect(proofs[0]!.signal?.aborted).toBe(false)
+
+      proofs[0]!.gate.resolve()
+      await preparing
+
+      expect(controller.operation).toMatchObject({ status: 'pending', phase: 'ready' })
+    })
+
+    it('drops a proved transfer on leaving the screen, so its proof is never sent', async () => {
+      const { controller, ui, proofs, preparing } = await startProving()
+      proofs[0]!.gate.resolve()
+      await preparing
+      expect(controller.operation).toMatchObject({ phase: 'ready' })
+
+      ui.navigate('view-1', 'dashboard')
+
+      expect(controller.operation).toBeNull()
+      await expect(controller.broadcastWithdrawal()).rejects.toThrow(
+        'There is no transfer ready to send.'
+      )
+    })
+
+    it('lets a transfer being sent finish when the user leaves the screen', async () => {
+      const { controller, ui, proofs, preparing } = await startProving()
+      proofs[0]!.gate.resolve()
+      await preparing
+      const sending = createDeferred()
+      jest
+        .mocked(createPPv1Broadcaster)
+        .mockReturnValueOnce({ broadcast: () => sending.promise } as any)
+
+      const broadcasting = controller.broadcastWithdrawal()
+      await waitUntil(() => controller.operation?.phase === 'broadcasting')
+      ui.navigate('view-1', 'dashboard')
+
+      expect(controller.operation).toMatchObject({ status: 'pending', phase: 'broadcasting' })
+
+      sending.resolve()
+      await waitUntil(() => controller.operation?.status === 'success')
+      await releaseSync('seed-a')
+      await broadcasting
+    })
+
+    it('cancels it on switching accounts, and proves the next one only once it has stopped', async () => {
+      const { controller, selectedAccount, proofs, preparing } = await startProving()
+
+      selectedAccount.select('seed-b')
+      expect(proofs[0]!.signal?.aborted).toBe(true)
+
+      // Not refused as another transfer in progress
+      const next = startWithdrawal(controller)
+      expect(controller.operation).toMatchObject({
+        seedId: 'seed-b',
+        status: 'pending',
+        phase: 'proving'
+      })
+      await flush()
+      await flush()
+      expect(proofs).toHaveLength(1)
+
+      proofs[0]!.gate.resolve()
+      await preparing
+      await waitUntil(() => proofs.length === 2)
+      expect(proofs[1]!.signal?.aborted).toBe(false)
+
+      proofs[1]!.gate.resolve()
+      await next
+      expect(controller.operation).toMatchObject({ seedId: 'seed-b', phase: 'ready' })
+    })
+
+    it('cancels it on lock, without telling the user it failed', async () => {
+      const { controller, keystore, proofs, preparing } = await startProving()
+      const errorCount = controller.emittedErrors.length
+
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      expect(proofs[0]!.signal?.aborted).toBe(true)
+
+      proofs[0]!.gate.resolve()
+      await preparing
+
+      expect(controller.operation).toBeNull()
+      expect(controller.emittedErrors).toHaveLength(errorCount)
+    })
+
+    it('stops waiting for a queued sync once cancelled, and never proves', async () => {
+      const { controller, selectedAccount, ui } = await prepareTest()
+      selectedAccount.select('seed-a')
+      ui.open('view-1', 'side-panel', SEND_ROUTE)
+      const syncing = controller.syncChain('1')
+      await waitUntil(() => runningSyncs.length === 1)
+
+      const preparing = startWithdrawal(controller)
+      await flush()
+      ui.navigate('view-1', 'dashboard')
+      await preparing
+
+      expect(controller.operation).toBeNull()
+      expect(protocols[0]?.syncCountWhenProving).toBeNull()
+
+      await releaseSync('seed-a')
+      await syncing
+      expect(protocols[0]?.syncCountWhenProving).toBeNull()
+    })
+  })
+
   describe('proving', () => {
     const syncedProtocol = async (proverFactory?: PrivacyPoolsProverFactory) => {
       const { controller, selectedAccount } = await prepareTest({ proverFactory })
@@ -1787,7 +2184,8 @@ describe('PrivacyPoolsController', () => {
 
       await expect(prover.prove('commitment', { value: 1n })).resolves.toBe(proof)
       expect(proverFactory).toHaveBeenCalledTimes(1)
-      expect(prove).toHaveBeenCalledWith('commitment', { value: 1n })
+      // No signal outside a withdrawal
+      expect(prove).toHaveBeenCalledWith('commitment', { value: 1n }, { signal: undefined })
     })
 
     it('proves in its own context without one, from the circuits base URL', async () => {

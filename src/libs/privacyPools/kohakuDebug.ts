@@ -244,7 +244,7 @@ export const withKohakuDebugTiming = <T extends object>(target: T, name: string)
   })
 }
 
-type KohakuProverLike = { prove: (circuit: any, signals: any) => Promise<any> }
+type KohakuProverLike = { prove: (circuit: any, signals: any, options?: any) => Promise<any> }
 
 const countNonZero = (values: unknown) =>
   Array.isArray(values) ? values.filter((value) => String(value) !== '0').length : undefined
@@ -264,8 +264,9 @@ export const withKohakuDebugProver = <P extends KohakuProverLike>(
 
     return {
       ...prover,
-      prove: (circuit: any, signals: any) =>
-        kohakuDebugCall(`proof.${circuit}`, () => prover.prove(circuit, signals), {
+      // `options` carries the cancellation signal - see `withCancellableProving`
+      prove: (circuit: any, signals: any, options?: any) =>
+        kohakuDebugCall(`proof.${circuit}`, () => prover.prove(circuit, signals, options), {
           details: () => ({
             stateTreeDepth: countNonZero(signals?.stateSiblings),
             aspTreeDepth: countNonZero(signals?.ASPSiblings)
