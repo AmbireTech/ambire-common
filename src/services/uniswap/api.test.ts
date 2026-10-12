@@ -189,6 +189,8 @@ describe('UniswapAPI', () => {
     expect(quote.routes[0]!.inputValueInUsd).toBe(1)
     expect(quote.routes[0]!.outputValueInUsd).toBe(0.99685215)
     expect(quote.routes[0]!.outputValueAfterGasInUsd).toBeCloseTo(0.89685215)
+    // Uniswap charges the network fee to the account, not from the received tokens
+    expect(quote.routes[0]!.networkFeeInToToken).toBeUndefined()
     expect(quote.routes[0]!.toAmount).toBe('999000')
     expect((quote.routes[0]!.toToken as any).priceUSD).toBe('0.99785')
     expect(quote.routes[0]!.steps[0]!.minAmountOut).toBe('994000')

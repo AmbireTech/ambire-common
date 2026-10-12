@@ -251,6 +251,13 @@ export interface SwapAndBridgeRoute {
   inputValueInUsd: number
   outputValueInUsd: number
   outputValueAfterGasInUsd?: number
+  /**
+   * Set only by providers that take the network fee from the received tokens instead of
+   * charging it to the account (currently CoW Swap). It's in the receiving token's
+   * smallest unit and is already included in `toAmount`, but not in the `minAmountOut`
+   * of the route's last user tx, which is what the user receives at least.
+   */
+  networkFeeInToToken?: string
   serviceTime: number
   rawRoute: SocketAPIRoute | LiFiRoute | UniswapQuoteResponse | CowSwapRawRoute
   toToken: LiFiToken

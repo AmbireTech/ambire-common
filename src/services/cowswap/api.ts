@@ -499,6 +499,7 @@ export class CowSwapAPI implements SwapProvider {
       // sorting compares the amount after it against other providers' after-gas values.
       // The gas of the user's own setPreSignature / ETH-flow createOrder tx is not included
       outputValueAfterGasInUsd: outputValueAfterNetworkCostInUsd,
+      networkFeeInToToken: networkFeeInBuyToken.toString(),
       serviceTime,
       rawRoute,
       toToken: {
