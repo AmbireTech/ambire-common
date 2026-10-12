@@ -1890,6 +1890,15 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const tokenInList = toTokenList.tokens.find((t) => t.address.toLowerCase() === requestedAddress)
 
     if (!tokenInList) {
+      // The list always leaves banned tokens out, so a lookup could never get it selected
+      const isRequestedTokenBanned = getBannedToTokenList(String(this.toChainId)).some(
+        (address) => address.toLowerCase() === requestedAddress
+      )
+      if (isRequestedTokenBanned) {
+        this.#requestedToToken = null
+        return
+      }
+
       // No provider has answered yet, and the first answer usually has it
       if (toTokenList.status === 'LOADING') return
 

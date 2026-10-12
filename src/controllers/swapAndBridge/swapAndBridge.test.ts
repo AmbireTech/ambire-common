@@ -851,6 +851,33 @@ describe('SwapAndBridge Controller', () => {
       // Not looked up again for the slower provider's answer
       expect(getTokenSpy).toHaveBeenCalledTimes(1)
     })
+
+    test('is neither looked up nor selected when the list bans it', async () => {
+      const toChainId = 1
+      // An old JPYC, left out of the Ethereum to token list
+      const bannedTokenAddr = '0x431D5dfF03120AFA4bDf332c61A6e1766eF37BDB'
+      const bannedToken = createToken(bannedTokenAddr, 'JPYC', toChainId)
+      const fastProviderToken = createToken(fastProviderTokenAddr, 'FAST', toChainId)
+      const slowProvider = mockSlowProvider([fastProviderToken])
+      const getTokenSpy = jest
+        .spyOn(socketAPIMock, 'getToken')
+        // Stops finding it after two lookups, so a lookup loop fails the test instead of hanging it
+        .mockResolvedValueOnce(bannedToken)
+        .mockResolvedValueOnce(bannedToken)
+        .mockResolvedValue(null as never)
+
+      await swapAndBridgeController.updateForm(
+        { fromSelectedToken: fromTokenOnBase, toChainId, toSelectedTokenAddr: bannedTokenAddr },
+        { updateQuote: false }
+      )
+
+      expect(getTokenSpy).not.toHaveBeenCalled()
+      expect(swapAndBridgeController.toSelectedToken).toBeNull()
+      expect(swapAndBridgeController.isToTokenSelectionPending).toBe(false)
+
+      slowProvider.resolveTokenList([fastProviderToken])
+      await wait(0)
+    })
   })
   test('should look up a requested to token that no provider lists only once, even if the list updates meanwhile', async () => {
     const toChainId = 8453
