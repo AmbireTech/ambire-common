@@ -1,6 +1,8 @@
 import { AbiCoder, Interface, toBeHex, ZeroHash } from 'ethers'
+import { EventEmitter as NodeEventEmitter } from 'events'
 
 import { expect, jest } from '@jest/globals'
+import { createPPv1Broadcaster } from '@kohaku-eth/privacy-pools'
 
 import { produceMemoryStore } from '../../../test/helpers'
 import EmittableError from '../../classes/EmittableError'
@@ -16,6 +18,7 @@ import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { IUiController, View } from '../../interfaces/ui'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
@@ -352,6 +355,30 @@ class FakeSelectedAccount extends EventEmitter {
   }
 }
 
+/** Reports views and their routes like `UiController`: a closed view is gone before the event. */
+class FakeUi {
+  views: View[] = []
+
+  uiEvent = new NodeEventEmitter()
+
+  open(id: string, type: View['type'], route: string) {
+    this.views.push({ id, type, currentRoute: route })
+  }
+
+  navigate(id: string, route: string) {
+    const view = this.views.find((v) => v.id === id) as View
+    view.previousRoute = view.currentRoute
+    view.currentRoute = route
+    this.uiEvent.emit('updateView', view)
+  }
+
+  close(id: string) {
+    const view = this.views.find((v) => v.id === id) as View
+    this.views = this.views.filter((v) => v !== view)
+    this.uiEvent.emit('removeView', view)
+  }
+}
+
 class FakeFeatureFlags extends EventEmitter {
   flags: { [flag: string]: boolean } = { tokenPrices: true, erc4337: true }
 
@@ -461,6 +488,7 @@ const prepareTest = async ({
   const featureFlags = new FakeFeatureFlags()
   const selectedAccount = new FakeSelectedAccount()
   const providers = new FakeProviders()
+  const ui = new FakeUi()
   const onAccountsRemoved = jest.fn<(seedIds: string[]) => Promise<void>>(async () => {})
 
   const controller = new PrivacyPoolsController({
@@ -470,6 +498,7 @@ const prepareTest = async ({
     providers: providers as unknown as IProvidersController,
     selectedAccount: selectedAccount as unknown as ISelectedAccountController,
     storage,
+    ui: ui as unknown as IUiController,
     fetch: fakeFetch as any,
     circuitsBaseUrl: '',
     proverFactory,
@@ -483,6 +512,7 @@ const prepareTest = async ({
     featureFlags,
     selectedAccount,
     providers,
+    ui,
     storage,
     onAccountsRemoved
   }
@@ -566,6 +596,7 @@ describe('PrivacyPoolsController', () => {
         providers: new FakeProviders() as unknown as IProvidersController,
         selectedAccount: new FakeSelectedAccount() as unknown as ISelectedAccountController,
         storage,
+        ui: new FakeUi() as unknown as IUiController,
         fetch: fakeFetch as any,
         circuitsBaseUrl: '',
         onAccountsRemoved: jest.fn(async () => {})
@@ -589,6 +620,7 @@ describe('PrivacyPoolsController', () => {
         providers: new FakeProviders() as unknown as IProvidersController,
         selectedAccount: new FakeSelectedAccount() as unknown as ISelectedAccountController,
         storage,
+        ui: new FakeUi() as unknown as IUiController,
         fetch: fakeFetch as any,
         circuitsBaseUrl: '',
         onAccountsRemoved
@@ -1234,6 +1266,102 @@ describe('PrivacyPoolsController', () => {
       await expect(buildDeposit(controller)).resolves.toHaveLength(1)
     })
   })
+  describe('send form', () => {
+    const SEND_ROUTE = 'privacy-pools-send'
+
+    const prepareFilledForm = async (viewType: View['type'] = 'popup') => {
+      const test = await prepareTest()
+      test.selectedAccount.select('seed-a')
+      test.ui.open('view-1', viewType, 'dashboard')
+      test.ui.navigate('view-1', SEND_ROUTE)
+      test.controller.updateSendForm({ recipientFieldValue: 'vitalik.eth', amount: '0.1' })
+
+      return test
+    }
+
+    it('keeps the form of a closed popup, so it reopens on it', async () => {
+      const { controller, ui } = await prepareFilledForm()
+
+      ui.close('view-1')
+
+      expect(controller.sendForm).toMatchObject({
+        recipientFieldValue: 'vitalik.eth',
+        amount: '0.1'
+      })
+      expect(controller.hasPersistedSendForm).toBe(true)
+    })
+
+    it('does not count a picked token alone as something to come back to', async () => {
+      const { controller } = await prepareTest()
+
+      controller.updateSendForm({ tokenId: '1:0x0', amountFieldMode: 'fiat' })
+
+      expect(controller.hasPersistedSendForm).toBe(false)
+    })
+
+    it('starts a closed side panel or tab on a blank form', async () => {
+      const sidePanel = await prepareFilledForm('side-panel')
+      sidePanel.ui.close('view-1')
+      expect(sidePanel.controller.hasPersistedSendForm).toBe(false)
+
+      const tab = await prepareFilledForm('tab')
+      tab.ui.close('view-1')
+      expect(tab.controller.hasPersistedSendForm).toBe(false)
+    })
+
+    it('clears the form on leaving the screen, and tells the screen to drop its copy', async () => {
+      const { controller, ui } = await prepareFilledForm()
+      const resetCounter = controller.sendFormResetCounter
+
+      ui.navigate('view-1', 'dashboard')
+
+      expect(controller.hasPersistedSendForm).toBe(false)
+      expect(controller.sendFormResetCounter).toBe(resetCounter + 1)
+    })
+
+    it('keeps the form while another view still shows the screen', async () => {
+      const { controller, ui } = await prepareFilledForm()
+      ui.open('view-2', 'tab', SEND_ROUTE)
+
+      ui.navigate('view-1', 'dashboard')
+      ui.close('view-1')
+
+      expect(controller.hasPersistedSendForm).toBe(true)
+    })
+
+    it('ignores views that never showed the screen', async () => {
+      const { controller, ui } = await prepareFilledForm()
+      ui.open('view-2', 'tab', 'dashboard')
+
+      ui.navigate('view-2', 'settings')
+      ui.close('view-2')
+
+      expect(controller.hasPersistedSendForm).toBe(true)
+    })
+
+    it('clears the form on switching accounts, without emitting when it is already blank', async () => {
+      const { controller, selectedAccount } = await prepareFilledForm()
+
+      selectedAccount.select('seed-b')
+      expect(controller.hasPersistedSendForm).toBe(false)
+
+      const resetCounter = controller.sendFormResetCounter
+      controller.resetSendForm()
+      expect(controller.sendFormResetCounter).toBe(resetCounter)
+    })
+
+    it('stops following views once destroyed', async () => {
+      const { controller, ui } = await prepareFilledForm()
+
+      controller.destroy()
+      ui.navigate('view-1', 'dashboard')
+
+      expect(controller.hasPersistedSendForm).toBe(true)
+      expect(ui.uiEvent.listenerCount('updateView')).toBe(0)
+      expect(ui.uiEvent.listenerCount('removeView')).toBe(0)
+    })
+  })
+
   describe('sending from a Privacy Pools account', () => {
     it('refuses to prove a transfer to something that is not an address', async () => {
       const { controller, selectedAccount } = await prepareTest()
@@ -1405,6 +1533,38 @@ describe('PrivacyPoolsController', () => {
       const [method, [params]] = providers.providers['1'].send.mock.calls[0] as [string, any[]]
       expect(method).toBe('eth_simulateV1')
       expect(params.blockStateCalls[0].calls[0].to).toBe(ETHEREUM_PAYMASTER.entryPointAddress)
+    })
+
+    it('clears the send form once the transfer is sent, like a regular transfer', async () => {
+      const { controller } = await prepareSignedWithdrawal()
+      controller.updateSendForm({ recipientFieldValue: WITHDRAWAL_RECIPIENT, amount: '0.1' })
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({ broadcast: async () => {} } as any)
+
+      const broadcasting = controller.broadcastWithdrawal()
+      await waitUntil(() => controller.operation?.status === 'success')
+
+      expect(controller.hasPersistedSendForm).toBe(false)
+
+      await releaseSync('seed-a')
+      await broadcasting
+    })
+
+    it('keeps the send form when the transfer could not be sent', async () => {
+      const { controller } = await prepareSignedWithdrawal()
+      controller.updateSendForm({ recipientFieldValue: WITHDRAWAL_RECIPIENT, amount: '0.1' })
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+        broadcast: async () => {
+          throw new Error('bundler rejected it')
+        }
+      } as any)
+
+      const broadcasting = controller.broadcastWithdrawal()
+      await waitUntil(() => controller.operation?.status === 'failed')
+
+      expect(controller.hasPersistedSendForm).toBe(true)
+
+      await releaseSync('seed-a')
+      await broadcasting
     })
 
     /** The proved transfer's clear-signing card, without the ids the humanizer draws at random. */

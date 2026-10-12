@@ -38,12 +38,14 @@ import {
   PrivacyPoolsIdentityChainState,
   PrivacyPoolsOperation,
   PrivacyPoolsPaymasterConfig,
+  PrivacyPoolsSendForm,
   PrivacyPoolsTokenBalance,
   PrivacyPoolsUnavailableReason
 } from '../../interfaces/privacyPools'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
+import { IUiController, View } from '../../interfaces/ui'
 import { Call } from '../../libs/accountOp/types'
 import { humanizePrivacyPoolsWithdrawal } from '../../libs/humanizer/modules/PrivacyPools/privacyPoolsModule'
 import {
@@ -89,6 +91,17 @@ const SYNC_MAX_AGE_MS = 10 * 60 * 1000
 
 /** After this, a proved withdrawal is shown with only its fee cap. */
 const WITHDRAWAL_ESTIMATION_TIMEOUT_MS = 8 * 1000
+
+/** The Send screen of a Privacy Pools account, whose form outlives a closed popup. */
+const SEND_ROUTE = 'privacy-pools-send'
+
+const EMPTY_SEND_FORM: PrivacyPoolsSendForm = {
+  recipientFieldValue: '',
+  tokenId: '',
+  amount: '',
+  amountInFiat: '',
+  amountFieldMode: 'token'
+}
 
 const readDepositPrecommitment = (data: string): bigint | null =>
   readPrivacyPoolsDeposit({ data, value: 0n })?.precommitment ?? null
@@ -153,6 +166,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #selectedAccount: ISelectedAccountController
 
   #storage: IStorageController
+
+  #ui: IUiController
 
   #fetch: Fetch
 
@@ -262,6 +277,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /** The latest withdrawal of any phrase. Exposed through `operation`. */
   #operation: PrivacyPoolsOperation | null = null
 
+  /** The selected account's Send form. Dropped on switching accounts, like the regular one. */
+  sendForm: PrivacyPoolsSendForm = EMPTY_SEND_FORM
+
+  /** Changes when the form is cleared here, so the screen drops what it holds locally. */
+  sendFormResetCounter = 0
+
   initialLoadPromise?: Promise<void>
 
   constructor({
@@ -271,6 +292,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     providers,
     selectedAccount,
     storage,
+    ui,
     fetch,
     circuitsBaseUrl,
     proverFactory,
@@ -283,6 +305,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     providers: IProvidersController
     selectedAccount: ISelectedAccountController
     storage: IStorageController
+    ui: IUiController
     fetch: Fetch
     /** Where the circuit artifacts are served from, as only the platform knows it. */
     circuitsBaseUrl: string
@@ -301,6 +324,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#providers = providers
     this.#selectedAccount = selectedAccount
     this.#storage = storage
+    this.#ui = ui
     this.#fetch = fetch
     this.#kohakuStorage = createKohakuStorage({
       storage,
@@ -314,6 +338,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         })
     })
     this.#onAccountsRemoved = onAccountsRemoved
+    this.#ui.uiEvent.on('updateView', this.#onUpdateView)
+    this.#ui.uiEvent.on('removeView', this.#onRemoveView)
     this.#proverFactory = withKohakuDebugProver(
       proverFactory ?? createProverFactory(circuitsBaseUrl)
     )
@@ -364,6 +390,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         if (selectedAccountId === this.#selectedAccountId) return
 
         this.#selectedAccountId = selectedAccountId
+        this.#clearSendForm()
         this.propagateUpdate(forceEmit)
       }, 'privacyPools'),
 
@@ -1308,6 +1335,52 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return this.#operation?.status === 'pending' && this.#operation.phase !== 'ready'
   }
 
+  /** Whether the Send form has anything the user would lose. Reopens the popup on that screen. */
+  get hasPersistedSendForm(): boolean {
+    const { recipientFieldValue, amount, amountInFiat } = this.sendForm
+
+    return !!(recipientFieldValue || amount || amountInFiat)
+  }
+
+  updateSendForm(update: Partial<PrivacyPoolsSendForm>) {
+    this.sendForm = { ...this.sendForm, ...update }
+    this.emitUpdate()
+  }
+
+  resetSendForm() {
+    if (this.#clearSendForm()) this.emitUpdate()
+  }
+
+  /** Returns whether there was anything to clear. */
+  #clearSendForm(): boolean {
+    if (this.sendForm === EMPTY_SEND_FORM) return false
+
+    this.sendForm = EMPTY_SEND_FORM
+    this.sendFormResetCounter += 1
+
+    return true
+  }
+
+  #hasSendViewOpen() {
+    return this.#ui.views.some((view) => view.currentRoute === SEND_ROUTE)
+  }
+
+  // Leaving the screen for another route drops the form, as on the regular Send
+  #onUpdateView = (view: View) => {
+    if (view.previousRoute !== SEND_ROUTE || view.currentRoute === SEND_ROUTE) return
+    if (this.#hasSendViewOpen()) return
+
+    this.resetSendForm()
+  }
+
+  // A closed popup keeps the form, while the side panel and a tab start fresh on reopen
+  #onRemoveView = (view: View) => {
+    if (view.currentRoute !== SEND_ROUTE || this.#hasSendViewOpen()) return
+    if (view.type === 'popup' && this.hasPersistedSendForm) return
+
+    this.resetSendForm()
+  }
+
   dismissOperation() {
     // `operation`, so another phrase's cannot be dismissed
     if (!this.operation || this.#isOperationInFlight()) return
@@ -1630,7 +1703,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       const debugTrace = startKohakuDebugTrace('broadcast', { chainId: operation.chainId })
       await broadcaster.broadcast(privateOp).finally(() => endKohakuDebugTrace(debugTrace))
 
-      this.#updateOperation({ ...operation, status: 'success', phase: 'finalizing' })
+      const isCurrentOperation = this.#updateOperation({
+        ...operation,
+        status: 'success',
+        phase: 'finalizing'
+      })
+      // Sent, so a reopened popup starts on a blank form, as after a regular transfer
+      if (isCurrentOperation && seedId === this.#getSelectedSeedId()) this.#clearSendForm()
       this.emitUpdate()
     } catch (error: any) {
       this.#failOperation(
@@ -1770,6 +1849,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   destroy() {
     this.#unsubscribers.forEach((unsubscribe) => unsubscribe())
     this.#unsubscribers = []
+    this.#ui.uiEvent.off('updateView', this.#onUpdateView)
+    this.#ui.uiEvent.off('removeView', this.#onRemoveView)
     this.#teardown()
   }
 
@@ -1783,7 +1864,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       chains: this.chains,
       balances: this.balances,
       hasSyncedAnyChain: this.hasSyncedAnyChain,
-      operation: this.operation
+      operation: this.operation,
+      hasPersistedSendForm: this.hasPersistedSendForm
     }
   }
 }

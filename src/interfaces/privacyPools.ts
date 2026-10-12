@@ -202,6 +202,20 @@ export type PrivacyPoolsOperation = {
   error: string | null
 }
 
+/**
+ * What the user has entered on a Privacy Pools account's Send screen. Kept like the regular Send
+ * form: through a closed popup, until the user leaves the screen, switches accounts or sends.
+ */
+export type PrivacyPoolsSendForm = {
+  /** The recipient field as typed. A domain name in it is resolved again when the screen opens. */
+  recipientFieldValue: string
+  /** The picked token's id (`${chainId}:${tokenAddress}`), or '' for the screen's default. */
+  tokenId: string
+  amount: string
+  amountInFiat: string
+  amountFieldMode: 'token' | 'fiat'
+}
+
 /** The entrypoint's deposit requirements for one asset, read from the chain as 0xBow tunes them. */
 export type PrivacyPoolsDepositAssetConfig = {
   minimumDepositAmount: bigint
