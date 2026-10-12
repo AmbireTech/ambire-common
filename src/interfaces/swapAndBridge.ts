@@ -668,8 +668,8 @@ export interface SwapProvider {
   }: {
     fromChainId: number
     toChainId: number
-    /** Reports the merged token list whenever another provider completes successfully. */
-    onUpdate?: (tokens: SwapAndBridgeToToken[]) => void
+    /** Reports the merged token list and the providers still loading after every answer. */
+    onUpdate?: (tokens: SwapAndBridgeToToken[], loadingProviderNames: string[]) => void
   }): Promise<SwapAndBridgeToToken[]>
   getToken({
     address,
