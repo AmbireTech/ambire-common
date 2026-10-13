@@ -24,6 +24,7 @@ import {
   UniswapSwapResponse,
   UniswapTransactionRequest
 } from '../../interfaces/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
@@ -31,8 +32,6 @@ import {
   isNoFeeToken,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
-import type { FeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import { AcrossAPI } from '../across/api'
 import {
   AMBIRE_FEE_TAKER_ADDRESS,
@@ -41,6 +40,7 @@ import {
   UNISWAP_SUPPORTED_CHAIN_IDS
 } from './constants'
 
+import type { FeeExemptionReason } from '../../libs/swapAndBridge/fee'
 const erc20Interface = new Interface(ERC20.abi)
 
 type UniswapTokenListEntry = {
@@ -300,6 +300,9 @@ export class UniswapAPI implements SwapProvider {
   areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
     if (fromChainId === Number(CITREA_CHAIN_ID) || toChainId === Number(CITREA_CHAIN_ID))
       return false
+    // As of v2.111.3, Uniswap bridges (cross-chain routes) are temporarily disabled.
+    // Same-chain swaps are unaffected. Remove this check to re-enable bridging.
+    if (fromChainId !== toChainId) return false
 
     return (
       UNISWAP_SUPPORTED_CHAIN_IDS.includes(fromChainId) &&
