@@ -931,7 +931,10 @@ export class MainController extends EventEmitter implements IMainController {
     this.isOffline = false
     // call closeRequestWindow while still on the currently selected account to allow proper
     // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
-    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
+    // A connect request isn't tied to an account - it connects whichever one is selected when
+    // approved - so it stays open and the user can pick the account to connect with.
+    const currentRequestKind = this.requests.currentUserRequest?.kind
+    if (currentRequestKind !== 'switchAccount' && currentRequestKind !== 'dappConnect') {
       // Switching accounts is the user acting on the wallet, not refusing the apps that
       // happened to be waiting, so it must not count towards the spam detection.
       await this.requests.closeRequestWindow({ isUserInitiated: false })
