@@ -334,6 +334,23 @@ jest.mock('../../libs/privacyPools/dataService', () => ({
   createPrivacyPoolsDataService: jest.fn(async () => ({ dataService: {}, isSagaHydrated: false }))
 }))
 
+// A second network (10, see `OTHER_CHAIN_ID`), configured like Ethereum, so tests can tell what
+// runs per network. Supported only where `prepareTest` adds it to the user's networks.
+jest.mock('../../consts/privacyPools', () => {
+  const actual = jest.requireActual<typeof import('../../consts/privacyPools')>(
+    '../../consts/privacyPools'
+  )
+  // The actual lookups read this same object, so they find it too
+  actual.PRIVACY_POOLS_CHAINS['10'] = { ...actual.PRIVACY_POOLS_CHAINS['1']!, chainId: 10n }
+
+  return {
+    ...actual,
+    PRIVACY_POOLS_SUPPORTED_CHAIN_IDS: [...actual.PRIVACY_POOLS_SUPPORTED_CHAIN_IDS, 10n]
+  }
+})
+
+const OTHER_CHAIN_ID = 10n
+
 class FakeKeystore extends EventEmitter {
   initialLoadPromise = Promise.resolve()
 
@@ -437,20 +454,24 @@ const fakeProviderCall = async ({ data }: { to: string; data: string }) => {
   return ERC20_INTERFACE.encodeFunctionResult('allowance', [allowance])
 }
 
+const createFakeProvider = (chainId: bigint) => ({
+  getNetwork: async () => ({ chainId }),
+  call: fakeProviderCall,
+  getBlock: async () => ({ baseFeePerGas: latestBaseFee }),
+  send: jest.fn(async (method: string) => {
+    if (method === 'eth_simulateV1') return simulateWithdrawal()
+
+    throw new Error(`FakeProviders: ${method} is not faked`)
+  })
+})
+
+type FakeProvider = ReturnType<typeof createFakeProvider>
+
 class FakeProviders extends EventEmitter {
   initialLoadPromise = Promise.resolve()
 
-  providers = {
-    '1': {
-      getNetwork: async () => ({ chainId: 1n }),
-      call: fakeProviderCall,
-      getBlock: async () => ({ baseFeePerGas: latestBaseFee }),
-      send: jest.fn(async (method: string) => {
-        if (method === 'eth_simulateV1') return simulateWithdrawal()
-
-        throw new Error(`FakeProviders: ${method} is not faked`)
-      })
-    }
+  providers: { [chainId: string]: FakeProvider; '1': FakeProvider } = {
+    '1': createFakeProvider(1n)
   }
 }
 
@@ -473,10 +494,18 @@ const waitUntil = async (condition: () => boolean) => {
   throw new Error('waitUntil: condition was never met')
 }
 
-const releaseSync = async (seedId: string) => {
-  await waitUntil(() => runningSyncs.some((sync) => sync.seedId === seedId))
-  const running = runningSyncs.find((sync) => sync.seedId === seedId) as RunningSync
+/** Takes the running sync of that phrase on that network out of `runningSyncs`, once it runs. */
+const takeRunningSync = async (seedId: string, chainId: bigint) => {
+  const isIt = (sync: RunningSync) => sync.seedId === seedId && sync.chainId === chainId
+  await waitUntil(() => runningSyncs.some(isIt))
+  const running = runningSyncs.find(isIt) as RunningSync
   runningSyncs = runningSyncs.filter((sync) => sync !== running)
+
+  return running
+}
+
+const releaseSync = async (seedId: string, chainId = 1n) => {
+  const running = await takeRunningSync(seedId, chainId)
   running.gate.resolve()
 }
 
@@ -484,11 +513,14 @@ const prepareTest = async ({
   accounts = ['seed-a', 'seed-b'],
   // Passed to start again from what an earlier controller left in storage, as after a restart
   storage = new StorageController(produceMemoryStore()),
-  proverFactory
+  proverFactory,
+  // Adds `OTHER_CHAIN_ID` to the user's networks, with a provider
+  hasOtherChain = false
 }: {
   accounts?: string[]
   storage?: StorageController
   proverFactory?: PrivacyPoolsProverFactory
+  hasOtherChain?: boolean
 } = {}) => {
   await storage.set(
     'privacyPoolsAccounts',
@@ -498,14 +530,25 @@ const prepareTest = async ({
   const keystore = new FakeKeystore()
   const featureFlags = new FakeFeatureFlags()
   const selectedAccount = new FakeSelectedAccount()
+  const networks = new FakeNetworks()
   const providers = new FakeProviders()
   const ui = new FakeUi()
   const onAccountsRemoved = jest.fn<(seedIds: string[]) => Promise<void>>(async () => {})
 
+  if (hasOtherChain) {
+    networks.networks.push({
+      chainId: OTHER_CHAIN_ID,
+      nativeAssetId: 'ethereum',
+      platformId: 'optimistic-ethereum',
+      rpcNoStateOverride
+    })
+    providers.providers[OTHER_CHAIN_ID.toString()] = createFakeProvider(OTHER_CHAIN_ID)
+  }
+
   const controller = new PrivacyPoolsController({
     keystore: keystore as unknown as IKeystoreController,
     featureFlags: featureFlags as unknown as IFeatureFlagsController,
-    networks: new FakeNetworks() as unknown as INetworksController,
+    networks: networks as unknown as INetworksController,
     providers: providers as unknown as IProvidersController,
     selectedAccount: selectedAccount as unknown as ISelectedAccountController,
     storage,
@@ -706,7 +749,7 @@ describe('PrivacyPoolsController', () => {
   })
 
   describe('sync queue', () => {
-    it('runs syncs of two recovery phrases one after the other', async () => {
+    it("reads a network's shared state once, with the other accounts waiting for that read", async () => {
       const { controller, selectedAccount } = await prepareTest()
 
       selectedAccount.select('seed-a')
@@ -716,7 +759,7 @@ describe('PrivacyPoolsController', () => {
 
       await waitUntil(() => runningSyncs.length === 1)
       await flush()
-      // The second phrase waits for the first one's sync to finish
+      // The second phrase waits for the first one's read of the network
       expect(runningSyncs.map((sync) => sync.seedId)).toEqual(['seed-a'])
 
       await releaseSync('seed-a')
@@ -727,6 +770,27 @@ describe('PrivacyPoolsController', () => {
       expect(getHeldAmounts(controller)).toEqual([20n])
       selectedAccount.select('seed-a')
       expect(getHeldAmounts(controller)).toEqual([10n])
+    })
+
+    it('syncs accounts side by side once the network has been read', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+
+      selectedAccount.select('seed-a')
+      const firstA = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await firstA
+
+      const secondA = controller.syncChain('1')
+      selectedAccount.select('seed-b')
+      const syncB = controller.syncChain('1')
+
+      await waitUntil(() => runningSyncs.length === 2)
+      expect(runningSyncs.map((sync) => sync.seedId).sort()).toEqual(['seed-a', 'seed-b'])
+
+      await releaseSync('seed-b')
+      await syncB
+      await releaseSync('seed-a')
+      await secondA
     })
 
     it('joins a sync already queued for the same network and phrase', async () => {
@@ -742,7 +806,27 @@ describe('PrivacyPoolsController', () => {
       expect(protocols.reduce((total, protocol) => total + protocol.syncCount, 0)).toBe(1)
     })
 
-    it('keeps the network syncing for every account until the last queued sync is done', async () => {
+    it("joins a sync still waiting for the network's first read", async () => {
+      const { controller, selectedAccount } = await prepareTest()
+
+      selectedAccount.select('seed-a')
+      const syncA = controller.syncChain('1')
+      selectedAccount.select('seed-b')
+      const firstB = controller.syncChain('1')
+      const secondB = controller.syncChain('1')
+
+      await releaseSync('seed-a')
+      await syncA
+      await releaseSync('seed-b')
+      await Promise.all([firstB, secondB])
+
+      const syncsOfB = protocols
+        .filter((protocol) => protocol.seedId === 'seed-b')
+        .reduce((total, protocol) => total + protocol.syncCount, 0)
+      expect(syncsOfB).toBe(1)
+    })
+
+    it("shows each account's own sync, and the network's first read to every account", async () => {
       const { controller, selectedAccount } = await prepareTest()
 
       selectedAccount.select('seed-a')
@@ -750,17 +834,20 @@ describe('PrivacyPoolsController', () => {
       selectedAccount.select('seed-b')
       const syncB = controller.syncChain('1')
 
-      // The very first read of the network, whichever phrase triggered it
-      await waitUntil(() => controller.chains['1']?.syncStatus === 'initializing')
+      // Waiting for the first phrase's read, which every phrase is told is the long first one
+      await waitUntil(() => controller.chains['1']?.isInitialSyncDone === false)
+      expect(controller.chains['1']?.syncStatus).toBe('syncing')
 
       await releaseSync('seed-a')
       await syncA
-      // The second phrase reads a network that is no longer cold
       await waitUntil(() => runningSyncs.length === 1)
       expect(controller.chains['1']?.syncStatus).toBe('syncing')
+      selectedAccount.select('seed-a')
+      expect(controller.chains['1']?.syncStatus).toBe('ready')
 
       await releaseSync('seed-b')
       await syncB
+      selectedAccount.select('seed-b')
       expect(controller.chains['1']?.syncStatus).toBe('ready')
     })
 
@@ -887,7 +974,7 @@ describe('PrivacyPoolsController', () => {
       expect(getHeldAmounts(controller)).toEqual([20n])
     })
 
-    it('lets the syncs behind a failed one run', async () => {
+    it("fails the syncs waiting for a failed first read, and reads the network's state again on the next one", async () => {
       const { controller, selectedAccount } = await prepareTest()
 
       selectedAccount.select('seed-a')
@@ -899,11 +986,145 @@ describe('PrivacyPoolsController', () => {
       const [running] = runningSyncs
       runningSyncs = []
       running!.gate.reject(new Error('RPC is down'))
-      await syncA
+      await Promise.all([syncA, syncB])
 
+      // The second phrase never read on its own: it failed along with the read it waited for
+      expect(protocols.filter((protocol) => protocol.seedId === 'seed-b')).toHaveLength(0)
+      expect(controller.chains['1']).toMatchObject({
+        syncStatus: 'idle',
+        error: 'Could not load your Privacy Pools balance on this network. Please try again.',
+        isInitialSyncDone: false
+      })
+
+      const retry = controller.syncChain('1')
       await releaseSync('seed-b')
-      await syncB
+      await retry
+      expect(controller.chains['1']?.isInitialSyncDone).toBe(true)
       expect(getHeldAmounts(controller)).toEqual([20n])
+    })
+
+    it("waits after a lock for the network's first read still running from before, instead of reading beside it", async () => {
+      const { controller, keystore, selectedAccount } = await prepareTest()
+
+      selectedAccount.select('seed-a')
+      const beforeLock = controller.syncChain('1')
+      await waitUntil(() => runningSyncs.length === 1)
+
+      keystore.isUnlocked = false
+      keystore.fireUpdate()
+      keystore.isUnlocked = true
+      keystore.fireUpdate()
+
+      const afterUnlock = controller.syncChain('1')
+      await flush()
+      expect(runningSyncs).toHaveLength(1)
+
+      await releaseSync('seed-a')
+      await beforeLock
+      // Starts from the state the read before the lock persisted
+      await waitUntil(() => runningSyncs.length === 1)
+      expect(controller.chains['1']?.isInitialSyncDone).toBe(true)
+
+      await releaseSync('seed-a')
+      await afterUnlock
+      expect(getHeldAmounts(controller)).toEqual([10n])
+    })
+  })
+
+  describe('networks side by side', () => {
+    const OTHER = OTHER_CHAIN_ID.toString()
+
+    const describeRunningSyncs = () =>
+      runningSyncs.map(({ seedId, chainId }) => `${seedId} on ${chainId}`).sort()
+
+    it('syncs every network of an account at once', async () => {
+      const { controller, selectedAccount } = await prepareTest({ hasOtherChain: true })
+      selectedAccount.select('seed-a')
+
+      const syncing = controller.sync()
+      await waitUntil(() => runningSyncs.length === 2)
+      expect(describeRunningSyncs()).toEqual(['seed-a on 1', 'seed-a on 10'])
+
+      // In either order: one network is not held up by the other
+      await releaseSync('seed-a', OTHER_CHAIN_ID)
+      await waitUntil(() => controller.chains[OTHER]?.syncStatus === 'ready')
+      expect(controller.chains['1']?.syncStatus).toBe('syncing')
+
+      await releaseSync('seed-a')
+      await syncing
+      expect(controller.chains['1']?.syncStatus).toBe('ready')
+      expect(controller.balances[OTHER]).toEqual([expect.objectContaining({ totalAmount: 10n })])
+    })
+
+    it("reads one network's shared state without holding up the other accounts on another network", async () => {
+      const { controller, selectedAccount } = await prepareTest({ hasOtherChain: true })
+
+      selectedAccount.select('seed-a')
+      const aOnEthereum = controller.syncChain('1')
+      selectedAccount.select('seed-b')
+      const bOnOther = controller.syncChain(OTHER)
+      const bOnEthereum = controller.syncChain('1')
+
+      // The second phrase reads the other network at once, and waits on Ethereum only
+      await waitUntil(() => runningSyncs.length === 2)
+      await flush()
+      expect(describeRunningSyncs()).toEqual(['seed-a on 1', 'seed-b on 10'])
+
+      await releaseSync('seed-b', OTHER_CHAIN_ID)
+      await bOnOther
+      await releaseSync('seed-a')
+      await aOnEthereum
+      await releaseSync('seed-b')
+      await bOnEthereum
+
+      expect(controller.chains['1']?.syncStatus).toBe('ready')
+      expect(controller.chains[OTHER]?.syncStatus).toBe('ready')
+    })
+
+    it('keeps the other networks when the first read of one fails', async () => {
+      const { controller, selectedAccount } = await prepareTest({ hasOtherChain: true })
+      selectedAccount.select('seed-a')
+
+      const syncing = controller.sync()
+      const onEthereum = await takeRunningSync('seed-a', 1n)
+      onEthereum.gate.reject(new Error('RPC is down'))
+      await releaseSync('seed-a', OTHER_CHAIN_ID)
+      await syncing
+
+      expect(controller.chains['1']).toMatchObject({
+        syncStatus: 'idle',
+        error: 'Could not load your Privacy Pools balance on this network. Please try again.',
+        isInitialSyncDone: false
+      })
+      expect(controller.chains[OTHER]).toMatchObject({
+        syncStatus: 'ready',
+        error: null,
+        isInitialSyncDone: true
+      })
+      expect(controller.balances[OTHER]).toEqual([expect.objectContaining({ totalAmount: 10n })])
+    })
+
+    it('proves a transfer without waiting for a sync of another network', async () => {
+      const { controller, selectedAccount } = await prepareTest({ hasOtherChain: true })
+      selectedAccount.select('seed-a')
+
+      const syncingOther = controller.syncChain(OTHER)
+      await waitUntil(() => runningSyncs.length === 1)
+
+      await controller.prepareWithdrawal({
+        chainId: '1',
+        tokenAddress: ZERO_ADDRESS,
+        amount: 10n ** 17n,
+        recipient: WITHDRAWAL_RECIPIENT
+      })
+
+      // Reached proving with the other network's sync still running
+      const provingProtocol = protocols.find((protocol) => protocol.syncCountWhenProving !== null)
+      expect(provingProtocol?.syncCountWhenProving).toBe(0)
+      expect(describeRunningSyncs()).toEqual(['seed-a on 10'])
+
+      await releaseSync('seed-a', OTHER_CHAIN_ID)
+      await syncingOther
     })
   })
   describe('syncing on opening an account', () => {

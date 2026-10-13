@@ -30,12 +30,10 @@ import { INetworksController } from '../../interfaces/network'
 import {
   IPrivacyPoolsController,
   PrivacyPoolsAccount,
+  PrivacyPoolsAccountChainState,
   PrivacyPoolsDepositAssetConfig,
   PrivacyPoolsChainConfig,
-  PrivacyPoolsChainHistory,
   PrivacyPoolsChainState,
-  PrivacyPoolsChainSyncState,
-  PrivacyPoolsIdentityChainState,
   PrivacyPoolsOperation,
   PrivacyPoolsPaymasterConfig,
   PrivacyPoolsSendForm,
@@ -58,6 +56,7 @@ import {
   describeKohakuDebugUserOperationGas,
   endKohakuDebugTrace,
   kohakuDebugCall,
+  KohakuDebugTrace,
   kohakuDebugPhase,
   readKohakuDebugTreeSizes,
   startKohakuDebugTrace,
@@ -120,6 +119,47 @@ const EMPTY_SEND_FORM: PrivacyPoolsSendForm = {
 
 const readDepositPrecommitment = (data: string): bigint | null =>
   readPrivacyPoolsDeposit({ data, value: 0n })?.precommitment ?? null
+
+/** An account's chain before its first sync. */
+const IDLE_ACCOUNT_CHAIN_STATE: PrivacyPoolsAccountChainState = {
+  syncStatus: 'idle',
+  syncStartedAt: null,
+  error: null,
+  lastSyncedAt: null,
+  lastSyncDuration: null,
+  notes: []
+}
+
+/**
+ * A chain's first read of its shared state on this device. Kept through a lock: none of it comes
+ * from a phrase.
+ */
+type InitialChainSync = {
+  /**
+   * Settles once the shared state is on this device, and every sync of the chain waits for it, so
+   * the state is read once. Absent until the chain's first sync on this run starts, and again after
+   * that read fails, so the next sync reads it.
+   */
+  whenDone?: Promise<void>
+  /** Whether this device has read the shared state - minutes the first time. Null until looked up. */
+  isDone: boolean | null
+  /** In ms, when the first read ran on this run. */
+  durationMs: number | null
+}
+
+/** The `whenDone` of a chain's first sync on this run, with what settles it. */
+const createInitialChainRead = () => {
+  let resolve = () => {}
+  let reject: (error: unknown) => void = () => {}
+  const promise = new Promise<void>((onResolve, onReject) => {
+    resolve = onResolve
+    reject = onReject
+  })
+
+  return { promise, resolve, reject }
+}
+
+type InitialChainRead = ReturnType<typeof createInitialChainRead>
 
 const ERC20_INTERFACE = new Interface([
   'function approve(address spender, uint256 amount)',
@@ -253,23 +293,18 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   /** Per phrase, outliving its plugins, so a rebuilt plugin skips re-deriving keys (pbkdf2). */
   #kohakuKeystores = new Map<string, Keystore>()
 
-  /**
-   * Runs syncs one at a time across all chains and phrases. The pools' history is the same for
-   * every phrase on a chain: the first sync reads and persists it, later ones read only new blocks.
-   * In parallel each would walk the whole history.
-   */
-  #syncQueue: Promise<void> = Promise.resolve()
+  // Syncing: every account syncs every chain in parallel, and asking again while a sync runs joins
+  // it. Only a chain's shared state - the same for every account, and minutes to read the first
+  // time - is read once: the other syncs of the chain wait for that read, then read only new blocks.
 
-  /** The queued or running sync per `${chainId}:${seedId}`, so asking again joins it. */
-  #syncJobs = new Map<string, Promise<void>>()
+  /** Per chain - see `InitialChainSync`. */
+  #initialChainSyncs: { [chainId: string]: InitialChainSync } = {}
 
-  /** Queued or running syncs per chain. It reads as syncing, for every phrase, while any is. */
-  #pendingSyncsByChain = new Map<string, number>()
+  /** The running sync per account and chain. Asking again while it runs joins it. */
+  #syncQueue: { [seedId: string]: { [chainId: string]: Promise<void> } } = {}
 
-  #syncStatesByChain: { [chainId: string]: PrivacyPoolsChainSyncState } = {}
-
-  /** Per chain, kept through a lock - see `PrivacyPoolsChainHistory`. */
-  #chainHistories: { [chainId: string]: PrivacyPoolsChainHistory } = {}
+  /** Per account and chain: its sync and its notes. Written only through `#writeAccountState`. */
+  #accountStates: { [seedId: string]: { [chainId: string]: PrivacyPoolsAccountChainState } } = {}
 
   /**
    * Bumped whenever a sync persists a chain's history. A plugin reads the store only when built, so
@@ -282,10 +317,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /** Bumped on every lock, so a sync that cannot be aborted does not write back wiped notes. */
   #generation = 0
-
-  #notesByIdentity: {
-    [seedId: string]: { [chainId: string]: PrivacyPoolsIdentityChainState }
-  } = {}
 
   /**
    * The next deposit's precommitment per `${chainId}:${seedId}` and the sync epoch it was derived
@@ -523,36 +554,33 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return !this.unavailableReason
   }
 
-  /** Per chain: the chain's sync state merged with the selected phrase's last read of it. */
+  /** Per chain: the selected account's sync of it, with what this device knows of its shared state. */
   get chains(): { [chainId: string]: PrivacyPoolsChainState } {
-    const identityChains = this.#getSelectedIdentityChains()
+    const accountChains = this.#getSelectedAccountStates()
     const chainIds = new Set([
       ...this.supportedChainIds,
-      ...Object.keys(this.#syncStatesByChain),
-      ...Object.keys(identityChains)
+      ...Object.keys(this.#initialChainSyncs),
+      ...Object.keys(accountChains)
     ])
 
     return Object.fromEntries(
       [...chainIds].map((chainId) => {
-        const sync = this.#syncStatesByChain[chainId] || {
-          syncStatus: 'idle' as const,
-          syncStartedAt: null,
-          error: null
-        }
-        const history = this.#chainHistories[chainId] || {
-          isInitialSyncDone: null,
-          initialSyncDuration: null
-        }
-        const identity = identityChains[chainId]
+        // Picked by name, not spread: notes and the initial sync's `whenDone` never reach the UI
+        const { syncStatus, syncStartedAt, error, lastSyncedAt, lastSyncDuration } =
+          accountChains[chainId] || IDLE_ACCOUNT_CHAIN_STATE
+        const initialSync = this.#initialChainSyncs[chainId]
 
         return [
           chainId,
           {
             chainId,
-            ...sync,
-            ...history,
-            lastSyncedAt: identity?.lastSyncedAt ?? null,
-            lastSyncDuration: identity?.lastSyncDuration ?? null
+            syncStatus,
+            syncStartedAt,
+            error,
+            isInitialSyncDone: initialSync?.isDone ?? null,
+            initialSyncDuration: initialSync?.durationMs ?? null,
+            lastSyncedAt,
+            lastSyncDuration
           }
         ]
       })
@@ -580,13 +608,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
    * association set and can only be reclaimed publicly.
    */
   get balances(): { [chainId: string]: PrivacyPoolsTokenBalance[] } {
-    const identityChains = this.#getSelectedIdentityChains()
+    const accountChains = this.#getSelectedAccountStates()
 
     return Object.fromEntries(
       Object.keys(this.chains).map((chainId) => {
         const byToken = new Map<string, PrivacyPoolsTokenBalance>()
 
-        ;(identityChains[chainId]?.notes || []).forEach((note) => {
+        ;(accountChains[chainId]?.notes || []).forEach((note) => {
           const key = note.tokenAddress.toLowerCase()
           const asset = getPrivacyPoolsAsset(BigInt(chainId), key)
           const entry = byToken.get(key) || {
@@ -622,10 +650,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return seedId
   }
 
-  #getSelectedIdentityChains(): { [chainId: string]: PrivacyPoolsIdentityChainState } {
+  #getSelectedAccountStates(): { [chainId: string]: PrivacyPoolsAccountChainState } {
     const seedId = this.#getSelectedSeedId()
 
-    return (seedId && this.#notesByIdentity[seedId]) || {}
+    return (seedId && this.#accountStates[seedId]) || {}
+  }
+
+  #hasAccount(seedId: string) {
+    return this.accounts.some((account) => account.seedId === seedId)
   }
 
   #assertAvailableAndGetSeedId(): string {
@@ -826,45 +858,37 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     })
   }
 
-  #writeChainHistory(chainId: string, update: Partial<PrivacyPoolsChainHistory>) {
-    this.#chainHistories[chainId] = {
-      ...(this.#chainHistories[chainId] || { isInitialSyncDone: null, initialSyncDuration: null }),
+  #writeInitialChainSync(chainId: string, update: Partial<InitialChainSync>) {
+    this.#initialChainSyncs[chainId] = {
+      ...(this.#initialChainSyncs[chainId] || { isDone: null, durationMs: null }),
       ...update
     }
   }
 
   /**
-   * Looks up once per chain whether its history was read on this device, so a queued sync can
-   * already show the long first read is ahead.
+   * The only writer of `#accountStates`. Writes nothing after a lock, or once the account is
+   * removed, as nothing derived from its phrase may outlive either. Returns whether it wrote.
    */
-  async #lookUpInitialSync(chainId: string) {
-    if (typeof this.#chainHistories[chainId]?.isInitialSyncDone === 'boolean') return
+  #writeAccountState(
+    seedId: string,
+    chainId: string,
+    generation: number,
+    update: Partial<PrivacyPoolsAccountChainState>
+  ): boolean {
+    if (generation !== this.#generation || !this.#hasAccount(seedId)) return false
 
-    const config = getPrivacyPoolsChainConfig(BigInt(chainId))
-    if (!config) return
-
-    const isChainCold = await this.#isChainCold(config)
-    // A sync that ran meanwhile has set it, and may have read the chain since
-    if (typeof this.#chainHistories[chainId]?.isInitialSyncDone === 'boolean') return
-
-    this.#writeChainHistory(chainId, { isInitialSyncDone: !isChainCold })
-    this.emitUpdate()
-  }
-
-  #writeChainSyncState(chainId: string, update: Partial<PrivacyPoolsChainSyncState>) {
-    this.#syncStatesByChain[chainId] = {
-      ...(this.#syncStatesByChain[chainId] || {
-        syncStatus: 'idle',
-        syncStartedAt: null,
-        error: null
-      }),
-      ...update
+    const accountChains = this.#accountStates[seedId] || {}
+    this.#accountStates[seedId] = {
+      ...accountChains,
+      [chainId]: { ...(accountChains[chainId] || IDLE_ACCOUNT_CHAIN_STATE), ...update }
     }
+
+    return true
   }
 
   /**
-   * Reads a chain's notes for the selected phrase. Queued (see `#syncQueue`), and a repeat call for
-   * the same chain and phrase joins the queued or running one.
+   * Reads a chain's notes for the selected account, beside the syncs of other accounts and chains.
+   * A repeat call joins the running one - see `#queueSync`.
    */
   async syncChain(chainId: string): Promise<void> {
     const seedId = this.#assertAvailableAndGetSeedId()
@@ -914,75 +938,91 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#pricesFetchedAt = 0
   }
 
-  /** Like `syncChain`, for any phrase, not only the selected one. */
+  /**
+   * Like `syncChain`, for any account, not only the selected one. Which sync reads the chain's
+   * shared state is decided here, with no await in between, so exactly one does.
+   */
   #queueSync(chainId: string, seedId: string): Promise<void> {
-    const jobKey = this.#protocolKey(chainId, seedId)
-    const existingJob = this.#syncJobs.get(jobKey)
-    if (existingJob) return existingJob
+    const runningSync = this.#syncQueue[seedId]?.[chainId]
+    if (runningSync) return runningSync
 
     const generation = this.#generation
+    // At once, so a sync waiting for the chain's first read already reads as under way
+    this.#writeAccountState(seedId, chainId, generation, {
+      syncStatus: 'syncing',
+      syncStartedAt: Date.now(),
+      error: null
+    })
+    this.emitUpdate()
 
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.#lookUpInitialSync(chainId)
-
-    this.#pendingSyncsByChain.set(chainId, (this.#pendingSyncsByChain.get(chainId) || 0) + 1)
-    // At once, so a sync waiting its turn already reads as under way
-    if (!this.#isChainSyncing(chainId)) {
-      this.#writeChainSyncState(chainId, {
-        syncStatus: 'syncing',
-        syncStartedAt: Date.now(),
-        error: null
-      })
-      this.emitUpdate()
+    const initialSyncDone = this.#initialChainSyncs[chainId]?.whenDone || null
+    const initialRead = initialSyncDone ? null : createInitialChainRead()
+    if (initialRead) {
+      // Reported by the sync whose read failed, while the ones waiting fail with it
+      initialRead.promise.catch(() => {})
+      this.#writeInitialChainSync(chainId, { whenDone: initialRead.promise })
     }
 
-    const job: Promise<void> = this.#syncQueue
-      .then(async () => {
-        const error = await this.#runSync(chainId, seedId, generation)
-        this.#settleChainSync(chainId, generation, error)
-      })
-      .finally(() => {
-        // A lock clears the map, so what is under this key may already be a newer sync
-        if (this.#syncJobs.get(jobKey) === job) this.#syncJobs.delete(jobKey)
-      })
+    const sync: Promise<void> = this.#runSync({
+      chainId,
+      seedId,
+      generation,
+      initialSyncDone,
+      initialRead
+    }).finally(() => {
+      // A lock clears the queue, so what is under this key may already be a newer sync
+      if (this.#syncQueue[seedId]?.[chainId] !== sync) return
 
-    this.#syncJobs.set(jobKey, job)
-    this.#syncQueue = job
+      delete this.#syncQueue[seedId]![chainId]
+      if (!Object.keys(this.#syncQueue[seedId]!).length) delete this.#syncQueue[seedId]
+    })
+    this.#syncQueue[seedId] = { ...this.#syncQueue[seedId], [chainId]: sync }
 
-    return job
-  }
-
-  #isChainSyncing(chainId: string) {
-    const syncStatus = this.#syncStatesByChain[chainId]?.syncStatus
-
-    return syncStatus === 'syncing' || syncStatus === 'initializing'
+    return sync
   }
 
   /**
-   * Resolves with the error to show for the chain, or null. Never rejects, so a failure does not
-   * break the queue.
+   * Reads a chain's notes for an account. The chain's first sync on this run gets `initialRead`
+   * and settles it once the shared state is on this device; every other sync waits for that on
+   * `initialSyncDone`. Never rejects.
    */
-  async #runSync(chainId: string, seedId: string, generation: number): Promise<string | null> {
-    // Locked while this waited its turn
-    if (generation !== this.#generation) return null
-
-    const config = getPrivacyPoolsChainConfig(BigInt(chainId))
-    const isChainCold = !!config && (await this.#isChainCold(config))
-    const startedAt = Date.now()
-
-    // 'initializing' is the chain's first read (minutes), whichever phrase triggers it. A phrase
-    // new to an already read chain only reads the tail.
-    this.#writeChainSyncState(chainId, {
-      syncStatus: isChainCold ? 'initializing' : 'syncing',
-      syncStartedAt: startedAt,
-      error: null
-    })
-    this.#writeChainHistory(chainId, { isInitialSyncDone: !isChainCold })
-    this.emitUpdate()
-
-    const debugTrace = startKohakuDebugTrace('sync', { chainId, isChainCold })
+  async #runSync({
+    chainId,
+    seedId,
+    generation,
+    initialSyncDone,
+    initialRead
+  }: {
+    chainId: string
+    seedId: string
+    generation: number
+    initialSyncDone: Promise<void> | null
+    initialRead: InitialChainRead | null
+  }): Promise<void> {
+    let isChainCold = false
+    let debugTrace: KohakuDebugTrace | null = null
 
     try {
+      if (initialSyncDone) {
+        // Rejects when that read failed, which fails this sync too
+        await initialSyncDone
+        // Locked while this waited
+        if (generation !== this.#generation) return
+      }
+
+      const config = getPrivacyPoolsChainConfig(BigInt(chainId))
+      isChainCold = !!config && (await this.#isChainCold(config))
+      // Already on this device, so the chain's other syncs need not wait
+      if (!isChainCold) initialRead?.resolve()
+
+      // The chain's first read takes minutes, whichever account triggers it. An account new to an
+      // already read chain only reads the new blocks.
+      const startedAt = Date.now()
+      this.#writeInitialChainSync(chainId, { isDone: !isChainCold })
+      this.#writeAccountState(seedId, chainId, generation, { syncStartedAt: startedAt })
+      this.emitUpdate()
+
+      debugTrace = startKohakuDebugTrace('sync', { chainId, isChainCold })
       const protocol = await kohakuDebugPhase(debugTrace, 'getProtocol', () =>
         this.#getProtocol(chainId, seedId)
       )
@@ -993,6 +1033,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       // The plugin syncs before every read, costing seconds even with no new blocks, so a
       // `sync()` first would pay twice
       const notes = await kohakuDebugPhase(debugTrace, 'sdk.notes (sync)', () => protocol.notes!())
+      // The plugin has persisted the shared state by now
+      initialRead?.resolve()
       const syncDuration = Date.now() - startedAt
       endKohakuDebugTrace(debugTrace, {
         chainId,
@@ -1002,30 +1044,25 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         treeSizes: readKohakuDebugTreeSizes(() => protocol.dumpState())
       })
 
-      // Even if locked since: the history is the chain's, not the phrase's
+      // Even if locked since: the shared state is the chain's, not the phrase's
       if (isChainCold)
-        this.#writeChainHistory(chainId, {
-          isInitialSyncDone: true,
-          initialSyncDuration: syncDuration
-        })
+        this.#writeInitialChainSync(chainId, { isDone: true, durationMs: syncDuration })
 
       // Nothing derived from the phrase is written back after a lock or account removal
-      if (generation !== this.#generation) return null
-      if (!this.accounts.some((account) => account.seedId === seedId)) return null
-
-      this.#notesByIdentity[seedId] = {
-        ...(this.#notesByIdentity[seedId] || {}),
-        [chainId]: {
-          lastSyncedAt: Date.now(),
-          lastSyncDuration: syncDuration,
-          notes: notes.map((note) => ({
-            label: note.label,
-            tokenAddress: fromPrivacyPoolsAssetAddress(note.assetAddress),
-            amount: note.balance,
-            approval: note.approved ? 'approved' : 'pending'
-          }))
-        }
-      }
+      const isWritten = this.#writeAccountState(seedId, chainId, generation, {
+        syncStatus: 'ready',
+        syncStartedAt: null,
+        error: null,
+        lastSyncedAt: Date.now(),
+        lastSyncDuration: syncDuration,
+        notes: notes.map((note) => ({
+          label: note.label,
+          tokenAddress: fromPrivacyPoolsAssetAddress(note.assetAddress),
+          amount: note.balance,
+          approval: note.approved ? 'approved' : 'pending'
+        }))
+      })
+      if (!isWritten) return
 
       // A deposit may have landed, which moves the next one's precommitment on
       const syncKey = this.#protocolKey(chainId, seedId)
@@ -1037,47 +1074,40 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       this.#protocolChainVersions.set(this.#protocolKey(chainId, seedId), chainVersion)
 
       this.#dropSagaHydratedProtocols(chainId)
-
-      return null
     } catch (error: any) {
       endKohakuDebugTrace(debugTrace, { chainId, failed: String(error?.message || error) })
-      if (generation !== this.#generation) return null
+
+      // Still not on this device: the next sync reads it again
+      if (initialRead && isChainCold) {
+        this.#writeInitialChainSync(chainId, { whenDone: undefined })
+        initialRead.reject(error)
+      }
+
+      if (generation !== this.#generation) return
 
       this.emitError({
         message: 'Could not load your Privacy Pools balance. Please try again.',
         level: 'silent',
         error: error instanceof Error ? error : new Error('privacyPools: sync failed')
       })
-
-      return 'Could not load your Privacy Pools balance on this network. Please try again.'
-    }
-  }
-
-  /** The chain keeps reading as syncing until its last queued sync finishes. */
-  #settleChainSync(chainId: string, generation: number, error: string | null) {
-    // The superseding lock already reset everything this would settle
-    if (generation !== this.#generation) return
-
-    const pendingSyncs = (this.#pendingSyncsByChain.get(chainId) || 1) - 1
-    this.#pendingSyncsByChain.set(chainId, pendingSyncs)
-
-    if (!pendingSyncs)
-      this.#writeChainSyncState(chainId, {
-        syncStatus: error ? 'idle' : 'ready',
+      this.#writeAccountState(seedId, chainId, generation, {
+        syncStatus: 'idle',
         syncStartedAt: null,
-        error
+        error: 'Could not load your Privacy Pools balance on this network. Please try again.'
       })
-    else if (error) this.#writeChainSyncState(chainId, { error })
-
-    this.emitUpdate()
+    } finally {
+      // Settled on every path, as the chain's other syncs wait for it. A no-op once settled.
+      initialRead?.resolve()
+      this.emitUpdate()
+    }
   }
 
   /**
    * Syncs every supported chain for the selected phrase, however fresh (a refresh).
    *
    * Not in `withStatus`, which refuses a call while the previous one runs: a first read takes
-   * minutes, and another account opened meanwhile must still queue its sync. Progress is per chain,
-   * through `chains`.
+   * minutes, and another account opened meanwhile must still start its sync. Progress is per
+   * chain, through `chains`.
    */
   async sync(): Promise<void> {
     try {
@@ -1097,9 +1127,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       const seedId = this.#assertAvailableAndGetSeedId()
       if (this.#keystore.seeds.find(({ id }) => id === seedId)?.notBackedUp) return
 
-      const identityChains = this.#notesByIdentity[seedId] || {}
+      const accountChains = this.#accountStates[seedId] || {}
       const staleChainIds = this.supportedChainIds.filter((chainId) => {
-        const lastSyncedAt = identityChains[chainId]?.lastSyncedAt
+        const lastSyncedAt = accountChains[chainId]?.lastSyncedAt
 
         return !lastSyncedAt || Date.now() - lastSyncedAt >= SYNC_MAX_AGE_MS
       })
@@ -1583,11 +1613,11 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       )
       throwIfWithdrawalCancelled(signal)
 
-      // The SDK syncs before proving, outside the queue, so only wait for queued syncs rather than
-      // run beside them. No sync of our own: it would only double the wait. Stops waiting once
-      // cancelled, as a first sync can take minutes.
+      // The SDK syncs before proving, outside the queue, so only wait for this account's sync of
+      // the chain rather than run beside it on the same plugin. No sync of our own: it would only
+      // double the wait. Stops waiting once cancelled, as a first sync can take minutes.
       await kohakuDebugPhase(debugTrace, 'waitForQueuedSync', () =>
-        untilWithdrawalCancelled(this.#syncQueue, signal)
+        untilWithdrawalCancelled(this.#syncQueue[seedId]?.[chainId] || Promise.resolve(), signal)
       )
 
       const protocol = await kohakuDebugPhase(debugTrace, 'getProtocol', () =>
@@ -1704,7 +1734,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   /** Approved notes of a token found by the last sync - for `[kohaku-debug]` only. */
   #countApprovedNotes(seedId: string, chainId: string, tokenAddress: string): number | undefined {
-    return this.#notesByIdentity[seedId]?.[chainId]?.notes.filter(
+    return this.#accountStates[seedId]?.[chainId]?.notes.filter(
       (note) =>
         note.approval === 'approved' &&
         note.tokenAddress.toLowerCase() === tokenAddress.toLowerCase()
@@ -2043,7 +2073,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       if (key.endsWith(`:${seedId}`)) this.#dropProtocol(key)
     })
     this.#kohakuKeystores.delete(seedId)
-    delete this.#notesByIdentity[seedId]
+    delete this.#syncQueue[seedId]
+    delete this.#accountStates[seedId]
   }
 
   /** Removes accounts whose phrase is gone - nothing in them is reachable. */
@@ -2080,14 +2111,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     return (
       !!this.#protocols.size ||
       !!this.#kohakuKeystores.size ||
-      !!this.#syncJobs.size ||
-      !!Object.keys(this.#notesByIdentity).length
+      !!Object.keys(this.#syncQueue).length ||
+      !!Object.keys(this.#accountStates).length
     )
   }
 
   /**
-   * On lock, drops everything derived from any phrase; chain history stays (see
-   * `PrivacyPoolsChainHistory`). A running sync cannot be stopped, so it finishes in the queue and
+   * On lock, drops everything derived from any phrase; what is known of each chain's shared state
+   * stays (see `InitialChainSync`). A running sync cannot be stopped, so it finishes and
    * `#generation` makes it discard its results. A withdrawal being proved is cancelled.
    */
   #teardown() {
@@ -2101,10 +2132,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#kohakuKeystores.clear()
     this.#nextDepositPrecommitments.clear()
     this.#syncEpochs.clear()
-    this.#syncJobs.clear()
-    this.#pendingSyncsByChain.clear()
-    this.#syncStatesByChain = {}
-    this.#notesByIdentity = {}
+    this.#syncQueue = {}
+    this.#accountStates = {}
     this.#operation = null
     this.#discardPending()
     this.emitUpdate()

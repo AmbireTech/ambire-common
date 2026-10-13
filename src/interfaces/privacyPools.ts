@@ -67,7 +67,7 @@ export type PrivacyPoolsAccount = {
   createdAt: number
 }
 
-export type PrivacyPoolsSyncStatus = 'idle' | 'initializing' | 'syncing' | 'ready'
+export type PrivacyPoolsSyncStatus = 'idle' | 'syncing' | 'ready'
 
 /**
  * Why Privacy Pools can't be used right now:
@@ -104,8 +104,8 @@ export type PrivacyPoolsTokenBalance = {
 }
 
 /**
- * One chain as the UI reads it: the chain's sync, shared by every identity, merged with this
- * identity's last read. Notes reach the UI only as per-token `balances`.
+ * One chain as the UI reads it: the account's sync of the chain, merged with what this device knows
+ * of the chain's shared state. Notes reach the UI only as per-token `balances`.
  */
 export type PrivacyPoolsChainState = {
   chainId: string
@@ -115,7 +115,7 @@ export type PrivacyPoolsChainState = {
   /** Per chain, so one dead RPC doesn't hide the other chains' usable balances. */
   error: string | null
   /**
-   * Whether this device has read the chain's history - minutes the first time, seconds after.
+   * Whether this device has read the chain's shared state - minutes the first time, seconds after.
    * Null until looked up.
    */
   isInitialSyncDone: boolean | null
@@ -123,26 +123,14 @@ export type PrivacyPoolsChainState = {
   initialSyncDuration: number | null
   // Tells "never synced" (show placeholders) apart from "syncing again" (keep what is on screen)
   lastSyncedAt: number | null
-  /** In ms, of this identity's latest sync. */
+  /** In ms, of this account's latest sync. */
   lastSyncDuration: number | null
 }
 
-/** The part of `PrivacyPoolsChainState` shared by every identity. */
-export type PrivacyPoolsChainSyncState = Pick<
+/** The part that belongs to one account: its sync of the chain, and its notes in the chain's pools. */
+export type PrivacyPoolsAccountChainState = Pick<
   PrivacyPoolsChainState,
-  'syncStatus' | 'syncStartedAt' | 'error'
->
-
-/** Shared by every identity and kept through a lock, as none of it comes from a phrase. */
-export type PrivacyPoolsChainHistory = Pick<
-  PrivacyPoolsChainState,
-  'isInitialSyncDone' | 'initialSyncDuration'
->
-
-/** The part that belongs to one identity, with its notes in that chain's pools. */
-export type PrivacyPoolsIdentityChainState = Pick<
-  PrivacyPoolsChainState,
-  'lastSyncedAt' | 'lastSyncDuration'
+  'syncStatus' | 'syncStartedAt' | 'error' | 'lastSyncedAt' | 'lastSyncDuration'
 > & { notes: PrivacyPoolsNote[] }
 
 /**
