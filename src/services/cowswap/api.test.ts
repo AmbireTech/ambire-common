@@ -352,6 +352,10 @@ describe('CowSwapAPI', () => {
     const expectedMinAmountOut =
       expectedAmountAfterNetworkCost - (expectedAmountAfterNetworkCost * 50n) / 10000n
     expect(route.toAmount).toBe((expectedAmountAfterNetworkCost + networkFeeInBuyToken).toString())
+    expect(route.networkFeeInToToken).toBe(networkFeeInBuyToken.toString())
+    expect(BigInt(route.toAmount) - BigInt(route.networkFeeInToToken!)).toBe(
+      expectedAmountAfterNetworkCost
+    )
     expect(route.userTxs[0]!.toAmount).toBe(route.toAmount)
     expect(route.steps[0]!.minAmountOut).toBe(expectedMinAmountOut.toString())
     expect((route.rawRoute as any).order.buyAmount).toBe(expectedMinAmountOut.toString())
