@@ -131,8 +131,7 @@ describe('Main Controller ', () => {
         factoryAddr: '0x1',
         singleton: '0x1',
         saltNonce: '0x00',
-        setupData: '0x',
-        version: '1.4.1'
+        setupData: '0x'
       }
     }
 
@@ -154,6 +153,7 @@ describe('Main Controller ', () => {
       delegatedContract: null,
       delegatedContractName: null,
       threshold: 2,
+      safeVersion: '1.4.1',
       updatedAt: 0
     }
     const getAccountStatesSpy = jest
@@ -473,6 +473,43 @@ describe('Main Controller ', () => {
       expect(discardSimulationSpy).not.toHaveBeenCalled()
       expect(updateSelectedAccountSpy).not.toHaveBeenCalled()
       expect(scheduleUpdateSpy).not.toHaveBeenCalled()
+    })
+
+    test('removes the safs of the Safe on the same chain when an internal deployment fails', async () => {
+      const mainCtrl = await setupController()
+      const rejectSafRequestsSpy = jest
+        .spyOn(mainCtrl.requests, 'rejectSameChainNotSignedSafeRequest')
+        .mockResolvedValue(undefined)
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [{ id: 'safe-deploy-op', calls: [] } as any] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: false,
+          chainsToUpdate: [],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [
+            {
+              id: 'safe-deploy-op',
+              accountAddr: senderAccount,
+              chainId: 1n,
+              status: AccountOpStatus.Failure,
+              calls: [],
+              meta: { isSafeDeploy: true }
+            } as any
+          ]
+        }
+      })
+      await mainCtrl.updateAccountsOpsStatuses()
+
+      expect(rejectSafRequestsSpy).toHaveBeenCalledWith(
+        senderAccount,
+        1n,
+        "Activating your Safe account failed, so this request can't be completed."
+      )
     })
 
     test('should update account state for account address and discard finalized simulations', async () => {

@@ -412,10 +412,18 @@ export class CowSwapAPI implements SwapProvider {
     const protocolFee = getProtocolFeeAmount(quotedBuyAmount, protocolFeeBps)
     const buyAmountBeforeFees = quotedBuyAmount + networkFeeInBuyToken + protocolFee
     const partnerFee = feeBps ? (buyAmountBeforeFees * BigInt(feeBps)) / 10000n : 0n
-    const toAmount = quotedBuyAmount - partnerFee
-    const minAmountOut = toAmount - (toAmount * BigInt(slippageBps)) / 10000n
+    // What the user actually receives: CoW Swap deducts the settlement network cost
+    // from the output instead of charging gas separately
+    const toAmountAfterNetworkCost = quotedBuyAmount - partnerFee
+    // Other providers quote their output before gas and charge gas separately, so the
+    // displayed toAmount adds the network cost back to compare all quotes the same way
+    const toAmount = toAmountAfterNetworkCost + networkFeeInBuyToken
+    // Must be derived from the amount after the network cost, otherwise the order asks
+    // for more than solvers can deliver and it would never be filled
+    const minAmountOut =
+      toAmountAfterNetworkCost - (toAmountAfterNetworkCost * BigInt(slippageBps)) / 10000n
 
-    if (toAmount <= 0n || minAmountOut <= 0n) {
+    if (toAmountAfterNetworkCost <= 0n || minAmountOut <= 0n) {
       throw new SwapAndBridgeProviderApiError(
         'Unable to fetch the quote. The expected receive amount is too low.'
       )
@@ -451,6 +459,12 @@ export class CowSwapAPI implements SwapProvider {
       toAmount: toAmount.toString(),
       buyAmountBeforeFees
     })
+    const outputValueAfterNetworkCostInUsd = getOutputValueInUsd({
+      inputValueInUsd,
+      toAsset,
+      toAmount: toAmountAfterNetworkCost.toString(),
+      buyAmountBeforeFees
+    })
     const userTx: SwapAndBridgeUserTx = {
       userTxIndex: 0,
       fromAsset: normalizedFromAsset,
@@ -481,6 +495,10 @@ export class CowSwapAPI implements SwapProvider {
       steps: [step],
       inputValueInUsd,
       outputValueInUsd,
+      // The settlement network cost is what CoW Swap charges instead of gas, so the route
+      // sorting compares the amount after it against other providers' after-gas values.
+      // The gas of the user's own setPreSignature / ETH-flow createOrder tx is not included
+      outputValueAfterGasInUsd: outputValueAfterNetworkCostInUsd,
       serviceTime,
       rawRoute,
       toToken: {

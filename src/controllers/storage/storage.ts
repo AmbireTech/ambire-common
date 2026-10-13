@@ -16,6 +16,7 @@ import {
   normalizeHostname
 } from '../../libs/dapps/helpers'
 import { KeyIterator } from '../../libs/keyIterator/keyIterator'
+import { isSortedUnique, toSortedUnique } from '../../libs/sortedList/sortedList'
 import { LegacyTokenPreference } from '../../libs/portfolio/customToken'
 import {
   getShouldMigrateKeystoreSeedsWithoutHdPath,
@@ -99,7 +100,9 @@ export class StorageController extends EventEmitter implements IStorageControlle
       await this.#migrateDappsAddConnectionSources() // As of v6.11.0
       await this.#migrateDomainsCacheToNames() // As of v6.14.0
       await this.#migrateDappsAddMissingIds() // As of v6.21.8
+      await this.#removeFetchingDisabledSelectors() // As of v6.23.0
       await this.#indexSentToHistoryFromAccountsOps() // As of the accountsOps → IDB release
+      await this.#sortPhishingLists() // As of the sorted phishing lists release
     } catch (error) {
       // Reported, because a failed migration skips all the ones after it on every start — and
       // the failure is invisible in the meantime, which for #indexSentToHistoryFromAccountsOps
@@ -160,6 +163,40 @@ export class StorageController extends EventEmitter implements IStorageControlle
     if (Object.keys(accountsOps).length) {
       indexRecipientsFromOps(sentToHistory, accountsOps)
       await this.#storage.set('sentToHistory', sentToHistory)
+    }
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
+  }
+
+  /**
+   * Sorts the stored phishing lists, drops duplicates and lowercases the addresses. The
+   * PhishingController keeps them in that shape so it can look entries up with a binary search
+   * instead of building a Set on every load, but lists stored before that are in the relayer's
+   * order - and lists stored before addresses were normalized may hold checksummed ones, which the
+   * lowercased lookup never matches.
+   *
+   * Safe to re-run: lists already in that shape are left untouched, and nothing is stored when
+   * there is no list yet (the PhishingController stores it in that shape).
+   */
+  async #sortPhishingLists() {
+    const MIGRATION_KEY = 'sortPhishingLists'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const phishing = await this.#storage.get('phishing', null)
+    const hasLists =
+      !!phishing && Array.isArray(phishing.domains) && Array.isArray(phishing.addresses)
+    const isInCurrentShape =
+      hasLists &&
+      isSortedUnique(phishing.domains) &&
+      isSortedUnique(phishing.addresses) &&
+      phishing.addresses.every((address) => address === address.toLowerCase())
+
+    if (hasLists && !isInCurrentShape) {
+      await this.#storage.set('phishing', {
+        ...phishing,
+        domains: toSortedUnique(phishing.domains),
+        addresses: toSortedUnique(phishing.addresses.map((address) => address.toLowerCase()))
+      })
     }
 
     await this.#markMigrationPassed(MIGRATION_KEY)
@@ -801,6 +838,27 @@ export class StorageController extends EventEmitter implements IStorageControlle
       })
 
       await this.#storage.set('dappsV2', migratedDapps)
+    }
+
+    await this.#markMigrationPassed(MIGRATION_KEY)
+  }
+
+  // As of v6.23.0, nothing is saved for a function selector while fetching them is turned off.
+  // Older versions saved an empty 'fetching-disabled' entry instead, only so the screen would stop
+  // showing the call as loading. Such an entry never expires now, so it would keep its selector
+  // from ever being fetched.
+  async #removeFetchingDisabledSelectors() {
+    const MIGRATION_KEY = 'removeFetchingDisabledSelectors'
+    if (this.#passedMigrations.has(MIGRATION_KEY)) return
+
+    const functionSelectors = await this.#storage.get('functionSelectors', {})
+    const isFetchingDisabledEntry = ({ status }: { status: string }) =>
+      status === 'fetching-disabled'
+    const entries = Object.entries(functionSelectors)
+    const currentEntries = entries.filter(([, entry]) => !isFetchingDisabledEntry(entry))
+
+    if (currentEntries.length !== entries.length) {
+      await this.#storage.set('functionSelectors', Object.fromEntries(currentEntries))
     }
 
     await this.#markMigrationPassed(MIGRATION_KEY)

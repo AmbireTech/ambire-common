@@ -10,8 +10,7 @@ const SAFE_CREATION: Account['safeCreation'] = {
   factoryAddr: SAFE_ADDR,
   singleton: SAFE_ADDR,
   saltNonce: '0x00',
-  setupData: '0x',
-  version: '1.4.1'
+  setupData: '0x'
 }
 
 const makeCallsRequest = ({

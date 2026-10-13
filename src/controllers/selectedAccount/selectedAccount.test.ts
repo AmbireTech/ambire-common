@@ -5,6 +5,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { networks } from '../../consts/networks'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
+import { defiPositionsOnDisabledNetworksBannerId } from '../../libs/banners/banners'
 import { DeFiPositionsError } from '../../libs/defiPositions/types'
 import { PORTFOLIO_LIB_ERROR_NAMES } from '../../libs/portfolio/portfolio'
 import { stringify } from '../../libs/richJson/richJson'
@@ -91,6 +92,7 @@ const prepareTest = async () => {
     selectedAccountCtrl: mainCtrl.selectedAccount,
     portfolioCtrl: mainCtrl.portfolio,
     providersCtrl: mainCtrl.providers,
+    networksCtrl: mainCtrl.networks,
     autoLoginCtrl: mainCtrl.autoLogin,
     accountsCtrl: mainCtrl.accounts,
     storage: mainCtrl.storage
@@ -268,6 +270,21 @@ describe('SelectedAccount Controller', () => {
     unsubscribe()
   })
 
+  it('the mobile invite key of the selected account reaches its portfolio', async () => {
+    const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
+    const accountAddr = accounts[0]!.addr
+    const mobileInviteKey = 'test-mobile-invite-key'
+    const getMobileInviteKeySpy = jest
+      .spyOn(portfolioCtrl, 'getMobileInviteKey')
+      .mockImplementation((addr) => (addr === accountAddr ? mobileInviteKey : undefined))
+
+    await portfolioCtrl.updateSelectedAccount(accountAddr)
+    await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+    expect(getMobileInviteKeySpy).toHaveBeenCalledWith(accountAddr)
+    expect(selectedAccountCtrl.portfolio.mobileInviteKey).toBe(mobileInviteKey)
+  })
+
   describe('Banners', () => {
     const accountAddr = accounts[0]!.addr
     beforeEach(() => {
@@ -315,6 +332,27 @@ describe('SelectedAccount Controller', () => {
       }
     }
 
+    it('A banner is displayed for DeFi positions on a disabled network', async () => {
+      const { selectedAccountCtrl, portfolioCtrl, networksCtrl } = await prepareTest()
+      const disabledChainId = 56n
+      await networksCtrl.updateNetwork({ disabled: true }, disabledChainId)
+      const getDefiPositionsCountSpy = jest
+        .spyOn(portfolioCtrl, 'getDefiPositionsCountOnDisabledNetworks')
+        .mockImplementation((addr) =>
+          addr === accountAddr ? { [disabledChainId.toString()]: 2 } : {}
+        )
+
+      await portfolioCtrl.updateSelectedAccount(accountAddr)
+      await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+
+      const defiBanner = selectedAccountCtrl.banners.find(
+        ({ id }) => id === defiPositionsOnDisabledNetworksBannerId
+      )
+
+      expect(getDefiPositionsCountSpy).toHaveBeenCalledWith(accountAddr)
+      expect(defiBanner).toBeDefined()
+      await networksCtrl.updateNetwork({ disabled: false }, disabledChainId)
+    })
     it("An RPC banner is displayed when it's not working and the user has assets on it", async () => {
       const { selectedAccountCtrl, portfolioCtrl, providersCtrl } = await prepareTest()
       await portfolioCtrl.updateSelectedAccount(accountAddr)

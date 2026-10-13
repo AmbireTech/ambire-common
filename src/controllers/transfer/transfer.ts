@@ -6,6 +6,7 @@ import { FEE_COLLECTOR } from '../../consts/addresses'
 import { IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { IAddressBookController } from '../../interfaces/addressBook'
+import { IContractInfoController } from '../../interfaces/contractInfo'
 import { IDappsController } from '../../interfaces/dapp'
 import { AddressState } from '../../interfaces/domains'
 import { IErc7730Controller } from '../../interfaces/erc7730'
@@ -171,6 +172,8 @@ export class TransferController extends EventEmitter implements ITransferControl
 
   #erc7730: IErc7730Controller
 
+  #contractInfo: IContractInfoController
+
   #relayerUrl: string
 
   isRecipientAddressFirstTimeSend: boolean = false
@@ -233,6 +236,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     onBroadcastSuccess: OnBroadcastSuccess,
     ui: IUiController,
     erc7730: IErc7730Controller,
+    contractInfo: IContractInfoController,
     platform: Platform,
     eventEmitterRegistry?: IEventEmitterRegistryController
   ) {
@@ -256,6 +260,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.#phishing = phishing
     this.#dapps = dapps
     this.#erc7730 = erc7730
+    this.#contractInfo = contractInfo
     this.#relayerUrl = relayerUrl
     this.#onBroadcastSuccess = onBroadcastSuccess
     this.#ui = ui
@@ -1205,6 +1210,7 @@ export class TransferController extends EventEmitter implements ITransferControl
       phishing: this.#phishing,
       dapps: this.#dapps,
       erc7730: this.#erc7730,
+      contractInfo: this.#contractInfo,
       fromRequestId: randomId(), // the account op and the request are fabricated,
       accountOp,
       shouldSimulate: false,

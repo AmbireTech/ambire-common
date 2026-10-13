@@ -3,6 +3,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 import { produceMemoryStore } from '../../../test/helpers'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
+import { Selectors } from '../../interfaces/contractInfo'
 import { Storage } from '../../interfaces/storage'
 import { StorageController } from './storage'
 
@@ -29,7 +30,9 @@ const ALL_MIGRATION_KEYS = [
   'migrateDappsAddConnectionSources',
   'migrateDomainsCacheToNames',
   'migrateDappsAddMissingIds',
-  'indexSentToHistoryFromAccountsOps'
+  'removeFetchingDisabledSelectors',
+  'indexSentToHistoryFromAccountsOps',
+  'sortPhishingLists'
 ]
 
 // Wraps a memory store and counts how many times each key is read and how many
@@ -209,6 +212,98 @@ describe('StorageController', () => {
     })
   })
 
+  describe('sortPhishingLists', () => {
+    const MIGRATION_KEY = 'sortPhishingLists'
+    const CHECKSUMMED_ADDRESS = '0x20A9Ff01B49cD8967Cdd8081C547236EED1D1a4e'
+    const LOWERCASE_ADDRESS = CHECKSUMMED_ADDRESS.toLowerCase()
+
+    test('sorts and dedupes the lists, lowercases addresses and keeps version and updatedAt', async () => {
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {
+        phishing: {
+          version: 7,
+          updatedAt: 123,
+          domains: ['zz-scam.io', 'aa-scam.org', 'zz-scam.io'],
+          addresses: [
+            LOWERCASE_ADDRESS,
+            CHECKSUMMED_ADDRESS,
+            '0x1a633538b169b41052bfc40b0c973ac1bff31a4e'
+          ]
+        }
+      })
+
+      expect(await storageCtrl.get('phishing', null)).toEqual({
+        version: 7,
+        updatedAt: 123,
+        domains: ['aa-scam.org', 'zz-scam.io'],
+        addresses: ['0x1a633538b169b41052bfc40b0c973ac1bff31a4e', LOWERCASE_ADDRESS]
+      })
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+
+    test('does not write a list that is already in the current shape', async () => {
+      const counting = produceCountingStore()
+      const current = {
+        version: 7,
+        updatedAt: 123,
+        domains: ['aa-scam.org', 'zz-scam.io'],
+        addresses: [LOWERCASE_ADDRESS]
+      }
+      await counting.store.set('phishing', current)
+      await counting.store.set(
+        'passedMigrations',
+        ALL_MIGRATION_KEYS.filter((key) => key !== MIGRATION_KEY)
+      )
+      counting.reset()
+
+      const storageCtrl = new StorageController(counting.store)
+      expect(await storageCtrl.get('phishing', null)).toEqual(current)
+      // The single write is the `passedMigrations` marker, `phishing` is left as it was
+      expect(counting.setCount()).toBe(1)
+    })
+
+    test('writes nothing when there is no list yet, but still marks the migration passed', async () => {
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {})
+
+      expect(await storageCtrl.get('phishing', null)).toBe(null)
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+
+    // The reported case: a stored op without calls made indexSentToHistoryFromAccountsOps throw,
+    // which skipped this migration on every start and left the phishing list unsorted.
+    test('still runs when the history holds an op without calls', async () => {
+      const ACCOUNT = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      const storageCtrl = await bootWithPendingMigrations(
+        ['indexSentToHistoryFromAccountsOps', MIGRATION_KEY],
+        {
+          accountsOps: { [ACCOUNT]: { '1': [{ id: 'malformed', timestamp: 1 }] } },
+          phishing: {
+            version: 1,
+            updatedAt: 1,
+            domains: ['zz-scam.io', 'aa-scam.org'],
+            addresses: []
+          }
+        }
+      )
+
+      expect(await storageCtrl.get('phishing', null)).toEqual(
+        expect.objectContaining({ domains: ['aa-scam.org', 'zz-scam.io'] })
+      )
+      expect(await storageCtrl.get('passedMigrations', [])).toEqual(
+        expect.arrayContaining(['indexSentToHistoryFromAccountsOps', MIGRATION_KEY])
+      )
+    })
+
+    test('leaves a malformed list as it is instead of throwing', async () => {
+      const malformed = { version: 1, updatedAt: 1, domains: 'not-a-list', addresses: [] }
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {
+        phishing: malformed
+      })
+
+      expect(await storageCtrl.get('phishing', null)).toEqual(malformed)
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+  })
+
   describe('migrateDomainsCacheToNames', () => {
     const ADDRESS = '0xC2E6dFcc2C6722866aD65F211D5757e1D2879337'
 
@@ -353,6 +448,65 @@ describe('StorageController', () => {
       expect(counting.setCount()).toBe(1)
       expect(passed).toContain(MIGRATION_KEY)
       expect(await storageCtrl.get('dappsV2', [])).toEqual([withId])
+    })
+  })
+
+  describe('removeFetchingDisabledSelectors', () => {
+    const MIGRATION_KEY = 'removeFetchingDisabledSelectors'
+    const TRANSFER_SELECTOR = '0xa9059cbb'
+    const APPROVE_SELECTOR = '0x095ea7b3'
+    const MINT_SELECTOR = '0x40c10f19'
+    const UNKNOWN_SELECTOR = '0xbeeeeeee'
+    const currentSelectors: Selectors = {
+      [APPROVE_SELECTOR]: {
+        status: 'success',
+        data: [{ signature: 'approve(address,uint256)' }],
+        updatedAt: 1
+      },
+      [MINT_SELECTOR]: {
+        status: 'error',
+        data: [{ signature: 'mint(address,uint256)' }],
+        error: 'Network error',
+        updatedAt: 2
+      },
+      [UNKNOWN_SELECTOR]: { status: 'not-found', updatedAt: 3 }
+    }
+
+    test('removes only the fetching-disabled entries and keeps the rest as they are', async () => {
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {
+        functionSelectors: {
+          ...currentSelectors,
+          [TRANSFER_SELECTOR]: { status: 'fetching-disabled', updatedAt: 4 }
+        }
+      })
+
+      expect(await storageCtrl.get('functionSelectors', {})).toEqual(currentSelectors)
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
+    })
+
+    test('writes only the migration marker when there are no fetching-disabled entries', async () => {
+      const counting = produceCountingStore()
+      await counting.store.set(
+        'passedMigrations',
+        ALL_MIGRATION_KEYS.filter((key) => key !== MIGRATION_KEY)
+      )
+      await counting.store.set('functionSelectors', currentSelectors)
+      counting.reset()
+
+      const storageCtrl = new StorageController(counting.store)
+      const passed = await storageCtrl.get('passedMigrations', [])
+
+      // The single write is the `passedMigrations` marker, `functionSelectors` is left as it was.
+      expect(counting.setCount()).toBe(1)
+      expect(passed).toContain(MIGRATION_KEY)
+      expect(await storageCtrl.get('functionSelectors', {})).toEqual(currentSelectors)
+    })
+
+    test('stores no selectors when none were saved', async () => {
+      const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {})
+
+      expect(await storageCtrl.get('functionSelectors')).toBeUndefined()
+      expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
     })
   })
 

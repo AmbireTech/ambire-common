@@ -9,6 +9,7 @@ import {
   ERC7730_MAX_CACHED_DESCRIPTORS
 } from '../../libs/humanizer/erc7730/consts'
 import { Erc7730Controller } from './erc7730'
+import { SAFE_PROXY_V1_4_1_RUNTIME_CODE } from './testDescriptors'
 
 const CONTRACT_ADDRESS = '0x1111111111111111111111111111111111111111'
 const REGISTRY_PATH = 'registry/test/controller.json'
@@ -307,5 +308,75 @@ describe('Erc7730Controller', () => {
       res: {}
     })
     expect(callRelayer).not.toHaveBeenCalled()
+  })
+
+  describe('Safe singleton lookup', () => {
+    const PROXY_ADDRESS = '0x2222222222222222222222222222222222222222'
+    const LIFI_DIAMOND = '0x1231deb6f5749ef6ce6943a275a1d3e7486f4eae'
+    const SAFE_SINGLETON = '0x41675c099f32341bf84bfc5382af534df5c7461a'
+    const LIFI_PATH = 'registry/lifi/calldata-LIFIDiamond.json'
+    const SAFE_PATH = 'registry/safe/calldata-Safe-1.4.1.json'
+    // Any contract that is not a SafeProxy, e.g. one deployed to impersonate a registered protocol
+    const SPOOF_CODE = '0x6080604052600080fdfea164736f6c6343000818000a'
+
+    const resolveProxyCall = async (code: string, singleton: string) => {
+      const callRelayer = jest.fn(async (path: string) => {
+        if (path === '/v2/erc7730/account-op') {
+          return {
+            success: true,
+            data: {
+              [`eip155:1:${LIFI_DIAMOND}`]: LIFI_PATH,
+              [`eip155:1:${SAFE_SINGLETON}`]: SAFE_PATH
+            },
+            errorState: []
+          }
+        }
+
+        return {
+          success: true,
+          display: { formats: { 'test()': { intent: 'Proxy test', fields: [] } } }
+        }
+      })
+      const provider = {
+        getCode: jest.fn(async () => code),
+        getStorage: jest.fn(async () => `0x000000000000000000000000${singleton.slice(2)}`)
+      }
+      const controller = makeController(makeStorage(), callRelayer, makeFeatureFlags(), {
+        providers: { '1': provider },
+        initialLoadPromise: undefined
+      })
+
+      const descriptors = await controller.getDescriptorsForAccountOp({
+        chainId: 1n,
+        calls: [{ to: PROXY_ADDRESS, value: 0n, data: '0x12345678' }]
+      } as AccountOp)
+
+      return { descriptors, provider }
+    }
+
+    test('does not lend a registered protocol descriptor to a contract pointing at it from slot 0', async () => {
+      const { descriptors, provider } = await resolveProxyCall(SPOOF_CODE, LIFI_DIAMOND)
+
+      expect(descriptors).toEqual({})
+      expect(provider.getCode).toHaveBeenCalledTimes(1)
+    })
+
+    test('does not treat a non-SafeProxy contract as a Safe even if slot 0 holds a Safe singleton', async () => {
+      const { descriptors } = await resolveProxyCall(SPOOF_CODE, SAFE_SINGLETON)
+
+      expect(descriptors).toEqual({})
+    })
+
+    test('does not follow a SafeProxy to a singleton that is not a known Safe', async () => {
+      const { descriptors } = await resolveProxyCall(SAFE_PROXY_V1_4_1_RUNTIME_CODE, LIFI_DIAMOND)
+
+      expect(descriptors).toEqual({})
+    })
+
+    test('follows a SafeProxy to a known Safe singleton', async () => {
+      const { descriptors } = await resolveProxyCall(SAFE_PROXY_V1_4_1_RUNTIME_CODE, SAFE_SINGLETON)
+
+      expect(descriptors[0]?.path).toBe(SAFE_PATH)
+    })
   })
 })
