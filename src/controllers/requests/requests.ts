@@ -2224,8 +2224,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         : getAmbirePaymasterService(baseAcc, this.#relayerUrl)
 
     return {
+      // Only the fields a dApp is meant to send are copied. Spreading the whole object would let a
+      // dApp set internal fields of the call (e.g. `fullVisualization`, `isFallback`, `status`)
+      // and the humanizer would later trust them as its own output.
       calls: calls.map((c) => ({
-        ...c,
+        to: c.to,
         data: c.data?.toLowerCase() || '0x',
         value: c.value ? getBigInt(c.value) : 0n,
         dapp: dapp ?? undefined,
@@ -2272,6 +2275,18 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!userRequest) return
 
     await this.#addBuiltDappRequest(userRequest)
+  }
+
+  /**
+   * Whether the scam checker flags the app, or the page embedding it, as unsafe. Auto-login signs
+   * without showing anything, so a flagged app must go through the regular sign-in prompt instead,
+   * where the user sees the warning.
+   */
+  async #isDappFlaggedAsUnsafe(session: DappProviderRequest['session']): Promise<boolean> {
+    // While the dApps are still loading from storage, a blacklisted dApp would read as LOADING
+    await this.#dapps.initialLoadPromise
+
+    return this.#dapps.isDappFlaggedAsUnsafe(session.origin, session.sessionId)
   }
 
   /**
@@ -2342,7 +2357,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // The signing authentication is mobile only, so elsewhere no app is ever confirmed for
         if (
           autoLoginStatus === 'active' &&
-          (!isSigningAuthPlatform(this.#platform) || dapp?.signingAuthenticated)
+          (!isSigningAuthPlatform(this.#platform) || dapp?.signingAuthenticated) &&
+          !(await this.#isDappFlaggedAsUnsafe(request.session))
         ) {
           // Sign and respond
           const signedMessage = await this.#autoLogin.autoLogin({
