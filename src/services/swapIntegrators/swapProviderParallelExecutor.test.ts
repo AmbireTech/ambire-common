@@ -154,7 +154,7 @@ describe('Swap Provider Parallel execution', () => {
     expect(uniqueIds.size).toBe(ids.length)
   })
 
-  it('Requests every provider once and reports token lists as providers complete', async () => {
+  it('Merges the token lists in the order the providers are registered, not in the order they answer', async () => {
     const createToken = (address: string, symbol: string) => ({
       address,
       chainId: 1,
@@ -164,10 +164,12 @@ describe('Swap Provider Parallel execution', () => {
     })
     const firstToken = createToken('0x0000000000000000000000000000000000000001', 'FIRST')
     const secondToken = createToken('0x0000000000000000000000000000000000000002', 'SECOND')
+    // The same token as returned by the first provider, with its own data
+    const firstProviderSecondToken = { ...secondToken, name: 'Second by first provider' }
     let resolveFirstProvider!: (tokens: (typeof firstToken)[]) => void
     let resolveSecondProvider!: (tokens: (typeof firstToken)[]) => void
-    const firstProvider = createProvider(async () => [])
-    const secondProvider = createProvider(async () => [])
+    const firstProvider = { ...createProvider(async () => []), name: 'First' }
+    const secondProvider = { ...createProvider(async () => []), name: 'Second' }
     firstProvider.getToTokenList = jest.fn(
       () => new Promise<(typeof firstToken)[]>((resolve) => (resolveFirstProvider = resolve))
     )
@@ -190,11 +192,11 @@ describe('Swap Provider Parallel execution', () => {
 
     resolveSecondProvider([secondToken])
     await firstUpdatePromise
-    expect(onUpdate).toHaveBeenLastCalledWith([secondToken])
+    expect(onUpdate).toHaveBeenLastCalledWith([secondToken], ['First'])
 
-    resolveFirstProvider([firstToken, secondToken])
-    await expect(tokenListPromise).resolves.toEqual([secondToken, firstToken])
-    expect(onUpdate).toHaveBeenLastCalledWith([secondToken, firstToken])
+    resolveFirstProvider([firstToken, firstProviderSecondToken])
+    await expect(tokenListPromise).resolves.toEqual([firstToken, firstProviderSecondToken])
+    expect(onUpdate).toHaveBeenLastCalledWith([firstToken, firstProviderSecondToken], [])
     expect(onUpdate).toHaveBeenCalledTimes(2)
   })
 
@@ -210,7 +212,7 @@ describe('Swap Provider Parallel execution', () => {
         symbol: 'TOKEN'
       }
       const successfulProvider = createProvider(async () => [])
-      const hangingProvider = createProvider(async () => [])
+      const hangingProvider = { ...createProvider(async () => []), name: 'Hanging' }
       successfulProvider.getToTokenList = jest.fn(async () => [token])
       hangingProvider.getToTokenList = jest.fn(() => new Promise(() => {}))
       let resolveUpdate!: () => void
@@ -224,10 +226,12 @@ describe('Swap Provider Parallel execution', () => {
       })
 
       await updatePromise
-      expect(onUpdate).toHaveBeenCalledWith([token])
+      expect(onUpdate).toHaveBeenCalledWith([token], ['Hanging'])
 
       await jest.advanceTimersByTimeAsync(30000)
       await expect(tokenListPromise).resolves.toEqual([token])
+      // Stops being reported as loading once it times out
+      expect(onUpdate).toHaveBeenLastCalledWith([token], [])
       expect(successfulProvider.getToTokenList).toHaveBeenCalledTimes(1)
       expect(hangingProvider.getToTokenList).toHaveBeenCalledTimes(1)
     } finally {
