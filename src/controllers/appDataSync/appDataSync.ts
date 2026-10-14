@@ -1,6 +1,7 @@
 import { getBytes } from 'ethers'
 
 import EmittableError from '@/classes/EmittableError'
+import { USER_FEATURE_FLAGS } from '@/consts/featureFlags'
 import EventEmitter from '@/controllers/eventEmitter/eventEmitter'
 import { Account, IAccountsController } from '@/interfaces/account'
 import { IAddressBookController } from '@/interfaces/addressBook'
@@ -12,7 +13,6 @@ import { INetworksController } from '@/interfaces/network'
 import { ISwapAndBridgeController } from '@/interfaces/swapAndBridge'
 import { IUiController } from '@/interfaces/ui'
 import {
-  APP_DATA_SYNC_FEATURE_FLAGS,
   APP_DATA_SYNC_PAYLOAD_VERSION,
   AppDataSyncExportOptions,
   AppDataSyncPayload,
@@ -146,10 +146,7 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
         ...(appSettings && {
           settings: {
             featureFlags: Object.fromEntries(
-              APP_DATA_SYNC_FEATURE_FLAGS.map((flag) => [
-                flag,
-                this.#featureFlags.isFeatureEnabled(flag)
-              ])
+              USER_FEATURE_FLAGS.map((flag) => [flag, this.#featureFlags.isFeatureEnabled(flag)])
             ),
             disabledSwapProviderIds: this.#swapAndBridge.getDisabledSwapProviderIds(),
             app: appSettings
@@ -169,11 +166,11 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
    * along with the settings, networks and contacts if the user chose to sync them. Those
    * are merged: what comes from the other product overrides what is here, the rest stays.
    * `payload` is the hex encoded data assembled from the scanned codes and `password`
-   * is the device password of the product that exported them, needed only when the
-   * payload holds private keys or recovery phrases.
+   * is the device password of the product that exported them, required whatever was
+   * synced, so that nothing is taken over without the user confirming it.
    */
   async importData(
-    { payload, password }: { payload: string; password?: string },
+    { payload, password }: { payload: string; password: string },
     requestId?: string
   ) {
     await this.#withSyncResponse('importData', requestId, async () => {
@@ -204,7 +201,7 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
 
       // The app settings (like the theme) are kept by the app, so it applies them itself
       if (settings) {
-        const featureFlags = APP_DATA_SYNC_FEATURE_FLAGS.reduce(
+        const featureFlags = USER_FEATURE_FLAGS.reduce(
           (flags, flag) =>
             typeof settings.featureFlags[flag] === 'boolean'
               ? { ...flags, [flag]: settings.featureFlags[flag] }

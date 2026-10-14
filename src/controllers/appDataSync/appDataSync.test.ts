@@ -1,4 +1,4 @@
-import { Wallet } from 'ethers'
+import { getBytes, Wallet } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
@@ -6,7 +6,11 @@ import { makeMainController } from '../../../test/helpers/mainController'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { AppDataSyncExportOptions } from '../../libs/appDataSync/appDataSync'
+import { USER_FEATURE_FLAGS } from '../../consts/featureFlags'
+import {
+  AppDataSyncExportOptions,
+  parseAppDataSyncPayload
+} from '../../libs/appDataSync/appDataSync'
 import { MainController } from '../main/main'
 
 const EXPORTING_PASS = 'exportingDevicePass'
@@ -241,7 +245,7 @@ describe('AppDataSyncController', () => {
     })
   })
 
-  test('syncs the settings, networks and contacts without any accounts or a password', async () => {
+  test('syncs the settings, networks and contacts without any accounts', async () => {
     const exportingDevice = await makeExportingDevice()
     await exportingDevice.featureFlags.setFeatureFlags({ ledgerSigningReports: true })
     await exportingDevice.addressBook.addContact('Bob', NEW_CONTACT_ADDR)
@@ -254,7 +258,7 @@ describe('AppDataSyncController', () => {
 
     // A device still on the get started screen: no accounts and no password yet
     const importingDevice = await makeImportingDevice({ withPassword: false })
-    await importingDevice.appDataSync.importData({ payload })
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
 
     expect(importingDevice.appDataSync.statuses.importData).toBe('INITIAL')
     expect(importingDevice.appDataSync.emittedErrors).toHaveLength(0)
@@ -267,15 +271,30 @@ describe('AppDataSyncController', () => {
     ])
   })
 
-  test('syncs a hardware wallet account without asking for a password', async () => {
+  test('syncs a hardware wallet account with the password of the other device', async () => {
     const exportingDevice = await makeExportingDevice()
     const payload = await exportPayload(exportingDevice, [LEDGER_ADDR])
 
     const importingDevice = await makeImportingDevice({ withPassword: true })
-    await importingDevice.appDataSync.importData({ payload })
+    await importingDevice.appDataSync.importData({ payload, password: EXPORTING_PASS })
 
     expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([LEDGER_ADDR])
     expect(importingDevice.keystore.keys.map((k) => k.addr)).toEqual([LEDGER_ADDR])
+  })
+
+  test('syncs only the feature flags the user controls', async () => {
+    const exportingDevice = await makeExportingDevice()
+    const payload = await exportPayload(exportingDevice, [], {
+      includeSeeds: true,
+      appSettings: { themeType: 'dark' },
+      includeNetworks: false,
+      includeContacts: false
+    })
+
+    const { settings } = parseAppDataSyncPayload(getBytes(payload))
+
+    expect(Object.keys(settings!.featureFlags).sort()).toEqual([...USER_FEATURE_FLAGS].sort())
+    expect(settings!.featureFlags).not.toHaveProperty('testnetMode')
   })
 
   test('sends no settings, networks or contacts unless the user chose them', async () => {
@@ -306,6 +325,29 @@ describe('AppDataSyncController', () => {
       )
       expect(importingDevice.accounts.accounts).toHaveLength(0)
       expect(importingDevice.keystore.keys).toHaveLength(0)
+    })
+
+    test('syncs no settings, networks or contacts when the password of the other device is wrong', async () => {
+      const exportingDevice = await makeExportingDevice()
+      await exportingDevice.featureFlags.setFeatureFlags({ ledgerSigningReports: true })
+      await exportingDevice.addressBook.addContact('Bob', NEW_CONTACT_ADDR)
+      const payload = await exportPayload(exportingDevice, [], {
+        includeSeeds: true,
+        appSettings: { themeType: 'dark' },
+        includeNetworks: true,
+        includeContacts: true
+      })
+
+      const importingDevice = await makeImportingDevice({ withPassword: false })
+      const networksBefore = importingDevice.networks.allNetworks
+      await importingDevice.appDataSync.importData({ payload, password: 'wrongPass' })
+
+      expect(importingDevice.appDataSync.emittedErrors.at(-1)?.message).toBe(
+        'Incorrect password. Please try again.'
+      )
+      expect(importingDevice.featureFlags.flags.ledgerSigningReports).toBe(false)
+      expect(importingDevice.networks.allNetworks).toEqual(networksBefore)
+      expect(await importingDevice.storage.get('contacts', [])).toEqual([])
     })
 
     test('adds no accounts when the scanned data is not a sync payload', async () => {

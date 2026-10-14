@@ -9,7 +9,7 @@ import {
 } from 'ethers'
 import { gzip, Inflate } from 'pako'
 
-import { FeatureFlags } from '../../consts/featureFlags'
+import { FeatureFlags, UserFeatureFlag } from '../../consts/featureFlags'
 import { Account } from '../../interfaces/account'
 import { Contacts } from '../../interfaces/addressBook'
 import {
@@ -31,32 +31,12 @@ export const APP_DATA_SYNC_UR_TYPE = 'ambire-account-sync'
 export const APP_DATA_SYNC_PAYLOAD_VERSION = 1
 
 /**
- * The feature flags the user controls from the privacy opt-outs settings. Only these
- * travel with the synced settings, the rest are internal to each product.
- */
-export const APP_DATA_SYNC_FEATURE_FLAGS = [
-  'networkConfig',
-  'tokenAndDefiAutoDiscovery',
-  'clearSigning',
-  'apiForFunctionSelectors',
-  'ambireSmartAccounts',
-  'scamAndPhishingChecker',
-  'swapAndBridgeTokenInfo',
-  'walletStakingWithdrawalsLookup',
-  'gasTank',
-  'erc4337',
-  'tokenPrices',
-  'eip7702',
-  'keepEnsProfilesUpToDate',
-  'ledgerSigningReports'
-] as const satisfies (keyof FeatureFlags)[]
-
-/**
  * Settings that the products share: the privacy opt-outs kept in ambire-common and the
  * ones each app keeps on its own (like the theme), which the app applies itself.
  */
 export type AppDataSyncSettings = {
-  featureFlags: Partial<Pick<FeatureFlags, (typeof APP_DATA_SYNC_FEATURE_FLAGS)[number]>>
+  /** Only the flags the user controls, the rest are internal to each product */
+  featureFlags: Partial<Pick<FeatureFlags, UserFeatureFlag>>
   disabledSwapProviderIds: string[]
   app: { [key: string]: string | boolean }
 }
@@ -80,8 +60,11 @@ export type AppDataSyncExportOptions = {
  */
 export type AppDataSyncPayload = {
   v: typeof APP_DATA_SYNC_PAYLOAD_VERSION
-  /** Missing when there is nothing encrypted to sync, see `isSyncPasswordRequired` */
-  secret?: MainKeyEncryptedWithSecret
+  /**
+   * Always present, even with nothing encrypted to sync, because unlocking it is how the
+   * importing device confirms the user knows the exporting device's password
+   */
+  secret: MainKeyEncryptedWithSecret
   /** Empty when the user synced only the settings, networks or Address Book */
   accounts: Account[]
   keys: StoredKey[]
@@ -93,17 +76,6 @@ export type AppDataSyncPayload = {
   /** The manually added contacts. Missing when the user did not choose to sync them */
   contacts?: Contacts
 }
-
-/**
- * Whether the payload holds anything encrypted (private keys or recovery phrases), which
- * only the password of the exporting device can unlock. Without it, the import needs
- * no password at all.
- */
-export const isSyncPasswordRequired = ({
-  keys,
-  seeds
-}: Pick<AppDataSyncPayload, 'keys' | 'seeds'>): boolean =>
-  keys.some((key) => key.type === 'internal') || !!seeds.length
 
 /**
  * The keys that travel along with the selected accounts. A Safe's owners are accounts
@@ -322,9 +294,7 @@ export const parseAppDataSyncPayload = (bytes: Uint8Array): AppDataSyncPayload =
   validateAccounts(payload.accounts)
   validateKeys(payload.keys)
   validateSeeds(payload.seeds)
-  // Validated whenever present, so its scrypt params are pinned even if nothing needs it
-  if (isSyncPasswordRequired(payload) || payload.secret !== undefined)
-    validateSecret(payload.secret)
+  validateSecret(payload.secret)
   validateSettings(payload.settings)
   validateNetworks(payload.networks)
   validateContacts(payload.contacts)
