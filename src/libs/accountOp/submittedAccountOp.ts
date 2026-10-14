@@ -170,6 +170,29 @@ export function getSubmittedAccountOpNonce(
   return BigInt(broadcastNonce)
 }
 
+/**
+ * Returns the first Safe nonce that is free once every transaction that was already sent,
+ * but is still waiting to be confirmed, gets mined: the greater of the on-chain nonce and the
+ * highest pending nonce + 1. Using it for a new Safe transaction queues the transaction behind
+ * the pending ones instead of reusing a pending nonce, which would replace that transaction.
+ *
+ * @param accountStateNonce the Safe nonce read from the chain
+ * @param pendingAccountOps the account's BroadcastedButNotConfirmed accountOps (any network)
+ * @param chainId the network of the new transaction; accountOps on other networks are ignored
+ */
+export function getSafeNonceAfterPendingAccountOps(
+  accountStateNonce: bigint,
+  pendingAccountOps: Pick<SubmittedAccountOp, 'chainId' | 'nonce'>[],
+  chainId: bigint
+): bigint {
+  return pendingAccountOps.reduce((freeNonce, accountOp) => {
+    if (accountOp.chainId !== chainId || accountOp.nonce === null) return freeNonce
+
+    const nonceAfterAccountOp = BigInt(accountOp.nonce) + 1n
+    return nonceAfterAccountOp > freeNonce ? nonceAfterAccountOp : freeNonce
+  }, accountStateNonce)
+}
+
 export function isIdentifiedByTxn(identifiedBy: AccountOpIdentifiedBy): boolean {
   return identifiedBy && identifiedBy.type === 'Transaction'
 }

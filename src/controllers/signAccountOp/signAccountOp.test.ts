@@ -1111,7 +1111,8 @@ describe('SignAccountOp Controller ', () => {
     controller.update({ accountOpData: { nonce: accountState.nonce + 1n } })
 
     expect(controller.errors).toContainEqual({
-      title: 'You need to broadcast pending transactions before this one.',
+      title:
+        'Earlier transactions need to go through first. Send them, or wait for the ones already sent to be confirmed.',
       action: 'refetch-account-state'
     })
     expect(controller.canBroadcast).toBe(false)

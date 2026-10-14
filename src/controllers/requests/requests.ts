@@ -72,6 +72,7 @@ import {
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getAccountOpNonce, isSafeRejectionCall } from '../../libs/accountOp/accountOp'
+import { getSafeNonceAfterPendingAccountOps } from '../../libs/accountOp/submittedAccountOp'
 import {
   getAccountOpBanners,
   getDappUserRequestsBanners,
@@ -252,7 +253,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     this.#onSetCurrentUserRequest(val)
   }
 
-  #getFirstFreeNonce(accountAddr: string, chainId: bigint, startNonce: bigint): bigint {
+  /**
+   * The first Safe nonce not taken by a transaction that is already sent but not yet confirmed
+   * on this network, nor by another queued (not yet sent) request.
+   */
+  #getFirstFreeNonce(accountAddr: string, chainId: bigint, accountStateNonce: bigint): bigint {
+    const startNonce = getSafeNonceAfterPendingAccountOps(
+      accountStateNonce,
+      this.#activity.broadcastedButNotConfirmed[accountAddr] || [],
+      chainId
+    )
     const queuedNonces = this.userRequests.reduce<bigint[]>((nonces, request) => {
       if (
         request.kind !== 'calls' ||
@@ -2621,8 +2631,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     let callUserRequest: CallsUserRequest | undefined
     const isSafeAccount = !!this.#accounts.accounts.find((a) => a.addr === meta.accountAddr)
       ?.safeCreation
+    // A Safe accountOp built in advance (speeding up or cancelling an already sent transaction)
+    // is pinned to that transaction's nonce, so it must always be a request of its own instead
+    // of getting its calls merged into whatever request is already open
+    const isPrebuiltSafeAccountOp = isSafeAccount && !!providedAccountOp
     const existingUserRequest = this.userRequests.find(
       (r) =>
+        !isPrebuiltSafeAccountOp &&
         r.kind === 'calls' &&
         // done like this so 1) a safe onchain rejection tx is not bundled with a normal batch
         // 2) a fetched rejection is bundled with the current local present rejection.
@@ -2767,10 +2782,15 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const requestId = !!account.safeCreation
         ? `${baseRequestId}-${generateUuid()}`
         : baseRequestId
+      const prebuiltSafeNonce =
+        isSafeAccount && providedAccountOp && providedAccountOp.nonce !== null
+          ? providedAccountOp.nonce
+          : undefined
+      const pinnedNonce = accountOpNonce ?? prebuiltSafeNonce
       const initialNonce =
-        account.safeCreation && !meta.safeTxnProps && accountOpNonce === undefined
+        account.safeCreation && !meta.safeTxnProps && pinnedNonce === undefined
           ? this.#getFirstFreeNonce(meta.accountAddr, meta.chainId, accountState.nonce)
-          : (accountOpNonce ?? meta.safeTxnProps?.nonce ?? accountState.nonce)
+          : (pinnedNonce ?? meta.safeTxnProps?.nonce ?? accountState.nonce)
       await this.#signAccountOpPreference.initialLoadPromise
       callUserRequest = {
         id: requestId,

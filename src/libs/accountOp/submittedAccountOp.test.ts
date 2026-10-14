@@ -2,6 +2,7 @@ import { encodeFunctionData, parseAbi } from 'viem'
 
 import {
   getAccountOpRecipients,
+  getSafeNonceAfterPendingAccountOps,
   getSubmittedAccountOpNonce,
   SubmittedAccountOp
 } from './submittedAccountOp'
@@ -37,6 +38,44 @@ describe('SubmittedAccountOp', () => {
 
     test('falls back to the broadcast nonce when a Safe transaction nonce is unavailable', () => {
       expect(getSubmittedAccountOpNonce(null, 7, true)).toBe(7n)
+    })
+  })
+
+  describe('getSafeNonceAfterPendingAccountOps', () => {
+    const BASE = 8453n
+    const ETHEREUM = 1n
+
+    test('uses the on-chain nonce when nothing is pending', () => {
+      expect(getSafeNonceAfterPendingAccountOps(268n, [], BASE)).toBe(268n)
+    })
+
+    test('queues after the highest pending nonce on the same network', () => {
+      const pending = [
+        { chainId: BASE, nonce: 268n },
+        { chainId: BASE, nonce: 270n },
+        { chainId: BASE, nonce: 269n }
+      ]
+
+      expect(getSafeNonceAfterPendingAccountOps(268n, pending, BASE)).toBe(271n)
+    })
+
+    test('ignores pending transactions on other networks', () => {
+      expect(
+        getSafeNonceAfterPendingAccountOps(268n, [{ chainId: ETHEREUM, nonce: 300n }], BASE)
+      ).toBe(268n)
+    })
+
+    test('ignores pending transactions without a nonce', () => {
+      expect(getSafeNonceAfterPendingAccountOps(268n, [{ chainId: BASE, nonce: null }], BASE)).toBe(
+        268n
+      )
+    })
+
+    test('never goes below the on-chain nonce when a pending one is already mined', () => {
+      // a stale BroadcastedButNotConfirmed status must not move the nonce backwards
+      expect(getSafeNonceAfterPendingAccountOps(275n, [{ chainId: BASE, nonce: 268n }], BASE)).toBe(
+        275n
+      )
     })
   })
 

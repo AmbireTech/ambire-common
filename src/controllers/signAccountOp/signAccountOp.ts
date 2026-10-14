@@ -94,6 +94,7 @@ import {
 import {
   AccountOpIdentifiedBy,
   getAccountOpRecipients,
+  getSafeNonceAfterPendingAccountOps,
   getSubmittedAccountOpNonce,
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
@@ -1596,7 +1597,8 @@ export class SignAccountOpController
       }
     }
 
-    // Safe txn, signed, with a future nonce: display an error
+    // Safe txn, signed, with a future nonce: display an error. The earlier transactions
+    // may be either not sent yet or sent and still waiting to be confirmed
     if (
       !!this.account.safeCreation &&
       accountState &&
@@ -1606,7 +1608,8 @@ export class SignAccountOpController
       this.#accountOp.signed.length >= this.threshold
     ) {
       errors.push({
-        title: 'You need to broadcast pending transactions before this one.',
+        title:
+          'Earlier transactions need to go through first. Send them, or wait for the ones already sent to be confirmed.',
         action: 'refetch-account-state'
       })
     }
@@ -3282,8 +3285,15 @@ export class SignAccountOpController
         (this.#accountOp.signed?.length || 0) < this.threshold
       ) {
         // If the Safe txn is not already signed, fetch the latest nonce unless
-        // the user explicitly selected one for this transaction.
-        if (!this.accountOp.safeTx && this.#customSafeNonce === null) {
+        // the user explicitly selected one for this transaction, or the transaction
+        // speeds up / cancels an already sent one, as it must keep that transaction's nonce.
+        // Sent but not yet confirmed transactions count as taken, so this one is queued
+        // after them instead of replacing one of them.
+        if (
+          !this.accountOp.safeTx &&
+          this.#customSafeNonce === null &&
+          !this.isSpeedUpTransaction
+        ) {
           const latestNonce = await getNonce(this.accountOp.accountAddr, this.provider).catch(
             (e) => {
               console.log('failed to retrieve the latest nonce for Safe')
@@ -3291,8 +3301,14 @@ export class SignAccountOpController
               return null
             }
           )
-          if (latestNonce) {
-            this.#updateNonce(latestNonce)
+          if (latestNonce !== null) {
+            this.#updateNonce(
+              getSafeNonceAfterPendingAccountOps(
+                latestNonce,
+                this.#activity.broadcastedButNotConfirmed[this.account.addr] || [],
+                this.accountOp.chainId
+              )
+            )
           }
         }
 
