@@ -5,6 +5,7 @@ import {
   computeOrderUid,
   ethFlowInterface,
   getApiNetwork,
+  getCowSwapOrderStruct,
   getOutputValueInUsd,
   getProtocolFeeAmount,
   getWrappedNativeTokenAddress,
@@ -499,6 +500,7 @@ export class CowSwapAPI implements SwapProvider {
       // sorting compares the amount after it against other providers' after-gas values.
       // The gas of the user's own setPreSignature / ETH-flow createOrder tx is not included
       outputValueAfterGasInUsd: outputValueAfterNetworkCostInUsd,
+      networkFeeInToToken: networkFeeInBuyToken.toString(),
       serviceTime,
       rawRoute,
       toToken: {
@@ -637,7 +639,8 @@ export class CowSwapAPI implements SwapProvider {
       txTarget: COWSWAP_SETTLEMENT_ADDRESS,
       userTxIndex: 0,
       value: '0',
-      txData: settlementInterface.encodeFunctionData('setPreSignature', [route.routeId, true])
+      txData: settlementInterface.encodeFunctionData('setPreSignature', [route.routeId, true]),
+      cowSwapOrder: getCowSwapOrderStruct(rawRoute.order)
     }
   }
 
