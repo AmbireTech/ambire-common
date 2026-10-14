@@ -48,7 +48,8 @@ const createController = (chainIds: bigint[], providers = {}) =>
       networks: chainIds.map((chainId) => ({ chainId, name: `Network ${chainId.toString()}` }))
     } as any,
     providers: { providers } as any,
-    storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any
+    storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any,
+    keystore: { getAccountKeys: () => [] } as any
   })
 
 const getOwnerSearch = (controller: SafeController, owner = OWNER) =>
@@ -352,9 +353,11 @@ describe('SafeController pending counts', () => {
   const safeAccount = (addr: string) => ({ addr, safeCreation, associatedKeys: [OWNER] })
 
   const createPendingCountsController = ({
-    accountStates
+    accountStates,
+    importedKeyAddrs = [OWNER]
   }: {
     accountStates: Record<string, Record<string, { isDeployed: boolean; threshold: number }>>
+    importedKeyAddrs?: string[]
   }) => {
     const accounts = {
       accounts: [
@@ -373,7 +376,13 @@ describe('SafeController pending counts', () => {
         networks: [{ chainId: 1n }, { chainId: 10n }, { chainId: 8453n }]
       } as any,
       providers: { providers: {} } as any,
-      storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any
+      storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any,
+      keystore: {
+        getAccountKeys: ({ associatedKeys }: { associatedKeys: string[] }) =>
+          importedKeyAddrs
+            .filter((addr) => associatedKeys.includes(addr))
+            .map((addr) => ({ addr, type: 'internal' }))
+      } as any
     })
 
     return { controller, accounts }
@@ -455,7 +464,23 @@ describe('SafeController pending counts', () => {
     expect(controller.pendingCountBySafe).toEqual({ [SAFE_B]: { '1': 1, '8453': 1 } })
   })
 
-  it('skips a Safe whose counts are younger than 5 minutes and fetches it again after', async () => {
+  it('skips the Safes without an imported owner, as the user cannot sign what is pending', async () => {
+    const { controller } = createPendingCountsController({
+      accountStates: {
+        [SAFE_A]: { '1': { isDeployed: true, threshold: 1 } },
+        [SAFE_B]: { '1': { isDeployed: true, threshold: 1 } }
+      },
+      importedKeyAddrs: [OTHER_OWNER]
+    })
+    await controller.initialLoadPromise
+
+    await controller.updateOtherSafesPendingCounts()
+
+    expect(fetchAllPending).not.toHaveBeenCalled()
+    expect(controller.pendingCountBySafe).toEqual({})
+  })
+
+  it('skips a Safe whose counts are younger than 15 minutes and fetches it again after', async () => {
     const { controller } = createPendingCountsController({
       accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1 } } }
     })
@@ -465,11 +490,11 @@ describe('SafeController pending counts', () => {
 
     try {
       await controller.updateOtherSafesPendingCounts(SAFE_A)
-      dateNowSpy.mockReturnValue(now + 5 * 60 * 1000 - 1)
+      dateNowSpy.mockReturnValue(now + 15 * 60 * 1000 - 1)
       await controller.updateOtherSafesPendingCounts(SAFE_A)
       expect(fetchAllPending).toHaveBeenCalledTimes(1)
 
-      dateNowSpy.mockReturnValue(now + 5 * 60 * 1000)
+      dateNowSpy.mockReturnValue(now + 15 * 60 * 1000)
       await controller.updateOtherSafesPendingCounts(SAFE_A)
       expect(fetchAllPending).toHaveBeenCalledTimes(2)
     } finally {
@@ -505,7 +530,7 @@ describe('SafeController pending counts', () => {
       .mocked(fetchAllPending)
       .mockRejectedValueOnce(new Error('Too many requests'))
       .mockResolvedValueOnce(pendingResponse(10n, 1, []) as any)
-    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 5 * 60 * 1000)
+    const dateNowSpy = jest.spyOn(Date, 'now').mockReturnValue(Date.now() + 15 * 60 * 1000)
 
     try {
       await controller.updateOtherSafesPendingCounts(SAFE_A)

@@ -10,6 +10,7 @@ import {
 import { IAccountsController, SafeAccountCreation } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
+import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISafeController, SafeAccountByOwner } from '../../interfaces/safe'
@@ -56,6 +57,8 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   #accounts: IAccountsController
 
+  #keystore: IKeystoreController
+
   #providers: IProvidersController
 
   /**
@@ -99,19 +102,22 @@ export class SafeController extends EventEmitter implements ISafeController {
     networks,
     providers,
     storage,
-    accounts
+    accounts,
+    keystore
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     networks: INetworksController
     providers: IProvidersController
     storage: IStorageController
     accounts: IAccountsController
+    keystore: IKeystoreController
   }) {
     super(eventEmitterRegistry)
     this.#networks = networks
     this.#providers = providers
     this.#storage = storage
     this.#accounts = accounts
+    this.#keystore = keystore
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -401,7 +407,8 @@ export class SafeController extends EventEmitter implements ISafeController {
   /**
    * Refreshes the pending counts of the user's Safes other than the selected one, whose
    * pending txns `MainController.fetchSafeTxns` turns into requests instead. A Safe is
-   * skipped while its counts are younger than `FETCH_OTHER_SAFES_PENDING`.
+   * skipped while its counts are younger than `FETCH_OTHER_SAFES_PENDING`, and until at least
+   * one of its owners is imported, as without one the user cannot sign what is pending.
    */
   async updateOtherSafesPendingCounts(selectedAccountAddr?: string) {
     if (this.#updateOtherSafesPendingCountsPromise)
@@ -418,10 +425,11 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   async #updateOtherSafesPendingCounts(selectedAccountAddr?: string) {
     const safesToUpdate = this.#accounts.accounts.filter(
-      ({ addr, safeCreation }) =>
-        !!safeCreation &&
-        addr !== selectedAccountAddr &&
-        !this.shouldSkipFetchPending(addr, FETCH_OTHER_SAFES_PENDING)
+      (account) =>
+        !!account.safeCreation &&
+        account.addr !== selectedAccountAddr &&
+        !!this.#keystore.getAccountKeys(account).length &&
+        !this.shouldSkipFetchPending(account.addr, FETCH_OTHER_SAFES_PENDING)
     )
     let isFirstRequest = true
 

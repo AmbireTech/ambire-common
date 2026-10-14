@@ -23,7 +23,7 @@ export const GAS_PRICE_UPDATE_INTERVAL = 12000
 export const FETCH_SAFE_TXNS = 3 * 60 * 1000 // 3 minutes
 // How old the pending counts of the Safes that are not selected may get before an app open or
 // focus refreshes them
-export const FETCH_OTHER_SAFES_PENDING = 5 * 60 * 1000 // 5 minutes
+export const FETCH_OTHER_SAFES_PENDING = 15 * 60 * 1000 // 15 minutes
 // How often the runner checks whether any scheduled portfolio update is due
 export const SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL = 20 * 1000 // 20 seconds
 // How long a scheduled portfolio update waits before the runner executes it, giving the
