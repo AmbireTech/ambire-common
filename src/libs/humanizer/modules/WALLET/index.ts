@@ -22,12 +22,17 @@ const stkWrapAbi = parseAbi(['function wrap(uint256 shareAmount)'])
 const stkUnwrapAbi = parseAbi(['function unwrap(uint256 shareAmount)'])
 const stkEnterAbi = parseAbi(['function enter(uint256 amount)'])
 
+const wrapAllSelector = toFunctionSelector(wrapAllAbi[0])
+const stkWrapSelector = toFunctionSelector(stkWrapAbi[0])
+const stkUnwrapSelector = toFunctionSelector(stkUnwrapAbi[0])
+const stkEnterSelector = toFunctionSelector(stkEnterAbi[0])
+
 export const WALLETModule: HumanizerCallModule = (_: AccountOp, call: IrCall) => {
   const matcher = {
     supplyController: WALLET_SUPPLY_CONTROLLER_MAPPING,
     stakingPool: STAKING_POOLS,
     stkWallet: {
-      [toFunctionSelector(wrapAllAbi[0])]: () => {
+      [wrapAllSelector]: () => {
         return [
           getAction('Wrap all'),
           getToken(WALLET_STAKING_ADDR, 0n),
@@ -35,7 +40,7 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, call: IrCall) =>
           getToken(STK_WALLET, 0n)
         ]
       },
-      [toFunctionSelector(stkWrapAbi[0])]: ({ data }: HexIrCall) => {
+      [stkWrapSelector]: ({ data }: HexIrCall) => {
         const { args } = decodeFunctionData({ abi: stkWrapAbi, data })
         const [shareAmount] = args
 
@@ -46,7 +51,7 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, call: IrCall) =>
           getToken(STK_WALLET, 0n)
         ]
       },
-      [toFunctionSelector(stkUnwrapAbi[0])]: ({ data }: HexIrCall) => {
+      [stkUnwrapSelector]: ({ data }: HexIrCall) => {
         const { args } = decodeFunctionData({ abi: stkUnwrapAbi, data })
         const [shareAmount] = args
 
@@ -57,7 +62,7 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, call: IrCall) =>
           getToken(WALLET_STAKING_ADDR, shareAmount)
         ]
       },
-      [toFunctionSelector(stkEnterAbi[0])]: ({ data }: HexIrCall) => {
+      [stkEnterSelector]: ({ data }: HexIrCall) => {
         const { args } = decodeFunctionData({ abi: stkEnterAbi, data })
         const [amount] = args
 

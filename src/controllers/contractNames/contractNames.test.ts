@@ -4,6 +4,8 @@ import fetch from 'node-fetch'
 import { expect, jest } from '@jest/globals'
 
 import { suppressConsole } from '../../../test/helpers/console'
+import { Fetch } from '../../interfaces/fetch'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { ContractNamesController, PERSIST_NOT_FOUND_IN_MS } from './contractNames'
 
 const contracts = {
@@ -166,5 +168,67 @@ describe('Contract Names', () => {
 
     expect(contractNamesController.contractsPendingToBeFetched.length).toBe(1)
     restore()
+  })
+
+  it('does not queue or fetch contract names when transaction argument decoding is disabled', async () => {
+    const mockedFetch = jest.fn()
+    const featureFlags = {
+      initialLoadPromise: Promise.resolve(),
+      isFeatureEnabled: jest.fn(() => false)
+    } as unknown as IFeatureFlagsController
+    const contractNamesController = new ContractNamesController({
+      fetch: mockedFetch as Fetch,
+      featureFlags
+    })
+    const address = Wallet.createRandom().address
+
+    contractNamesController.getName(address, 1n)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
+    await Promise.resolve()
+
+    expect(contractNamesController.contractsPendingToBeFetched).toEqual([])
+    expect(contractNamesController.contractNames[address]).toBeUndefined()
+    expect(mockedFetch).not.toHaveBeenCalled()
+  })
+
+  it('cancels a queued contract name fetch if transaction argument decoding is disabled', async () => {
+    const address = Wallet.createRandom().address
+    const mockedFetch = jest.fn(async () => ({
+      json: async () => ({
+        contracts: {
+          [address]: { address, name: 'Example contract' }
+        }
+      })
+    }))
+    let isEnabled = true
+    const featureFlags = {
+      initialLoadPromise: Promise.resolve(),
+      isFeatureEnabled: jest.fn(() => isEnabled)
+    } as unknown as IFeatureFlagsController
+    const contractNamesController = new ContractNamesController({
+      fetch: mockedFetch as unknown as Fetch,
+      featureFlags
+    })
+
+    contractNamesController.getName(address, 1n)
+    expect(contractNamesController.contractNames[address]?.isLoading).toBe(true)
+
+    isEnabled = false
+    const cancellationUpdate = waitForNthUpdate(contractNamesController, 1)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
+    await cancellationUpdate
+
+    expect(mockedFetch).not.toHaveBeenCalled()
+    expect(contractNamesController.contractsPendingToBeFetched).toEqual([])
+    expect(contractNamesController.contractNames[address]?.isLoading).toBe(false)
+
+    isEnabled = true
+    contractNamesController.getName(address, 1n)
+    const fetchUpdates = waitForNthUpdate(contractNamesController, 2)
+    jest.advanceTimersByTime(DEFAULT_DEBOUNCE)
+    await fetchUpdates
+
+    expect(mockedFetch).toHaveBeenCalledTimes(1)
+    expect(contractNamesController.contractNames[address]?.name).toBe('Example contract')
   })
 })

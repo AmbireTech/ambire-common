@@ -4,18 +4,20 @@ import { TypedDataDomain, TypedDataField } from 'ethers'
 // import { AddEthereumChainParameter, WatchAssetParams } from 'viem'
 import { SiweMessage as ViemSiweMessage } from 'viem/siwe'
 
+import { Call } from '@/libs/accountOp/types'
+
 import { SubmittedAccountOp } from '../libs/accountOp/submittedAccountOp'
 import { PaymasterService } from '../libs/erc7677/types'
 import { AccountId } from './account'
 import { AutoLoginStatus, SiweValidityStatus } from './autoLogin'
-import { DappProviderRequest } from './dapp'
+import { Dapp, DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { ISignAccountOpController } from './signAccountOp'
 import { EIP7702Signature } from './signatures'
 import { SwapAndBridgeQuote, SwapAndBridgeSendTxRequest } from './swapAndBridge'
 
+import type { AccountOp } from '../libs/accountOp/accountOp'
 import type { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
-
 // @TODO: move this type and it's deps (PlainTextMessage, TypedMessage) to another place,
 // probably interfaces
 export interface Message {
@@ -33,13 +35,44 @@ export interface Message {
   signature: EIP7702Signature | string | null
 }
 
-export type DappPromise = {
+/**
+ * What an app's request flow hands over, before it is attached to a user request. The `meta`
+ * a `DappPromise` carries is only known once the payload has been read, so it is added when
+ * the request is built rather than by whoever raised it.
+ */
+export type PendingDappPromise = {
   id: string
   session: DappProviderRequest['session']
-  meta: { isWalletSendCalls?: boolean }
   resolve: (data: any) => void
   reject: (data: any) => void
 }
+
+/** A dapp promise once it is attached to a user request. */
+export type DappPromise = PendingDappPromise & {
+  meta: { isWalletSendCalls?: boolean }
+}
+
+/**
+ * One app request waiting its turn behind the requests it would collide with. `settle` and
+ * `fail` answer the caller that is waiting on `build`, which is a different thing from the
+ * app's own promise - a request can be added successfully and still leave the app waiting for
+ * the user.
+ */
+export type DappRequestQueueItem = {
+  request: DappProviderRequest
+  dappPromise: PendingDappPromise
+  dapp: Dapp | null
+  settle: () => void
+  fail: (error: any) => void
+}
+
+/** One transaction request, validated and ready to go into a batch. */
+export type DappCallsRequestParams = {
+  calls: Call[]
+  meta: CallsUserRequest['meta']
+  dappPromise: CallsUserRequest['dappPromises'][number]
+}
+
 interface UserRequestBase<DP = DappPromise[]> {
   id: string | number
   kind: string
@@ -230,6 +263,34 @@ export type SignUserRequest =
   | TypedMessageUserRequest
   | SiweMessageUserRequest
   | AuthorizationUserRequest
+
+/** What a transaction batch is built from, before it gets a SignAccountOpController of its own. */
+export type CallsUserRequestParams = {
+  calls: Call[]
+  meta: CallsUserRequest['meta']
+  accountOp?: AccountOp
+  dappPromises?: CallsUserRequest['dappPromises']
+  dappSessionId?: string
+}
+
+/**
+ * Transactions held back until the user switches to the account they are for. They are kept
+ * unbuilt so they join that account's batch only once the user is looking at it.
+ */
+export type CallsWaitingAccountSwitch = CallsUserRequestParams & {
+  kind: 'calls'
+  dappPromises: CallsUserRequest['dappPromises']
+}
+
+/**
+ * A sign request for an account other than the selected one, waiting for the user to switch.
+ * Calls are handled separately on purpose as creating a SignAccountOp controller for them
+ * may not be needed - a request may land in the controller of an already existing batch.
+ * That's why we store the "raw" params and do whatever once the user handles it.
+ */
+export type UserRequestWaitingAccountSwitch =
+  | Exclude<SignUserRequest, CallsUserRequest>
+  | CallsWaitingAccountSwitch
 
 export type RequestPosition = 'first' | 'last'
 

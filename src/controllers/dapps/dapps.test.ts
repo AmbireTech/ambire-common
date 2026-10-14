@@ -11,12 +11,14 @@ import { Session } from '../../classes/session'
 import { predefinedDapps } from '../../consts/dapps/dapps'
 import mockChains from '../../consts/dapps/mockChains'
 import mockDapps from '../../consts/dapps/mockDapps'
+import { DAPP_SILENCE_DURATION } from '../../consts/safeguards/dappRequestSpam'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp'
 import { IStorageController } from '../../interfaces/storage'
 import { DappConnectRequest } from '../../interfaces/userRequest'
 import { PhishingController } from '../phishing/phishing'
 
 const TRENDING_TOKENS_URL = 'https://cena.ambire.com/api/v3/trending/'
+const NOW = 1_700_000_000_000
 
 // Two valid entries plus one invalid (no price) to exercise normalization + filtering.
 // Mirrors the trimmed endpoint shape: a { tokens: [...] } wrapper of minimal coin objects
@@ -311,6 +313,54 @@ describe('DappsController', () => {
     })
   })
 
+  test('should refresh the dapp connection security check after enabling the scam checker', async () => {
+    const session = new Session({ tabId: 1, url: 'https://metamask.github.io/test-dapp/' })
+    session.setProp({ name: 'E2E Test Dapp' })
+    const request: DappConnectRequest = {
+      id: 1,
+      kind: 'dappConnect',
+      meta: { params: {} },
+      dappPromises: [
+        {
+          id: '',
+          resolve: () => {},
+          reject: () => {},
+          meta: {},
+          session
+        }
+      ]
+    }
+
+    const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
+      await storageCtrl.set('dappsV2', predefinedDapps)
+      await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+    })
+    await controller.initialLoadPromise
+    await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+
+    await controller.setDappToConnectIfNeeded(request)
+
+    expect(controller.dappToConnect?.blacklisted).toBe('FAILED_TO_GET')
+
+    const updateDomainsSpy = jest
+      .spyOn(mainCtrl.phishing, 'updateDomainsBlacklistedStatus')
+      .mockImplementation(async (urls, callback) => {
+        expect(urls).toEqual([session.origin])
+        expect(controller.dappToConnect?.blacklisted).toBe('LOADING')
+        expect(mainCtrl.featureFlags.isFeatureEnabled('scamAndPhishingChecker')).toBe(true)
+        callback({ [session.id]: 'VERIFIED' })
+      })
+
+    try {
+      await controller.enableScamCheckerAndRefreshDappToConnect()
+
+      expect(updateDomainsSpy).toHaveBeenCalledTimes(1)
+      expect(controller.dappToConnect?.blacklisted).toBe('VERIFIED')
+    } finally {
+      updateDomainsSpy.mockRestore()
+    }
+  })
+
   test('should sync dapps blacklisted status only when phishing.shouldSyncDapps is true', async () => {
     const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
       await storageCtrl.set('dappsV2', [
@@ -370,6 +420,29 @@ describe('DappsController', () => {
         .mockImplementation(async (_urls, callback) => {
           callback(statuses as { [key: string]: BlacklistedStatus })
         })
+
+    test('should not return scam checker banners when the checker is disabled', async () => {
+      const updateDomainsSpy = mockDappVerificationStatuses({ 'aave.com': 'BLACKLISTED' })
+
+      try {
+        const { controller, mainCtrl } = await prepareTest(async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', predefinedDapps)
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+        })
+        await controller.fetchAndUpdatePromise
+
+        const aave = controller.getDapp('aave.com')!
+        expect(controller.getDappVerificationBanner([aave.url])?.id).toBe(
+          DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED
+        )
+
+        await mainCtrl.featureFlags.setFeatureFlag('scamAndPhishingChecker', false)
+
+        expect(controller.getDappVerificationBanner([aave.url])).toBeNull()
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
 
     test('should return loading banner for dapps with pending verification', async () => {
       const updateDomainsSpy = mockDappVerificationStatuses({ 'aave.com': 'LOADING' })
@@ -938,6 +1011,278 @@ describe('DappsController', () => {
 
       // But the global dApp status in #dapps is unchanged
       expect(controller.getDapp(aave.id)?.blacklisted).toBe('VERIFIED')
+    })
+  })
+
+  describe('user-trusted dApps on shared hosting', () => {
+    const vercelDapp = makeDapp({
+      id: 'my-dapp.vercel.app',
+      name: 'My Dapp',
+      url: 'https://my-dapp.vercel.app',
+      blacklisted: 'SUSPICIOUS_HOSTING',
+      isCustom: true
+    })
+    const googleSitesDapp = makeDapp({
+      id: 'sites.google.com',
+      name: 'Dapp On Google Sites',
+      url: 'https://sites.google.com/view/my-dapp',
+      blacklisted: 'SUSPICIOUS_HOSTING',
+      isCustom: true
+    })
+
+    const prepareTrustTest = async (dapps: Dapp[] = [vercelDapp]) =>
+      prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [...predefinedDapps, ...dapps])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+
+    test('the suspicious hosting banner offers the trust action only for dApps that can take it', async () => {
+      const { controller } = await prepareTrustTest([vercelDapp, googleSitesDapp])
+      await controller.fetchAndUpdatePromise
+
+      const vercelBanner = controller.getDappVerificationBanner([vercelDapp.url])
+      expect(vercelBanner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+      expect(vercelBanner?.trustableDappUrls).toEqual([vercelDapp.url])
+
+      // sites.google.com is shared with every other app published there, so there is nothing
+      // smaller than the whole platform the user could trust.
+      const googleSitesBanner = controller.getDappVerificationBanner([googleSitesDapp.url])
+      expect(googleSitesBanner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+      expect(googleSitesBanner?.trustableDappUrls).toEqual([])
+    })
+
+    test('trusting a dApp silences its hosting warning, leaving the not-in-catalog one', async () => {
+      const { controller } = await prepareTrustTest()
+      await controller.fetchAndUpdatePromise
+
+      await controller.trustDapp(vercelDapp.url)
+
+      // Trust does not vouch for the app - it only takes it off the suspicious-hosting footing,
+      // onto the same one every other app outside the catalog stands on.
+      const banner = controller.getDappVerificationBanner([vercelDapp.url])
+      expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG)
+
+      const dapp = controller.dapps.find((d) => d.id === vercelDapp.id)!
+      expect(dapp.isTrustedByUser).toBe(true)
+      expect(dapp.canBeTrustedByUser).toBe(true)
+      // The stored status stays as the checks found it, so the UI can still tell the user why the
+      // app is marked as trusted in the first place.
+      expect(dapp.blacklisted).toBe('SUSPICIOUS_HOSTING')
+    })
+
+    test('revoking the trust brings the hosting warning back', async () => {
+      const { controller, mainCtrl } = await prepareTrustTest()
+      await controller.fetchAndUpdatePromise
+
+      await controller.trustDapp(vercelDapp.url)
+      await controller.untrustDapp(vercelDapp.id)
+
+      expect(controller.getDappVerificationBanner([vercelDapp.url])?.id).toBe(
+        DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING
+      )
+      expect(controller.dapps.find((d) => d.id === vercelDapp.id)!.isTrustedByUser).toBe(false)
+      const storedDapps = await mainCtrl.storage.get('dappsV2', [])
+      expect(storedDapps.find((d) => d.id === vercelDapp.id)!.isTrustedByUser).toBe(false)
+    })
+
+    test('the trust is stored on the dApp record, so a disconnect that drops it drops the trust', async () => {
+      const { controller, mainCtrl } = await prepareTrustTest([
+        { ...vercelDapp, isConnected: true, connectedSources: ['injected'] }
+      ])
+      await controller.fetchAndUpdatePromise
+
+      await controller.trustDapp(vercelDapp.url)
+      const storedDapps = await mainCtrl.storage.get('dappsV2', [])
+      expect(storedDapps.find((d) => d.id === vercelDapp.id)!.isTrustedByUser).toBe(true)
+
+      // Disconnecting a custom dApp removes its record entirely - and the trust with it. The user
+      // has to vouch for the app again on the next connect, which we accept: keeping the trust
+      // alive would mean a record outliving the connection it was made for.
+      controller.updateDapp(vercelDapp.id, { connectedSources: [] })
+      expect(controller.getDapp(vercelDapp.id)).toBeUndefined()
+
+      const storedDappsAfterDisconnect = await mainCtrl.storage.get('dappsV2', [])
+      expect(storedDappsAfterDisconnect.find((d) => d.id === vercelDapp.id)).toBeUndefined()
+    })
+
+    test('a trailing-dot id stored by an older version still resolves to the trusted dApp', async () => {
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', [
+          ...predefinedDapps,
+          { ...vercelDapp, id: 'my-dapp.vercel.app.', isTrustedByUser: true }
+        ])
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.fetchAndUpdatePromise
+
+      expect(controller.getDappVerificationBanner([vercelDapp.url])?.id).toBe(
+        DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG
+      )
+    })
+
+    test('SECURITY: trusting a dApp that shares its hostname with the platform is refused', async () => {
+      const { controller, mainCtrl } = await prepareTrustTest([googleSitesDapp])
+      await controller.fetchAndUpdatePromise
+
+      const { restore } = suppressConsole()
+      try {
+        await controller.trustDapp(googleSitesDapp.url)
+      } finally {
+        restore()
+      }
+
+      const storedDapps = await mainCtrl.storage.get('dappsV2', [])
+      expect(storedDapps.find((d) => d.id === googleSitesDapp.id)!.isTrustedByUser).toBeFalsy()
+      expect(controller.getDappVerificationBanner([googleSitesDapp.url])?.id).toBe(
+        DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING
+      )
+      const dapp = controller.dapps.find((d) => d.id === googleSitesDapp.id)!
+      expect(dapp.canBeTrustedByUser).toBe(false)
+      expect(dapp.isTrustedByUser).toBe(false)
+    })
+
+    test('SECURITY: the trust never silences BLACKLISTED', async () => {
+      // The phishing DB is what makes a dApp BLACKLISTED; on a suspicious hosting platform it
+      // outranks the hosting warning, so this is the status the checks would really report.
+      const updateDomainsSpy = jest
+        .spyOn(PhishingController.prototype, 'updateDomainsBlacklistedStatus')
+        .mockImplementation(async (_urls, callback) => {
+          callback({ [vercelDapp.id]: 'BLACKLISTED' })
+        })
+
+      try {
+        const { controller } = await prepareTrustTest([
+          makeDapp({ ...vercelDapp, blacklisted: 'LOADING' })
+        ])
+        await controller.fetchAndUpdatePromise
+
+        expect(controller.getDapp(vercelDapp.id)?.blacklisted).toBe('BLACKLISTED')
+
+        await controller.trustDapp(vercelDapp.url)
+
+        expect(controller.getDappVerificationBanner([vercelDapp.url])?.id).toBe(
+          DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED
+        )
+      } finally {
+        updateDomainsSpy.mockRestore()
+      }
+    })
+
+    test('SECURITY: the trust never silences a dangerous frame context', async () => {
+      const { controller } = await prepareTrustTest()
+      await controller.fetchAndUpdatePromise
+
+      await controller.trustDapp(vercelDapp.url)
+
+      // The trusted dApp is embedded in a tab whose top-level document is a phishing page. The
+      // danger belongs to that document, not to the app the user vouched for.
+      const embeddedSession = new Session({
+        tabId: 80,
+        windowId: 1,
+        url: vercelDapp.url,
+        frameId: 3,
+        topFrameUrl: 'https://sites.google.com/view/fake-uniswap'
+      })
+      controller.dappSessions[embeddedSession.sessionId] = embeddedSession
+
+      const banner = controller.getDappVerificationBanner([vercelDapp.url], {
+        sessionId: embeddedSession.sessionId
+      })
+      expect(banner?.id).toBe(DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING)
+      expect(banner?.trustableDappUrls).toEqual([])
+    })
+
+    test('trusting from the connect prompt sticks to the pending dApp and is persisted on connect', async () => {
+      // A dApp connecting for the first time has no record yet, so there is nothing to write the
+      // trust onto - it rides on dappToConnect until the UI hands that back to addDapp.
+      const { controller } = await prepareTest(async (storageCtrl) => {
+        await storageCtrl.set('dappsV2', predefinedDapps)
+        await storageCtrl.set('lastDappsUpdateVersion', '1.0.0')
+      })
+      await controller.fetchAndUpdatePromise
+      expect(controller.getDapp(vercelDapp.id)).toBeUndefined()
+
+      await controller.setDappToConnectIfNeeded({
+        id: 1,
+        kind: 'dappConnect',
+        meta: { params: {} },
+        dappPromises: [
+          {
+            id: '',
+            resolve: () => {},
+            reject: () => {},
+            meta: {},
+            session: new Session({ tabId: 92, windowId: 1, url: vercelDapp.url, frameId: 0 })
+          }
+        ]
+      })
+      await wait(1)
+
+      await controller.trustDapp(vercelDapp.url)
+
+      const dappToConnect = controller.toJSON().dappToConnect!
+      expect(dappToConnect.isTrustedByUser).toBe(true)
+
+      await controller.addDapp({ ...dappToConnect, isConnected: true })
+
+      expect(controller.getDapp(vercelDapp.id)?.isTrustedByUser).toBe(true)
+      expect(controller.getDappVerificationBanner([vercelDapp.url])?.id).toBe(
+        DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG
+      )
+    })
+
+    /**
+     * Opens the connect prompt for a dApp the user already trusts and returns dappToConnect the
+     * way the UI receives it - the trust flags are stamped on serialization, so they are only
+     * visible on toJSON(), not on the controller field.
+     */
+    const connectTrustedVercelDappFrom = async (session: Session) => {
+      const { controller } = await prepareTrustTest()
+      await controller.fetchAndUpdatePromise
+      await controller.trustDapp(vercelDapp.url)
+
+      await controller.setDappToConnectIfNeeded({
+        id: 1,
+        kind: 'dappConnect',
+        meta: { params: {} },
+        dappPromises: [{ id: '', resolve: () => {}, reject: () => {}, meta: {}, session }]
+      })
+      // The status is filled in by the phishing check that setDappToConnectIfNeeded deliberately
+      // does not await, so let it settle before reading the flags.
+      await wait(1)
+
+      return controller.toJSON().dappToConnect!
+    }
+
+    test('a trusted dApp connecting as the top frame keeps its hosting warning silenced', async () => {
+      const dappToConnect = await connectTrustedVercelDappFrom(
+        new Session({ tabId: 90, windowId: 1, url: vercelDapp.url, frameId: 0 })
+      )
+
+      expect(dappToConnect.blacklisted).toBe('SUSPICIOUS_HOSTING')
+      expect(dappToConnect.canBeTrustedByUser).toBe(true)
+      expect(dappToConnect.isTrustedByUser).toBe(true)
+    })
+
+    test('SECURITY: the trust never silences a dangerous frame context on the connect prompt', async () => {
+      // The trusted dApp asks to connect from inside a tab whose top-level document is a phishing
+      // page. The danger belongs to that document, not to the app the user vouched for.
+      const dappToConnect = await connectTrustedVercelDappFrom(
+        new Session({
+          tabId: 91,
+          windowId: 1,
+          url: vercelDapp.url,
+          frameId: 3,
+          topFrameUrl: 'https://sites.google.com/view/fake-uniswap'
+        })
+      )
+
+      expect(dappToConnect.blacklisted).toBe('SUSPICIOUS_HOSTING')
+      // Both false even though this dApp is on a platform where a single app can be trusted and
+      // the user trusted this exact one - the warning on screen is not about its hosting, so it
+      // can neither be silenced by the trust already given nor by the action being offered again.
+      expect(dappToConnect.canBeTrustedByUser).toBe(false)
+      expect(dappToConnect.isTrustedByUser).toBe(false)
     })
   })
 
@@ -2318,6 +2663,17 @@ describe('DappsController', () => {
       expect(stored.updatedAt).toBeGreaterThan(0)
     })
 
+    test('does not fetch trending tokens when swap and bridge token info is disabled', async () => {
+      const { controller, mainCtrl } = await prepareTest(seedStorage)
+      await mainCtrl.featureFlags.setFeatureFlag('swapAndBridgeTokenInfo', false)
+      const fetchMock = mainCtrl.fetch as jest.Mock
+      fetchMock.mockClear()
+
+      await controller.updateTrendingTokens()
+
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
     test('restores trending tokens from storage on init', async () => {
       const seeded = {
         id: 'solana',
@@ -2440,6 +2796,190 @@ describe('DappsController', () => {
 
       storageGetSpy.mockRestore()
       fetchSpy.mockRestore()
+    })
+  })
+
+  describe('request spam tracking', () => {
+    const DAPP_ID = 'spamming-dapp.com'
+
+    test('offers to silence only after the app has been rejected enough times', async () => {
+      const { controller } = await prepareTest()
+
+      expect(controller.shouldOfferToSilenceDapp(DAPP_ID)).toBe(false)
+
+      controller.recordDappRejection(DAPP_ID)
+      expect(controller.shouldOfferToSilenceDapp(DAPP_ID)).toBe(false)
+
+      controller.recordDappRejection(DAPP_ID)
+      expect(controller.shouldOfferToSilenceDapp(DAPP_ID)).toBe(true)
+    })
+
+    test('one rejection is never enough, however soon the app asks again', async () => {
+      const { controller } = await prepareTest()
+
+      controller.recordDappRejection(DAPP_ID)
+
+      expect(controller.shouldOfferToSilenceDapp(DAPP_ID)).toBe(false)
+    })
+
+    test('one approved request clears everything held against the app', async () => {
+      const { controller } = await prepareTest()
+
+      controller.recordDappRejection(DAPP_ID)
+      controller.recordDappRejection(DAPP_ID)
+      controller.clearDappRejections(DAPP_ID)
+
+      expect(controller.shouldOfferToSilenceDapp(DAPP_ID)).toBe(false)
+    })
+
+    test('silencing lasts a minute and leaves the connection alone', async () => {
+      const { controller } = await prepareTest()
+      const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(NOW)
+
+      expect(controller.isDappSilenced(DAPP_ID)).toBe(false)
+
+      controller.silenceDapp(DAPP_ID)
+      expect(controller.isDappSilenced(DAPP_ID)).toBe(true)
+
+      nowSpy.mockReturnValue(NOW + DAPP_SILENCE_DURATION - 1)
+      expect(controller.isDappSilenced(DAPP_ID)).toBe(true)
+
+      nowSpy.mockReturnValue(NOW + DAPP_SILENCE_DURATION)
+      expect(controller.isDappSilenced(DAPP_ID)).toBe(false)
+
+      nowSpy.mockRestore()
+    })
+  })
+
+  // Auto-login signs while an app's status reads LOADING, so a catalog rebuild - which recreates
+  // every catalog app as LOADING - must not leave a window where a request can see that status.
+  describe('scam check during an app catalog rebuild', () => {
+    const SCAM_CHECKER_DOMAINS_URL = 'https://cena.ambire.com/api/v3/scamchecker/domains'
+    const AAVE_ID = 'aave.com'
+
+    // CI runs with IS_TESTING, which makes the phishing check skip both the local list and the
+    // scam checker and answer VERIFIED - the very path these tests are about would not run
+    let isTestingEnv: string | undefined
+    beforeEach(() => {
+      isTestingEnv = process.env.IS_TESTING
+      delete process.env.IS_TESTING
+    })
+    afterEach(() => {
+      if (isTestingEnv === undefined) return
+      process.env.IS_TESTING = isTestingEnv
+    })
+
+    /**
+     * Records the status `getStatus` returns after every microtask until stopped. Any `await`
+     * inside the rebuild is a point where other code - e.g. an incoming sign-in request - could
+     * run, so a status the sampler never sees is one no such code can see either.
+     */
+    const startStatusSampler = (getStatus: () => Dapp['blacklisted'] | undefined) => {
+      const seenStatuses = new Set<Dapp['blacklisted'] | undefined>()
+      let isStopped = false
+      const samplingPromise = (async () => {
+        let iteration = 0
+        while (!isStopped) {
+          seenStatuses.add(getStatus())
+          iteration++
+          // Yield to the event loop now and then, so timers and I/O are not starved
+          await (iteration % 100
+            ? Promise.resolve()
+            : new Promise((resolve) => {
+                setImmediate(resolve)
+              }))
+        }
+      })()
+
+      return {
+        seenStatuses,
+        stop: async () => {
+          isStopped = true
+          await samplingPromise
+        }
+      }
+    }
+
+    const rebuildCatalogWhileSampling = async (localPhishingDomains: string[]) => {
+      const scamCheckerRequestedDomains: string[] = []
+      const { controller, mainCtrl } = await prepareTest(
+        async (storageCtrl) => {
+          await storageCtrl.set('dappsV2', [
+            ...predefinedDapps,
+            makeDapp({
+              id: AAVE_ID,
+              name: 'AAVE',
+              url: 'https://aave.com',
+              blacklisted: 'BLACKLISTED'
+            })
+          ])
+          // Differs from the app version, so loading rebuilds the catalog
+          await storageCtrl.set('lastDappsUpdateVersion', 'test-version')
+          if (localPhishingDomains.length) {
+            await storageCtrl.set('phishing', {
+              version: 1,
+              updatedAt: Date.now(),
+              domains: localPhishingDomains,
+              addresses: []
+            })
+          }
+        },
+        async (url: string, options?: { body?: string }) => {
+          if (url === 'https://api.llama.fi/protocols') {
+            return { ok: true, status: 200, json: async () => mockDapps }
+          }
+          if (url === 'https://api.llama.fi/v2/chains') {
+            return { ok: true, status: 200, json: async () => mockChains }
+          }
+          if (url === SCAM_CHECKER_DOMAINS_URL) {
+            const { domains } = JSON.parse(options?.body || '{}') as { domains: string[] }
+            scamCheckerRequestedDomains.push(...domains)
+            // A real network round trip, during which other code gets to run
+            await new Promise((resolve) => {
+              setTimeout(resolve, 20)
+            })
+            return {
+              ok: true,
+              status: 200,
+              json: async () =>
+                Object.fromEntries(domains.map((domain) => [domain, domain === AAVE_ID]))
+            }
+          }
+
+          return { ok: false, status: 500, json: async () => ({}) }
+        },
+        true
+      )
+
+      const sampler = startStatusSampler(() => controller.getDapp(AAVE_ID)?.blacklisted)
+      // The local phishing list is read from storage long before the catalog finishes downloading
+      await mainCtrl.phishing.init()
+      await controller.init()
+      await controller.fetchAndUpdatePromise
+      await sampler.stop()
+
+      return { controller, seenStatuses: sampler.seenStatuses, scamCheckerRequestedDomains }
+    }
+
+    test('an app checked against the local phishing list is never seen as LOADING', async () => {
+      const { controller, seenStatuses, scamCheckerRequestedDomains } =
+        await rebuildCatalogWhileSampling([AAVE_ID])
+
+      // The catalog was really rebuilt from the downloaded list
+      expect(controller.dapps.some((d) => d.name === 'Lido')).toBe(true)
+      expect(scamCheckerRequestedDomains).toEqual([])
+      expect(seenStatuses.has('LOADING')).toBe(false)
+      expect(controller.getDapp(AAVE_ID)?.blacklisted).toBe('BLACKLISTED')
+    })
+
+    // Control: proves the sampler does catch LOADING when there is a window to catch
+    test('an app is seen as LOADING while the scam checker is asked, when the local list is empty', async () => {
+      const { controller, seenStatuses, scamCheckerRequestedDomains } =
+        await rebuildCatalogWhileSampling([])
+
+      expect(scamCheckerRequestedDomains).toContain(AAVE_ID)
+      expect(seenStatuses.has('LOADING')).toBe(true)
+      expect(controller.getDapp(AAVE_ID)?.blacklisted).toBe('BLACKLISTED')
     })
   })
 })

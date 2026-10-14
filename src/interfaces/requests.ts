@@ -6,7 +6,12 @@ import { ControllerInterface } from './controller'
 import { DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { SwapAndBridgeActiveRoute, SwapAndBridgeQuote } from './swapAndBridge'
-import { CallsUserRequest, RequestExecutionType, RequestPosition } from './userRequest'
+import {
+  CallsUserRequest,
+  PendingDappPromise,
+  RequestExecutionType,
+  RequestPosition
+} from './userRequest'
 
 export type IRequestsController = ControllerInterface<
   InstanceType<typeof import('../controllers/requests/requests').RequestsController>
@@ -17,12 +22,7 @@ export type BuildRequest =
       type: 'dappRequest'
       params: {
         request: DappProviderRequest
-        dappPromise: {
-          id: string
-          session: DappProviderRequest['session']
-          resolve: (data: any) => void
-          reject: (data: any) => void
-        }
+        dappPromise: PendingDappPromise
       }
     }
   | {

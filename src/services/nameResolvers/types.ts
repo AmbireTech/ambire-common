@@ -25,6 +25,11 @@ export type ForwardResolution = {
   expiry: NameExpiry | null
 }
 
+export type ForwardResolutionOptions = {
+  /** Skip avatar records and any remote metadata they may reference. */
+  resolveAvatar?: boolean
+}
+
 /**
  * A name service the wallet can resolve names against. To add one, add a resolver class under
  * `resolvers/` and register it in `resolvers/index.ts`: services that expose an ENS-compatible
@@ -56,7 +61,11 @@ export interface NameResolver {
    * before attempting resolution, without learning anything provider-specific.
    */
   requiredChainId(networkMode: NetworkMode): string | undefined
-  resolve(domain: string, ctx: ResolveContext): Promise<ForwardResolution | null>
+  resolve(
+    domain: string,
+    ctx: ResolveContext,
+    options?: ForwardResolutionOptions
+  ): Promise<ForwardResolution | null>
   reverse(addresses: string[], ctx: ResolveContext): Promise<ReverseLookupResult>
   getAvatar(name: string, ctx: ResolveContext): Promise<string | null>
   getExpiry?(name: string, ctx: ResolveContext): Promise<NameExpiry | null>

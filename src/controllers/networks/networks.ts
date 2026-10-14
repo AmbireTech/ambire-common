@@ -8,6 +8,7 @@ import { networks as predefinedNetworks } from '../../consts/networks'
 import { testnetNetworks as predefinedTestnetNetworks } from '../../consts/testnetNetworks'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Fetch } from '../../interfaces/fetch'
+import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import {
   AddNetworkRequestParams,
   ChainId,
@@ -21,9 +22,11 @@ import { RPCProvider } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
 import {
   getFeaturesByNetworkProperties,
+  getLoadingNetworkInfo,
   getNetworkInfo,
   getNetworksUpdatedWithRelayerNetworks,
-  getValidNetworks
+  getValidNetworks,
+  isNetworkInfoPending
 } from '../../libs/networks/networks'
 import { relayerCall } from '../../libs/relayerCall/relayerCall'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -50,6 +53,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
 
   #callRelayer: Function
 
+  #featureFlags?: IFeatureFlagsController
+
   #networks: { [key: string]: Network } = {}
 
   statuses: Statuses<keyof typeof STATUS_WRAPPED_METHODS> = STATUS_WRAPPED_METHODS
@@ -59,6 +64,9 @@ export class NetworksController extends EventEmitter implements INetworksControl
     rpcUrl: string
     info?: NetworkInfoLoading<NetworkInfo>
   } | null = null
+
+  // Prevents race conditions in setNetworkToAddOrUpdate
+  #networkToAddOrUpdateRequestId = 0
 
   areNetworksFetchingFromRelayer: boolean = false
 
@@ -88,7 +96,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
     relayerUrl,
     useTempProvider,
     onAddOrUpdateNetworks,
-    onReady
+    onReady,
+    featureFlags
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     defaultNetworksMode?: 'mainnet' | 'testnet'
@@ -104,6 +113,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     ) => Promise<void>
     onAddOrUpdateNetworks: (networks: Network[]) => void | Promise<void>
     onReady: () => Promise<void>
+    featureFlags?: IFeatureFlagsController
   }) {
     super(eventEmitterRegistry)
     if (defaultNetworksMode) this.defaultNetworksMode = defaultNetworksMode
@@ -113,6 +123,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
     this.#useTempProvider = useTempProvider
     this.#onAddOrUpdateNetworks = onAddOrUpdateNetworks
     this.#onReady = onReady
+    this.#featureFlags = featureFlags
 
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
@@ -201,6 +212,8 @@ export class NetworksController extends EventEmitter implements INetworksControl
    * `synchronizeNetworks`.
    */
   async #load() {
+    await this.#featureFlags?.initialLoadPromise
+
     // Step 1. Get latest storage (networksInStorage) and validate/normalize
     const networksInStorage = await this.getNetworksInStorage()
 
@@ -255,6 +268,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
    */
   async synchronizeNetworks() {
     if (this.defaultNetworksMode === 'testnet') return
+    if (this.#featureFlags?.isFeatureEnabled('networkConfig') === false) return
 
     this.areNetworksFetchingFromRelayer = true
     this.emitUpdate()
@@ -311,6 +325,10 @@ export class NetworksController extends EventEmitter implements INetworksControl
     mergedNetworks: { [key: string]: Network }
     updatedNetworkChainIds: Network['chainId'][]
   }> {
+    if (this.#featureFlags?.isFeatureEnabled('networkConfig') === false) {
+      return { mergedNetworks: currentNetworks, updatedNetworkChainIds: [] }
+    }
+
     let relayerNetworks: RelayerNetworkConfigResponse = {}
     try {
       const res = await Promise.race([
@@ -360,9 +378,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
             network.chainId,
             provider,
             async (info) => {
-              if (Object.values(info).some((prop) => prop === 'LOADING')) {
-                return
-              }
+              if (isNetworkInfoPending(info)) return
 
               // If RPC is flagged there might be an issue with the RPC
               // this information will fail to return
@@ -394,42 +410,54 @@ export class NetworksController extends EventEmitter implements INetworksControl
       rpcUrl: string
     } | null = null
   ) {
-    await this.initialLoadPromise
+    this.#networkToAddOrUpdateRequestId += 1
+    const requestId = this.#networkToAddOrUpdateRequestId
 
-    if (networkToAddOrUpdate) {
-      this.networkToAddOrUpdate = networkToAddOrUpdate
-      this.emitUpdate()
-
-      await this.#useTempProvider(
-        { chainId: networkToAddOrUpdate.chainId, rpcUrl: networkToAddOrUpdate.rpcUrl },
-        async (provider) => {
-          await getNetworkInfo(
-            this.#fetch,
-            networkToAddOrUpdate.chainId,
-            provider,
-            (info) => {
-              if (this.networkToAddOrUpdate) {
-                this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
-                this.emitUpdate()
-              }
-            },
-            this.#networks[networkToAddOrUpdate.chainId.toString()]
-          )
-        }
-      )
-    } else {
+    if (!networkToAddOrUpdate) {
       this.networkToAddOrUpdate = null
       this.emitUpdate()
+      return
     }
+
+    // Seeded so the very first emission already carries the loading shape, instead of the
+    // UI rendering a frame of "?" rows before the probes report in.
+    this.networkToAddOrUpdate = {
+      ...networkToAddOrUpdate,
+      info: getLoadingNetworkInfo(networkToAddOrUpdate.chainId)
+    }
+    this.emitUpdate()
+
+    await this.initialLoadPromise
+
+    await this.#useTempProvider(
+      { chainId: networkToAddOrUpdate.chainId, rpcUrl: networkToAddOrUpdate.rpcUrl },
+      async (provider) => {
+        await getNetworkInfo(
+          this.#fetch,
+          networkToAddOrUpdate.chainId,
+          provider,
+          (info) => {
+            if (requestId !== this.#networkToAddOrUpdateRequestId) return
+            if (!this.networkToAddOrUpdate) return
+
+            this.networkToAddOrUpdate = { ...this.networkToAddOrUpdate, info }
+            this.emitUpdate()
+          },
+          this.#networks[networkToAddOrUpdate.chainId.toString()]
+        )
+      }
+    )
   }
 
   async #addNetwork(network: AddNetworkRequestParams) {
     await this.initialLoadPromise
-    if (
-      !this.networkToAddOrUpdate?.info ||
-      Object.values(this.networkToAddOrUpdate.info).some((prop) => prop === 'LOADING')
-    ) {
-      return
+    // The redundant-looking `info` check is what narrows `networkToAddOrUpdate` below
+    if (!this.networkToAddOrUpdate?.info || isNetworkInfoPending(this.networkToAddOrUpdate.info)) {
+      throw new EmittableError({
+        message: "We're still checking this network. Please wait a moment and try again.",
+        level: 'expected',
+        error: new Error('settings: addNetwork called before the network info was resolved')
+      })
     }
 
     const chainIds = this.allNetworks.map((net) => net.chainId)
@@ -536,9 +564,7 @@ export class NetworksController extends EventEmitter implements INetworksControl
               chainId,
               provider,
               async (info) => {
-                if (Object.values(info).some((prop) => prop === 'LOADING')) {
-                  return
-                }
+                if (isNetworkInfoPending(info)) return
 
                 const { feeOptions } = info as NetworkInfo
 

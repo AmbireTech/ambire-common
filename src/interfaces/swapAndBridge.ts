@@ -186,6 +186,76 @@ export interface UniswapStatusResponse {
   }[]
 }
 
+export interface CowSwapOrderParameters {
+  sellToken: string
+  buyToken: string
+  receiver: string
+  sellAmount: string
+  buyAmount: string
+  validTo: number
+  appData: string
+  appDataHash?: string
+  feeAmount: string
+  kind: 'sell'
+  partiallyFillable: false
+  sellTokenBalance?: 'erc20'
+  buyTokenBalance?: 'erc20'
+}
+
+export interface CowSwapQuoteResponse {
+  quote: CowSwapOrderParameters & {
+    gasAmount: string
+    gasPrice: string
+    sellTokenPrice: string
+    signingScheme?: 'presign' | 'eip1271'
+  }
+  from?: string
+  expiration: string
+  id?: number
+  verified: boolean
+  protocolFeeBps?: string
+}
+
+export interface CowSwapOrderCreation extends CowSwapOrderParameters {
+  appDataHash: string
+  sellTokenBalance: 'erc20'
+  buyTokenBalance: 'erc20'
+  signingScheme: 'presign' | 'eip1271'
+  signature: '0x'
+  from: string
+  quoteId: number | null
+}
+
+/**
+ * A CoW Swap order exactly as its order ID commits to it - the fields of the EIP-712 `Order`
+ * struct that the settlement contract hashes. Pre-sign and cancel transactions contain only the
+ * order ID, so this is attached to their call to let the humanizer show the order itself. The
+ * humanizer displays it only after recomputing the order ID from it, so a struct that doesn't
+ * match the transaction is never shown.
+ */
+export interface CowSwapOrderStruct {
+  sellToken: string
+  buyToken: string
+  /** The zero address means the order pays out to its owner */
+  receiver: string
+  sellAmount: string
+  buyAmount: string
+  validTo: number
+  /** The hash of the order's app data, not the app data JSON itself */
+  appData: string
+  feeAmount: string
+  kind: 'sell' | 'buy'
+  partiallyFillable: boolean
+  sellTokenBalance: 'erc20' | 'external' | 'internal'
+  buyTokenBalance: 'erc20' | 'internal'
+}
+
+export interface CowSwapRawRoute {
+  quoteResponse: CowSwapQuoteResponse
+  order: CowSwapOrderCreation
+  isEthFlow: boolean
+}
+
 export interface SwapAndBridgeRoute {
   providerId: string
   routeId: string
@@ -205,8 +275,15 @@ export interface SwapAndBridgeRoute {
   inputValueInUsd: number
   outputValueInUsd: number
   outputValueAfterGasInUsd?: number
+  /**
+   * Set only by providers that take the network fee from the received tokens instead of
+   * charging it to the account (currently CoW Swap). It's in the receiving token's
+   * smallest unit and is already included in `toAmount`, but not in the `minAmountOut`
+   * of the route's last user tx, which is what the user receives at least.
+   */
+  networkFeeInToToken?: string
   serviceTime: number
-  rawRoute: SocketAPIRoute | LiFiRoute | UniswapQuoteResponse
+  rawRoute: SocketAPIRoute | LiFiRoute | UniswapQuoteResponse | CowSwapRawRoute
   toToken: LiFiToken
   disabled: boolean
   disabledReason?: string
@@ -399,6 +476,8 @@ export type SwapAndBridgeSendTxRequest = {
   txTarget: string
   userTxIndex: number
   value: string
+  /** The CoW Swap order that `txData` pre-signs, so the humanizer can show it instead of its ID */
+  cowSwapOrder?: CowSwapOrderStruct
 }
 
 export type ActiveRoute = {
@@ -654,7 +733,8 @@ export interface SwapProvider {
     bridge,
     providerId,
     requestId,
-    routeId
+    routeId,
+    rawRoute
   }: {
     txHash: string
     fromChainId: number
@@ -663,6 +743,7 @@ export interface SwapProvider {
     providerId: string
     requestId?: string
     routeId?: string
+    rawRoute?: SwapAndBridgeRoute['rawRoute']
   }): Promise<SwapAndBridgeRouteStatusResult>
 }
 

@@ -777,10 +777,44 @@ describe('Domains', () => {
     nowSpy.mockReturnValue(start + PERSIST_DOMAIN_FOR_IN_MS + 60000)
     await controller.reverseLookup(address, true, { privacyUpdateMode: 'whenStale' })
     expect(reverseLookupEnsSpy).toHaveBeenCalledTimes(4)
+    expect(getEnsAvatarSpy).not.toHaveBeenCalled()
 
     nowSpy.mockRestore()
     reverseLookupEnsSpy.mockRestore()
     getEnsAvatarSpy.mockRestore()
+  })
+
+  it('privacy mode: resolves a domain without requesting or storing its avatar', async () => {
+    const domain = 'private.eth'
+    const address = getAddress('0x1234567890123456789012345678901234567890')
+    const resolveSpy = jest.fn(async () => ({
+      address,
+      avatar: 'https://example.com/private-avatar.png',
+      expiry: null
+    }))
+    const resolver: NameResolver = {
+      id: 'ens',
+      label: 'ENS',
+      isFallback: true,
+      capabilities: { reverse: true, avatar: true, expiry: false },
+      matches: () => true,
+      normalize: (name: string) => name,
+      requiredChainId: () => '1',
+      resolve: resolveSpy,
+      reverse: async () => ({}),
+      getAvatar: async () => null
+    }
+    const controller = new DomainsController({
+      providers: { ['1']: mainnetProvider() },
+      featureFlags: makeFeatureFlags(false),
+      resolvers: [resolver],
+      getNetwork: allNetworksEnabled
+    })
+
+    await controller.resolveDomain({ domain })
+
+    expect(resolveSpy).toHaveBeenCalledWith(domain, expect.anything(), { resolveAvatar: false })
+    expect(controller.domains[address]!.avatar).toBeNull()
   })
 
   it('opt-out (keepEnsProfilesUpToDate): passively refreshes after the TTL', async () => {

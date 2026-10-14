@@ -8,7 +8,11 @@ import { SwapProviderParallelExecutor } from './swapProviderParallelExecutor'
 import { SwapProvider } from '../../interfaces/swapAndBridge'
 
 const socketApi = new SocketAPI({ fetch, apiKey: '' })
-const lifiApi = new LiFiAPI({ fetch, apiKey: '' })
+const lifiApi = new LiFiAPI({
+  fetch,
+  apiKey: '',
+  featureFlags: { isFeatureEnabled: () => true }
+})
 const swapProviderParallelExecutor = new SwapProviderParallelExecutor([socketApi, lifiApi])
 
 describe('Swap Provider Parallel execution', () => {

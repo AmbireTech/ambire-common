@@ -96,6 +96,7 @@ const createController = (
       ])
     } as any,
     {} as any,
+    { isFeatureEnabled: () => true } as any,
     jest.fn(async () => undefined)
   )
 

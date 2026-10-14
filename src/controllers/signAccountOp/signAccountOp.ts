@@ -27,7 +27,8 @@ import {
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { EIP7702Auth } from '../../consts/7702'
 import { FEE_COLLECTOR } from '../../consts/addresses'
-import { SINGLETON } from '../../consts/deploy'
+import { PIMLICO } from '../../consts/bundlers'
+import { EIP_7702_AMBIRE_ACCOUNT, SINGLETON } from '../../consts/deploy'
 import gasTankFeeTokens from '../../consts/gasTankFeeTokens'
 import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { SAFE_API_TIMEOUT_MS } from '../../consts/safe'
@@ -45,6 +46,7 @@ import { Account, AccountOnchainState, IAccountsController } from '../../interfa
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
+import { IErc7730Controller } from '../../interfaces/erc7730'
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { Hex } from '../../interfaces/hex'
@@ -57,6 +59,7 @@ import {
 } from '../../interfaces/keystore'
 import { INetworksController, Network } from '../../interfaces/network'
 import { IPhishingController } from '../../interfaces/phishing'
+import { Platform } from '../../interfaces/platform'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { RPCProvider } from '../../interfaces/provider'
 import {
@@ -70,6 +73,7 @@ import {
   TraceCallDiscoveryStatus,
   Warning
 } from '../../interfaces/signAccountOp'
+import { SigningAuthRequirement } from '../../interfaces/signingAuth'
 import { UserRequest } from '../../interfaces/userRequest'
 import { getContractImplementation } from '../../libs/7702/7702'
 import {
@@ -89,6 +93,7 @@ import {
 } from '../../libs/accountOp/accountOp'
 import {
   AccountOpIdentifiedBy,
+  getAccountOpRecipients,
   getSubmittedAccountOpNonce,
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
@@ -99,6 +104,7 @@ import {
   broadcastTransaction,
   buildRawTransaction
 } from '../../libs/broadcast/broadcast'
+import { getUnauthenticatedDapps, isSigningAuthPlatform } from '../../libs/dapps/helpers'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
@@ -109,7 +115,8 @@ import {
   FullEstimationSummary
 } from '../../libs/estimate/interfaces'
 import { calculateFeeAmount } from '../../libs/fees/fees'
-import { fetchErc7730DescriptorsForAccountOp, humanizeAccountOp } from '../../libs/humanizer'
+import { humanizeAccountOp } from '../../libs/humanizer'
+import { Erc7730CallDescriptors } from '../../libs/humanizer/erc7730/types'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import {
   flattenHumanizerVisualizations,
@@ -121,6 +128,7 @@ import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
 import { getSafeTxn } from '../../libs/safe/helpers'
 import {
+  canHotOwnersMeetSafeThreshold,
   confirm,
   getAlreadySignedOwners,
   getImportedSignersThatHaveNotSigned,
@@ -174,6 +182,7 @@ import {
   getFeeSpeedIdentifier,
   getFeeTokenPriceUnavailableWarning,
   getSafeDelegateCallWarning,
+  getSafeGasRefundWarning,
   getSignificantBalanceDecreaseWarning,
   getTokenUsdAmount,
   getUnknownTokenWarning,
@@ -190,8 +199,21 @@ import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
 export { FeeSpeed, noStateUpdateStatuses, SigningStatus }
 export type { SpeedCalc, Status }
 
+/**
+ * How many reestimates run at the normal interval before the loop slows down,
+ * assuming the user left the request open without acting on it.
+ */
+const REESTIMATES_BEFORE_SLOWING_DOWN = 10
+
+/** Each slowed-down reestimate waits this much longer than the previous one. */
+const SLOWED_DOWN_REESTIMATE_STEP = 10000
+
+/** After this many reestimates the loop gives up and stops refetching. */
+export const MAX_REESTIMATES = 20
+
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
+  rpcGasPrices?: GasSpeeds
   customGasPrices?: GasSpeeds
   customGasLimit?: bigint
   feeToken?: TokenResult
@@ -226,6 +248,8 @@ export class SignAccountOpController
 
   #callRelayer: BindedRelayerCall
 
+  #erc7730: IErc7730Controller
+
   #accounts: IAccountsController
 
   #keystore: IKeystoreController
@@ -233,6 +257,8 @@ export class SignAccountOpController
   #portfolio: IPortfolioController
 
   #featureFlags: IFeatureFlagsController
+
+  #platform: Platform
 
   #signAccountOpPreference: SignAccountOpPreferenceController
 
@@ -262,7 +288,20 @@ export class SignAccountOpController
 
   #customSafeNonce: bigint | null = null
 
+  /**
+   * The gas prices used for broadcasting. With the `rpcWithBundlerFallback` strategy
+   * (see BaseAccount.getGasPriceFetchStrategy), these come from the bundler estimation
+   * and are used for bundler broadcasts only. While there's no bundler estimation,
+   * they're the gasPrice controller ones
+   */
   gasPrices?: GasSpeeds
+
+  /**
+   * The gas prices for broadcasts outside the bundler with the `rpcWithBundlerFallback`
+   * strategy (see BaseAccount.getGasPriceFetchStrategy). These are the RPC gas prices,
+   * or the bundler ones if the RPC has failed and the bundler fallback has succeeded
+   */
+  rpcGasPrices?: GasSpeeds
 
   hasCustomGasPrices: boolean = false
 
@@ -295,6 +334,13 @@ export class SignAccountOpController
   selectedOption: FeePaymentOption | undefined = undefined
 
   status: Status | null = null
+
+  /**
+   * The recipients of this account op the account has never sent to before, together with the
+   * account op they were resolved for. Resolved asynchronously from the activity, so it is cached
+   * here instead of read on every access.
+   */
+  #firstTimeRecipients: { accountOpId: string; recipients: string[] } | null = null
 
   broadcastStatus: 'INITIAL' | 'LOADING' | 'SUCCESS' | 'ERROR' = 'INITIAL'
 
@@ -438,11 +484,13 @@ export class SignAccountOpController
     eventEmitterRegistry,
     type,
     callRelayer,
+    erc7730,
     accounts,
     networks,
     keystore,
     portfolio,
     featureFlags,
+    platform,
     signAccountOpPreference,
     externalSignerControllers,
     account,
@@ -461,11 +509,13 @@ export class SignAccountOpController
     eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
     callRelayer: BindedRelayerCall
+    erc7730: IErc7730Controller
     accounts: IAccountsController
     networks: INetworksController
     keystore: IKeystoreController
     portfolio: IPortfolioController
     featureFlags: IFeatureFlagsController
+    platform: Platform
     signAccountOpPreference: SignAccountOpPreferenceController
     externalSignerControllers: ExternalSignerControllers
     account: Account
@@ -484,10 +534,12 @@ export class SignAccountOpController
     super(eventEmitterRegistry, false)
     this.#type = type || 'default'
     this.#callRelayer = callRelayer
+    this.#erc7730 = erc7730
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
     this.#featureFlags = featureFlags
+    this.#platform = platform
     this.#signAccountOpPreference = signAccountOpPreference
     this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
     this.selectedFeeSpeed =
@@ -548,11 +600,17 @@ export class SignAccountOpController
       this.#featureFlags
     )
     this.#onUpdateAfterTraceCallSuccess = onUpdateAfterTraceCallSuccess
-    this.gasPrice = new GasPriceController(network, provider, this.baseAccount, () => ({
-      estimation: this.estimation,
-      readyToSign: this.readyToSign,
-      stopRefetching: this.#stopRefetching
-    }))
+    this.gasPrice = new GasPriceController(
+      network,
+      provider,
+      this.baseAccount,
+      () => ({
+        estimation: this.estimation,
+        readyToSign: this.readyToSign,
+        stopRefetching: this.#stopRefetching
+      }),
+      this.#featureFlags
+    )
     this.#shouldSimulate = shouldSimulate
 
     this.#onBroadcastSuccess = onBroadcastSuccess
@@ -563,6 +621,7 @@ export class SignAccountOpController
       // Null when the controller is destroyed
       if (!this.gasPrice || this.#stopRefetching) {
         this.#gasPriceInterval.stop()
+        return
       }
 
       await this.gasPrice.fetch('major')
@@ -604,6 +663,83 @@ export class SignAccountOpController
       id: hasUpdatedCalls ? generateUuid() : this.#accountOp.id
     }
     this.#updateSafeEip712Data()
+
+    if (hasUpdatedCalls) void this.#updateFirstTimeRecipients()
+  }
+
+  /**
+   * Which recipients of this account op have never been sent to. A saved contact or an added
+   * account still counts; only the fee collector is left out, as the app picks it, not the user.
+   */
+  async #updateFirstTimeRecipients() {
+    // Only the signing authentication reads them, so elsewhere the activity lookups are skipped
+    if (!isSigningAuthPlatform(this.#platform)) return
+
+    const accountOpId = this.#accountOp.id
+    const recipients = getAccountOpRecipients(this.#accountOp)
+      .map(({ address }) => address)
+      .filter((recipient) => recipient.toLowerCase() !== FEE_COLLECTOR.toLowerCase())
+
+    try {
+      const sentToResults = await Promise.all(
+        recipients.map((recipient) =>
+          this.#activity.hasAccountOpsSentTo(recipient, this.account.addr)
+        )
+      )
+
+      // The calls may have changed while the activity was being read, in which case this result
+      // describes an account op that is no longer on screen
+      if (accountOpId !== this.#accountOp.id) return
+
+      this.#firstTimeRecipients = {
+        accountOpId,
+        recipients: recipients.filter((_, index) => !sentToResults[index]!.found)
+      }
+      this.emitUpdate()
+    } catch (error) {
+      // Leaving the cache untouched means the recipients are not reported as first time ones,
+      // so the user is not blocked - but this should never happen, hence the report
+      this.emitError({
+        level: 'silent',
+        message: 'Could not check whether this account has sent to these addresses before.',
+        error:
+          error instanceof Error
+            ? error
+            : new Error('signAccountOp: reading the sent to history failed')
+      })
+    }
+  }
+
+  /**
+   * Why this account op needs the password/biometrics confirmation, or `null` when it does not.
+   * Read live for the dapps, whose stored flag can change while the request is on screen.
+   * Mobile only. A Safe needs it only when its hot owners can meet the threshold on their own.
+   */
+  get signingAuthRequirement(): SigningAuthRequirement | null {
+    if (!isSigningAuthPlatform(this.#platform)) return null
+
+    if (
+      this.account.safeCreation &&
+      !canHotOwnersMeetSafeThreshold(this.accountKeyStoreKeys, this.threshold)
+    )
+      return null
+
+    const unauthenticatedDapps = getUnauthenticatedDapps(
+      this.#accountOp.calls.map((call) =>
+        call.dapp?.id ? this.#dapps.getDapp(call.dapp.id) : undefined
+      )
+    )
+
+    // The cache belongs to a previous version of the calls until the activity read finishes,
+    // so it must not be reported against the calls currently on screen
+    const firstTimeRecipients =
+      this.#firstTimeRecipients?.accountOpId === this.#accountOp.id
+        ? this.#firstTimeRecipients.recipients
+        : []
+
+    if (!firstTimeRecipients.length && !unauthenticatedDapps.length) return null
+
+    return { firstTimeRecipients, unauthenticatedDapps }
   }
 
   #rebuildBaseAccount() {
@@ -916,6 +1052,7 @@ export class SignAccountOpController
     this.#setDefaults()
     this.humanize()
     this.learnTokens()
+    void this.#updateFirstTimeRecipients()
 
     let lastEstimationStatus: EstimationStatus | null = null
 
@@ -943,9 +1080,14 @@ export class SignAccountOpController
       // if gas prices are not set OR there's no bundler estimation,
       // use the gas prices from the controller.
       // otherwise, we're good as gas price also come from the bundlerEstimation
-      if (!this.gasPrices || !this.estimation.estimation?.bundlerEstimation) {
-        this.update({ gasPrices: this.gasPrice.gasPrices })
-      }
+      const shouldUseControllerGasPrices =
+        !this.gasPrices || !this.estimation.estimation?.bundlerEstimation
+      const gasPrices = shouldUseControllerGasPrices ? this.gasPrice.gasPrices : undefined
+      // set only with the rpcWithBundlerFallback strategy (see BaseAccount.getGasPriceFetchStrategy)
+      const rpcGasPrices = this.gasPrice.rpcGasPrices
+      if (!gasPrices && !rpcGasPrices) return
+
+      this.update({ gasPrices, rpcGasPrices })
     })
 
     this.gasPrice.onError((error: ErrorRef) => {
@@ -1030,10 +1172,7 @@ export class SignAccountOpController
     return true
   }
 
-  #setErc7730Humanization(
-    humanizationId: number,
-    erc7730Descriptors: Awaited<ReturnType<typeof fetchErc7730DescriptorsForAccountOp>>
-  ) {
+  #setErc7730Humanization(humanizationId: number, erc7730Descriptors: Erc7730CallDescriptors) {
     if (
       !this.isCurrentHumanization(humanizationId) ||
       this.humanizationId !== humanizationId ||
@@ -1063,11 +1202,7 @@ export class SignAccountOpController
   async #applyDescriptorFirstHumanization(humanizationId: number) {
     await this.applyDescriptorFirstHumanization({
       humanizationId,
-      fetchDescriptor: () =>
-        fetchErc7730DescriptorsForAccountOp(this.accountOp, {
-          callRelayer: this.#callRelayer,
-          provider: this.provider
-        }),
+      fetchDescriptor: () => this.#erc7730.getDescriptorsForAccountOp(this.accountOp),
       applyDescriptorHumanization: (erc7730Descriptors, currentHumanizationId) =>
         this.#setErc7730Humanization(currentHumanizationId, erc7730Descriptors),
       applyFallbackHumanization: (currentHumanizationId) =>
@@ -1502,7 +1637,8 @@ export class SignAccountOpController
       const feeTokenHasPrice = this.feeSpeeds[identifier]?.every((speed) => !!speed.amountUsd)
       const feeTokenPriceUnavailableWarning = getFeeTokenPriceUnavailableWarning(
         !!this.hasSpeeds(identifier),
-        !!feeTokenHasPrice
+        !!feeTokenHasPrice,
+        this.#featureFlags.isFeatureEnabled('tokenPrices')
       )
 
       // push the warning only if the txn is not sponsored
@@ -1592,7 +1728,9 @@ export class SignAccountOpController
     // the time as the user might just have closed the popup of the extension
     // in a ready-to-estimate state, resulting in meaningless requests
     const waitTime =
-      this.#reestimateCounter < 10 ? ESTIMATE_UPDATE_INTERVAL : 10000 * this.#reestimateCounter
+      this.#reestimateCounter < REESTIMATES_BEFORE_SLOWING_DOWN
+        ? ESTIMATE_UPDATE_INTERVAL
+        : SLOWED_DOWN_REESTIMATE_STEP * this.#reestimateCounter
 
     // Update the timeout for the next run
     this.#simulateAndEstimateOrSimulateInterval.updateTimeout({ timeout: waitTime })
@@ -1601,13 +1739,31 @@ export class SignAccountOpController
       ? this.#simulateAndEstimate()
       : this.estimation.estimate(this.accountOp))
 
-    if (this.#reestimateCounter >= 20) {
-      this.#simulateAndEstimateOrSimulateInterval.stop()
-      this.#gasPriceInterval.stop()
-      this.#stopRefetching = true
+    // Asking again cannot change the outcome, so there is nothing left to wait
+    // for. Changing the calls or hitting retry starts the loop over.
+    if (this.estimation.hasPermanentFailure()) {
+      this.#stopIntervals()
+      return
+    }
+
+    if (this.#reestimateCounter >= MAX_REESTIMATES) {
+      this.#stopIntervals()
     }
 
     this.#reestimateCounter += 1
+  }
+
+  #startGasPriceIntervalIfNoCustomPrices() {
+    if (this.hasCustomGasPrices) {
+      this.#gasPriceInterval.stop()
+      return
+    }
+
+    this.#gasPriceInterval.start({
+      // Refetch immediately if the gas prices are stale
+      runImmediately:
+        !this.gasPrice.updatedAt || Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
+    })
   }
 
   /**
@@ -1642,7 +1798,10 @@ export class SignAccountOpController
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async retry(method: 'simulate' | 'estimate') {
     this.bundlerSwitcher.cleanUp()
-    this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true })
+    // Resuming instead of only restarting the interval, because refetching may
+    // have been stopped by the give-up counter. A restart alone would be undone
+    // by the interval's own #stopRefetching check on its first run.
+    this.#resumeIntervals({ haveCallsChanged: true })
   }
 
   async enableErc4337AndReestimate() {
@@ -1664,6 +1823,7 @@ export class SignAccountOpController
 
   update({
     gasPrices,
+    rpcGasPrices,
     customGasPrices,
     customGasLimit,
     feeToken,
@@ -1703,16 +1863,7 @@ export class SignAccountOpController
 
       if (this.estimation.status === EstimationStatus.Success) {
         // Start the gas price interval in case it was stopped earlier
-        if (!this.hasCustomGasPrices) {
-          this.#gasPriceInterval.start({
-            // Refetch immediately if the gas prices are stale
-            runImmediately:
-              !this.gasPrice.updatedAt ||
-              Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
-          })
-        } else {
-          this.#gasPriceInterval.stop()
-        }
+        this.#startGasPriceIntervalIfNoCustomPrices()
 
         const estimation = this.estimation.estimation as FullEstimationSummary
         if (estimation.ambireEstimation && !isSpeedUpTransaction) {
@@ -1731,22 +1882,23 @@ export class SignAccountOpController
           if (!this.hasCustomGasPrices) {
             this.gasPrices = this.estimation.estimation.bundlerGasPrices
           }
-          // and we're stopping the gas price interval as
-          // we will use the bundler gas prices
-          this.#gasPriceInterval.stop()
           this.gasPrice.areGasPricesUsedFromBundlerEstimation = true
-        } else {
-          // if there's an estimate, but no bundlerGasPrices, resume the gas price
-          // controller refetch as there's no other way to fetch gas prices
-          if (!this.hasCustomGasPrices) {
-            this.#gasPriceInterval.start({
-              runImmediately:
-                !this.gasPrice.updatedAt ||
-                Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
-            })
+          // and we're stopping the gas price interval as
+          // we will use the bundler gas prices, unless the account
+          // also needs the RPC gas prices for its non-bundler broadcasts
+          if (
+            this.baseAccount.getGasPriceFetchStrategy(
+              this.#featureFlags.isFeatureEnabled('erc4337')
+            ) === 'rpcWithBundlerFallback'
+          ) {
+            this.#startGasPriceIntervalIfNoCustomPrices()
           } else {
             this.#gasPriceInterval.stop()
           }
+        } else {
+          // if there's an estimate, but no bundlerGasPrices, resume the gas price
+          // controller refetch as there's no other way to fetch gas prices
+          this.#startGasPriceIntervalIfNoCustomPrices()
           this.gasPrice.areGasPricesUsedFromBundlerEstimation = false
         }
       }
@@ -1820,6 +1972,10 @@ export class SignAccountOpController
         this.#gasPriceInterval.stop()
       } else if (gasPrices && !this.hasCustomGasPrices) {
         this.gasPrices = gasPrices
+      }
+
+      if (rpcGasPrices) {
+        this.rpcGasPrices = rpcGasPrices
       }
 
       if (typeof customGasLimit !== 'undefined') {
@@ -1916,6 +2072,7 @@ export class SignAccountOpController
         !Object.keys(this.feeSpeeds).length ||
         Array.isArray(accountOpData?.calls) ||
         gasPrices ||
+        rpcGasPrices ||
         customGasPrices ||
         typeof customGasLimit !== 'undefined' ||
         this.#paidBy ||
@@ -1954,8 +2111,8 @@ export class SignAccountOpController
 
     if (isInTheMiddleOfSigning || isDone) return
 
-    // if we have an estimation error, set the state so and return
-    if (this.estimation.error) {
+    // Set to EstimationError if not retrying
+    if (this.estimation.error && !this.estimation.isRetryingFailure()) {
       this.status = { type: SigningStatus.EstimationError }
       this.emitUpdate()
       return
@@ -2019,6 +2176,7 @@ export class SignAccountOpController
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
+    this.rpcGasPrices = undefined
     this.hasCustomGasPrices = false
     this.gasFeeChangedConfirmationRequired = false
     this.previousFee = null
@@ -2355,34 +2513,51 @@ export class SignAccountOpController
    * That way we get a better bundler userOp acceptance rate and a
    * normal, intuitive UX
    */
-  #getIncreasedPrices(): GasSpeeds | null {
-    if (!this.gasPrices) return null
+  #getIncreasedPrices(gasPrices?: GasSpeeds): GasSpeeds | null {
+    if (!gasPrices) return null
 
     // no increase if the user has set them
-    if (this.hasCustomGasPrices) return this.gasPrices
+    if (this.hasCustomGasPrices) return gasPrices
 
     // no increase if there's no bundlerEstimation as this means
     // we're not using erc-4337 for broadcast
-    if (!this.estimation.estimation?.bundlerEstimation) return this.gasPrices
+    if (!this.estimation.estimation?.bundlerEstimation) return gasPrices
 
     return {
       slow: {
-        maxFeePerGas: this.gasPrices.slow.maxFeePerGas,
-        maxPriorityFeePerGas: this.gasPrices.slow.maxPriorityFeePerGas
+        maxFeePerGas: gasPrices.slow.maxFeePerGas,
+        maxPriorityFeePerGas: gasPrices.slow.maxPriorityFeePerGas
       },
       medium: {
-        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.medium.maxFeePerGas), 5n),
-        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.medium.maxPriorityFeePerGas), 5n)
+        maxFeePerGas: this.#addExtra(BigInt(gasPrices.medium.maxFeePerGas), 5n),
+        maxPriorityFeePerGas: this.#addExtra(BigInt(gasPrices.medium.maxPriorityFeePerGas), 5n)
       },
       fast: {
-        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.fast.maxFeePerGas), 7n),
-        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.fast.maxPriorityFeePerGas), 7n)
+        maxFeePerGas: this.#addExtra(BigInt(gasPrices.fast.maxFeePerGas), 7n),
+        maxPriorityFeePerGas: this.#addExtra(BigInt(gasPrices.fast.maxPriorityFeePerGas), 7n)
       },
       ape: {
-        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.ape.maxFeePerGas), 10n),
-        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.ape.maxPriorityFeePerGas), 10n)
+        maxFeePerGas: this.#addExtra(BigInt(gasPrices.ape.maxFeePerGas), 10n),
+        maxPriorityFeePerGas: this.#addExtra(BigInt(gasPrices.ape.maxPriorityFeePerGas), 10n)
       }
     }
+  }
+
+  /**
+   * Whether the broadcast option should use the RPC gas prices instead of the
+   * bundler ones. Applicable only with the `rpcWithBundlerFallback` strategy
+   * (see BaseAccount.getGasPriceFetchStrategy). If the RPC gas prices are not
+   * fetched yet, gasPrices are used as a fallback
+   */
+  #shouldUseRpcGasPrices(broadcastOption: string): boolean {
+    if (this.hasCustomGasPrices || !this.rpcGasPrices) return false
+    if (
+      this.baseAccount.getGasPriceFetchStrategy(this.#featureFlags.isFeatureEnabled('erc4337')) !==
+      'rpcWithBundlerFallback'
+    )
+      return false
+
+    return this.baseAccount.shouldUseRpcGasPrices(broadcastOption)
   }
 
   get #feeSpeedsLoading() {
@@ -2434,9 +2609,21 @@ export class SignAccountOpController
         return
       }
 
+      // each available fee option should declare its estimation method
+      const broadcastOption = this.baseAccount.getBroadcastOption(option, {
+        op: this.accountOp,
+        isSponsored: this.isSponsored
+      })
+
       const nativeRatio = this.#getNativeToFeeTokenRatio(option.token)
-      const increasedGasPrices = this.#getIncreasedPrices()
-      if (!nativeRatio || !this.gasPrices || !increasedGasPrices) {
+      const shouldUseRpcGasPrices = this.#shouldUseRpcGasPrices(broadcastOption)
+      const gasPrices = shouldUseRpcGasPrices ? this.rpcGasPrices : this.gasPrices
+      // the RPC gas prices are used only for broadcasts outside erc-4337,
+      // so they should not be increased
+      const increasedGasPrices = shouldUseRpcGasPrices
+        ? gasPrices
+        : this.#getIncreasedPrices(gasPrices)
+      if (!nativeRatio || !gasPrices || !increasedGasPrices) {
         this.feeSpeeds[identifier] = []
         return
       }
@@ -2447,19 +2634,13 @@ export class SignAccountOpController
         op: this.accountOp
       })
 
-      // each available fee option should declare it's estimation method
-      const broadcastOption = this.baseAccount.getBroadcastOption(option, {
-        op: this.accountOp,
-        isSponsored: this.isSponsored
-      })
-
       const speeds = ['slow', 'medium', 'fast', 'ape']
       for (let i = 0; i < speeds.length; i++) {
         // we have two prices:
         // receivedPrices, from old lib/bundler
         // and increasedPrices, which we use for the fee only
         const speed = speeds[i] as FeeSpeed
-        const receivedPrices = this.gasPrices[speed]
+        const receivedPrices = gasPrices[speed]
         const increasedPrices = increasedGasPrices[speed]
 
         let amount
@@ -3128,7 +3309,10 @@ export class SignAccountOpController
         const { safeTxn, typedData, safeTxnHash, signingRequest } =
           this.#getSafeSigningData(accountState)
         const signature = (await this.#withHardwareWalletSigningRequest(signingRequest, () =>
-          safeSigner.signTypedData(typedData)
+          safeSigner.signTypedData(typedData, {
+            chainId: this.#network.chainId,
+            provider: this.provider
+          })
         )) as Hex
         nowSignedSigs.push(signature)
 
@@ -3218,7 +3402,14 @@ export class SignAccountOpController
                 accountState,
                 network: this.#network
               }),
-              () => getExecuteSignature(this.#network, this.accountOp, accountState, signer)
+              () =>
+                getExecuteSignature(
+                  this.#network,
+                  this.accountOp,
+                  accountState,
+                  signer,
+                  this.provider
+                )
             )
           })
         }
@@ -3327,7 +3518,8 @@ export class SignAccountOpController
                 this.#network,
                 false,
                 undefined,
-                true
+                true,
+                this.provider
               )
           )
           if (!this.accountOp.meta) {
@@ -3391,8 +3583,17 @@ export class SignAccountOpController
 
         // safe accounts have their signature prepopulated
         if (!this.account.safeCreation) {
-          const isHotEOA = accountState.isEOA && this.accountOp.signingKeyType === 'internal'
-          if (!isHotEOA) {
+          // Which signature format a 7702 EOA needs is dictated by the delegator
+          // it points to, not by the key type: the Ambire 7702 account validates
+          // the Ambire4337AccountOp typed data in unprotected mode, while the
+          // GridPlus one expects the standard AmbireOperation wrapping that smart
+          // accounts use. Getting this wrong fails the userOp with AA24.
+          const delegator =
+            accountState.delegatedContract ??
+            getContractImplementation(this.#network.chainId, this.accountKeyStoreKeys)
+          const signsAsAmbire7702Eoa =
+            accountState.isEOA && delegator.toLowerCase() === EIP_7702_AMBIRE_ACCOUNT.toLowerCase()
+          if (!signsAsAmbire7702Eoa) {
             const typedData = getTypedData(
               this.#network.chainId,
               this.accountOp.accountAddr,
@@ -3400,7 +3601,10 @@ export class SignAccountOpController
             )
             const signature = wrapStandard(
               await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-                signer.signTypedData(typedData)
+                signer.signTypedData(typedData, {
+                  chainId: this.#network.chainId,
+                  provider: this.provider
+                })
               )
             )
             userOperation.signature = signature
@@ -3414,7 +3618,10 @@ export class SignAccountOpController
             )
             const signature = wrapUnprotected(
               await this.#withHardwareWalletSigningRequest(getEIP712SigningRequest(typedData), () =>
-                signer.signTypedData(typedData)
+                signer.signTypedData(typedData, {
+                  chainId: this.#network.chainId,
+                  provider: this.provider
+                })
               )
             )
             userOperation.signature = signature
@@ -3444,7 +3651,14 @@ export class SignAccountOpController
               accountState,
               network: this.#network
             }),
-            () => getExecuteSignature(this.#network, this.accountOp, accountState, signer)
+            () =>
+              getExecuteSignature(
+                this.#network,
+                this.accountOp,
+                accountState,
+                signer,
+                this.provider
+              )
           )
         })
       }
@@ -3554,7 +3768,77 @@ export class SignAccountOpController
       BROADCAST_OPTIONS.delegation
     ]
 
-    if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
+    // PQ1 is a smart-contract-only signer that cannot produce a raw EOA
+    // transaction. The signer packages the calls into a 4337 UserOperation,
+    // signs on-device and submits via its own bundler (Pimlico). We
+    // short-circuit the entire EOA + bundler tree below, but keep two of
+    // its invariants:
+    //   1. The user-approved `gasFeePayment` binds the broadcast — the fee
+    //      fields of the UserOp are taken from it, and fee options the
+    //      4337 pipeline cannot honor (gas tank, another payer, a non-
+    //      native fee token) are refused up front instead of silently
+    //      charging the wallet's native balance a different amount.
+    //   2. Device interaction runs inside #withHardwareWalletSigningRequest
+    //      so the "confirm on your device" UI shows while the PQ1 waits
+    //      for its physical confirmation.
+    if (accountOp.signingKeyType === 'pq1') {
+      try {
+        const { gasFeePayment } = accountOp
+        if (
+          gasFeePayment.isGasTank ||
+          gasFeePayment.paidBy !== accountOp.accountAddr ||
+          gasFeePayment.inToken !== ZeroAddress
+        ) {
+          return this.throwBroadcastAccountOp({
+            message:
+              'PQ1 accounts pay gas with the native token from the account itself. Please select the native-token fee option paid by this account and try again.',
+            accountState
+          })
+        }
+        const signer = await this.#keystore.getSigner(
+          accountOp.signingKeyAddr,
+          accountOp.signingKeyType
+        )
+        if (signer.init) {
+          signer.init(this.#externalSignerControllers[accountOp.signingKeyType])
+        }
+        if (!signer.broadcastAccountOp) {
+          return this.throwBroadcastAccountOp({
+            message: `Signer for key type ${accountOp.signingKeyType} does not implement broadcastAccountOp`,
+            accountState
+          })
+        }
+        const calls = accountOp.calls.map((c) => ({ to: c.to, value: c.value, data: c.data }))
+        const { userOpHash, nonce } = await this.#withHardwareWalletSigningRequest(
+          getRawTransactionSigningRequest({
+            chainId: accountOp.chainId,
+            from: accountOp.accountAddr,
+            calls
+          }),
+          () =>
+            signer.broadcastAccountOp!({
+              chainId: accountOp.chainId,
+              provider: this.provider!,
+              calls,
+              gasFeePayment: {
+                gasPrice: gasFeePayment.gasPrice,
+                maxPriorityFeePerGas: gasFeePayment.maxPriorityFeePerGas
+              }
+            })
+        )
+        // Identified the same way as any other bundler broadcast: the
+        // ActivityController resolves the tx hash and reads per-op success
+        // from the UserOperationEvent log (so a UserOp whose inner
+        // execution reverted is correctly reported as failed, and a
+        // slow-but-included op is not misreported as a failed broadcast).
+        transactionRes = {
+          nonce: Number(nonce),
+          identifiedBy: { type: 'UserOperation', identifier: userOpHash, bundler: PIMLICO }
+        }
+      } catch (error: any) {
+        return this.throwBroadcastAccountOp({ error, accountState })
+      }
+    } else if (rawTxnBroadcast.includes(accountOp.gasFeePayment.broadcastOption)) {
       const multipleTxnsBroadcastRes = []
       const senderAddr =
         accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
@@ -3784,14 +4068,7 @@ export class SignAccountOpController
         message: 'No transaction response received after being broadcasted.'
       })
 
-    const clearSigningHumanization = hasErc7730Humanization(this.humanization)
-      ? this.humanization
-      : null
     const submittedAccountOpMeta = { ...accountOp.meta }
-    delete submittedAccountOpMeta.clearSigningHumanization
-    if (clearSigningHumanization) {
-      submittedAccountOpMeta.clearSigningHumanization = clearSigningHumanization
-    }
 
     const submittedAccountOp: SubmittedAccountOp = {
       ...accountOp,
@@ -4224,11 +4501,37 @@ export class SignAccountOpController
       })
     }
 
+    const safeGasRefundWarning = getSafeGasRefundWarning(this.accountOp)
+    if (safeGasRefundWarning) {
+      banners.push({
+        id: safeGasRefundWarning.id,
+        type: 'warning',
+        title: safeGasRefundWarning.title,
+        text: safeGasRefundWarning.text || safeGasRefundWarning.title
+      })
+    }
+
     return banners
   }
 
   get canAccountBroadcastByItself(): boolean {
     return this.baseAccount.canBroadcastByItself()
+  }
+
+  /**
+   * The gas prices used by the selected fee option. They differ from gasPrices
+   * only with the `rpcWithBundlerFallback` strategy
+   * (see BaseAccount.getGasPriceFetchStrategy)
+   */
+  get selectedOptionGasPrices(): GasSpeeds | undefined {
+    if (!this.selectedOption) return this.gasPrices
+
+    const broadcastOption = this.baseAccount.getBroadcastOption(this.selectedOption, {
+      op: this.accountOp,
+      isSponsored: this.isSponsored
+    })
+
+    return this.#shouldUseRpcGasPrices(broadcastOption) ? this.rpcGasPrices : this.gasPrices
   }
 
   get canSetCustomGasPrices(): boolean {
@@ -4297,6 +4600,7 @@ export class SignAccountOpController
       isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress,
       banners: this.banners,
       canAccountBroadcastByItself: this.canAccountBroadcastByItself,
+      selectedOptionGasPrices: this.selectedOptionGasPrices,
       canSetCustomGasPrices: this.canSetCustomGasPrices,
       canSetCustomGas: this.canSetCustomGas,
       isErc4337Enabled: this.isErc4337Enabled,
@@ -4307,7 +4611,8 @@ export class SignAccountOpController
       hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
       safeEip712Data: this.safeEip712Data,
       gasFeeChangedConfirmationRequired: this.gasFeeChangedConfirmationRequired,
-      previousFee: this.previousFee
+      previousFee: this.previousFee,
+      signingAuthRequirement: this.signingAuthRequirement
     }
   }
 }

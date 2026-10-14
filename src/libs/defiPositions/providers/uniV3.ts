@@ -31,79 +31,44 @@ export async function getUniV3Positions(
     factoryAddr
   ])
 
-  const data = result.map((asset: any) => ({
-    positionId: asset.positionId,
-    token0Symbol: asset.token0Symbol,
-    poolAddr: asset.poolAddr,
-    token0Name: asset.token0Name,
-    token0Decimals: asset.token0Decimals,
-    token1Symbol: asset.token1Symbol,
-    token1Name: asset.token1Name,
-    token1Decimals: asset.token1Decimals,
-    feeGrowthGlobal0X128: asset.feeGrowthGlobal0X128,
-    positionInfo: {
-      nonce: asset.positionInfo.nonce,
-      operator: asset.positionInfo.operator,
-      token0: asset.positionInfo.token0,
-      token1: asset.positionInfo.token1,
-      fee: asset.positionInfo.fee,
-      tickLower: asset.positionInfo.tickLower,
-      tickUpper: asset.positionInfo.tickUpper,
-      liquidity: asset.positionInfo.liquidity,
-      feeGrowthInside0LastX128: asset.positionInfo.feeGrowthInside0LastX128,
-      feeGrowthInside1LastX128: asset.positionInfo.feeGrowthInside1LastX128,
-      tokensOwed0: asset.positionInfo.tokensOwed0,
-      tokensOwed1: asset.positionInfo.tokensOwed1
-    },
-    poolSlot0: {
-      sqrtPriceX96: asset.poolSlot0.sqrtPriceX96,
-      tick: asset.poolSlot0.tick,
-      observationIndex: asset.poolSlot0.observationIndex,
-      observationCardinality: asset.poolSlot0.observationCardinality,
-      observationCardinalityNext: asset.poolSlot0.observationCardinalityNext,
-      feeProtocol: asset.poolSlot0.feeProtocol,
-      unlocked: asset.poolSlot0.unlocked
-    }
-  }))
-
-  const positions: Position[] = data
-    .map((pos: any) => {
+  const positions: Position[] = result
+    .map((asset: any) => {
       const tokenAmounts = uniV3DataToPortfolioPosition(
-        pos.positionInfo.liquidity,
-        pos.poolSlot0.sqrtPriceX96,
-        pos.positionInfo.tickLower,
-        pos.positionInfo.tickUpper
+        asset.positionInfo.liquidity,
+        asset.poolSlot0.sqrtPriceX96,
+        asset.positionInfo.tickLower,
+        asset.positionInfo.tickUpper
       )
       return {
-        id: pos.positionId.toString(),
+        id: asset.positionId.toString(),
         additionalData: {
           inRange: tokenAmounts.isInRage,
-          positionIndex: pos.positionId.toString(),
-          liquidity: pos.positionInfo.liquidity,
+          positionIndex: asset.positionId.toString(),
+          liquidity: asset.positionInfo.liquidity,
           name: 'Liquidity Pool',
-          pool: { id: pos.poolAddr }
+          pool: { id: asset.poolAddr }
         },
         assets: [
           {
-            address: pos.positionInfo.token0,
-            symbol: pos.token0Symbol,
-            name: pos.token0Name,
-            decimals: Number(pos.token0Decimals),
+            address: asset.positionInfo.token0,
+            symbol: asset.token0Symbol,
+            name: asset.token0Name,
+            decimals: Number(asset.token0Decimals),
             amount: BigInt(tokenAmounts.amount0),
             type: AssetType.Liquidity
           },
           {
-            address: pos.positionInfo.token1,
-            symbol: pos.token1Symbol,
-            name: pos.token1Name,
-            decimals: Number(pos.token1Decimals),
+            address: asset.positionInfo.token1,
+            symbol: asset.token1Symbol,
+            name: asset.token1Name,
+            decimals: Number(asset.token1Decimals),
             amount: BigInt(tokenAmounts.amount1),
             type: AssetType.Liquidity
           }
         ]
       }
     })
-    .filter((p: Position) => p.additionalData.liquidity !== BigInt(0))
+    .filter((p: Position) => p.additionalData.liquidity !== 0n)
 
   if (positions.length === 0) return null
 

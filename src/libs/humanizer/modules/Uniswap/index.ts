@@ -8,11 +8,9 @@ import { uniUniversalRouter } from './uniUniversalRouter'
 import { uniV2Mapping } from './uniV2'
 import { uniV3Mapping } from './uniV3'
 
-const uniV3MappingObj = uniV3Mapping()
-
 const fullUniswapHumanizerMapping = {
   ...uniV2Mapping,
-  ...uniV3MappingObj,
+  ...uniV3Mapping,
   ...uniUniversalRouter,
   ...uniSwapProxy
 }

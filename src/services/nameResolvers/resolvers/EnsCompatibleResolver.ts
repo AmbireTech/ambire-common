@@ -1,3 +1,4 @@
+import { Address } from 'viem'
 import { normalize as ensNormalize } from 'viem/ens'
 
 import { FeatureFlags } from '@/consts/featureFlags'
@@ -13,6 +14,7 @@ import {
 import { isNameExpiryStale } from '../expiry'
 import {
   ForwardResolution,
+  ForwardResolutionOptions,
   NameResolver,
   NameServiceId,
   NetworkMode,
@@ -24,7 +26,7 @@ export const ETHEREUM_CHAIN_ID = { mainnet: '1', testnet: '11155111' }
 export type EnsCompatibleConfig = {
   id: NameServiceId
   label: string
-  universalResolver: string
+  universalResolver: Address
   chainId: { mainnet: string; testnet: string }
   featureFlag?: keyof FeatureFlags
   isFallback?: boolean
@@ -47,7 +49,7 @@ export abstract class EnsCompatibleResolver implements NameResolver {
 
   readonly capabilities: { reverse: boolean; avatar: boolean; expiry: boolean }
 
-  protected readonly universalResolver: string
+  protected readonly universalResolver: Address
 
   protected readonly chainId: { mainnet: string; testnet: string }
 
@@ -85,7 +87,11 @@ export abstract class EnsCompatibleResolver implements NameResolver {
     return ctx.getProvider(this.chainId[ctx.networkMode])
   }
 
-  async resolve(domain: string, ctx: ResolveContext): Promise<ForwardResolution | null> {
+  async resolve(
+    domain: string,
+    ctx: ResolveContext,
+    options?: ForwardResolutionOptions
+  ): Promise<ForwardResolution | null> {
     const provider = this.providerFor(ctx)
     if (!provider) return null
 
@@ -93,6 +99,7 @@ export abstract class EnsCompatibleResolver implements NameResolver {
       provider,
       domain,
       options: {
+        resolveAvatar: options?.resolveAvatar,
         universalResolverAddress: this.universalResolver,
         expiry: this.expiryConfig
           ? {

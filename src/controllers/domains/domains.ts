@@ -202,6 +202,11 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     return !!this.#featureFlags?.isFeatureEnabled('keepEnsProfilesUpToDate')
   }
 
+  /** Standalone apps without privacy controls preserve their existing avatar behavior. */
+  get #shouldResolveAvatars() {
+    return !this.#featureFlags || this.#keepEnsProfilesUpToDate
+  }
+
   /** Resolvers enabled for the current feature-flag state */
   get #activeResolvers(): NameResolver[] {
     const featureFlags = this.#featureFlags
@@ -275,7 +280,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
    */
   async #verifyResolvedAddress(resolver: NameResolver, domain: string, address: string) {
     const verified = await withTimeout(
-      () => resolver.resolve(domain, this.#verificationContext()),
+      () => resolver.resolve(domain, this.#verificationContext(), { resolveAvatar: false }),
       { timeoutMs: RESOLUTION_VERIFY_TIMEOUT_MS }
     )
 
@@ -394,7 +399,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     }
 
     await resolver
-      .resolve(name, this.#context())
+      .resolve(name, this.#context(), { resolveAvatar: this.#shouldResolveAvatars })
       .then(async (result) => {
         if (result?.address) {
           // Verify before caching, so a mismatch throws into the catch and nothing bad is persisted.
@@ -407,7 +412,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
           }
           this.#saveResolvedDomain({
             address: result.address,
-            avatar: result.avatar,
+            avatar: this.#shouldResolveAvatars ? result.avatar : null,
             expiry: result.expiry,
             domain: name,
             type: resolver.id
@@ -690,7 +695,7 @@ export class DomainsController extends EventEmitter implements IDomainsControlle
     if (!resolver) return { avatar: null, expiry: undefined }
 
     const [avatar, expiry] = await Promise.all([
-      resolver.capabilities.avatar
+      this.#shouldResolveAvatars && resolver.capabilities.avatar
         ? withTimeout(() => resolver.getAvatar(primary.name, ctx), {
             timeoutMs: REVERSE_LOOKUP_TIMEOUT_MS
           }).catch(() => null)

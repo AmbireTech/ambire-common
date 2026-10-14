@@ -1,6 +1,6 @@
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { Network } from '../../interfaces/network'
-import { canBecomeSmarterOnChain } from './account'
+import { canBecomeSmarterOnChain, shouldBecomeSmarterAutomatically } from './account'
 import { BaseAccount } from './BaseAccount'
 import { EOA } from './EOA'
 import { EOA7702 } from './EOA7702'
@@ -17,10 +17,15 @@ export function getBaseAccount(
 ): BaseAccount {
   if (account.safeCreation) return new Safe(account, network, accountState, isErc4337Enabled)
   if (accountState.isEOA) {
-    if (
-      isErc7702Enabled &&
-      (accountState.isSmarterEoa || canBecomeSmarterOnChain(network, account, accountState))
-    ) {
+    // an account that is already upgraded onchain always behaves as one. The
+    // rest are upgraded on their own only if their keys allow it, see
+    // shouldBecomeSmarterAutomatically
+    const shouldBeSmarter =
+      accountState.isSmarterEoa ||
+      (canBecomeSmarterOnChain(network, account, accountState) &&
+        shouldBecomeSmarterAutomatically(accountState.importedAccountKeys))
+
+    if (isErc7702Enabled && shouldBeSmarter) {
       return new EOA7702(account, network, accountState, isErc4337Enabled)
     }
 

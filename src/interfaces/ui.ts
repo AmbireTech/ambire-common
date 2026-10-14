@@ -43,7 +43,6 @@ export const isSidePanelView = (view: Pick<View, 'type'>) => view.type === 'side
 
 export type OpenWindowOptions = {
   route?: string
-  customSize?: { width: number; height: number }
   baseWindowId?: number
 }
 

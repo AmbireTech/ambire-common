@@ -3,6 +3,7 @@ import { Fetch, RequestInitWithCustomHeaders } from '../../interfaces/fetch'
 import {
   SocketAPIToken,
   SwapAndBridgeRoute,
+  SwapAndBridgeRouteStatusResult,
   SwapAndBridgeSendTxRequest
 } from '../../interfaces/swapAndBridge'
 
@@ -461,7 +462,7 @@ export class SocketAPIMock {
     }
   }
 
-  async getRouteStatus({ txHash }: { txHash: string }) {
+  async getRouteStatus({ txHash }: { txHash: string }): Promise<SwapAndBridgeRouteStatusResult> {
     return { status: 'completed', txnId: txHash }
   }
 }

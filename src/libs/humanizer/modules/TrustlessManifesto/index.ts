@@ -6,10 +6,12 @@ import { getAction, getLabel } from '../../utils'
 
 const pledgeAbi = parseAbi(['function pledge()'])
 
+const pledgeSelector = toFunctionSelector(pledgeAbi[0])
+
 const TrustlessManifestoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   if (
     call.data &&
-    call.data.startsWith(toFunctionSelector(pledgeAbi[0])) &&
+    call.data.startsWith(pledgeSelector) &&
     call.to &&
     isAddress(call.to) &&
     getAddress(call.to) === '0x32AA964746ba2be65C71fe4A5cB3c4a023cA3e20'

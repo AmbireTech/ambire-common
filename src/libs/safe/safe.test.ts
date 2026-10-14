@@ -3,7 +3,12 @@ import { concat, getAddress, getBytes, Interface, solidityPacked, ZeroAddress } 
 import { describe, expect, jest, test } from '@jest/globals'
 
 import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
-import { getSafeAccountByOwner, normalizeSafeGlobalMessage, toCallsUserRequest } from './safe'
+import {
+  canHotOwnersMeetSafeThreshold,
+  getSafeAccountByOwner,
+  normalizeSafeGlobalMessage,
+  toCallsUserRequest
+} from './safe'
 
 import type { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
 import type { EIP712TypedData, SafeMultisigTransactionResponse } from '@safe-global/types-kit'
@@ -244,5 +249,36 @@ describe('parseSafeMessageOrigin', () => {
       name: undefined,
       url: undefined
     })
+  })
+})
+
+describe('canHotOwnersMeetSafeThreshold', () => {
+  test('is true when the hot owners alone meet the threshold', () => {
+    expect(canHotOwnersMeetSafeThreshold([{ type: 'internal' }, { type: 'internal' }], 2)).toBe(
+      true
+    )
+  })
+
+  test('is false when the hot owners are fewer than the threshold', () => {
+    expect(canHotOwnersMeetSafeThreshold([{ type: 'internal' }], 2)).toBe(false)
+  })
+
+  test('is true when the hot owners meet the threshold next to a hardware wallet or card', () => {
+    expect(
+      canHotOwnersMeetSafeThreshold(
+        [{ type: 'internal' }, { type: 'internal' }, { type: 'ledger' }],
+        2
+      )
+    ).toBe(true)
+    expect(canHotOwnersMeetSafeThreshold([{ type: 'internal' }, { type: 'nfc' }], 1)).toBe(true)
+  })
+
+  test('is false when the threshold needs a hardware wallet or card', () => {
+    expect(canHotOwnersMeetSafeThreshold([{ type: 'internal' }, { type: 'ledger' }], 2)).toBe(false)
+    expect(canHotOwnersMeetSafeThreshold([{ type: 'trezor' }, { type: 'nfc' }], 1)).toBe(false)
+  })
+
+  test('is false when there are no imported owners', () => {
+    expect(canHotOwnersMeetSafeThreshold([], 1)).toBe(false)
   })
 })

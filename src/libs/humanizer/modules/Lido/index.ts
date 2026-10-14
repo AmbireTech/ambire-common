@@ -29,17 +29,25 @@ const claimWithdrawalsToAbi = parseAbi([
 const claimWithdrawalAbi = parseAbi(['function claimWithdrawal(uint256 _requestId)'])
 const submitAbi = parseAbi(['function submit(address _referral) payable returns (uint256)'])
 
+const wrapSelector = toFunctionSelector(wrapAbi[0])
+const unwrapSelector = toFunctionSelector(unwrapAbi[0])
+const requestWithdrawalsSelector = toFunctionSelector(requestWithdrawalsAbi[0])
+const claimWithdrawalsSelector = toFunctionSelector(claimWithdrawalsAbi[0])
+const claimWithdrawalSelector = toFunctionSelector(claimWithdrawalAbi[0])
+const claimWithdrawalsToSelector = toFunctionSelector(claimWithdrawalsToAbi[0])
+const submitSelector = toFunctionSelector(submitAbi[0])
+
 export const LidoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   if (!isHexCall(call)) return call
 
   if (call.to && isAddress(call.to) && getAddress(call.to) === WRAPPED_ST_ETH_ADDRESS) {
-    if (call.data.startsWith(toFunctionSelector(wrapAbi[0]))) {
+    if (call.data.startsWith(wrapSelector)) {
       const { args } = decodeFunctionData({ abi: wrapAbi, data: call.data })
       const [amount] = args
       const fullVisualization = [getAction('Wrap'), getToken(ST_ETH_ADDRESS, amount)]
       return { ...call, fullVisualization }
     }
-    if (call.data.startsWith(toFunctionSelector(unwrapAbi[0]))) {
+    if (call.data.startsWith(unwrapSelector)) {
       const { args } = decodeFunctionData({ abi: unwrapAbi, data: call.data })
       const [amount] = args
       const fullVisualization = [getAction('Unwrap'), getToken(ST_ETH_ADDRESS, amount)]
@@ -48,7 +56,7 @@ export const LidoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) 
   }
 
   if (call.to && isAddress(call.to) && getAddress(call.to) === UNWRAP_CONTRACT_ADDR) {
-    if (call.data.startsWith(toFunctionSelector(requestWithdrawalsAbi[0]))) {
+    if (call.data.startsWith(requestWithdrawalsSelector)) {
       const { args } = decodeFunctionData({
         abi: requestWithdrawalsAbi,
         data: call.data
@@ -61,13 +69,13 @@ export const LidoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) 
       return { ...call, fullVisualization }
     }
 
-    if (call.data.startsWith(toFunctionSelector(claimWithdrawalsAbi[0]))) {
+    if (call.data.startsWith(claimWithdrawalsSelector)) {
       return { ...call, fullVisualization: [getAction('Claim withdrawals')] }
     }
-    if (call.data.startsWith(toFunctionSelector(claimWithdrawalAbi[0]))) {
+    if (call.data.startsWith(claimWithdrawalSelector)) {
       return { ...call, fullVisualization: [getAction('Claim withdrawal')] }
     }
-    if (call.data.startsWith(toFunctionSelector(claimWithdrawalsToAbi[0]))) {
+    if (call.data.startsWith(claimWithdrawalsToSelector)) {
       const { args } = decodeFunctionData({
         abi: claimWithdrawalsToAbi,
         data: call.data
@@ -79,7 +87,7 @@ export const LidoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) 
       return { ...call, fullVisualization: [getAction('Claim withdrawal')] }
     }
   } else if (call.to && isAddress(call.to) && getAddress(call.to) === ST_ETH_ADDRESS) {
-    if (call.data.startsWith(toFunctionSelector(submitAbi[0]))) {
+    if (call.data.startsWith(submitSelector)) {
       return {
         ...call,
         fullVisualization: [getAction('Stake'), getToken(ST_ETH_ADDRESS, call.value)]

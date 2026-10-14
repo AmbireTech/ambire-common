@@ -42,6 +42,8 @@ const parsePrivilegeCall = (
   ]
 }
 
+const setAddrPrivilegeSelector = toFunctionSelector(setAddrPrivilegeAbi[0])
+
 export const privilegeHumanizer: HumanizerCallModule = (
   accountOp: AccountOp,
   call: IrCall,
@@ -50,7 +52,7 @@ export const privilegeHumanizer: HumanizerCallModule = (
   // humanizerMeta should be always provided
   if (!humanizerMeta) return call
 
-  if (isHexCall(call) && call.data.slice(0, 10) === toFunctionSelector(setAddrPrivilegeAbi[0])) {
+  if (isHexCall(call) && call.data.slice(0, 10) === setAddrPrivilegeSelector) {
     return {
       ...call,
       fullVisualization: parsePrivilegeCall(humanizerMeta, call)

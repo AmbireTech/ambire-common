@@ -8,6 +8,8 @@ const exchangeAbi = parseAbi([
   'function exchange(address[11] _route, uint256[5][5] _swap_params, uint256 _amount, uint256 _expected, address[5] _pools)'
 ])
 
+const exchangeSelector = toFunctionSelector(exchangeAbi[0])
+
 const curveModule: HumanizerCallModule = (_: AccountOp, call: IrCall) => {
   const parseCurveNative = (address: string) =>
     address.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' ? zeroAddress : address
@@ -24,7 +26,7 @@ const curveModule: HumanizerCallModule = (_: AccountOp, call: IrCall) => {
   }
 
   const matcher: Record<string, (call: HexIrCall) => any> = {
-    [toFunctionSelector(exchangeAbi[0])]: (call) => {
+    [exchangeSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: exchangeAbi, data: call.data })
       const [_route, , _amount, _expected] = args
       return handleBasicSwap(_route, _amount, _expected)

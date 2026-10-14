@@ -595,9 +595,9 @@ describe('Account', () => {
   })
 
   test('Should not classify an unsupported EOA as smarter', () => {
-    const ledgerKey = {
+    const trezorKey = {
       addr: basicAccount.addr,
-      type: 'ledger',
+      type: 'trezor',
       label: 'Account key',
       dedicatedToOneSA: false,
       isExternallyStored: false,
@@ -610,7 +610,7 @@ describe('Account', () => {
       }
     } as Key
 
-    expect(canOrHasBecomeSmarter(basicAccount, {}, [ledgerKey])).toBe(false)
+    expect(canOrHasBecomeSmarter(basicAccount, {}, [trezorKey])).toBe(false)
   })
 
   test('Should not classify a V2 smart account as an EIP-7702 account', () => {
