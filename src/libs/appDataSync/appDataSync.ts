@@ -9,7 +9,7 @@ import {
 } from 'ethers'
 import { gzip, Inflate } from 'pako'
 
-import { FeatureFlags } from '../../consts/featureFlags'
+import { FeatureFlags, UserFeatureFlag } from '../../consts/featureFlags'
 import { Account } from '../../interfaces/account'
 import { Contacts } from '../../interfaces/addressBook'
 import {
@@ -31,32 +31,12 @@ export const APP_DATA_SYNC_UR_TYPE = 'ambire-account-sync'
 export const APP_DATA_SYNC_PAYLOAD_VERSION = 1
 
 /**
- * The feature flags the user controls from the privacy opt-outs settings. Only these
- * travel with the synced settings, the rest are internal to each product.
- */
-export const APP_DATA_SYNC_FEATURE_FLAGS = [
-  'networkConfig',
-  'tokenAndDefiAutoDiscovery',
-  'clearSigning',
-  'apiForFunctionSelectors',
-  'ambireSmartAccounts',
-  'scamAndPhishingChecker',
-  'swapAndBridgeTokenInfo',
-  'walletStakingWithdrawalsLookup',
-  'gasTank',
-  'erc4337',
-  'tokenPrices',
-  'eip7702',
-  'keepEnsProfilesUpToDate',
-  'ledgerSigningReports'
-] as const satisfies (keyof FeatureFlags)[]
-
-/**
  * Settings that the products share: the privacy opt-outs kept in ambire-common and the
  * ones each app keeps on its own (like the theme), which the app applies itself.
  */
 export type AppDataSyncSettings = {
-  featureFlags: Partial<Pick<FeatureFlags, (typeof APP_DATA_SYNC_FEATURE_FLAGS)[number]>>
+  /** Only the flags the user controls, the rest are internal to each product */
+  featureFlags: Partial<Pick<FeatureFlags, UserFeatureFlag>>
   disabledSwapProviderIds: string[]
   app: { [key: string]: string | boolean }
 }

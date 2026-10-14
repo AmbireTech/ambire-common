@@ -1,4 +1,4 @@
-import { Wallet } from 'ethers'
+import { getBytes, Wallet } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
@@ -6,7 +6,11 @@ import { makeMainController } from '../../../test/helpers/mainController'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
-import { AppDataSyncExportOptions } from '../../libs/appDataSync/appDataSync'
+import { USER_FEATURE_FLAGS } from '../../consts/featureFlags'
+import {
+  AppDataSyncExportOptions,
+  parseAppDataSyncPayload
+} from '../../libs/appDataSync/appDataSync'
 import { MainController } from '../main/main'
 
 const EXPORTING_PASS = 'exportingDevicePass'
@@ -276,6 +280,21 @@ describe('AppDataSyncController', () => {
 
     expect(importingDevice.accounts.accounts.map((a) => a.addr)).toEqual([LEDGER_ADDR])
     expect(importingDevice.keystore.keys.map((k) => k.addr)).toEqual([LEDGER_ADDR])
+  })
+
+  test('syncs only the feature flags the user controls', async () => {
+    const exportingDevice = await makeExportingDevice()
+    const payload = await exportPayload(exportingDevice, [], {
+      includeSeeds: true,
+      appSettings: { themeType: 'dark' },
+      includeNetworks: false,
+      includeContacts: false
+    })
+
+    const { settings } = parseAppDataSyncPayload(getBytes(payload))
+
+    expect(Object.keys(settings!.featureFlags).sort()).toEqual([...USER_FEATURE_FLAGS].sort())
+    expect(settings!.featureFlags).not.toHaveProperty('testnetMode')
   })
 
   test('sends no settings, networks or contacts unless the user chose them', async () => {
