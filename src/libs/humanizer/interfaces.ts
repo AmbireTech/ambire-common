@@ -91,12 +91,10 @@ export interface IrCall extends Omit<Call, 'to'> {
   warnings?: HumanizerWarning[]
   isFallback?: boolean
   to?: string
-<<<<<<< HEAD
   /** The call data decoded with the function signature of its selector, when it can be decoded. */
   decodedCall?: DecodedCall
   /** The call isn't decoded yet because the function signatures it needs are still being fetched. */
   isDecodingCall?: boolean
-=======
   /**
    * Set by a module whose visualization is built from data it verified against the call (e.g. a
    * CoW Swap order that hashes to the order ID in the calldata). Such a visualization shows more
@@ -104,7 +102,6 @@ export interface IrCall extends Omit<Call, 'to'> {
    * of the descriptor's.
    */
   preferredOverErc7730?: boolean
->>>>>>> 4ff1916b59bec0e86ff4ad9bcaf33e6f7b774b5e
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]
