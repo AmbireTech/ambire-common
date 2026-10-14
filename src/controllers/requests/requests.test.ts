@@ -13,6 +13,7 @@ import {
   MAX_DAPP_CALLS_PER_REQUEST
 } from '../../consts/safeguards/dappRequestSpam'
 import { AccountOnchainState } from '../../interfaces/account'
+import { DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { Platform } from '../../interfaces/platform'
 import {
@@ -4350,7 +4351,10 @@ describe('RequestsController ', () => {
 
     const buildEthSendTx = (
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
-      txParams: { from: string; to?: string; value?: string; data?: string }
+      txParams: { from: string; to?: string; value?: string; data?: string } & Record<
+        string,
+        unknown
+      >
     ) =>
       controller.build({
         type: 'dappRequest',
@@ -4371,7 +4375,7 @@ describe('RequestsController ', () => {
 
     const buildWalletSendCalls = (
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
-      calls: { to?: string; value?: string; data?: string }[]
+      calls: ({ to?: string; value?: string; data?: string } & Record<string, unknown>)[]
     ) =>
       controller.build({
         type: 'dappRequest',
@@ -4429,6 +4433,55 @@ describe('RequestsController ', () => {
       await expect(
         buildEthSendTx(controller, { from: FROM, to: VALID_TO, value: '0x0' })
       ).resolves.toBeUndefined()
+    })
+
+    describe('internal call fields a dApp must not be able to set', () => {
+      const INTERNAL_FIELDS = {
+        fullVisualization: [{ type: 'action', content: 'Sign In with Ethereum' }],
+        isFallback: false,
+        warnings: [{ content: 'fake', code: 'fake' }],
+        status: 'rejected',
+        txnId: '0x1234',
+        activeRouteId: 'some-route',
+        recipientDomain: 'vitalik.eth',
+        validationError: 'fake',
+        gas: '0x5208'
+      }
+      const getBuiltCalls = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+        controller.userRequests.flatMap((r) =>
+          r.kind === 'calls' ? r.signAccountOp.accountOp.calls : []
+        )
+
+      test('eth_sendTransaction keeps only to, data and value', async () => {
+        const { controller } = await prepareTest(true)
+
+        await buildEthSendTx(controller, {
+          from: FROM,
+          to: VALID_TO,
+          value: '0x1',
+          data: '0xABCD',
+          ...INTERNAL_FIELDS
+        })
+
+        const [call] = getBuiltCalls(controller)
+        expect(call).toBeDefined()
+        expect(call).toMatchObject({ to: VALID_TO, value: 1n, data: '0xabcd' })
+        Object.keys(INTERNAL_FIELDS).forEach((field) => expect(call).not.toHaveProperty(field))
+        expect(call).not.toHaveProperty('from')
+      })
+
+      test('wallet_sendCalls keeps only to, data and value', async () => {
+        const { controller } = await prepareTest(true)
+
+        await buildWalletSendCalls(controller, [
+          { to: VALID_TO, value: '0x1', data: '0xabcd', ...INTERNAL_FIELDS }
+        ])
+
+        const [call] = getBuiltCalls(controller)
+        expect(call).toBeDefined()
+        expect(call).toMatchObject({ to: VALID_TO, value: 1n, data: '0xabcd' })
+        Object.keys(INTERNAL_FIELDS).forEach((field) => expect(call).not.toHaveProperty(field))
+      })
     })
 
     test('rejects wallet_sendCalls when any call has odd-length hex data', async () => {
@@ -4731,6 +4784,92 @@ describe('SIWE auto-login and signing authentication', () => {
     expect(autoLoginSpy).toHaveBeenCalled()
     expect(resolve).toHaveBeenCalledWith({ hash: '0xdeadbeef' })
     expect(controller.userRequests.length).toBe(0)
+
+    jest.restoreAllMocks()
+  })
+
+  test.each([
+    ['blacklisted', DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED],
+    ['hosted on a suspicious platform', DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING]
+  ])(
+    'does not sign on the user behalf for an app that is %s, even with an active policy',
+    async (_, bannerId) => {
+      const { controller, autoLoginCtrl, dappsCtrl } = await prepareTest(
+        true,
+        false,
+        'browser-webkit'
+      )
+
+      jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+      const verificationBannerSpy = jest
+        .spyOn(dappsCtrl, 'getDappVerificationBanner')
+        .mockReturnValue({ id: bannerId, type: 'error', title: '', text: '' })
+      const autoLoginSpy = jest
+        .spyOn(autoLoginCtrl, 'autoLogin')
+        .mockResolvedValue({ signature: '0xdeadbeef' } as any)
+
+      const resolve = await buildSiweRequest(controller)
+
+      // The verdict must be for the requesting page and its frame context, not some other app
+      expect(verificationBannerSpy).toHaveBeenCalledWith([MOCK_SESSION.origin], {
+        sessionId: MOCK_SESSION.sessionId
+      })
+      expect(autoLoginSpy).not.toHaveBeenCalled()
+      expect(resolve).not.toHaveBeenCalled()
+      // The request opens the sign message screen instead, where the warning is shown
+      expect(controller.userRequests.length).toBe(1)
+      expect(controller.userRequests[0]!.kind).toBe('siwe')
+
+      jest.restoreAllMocks()
+    }
+  )
+
+  test.each([
+    ['still being verified', DAPP_VERIFICATION_BANNER_IDS.LOADING],
+    ['not verified', DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN],
+    ['not in the catalog', DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG]
+  ])('signs on the user behalf for an app that is %s', async (_, bannerId) => {
+    const { controller, autoLoginCtrl, dappsCtrl } = await prepareTest(
+      true,
+      false,
+      'browser-webkit'
+    )
+
+    jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+    jest
+      .spyOn(dappsCtrl, 'getDappVerificationBanner')
+      .mockReturnValue({ id: bannerId, type: 'warning', title: '', text: '' })
+    const autoLoginSpy = jest
+      .spyOn(autoLoginCtrl, 'autoLogin')
+      .mockResolvedValue({ signature: '0xdeadbeef' } as any)
+
+    const resolve = await buildSiweRequest(controller)
+
+    expect(autoLoginSpy).toHaveBeenCalled()
+    expect(resolve).toHaveBeenCalledWith({ hash: '0xdeadbeef' })
+    expect(controller.userRequests.length).toBe(0)
+
+    jest.restoreAllMocks()
+  })
+
+  test('signs on the user behalf when the scam checker is turned off', async () => {
+    const { controller, autoLoginCtrl, dappsCtrl } = await prepareTest(
+      true,
+      false,
+      'browser-webkit'
+    )
+
+    jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+    // A turned off scam checker reports no banner at all
+    jest.spyOn(dappsCtrl, 'getDappVerificationBanner').mockReturnValue(null)
+    const autoLoginSpy = jest
+      .spyOn(autoLoginCtrl, 'autoLogin')
+      .mockResolvedValue({ signature: '0xdeadbeef' } as any)
+
+    const resolve = await buildSiweRequest(controller)
+
+    expect(autoLoginSpy).toHaveBeenCalled()
+    expect(resolve).toHaveBeenCalledWith({ hash: '0xdeadbeef' })
 
     jest.restoreAllMocks()
   })

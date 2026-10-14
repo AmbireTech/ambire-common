@@ -5,7 +5,12 @@ import { Token as LiFiToken } from '@lifi/types'
 
 import { defaultFeatureFlags, FeatureFlags } from '../../consts/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
-import { SwapAndBridgeQuote, SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
+import {
+  CowSwapOrderStruct,
+  SwapAndBridgeQuote,
+  SwapAndBridgeSendTxRequest,
+  SwapAndBridgeToToken
+} from '../../interfaces/swapAndBridge'
 import { TokenResult } from '../portfolio'
 import {
   attemptToSortTokensByMarketCap,
@@ -14,6 +19,7 @@ import {
   getFeeTokenForSponsorship,
   getIsBridgeRoute,
   getIsIntentRoute,
+  getSwapAndBridgeCalls,
   getSwapSponsorship,
   sortTokenListResponse
 } from './swapAndBridge'
@@ -786,5 +792,51 @@ describe('swapAndBridge lib', () => {
       // The function catches errors and returns null
       expect(result).toBeNull()
     })
+  })
+})
+
+describe('getSwapAndBridgeCalls', () => {
+  const cowSwapOrder: CowSwapOrderStruct = {
+    sellToken: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+    buyToken: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+    receiver: '0x0000000000000000000000000000000000000001',
+    sellAmount: '1000000',
+    buyAmount: '400000000000000',
+    validTo: 1783581106,
+    appData: `0x${'11'.repeat(32)}`,
+    feeAmount: '0',
+    kind: 'sell',
+    partiallyFillable: false,
+    sellTokenBalance: 'erc20',
+    buyTokenBalance: 'erc20'
+  }
+  const userTx: SwapAndBridgeSendTxRequest = {
+    activeRouteId: '0xorder-uid',
+    // no approval, so neither the provider nor the account state is read
+    approvalData: null,
+    chainId: 1,
+    txData: '0x1234',
+    txTarget: '0x9008D19f58AAbD9eD0D60971565AA8510560ab41',
+    userTxIndex: 0,
+    value: '0'
+  }
+
+  test('keeps the CoW Swap order on the call it pre-signs', async () => {
+    const calls = await getSwapAndBridgeCalls(
+      { ...userTx, cowSwapOrder },
+      {} as any,
+      {} as any,
+      {} as any
+    )
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ activeRouteId: userTx.activeRouteId, cowSwapOrder })
+  })
+
+  test('adds no CoW Swap order to calls of other providers', async () => {
+    const calls = await getSwapAndBridgeCalls(userTx, {} as any, {} as any, {} as any)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).not.toHaveProperty('cowSwapOrder')
   })
 })

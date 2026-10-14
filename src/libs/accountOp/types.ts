@@ -1,5 +1,6 @@
 import { Dapp } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
+import type { CowSwapOrderStruct } from '../../interfaces/swapAndBridge'
 
 export enum AccountOpStatus {
   Pending = 'pending',
@@ -43,4 +44,10 @@ export interface Call {
    * and then use it to warn the user if the ENS resolves to a different address in the future.
    */
   recipientDomain?: string
+  /**
+   * Added for CoW Swap pre-sign calls built by the wallet's swap. The calldata holds only the
+   * order ID (a hash of the order), so the order is kept here for the humanizer, which shows it
+   * only if it hashes to that same order ID.
+   */
+  cowSwapOrder?: CowSwapOrderStruct
 }
