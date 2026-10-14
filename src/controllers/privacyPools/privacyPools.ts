@@ -53,17 +53,6 @@ import {
   createKohakuStorage
 } from '../../libs/kohaku/host'
 import {
-  describeKohakuDebugUserOperationGas,
-  endKohakuDebugTrace,
-  kohakuDebugCall,
-  KohakuDebugTrace,
-  kohakuDebugPhase,
-  readKohakuDebugTreeSizes,
-  startKohakuDebugTrace,
-  withKohakuDebugProver,
-  withKohakuDebugTiming
-} from '../../libs/privacyPools/kohakuDebug'
-import {
   createProverFactory,
   PrivacyPoolsProverFactory,
   withCancellableProving
@@ -446,7 +435,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#ui.uiEvent.on('updateView', this.#onUpdateView)
     this.#ui.uiEvent.on('removeView', this.#onRemoveView)
     this.#proverFactory = withCancellableProving(
-      withKohakuDebugProver(proverFactory ?? createProverFactory(circuitsBaseUrl)),
+      proverFactory ?? createProverFactory(circuitsBaseUrl),
       () => this.#provingSignal
     )
 
@@ -698,7 +687,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #getHost(provider: JsonRpcProvider, seedId: string): Host {
     return {
       network: createKohakuNetwork(this.#fetch),
-      storage: withKohakuDebugTiming(this.#kohakuStorage, 'storage'),
+      storage: this.#kohakuStorage,
       keystore: this.#getKohakuKeystore(seedId),
       provider: createKohakuProvider(provider)
     }
@@ -716,13 +705,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     if (existing) return existing
 
     const keystore = createKohakuKeystore((path) =>
-      kohakuDebugCall(
-        'keystore.deriveKey',
-        () => this.#keystore.derivePrivacyPoolsKey(seedId, path),
-        {
-          quiet: true
-        }
-      )
+      this.#keystore.derivePrivacyPoolsKey(seedId, path)
     )
     this.#kohakuKeystores.set(seedId, keystore)
 
@@ -760,7 +743,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       accountIndex: PRIVACY_POOLS_ACCOUNT_INDEX,
       // Skipped once this chain has a persisted store
       initialState: this.#resolveInitialState,
-      dataService: withKohakuDebugTiming(dataService, 'dataService'),
+      dataService,
       entrypoint: {
         address: BigInt(config.entrypointAddress),
         deploymentBlock: config.deploymentBlock
@@ -769,10 +752,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       proverFactory: this.#proverFactory as SdkProverFactory,
       // Not the SDK's IPFS default, which needs ipfs.io up and the last root update's CID pinned
       aspServiceFactory: () =>
-        withKohakuDebugTiming(
-          new OxBowAspService({ network: host.network, aspUrl: config.aspUrl }),
-          'aspService'
-        ),
+        new OxBowAspService({ network: host.network, aspUrl: config.aspUrl }),
       // Not the SDK's built-in table: withdrawals are built with the adapters
       // `readPaymasterWithdrawal` checks, and reach the bundler with our key. Empty without a
       // paymaster, so the SDK refuses rather than falls back to its table.
@@ -1000,7 +980,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     initialRead: InitialChainRead | null
   }): Promise<void> {
     let isChainCold = false
-    let debugTrace: KohakuDebugTrace | null = null
 
     try {
       if (initialSyncDone) {
@@ -1022,27 +1001,17 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       this.#writeAccountState(seedId, chainId, generation, { syncStartedAt: startedAt })
       this.emitUpdate()
 
-      debugTrace = startKohakuDebugTrace('sync', { chainId, isChainCold })
-      const protocol = await kohakuDebugPhase(debugTrace, 'getProtocol', () =>
-        this.#getProtocol(chainId, seedId)
-      )
+      const protocol = await this.#getProtocol(chainId, seedId)
 
       // Optional on the plugin interface; checked so an SDK that drops it fails clearly
       if (!protocol.notes) throw new Error('privacyPools: plugin does not expose notes')
 
       // The plugin syncs before every read, costing seconds even with no new blocks, so a
       // `sync()` first would pay twice
-      const notes = await kohakuDebugPhase(debugTrace, 'sdk.notes (sync)', () => protocol.notes!())
+      const notes = await protocol.notes()
       // The plugin has persisted the shared state by now
       initialRead?.resolve()
       const syncDuration = Date.now() - startedAt
-      endKohakuDebugTrace(debugTrace, {
-        chainId,
-        isChainCold,
-        notes: notes.length,
-        approvedNotes: notes.filter((note) => note.approved).length,
-        treeSizes: readKohakuDebugTreeSizes(() => protocol.dumpState())
-      })
 
       // Even if locked since: the shared state is the chain's, not the phrase's
       if (isChainCold)
@@ -1075,8 +1044,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
       this.#dropSagaHydratedProtocols(chainId)
     } catch (error: any) {
-      endKohakuDebugTrace(debugTrace, { chainId, failed: String(error?.message || error) })
-
       // Still not on this device: the next sync reads it again
       if (initialRead && isChainCold) {
         this.#writeInitialChainSync(chainId, { whenDone: undefined })
@@ -1593,36 +1560,24 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       finishPreparation = resolve
     })
 
-    const isNative = isPrivacyPoolsNativeAsset(tokenAddress)
-    const debugTrace = startKohakuDebugTrace('withdraw', { chainId, tokenAddress, isNative })
-    const debugSummary: Record<string, unknown> = {
-      chainId,
-      tokenAddress,
-      isNative,
-      approvedNotesAvailable: this.#countApprovedNotes(seedId, chainId, tokenAddress)
-    }
-
     try {
       // Not raced with the signal: a cancelled preparation must stop before this one proves
       await previousPreparation
       throwIfWithdrawalCancelled(signal)
       this.#provingSignal = signal
 
-      const poolAddress = await kohakuDebugPhase(debugTrace, 'assertPoolIsSponsored', () =>
-        this.#assertPoolIsSponsored(chainId, tokenAddress)
-      )
+      const poolAddress = await this.#assertPoolIsSponsored(chainId, tokenAddress)
       throwIfWithdrawalCancelled(signal)
 
       // The SDK syncs before proving, outside the queue, so only wait for this account's sync of
       // the chain rather than run beside it on the same plugin. No sync of our own: it would only
       // double the wait. Stops waiting once cancelled, as a first sync can take minutes.
-      await kohakuDebugPhase(debugTrace, 'waitForQueuedSync', () =>
-        untilWithdrawalCancelled(this.#syncQueue[seedId]?.[chainId] || Promise.resolve(), signal)
+      await untilWithdrawalCancelled(
+        this.#syncQueue[seedId]?.[chainId] || Promise.resolve(),
+        signal
       )
 
-      const protocol = await kohakuDebugPhase(debugTrace, 'getProtocol', () =>
-        this.#getProtocol(chainId, seedId)
-      )
+      const protocol = await this.#getProtocol(chainId, seedId)
       throwIfWithdrawalCancelled(signal)
 
       // Checked by `isAddress` above
@@ -1631,20 +1586,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       // withdrawal): the SDK's plain withdrawal may pick a pending deposit, failing the proof.
       // The unused gas is refunded to the recipient, which is the SDK's default too, so a
       // different default can't leave it on a batch's single-use sender.
-      const privateOp = await kohakuDebugPhase(
-        debugTrace,
-        'sdk.prepareUnshield (sync + proofs + gas + signing)',
-        () =>
-          protocol.prepareUnshield(
-            {
-              asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(tokenAddress) },
-              amount
-            },
-            sdkRecipient,
-            { mode: 'paymaster', batch: true, refundRecipient: sdkRecipient }
-          )
+      const privateOp = await protocol.prepareUnshield(
+        {
+          asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(tokenAddress) },
+          amount
+        },
+        sdkRecipient,
+        { mode: 'paymaster', batch: true, refundRecipient: sdkRecipient }
       )
-      debugSummary.treeSizes = readKohakuDebugTreeSizes(() => protocol.dumpState())
 
       // Only paymaster mode is asked for, so anything else means the SDK ignored it
       if (privateOp.mode !== 'paymaster')
@@ -1659,32 +1608,17 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         amount
       })
       const { fee, noteCount } = paymasterWithdrawal
-      debugSummary.noteCount = noteCount
-      debugSummary.userOperationGas = describeKohakuDebugUserOperationGas(
-        privateOp.withdrawal.userOperation
-      )
-      debugSummary.feeCap = fee.toString()
 
-      const feeEstimate = await kohakuDebugPhase(debugTrace, 'ourFeeEstimation (simulation)', () =>
-        this.#getExpectedWithdrawalFee({
-          chainId,
-          userOperation: privateOp.withdrawal.userOperation,
-          paymaster,
-          recipient,
-          tokenAddress,
-          fee
-        })
-      )
+      const feeEstimate = await this.#getExpectedWithdrawalFee({
+        chainId,
+        userOperation: privateOp.withdrawal.userOperation,
+        paymaster,
+        recipient,
+        tokenAddress,
+        fee
+      })
       throwIfWithdrawalCancelled(signal)
       const expectedFeeAmount = feeEstimate?.expectedFee ?? null
-      debugSummary.simulation = feeEstimate
-        ? {
-            expectedFee: feeEstimate.expectedFee.toString(),
-            gasUsed: feeEstimate.gasUsed.toString(),
-            gasCostWei: feeEstimate.gasCost.toString(),
-            gasCostEth: formatUnits(feeEstimate.gasCost, 18)
-          }
-        : 'unavailable'
 
       // A batch must simulate first: if its calls fail on chain, the largest deposit is still paid
       // to the single-use sender, out of the wallet's reach
@@ -1710,16 +1644,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
         this.#pendingWithdrawal = { privateOp, paymasterWithdrawal, checkedAt: Date.now() }
     } catch (error: any) {
       // Whatever it failed with: the user left, so there is nothing to tell them
-      if (signal.aborted) {
-        debugSummary.cancelled = true
-      } else {
-        debugSummary.failed = String(error?.message || error)
+      if (!signal.aborted)
         this.#failOperation(
           operation,
           toReadableWithdrawalError(error),
           'The transfer could not be prepared. Please try again.'
         )
-      }
     } finally {
       if (this.#provingSignal === signal) this.#provingSignal = null
       if (this.#preparationAbortController === abortController)
@@ -1727,18 +1657,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       finishPreparation()
     }
 
-    endKohakuDebugTrace(debugTrace, debugSummary)
-
     this.emitUpdate()
-  }
-
-  /** Approved notes of a token found by the last sync - for `[kohaku-debug]` only. */
-  #countApprovedNotes(seedId: string, chainId: string, tokenAddress: string): number | undefined {
-    return this.#accountStates[seedId]?.[chainId]?.notes.filter(
-      (note) =>
-        note.approval === 'approved' &&
-        note.tokenAddress.toLowerCase() === tokenAddress.toLowerCase()
-    ).length
   }
 
   /**
@@ -1991,9 +1910,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       const host = this.#getHost(this.#getProvider(operation.chainId), seedId)
       // No relayers: a paymaster withdrawal goes to the bundler URL carried in the payload.
       const broadcaster = createPPv1Broadcaster(host, { broadcasterUrl: {} })
-      // Times handing the userOp to the bundler until it lands
-      const debugTrace = startKohakuDebugTrace('broadcast', { chainId: operation.chainId })
-      await broadcaster.broadcast(privateOp).finally(() => endKohakuDebugTrace(debugTrace))
+      await broadcaster.broadcast(privateOp)
 
       const isCurrentOperation = this.#updateOperation({
         ...operation,
