@@ -1586,52 +1586,55 @@ export class MainController extends EventEmitter implements IMainController {
         if (shouldEmitUpdate) {
           this.emitUpdate()
 
-          if (chainsToUpdate.length) {
-            const networks = chainsToUpdate
-              ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
-              : undefined
+          const finalizedAccountOps = updatedAccountsOps.filter(
+            (op) =>
+              op.status !== AccountOpStatus.Pending &&
+              op.status !== AccountOpStatus.BroadcastedButNotConfirmed
+          )
 
-            if (networks?.length) {
-              // The account state must be updated before the portfolio
-              // as the portfolio has internal checks whether the nonce has changed
-              // to decide if to force refetch certain data
-              await this.accounts.updateAccountState(
-                accountAddr,
-                'latest',
-                networks?.map((net) => net.chainId)
-              )
+          const networks = this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
 
-              const finalizedAccountOps = updatedAccountsOps.filter(
-                (op) =>
-                  op.status !== AccountOpStatus.Pending &&
-                  op.status !== AccountOpStatus.BroadcastedButNotConfirmed
-              )
+          if (networks.length) {
+            // The account state must be updated before the portfolio
+            // as the portfolio has internal checks whether the nonce has changed
+            // to decide if to force refetch certain data
+            await this.accounts.updateAccountState(
+              accountAddr,
+              'latest',
+              networks.map((net) => net.chainId)
+            )
 
-              // Schedule an update that will refetch new defi positions (if any)
-              chainsToUpdate.forEach((chainId) => {
-                this.portfolio.scheduleUpdate({
-                  accountId: accountAddr,
-                  chainId,
-                  bypassServerSideCache: true
-                })
+            // Schedule an update that will refetch new defi positions (if any)
+            chainsToUpdate.forEach((chainId) => {
+              this.portfolio.scheduleUpdate({
+                accountId: accountAddr,
+                chainId,
+                bypassServerSideCache: true
               })
-              // Discard the simulation (that also updates the portfolio, but doesn't force update defi)
-              await this.portfolio.discardSimulation(finalizedAccountOps)
+            })
+          }
 
-              // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
-              this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+          // Discard the simulation (that also updates the portfolio, but doesn't force update defi).
+          // Runs for every finalized op, as ops finalized without a receipt (replaced, rejected,
+          // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
+          if (finalizedAccountOps.length) {
+            await this.portfolio.discardSimulation(finalizedAccountOps)
+          }
+
+          if (networks.length) {
+            // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
+            this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+              accountAddr,
+              updatedAccountsOps
+            )
+
+            Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
+              // eslint-disable-next-line @typescript-eslint/no-floating-promises
+              this.portfolio.updateSelectedAccount(
                 accountAddr,
-                updatedAccountsOps
+                this.networks.networks.filter((n) => chainIds.includes(n.chainId))
               )
-
-              Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
-                // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                this.portfolio.updateSelectedAccount(
-                  accountAddr,
-                  this.networks.networks.filter((n) => chainIds.includes(n.chainId))
-                )
-              })
-            }
+            })
           }
         }
 

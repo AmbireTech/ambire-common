@@ -1384,8 +1384,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
    * 0. Once we broadcast an AccountOp, we are adding it to ActivityController via `addAccountOp`,
    * and are setting its status to AccountOpStatus.BroadcastedButNotConfirmed.
    * 1. Here, we firstly rely on `getTransactionReceipt` for determining the status (success or failure).
-   * 2. If we don't manage to determine its status, we are comparing AccountOp and Account nonce.
-   * If Account nonce is greater than AccountOp, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
+   * 2. If there's no receipt and the txn is not in the mempool, we look for another confirmed AccountOp with the same eoaNonce.
+   * If there is one, then we know that AccountOp has past nonce (AccountOpStatus.UnknownButPastNonce).
    */
   async #updateAccountsOpsStatuses(accountAddr: string): Promise<{
     shouldEmitUpdate: boolean
@@ -1519,19 +1519,7 @@ export class ActivityController extends EventEmitter implements IActivityControl
             }
 
             try {
-              const hasConfirmedOpWithSameEoaNonce =
-                accountOp.eoaNonce !== null &&
-                typeof accountOp.eoaNonce !== 'undefined' &&
-                confirmedOps.some((op) => op !== accountOp && op.eoaNonce === accountOp.eoaNonce)
-
-              if (hasConfirmedOpWithSameEoaNonce) {
-                const updatedOpIfAny = updateOpStatus(
-                  accountOp,
-                  AccountOpStatus.UnknownButPastNonce
-                )
-                if (updatedOpIfAny) queueUpdatedOp(updatedOpIfAny)
-                return
-              }
+              let isAnyTxnInMempool = false
 
               const txIds = []
               if (accountOp.identifiedBy.type !== 'MultipleTxns') {
@@ -1675,7 +1663,28 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
                 const txn = txnId ? await provider.getTransaction(txnId) : null
 
-                if (txn) continue
+                if (txn) {
+                  isAnyTxnInMempool = true
+                  continue
+                }
+              }
+
+              // Checked only after the receipt lookup: eoaNonce can collide with an unrelated
+              // confirmed op (e.g. it holds the fee payer's nonce), so a matching nonce alone
+              // must never mark a successful op as replaced
+              const hasReceipt = typeof firstReceiptBlockNumber !== 'undefined'
+              const isReplacedByConfirmedOp =
+                !hasReceipt &&
+                !isAnyTxnInMempool &&
+                accountOp.eoaNonce !== null &&
+                typeof accountOp.eoaNonce !== 'undefined' &&
+                confirmedOps.some((op) => op !== accountOp && op.eoaNonce === accountOp.eoaNonce)
+              if (isReplacedByConfirmedOp) {
+                const updatedOpIfAny = updateOpStatus(
+                  accountOp,
+                  AccountOpStatus.UnknownButPastNonce
+                )
+                if (updatedOpIfAny) queueUpdatedOp(updatedOpIfAny)
               }
             } catch (error) {
               this.emitError({
