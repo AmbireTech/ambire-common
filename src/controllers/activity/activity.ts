@@ -1519,10 +1519,20 @@ export class ActivityController extends EventEmitter implements IActivityControl
             }
 
             try {
+              // eoaNonce is the nonce of the EOA that paid for the broadcast (paidBy), which
+              // may differ from the account itself (e.g. a smart account paid by one of its
+              // EOA keys). Nonces of different EOAs are unrelated, so compare the payer too
+              const accountOpPaidBy = accountOp.gasFeePayment?.paidBy?.toLowerCase()
               const hasConfirmedOpWithSameEoaNonce =
                 accountOp.eoaNonce !== null &&
                 typeof accountOp.eoaNonce !== 'undefined' &&
-                confirmedOps.some((op) => op !== accountOp && op.eoaNonce === accountOp.eoaNonce)
+                !!accountOpPaidBy &&
+                confirmedOps.some(
+                  (op) =>
+                    op !== accountOp &&
+                    op.eoaNonce === accountOp.eoaNonce &&
+                    op.gasFeePayment?.paidBy?.toLowerCase() === accountOpPaidBy
+                )
 
               if (hasConfirmedOpWithSameEoaNonce) {
                 const updatedOpIfAny = updateOpStatus(
