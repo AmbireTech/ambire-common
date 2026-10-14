@@ -1037,41 +1037,33 @@ describe('SignAccountOp Controller ', () => {
   describe('refetchAccountState', () => {
     test('refreshes the account state and clears the loading state', async () => {
       const { controller, accountsCtrl } = await initDefaultFeeSelection()
-      const accountState =
-        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
-          controller.accountOp.chainId.toString()
-        ]!
-      const forceFetchPendingStateSpy = jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
-        .mockResolvedValue(accountState)
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
+        .mockResolvedValue(undefined)
 
       await expect(controller.refetchAccountState()).resolves.toBeUndefined()
 
-      expect(forceFetchPendingStateSpy).toHaveBeenCalledWith(
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(
         controller.accountOp.accountAddr,
-        controller.accountOp.chainId
+        'pending',
+        [controller.accountOp.chainId]
       )
       expect(controller.isRefetchingAccountState).toBe(false)
     })
 
     test('ignores concurrent refresh attempts', async () => {
       const { controller, accountsCtrl } = await initDefaultFeeSelection()
-      const accountState =
-        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
-          controller.accountOp.chainId.toString()
-        ]!
       const pendingRefresh = createDeferred<void>()
-      const forceFetchPendingStateSpy = jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
         .mockImplementation(async () => {
           await pendingRefresh.promise
-          return accountState
         })
 
       const firstRefresh = controller.refetchAccountState()
       await controller.refetchAccountState()
 
-      expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(1)
+      expect(updateAccountStateSpy).toHaveBeenCalledTimes(1)
       expect(controller.isRefetchingAccountState).toBe(true)
 
       pendingRefresh.resolve()
@@ -1083,15 +1075,11 @@ describe('SignAccountOp Controller ', () => {
     test('emits fetch errors without rejecting and allows retrying', async () => {
       const { restore } = suppressConsole()
       const { controller, accountsCtrl } = await initDefaultFeeSelection()
-      const accountState =
-        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
-          controller.accountOp.chainId.toString()
-        ]!
       const fetchError = new Error('RPC timeout')
-      const forceFetchPendingStateSpy = jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
         .mockRejectedValueOnce(fetchError)
-        .mockResolvedValueOnce(accountState)
+        .mockResolvedValueOnce(undefined)
       const onError = jest.fn()
       controller.onError(onError)
 
@@ -1106,7 +1094,7 @@ describe('SignAccountOp Controller ', () => {
 
       await expect(controller.refetchAccountState()).resolves.toBeUndefined()
 
-      expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(2)
+      expect(updateAccountStateSpy).toHaveBeenCalledTimes(2)
       expect(controller.isRefetchingAccountState).toBe(false)
       restore()
     })
