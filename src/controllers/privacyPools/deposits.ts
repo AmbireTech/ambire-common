@@ -1,4 +1,4 @@
-import { formatUnits, Interface } from 'ethers'
+import { Interface } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
 import {
@@ -18,6 +18,7 @@ import {
   PhraseScopedModule,
   PrivacyPoolsContext
 } from './context'
+import { privacyPoolsErrors } from './errors'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsSync } from './sync'
 
@@ -100,43 +101,18 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     const config = getChainConfig(chainId)
 
     const asset = getPrivacyPoolsDepositAsset(BigInt(chainId), tokenAddress)
-    if (!asset)
-      throw new EmittableError({
-        message: 'This token cannot be sent to a Privacy Pools account.',
-        level: 'expected',
-        error: new Error(`privacyPools: unsupported asset ${tokenAddress} on chain ${chainId}`)
-      })
+    if (!asset) throw privacyPoolsErrors.depositUnsupportedToken(tokenAddress, chainId)
 
     if (amount > asset.maxDeposit)
-      throw new EmittableError({
-        message: `A Privacy Pools account accepts at most ${formatUnits(
-          asset.maxDeposit,
-          asset.decimals
-        )} ${asset.symbol} at a time.`,
-        level: 'expected',
-        error: new Error('privacyPools: deposit above the operator ceiling')
-      })
+      throw privacyPoolsErrors.depositAboveMaximum(asset.maxDeposit, asset)
 
     const { minimumDepositAmount } = await this.loadAssetConfig(chainId, tokenAddress)
     if (amount < minimumDepositAmount)
-      throw new EmittableError({
-        message: `A Privacy Pools account accepts at least ${formatUnits(
-          minimumDepositAmount,
-          asset.decimals
-        )} ${asset.symbol} at a time.`,
-        level: 'expected',
-        error: new Error('privacyPools: deposit below the entrypoint minimum')
-      })
+      throw privacyPoolsErrors.depositBelowMinimum(minimumDepositAmount, asset)
 
     const precommitment = await this.#getNextDepositPrecommitment(chainId, seedId)
 
-    if (this.#isDepositAwaitingChain(precommitment))
-      throw new EmittableError({
-        message:
-          'Your previous transfer to this Privacy Pools account is still being confirmed. Please try again once it is.',
-        level: 'expected',
-        error: new Error('privacyPools: the next precommitment is still in a pending deposit')
-      })
+    if (this.#isDepositAwaitingChain(precommitment)) throw privacyPoolsErrors.depositAwaitingChain()
 
     this.#preparedDeposits.set(precommitment, { seedId, chainId })
 
@@ -179,11 +155,7 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
 
       return assetConfig
     } catch (error: any) {
-      throw new EmittableError({
-        message: 'Could not check what Privacy Pools accepts for this token. Please try again.',
-        level: 'major',
-        error: error instanceof Error ? error : new Error('privacyPools: asset config read failed')
-      })
+      throw privacyPoolsErrors.depositAssetConfigReadFailed(error)
     }
   }
 
@@ -277,12 +249,7 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     return derivation.catch((error) => {
       if (error instanceof EmittableError) throw error
 
-      throw new EmittableError({
-        message: 'Could not prepare the transfer to this Privacy Pools account. Please try again.',
-        level: 'major',
-        error:
-          error instanceof Error ? error : new Error('privacyPools: deposit preparation failed')
-      })
+      throw privacyPoolsErrors.depositPreparationFailed(error)
     })
   }
 

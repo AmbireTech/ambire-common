@@ -37,6 +37,7 @@ import {
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { LockGeneration, PhraseScopedModule, PrivacyPoolsContext } from './context'
 import { PrivacyPoolsDepositParams, PrivacyPoolsDeposits } from './deposits'
+import { privacyPoolsErrors } from './errors'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsSendFormState } from './sendForm'
 import { PrivacyPoolsSync } from './sync'
@@ -392,34 +393,14 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #assertAvailableAndGetSeedId(): string {
     const reason = this.unavailableReason
 
-    if (reason === 'no-account')
-      throw new EmittableError({
-        message: 'Please select a Privacy Pools account first.',
-        level: 'expected',
-        error: new Error('privacyPools: no Privacy Pools account selected')
-      })
+    if (reason === 'no-account') throw privacyPoolsErrors.noAccountSelected()
 
-    if (reason === 'unsupported-network')
-      throw new EmittableError({
-        message: 'Privacy Pools is not available on any of the networks you have added.',
-        level: 'expected',
-        error: new Error('privacyPools: no supported network')
-      })
+    if (reason === 'unsupported-network') throw privacyPoolsErrors.noSupportedNetwork()
 
-    if (reason === 'locked')
-      throw new EmittableError({
-        message: 'Please unlock your wallet to use Privacy Pools.',
-        level: 'expected',
-        error: new Error('privacyPools: keystore locked')
-      })
+    if (reason === 'locked') throw privacyPoolsErrors.locked()
 
     const seedId = this.#getSelectedSeedId()
-    if (!seedId)
-      throw new EmittableError({
-        message: 'Privacy Pools is not available for this account.',
-        level: 'expected',
-        error: new Error('privacyPools: no seed id')
-      })
+    if (!seedId) throw privacyPoolsErrors.unavailableForAccount()
 
     return seedId
   }
@@ -536,27 +517,13 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     const { seedId, chainId } = params
     await this.initialLoadPromise
 
-    if (!this.#hasAccount(seedId))
-      throw new EmittableError({
-        message: 'This Privacy Pools account is no longer in your wallet.',
-        level: 'expected',
-        error: new Error(`privacyPools: no account for seed ${seedId}`)
-      })
+    if (!this.#hasAccount(seedId)) throw privacyPoolsErrors.depositAccountRemoved(seedId)
 
-    if (!this.#keystore.isUnlocked)
-      throw new EmittableError({
-        message: 'Please unlock your wallet to send to a Privacy Pools account.',
-        level: 'expected',
-        error: new Error('privacyPools: keystore locked')
-      })
+    if (!this.#keystore.isUnlocked) throw privacyPoolsErrors.depositLocked()
 
     const config = getPrivacyPoolsChainConfig(BigInt(chainId))
     if (!config || !this.supportedChainIds.includes(chainId))
-      throw new EmittableError({
-        message: 'Privacy Pools accounts cannot receive funds on this network.',
-        level: 'expected',
-        error: new Error(`privacyPools: unsupported chain ${chainId}`)
-      })
+      throw privacyPoolsErrors.depositUnsupportedNetwork(chainId)
 
     return this.#deposits.buildCalls(params)
   }
@@ -662,18 +629,9 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     await this.initialLoadPromise
 
     if (!this.#keystore.seeds.some((seed) => seed.id === seedId))
-      throw new EmittableError({
-        message: 'This recovery phrase is no longer in your wallet.',
-        level: 'expected',
-        error: new Error(`privacyPools: no stored seed ${seedId}`)
-      })
+      throw privacyPoolsErrors.seedRemoved(seedId)
 
-    if (this.#hasAccount(seedId))
-      throw new EmittableError({
-        message: 'This recovery phrase already has a Privacy Pools account.',
-        level: 'expected',
-        error: new Error(`privacyPools: seed ${seedId} already has an account`)
-      })
+    if (this.#hasAccount(seedId)) throw privacyPoolsErrors.accountExists(seedId)
 
     this.accounts = [...this.accounts, { seedId, createdAt: Date.now() }]
     this.emitUpdate()

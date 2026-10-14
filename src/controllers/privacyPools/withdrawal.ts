@@ -30,6 +30,7 @@ import {
   PhraseScopedModule,
   PrivacyPoolsContext
 } from './context'
+import { privacyPoolsErrors } from './errors'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsSync } from './sync'
 
@@ -57,12 +58,7 @@ const toReadableWithdrawalError = (error: unknown) => {
   const sdkError = toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
   if (!sdkError.message.includes(FEE_ABOVE_AMOUNT_SDK_MESSAGE)) return sdkError
 
-  return new EmittableError({
-    message:
-      'This amount is too small to cover the network fee for sending it. Please try a larger amount.',
-    level: 'expected',
-    error: sdkError
-  })
+  return privacyPoolsErrors.withdrawalFeeAboveAmount(sdkError)
 }
 
 const WITHDRAWAL_CANCELLED_MESSAGE = 'privacyPools: the withdrawal was cancelled'
@@ -194,31 +190,16 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     recipient
   }: PrivacyPoolsWithdrawalParams & { seedId: string }): Promise<void> {
     const { paymaster } = getChainConfig(chainId)
-    if (!paymaster)
-      throw new EmittableError({
-        message: 'Sending from a Privacy Pools account is not available on this network yet.',
-        level: 'expected',
-        error: new Error(`privacyPools: no paymaster configured for chain ${chainId}`)
-      })
+    if (!paymaster) throw privacyPoolsErrors.withdrawalUnsupportedNetwork(chainId)
 
     this.#assertBundlerIsAllowed()
 
     // Not only in the form: a proof to a malformed or zero address would burn the funds
     if (!isAddress(recipient) || BigInt(recipient) === 0n)
-      throw new EmittableError({
-        message: 'Please enter a valid address to send to.',
-        level: 'expected',
-        error: new Error('privacyPools: invalid withdrawal recipient')
-      })
+      throw privacyPoolsErrors.withdrawalInvalidRecipient()
 
     // One at a time across phrases: only one proved withdrawal is kept
-    if (this.#isOperationInFlight())
-      throw new EmittableError({
-        message:
-          'Another transfer from a Privacy Pools account is still in progress. Please wait for it to finish.',
-        level: 'expected',
-        error: new Error('privacyPools: a withdrawal is already in flight')
-      })
+    if (this.#isOperationInFlight()) throw privacyPoolsErrors.withdrawalInFlight()
 
     this.#discardPending()
 
@@ -302,12 +283,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       // A batch must simulate first: if its calls fail on chain, the largest deposit is still paid
       // to the single-use sender, out of the wallet's reach
       if (noteCount > 1 && expectedFeeAmount === null)
-        throw new EmittableError({
-          message:
-            'This transfer combines several of your deposits, and we could not confirm it would go through, so it was not sent. Please try again in a moment, or send a smaller amount.',
-          level: 'expected',
-          error: new Error('privacyPools: a batch withdrawal could not be simulated')
-        })
+        throw privacyPoolsErrors.withdrawalBatchNotSimulated()
 
       const isStillCurrent = this.#updateOperation({
         ...operation,
@@ -523,11 +499,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     const pendingWithdrawal = this.#pendingWithdrawal
     if (operation && pendingWithdrawal) return pendingWithdrawal
 
-    throw new EmittableError({
-      message: 'There is no transfer ready to send.',
-      level: 'expected',
-      error: new Error('privacyPools: no prepared withdrawal')
-    })
+    throw privacyPoolsErrors.withdrawalNotReady()
   }
 
   /**
@@ -669,12 +641,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
   #assertBundlerIsAllowed() {
     if (this.#ctx.featureFlags.isFeatureEnabled('erc4337')) return
 
-    throw new EmittableError({
-      message:
-        'Sending from a Privacy Pools account needs "ERC-4337 smart account features", which you turned off. Turn it on in Settings > Privacy opt-outs to send.',
-      level: 'expected',
-      error: new Error('privacyPools: the user opted out of ERC-4337')
-    })
+    throw privacyPoolsErrors.withdrawalBundlerOptedOut()
   }
 
   /**
@@ -695,11 +662,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     if (config.paymaster.poolAdapters[poolAddress.toLowerCase()]) return poolAddress
 
     const symbol = getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)?.symbol || 'this token'
-    throw new EmittableError({
-      message: `Sending ${symbol} from a Privacy Pools account is not supported yet.`,
-      level: 'expected',
-      error: new Error(`privacyPools: no paymaster adapter for pool ${poolAddress}`)
-    })
+    throw privacyPoolsErrors.withdrawalUnsupportedToken(symbol, poolAddress)
   }
 
   /** Drops the unsent withdrawal, so its proof is not sent later at a stale gas price. */
