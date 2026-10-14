@@ -65,10 +65,10 @@ const validateAddAuthSignerAddress = (address: string, selectedAcc: any): Valida
   return { severity: 'success', message: '' }
 }
 
-const NOT_IN_ADDRESS_BOOK_MESSAGE =
-  "This address isn't in your Address Book. Double-check the details before confirming."
 const FIRST_TIME_SEND_MESSAGE = 'First time sending to this address.'
 const FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE = FIRST_TIME_SEND_MESSAGE // same same as above, but keep it separate just in case
+const VIEW_ONLY_RECIPIENT_MESSAGE =
+  "This account is view-only in Ambire, so you can't move funds out of it from here. Make sure you can access it before you send."
 
 // Keep poisoning warnings readable with compact address previews.
 // We size the preview based on the strongest symmetric part of the match:
@@ -125,13 +125,32 @@ function getTimeAgo(date: Date): string {
   return `${diffYears} ${diffYears === 1 ? 'year' : 'years'} ago`
 }
 
+/**
+ * What the form buttons must do for the current recipient:
+ * - 'none' - the normal button
+ * - 'hold' - the user must hold the button to proceed (a risk the user can accept)
+ * - 'block' - the button is disabled (a risk the user must not accept)
+ */
+export type RecipientGate = 'none' | 'hold' | 'block'
+
+export type RecipientValidation = Validation & { gate: RecipientGate }
+
+type RecipientRule = {
+  /** Lazy, so that a rule that is not needed does not do any work */
+  applies: () => boolean
+  validation: () => Validation
+  gate: RecipientGate
+}
+
+const GATE_STRENGTH: { [key in RecipientGate]: number } = { none: 0, hold: 1, block: 2 }
+
 const validateSendTransferAddress = (
   address: string,
   selectedAccAddr: string,
   addressConfirmed: any,
   isRecipientAddressUnknown: boolean,
   isRecipientHumanizerKnownTokenOrSmartContract: boolean,
-  isDomain: boolean,
+  _isDomain: boolean,
   isRecipientDomainResolving: boolean,
   networks: Network[],
   accountStates: AccountStates,
@@ -141,118 +160,149 @@ const validateSendTransferAddress = (
   lastRecipientTransactionDate?: Date | null,
   addressPoisoningMatch?: AddressPoisoningMatch | null,
   recipientDomainAddressChange?: { previousAddress: string } | null,
-  isRecipientAddressBlacklisted?: boolean
-): Validation => {
+  isRecipientAddressBlacklisted?: boolean,
+  isRecipientAddressViewOnly?: boolean
+): RecipientValidation => {
   // Basic validation is handled in the AddressInput component and we don't want to overwrite it.
   if (!isValidAddress(address) || isRecipientDomainResolving) {
     return {
       message: '',
-      severity: 'success'
+      severity: 'success',
+      gate: 'none'
     }
   }
 
-  // A known scam address is the most severe problem, so it takes priority over every other message.
-  // The severity is 'error' so that the buttons of the form stay disabled - sending to a known scam
-  // address is never something we let the user proceed with.
-  if (isRecipientAddressBlacklisted) {
-    return {
-      message: 'This address is known for stealing funds. Anything you send to it will be lost.',
-      severity: 'error'
-    }
-  }
+  const getUnsupportedNetworkReason = () => {
+    if (!chainId) return undefined
 
-  // A domain the user sent to before now resolves to a different address - it may have expired and
-  // been re-pointed.
-  if (recipientDomainAddressChange) {
-    return {
-      message:
-        'This name now resolves to a different address than the last time you sent to it. Verify the new recipient before proceeding.',
-      severity: 'warning'
-    }
-  }
-
-  if (address.toLowerCase() === selectedAccAddr.toLowerCase()) {
-    return {
-      message: "You're about to send funds back to yourself.",
-      severity: 'warning'
-    }
-  }
-
-  // check if the account is supported on the receiving network
-  if (chainId) {
     const accountNetworks = getSupportedNetworks(networks, accountStates, recepientAccount)
     const foundNetwork = accountNetworks.find((n) => n.chainId === chainId)
     if (foundNetwork && foundNetwork.isNotSupported && foundNetwork.notSupportedReason) {
-      return {
-        message: foundNetwork.notSupportedReason,
+      return foundNetwork.notSupportedReason
+    }
+    return undefined
+  }
+
+  // The only gate that depends on the agreement of the user: the message stays the same, but the
+  // hold is released once the user agrees to send to the unknown address.
+  const isUnknownRecipientHold =
+    isRecipientAddressUnknown &&
+    !addressConfirmed &&
+    !isRecipientHumanizerKnownTokenOrSmartContract &&
+    !!isRecipientAddressFirstTimeSend
+
+  // The single source of truth for both the message under the input and the state of the buttons,
+  // so a rule can't require a hold (or a block) without also explaining why.
+  // The message comes from the FIRST rule that applies, so the order is the priority of the messages.
+  // The gate is the STRONGEST gate of ALL the rules that apply, so a more important message
+  // can't hide a lower priority hold.
+  const rules: RecipientRule[] = [
+    // A known scam address is the most severe problem, so it takes priority over every other message.
+    // The severity is 'error' and the gate is 'block' - sending to a known scam address is never
+    // something we let the user proceed with.
+    {
+      applies: () => !!isRecipientAddressBlacklisted,
+      validation: () => ({
+        message: 'This address is known for stealing funds. Anything you send to it will be lost.',
+        severity: 'error'
+      }),
+      gate: 'block'
+    },
+    // A domain the user sent to before now resolves to a different address - it may have expired and
+    // been re-pointed.
+    {
+      applies: () => !!recipientDomainAddressChange,
+      validation: () => ({
+        message:
+          'This name now resolves to a different address than the last time you sent to it. Verify the new recipient before proceeding.',
         severity: 'warning'
-      }
+      }),
+      gate: 'hold'
+    },
+    {
+      applies: () => address.toLowerCase() === selectedAccAddr.toLowerCase(),
+      validation: () => ({
+        message: "You're about to send funds back to yourself.",
+        severity: 'warning'
+      }),
+      gate: 'none'
+    },
+    // check if the account is supported on the receiving network
+    {
+      applies: () => !!getUnsupportedNetworkReason(),
+      validation: () => ({
+        message: getUnsupportedNetworkReason() || '',
+        severity: 'warning'
+      }),
+      gate: 'none'
+    },
+    {
+      applies: () => isRecipientHumanizerKnownTokenOrSmartContract,
+      validation: () => ({
+        message: 'You are trying to send tokens to a smart contract. Doing so would burn them.',
+        severity: 'error'
+      }),
+      gate: 'block'
+    },
+    // poisoning detected - require hold-to-proceed as an additional safety step
+    {
+      applies: () => !!addressPoisoningMatch,
+      validation: () => ({
+        message: getAddressPoisoningWarningMessage(
+          formatAddressPoisoningMatchForMessage(addressPoisoningMatch as AddressPoisoningMatch)
+        ),
+        severity: 'warning'
+      }),
+      gate: 'hold'
+    },
+    {
+      applies: () => !!isRecipientAddressViewOnly,
+      validation: () => ({
+        message: VIEW_ONLY_RECIPIENT_MESSAGE,
+        severity: 'warning'
+      }),
+      gate: 'hold'
+    },
+    {
+      applies: () => !!isRecipientAddressFirstTimeSend,
+      validation: () => {
+        let message = isRecipientAddressUnknown
+          ? FIRST_TIME_SEND_MESSAGE
+          : FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE
+        if (lastRecipientTransactionDate) {
+          message = `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`
+        }
+        return {
+          message,
+          severity: lastRecipientTransactionDate ? 'success' : 'warning'
+        }
+      },
+      gate: isUnknownRecipientHold ? 'hold' : 'none'
+    },
+    {
+      applies: () => !!lastRecipientTransactionDate,
+      validation: () => ({
+        message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate as Date)}.`,
+        severity: 'success'
+      }),
+      gate: 'none'
     }
+  ]
+
+  const appliedRules = rules.filter((rule) => rule.applies())
+
+  const gate = appliedRules.reduce<RecipientGate>(
+    (strongest, rule) =>
+      GATE_STRENGTH[rule.gate] > GATE_STRENGTH[strongest] ? rule.gate : strongest,
+    'none'
+  )
+
+  const validation: Validation = appliedRules[0]?.validation() ?? {
+    severity: 'success',
+    message: ''
   }
 
-  if (isRecipientHumanizerKnownTokenOrSmartContract) {
-    return {
-      message: 'You are trying to send tokens to a smart contract. Doing so would burn them.',
-      severity: 'error'
-    }
-  }
-
-  if (addressPoisoningMatch) {
-    return {
-      message: getAddressPoisoningWarningMessage(
-        formatAddressPoisoningMatchForMessage(addressPoisoningMatch)
-      ),
-      severity: 'warning'
-    }
-  }
-
-  if (isRecipientAddressFirstTimeSend) {
-    let message = isRecipientAddressUnknown
-      ? FIRST_TIME_SEND_MESSAGE
-      : FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE
-    if (lastRecipientTransactionDate) {
-      message = `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`
-    }
-    return {
-      message,
-      severity: lastRecipientTransactionDate ? 'success' : 'warning'
-    }
-  }
-
-  if (
-    isRecipientAddressUnknown &&
-    isRecipientAddressFirstTimeSend &&
-    !addressConfirmed &&
-    !isDomain &&
-    !isRecipientDomainResolving
-  ) {
-    return {
-      message: NOT_IN_ADDRESS_BOOK_MESSAGE,
-      severity: 'error'
-    }
-  }
-
-  if (
-    isRecipientAddressUnknown &&
-    isRecipientAddressFirstTimeSend &&
-    !addressConfirmed &&
-    isDomain &&
-    !isRecipientDomainResolving
-  ) {
-    return {
-      message: NOT_IN_ADDRESS_BOOK_MESSAGE,
-      severity: 'error'
-    }
-  }
-
-  if (lastRecipientTransactionDate) {
-    return {
-      message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`,
-      severity: 'success'
-    }
-  }
-
-  return { severity: 'success', message: '' }
+  return { ...validation, gate }
 }
 
 const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult): Validation => {

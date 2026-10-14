@@ -44,6 +44,7 @@ import {
 } from '../../libs/transfer/amount'
 import { getTransferRequestParams } from '../../libs/transfer/userRequest'
 import {
+  RecipientValidation,
   validateSendTransferAddress,
   validateSendTransferAmount,
   Validation
@@ -71,7 +72,8 @@ const DEFAULT_ADDRESS_STATE: AddressState = {
 }
 
 const DEFAULT_VALIDATION_FORM_MSGS: {
-  [key in 'amount' | 'recipientAddress']: Validation
+  amount: Validation
+  recipientAddress: RecipientValidation
 } = {
   amount: {
     severity: 'error',
@@ -79,7 +81,8 @@ const DEFAULT_VALIDATION_FORM_MSGS: {
   },
   recipientAddress: {
     message: '',
-    severity: 'error'
+    severity: 'error',
+    gate: 'block'
   }
 }
 
@@ -600,7 +603,8 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.lastSentToRecipientAt,
         this.addressPoisoningMatch,
         this.recipientDomainAddressChange,
-        this.isRecipientAddressBlacklisted
+        this.isRecipientAddressBlacklisted,
+        this.isRecipientAddressViewOnly
       )
     }
 
