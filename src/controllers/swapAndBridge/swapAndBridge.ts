@@ -89,6 +89,7 @@ import {
   getIsIntentRoute,
   getIsTokenEligibleForSwapAndBridge,
   getRouteOutputValuesForSorting,
+  getSignedQuoteSnapshot,
   getSwapAndBridgeCalls,
   getSwapSponsorship,
   isNoFeeToken,
@@ -876,6 +877,16 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return this.#signAccountOpController
   }
 
+  /**
+   * Whether the swap transaction is being signed or broadcast right now. Signing with a
+   * hardware wallet can take a while, and the quote the user agreed to must not change
+   * in the meantime. Reads the private controller on purpose, as the public getter
+   * returns null once the quote id changes.
+   */
+  get isSignAndBroadcastInProgress() {
+    return !!this.#signAccountOpController?.isSignAndBroadcastInProgress
+  }
+
   get formStatus() {
     if (this.hasProceeded) return SwapAndBridgeFormStatus.Proceeded
 
@@ -1223,7 +1234,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       // screen is opened after a some time
       this.#serviceProviderAPI.resetHealth()
     }
-    this.hasProceeded = false
+    // A session can go away while another one is still signing, e.g. the popup is
+    // replaced by a request window when signing with a hardware wallet. Leaving the
+    // proceeded state then would let the quote refresh under the transaction being signed
+    if (!this.isSignAndBroadcastInProgress) this.hasProceeded = false
   }
 
   addOrUpdateError(error: SwapAndBridgeErrorType) {
@@ -3303,6 +3317,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
+    // Keep a copy of the quote the transaction is built from, so the active route is created
+    // from what the user signed even if the form quote is refreshed or changed while signing.
+    // No copy means another route got selected during the async calls above - a newer
+    // initSignAccountOpIfNeeded call is handling it
+    const signedQuote = getSignedQuoteSnapshot(this.quote, userTxn.activeRouteId)
+    if (!signedQuote) return
+
     const feeToken = getFeeTokenForSponsorship(this.fromSelectedToken, this.quote, this.fromAmount)
     const isIntent = this.quote?.selectedRoute
       ? getIsIntentRoute(this.quote.selectedRoute)
@@ -3347,6 +3368,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
             meta: {
               ...(this.#signAccountOpController.accountOp.meta || {}),
               swapTxn: userTxn,
+              quote: signedQuote,
               fromQuoteId: quoteIdGuard,
               swapSponsorship
             }
@@ -3369,6 +3391,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       calls,
       meta: {
         swapTxn: userTxn,
+        quote: signedQuote,
         paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
         fromQuoteId: quoteIdGuard,
         swapSponsorship
@@ -3532,6 +3555,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#isOnSwapAndBridgeRoute &&
       this.formStatus === SwapAndBridgeFormStatus.ReadyToSubmit &&
       !this.hasProceeded &&
+      !this.isSignAndBroadcastInProgress &&
       this.quote &&
       !this.quote.selectedRoute?.disabled &&
       !this.quote.selectedRoute?.isSelectedManually

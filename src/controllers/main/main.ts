@@ -116,6 +116,7 @@ import { getAccountKeysCount } from '@/libs/keys/keys'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
+import { getQuoteForSignedSwap } from '@/libs/swapAndBridge/swapAndBridge'
 import { CowSwapAPI } from '@/services/cowswap/api'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
@@ -1035,28 +1036,32 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     if (accountOp.meta?.swapTxn) {
-      // we need a quote to be able to add an active route
-      const quote = accountOp.meta.quote || this.swapAndBridge.quote
-      if (quote) {
+      // we need the quote the swap was built from to be able to add an active route
+      const quote = getQuoteForSignedSwap(accountOp.meta, this.swapAndBridge.quote)
+      if (quote?.selectedRoute) {
         try {
           this.swapAndBridge.addActiveRoute({
             quote,
             userTxIndex: accountOp.meta?.swapTxn.userTxIndex,
-            routeStatus: !!quote?.selectedRoute ? 'in-progress' : 'ready'
+            routeStatus: 'in-progress'
           })
-          if (quote.selectedRoute) {
-            this.swapAndBridge.updateActiveRoute(quote.selectedRoute.routeId, {
-              userTxHash: submittedAccountOp.txnId,
-              identifiedBy: submittedAccountOp.identifiedBy
-            })
-          }
+          this.swapAndBridge.updateActiveRoute(quote.selectedRoute.routeId, {
+            userTxHash: submittedAccountOp.txnId,
+            identifiedBy: submittedAccountOp.identifiedBy
+          })
         } catch (e) {
           console.log('failed to add an active route', e)
         }
+      } else if (accountOp.meta.fromQuoteId) {
+        // One-click swaps always store the quote they were built from. Without it,
+        // the progress of this swap can't be shown to the user
+        const message = 'The signed swap quote is missing; the active route was not added'
+        this.emitError({ level: 'silent', message, error: new Error(message) })
       }
 
-      // no need to keep it in storage
+      // no need to keep it in storage. The submitted account op has a copy of the meta
       delete accountOp.meta.quote
+      delete submittedAccountOp.meta?.quote
     }
 
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)

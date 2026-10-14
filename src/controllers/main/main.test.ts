@@ -758,4 +758,163 @@ describe('Main Controller ', () => {
       )
     })
   })
+  describe('commonHandlerForBroadcastSuccess for swaps', () => {
+    const SIGNED_ROUTE_ID = 'route-signed'
+    const TXN_ID = '0x8d94395e374c50feaaf22f940a18b85717609c667e9ff45368c45b3f2ee1b06f'
+
+    const createQuote = (routeId: string) =>
+      ({
+        fromAsset: { address: '0x0000000000000000000000000000000000000000', symbol: 'ETH' },
+        fromChainId: 1,
+        toAsset: { address: '0x431D5dfF03120AFA4bDf332c61A6e1766eF37BDB', symbol: 'JPYC' },
+        toChainId: 1,
+        selectedRoute: { routeId, providerId: 'lifi', steps: [] },
+        selectedRouteSteps: [],
+        routes: [{ routeId, providerId: 'lifi', steps: [] }]
+      }) as any
+
+    const createSwapAccountOp = (meta: Record<string, unknown>) => {
+      const accountOp = {
+        id: 'swap-account-op',
+        accountAddr: accounts[0]!.addr,
+        chainId: 1n,
+        calls: [{ id: SIGNED_ROUTE_ID, to: '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE', value: 0n }],
+        meta: {
+          swapTxn: { activeRouteId: SIGNED_ROUTE_ID, userTxIndex: 0, chainId: 1 },
+          ...meta
+        }
+      } as any
+      const submittedAccountOp = {
+        ...accountOp,
+        // The sign controller passes a shallow copy of the meta
+        meta: { ...accountOp.meta },
+        txnId: TXN_ID,
+        status: AccountOpStatus.BroadcastedButNotConfirmed,
+        identifiedBy: { type: 'Transaction', identifier: TXN_ID }
+      } as any
+
+      return { accountOp, submittedAccountOp }
+    }
+
+    const setupController = async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+      })
+      const addActiveRouteSpy = jest
+        .spyOn(mainCtrl.swapAndBridge, 'addActiveRoute')
+        .mockImplementation(() => {})
+      const updateActiveRouteSpy = jest
+        .spyOn(mainCtrl.swapAndBridge, 'updateActiveRoute')
+        .mockImplementation(() => {})
+      jest
+        .spyOn(mainCtrl.swapAndBridge, 'handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate')
+        .mockImplementation(() => {})
+      const addAccountOpSpy = jest
+        .spyOn(mainCtrl.activity, 'addAccountOp')
+        .mockImplementation(async () => {})
+      jest.spyOn(mainCtrl.ui.notification, 'create').mockImplementation(async () => {})
+      const emittedErrors: { level: string; message: string }[] = []
+      const unsubscribe = mainCtrl.onError((error) => emittedErrors.push(error))
+
+      return {
+        mainCtrl,
+        addActiveRouteSpy,
+        updateActiveRouteSpy,
+        addAccountOpSpy,
+        emittedErrors,
+        unsubscribe
+      }
+    }
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    test('adds the active route from the signed quote even if the form quote was refreshed while signing', async () => {
+      const { mainCtrl, addActiveRouteSpy, updateActiveRouteSpy, emittedErrors, unsubscribe } =
+        await setupController()
+      const signedQuote = createQuote(SIGNED_ROUTE_ID)
+      mainCtrl.swapAndBridge.quote = createQuote('route-refreshed')
+      const { accountOp, submittedAccountOp } = createSwapAccountOp({
+        quote: signedQuote,
+        fromQuoteId: 'quote-id'
+      })
+
+      await mainCtrl.commonHandlerForBroadcastSuccess({ accountOp, submittedAccountOp } as any)
+
+      expect(addActiveRouteSpy).toHaveBeenCalledTimes(1)
+      expect(addActiveRouteSpy).toHaveBeenCalledWith({
+        quote: signedQuote,
+        userTxIndex: 0,
+        routeStatus: 'in-progress'
+      })
+      expect(updateActiveRouteSpy).toHaveBeenCalledWith(SIGNED_ROUTE_ID, {
+        userTxHash: TXN_ID,
+        identifiedBy: submittedAccountOp.identifiedBy
+      })
+      expect(emittedErrors).toHaveLength(0)
+      unsubscribe()
+    })
+
+    test('does not persist the quote in the activity', async () => {
+      const { addAccountOpSpy, mainCtrl, unsubscribe } = await setupController()
+      const { accountOp, submittedAccountOp } = createSwapAccountOp({
+        quote: createQuote(SIGNED_ROUTE_ID),
+        fromQuoteId: 'quote-id'
+      })
+
+      await mainCtrl.commonHandlerForBroadcastSuccess({ accountOp, submittedAccountOp } as any)
+
+      expect(addAccountOpSpy).toHaveBeenCalledTimes(1)
+      const storedAccountOp = addAccountOpSpy.mock.calls[0]![0]
+      expect(storedAccountOp.meta).not.toHaveProperty('quote')
+      // The swap data is still needed to track the route
+      expect(storedAccountOp.meta?.swapTxn?.activeRouteId).toBe(SIGNED_ROUTE_ID)
+      expect(accountOp.meta).not.toHaveProperty('quote')
+      unsubscribe()
+    })
+
+    test('does not add an active route for a one-click swap when only a refreshed form quote is available', async () => {
+      const { mainCtrl, addActiveRouteSpy, updateActiveRouteSpy, emittedErrors, unsubscribe } =
+        await setupController()
+      mainCtrl.swapAndBridge.quote = createQuote('route-refreshed')
+      const { accountOp, submittedAccountOp } = createSwapAccountOp({ fromQuoteId: 'quote-id' })
+
+      await mainCtrl.commonHandlerForBroadcastSuccess({ accountOp, submittedAccountOp } as any)
+
+      expect(addActiveRouteSpy).not.toHaveBeenCalled()
+      expect(updateActiveRouteSpy).not.toHaveBeenCalled()
+      expect(emittedErrors).toHaveLength(1)
+      expect(emittedErrors[0]!.level).toBe('silent')
+      unsubscribe()
+    })
+
+    test('does not add an active route for a batched swap when the form shows another quote', async () => {
+      const { mainCtrl, addActiveRouteSpy, emittedErrors, unsubscribe } = await setupController()
+      // The user is back on the swap screen with a new quote while signing an older batch
+      mainCtrl.swapAndBridge.quote = createQuote('route-on-screen')
+      const { accountOp, submittedAccountOp } = createSwapAccountOp({})
+
+      await mainCtrl.commonHandlerForBroadcastSuccess({ accountOp, submittedAccountOp } as any)
+
+      expect(addActiveRouteSpy).not.toHaveBeenCalled()
+      // Batched swaps add their active route when they are added to the batch
+      expect(emittedErrors).toHaveLength(0)
+      unsubscribe()
+    })
+
+    test('falls back to the form quote when it still has the signed route', async () => {
+      const { mainCtrl, addActiveRouteSpy, unsubscribe } = await setupController()
+      const currentQuote = createQuote(SIGNED_ROUTE_ID)
+      mainCtrl.swapAndBridge.quote = currentQuote
+      const { accountOp, submittedAccountOp } = createSwapAccountOp({})
+
+      await mainCtrl.commonHandlerForBroadcastSuccess({ accountOp, submittedAccountOp } as any)
+
+      expect(addActiveRouteSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ quote: currentQuote, routeStatus: 'in-progress' })
+      )
+      unsubscribe()
+    })
+  })
 })

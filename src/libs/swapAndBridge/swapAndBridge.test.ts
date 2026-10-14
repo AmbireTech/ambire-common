@@ -5,7 +5,11 @@ import { Token as LiFiToken } from '@lifi/types'
 
 import { defaultFeatureFlags, FeatureFlags } from '../../consts/featureFlags'
 import { Fetch } from '../../interfaces/fetch'
-import { SwapAndBridgeQuote, SwapAndBridgeToToken } from '../../interfaces/swapAndBridge'
+import {
+  SwapAndBridgeQuote,
+  SwapAndBridgeSendTxRequest,
+  SwapAndBridgeToToken
+} from '../../interfaces/swapAndBridge'
 import { TokenResult } from '../portfolio'
 import {
   attemptToSortTokensByMarketCap,
@@ -14,6 +18,8 @@ import {
   getFeeTokenForSponsorship,
   getIsBridgeRoute,
   getIsIntentRoute,
+  getQuoteForSignedSwap,
+  getSignedQuoteSnapshot,
   getSwapSponsorship,
   sortTokenListResponse
 } from './swapAndBridge'
@@ -785,6 +791,135 @@ describe('swapAndBridge lib', () => {
       const result = calculateAmountWarnings(malformedRoute, '100', '0.05', 18)
       // The function catches errors and returns null
       expect(result).toBeNull()
+    })
+  })
+})
+
+describe('signed swap quote', () => {
+  const createQuote = (routeIds: string[], selectedRouteId: string | null): SwapAndBridgeQuote => {
+    const routes = routeIds.map((routeId) => ({
+      ...createMockRoute({
+        inputValueInUsd: 100,
+        outputValueInUsd: 99,
+        fromAmount: 0.05,
+        minAmountOut: 98
+      })!,
+      routeId
+    }))
+    const selectedRoute = routes.find((route) => route.routeId === selectedRouteId)
+
+    return {
+      fromAsset: createToToken('0x0000000000000000000000000000000000000000', 'ETH'),
+      fromChainId: 1,
+      toAsset: createToToken('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', 'USDC'),
+      toChainId: 1,
+      selectedRoute,
+      selectedRouteSteps: selectedRoute?.steps || [],
+      routes
+    }
+  }
+
+  const createSwapTxn = (activeRouteId: string): SwapAndBridgeSendTxRequest => ({
+    activeRouteId,
+    approvalData: null,
+    chainId: 1,
+    txData: '0x',
+    txTarget: '0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE',
+    userTxIndex: 0,
+    value: '0'
+  })
+
+  describe('getSignedQuoteSnapshot', () => {
+    test('should keep only the selected route', () => {
+      const quote = createQuote(['route-a', 'route-b', 'route-c'], 'route-b')
+
+      const snapshot = getSignedQuoteSnapshot(quote, 'route-b')
+
+      expect(snapshot).toBeDefined()
+      expect(snapshot!.selectedRoute!.routeId).toBe('route-b')
+      expect(snapshot!.routes).toHaveLength(1)
+      expect(snapshot!.routes[0]).toBe(snapshot!.selectedRoute)
+      expect(snapshot!.fromAsset).toEqual(quote.fromAsset)
+      expect(snapshot!.toAsset).toEqual(quote.toAsset)
+      // The form quote must stay untouched
+      expect(quote.routes).toHaveLength(3)
+    })
+
+    test('should not change when the form quote is changed in place after signing started', () => {
+      const quote = createQuote(['route-a', 'route-b'], 'route-a')
+      const snapshot = getSignedQuoteSnapshot(quote, 'route-a')
+
+      // What markSelectedRouteAsFailed and onEstimationFailure do to the form quote
+      quote.selectedRoute!.disabled = true
+      quote.selectedRoute!.disabledReason = 'Invalid quote'
+      quote.routes.reverse()
+      quote.selectedRoute = quote.routes[0]
+      quote.toAsset.symbol = 'CHANGED'
+
+      expect(snapshot!.selectedRoute!.routeId).toBe('route-a')
+      expect(snapshot!.selectedRoute!.disabled).toBe(false)
+      expect(snapshot!.selectedRoute!.disabledReason).toBeUndefined()
+      expect(snapshot!.toAsset.symbol).toBe('USDC')
+    })
+
+    test('should return undefined when another route is selected than the signed one', () => {
+      const quote = createQuote(['route-a', 'route-b'], 'route-b')
+
+      expect(getSignedQuoteSnapshot(quote, 'route-a')).toBeUndefined()
+    })
+
+    test('should return undefined without a quote or a selected route', () => {
+      expect(getSignedQuoteSnapshot(null, 'route-a')).toBeUndefined()
+      expect(getSignedQuoteSnapshot(undefined, 'route-a')).toBeUndefined()
+      expect(getSignedQuoteSnapshot(createQuote(['route-a'], null), 'route-a')).toBeUndefined()
+    })
+  })
+
+  describe('getQuoteForSignedSwap', () => {
+    test('should prefer the quote stored at signing over the current form quote', () => {
+      const signedQuote = createQuote(['route-a'], 'route-a')
+      const currentQuote = createQuote(['route-a'], 'route-a')
+
+      expect(
+        getQuoteForSignedSwap({ swapTxn: createSwapTxn('route-a'), quote: signedQuote }, currentQuote)
+      ).toBe(signedQuote)
+    })
+
+    test('should fall back to the current form quote when it still has the signed route', () => {
+      const currentQuote = createQuote(['route-a', 'route-b'], 'route-a')
+
+      expect(getQuoteForSignedSwap({ swapTxn: createSwapTxn('route-a') }, currentQuote)).toBe(
+        currentQuote
+      )
+    })
+
+    test('should not use a form quote that was refreshed while signing', () => {
+      // A refresh returns a new route id, so an active route made from it
+      // would never match the broadcast transaction
+      const refreshedQuote = createQuote(['route-new'], 'route-new')
+
+      expect(
+        getQuoteForSignedSwap({ swapTxn: createSwapTxn('route-signed') }, refreshedQuote)
+      ).toBeUndefined()
+    })
+
+    test('should not use a stored quote that is for a different route', () => {
+      const signedQuote = createQuote(['route-b'], 'route-b')
+
+      expect(
+        getQuoteForSignedSwap({ swapTxn: createSwapTxn('route-a'), quote: signedQuote }, null)
+      ).toBeUndefined()
+    })
+
+    test('should return undefined for account ops that are not swaps', () => {
+      const currentQuote = createQuote(['route-a'], 'route-a')
+
+      expect(getQuoteForSignedSwap(undefined, currentQuote)).toBeUndefined()
+      expect(getQuoteForSignedSwap({}, currentQuote)).toBeUndefined()
+    })
+
+    test('should return undefined when there is no quote at all', () => {
+      expect(getQuoteForSignedSwap({ swapTxn: createSwapTxn('route-a') }, null)).toBeUndefined()
     })
   })
 })

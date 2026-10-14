@@ -1074,6 +1074,49 @@ describe('SwapAndBridge Controller', () => {
       jest.useRealTimers()
       restore()
     })
+    it('should not continuously update the quote while the swap is being signed', async () => {
+      // Get back on the swap and bridge route, the previous test navigated away from it
+      uiCtrl.updateView('test-quote', { currentRoute: 'other', isReady: true })
+      uiCtrl.updateView('test-quote', { currentRoute: 'swap-and-bridge', isReady: true })
+
+      jest.useFakeTimers()
+      const { restore } = suppressConsole()
+
+      const updateQuoteSpy = jest
+        .spyOn(swapAndBridgeController, 'updateQuote')
+        .mockImplementation((() => {}) as any)
+      const updateQuoteIntervalStopSpy = jest.spyOn(
+        swapAndBridgeController.updateQuoteInterval,
+        'stop'
+      )
+      jest
+        .spyOn(swapAndBridgeController, 'formStatus', 'get')
+        .mockReturnValue(SwapAndBridgeFormStatus.ReadyToSubmit)
+      // A hardware wallet signing that is still waiting for the user, after the
+      // proceeded state got lost (e.g. the popup got replaced by a request window)
+      const isSigningSpy = jest
+        .spyOn(swapAndBridgeController, 'isSignAndBroadcastInProgress', 'get')
+        .mockReturnValue(true)
+      swapAndBridgeController.quote!.selectedRoute!.disabled = false
+
+      swapAndBridgeController.updateQuoteInterval.restart()
+      await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateQuoteInterval)
+
+      expect(updateQuoteSpy).toHaveBeenCalledTimes(0)
+      expect(updateQuoteIntervalStopSpy).toHaveBeenCalledTimes(1)
+
+      // Once signing is over, the quote refreshes again
+      isSigningSpy.mockReturnValue(false)
+      swapAndBridgeController.updateQuoteInterval.restart()
+      await waitForFnToBeCalledAndExecuted(swapAndBridgeController.updateQuoteInterval)
+
+      expect(updateQuoteSpy).toHaveBeenCalledTimes(1)
+
+      jest.clearAllTimers()
+      jest.useRealTimers()
+      restore()
+      uiCtrl.updateView('test-quote', { currentRoute: 'other', isReady: true })
+    })
   }) // end describe('continuous quote updates')
 
   test('should add an activeRoute', async () => {
@@ -1479,6 +1522,60 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController.unloadScreen('1')
     expect(swapAndBridgeController.formStatus).toEqual('empty')
     expect(swapAndBridgeController.sessionIds.length).toEqual(0)
+  })
+  describe('unloadScreen while proceeded', () => {
+    let controller: SwapAndBridgeController
+
+    beforeEach(async () => {
+      controller = buildSwapAndBridgeController()
+      await controller.initForm('popup')
+      await controller.initForm('request-window')
+      controller.setUserProceeded(true)
+    })
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+      controller.unloadScreen('popup', true)
+      controller.unloadScreen('request-window', true)
+    })
+
+    test('should stay proceeded while another screen is signing the swap', () => {
+      // The popup is force-unloaded once the request window that took over the
+      // hardware wallet signing has opened
+      jest.spyOn(controller, 'isSignAndBroadcastInProgress', 'get').mockReturnValue(true)
+
+      controller.unloadScreen('popup', true)
+
+      expect(controller.sessionIds).toEqual(['request-window'])
+      expect(controller.hasProceeded).toBe(true)
+      expect(controller.formStatus).toBe(SwapAndBridgeFormStatus.Proceeded)
+    })
+
+    test('should stop being proceeded when a screen is closed and nothing is being signed', () => {
+      // e.g. the user proceeded in one tab and closed it, while another tab stays open
+      jest.spyOn(controller, 'isSignAndBroadcastInProgress', 'get').mockReturnValue(false)
+
+      controller.unloadScreen('popup', true)
+
+      expect(controller.sessionIds).toEqual(['request-window'])
+      expect(controller.hasProceeded).toBe(false)
+      expect(controller.formStatus).not.toBe(SwapAndBridgeFormStatus.Proceeded)
+    })
+
+    test('should reset the form when the last screen is closed, even while signing', () => {
+      jest.spyOn(controller, 'isSignAndBroadcastInProgress', 'get').mockReturnValue(true)
+
+      controller.unloadScreen('popup', true)
+      controller.unloadScreen('request-window', true)
+
+      expect(controller.sessionIds).toHaveLength(0)
+      expect(controller.hasProceeded).toBe(false)
+      expect(controller.formStatus).toBe(SwapAndBridgeFormStatus.Empty)
+    })
+
+    test('should not be signing without a sign controller', () => {
+      expect(controller.isSignAndBroadcastInProgress).toBe(false)
+    })
   })
   test('should toJSON()', () => {
     expect(swapAndBridgeController.toJSON()).toBeDefined()

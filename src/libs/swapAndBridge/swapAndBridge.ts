@@ -502,6 +502,43 @@ const getSwapAndBridgeRequestParams = async (
   }
 }
 
+/**
+ * Returns a detached copy of the quote with only the route that the swap transaction is built
+ * from, or `undefined` if the quote has a different route selected. The copy is stored in the
+ * account op meta, so the active route can be created from what the user signed even if the
+ * form quote is refreshed or changed in place during a slow (e.g. hardware wallet) signing.
+ * The other routes are dropped, as the account op is sent to the UI on every update.
+ */
+const getSignedQuoteSnapshot = (
+  quote: SwapAndBridgeQuote | null | undefined,
+  activeRouteId: SwapAndBridgeSendTxRequest['activeRouteId']
+): SwapAndBridgeQuote | undefined => {
+  if (!quote?.selectedRoute || quote.selectedRoute.routeId !== activeRouteId) return undefined
+
+  const snapshot = structuredClone({ ...quote, routes: [] })
+
+  return { ...snapshot, routes: snapshot.selectedRoute ? [snapshot.selectedRoute] : [] }
+}
+
+/**
+ * Returns the quote that the swap transaction of an account op is built from: the copy stored
+ * in its meta, or the current form quote as a fallback. Returns `undefined` if the quote's
+ * selected route is not the signed one (e.g. the form quote got refreshed in the meantime), as
+ * an active route created from it couldn't be matched to the broadcast transaction.
+ */
+const getQuoteForSignedSwap = (
+  meta: { swapTxn?: SwapAndBridgeSendTxRequest; quote?: SwapAndBridgeQuote } | undefined,
+  currentQuote: SwapAndBridgeQuote | null
+): SwapAndBridgeQuote | undefined => {
+  if (!meta?.swapTxn) return undefined
+
+  const quote = meta.quote || currentQuote
+  if (!quote?.selectedRoute || quote.selectedRoute.routeId !== meta.swapTxn.activeRouteId)
+    return undefined
+
+  return quote
+}
+
 export const getIsBridgeRoute = (route: SwapAndBridgeRoute) => {
   return route.fromChainId !== route.toChainId
 }
@@ -924,7 +961,9 @@ export {
   getBannedToTokenList,
   getFeeTokenForSponsorship,
   getLink,
+  getQuoteForSignedSwap,
   getRouteOutputValuesForSorting,
+  getSignedQuoteSnapshot,
   getSlippage,
   getSwapAndBridgeCalls,
   getSwapAndBridgeRequestParams,
