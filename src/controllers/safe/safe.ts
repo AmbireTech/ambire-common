@@ -408,7 +408,8 @@ export class SafeController extends EventEmitter implements ISafeController {
    * Refreshes the pending counts of the user's Safes other than the selected one, whose
    * pending txns `MainController.fetchSafeTxns` turns into requests instead. A Safe is
    * skipped while its counts are younger than `FETCH_OTHER_SAFES_PENDING`, and until at least
-   * one of its owners is imported, as without one the user cannot sign what is pending.
+   * one of its owners is imported, as without one the user cannot sign what is pending. The
+   * counts of a Safe whose owners were all removed are cleared.
    */
   async updateOtherSafesPendingCounts(selectedAccountAddr?: string) {
     if (this.#updateOtherSafesPendingCountsPromise)
@@ -423,7 +424,33 @@ export class SafeController extends EventEmitter implements ISafeController {
     return this.#updateOtherSafesPendingCountsPromise
   }
 
+  /**
+   * Drops the counts of the Safes that are not selected and no longer have an owner imported,
+   * as they are not refreshed anymore. Forgetting when they were fetched lets an owner that is
+   * imported again bring the count back right away.
+   */
+  #clearCountsOfSafesWithoutOwner(selectedAccountAddr?: string) {
+    const safesWithoutOwner = this.#accounts.accounts.filter(
+      (account) =>
+        !!account.safeCreation &&
+        account.addr !== selectedAccountAddr &&
+        !!this.pendingCountBySafe[account.addr] &&
+        !this.#keystore.getAccountKeys(account).length
+    )
+    if (!safesWithoutOwner.length) return
+
+    const pendingCountBySafe = { ...this.pendingCountBySafe }
+    safesWithoutOwner.forEach(({ addr }) => {
+      delete pendingCountBySafe[addr]
+      delete this.#pendingFetchedAt[addr]
+    })
+    this.pendingCountBySafe = pendingCountBySafe
+    this.emitUpdate()
+  }
+
   async #updateOtherSafesPendingCounts(selectedAccountAddr?: string) {
+    this.#clearCountsOfSafesWithoutOwner(selectedAccountAddr)
+
     const safesToUpdate = this.#accounts.accounts.filter(
       (account) =>
         !!account.safeCreation &&

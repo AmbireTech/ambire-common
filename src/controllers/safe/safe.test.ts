@@ -385,7 +385,7 @@ describe('SafeController pending counts', () => {
       } as any
     })
 
-    return { controller, accounts }
+    return { controller, accounts, importedKeyAddrs }
   }
 
   const pendingResponse = (
@@ -478,6 +478,37 @@ describe('SafeController pending counts', () => {
 
     expect(fetchAllPending).not.toHaveBeenCalled()
     expect(controller.pendingCountBySafe).toEqual({})
+  })
+
+  it('clears the counts of a Safe whose owners were removed and fetches them again once one is back', async () => {
+    const { controller, importedKeyAddrs } = createPendingCountsController({
+      accountStates: { [SAFE_B]: { '1': { isDeployed: true, threshold: 1 } } }
+    })
+    await controller.initialLoadPromise
+    await controller.updateOtherSafesPendingCounts(SAFE_A)
+    expect(controller.pendingCountBySafe[SAFE_B]).toEqual({ '1': 1 })
+
+    importedKeyAddrs.splice(0)
+    await controller.updateOtherSafesPendingCounts(SAFE_A)
+    expect(controller.pendingCountBySafe).toEqual({})
+    expect(fetchAllPending).toHaveBeenCalledTimes(1)
+
+    // Well within the 15 minutes, as the count was cleared rather than refreshed
+    importedKeyAddrs.push(OWNER)
+    await controller.updateOtherSafesPendingCounts(SAFE_A)
+    expect(controller.pendingCountBySafe[SAFE_B]).toEqual({ '1': 1 })
+    expect(fetchAllPending).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the counts of the selected Safe without owners, as it is not refreshed from here', async () => {
+    const { controller, importedKeyAddrs } = createPendingCountsController({ accountStates: {} })
+    await controller.initialLoadPromise
+    await controller.fetchPending(SAFE_A as Hex, [{ chainId: 1n, threshold: 1 }])
+
+    importedKeyAddrs.splice(0)
+    await controller.updateOtherSafesPendingCounts(SAFE_A)
+
+    expect(controller.pendingCountBySafe[SAFE_A]).toEqual({ '1': 1 })
   })
 
   it('skips a Safe whose counts are younger than 15 minutes and fetches it again after', async () => {
