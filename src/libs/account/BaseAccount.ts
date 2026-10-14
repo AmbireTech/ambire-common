@@ -1,10 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
+import { ETHEREUM_CHAIN_ID } from '../../consts/networks'
 import { Account, AccountOnchainState } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Hex } from '../../interfaces/hex'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { AccountOp } from '../accountOp/accountOp'
+import { BROADCAST_OPTIONS } from '../broadcast/broadcast'
 import {
   BundlerStateOverride,
   FeePaymentOption,
@@ -13,6 +15,16 @@ import {
 } from '../estimate/interfaces'
 import { TokenResult } from '../portfolio'
 import { UserOperation } from '../userOperation/types'
+
+/**
+ * Which gas prices the gasPrice controller should fetch for an account:
+ * - `bundlerWithRpcFallback`: a single collection from the bundler, falling back to the RPC
+ * - `rpc`: a single collection from the RPC only
+ * - `rpcWithBundlerFallback`: the RPC gas prices, falling back to the bundler ones if the
+ *   RPC fails, used for broadcasts outside the bundler. Bundler broadcasts keep using the
+ *   gas prices that come with the bundler estimation
+ */
+export type GasPriceFetchStrategy = 'bundlerWithRpcFallback' | 'rpc' | 'rpcWithBundlerFallback'
 
 export abstract class BaseAccount {
   protected account: Account
@@ -141,6 +153,35 @@ export abstract class BaseAccount {
 
   canUseErc4337(): boolean {
     return false
+  }
+
+  /**
+   * When ERC-4337 is disabled, the RPC is the only source of gas prices.
+   * On Ethereum, the gas prices returned by the bundlers differ from the RPC ones,
+   * so the RPC is given priority: accounts that cannot use ERC-4337 rely on the RPC
+   * only, while the ones that can use the RPC with the bundler as a fallback for
+   * their broadcasts outside the bundler (see shouldUseRpcGasPrices).
+   * Everywhere else, the bundler is preferred as it's faster and more accurate
+   */
+  getGasPriceFetchStrategy(isErc4337Enabled: boolean): GasPriceFetchStrategy {
+    // global config
+    if (!isErc4337Enabled) return 'rpc'
+
+    // bundler is with priority on other chains
+    if (this.network.chainId !== ETHEREUM_CHAIN_ID) return 'bundlerWithRpcFallback'
+
+    // rpc is with priority on Ethereum
+    return this.canUseErc4337() ? 'rpcWithBundlerFallback' : 'rpc'
+  }
+
+  /**
+   * When the account uses the `rpcWithBundlerFallback` strategy (see getGasPriceFetchStrategy),
+   * a bundler broadcast (the account itself paying in a token or native via userOp)
+   * should use the bundler gas prices and every other broadcast (by self,
+   * by another EOA, by the relayer) - the RPC ones
+   */
+  shouldUseRpcGasPrices(broadcastOption: string): boolean {
+    return broadcastOption !== BROADCAST_OPTIONS.byBundler
   }
 
   /**

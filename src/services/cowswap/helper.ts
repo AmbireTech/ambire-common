@@ -12,7 +12,11 @@ import {
 
 import SwapAndBridgeProviderApiError from '@/classes/SwapAndBridgeProviderApiError'
 import { FEE_COLLECTOR } from '@/consts/addresses'
-import { CowSwapOrderCreation, SwapAndBridgeToToken } from '@/interfaces/swapAndBridge'
+import {
+  CowSwapOrderCreation,
+  CowSwapOrderStruct,
+  SwapAndBridgeToToken
+} from '@/interfaces/swapAndBridge'
 import {
   COWSWAP_APP_CODE,
   COWSWAP_APP_DATA_VERSION,
@@ -137,6 +141,51 @@ export const buildAppData = ({ slippageBps, feeBps }: { slippageBps: number; fee
   }
 }
 
+/** Picks the fields of an order we submit to CoW Swap that its order ID commits to. */
+export const getCowSwapOrderStruct = (order: CowSwapOrderCreation): CowSwapOrderStruct => ({
+  sellToken: order.sellToken,
+  buyToken: order.buyToken,
+  receiver: order.receiver,
+  sellAmount: order.sellAmount,
+  buyAmount: order.buyAmount,
+  validTo: order.validTo,
+  appData: order.appDataHash,
+  feeAmount: order.feeAmount,
+  kind: order.kind,
+  partiallyFillable: order.partiallyFillable,
+  sellTokenBalance: order.sellTokenBalance,
+  buyTokenBalance: order.buyTokenBalance
+})
+
+/**
+ * Builds the CoW Swap order ID (`orderUid`) of `order` owned by `owner` on `chainId`: the EIP-712
+ * hash of the order, followed by the owner and the order's expiry. Pre-sign and cancel
+ * transactions contain only this ID, so recomputing it from an order is how we prove which order
+ * such a transaction refers to. Throws if a field of `order` can't be encoded.
+ */
+export const getCowSwapOrderUid = ({
+  chainId,
+  order,
+  owner
+}: {
+  chainId: number | bigint
+  order: CowSwapOrderStruct
+  owner: string
+}) => {
+  const orderDigest = TypedDataEncoder.hash(
+    {
+      name: 'Gnosis Protocol',
+      version: 'v2',
+      chainId,
+      verifyingContract: COWSWAP_SETTLEMENT_ADDRESS
+    },
+    orderTypes,
+    order
+  )
+
+  return solidityPacked(['bytes32', 'address', 'uint32'], [orderDigest, owner, order.validTo])
+}
+
 export const computeOrderUid = ({
   chainId,
   order,
@@ -148,35 +197,14 @@ export const computeOrderUid = ({
   owner: string
   isEthFlow: boolean
 }) => {
-  const validTo = isEthFlow ? MAX_VALID_TO : order.validTo
-  const orderDigest = TypedDataEncoder.hash(
-    {
-      name: 'Gnosis Protocol',
-      version: 'v2',
-      chainId,
-      verifyingContract: COWSWAP_SETTLEMENT_ADDRESS
-    },
-    orderTypes,
-    {
-      sellToken: order.sellToken,
-      buyToken: order.buyToken,
-      receiver: order.receiver,
-      sellAmount: order.sellAmount,
-      buyAmount: order.buyAmount,
-      validTo,
-      appData: order.appDataHash,
-      feeAmount: order.feeAmount,
-      kind: order.kind,
-      partiallyFillable: order.partiallyFillable,
-      sellTokenBalance: order.sellTokenBalance,
-      buyTokenBalance: order.buyTokenBalance
-    }
-  )
+  const orderStruct = getCowSwapOrderStruct(order)
+  if (!isEthFlow) return getCowSwapOrderUid({ chainId, order: orderStruct, owner })
 
-  return solidityPacked(
-    ['bytes32', 'address', 'uint32'],
-    [orderDigest, isEthFlow ? COWSWAP_ETH_FLOW_ADDRESS : owner, validTo]
-  )
+  return getCowSwapOrderUid({
+    chainId,
+    order: { ...orderStruct, validTo: MAX_VALID_TO },
+    owner: COWSWAP_ETH_FLOW_ADDRESS
+  })
 }
 
 export const getOutputValueInUsd = ({
