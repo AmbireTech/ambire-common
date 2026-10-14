@@ -166,11 +166,11 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
    * along with the settings, networks and contacts if the user chose to sync them. Those
    * are merged: what comes from the other product overrides what is here, the rest stays.
    * `payload` is the hex encoded data assembled from the scanned codes and `password`
-   * is the device password of the product that exported them, needed only when the
-   * payload holds private keys or recovery phrases.
+   * is the device password of the product that exported them, required whatever was
+   * synced, so that nothing is taken over without the user confirming it.
    */
   async importData(
-    { payload, password }: { payload: string; password?: string },
+    { payload, password }: { payload: string; password: string },
     requestId?: string
   ) {
     await this.#withSyncResponse('importData', requestId, async () => {

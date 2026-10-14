@@ -8,7 +8,6 @@ import { CIPHER } from '@/libs/keystore/keystore'
 import {
   APP_DATA_SYNC_PAYLOAD_VERSION,
   AppDataSyncPayload,
-  isSyncPasswordRequired,
   parseAppDataSyncPayload,
   serializeAppDataSyncPayload
 } from './appDataSync'
@@ -287,14 +286,18 @@ describe('appDataSync payload', () => {
     expect(serializeAndParse(viewOnlyPayload)).toEqual(viewOnlyPayload)
   })
 
-  it('needs the password only for private keys and recovery phrases', () => {
-    const payload = buildPayload()
+  it('rejects hardware wallet accounts that come without the password protected main key', () => {
+    // Nothing needs decrypting, but the main key is still how the password gets confirmed
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { secret, ...withoutSecret } = {
+      ...buildPayload(),
+      keys: [buildPayload().keys[1]!],
+      seeds: []
+    }
 
-    expect(isSyncPasswordRequired(payload)).toBe(true)
-    expect(isSyncPasswordRequired({ ...payload, keys: [] })).toBe(true)
-    // Hardware wallet keys are stored on the device, so there is nothing to decrypt
-    expect(isSyncPasswordRequired({ keys: [payload.keys[1]!], seeds: [] })).toBe(false)
-    expect(isSyncPasswordRequired({ keys: [], seeds: [] })).toBe(false)
+    expect(() => serializeAndParse(withoutSecret)).toThrow(
+      'missing the password protected main key'
+    )
   })
 
   describe('settings, networks and contacts', () => {
@@ -317,7 +320,13 @@ describe('appDataSync payload', () => {
       expect(typeof parsed.networks![0]!.chainId).toBe('bigint')
     })
 
-    it('accepts only the settings, networks and contacts, without accounts or a password', () => {
+    it('accepts only the settings, networks and contacts, without accounts', () => {
+      const payload = { ...buildFullPayload(), accounts: [], keys: [], seeds: [] }
+
+      expect(serializeAndParse(payload)).toEqual(payload)
+    })
+
+    it('rejects them without the password protected main key', () => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { secret, ...payload } = {
         ...buildFullPayload(),
@@ -325,15 +334,13 @@ describe('appDataSync payload', () => {
         keys: [],
         seeds: []
       }
-      const parsed = serializeAndParse(payload)
 
-      expect(parsed).toEqual(payload)
-      expect(isSyncPasswordRequired(parsed)).toBe(false)
+      expect(() => serializeAndParse(payload)).toThrow('missing the password protected main key')
     })
 
     it('accepts just one of them', () => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { secret, settings, networks, ...payload } = {
+      const { settings, networks, ...payload } = {
         ...buildFullPayload(),
         accounts: [],
         keys: [],
@@ -343,7 +350,7 @@ describe('appDataSync payload', () => {
       expect(serializeAndParse(payload).contacts).toEqual(payload.contacts)
     })
 
-    it('still pins the scrypt params of a main key nothing needs', () => {
+    it('pins the scrypt params even when nothing encrypted is synced', () => {
       const payload: any = { ...buildFullPayload(), accounts: [], keys: [], seeds: [] }
       payload.secret.scryptParams = { ...payload.secret.scryptParams, N: 2 ** 21 }
 

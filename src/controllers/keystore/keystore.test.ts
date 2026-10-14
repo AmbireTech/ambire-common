@@ -800,27 +800,19 @@ describe('app data sync between two devices', () => {
     expect(importingKeystore.keys[0]!.meta.fromSeedId).toBeUndefined()
   })
 
-  test('exports hardware wallet keys without the main key, as nothing needs decrypting', async () => {
-    const exported = await exportingKeystore.exportForSync([EXTERNAL_ADDR])
+  test('exports the main key even when nothing needs decrypting, so the password gets confirmed', async () => {
+    const hardwareWalletOnly = await exportingKeystore.exportForSync([EXTERNAL_ADDR])
+    const nothingEncrypted = await exportingKeystore.exportForSync([])
 
-    expect(exported.secret).toBeUndefined()
+    expect(hardwareWalletOnly.secret.id).toBe('password')
+    expect(nothingEncrypted.secret.id).toBe('password')
   })
 
-  test('exports hardware wallet keys even from a device without a password', async () => {
-    const biometricsOnlyKeystore = createKeystore()
-    await biometricsOnlyKeystore.addSecret('biometrics', 'biometricsSecret', '', true)
-
-    await expect(biometricsOnlyKeystore.exportForSync([])).resolves.toEqual({
-      keys: [],
-      seeds: []
-    })
-  })
-
-  test('imports hardware wallet keys without a password', async () => {
+  test('imports hardware wallet keys with the password of the other device', async () => {
     await importingKeystore.addSecret('password', importingPass, '', true)
     const payload = await buildPayload([EXTERNAL_ADDR])
 
-    await importingKeystore.importFromSync(payload)
+    await importingKeystore.importFromSync(payload, exportingPass)
 
     expect(importingKeystore.keys).toEqual([
       expect.objectContaining({ addr: EXTERNAL_ADDR, type: 'ledger', isExternallyStored: true })
@@ -830,14 +822,23 @@ describe('app data sync between two devices', () => {
   describe('Negative cases', () => {
     suppressConsoleBeforeEach()
 
-    test('does not import encrypted keys without the password of the other device', async () => {
+    test('does not import hardware wallet keys when the password of the other device is wrong', async () => {
       await importingKeystore.addSecret('password', importingPass, '', true)
-      const payload = await buildPayload([keyPublicAddress])
+      const payload = await buildPayload([EXTERNAL_ADDR])
 
-      await expect(importingKeystore.importFromSync(payload)).rejects.toThrow(
-        'the synced keys need the password of the other device'
+      await expect(importingKeystore.importFromSync(payload, 'wrongPass')).rejects.toThrow(
+        'Incorrect password. Please try again.'
       )
       expect(importingKeystore.keys).toHaveLength(0)
+    })
+
+    test('refuses to export even hardware wallet keys from a device without a password', async () => {
+      const biometricsOnlyKeystore = createKeystore()
+      await biometricsOnlyKeystore.addSecret('biometrics', 'biometricsSecret', '', true)
+
+      await expect(biometricsOnlyKeystore.exportForSync([])).rejects.toThrow(
+        'Set a password for this device before syncing your accounts.'
+      )
     })
 
     test('refuses to export private keys from a device without a password', async () => {

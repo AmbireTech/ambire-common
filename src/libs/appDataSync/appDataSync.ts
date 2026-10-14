@@ -80,8 +80,11 @@ export type AppDataSyncExportOptions = {
  */
 export type AppDataSyncPayload = {
   v: typeof APP_DATA_SYNC_PAYLOAD_VERSION
-  /** Missing when there is nothing encrypted to sync, see `isSyncPasswordRequired` */
-  secret?: MainKeyEncryptedWithSecret
+  /**
+   * Always present, even with nothing encrypted to sync, because unlocking it is how the
+   * importing device confirms the user knows the exporting device's password
+   */
+  secret: MainKeyEncryptedWithSecret
   /** Empty when the user synced only the settings, networks or Address Book */
   accounts: Account[]
   keys: StoredKey[]
@@ -93,17 +96,6 @@ export type AppDataSyncPayload = {
   /** The manually added contacts. Missing when the user did not choose to sync them */
   contacts?: Contacts
 }
-
-/**
- * Whether the payload holds anything encrypted (private keys or recovery phrases), which
- * only the password of the exporting device can unlock. Without it, the import needs
- * no password at all.
- */
-export const isSyncPasswordRequired = ({
-  keys,
-  seeds
-}: Pick<AppDataSyncPayload, 'keys' | 'seeds'>): boolean =>
-  keys.some((key) => key.type === 'internal') || !!seeds.length
 
 const requireGcmPayload = (payload: any, what: string) => {
   if (!tryParseGcmPayload(payload))
@@ -309,9 +301,7 @@ export const parseAppDataSyncPayload = (bytes: Uint8Array): AppDataSyncPayload =
   validateAccounts(payload.accounts)
   validateKeys(payload.keys)
   validateSeeds(payload.seeds)
-  // Validated whenever present, so its scrypt params are pinned even if nothing needs it
-  if (isSyncPasswordRequired(payload) || payload.secret !== undefined)
-    validateSecret(payload.secret)
+  validateSecret(payload.secret)
   validateSettings(payload.settings)
   validateNetworks(payload.networks)
   validateContacts(payload.contacts)

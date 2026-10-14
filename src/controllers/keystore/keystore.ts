@@ -56,7 +56,7 @@ import {
 import { Platform } from '../../interfaces/platform'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
-import { AppDataSyncPayload, isSyncPasswordRequired } from '../../libs/appDataSync/appDataSync'
+import { AppDataSyncPayload } from '../../libs/appDataSync/appDataSync'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
@@ -1309,20 +1309,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * keys still travel (so the accounts can sign on the other device), but the recovery
    * phrases they were derived from stay on this device.
    *
-   * The main key is left out when nothing encrypted is exported (hardware wallet keys
-   * only, or no keys at all), so the other device needs no password to import.
+   * The main key goes along even when nothing encrypted is exported (hardware wallet keys
+   * only, or no keys at all), so the other device always asks for this device's password.
    */
   async exportForSync(
     keyAddrs: Key['addr'][],
     includeSeeds: boolean = true
   ): Promise<Pick<AppDataSyncPayload, 'secret' | 'keys' | 'seeds'>> {
     await this.initialLoadPromise
-
-    const keys = this.#keystoreKeys.filter((key) => keyAddrs.includes(key.addr))
-    const seedIds = new Set(keys.map((key) => key.meta?.fromSeedId).filter(Boolean))
-    const seeds = includeSeeds ? this.#keystoreSeeds.filter((seed) => seedIds.has(seed.id)) : []
-
-    if (!isSyncPasswordRequired({ keys, seeds })) return { keys, seeds }
 
     const secret = this.#keystoreSecrets.find((s) => s.id === 'password')
     if (!secret)
@@ -1339,6 +1333,10 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
           'Something went wrong when preparing your accounts for syncing. Please unlock the app again or contact support if the problem persists.',
         error: new Error('keystore: password secret not migrated to GCM yet')
       })
+
+    const keys = this.#keystoreKeys.filter((key) => keyAddrs.includes(key.addr))
+    const seedIds = new Set(keys.map((key) => key.meta?.fromSeedId).filter(Boolean))
+    const seeds = includeSeeds ? this.#keystoreSeeds.filter((seed) => seedIds.has(seed.id)) : []
 
     // Keys and seeds are migrated to GCM on unlock, so this should never happen. If it
     // does, fail here rather than on the other device, which would reject the payload
@@ -1371,24 +1369,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * MainController orchestrates the whole migration (and must not add the accounts if
    * this fails).
    *
-   * Without anything encrypted in the payload (hardware wallet keys only, or no keys at
-   * all) there is nothing to unlock, so no password is needed.
+   * The password is required even without anything encrypted in the payload (hardware
+   * wallet keys only, or no keys at all), as unwrapping the main key is how the user
+   * confirms the sync came from their other device.
    */
-  async importFromSync(payload: AppDataSyncPayload, password?: string) {
+  async importFromSync(payload: AppDataSyncPayload, password: string) {
     await this.initialLoadPromise
 
     const { secret, keys, seeds } = payload
-    if (!isSyncPasswordRequired(payload)) {
-      const externalKeys: ReadyToAddKeys['external'] = keys.flatMap((key) =>
-        key.type === 'internal' ? [] : [key]
-      )
-      await this.#addKeysExternallyStored(externalKeys)
-      this.emitUpdate()
-      return
-    }
-
-    if (!secret || password === undefined)
-      throw new Error('keystore: the synced keys need the password of the other device')
     if (secret.aesEncrypted.cipherType !== CIPHER)
       throw new Error('keystore: synced main key is not encrypted with GCM')
 
