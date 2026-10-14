@@ -14,6 +14,7 @@ import { ISwapAndBridgeController } from '@/interfaces/swapAndBridge'
 import { IUiController } from '@/interfaces/ui'
 import {
   APP_DATA_SYNC_PAYLOAD_VERSION,
+  AppDataSyncNewerVersionError,
   AppDataSyncExportOptions,
   AppDataSyncPayload,
   getAppDataSyncKeyAddrs,
@@ -181,7 +182,9 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
         throw new EmittableError({
           level: 'expected',
           message:
-            'The scanned QR codes do not contain Ambire accounts, or not all of them were scanned. Please try again.',
+            error instanceof AppDataSyncNewerVersionError
+              ? 'The QR codes come from a newer version of Ambire. Please update this app and scan them again.'
+              : 'The scanned QR codes do not contain Ambire accounts, or not all of them were scanned. Please try again.',
           error: error instanceof Error ? error : new Error('appDataSync: invalid sync payload')
         })
       }

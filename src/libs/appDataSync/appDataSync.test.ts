@@ -7,6 +7,7 @@ import { CIPHER } from '@/libs/keystore/keystore'
 
 import {
   APP_DATA_SYNC_PAYLOAD_VERSION,
+  AppDataSyncNewerVersionError,
   AppDataSyncPayload,
   getAppDataSyncKeyAddrs,
   parseAppDataSyncPayload,
@@ -133,9 +134,27 @@ describe('appDataSync payload', () => {
   })
 
   it('rejects an unsupported payload version', () => {
-    expect(() => serializeAndParse({ ...buildPayload(), v: 2 })).toThrow(
+    expect(() => serializeAndParse({ ...buildPayload(), v: 0 })).toThrow(
+      'unsupported payload version 0'
+    )
+    expect(() => serializeAndParse({ ...buildPayload(), v: '2' })).toThrow(
       'unsupported payload version 2'
     )
+    expect(() => serializeAndParse({ ...buildPayload(), v: 1.5 })).toThrow(
+      'unsupported payload version 1.5'
+    )
+  })
+
+  it('tells a payload from a newer app apart, so the user is asked to update', () => {
+    expect(() => serializeAndParse({ ...buildPayload(), v: 3 })).toThrow(
+      AppDataSyncNewerVersionError
+    )
+  })
+
+  it('still reads the accounts-only payload that the released apps export', () => {
+    const accountsOnly = { ...buildPayload(), v: 1 as const }
+
+    expect(serializeAndParse(accountsOnly)).toEqual(accountsOnly)
   })
 
   it('rejects a payload without the password protected main key', () => {
