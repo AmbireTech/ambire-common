@@ -558,7 +558,7 @@ describe('Main Controller ', () => {
       await mainCtrl.updateAccountsOpsStatuses()
       await flushAsyncUpdates()
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
       expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
       // A cache-busting update is scheduled for the updated chain.
       expect(scheduleUpdateSpy).toHaveBeenCalledTimes(1)
@@ -655,7 +655,7 @@ describe('Main Controller ', () => {
       await flushAsyncUpdates()
 
       expect(mainCtrl.selectedAccount.account?.addr).toBe(selectedAccountAddr)
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
       expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
       // Scheduling targets the tx account, not the selected one.
       expect(scheduleUpdateSpy).toHaveBeenCalledWith({
@@ -702,7 +702,7 @@ describe('Main Controller ', () => {
       await mainCtrl.updateAccountsOpsStatuses()
       await flushAsyncUpdates()
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n, 10n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n, 10n], true)
       expect(scheduleUpdateSpy).toHaveBeenCalledTimes(2)
       expect(scheduleUpdateSpy).toHaveBeenCalledWith({
         accountId: senderAccount,
