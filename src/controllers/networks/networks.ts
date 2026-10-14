@@ -609,6 +609,28 @@ export class NetworksController extends EventEmitter implements INetworksControl
   }
 
   /**
+   * Bulk-adds networks coming from another device. A network whose chainId is already
+   * here gets overridden, the rest of the networks stay untouched.
+   */
+  async mergeNetworks(networks: Network[]) {
+    await this.initialLoadPromise
+
+    if (!networks.length) return
+
+    networks.forEach((network) => {
+      this.#networks[network.chainId.toString()] = network
+    })
+
+    await this.#storage.set('networks', this.#networks)
+
+    const mergedChainIds = networks.map((network) => network.chainId)
+    void this.#onAddOrUpdateNetworks(
+      this.allNetworks.filter((network) => mergedChainIds.includes(network.chainId))
+    )
+    this.emitUpdate()
+  }
+
+  /**
    * @deprecated - users can no longer remove networks from the UI
    */
   async removeNetwork(chainId: ChainId) {
