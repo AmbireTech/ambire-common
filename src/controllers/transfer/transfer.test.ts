@@ -445,10 +445,12 @@ describe('Transfer Controller - Privacy Pools recipient', () => {
     const { mainCtrl, uiCtrl, selectedAccountCtrl } = context
 
     // The limits come from the chain, which the tests do not reach
+    let depositAssetConfigs = {}
+    jest
+      .spyOn(mainCtrl.privacyPools, 'depositAssetConfigs', 'get')
+      .mockImplementation(() => depositAssetConfigs)
     jest.spyOn(mainCtrl.privacyPools, 'loadDepositAssetConfig').mockImplementation(async () => {
-      mainCtrl.privacyPools.depositAssetConfigs = {
-        [`1:${ZeroAddress}`]: ETH_DEPOSIT_LIMITS
-      }
+      depositAssetConfigs = { [`1:${ZeroAddress}`]: ETH_DEPOSIT_LIMITS }
       return ETH_DEPOSIT_LIMITS
     })
 

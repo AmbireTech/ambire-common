@@ -690,6 +690,39 @@ describe('PrivacyPoolsController', () => {
     })
   })
 
+  describe('state sent to the UI', () => {
+    it('holds only the public state, nothing derived from a phrase', async () => {
+      const { controller, selectedAccount } = await prepareTest()
+      selectedAccount.select('seed-a')
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+
+      expect(Object.keys(controller.toJSON()).sort()).toEqual(
+        [
+          'accounts',
+          'balances',
+          'chains',
+          'depositAssetConfigs',
+          'emittedErrors',
+          'hasPersistedSendForm',
+          'hasSyncedAnyChain',
+          'id',
+          'initialLoadPromise',
+          'isAvailableForSelectedAccount',
+          'name',
+          'operation',
+          'prices',
+          'sendForm',
+          'sendFormResetCounter',
+          'statuses',
+          'supportedChainIds',
+          'unavailableReason'
+        ].sort()
+      )
+    })
+  })
+
   describe('selection', () => {
     it('is unavailable until a Privacy Pools account is selected', async () => {
       const { controller, selectedAccount } = await prepareTest()
@@ -1749,6 +1782,21 @@ describe('PrivacyPoolsController', () => {
       const emitted = controller.emittedErrors.at(-1)
       expect(emitted?.level).toBe('major')
       expect(emitted?.error.message).toBe('Leaf not found in the leaves array.')
+    })
+
+    it('drops a proved transfer with its account, so re-adding the account cannot send it', async () => {
+      const { controller } = await prepareSignedWithdrawal()
+      expect(controller.operation).toMatchObject({ phase: 'ready' })
+      jest.mocked(createPPv1Broadcaster).mockClear()
+
+      await controller.removeAccount('seed-a')
+      await controller.addAccount('seed-a')
+
+      expect(controller.operation).toBeNull()
+      await expect(controller.broadcastWithdrawal()).rejects.toThrow(
+        'There is no transfer ready to send.'
+      )
+      expect(createPPv1Broadcaster).not.toHaveBeenCalled()
     })
 
     it('shows what a proved transfer costs by running it, next to the most it can cost', async () => {
