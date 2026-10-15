@@ -841,4 +841,91 @@ describe('Main Controller ', () => {
       )
     })
   })
+  describe('commonHandlerForBroadcastSuccess for swaps', () => {
+    const SIGNED_ROUTE_ID = 'signed-route'
+    const TXN_ID = '0x8d94395e374c50feaaf22f940a18b85717609c667e9ff45368c45b3f2ee1b06f'
+
+    const createQuote = (routeId: string) => {
+      const route = { routeId, providerId: 'lifi', steps: [], userTxs: [] }
+
+      return {
+        fromAsset: { address: '0x0000000000000000000000000000000000000000', symbol: 'ETH' },
+        toAsset: { address: '0x431D5dfF03120AFA4bDf332c61A6e1766eF37BDB', symbol: 'JPYC' },
+        selectedRoute: route,
+        routes: [route]
+      } as any
+    }
+
+    const createSwapAccountOps = (meta: Record<string, unknown> = {}) => {
+      const accountOp = {
+        accountAddr: accounts[0]!.addr,
+        chainId: 1n,
+        calls: [],
+        meta: { swapTxn: { activeRouteId: SIGNED_ROUTE_ID, userTxIndex: 0, chainId: 1 }, ...meta }
+      } as any
+      const submittedAccountOp = {
+        ...accountOp,
+        // The sign controller passes a shallow copy of the meta
+        meta: { ...accountOp.meta },
+        txnId: TXN_ID,
+        identifiedBy: { type: 'Transaction', identifier: TXN_ID }
+      } as any
+
+      return { accountOp, submittedAccountOp }
+    }
+
+    const setupController = async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+      })
+      jest
+        .spyOn(mainCtrl.swapAndBridge, 'handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate')
+        .mockImplementation(() => {})
+      jest.spyOn(mainCtrl.activity, 'addAccountOp').mockImplementation(async () => {})
+      jest.spyOn(mainCtrl.ui.notification, 'create').mockImplementation(async () => {})
+
+      return mainCtrl
+    }
+
+    afterEach(() => {
+      jest.restoreAllMocks()
+    })
+
+    test('should add the active route from the quote the swap was built from', async () => {
+      const mainCtrl = await setupController()
+      mainCtrl.swapAndBridge.quote = createQuote(SIGNED_ROUTE_ID)
+
+      await mainCtrl.commonHandlerForBroadcastSuccess(createSwapAccountOps())
+
+      const [activeRoute] = mainCtrl.swapAndBridge.activeRoutes
+      expect(mainCtrl.swapAndBridge.activeRoutes).toHaveLength(1)
+      expect(activeRoute!.activeRouteId).toBe(SIGNED_ROUTE_ID)
+      expect(activeRoute!.routeStatus).toBe('in-progress')
+      expect(activeRoute!.userTxHash).toBe(TXN_ID)
+    })
+
+    test('should not add an active route from a quote that is not the signed one', async () => {
+      const mainCtrl = await setupController()
+      // e.g. the form refreshed the quote while the user was confirming on a hardware wallet
+      mainCtrl.swapAndBridge.quote = createQuote('refreshed-route')
+
+      await mainCtrl.commonHandlerForBroadcastSuccess(createSwapAccountOps())
+
+      expect(mainCtrl.swapAndBridge.activeRoutes).toHaveLength(0)
+    })
+
+    test('should not store the quote of a Safe batch swap in the activity', async () => {
+      const mainCtrl = await setupController()
+      // Safe accounts pass the quote along with the swap when adding it to the batch
+      const accountOps = createSwapAccountOps({ quote: createQuote(SIGNED_ROUTE_ID) })
+
+      await mainCtrl.commonHandlerForBroadcastSuccess(accountOps)
+
+      // The quote is still used to add the active route before it's deleted
+      expect(mainCtrl.swapAndBridge.activeRoutes).toHaveLength(1)
+      const [storedAccountOp] = jest.mocked(mainCtrl.activity.addAccountOp).mock.calls[0]!
+      expect(storedAccountOp.meta).not.toHaveProperty('quote')
+      expect(storedAccountOp.meta?.swapTxn?.activeRouteId).toBe(SIGNED_ROUTE_ID)
+    })
+  })
 })

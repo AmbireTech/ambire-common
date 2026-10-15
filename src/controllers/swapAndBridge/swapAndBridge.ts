@@ -892,8 +892,20 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     return this.#signAccountOpController
   }
 
+  /**
+   * Whether the swap is being signed or broadcast right now, e.g. waiting for a hardware wallet.
+   * Reads the private controller on purpose, as the public getter may return null for it.
+   */
+  get isSignAndBroadcastInProgress() {
+    return !!this.#signAccountOpController?.isSignAndBroadcastInProgress
+  }
+
   get formStatus() {
-    if (this.hasProceeded) return SwapAndBridgeFormStatus.Proceeded
+    // The swap being signed keeps the form locked even if hasProceeded got reset, e.g. when
+    // the popup is replaced by a request window. Otherwise the quote refreshes under the
+    // signed transaction and its route can no longer be tracked
+    if (this.hasProceeded || this.isSignAndBroadcastInProgress)
+      return SwapAndBridgeFormStatus.Proceeded
 
     if (this.isFormEmpty) return SwapAndBridgeFormStatus.Empty
     if (this.validateFromAmount.message || this.swapSignErrors.length)
