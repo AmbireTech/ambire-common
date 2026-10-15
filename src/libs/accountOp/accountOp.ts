@@ -106,6 +106,12 @@ export interface AccountOp {
       enabled: boolean
     }
     /**
+     * Set on an accountOp that sends an already signed and already sent transaction again, to
+     * get it confirmed sooner. It isn't a new transaction, so it's kept out of the Safe queue and
+     * rejecting it simply drops it, instead of cancelling the transaction onchain.
+     */
+    isResend?: boolean
+    /**
      * @deprecated No longer written or read anywhere. Used to hold the descriptor-backed
      * humanization output, persisted so activity/history/Benzin could redisplay a past op without
      * re-humanizing it. Removed because it coupled storage to the humanizer's internal, frequently
