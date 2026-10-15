@@ -882,11 +882,12 @@ export class ActivityController extends EventEmitter implements IActivityControl
       )
     )
 
-    const hasNewFeePayer = recordFeePayer(
+    const hasFeePayersHistoryChanged = recordFeePayer(
       this.#feePayersHistory,
       accountAddr,
       chainId,
-      accountOp.gasFeePayment?.paidBy
+      accountOp.gasFeePayment?.paidBy,
+      accountOp.timestamp
     )
 
     await this.syncFilteredAccountsOps()
@@ -900,12 +901,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
     // Key-value, never IDB — persisted here so recipients survive a service worker restart.
     await this.#storage.set('sentToHistory', this.#sentToHistory)
 
-    if (hasNewFeePayer) await this.#storage.set('feePayersHistory', this.#feePayersHistory)
+    if (hasFeePayersHistoryChanged)
+      await this.#storage.set('feePayersHistory', this.#feePayersHistory)
   }
 
   /**
    * The other accounts (EOAs) that already paid the fee for a transaction of `accountAddr` on
-   * `chainId`, checksummed. Paying from one of them links nothing new to the account publicly.
+   * `chainId`, checksummed and ordered from the one that paid last. Paying from one of them
+   * links nothing new to the account publicly.
    *
    * Only knows what this wallet broadcast: a payer used from another wallet or device is missing,
    * which errs on the side of warning the user. The index is filled on broadcast, so the ops in
@@ -913,24 +916,28 @@ export class ActivityController extends EventEmitter implements IActivityControl
    * broadcast before the index existed.
    */
   getFeePayers(accountAddr: string, chainId: bigint): string[] {
+    const checksummedAccountAddr = getAddressCaught(accountAddr)
+    if (!checksummedAccountAddr) return []
+
     const chainIdString = chainId.toString()
     const accountKey = getAccountOpsAccountKey(this.#feePayersHistory, accountAddr)
-    const indexedPayers = accountKey
-      ? this.#feePayersHistory[accountKey]?.[chainIdString] || []
-      : []
-    const payers = new Set(indexedPayers)
+    const indexedPayers = accountKey ? this.#feePayersHistory[accountKey]?.[chainIdString] : {}
+    // A copy, so merging the ops in memory doesn't write them into the persisted index
+    const mergedHistory: FeePayersHistory = {
+      [checksummedAccountAddr]: { [chainIdString]: { ...indexedPayers } }
+    }
 
     getAccountOpsForAccountAndChain(this.#accountsOps, accountAddr, chainIdString).forEach((op) => {
-      const paidBy = op.gasFeePayment?.paidBy
       // A rejected op never reached the network, so it linked nothing
-      if (!paidBy || op.status === AccountOpStatus.Rejected) return
+      if (op.status === AccountOpStatus.Rejected) return
 
-      const checksummedPaidBy = getAddressCaught(paidBy)
-      if (checksummedPaidBy && checksummedPaidBy.toLowerCase() !== accountAddr.toLowerCase())
-        payers.add(checksummedPaidBy)
+      recordFeePayer(mergedHistory, accountAddr, chainId, op.gasFeePayment?.paidBy, op.timestamp)
     })
 
-    return Array.from(payers)
+    const lastPaidAtByPayer = mergedHistory[checksummedAccountAddr]![chainIdString]!
+    return Object.keys(lastPaidAtByPayer).sort(
+      (a, b) => lastPaidAtByPayer[b]! - lastPaidAtByPayer[a]!
+    )
   }
 
   /** Returns the address a domain last resolved to when the user sent to it, or null if never. */

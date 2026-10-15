@@ -1433,22 +1433,24 @@ export class SignAccountOpController
     const owners = (accountState?.associatedKeys || this.account.associatedKeys).map((addr) =>
       addr.toLowerCase()
     )
-    const linked = this.#activity
+    // Ordered from the one that paid last
+    const feePayers = this.#activity
       .getFeePayers(this.account.addr, this.#network.chainId)
       .map((addr) => addr.toLowerCase())
-      .filter((addr) => !owners.includes(addr))
+    const linked = feePayers.filter((addr) => !owners.includes(addr))
 
-    this.safeFeePayerLinks = { owners, linked }
+    this.safeFeePayerLinks = { owners, linked, lastUsed: feePayers[0] || null }
   }
 
-  /** Lower is better: owners first, then payers already linked, then the rest */
+  /** Lower is better: the last payer first, then owners, then payers already linked, then the rest */
   #getSafeFeePayerRank(paidBy: string): number {
     if (!this.safeFeePayerLinks) return 0
 
     const paidByLowercased = paidBy.toLowerCase()
-    if (this.safeFeePayerLinks.owners.includes(paidByLowercased)) return 0
-    if (this.safeFeePayerLinks.linked.includes(paidByLowercased)) return 1
-    return 2
+    if (this.safeFeePayerLinks.lastUsed === paidByLowercased) return 0
+    if (this.safeFeePayerLinks.owners.includes(paidByLowercased)) return 1
+    if (this.safeFeePayerLinks.linked.includes(paidByLowercased)) return 2
+    return 3
   }
 
   /**
@@ -1458,9 +1460,13 @@ export class SignAccountOpController
   get isFeePayerNotLinkedToSafe(): boolean {
     const paidBy = this.accountOp.gasFeePayment?.paidBy
     if (!this.safeFeePayerLinks || !paidBy) return false
-    if (paidBy.toLowerCase() === this.account.addr.toLowerCase()) return false
+    const paidByLowercased = paidBy.toLowerCase()
+    if (paidByLowercased === this.account.addr.toLowerCase()) return false
 
-    return this.#getSafeFeePayerRank(paidBy) === 2
+    return (
+      !this.safeFeePayerLinks.owners.includes(paidByLowercased) &&
+      !this.safeFeePayerLinks.linked.includes(paidByLowercased)
+    )
   }
 
   #setDefaults() {
@@ -1496,8 +1502,9 @@ export class SignAccountOpController
 
       this.#updateSafeFeePayerLinks()
 
-      // For Safes, the payers that don't link a new EOA to the Safe come first,
-      // so one of them becomes the default
+      // For Safes, the last payer and then the others that don't link a new EOA to the Safe
+      // come first, so one of them becomes the default. The account's own options (e.g. the
+      // gas tank) still win over them in #getDefaultFeeOption when they can pay
       const payOptionsPaidByEOA = this.estimation.availableFeeOptions
         .filter((feeOption) => feeOption.paidBy !== this.accountOp.accountAddr)
         .sort(

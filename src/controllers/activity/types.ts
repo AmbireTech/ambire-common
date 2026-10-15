@@ -23,11 +23,12 @@ export interface SentToHistory {
 
 /**
  * Persistent index of the other accounts (EOAs) that paid the fee for an account's transactions,
- * per account and chain. Broadcasting from an EOA publicly links it to the account (e.g. a Safe),
- * so this tells which payers are already linked and which would be linked for the first time.
+ * per account and chain, with the timestamp of the latest payment of each. Broadcasting from an
+ * EOA publicly links it to the account (e.g. a Safe), so this tells which payers are already
+ * linked and which would be linked for the first time, and which one paid last.
  * Addresses are checksummed. Kept separately from the activity history so it outlives its
  * MAX_OPS_PER_GROUP eviction and the startup window that loads only the recent ops.
  */
 export interface FeePayersHistory {
-  [accountId: string]: { [chainId: string]: string[] }
+  [accountId: string]: { [chainId: string]: { [paidBy: string]: number } }
 }

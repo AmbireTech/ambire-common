@@ -13,33 +13,41 @@ describe('recordFeePayer', () => {
   test('records a new payer checksummed, under the checksummed account and chain', () => {
     const history: FeePayersHistory = {}
 
-    const hasChanged = recordFeePayer(history, SAFE.toLowerCase(), 1n, PAYER.toLowerCase())
+    const hasChanged = recordFeePayer(history, SAFE.toLowerCase(), 1n, PAYER.toLowerCase(), 100)
 
     expect(hasChanged).toBe(true)
-    expect(history).toEqual({ [SAFE]: { '1': [PAYER] } })
+    expect(history).toEqual({ [SAFE]: { '1': { [PAYER]: 100 } } })
   })
 
-  test('does not duplicate a payer that differs only in casing', () => {
-    const history: FeePayersHistory = { [SAFE]: { '1': [PAYER] } }
+  test('moves the payment time forward when the same payer pays again', () => {
+    const history: FeePayersHistory = { [SAFE]: { '1': { [PAYER]: 100 } } }
 
-    const hasChanged = recordFeePayer(history, SAFE, 1n, PAYER.toLowerCase())
+    const hasChanged = recordFeePayer(history, SAFE, 1n, PAYER.toLowerCase(), 200)
 
-    expect(hasChanged).toBe(false)
-    expect(history[SAFE]!['1']).toEqual([PAYER])
+    expect(hasChanged).toBe(true)
+    expect(history[SAFE]!['1']).toEqual({ [PAYER]: 200 })
+  })
+
+  test('keeps the latest payment time when an older or the same payment is recorded', () => {
+    const history: FeePayersHistory = { [SAFE]: { '1': { [PAYER]: 200 } } }
+
+    expect(recordFeePayer(history, SAFE, 1n, PAYER, 100)).toBe(false)
+    expect(recordFeePayer(history, SAFE, 1n, PAYER, 200)).toBe(false)
+    expect(history[SAFE]!['1']).toEqual({ [PAYER]: 200 })
   })
 
   test('keeps payers per chain, as a payer on one chain is not linked on another', () => {
-    const history: FeePayersHistory = { [SAFE]: { '1': [PAYER] } }
+    const history: FeePayersHistory = { [SAFE]: { '1': { [PAYER]: 100 } } }
 
-    recordFeePayer(history, SAFE, 8453n, OTHER_PAYER)
+    recordFeePayer(history, SAFE, 8453n, OTHER_PAYER, 300)
 
-    expect(history[SAFE]).toEqual({ '1': [PAYER], '8453': [OTHER_PAYER] })
+    expect(history[SAFE]).toEqual({ '1': { [PAYER]: 100 }, '8453': { [OTHER_PAYER]: 300 } })
   })
 
   test('skips the account paying for itself, as that links no other account', () => {
     const history: FeePayersHistory = {}
 
-    const hasChanged = recordFeePayer(history, SAFE, 1n, SAFE.toLowerCase())
+    const hasChanged = recordFeePayer(history, SAFE, 1n, SAFE.toLowerCase(), 100)
 
     expect(hasChanged).toBe(false)
     expect(history).toEqual({})
@@ -48,9 +56,9 @@ describe('recordFeePayer', () => {
   test('skips a missing or invalid payer without throwing', () => {
     const history: FeePayersHistory = {}
 
-    expect(recordFeePayer(history, SAFE, 1n, undefined)).toBe(false)
-    expect(recordFeePayer(history, SAFE, 1n, 'not-an-address')).toBe(false)
-    expect(recordFeePayer(history, 'not-an-address', 1n, PAYER)).toBe(false)
+    expect(recordFeePayer(history, SAFE, 1n, undefined, 100)).toBe(false)
+    expect(recordFeePayer(history, SAFE, 1n, 'not-an-address', 100)).toBe(false)
+    expect(recordFeePayer(history, 'not-an-address', 1n, PAYER, 100)).toBe(false)
     expect(history).toEqual({})
   })
 })

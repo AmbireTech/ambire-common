@@ -88,6 +88,8 @@ type SafeFeePayerLinks = {
   owners: string[]
   /** EOAs that already paid a fee for the Safe on this chain, excluding the owners */
   linked: string[]
+  /** The EOA that paid the Safe's latest fee on this chain (an owner or a linked one), if any */
+  lastUsed: string | null
 }
 
 type HardwareWalletSigningRequest = {
