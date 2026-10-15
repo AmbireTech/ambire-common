@@ -569,6 +569,89 @@ describe('Main Controller ', () => {
       })
     })
 
+    // Ops finalized without a receipt: activity leaves chainsToUpdate empty for them.
+    test.each([
+      AccountOpStatus.UnknownButPastNonce,
+      AccountOpStatus.Rejected,
+      AccountOpStatus.BroadcastButStuck
+    ])(
+      'discards the simulation of an op finalized as %s even without chainsToUpdate',
+      async (status) => {
+        const mainCtrl = await setupController()
+
+        const finalizedAccountOp = {
+          id: 'finalized-without-receipt',
+          accountAddr: senderAccount,
+          chainId: 1n,
+          status,
+          calls: []
+        } as any
+
+        jest
+          .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+          .mockReturnValue({ [senderAccount]: [finalizedAccountOp] })
+        jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+          [senderAccount]: {
+            shouldEmitUpdate: true,
+            chainsToUpdate: [],
+            portfoliosToUpdate: {},
+            shouldFetchSafeTxns: false,
+            newestOpTimestamp: Date.now(),
+            updatedAccountsOps: [finalizedAccountOp]
+          }
+        })
+        jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockResolvedValue(undefined)
+        jest.spyOn(mainCtrl.portfolio, 'scheduleUpdate').mockImplementation(() => {})
+        const discardSimulationSpy = jest
+          .spyOn(mainCtrl.portfolio, 'discardSimulation')
+          .mockResolvedValue(undefined)
+
+        await mainCtrl.updateAccountsOpsStatuses()
+        await flushAsyncUpdates()
+
+        // Otherwise the pending simulation stays on the dashboard until the app restarts
+        expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
+      }
+    )
+
+    test('discards the simulation even when the updated chain is no longer among the networks', async () => {
+      const mainCtrl = await setupController()
+
+      const finalizedAccountOp = {
+        id: 'finalized-on-removed-network',
+        accountAddr: senderAccount,
+        chainId: 999999n,
+        status: AccountOpStatus.Success,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [finalizedAccountOp] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [999999n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [finalizedAccountOp]
+        }
+      })
+      const updateAccountStateSpy = jest
+        .spyOn(mainCtrl.accounts, 'updateAccountState')
+        .mockResolvedValue(undefined)
+      const discardSimulationSpy = jest
+        .spyOn(mainCtrl.portfolio, 'discardSimulation')
+        .mockResolvedValue(undefined)
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(updateAccountStateSpy).not.toHaveBeenCalled()
+      expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
+    })
+
     test('should call updateSelectedAccount for recipient accounts from portfoliosToUpdate', async () => {
       const mainCtrl = await setupController()
 
