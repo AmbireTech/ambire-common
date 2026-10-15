@@ -119,6 +119,98 @@ describe('Main Controller ', () => {
     fetchSafeTxnsSpy.mockRestore()
   })
 
+  test('fetches the other Safes pending counts after the selected Safe on focus, only when unlocked', async () => {
+    const fetchSafeTxnsSpy = jest.spyOn(controller, 'fetchSafeTxns').mockResolvedValue()
+    const updateOtherSafesSpy = jest
+      .spyOn(controller.safe, 'updateOtherSafesPendingCounts')
+      .mockResolvedValue()
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get')
+    const view = { id: 'focus-test-view', type: 'popup' } as any
+
+    try {
+      isUnlockedSpy.mockReturnValue(false)
+      controller.ui.uiEvent.emit('viewFocus', view)
+      await wait(0)
+
+      expect(fetchSafeTxnsSpy).toHaveBeenCalledWith([])
+      expect(updateOtherSafesSpy).not.toHaveBeenCalled()
+
+      isUnlockedSpy.mockReturnValue(true)
+      controller.ui.uiEvent.emit('viewFocus', view)
+      await wait(0)
+
+      expect(updateOtherSafesSpy).toHaveBeenCalledTimes(1)
+      expect(updateOtherSafesSpy).toHaveBeenCalledWith(controller.selectedAccount.account?.addr)
+    } finally {
+      fetchSafeTxnsSpy.mockRestore()
+      updateOtherSafesSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
+    }
+  })
+
+  test('fetches the other Safes pending counts when a view is added, only when unlocked', async () => {
+    const fetchSafeTxnsSpy = jest.spyOn(controller, 'fetchSafeTxns').mockResolvedValue()
+    const updateOtherSafesSpy = jest
+      .spyOn(controller.safe, 'updateOtherSafesPendingCounts')
+      .mockResolvedValue()
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get')
+    // Not an overlay view, so that the popup open flow stays out of the test
+    const view = { id: 'add-view-test-view', type: 'tab' } as any
+
+    try {
+      isUnlockedSpy.mockReturnValue(false)
+      controller.ui.uiEvent.emit('addView', view)
+      await wait(0)
+
+      expect(fetchSafeTxnsSpy).not.toHaveBeenCalled()
+      expect(updateOtherSafesSpy).not.toHaveBeenCalled()
+
+      isUnlockedSpy.mockReturnValue(true)
+      controller.ui.uiEvent.emit('addView', view)
+      await wait(0)
+
+      expect(fetchSafeTxnsSpy).toHaveBeenCalledWith([])
+      expect(updateOtherSafesSpy).toHaveBeenCalledWith(controller.selectedAccount.account?.addr)
+    } finally {
+      fetchSafeTxnsSpy.mockRestore()
+      updateOtherSafesSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
+    }
+  })
+
+  test('fetches the other Safes pending counts when the wallet gets unlocked', async () => {
+    const fetchSafeTxnsSpy = jest.spyOn(controller, 'fetchSafeTxns').mockResolvedValue()
+    const updateOtherSafesSpy = jest
+      .spyOn(controller.safe, 'updateOtherSafesPendingCounts')
+      .mockResolvedValue()
+    const migrationSpy = jest
+      .spyOn(controller.storage, 'associateAccountKeysWithLegacySavedSeedMigration')
+      .mockResolvedValue()
+    const isUnlockedSpy = jest.spyOn(controller.keystore, 'isUnlocked', 'get')
+    const originalUnlockStatus = controller.keystore.statuses.unlockWithSecret
+
+    try {
+      isUnlockedSpy.mockReturnValue(true)
+      // An update that is not an unlock fetches nothing
+      await controller.keystore.forceEmitUpdate()
+      await wait(0)
+      expect(updateOtherSafesSpy).not.toHaveBeenCalled()
+
+      controller.keystore.statuses.unlockWithSecret = 'SUCCESS'
+      await controller.keystore.forceEmitUpdate()
+      await wait(0)
+
+      expect(fetchSafeTxnsSpy).toHaveBeenCalledWith([])
+      expect(updateOtherSafesSpy).toHaveBeenCalledWith(controller.selectedAccount.account?.addr)
+    } finally {
+      controller.keystore.statuses.unlockWithSecret = originalUnlockStatus
+      fetchSafeTxnsSpy.mockRestore()
+      updateOtherSafesSpy.mockRestore()
+      migrationSpy.mockRestore()
+      isUnlockedSpy.mockRestore()
+    }
+  })
+
   test('tracks the Safe pending transaction API fetch while it is in progress', async () => {
     const originalSelectedAccount = controller.selectedAccount.account
     const account = controller.accounts.accounts[0]
@@ -558,7 +650,7 @@ describe('Main Controller ', () => {
       await mainCtrl.updateAccountsOpsStatuses()
       await flushAsyncUpdates()
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
       expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
       // A cache-busting update is scheduled for the updated chain.
       expect(scheduleUpdateSpy).toHaveBeenCalledTimes(1)
@@ -738,7 +830,7 @@ describe('Main Controller ', () => {
       await flushAsyncUpdates()
 
       expect(mainCtrl.selectedAccount.account?.addr).toBe(selectedAccountAddr)
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n], true)
       expect(discardSimulationSpy).toHaveBeenCalledWith([finalizedAccountOp])
       // Scheduling targets the tx account, not the selected one.
       expect(scheduleUpdateSpy).toHaveBeenCalledWith({
@@ -785,7 +877,7 @@ describe('Main Controller ', () => {
       await mainCtrl.updateAccountsOpsStatuses()
       await flushAsyncUpdates()
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n, 10n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(senderAccount, 'latest', [1n, 10n], true)
       expect(scheduleUpdateSpy).toHaveBeenCalledTimes(2)
       expect(scheduleUpdateSpy).toHaveBeenCalledWith({
         accountId: senderAccount,

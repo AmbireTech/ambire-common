@@ -371,7 +371,8 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       providers: this.providers,
       storage: this.storage,
-      accounts: this.accounts
+      accounts: this.accounts,
+      keystore: this.keystore
     })
 
     this.survey = new SurveyController({
@@ -802,15 +803,25 @@ export class MainController extends EventEmitter implements IMainController {
             await this.keystore.updateKeystoreKeys()
           }
         )
+        // A view added or focused while the wallet was locked fetched nothing for the other
+        // Safes. The other operations that set this status are cheap here, as recently
+        // fetched Safes are skipped.
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#fetchAllSafesPending()
       }
     })
 
     this.ui.uiEvent.on('addView', async (view: View) => {
+      if (this.keystore.isUnlocked) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#fetchAllSafesPending()
+      }
       if (isExtensionOverlayView(view)) await this.onPopupOpen(view.id)
     })
 
     this.ui.uiEvent.on('viewFocus', () => {
-      this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#fetchAllSafesPending()
     })
   }
 
@@ -851,9 +862,7 @@ export class MainController extends EventEmitter implements IMainController {
         })
       }
 
-      if (!this.accounts.areAccountStatesLoading) {
-        this.accounts.updateAccountState(selectedAccountAddr)
-      }
+      this.accounts.updateAccountState(selectedAccountAddr)
     }
 
     this.ui.updateView(viewId, { isReady: true })
@@ -1603,7 +1612,8 @@ export class MainController extends EventEmitter implements IMainController {
             await this.accounts.updateAccountState(
               accountAddr,
               'latest',
-              networks.map((net) => net.chainId)
+              networks.map((net) => net.chainId),
+              true
             )
 
             // Schedule an update that will refetch new defi positions (if any)
@@ -1759,13 +1769,8 @@ export class MainController extends EventEmitter implements IMainController {
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
       // it's very likely that the account state is already in the process of being updated.
-      // If we try to run the same action, `withStatus` validation will throw an error.
-      // So, we perform this safety check to prevent the error.
-      // However, even if we don't trigger an update here, it's not a big problem,
-      // as the account state will be updated anyway, and its update will be very recent.
-      !this.accounts.areAccountStatesLoading && this.selectedAccount.account?.addr
-        ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds)
-        : Promise.resolve(),
+      // That fetch is reused, so this causes no extra fetch.
+      this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
@@ -1793,6 +1798,19 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     return this.#fetchSafeTxnsPromise
+  }
+
+  /**
+   * Fetches the pending txns of the selected Safe, and then the pending counts of the other
+   * Safes, one after the other so they don't compete for the Safe API's rate limit
+   */
+  async #fetchAllSafesPending() {
+    await this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
+
+    // do not make Safe requests for the other Safes if the wallet is locked
+    if (!this.keystore.isUnlocked) return
+
+    await this.safe.updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
   }
 
   async refreshSafeTxns() {

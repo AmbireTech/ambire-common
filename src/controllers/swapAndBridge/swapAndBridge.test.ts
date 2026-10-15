@@ -263,7 +263,8 @@ const safe = new SafeController({
   networks: networksCtrl,
   providers: providersCtrl,
   storage: storageCtrl,
-  accounts: accountsCtrl
+  accounts: accountsCtrl,
+  keystore
 })
 
 const activityCtrl = new ActivityController(

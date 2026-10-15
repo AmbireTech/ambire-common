@@ -587,7 +587,9 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         // otherwise wait for the fetch to complete (no matter how long it takes).
         // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
         const accountState = await Promise.race([
-          this.#accounts.forceFetchPendingState(meta.accountAddr, meta.chainId),
+          this.#accounts
+            .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
+            .then(() => this.#accounts.accountStates[meta.accountAddr]?.[meta.chainId.toString()]),
           // Fallback to the old account state if it exists and the fetch takes too long
           accountStateBefore
             ? // `undefined` included intentionally - previous `accountStateBefore` may not always exist
@@ -774,13 +776,14 @@ export class RequestsController extends EventEmitter implements IRequestsControl
   /**
    * Safs can't be opened until their Safe is deployed. If the known account state says the Safe
    * isn't deployed yet, it gets refreshed first, as the deployment may have just been confirmed.
+   * Uses the 'latest' state, as a deployment that isn't mined yet can still fail.
    */
   async #confirmSafeDeploymentBeforeOpening(
     accountAddr: string,
     chainId: bigint
   ): Promise<boolean> {
     try {
-      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId])
+      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId], true)
 
       const accountState = this.#accounts.accountStates[accountAddr]?.[chainId.toString()]
 
@@ -1599,7 +1602,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!isDefinitelyNotDeployed && !isMaybeDeployed) return
 
     try {
-      if (isMaybeDeployed && (await this.#isSafeDeployedOnChain(op.accountAddr, op.chainId))) return
+      if (isMaybeDeployed && (await this.#isSafeDeployedOnChain(op.accountAddr, op.chainId, true)))
+        return
 
       const errorMessage =
         op.status === AccountOpStatus.BroadcastButStuck
@@ -1619,10 +1623,16 @@ export class RequestsController extends EventEmitter implements IRequestsControl
    * Refreshes the account state and checks if the Safe is deployed.
    * If the check fails, the Safe is treated as not deployed, so the requests
    * waiting for it don't hang forever (the deployment op is no longer tracked).
+   * Pass `force` when the deployment status may have just changed. Uses the 'latest' state, so a
+   * deployment that isn't mined yet counts as not deployed.
    */
-  async #isSafeDeployedOnChain(accountAddr: string, chainId: bigint): Promise<boolean> {
+  async #isSafeDeployedOnChain(
+    accountAddr: string,
+    chainId: bigint,
+    force = false
+  ): Promise<boolean> {
     try {
-      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId])
+      await this.#accounts.updateAccountState(accountAddr, 'latest', [chainId], force)
     } catch (error) {
       this.emitError({
         level: 'silent',
@@ -1754,7 +1764,12 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         return { success: false, error: 'unavailable' }
       }
 
-      const accountState = await this.#accounts.forceFetchPendingState(accountAddr, chainId)
+      // 'pending' also counts a deployment that isn't mined yet, so a second one isn't sent
+      await this.#accounts.updateAccountState(accountAddr, 'pending', [chainId])
+      const accountState = this.#accounts.accountStates[accountAddr]?.[chainId.toString()]
+      if (!accountState) {
+        return { success: false, error: 'preparation-failed' }
+      }
       if (accountState.isDeployed) {
         return { success: true, alreadyDeployed: true }
       }
@@ -3398,15 +3413,30 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       // Try to update the account state for 3 seconds. If that fails, use the previous account state if it exists,
       // otherwise wait for the fetch to complete (no matter how long it takes).
       // This is done in an attempt to always have the latest nonce, but without blocking the UI for too long if the RPC is slow to respond.
-      const accountState = (await Promise.race([
-        this.#accounts.forceFetchPendingState(meta.accountAddr, meta.chainId),
+      const accountState = await Promise.race([
+        this.#accounts
+          .updateAccountState(meta.accountAddr, 'pending', [meta.chainId])
+          .then(() => this.#accounts.accountStates[meta.accountAddr]?.[meta.chainId.toString()]),
         // Fallback to the old account state if it exists and the fetch takes too long
         accountStateBefore
-          ? new Promise((res) => {
+          ? new Promise<AccountOnchainState>((res) => {
               setTimeout(() => res(accountStateBefore), 2000)
             })
-          : new Promise(() => {}) // Explicitly never-resolving promise
-      ])) as any
+          : new Promise<AccountOnchainState>(() => {}) // Explicitly never-resolving promise
+      ])
+
+      if (!accountState) {
+        this.emitError({
+          level: 'major',
+          message:
+            "Transaction couldn't be processed because required account data couldn't be retrieved. Please try again later or contact Ambire support.",
+          error: new Error(
+            `requestsController error: accountState for ${meta.accountAddr} is undefined on network with id ${meta.chainId}`
+          )
+        })
+        dappPromises.forEach((p) => p.reject(ethErrors.rpc.internal()))
+        return
+      }
 
       // do not build requests for expired Safe txns
       if (meta.safeTxnProps && meta.safeTxnProps.nonce < accountState.nonce) return
