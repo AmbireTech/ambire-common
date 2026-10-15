@@ -951,10 +951,12 @@ describe('Activity Controller ', () => {
 
       const setupOps = async ({
         receiptsByTxnId,
-        txnIdsInMempool = []
+        txnIdsInMempool = [],
+        previousOpPaidBy
       }: {
         receiptsByTxnId: Record<string, any>
         txnIdsInMempool?: string[]
+        previousOpPaidBy?: string
       }) => {
         const { controller } = await prepareTest()
         const provider = mainCtrl.providers.providers['1']!
@@ -973,7 +975,10 @@ describe('Activity Controller ', () => {
           eoaNonce: 5n,
           txnId: PREVIOUS_TXN_ID,
           identifiedBy: { type: 'Transaction', identifier: PREVIOUS_TXN_ID },
-          timestamp: Date.now() - 1000
+          timestamp: Date.now() - 1000,
+          ...(previousOpPaidBy && {
+            gasFeePayment: { ...SUBMITTED_ACCOUNT_OP.gasFeePayment!, paidBy: previousOpPaidBy }
+          })
         })
         const pendingOp = buildSubmittedAccountOp({
           eoaNonce: 5n,
@@ -1022,6 +1027,29 @@ describe('Activity Controller ', () => {
         expect(getTransactionReceiptSpy).toHaveBeenCalledWith(PENDING_TXN_ID)
         expect(pendingOp?.status).toBe(AccountOpStatus.Success)
         expect(result.chainsToUpdate).toEqual([1n])
+      })
+
+      test('an op is not replaced by a confirmed op with the same eoaNonce paid by another EOA', async () => {
+        // eoaNonce is the payer's nonce, so nonces of different payers are unrelated
+        const { pollStatuses } = await setupOps({
+          receiptsByTxnId: { [PREVIOUS_TXN_ID]: buildMockReceipt() },
+          previousOpPaidBy: '0x2222222222222222222222222222222222222222'
+        })
+
+        const { pendingOp } = await pollStatuses()
+
+        expect(pendingOp?.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+      })
+
+      test('compares the payer case-insensitively', async () => {
+        const { pollStatuses } = await setupOps({
+          receiptsByTxnId: { [PREVIOUS_TXN_ID]: buildMockReceipt() },
+          previousOpPaidBy: SUBMITTED_ACCOUNT_OP.gasFeePayment!.paidBy.toLowerCase()
+        })
+
+        const { pendingOp } = await pollStatuses()
+
+        expect(pendingOp?.status).toBe(AccountOpStatus.UnknownButPastNonce)
       })
 
       test('an op still in the mempool is not marked as replaced while it waits', async () => {

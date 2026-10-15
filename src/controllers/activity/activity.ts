@@ -1669,16 +1669,25 @@ export class ActivityController extends EventEmitter implements IActivityControl
                 }
               }
 
-              // Checked only after the receipt lookup: eoaNonce can collide with an unrelated
-              // confirmed op (e.g. it holds the fee payer's nonce), so a matching nonce alone
-              // must never mark a successful op as replaced
+              // Checked only after the receipt lookup, so a matching nonce alone never marks a
+              // successful op as replaced. eoaNonce is the nonce of the EOA that paid for the
+              // broadcast (paidBy), which may differ from the account itself (e.g. a smart
+              // account paid by one of its EOA keys). Nonces of different EOAs are unrelated,
+              // so compare the payer too
               const hasReceipt = typeof firstReceiptBlockNumber !== 'undefined'
+              const accountOpPaidBy = accountOp.gasFeePayment?.paidBy?.toLowerCase()
               const isReplacedByConfirmedOp =
                 !hasReceipt &&
                 !isAnyTxnInMempool &&
                 accountOp.eoaNonce !== null &&
                 typeof accountOp.eoaNonce !== 'undefined' &&
-                confirmedOps.some((op) => op !== accountOp && op.eoaNonce === accountOp.eoaNonce)
+                !!accountOpPaidBy &&
+                confirmedOps.some(
+                  (op) =>
+                    op !== accountOp &&
+                    op.eoaNonce === accountOp.eoaNonce &&
+                    op.gasFeePayment?.paidBy?.toLowerCase() === accountOpPaidBy
+                )
               if (isReplacedByConfirmedOp) {
                 const updatedOpIfAny = updateOpStatus(
                   accountOp,
