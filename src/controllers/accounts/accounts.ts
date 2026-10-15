@@ -210,12 +210,16 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
     await Promise.all(
       networksToUpdate.map(async (network) => {
+        const chainIdKey = network.chainId.toString()
+        let networkLoadingPromise: Promise<AccountOnchainState[]> | undefined
         try {
-          if (this.accountStatesLoadingState[network.chainId.toString()]) {
-            await this.accountStatesLoadingState[network.chainId.toString()]
-
-            return
+          // An in-flight update may be for other accounts, so fetch the ones it left out
+          let accountsToFetch = accounts
+          while (this.accountStatesLoadingState[chainIdKey]) {
+            await this.accountStatesLoadingState[chainIdKey]
+            accountsToFetch = accounts.filter(({ addr }) => !this.accountStates[addr]?.[chainIdKey])
           }
+          if (!accountsToFetch.length) return
 
           const provider = this.#providers.providers[network.chainId.toString()]
           if (!provider) {
@@ -229,15 +233,15 @@ export class AccountsController extends EventEmitter implements IAccountsControl
             return
           }
 
-          this.accountStatesLoadingState[network.chainId.toString()] = getAccountState(
+          networkLoadingPromise = getAccountState(
             provider,
             network,
-            accounts,
+            accountsToFetch,
             this.#keystore.keys,
             blockTag
           )
-          const networkAccountStates =
-            await this.accountStatesLoadingState[network.chainId.toString()]!
+          this.accountStatesLoadingState[chainIdKey] = networkLoadingPromise
+          const networkAccountStates = await networkLoadingPromise
 
           this.#updateProviderIsWorking(network.chainId, true)
 
@@ -270,7 +274,13 @@ export class AccountsController extends EventEmitter implements IAccountsControl
           this.#updateProviderIsWorking(network.chainId, false)
         } finally {
           readyNetworks++
-          this.accountStatesLoadingState[network.chainId.toString()] = undefined
+          // Only the update that started the fetch clears it, not the ones that waited for it
+          if (
+            networkLoadingPromise &&
+            this.accountStatesLoadingState[chainIdKey] === networkLoadingPromise
+          ) {
+            this.accountStatesLoadingState[chainIdKey] = undefined
+          }
         }
 
         const areAllReady = readyNetworks === networksToUpdate.length

@@ -65,6 +65,23 @@ describe('AccountsController', () => {
     expect(acc?.preferences.label).toEqual('new-label')
     expect(acc?.preferences.pfp).toEqual('predefined-image')
   })
+  test('updates the state of an account while another account is updating', async () => {
+    const [selectedAccount, otherAccount] = accounts
+    delete accountsCtrl.accountStates[otherAccount!.addr]
+
+    await Promise.all([
+      accountsCtrl.updateAccountState(selectedAccount!.addr),
+      accountsCtrl.updateAccountState(otherAccount!.addr)
+    ])
+
+    const chainIdsWithState = Object.keys(accountsCtrl.accountStates[otherAccount!.addr] ?? {})
+    const chainIdsWithSelectedState = Object.keys(
+      accountsCtrl.accountStates[selectedAccount!.addr] ?? {}
+    )
+    expect(chainIdsWithState.length).toBeGreaterThan(0)
+    expect(chainIdsWithState.sort()).toEqual(chainIdsWithSelectedState.sort())
+    expect(accountsCtrl.areAccountStatesLoading).toBe(false)
+  })
   test('removeAccountData', async () => {
     await accountsCtrl.updateAccountState(accounts[0]!.addr)
     expect(accountsCtrl.accounts.length).toBeGreaterThan(0)
