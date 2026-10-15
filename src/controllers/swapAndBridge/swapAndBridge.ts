@@ -917,6 +917,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     if (
       !this.signAccountOpController ||
+      // Another route got selected and its transaction is still being prepared. The estimation
+      // is still the one of the previous route, so submitting would use the previous route
+      this.signAccountOpController.accountOp.meta?.swapTxn?.activeRouteId !==
+        this.quote.selectedRoute?.routeId ||
       this.signAccountOpController.estimation.status !== EstimationStatus.Success
     )
       return SwapAndBridgeFormStatus.ReadyToEstimate

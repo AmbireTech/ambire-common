@@ -2790,9 +2790,10 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             ? { ...formQuote }
             : undefined
 
-        // e.g. the user selected another route and its transaction is still being prepared.
-        // Adding it now would add the previously selected route instead of the one on screen
-        if (shouldAddActiveRoute && !transactionQuote) {
+        // The user selected another route and its transaction is still being prepared. The form
+        // is not ready to submit then, but the screen may not show that yet. Adding it now would
+        // add the previously selected route instead of the one the user picked
+        if (!activeRouteId && !transactionQuote) {
           const message = 'The selected route is still loading. Please try again in a moment.'
           throw new EmittableError({
             message,

@@ -819,7 +819,10 @@ describe('RequestsController ', () => {
       } as any
     }
 
-    const prepareSwapTest = async (transactionRouteId: string) => {
+    const prepareSwapTest = async (
+      transactionRouteId: string,
+      formStatus = SwapAndBridgeFormStatus.ReadyToSubmit
+    ) => {
       const testSetup = await prepareTest()
       const { swapAndBridge } = testSetup.mainCtrl
       const swapTxn = {
@@ -834,9 +837,7 @@ describe('RequestsController ', () => {
       jest
         .spyOn(swapAndBridge, 'signAccountOpController', 'get')
         .mockReturnValue({ accountOp: { meta: { swapTxn } } } as any)
-      jest
-        .spyOn(swapAndBridge, 'formStatus', 'get')
-        .mockReturnValue(SwapAndBridgeFormStatus.ReadyToSubmit)
+      jest.spyOn(swapAndBridge, 'formStatus', 'get').mockReturnValue(formStatus)
       swapAndBridge.quote = createQuote(SELECTED_ROUTE_ID)
 
       return testSetup
@@ -864,8 +865,12 @@ describe('RequestsController ', () => {
     })
 
     test('does not add the swap while the transaction of the selected route is being prepared', async () => {
-      // The user selected another route, but the transaction is still built for the previous one
-      const { controller, mainCtrl } = await prepareSwapTest('previously-selected-route')
+      // The user selected another route, but the transaction is still built for the previous one.
+      // The form is not ready to submit then, but the screen may not have received that yet
+      const { controller, mainCtrl } = await prepareSwapTest(
+        'previously-selected-route',
+        SwapAndBridgeFormStatus.ReadyToEstimate
+      )
       const onError = jest.fn()
       controller.onError(onError)
 
