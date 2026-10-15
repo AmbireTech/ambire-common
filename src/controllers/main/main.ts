@@ -851,9 +851,7 @@ export class MainController extends EventEmitter implements IMainController {
         })
       }
 
-      if (!this.accounts.areAccountStatesLoading) {
-        this.accounts.updateAccountState(selectedAccountAddr)
-      }
+      this.accounts.updateAccountState(selectedAccountAddr)
     }
 
     this.ui.updateView(viewId, { isReady: true })
@@ -1603,7 +1601,8 @@ export class MainController extends EventEmitter implements IMainController {
             await this.accounts.updateAccountState(
               accountAddr,
               'latest',
-              networks.map((net) => net.chainId)
+              networks.map((net) => net.chainId),
+              true
             )
 
             // Schedule an update that will refetch new defi positions (if any)
@@ -1759,13 +1758,8 @@ export class MainController extends EventEmitter implements IMainController {
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
       // it's very likely that the account state is already in the process of being updated.
-      // If we try to run the same action, `withStatus` validation will throw an error.
-      // So, we perform this safety check to prevent the error.
-      // However, even if we don't trigger an update here, it's not a big problem,
-      // as the account state will be updated anyway, and its update will be very recent.
-      !this.accounts.areAccountStatesLoading && this.selectedAccount.account?.addr
-        ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds)
-        : Promise.resolve(),
+      // That fetch is reused, so this causes no extra fetch.
+      this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),

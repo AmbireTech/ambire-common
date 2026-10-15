@@ -12,7 +12,6 @@ import {
   DAPP_SILENCE_DURATION,
   MAX_DAPP_CALLS_PER_REQUEST
 } from '../../consts/safeguards/dappRequestSpam'
-import { AccountOnchainState } from '../../interfaces/account'
 import { DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { Platform } from '../../interfaces/platform'
@@ -850,7 +849,7 @@ describe('RequestsController ', () => {
     const chainId = 1n
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.threshold = 2
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const txnId = SAFE_TX_HASH
     const firstSigner = new Wallet(`0x${'1'.repeat(64)}`)
     const secondSigner = new Wallet(`0x${'2'.repeat(64)}`)
@@ -1378,11 +1377,8 @@ describe('RequestsController ', () => {
     const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
-    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue({
-      ...accountState,
-      nonce: 1n
-    })
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 1n
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const buildSafeRequest = (nonce: bigint, txnId: Hex) =>
       controller.build({
         type: 'calls',
@@ -1461,7 +1457,7 @@ describe('RequestsController ', () => {
     }
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
@@ -1528,7 +1524,7 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValue({
@@ -1575,7 +1571,7 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -1603,7 +1599,7 @@ describe('RequestsController ', () => {
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
     jest
-      .spyOn(accountsCtrl, 'forceFetchPendingState')
+      .spyOn(accountsCtrl, 'updateAccountState')
       .mockRejectedValue(new Error('The network did not respond'))
     const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
     const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
@@ -1639,7 +1635,7 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const deploymentCall = {
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -1703,7 +1699,7 @@ describe('RequestsController ', () => {
     )
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
       value: 0n,
@@ -1768,12 +1764,11 @@ describe('RequestsController ', () => {
     const stateFetchStarted = new Promise<void>((resolve) => {
       signalStateFetchStarted = resolve
     })
-    const forceFetchPendingStateSpy = jest
-      .spyOn(accountsCtrl, 'forceFetchPendingState')
+    const updateAccountStateSpy = jest
+      .spyOn(accountsCtrl, 'updateAccountState')
       .mockImplementation(async () => {
         signalStateFetchStarted()
         await stateFetchGate
-        return accountState
       })
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
@@ -1796,7 +1791,7 @@ describe('RequestsController ', () => {
     )
 
     await stateFetchStarted
-    expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(1)
+    expect(updateAccountStateSpy).toHaveBeenCalledTimes(1)
     releaseStateFetch()
 
     await expect(Promise.all([firstRequest, secondRequest])).resolves.toEqual([true, true])
@@ -1827,7 +1822,7 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValueOnce(null)
@@ -1875,7 +1870,7 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue(null)
     const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
 
@@ -1895,8 +1890,7 @@ describe('RequestsController ', () => {
     const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
-    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
     const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
 
@@ -1924,7 +1918,7 @@ describe('RequestsController ', () => {
     )
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValue({
@@ -1985,7 +1979,7 @@ describe('RequestsController ', () => {
     account.safeCreation = { ...account.safeCreation!, setupData: '0x1234' }
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValue({
@@ -2157,7 +2151,7 @@ describe('RequestsController ', () => {
 
         await controller.handleSafeDeployStatusUpdate(makeSafeDeployOp(status))
 
-        expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], true)
         expect(rejectSpy).not.toHaveBeenCalled()
       }
     )
@@ -2288,7 +2282,7 @@ describe('RequestsController ', () => {
       const accountState = accountsCtrl.accountStates[accountAddr]![1]!
       accountState.isSmarterEoa = true
       accountState.delegatedContract = '0x1234567890123456789012345678901234567890'
-      jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
       const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
       const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
 
@@ -2325,7 +2319,7 @@ describe('RequestsController ', () => {
 
     await controller.resolveUserRequest({}, benzinRequest.id)
 
-    expect(updateAccountStateSpy).toHaveBeenCalledWith(accountAddr, 'latest', [chainId])
+    expect(updateAccountStateSpy).toHaveBeenCalledWith(accountAddr, 'latest', [chainId], true)
     expect(controller.userRequests).toEqual([transactionRequest])
     expect(controller.currentUserRequest).toBe(transactionRequest)
     expect(resumeSpy).toHaveBeenCalledTimes(1)
@@ -2398,8 +2392,7 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
 
     const recoveredSafeCreation = {
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
@@ -2464,8 +2457,7 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'findDeployData').mockResolvedValue({
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
       singleton: '0x2345678901234567890123456789012345678901' as Hex,
@@ -2521,8 +2513,7 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const incompleteSafeCreation = {
       factoryAddr: '0x' as Hex,
       singleton: '0x' as Hex,
@@ -2577,7 +2568,7 @@ describe('RequestsController ', () => {
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue(null)
     const reject = jest.fn()
 
@@ -2673,7 +2664,6 @@ describe('RequestsController ', () => {
       account.safeCreation = { ...account.safeCreation!, setupData: '0x1234' }
       const accountState = accountsCtrl.accountStates[safeAccountAddr]![1]!
       accountState.isDeployed = false
-      jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
       // the onchain check confirms the Safe is still not deployed
       const updateAccountStateSpy = jest
         .spyOn(accountsCtrl, 'updateAccountState')
@@ -2698,7 +2688,7 @@ describe('RequestsController ', () => {
 
       await controller.addUserRequests([messageRequest])
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], false)
       expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
       const [deploymentRequest, addedMessageRequest] = controller.userRequests
       if (deploymentRequest?.kind !== 'calls') throw new Error('Expected a deployment request')
@@ -2808,7 +2798,7 @@ describe('RequestsController ', () => {
 
       await controller.addUserRequests([messageRequest])
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], false)
       expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
       expect(controller.userRequests).toEqual([messageRequest])
     })
@@ -2938,7 +2928,7 @@ describe('RequestsController ', () => {
 
       await controller.resolveUserRequest({}, benzinRequest.id)
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], true)
       expect(controller.userRequests).toEqual([benzinRequest, messageRequest])
       expect(controller.currentUserRequest).toBe(benzinRequest)
     })
@@ -3726,15 +3716,7 @@ describe('RequestsController ', () => {
 
       // No cached state to fall back on and nothing to fetch, so this one cannot be prepared
       delete accountsCtrl.accountStates[ACCOUNT_ADDR]!['10']
-      jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
-        .mockImplementation(async (_addr: string, chainId: bigint) =>
-          // The real method reads the state from a map, so it resolves with `undefined` when
-          // nothing was fetched, even though its signature doesn't say so
-          chainId === 10n
-            ? (undefined as unknown as AccountOnchainState)
-            : accountsCtrl.accountStates[ACCOUNT_ADDR]![chainId.toString()]!
-        )
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
 
       await controller.addUserRequests([unfetchable, fine])
 
