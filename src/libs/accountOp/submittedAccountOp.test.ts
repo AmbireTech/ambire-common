@@ -1,3 +1,4 @@
+import { toBeHex } from 'ethers'
 import { encodeFunctionData, parseAbi } from 'viem'
 
 import {
@@ -69,6 +70,31 @@ describe('SubmittedAccountOp', () => {
       expect(getSafeNonceAfterPendingAccountOps(268n, [{ chainId: BASE, nonce: null }], BASE)).toBe(
         268n
       )
+    })
+
+    test('ignores a pending transaction stored with the bundler nonce as its nonce', () => {
+      const bundlerNonce = (123n << 64n) + 0n
+      const legacyPending = {
+        chainId: BASE,
+        nonce: bundlerNonce,
+        identifiedBy: { type: 'UserOperation' as const, identifier: '0xuserophash' },
+        asUserOperation: { nonce: toBeHex(bundlerNonce) } as unknown as SubmittedAccountOp['asUserOperation']
+      }
+
+      expect(
+        getSafeNonceAfterPendingAccountOps(268n, [legacyPending, { chainId: BASE, nonce: 268n }], BASE)
+      ).toBe(269n)
+    })
+
+    test('still counts a bundler-sent transaction stored with its Safe nonce', () => {
+      const pending = {
+        chainId: BASE,
+        nonce: 268n,
+        identifiedBy: { type: 'UserOperation' as const, identifier: '0xuserophash' },
+        asUserOperation: { nonce: toBeHex(123n << 64n) } as unknown as SubmittedAccountOp['asUserOperation']
+      }
+
+      expect(getSafeNonceAfterPendingAccountOps(268n, [pending], BASE)).toBe(269n)
     })
 
     test('never goes below the on-chain nonce when a pending one is already mined', () => {

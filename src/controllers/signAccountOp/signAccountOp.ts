@@ -780,9 +780,7 @@ export class SignAccountOpController
   }
 
   #updateNonce(nonce: bigint) {
-    // A Safe's nonce is set once, when its request is created (see RequestsController) or when
-    // the user picks one, and is never changed from here afterwards
-    if (this.account.safeCreation) return
+    if (this.#customSafeNonce !== null) return
     this.#updateAccountOp({ nonce })
   }
 

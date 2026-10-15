@@ -1179,12 +1179,15 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.accountOp.nonce).toBe(3n)
   })
 
-  test('keeps the Safe nonce it was created with when the estimation reports another one', async () => {
+  test('lets the estimation update the Safe nonce unless the user picked one', async () => {
     const { controller } = await initSafeNonce([], 7)
 
     controller.update({ hasNewEstimation: true })
+    expect(controller.accountOp.nonce).toBe(7n)
 
-    expect(controller.accountOp.nonce).toBe(3n)
+    controller.setSafeNonce(42n)
+    controller.update({ hasNewEstimation: true })
+    expect(controller.accountOp.nonce).toBe(42n)
   })
 
   test('does not change a Safe nonce while signing is in progress', async () => {
