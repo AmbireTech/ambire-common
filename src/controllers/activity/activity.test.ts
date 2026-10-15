@@ -1,4 +1,4 @@
-import { getAddress } from 'ethers'
+import { getAddress, Interface, ZeroAddress } from 'ethers'
 import fetch from 'node-fetch'
 
 import { generateUuid } from '@/utils/uuid'
@@ -172,6 +172,11 @@ describe('Activity Controller ', () => {
     jest.restoreAllMocks()
     await storageCtrl.remove('accountsOps')
     await storageCtrl.remove('signedMessages')
+    // sentToHistory is durable and deliberately outlives accountsOps — recipient memory is
+    // independent of op retention, so poisoning protection survives history eviction. Tests
+    // that assume "no history" therefore have to clear it explicitly.
+    await storageCtrl.remove('sentToHistory')
+    await (storageCtrl.remove as (key: string) => Promise<void>)('sentToHistoryBackfilled')
   })
 
   describe('AccountsOps', () => {
@@ -370,6 +375,14 @@ describe('Activity Controller ', () => {
 
     test('setAccountOpBalanceChanges stores an empty array after 3 failures', async () => {
       const { controller, sessionId } = await prepareTest()
+      const nftBalanceChanges = [
+        {
+          address: '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e',
+          tokenId: 12345n,
+          chainId: SUBMITTED_ACCOUNT_OP.chainId,
+          balanceChange: 1n
+        }
+      ]
 
       await controller.addAccountOp(SUBMITTED_ACCOUNT_OP)
 
@@ -377,19 +390,24 @@ describe('Activity Controller ', () => {
         SUBMITTED_ACCOUNT_OP.identifiedBy,
         SUBMITTED_ACCOUNT_OP.accountAddr,
         SUBMITTED_ACCOUNT_OP.chainId,
-        new Error('balance changes failed')
+        new Error('balance changes failed'),
+        nftBalanceChanges
       )
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
       expect(
         controller.accountsOps[sessionId]!.result.items[0]!.balanceChangesFetchRetryCount
       ).toBe(1)
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBe(undefined)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.nftBalanceChanges).toEqual(
+        nftBalanceChanges
+      )
 
       await controller.setAccountOpBalanceChanges(
         SUBMITTED_ACCOUNT_OP.identifiedBy,
         SUBMITTED_ACCOUNT_OP.accountAddr,
         SUBMITTED_ACCOUNT_OP.chainId,
-        new Error('balance changes failed')
+        new Error('balance changes failed'),
+        nftBalanceChanges
       )
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toBeUndefined()
       expect(
@@ -401,7 +419,8 @@ describe('Activity Controller ', () => {
         SUBMITTED_ACCOUNT_OP.identifiedBy,
         SUBMITTED_ACCOUNT_OP.accountAddr,
         SUBMITTED_ACCOUNT_OP.chainId,
-        new Error('balance changes failed')
+        new Error('balance changes failed'),
+        nftBalanceChanges
       )
       expect(controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges).toEqual([])
       expect(
@@ -410,6 +429,9 @@ describe('Activity Controller ', () => {
       const balanceChanges = controller.accountsOps[sessionId]!.result.items[0]!.balanceChanges
       expect(balanceChanges).not.toBe(undefined)
       expect(balanceChanges?.length).toBe(0)
+      expect(controller.accountsOps[sessionId]!.result.items[0]!.nftBalanceChanges).toEqual(
+        nftBalanceChanges
+      )
     })
 
     test('Pagination and filtration handled correctly', async () => {
@@ -658,6 +680,84 @@ describe('Activity Controller ', () => {
       )
     })
 
+    test('records and learns Uniswap position NFT balance changes from receipt logs', async () => {
+      const { controller } = await prepareTest()
+      const provider = mainCtrl.providers.providers['1']!
+      const positionManager = '0xbD216513d74C8cf14cf4747E6AaA6420FF64ee9e'
+      const tokenId = 12345n
+      const transferInterface = new Interface([
+        'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)'
+      ])
+      const transferEvent = transferInterface.getEvent('Transfer')
+      if (!transferEvent) throw new Error('Missing Transfer event')
+
+      const transferLog = {
+        address: positionManager,
+        ...transferInterface.encodeEventLog(transferEvent, [
+          ZeroAddress,
+          SUBMITTED_ACCOUNT_OP.accountAddr,
+          tokenId
+        ])
+      }
+      jest
+        .spyOn(provider, 'getTransactionReceipt')
+        .mockResolvedValue(buildMockReceipt({ logs: [transferLog] }))
+      jest.spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock').mockResolvedValue([
+        [
+          '0x',
+          {
+            address: ZeroAddress,
+            amount: 0n,
+            chainId: 1n,
+            decimals: 18,
+            flags: {
+              canTopUpGasTank: false,
+              isFeeToken: true,
+              onGasTank: false,
+              rewardsType: null
+            },
+            marketDataIn: [],
+            name: 'Ether',
+            priceIn: [],
+            symbol: 'ETH'
+          }
+        ]
+      ])
+      const addErc721sToBeLearnedSpy = jest.spyOn(mainCtrl.portfolio, 'addErc721sToBeLearned')
+      const accountOp = buildSubmittedAccountOp()
+
+      await controller.addAccountOp(accountOp)
+      await controller.updateAccountsOpsStatuses()
+
+      const updatedAccountOp = controller.getAccountOpsForAccount({
+        accountAddr: accountOp.accountAddr
+      })[0]!
+      if (updatedAccountOp.nftBalanceChanges === undefined) {
+        await new Promise<void>((resolve) => {
+          const unsubscribe = controller.onUpdate(() => {
+            if (updatedAccountOp.nftBalanceChanges === undefined) return
+
+            unsubscribe()
+            resolve()
+          })
+        })
+      }
+
+      expect(addErc721sToBeLearnedSpy).toHaveBeenCalledWith(
+        [[getAddress(positionManager), [tokenId]]],
+        accountOp.accountAddr,
+        accountOp.chainId
+      )
+      expect(updatedAccountOp.nftBalanceChanges).toEqual([
+        {
+          address: getAddress(positionManager),
+          tokenId,
+          chainId: accountOp.chainId,
+          balanceChange: 1n
+        }
+      ])
+    })
+
     test('`failed` status is set correctly', async () => {
       const { controller, sessionId } = await prepareTest()
       const provider = mainCtrl.providers.providers['1']!
@@ -843,6 +943,138 @@ describe('Activity Controller ', () => {
         AccountOpStatus.BroadcastButStuck,
         AccountOpStatus.BroadcastButStuck
       ])
+    })
+
+    describe('Replaced by fee (same eoaNonce as a confirmed op)', () => {
+      const PREVIOUS_TXN_ID = `0x${'aa'.repeat(32)}`
+      const PENDING_TXN_ID = `0x${'bb'.repeat(32)}`
+
+      const setupOps = async ({
+        receiptsByTxnId,
+        txnIdsInMempool = [],
+        previousOpPaidBy
+      }: {
+        receiptsByTxnId: Record<string, any>
+        txnIdsInMempool?: string[]
+        previousOpPaidBy?: string
+      }) => {
+        const { controller } = await prepareTest()
+        const provider = mainCtrl.providers.providers['1']!
+        const getTransactionReceiptSpy = jest
+          .spyOn(provider, 'getTransactionReceipt')
+          .mockImplementation(async (txnId: string) => receiptsByTxnId[txnId] ?? null)
+        jest
+          .spyOn(provider, 'getTransaction')
+          .mockImplementation(async (txnId: string) =>
+            txnIdsInMempool.includes(txnId) ? ({ hash: txnId } as any) : null
+          )
+        jest.spyOn(mainCtrl.portfolio, 'getTokenBalancesOnBlock').mockResolvedValue([])
+
+        const previousOp = buildSubmittedAccountOp({
+          status: AccountOpStatus.Success,
+          eoaNonce: 5n,
+          txnId: PREVIOUS_TXN_ID,
+          identifiedBy: { type: 'Transaction', identifier: PREVIOUS_TXN_ID },
+          timestamp: Date.now() - 1000,
+          ...(previousOpPaidBy && {
+            gasFeePayment: { ...SUBMITTED_ACCOUNT_OP.gasFeePayment!, paidBy: previousOpPaidBy }
+          })
+        })
+        const pendingOp = buildSubmittedAccountOp({
+          eoaNonce: 5n,
+          txnId: PENDING_TXN_ID,
+          identifiedBy: { type: 'Transaction', identifier: PENDING_TXN_ID }
+        })
+        await controller.addAccountOp(previousOp)
+        await controller.addAccountOp(pendingOp)
+
+        const pollStatuses = async () => {
+          const result = await controller.updateAccountsOpsStatuses([pendingOp.accountAddr])
+          const updatedPendingOp = controller
+            .getAccountOpsForAccount({ accountAddr: pendingOp.accountAddr })
+            .find(({ id }) => id === pendingOp.id)
+
+          return { result: result[pendingOp.accountAddr]!, pendingOp: updatedPendingOp }
+        }
+
+        return { pollStatuses, getTransactionReceiptSpy }
+      }
+
+      test('marks an op without a receipt as replaced and hands it back so its simulation is discarded', async () => {
+        const { pollStatuses } = await setupOps({
+          receiptsByTxnId: { [PREVIOUS_TXN_ID]: buildMockReceipt() }
+        })
+
+        const { result, pendingOp } = await pollStatuses()
+
+        expect(pendingOp?.status).toBe(AccountOpStatus.UnknownButPastNonce)
+        expect(result.updatedAccountsOps.map(({ id }) => id)).toContain(pendingOp?.id)
+      })
+
+      test('an op whose own receipt succeeded is Success even if it shares the eoaNonce', async () => {
+        // e.g. eoaNonce holds the fee payer's nonce (byOtherEOA) or a stale value, so it
+        // collides with an older, unrelated op on the same account and chain
+        const { pollStatuses, getTransactionReceiptSpy } = await setupOps({
+          receiptsByTxnId: {
+            [PREVIOUS_TXN_ID]: buildMockReceipt(),
+            [PENDING_TXN_ID]: buildMockReceipt({ status: 1 })
+          }
+        })
+
+        const { result, pendingOp } = await pollStatuses()
+
+        // The op's own receipt wins over the eoaNonce match, so it isn't shown as "Replaced by fee"
+        expect(getTransactionReceiptSpy).toHaveBeenCalledWith(PENDING_TXN_ID)
+        expect(pendingOp?.status).toBe(AccountOpStatus.Success)
+        expect(result.chainsToUpdate).toEqual([1n])
+      })
+
+      test('an op is not replaced by a confirmed op with the same eoaNonce paid by another EOA', async () => {
+        // eoaNonce is the payer's nonce, so nonces of different payers are unrelated
+        const { pollStatuses } = await setupOps({
+          receiptsByTxnId: { [PREVIOUS_TXN_ID]: buildMockReceipt() },
+          previousOpPaidBy: '0x2222222222222222222222222222222222222222'
+        })
+
+        const { pendingOp } = await pollStatuses()
+
+        expect(pendingOp?.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+      })
+
+      test('compares the payer case-insensitively', async () => {
+        const { pollStatuses } = await setupOps({
+          receiptsByTxnId: { [PREVIOUS_TXN_ID]: buildMockReceipt() },
+          previousOpPaidBy: SUBMITTED_ACCOUNT_OP.gasFeePayment!.paidBy.toLowerCase()
+        })
+
+        const { pendingOp } = await pollStatuses()
+
+        expect(pendingOp?.status).toBe(AccountOpStatus.UnknownButPastNonce)
+      })
+
+      test('an op still in the mempool is not marked as replaced while it waits', async () => {
+        const { pollStatuses } = await setupOps({
+          receiptsByTxnId: { [PREVIOUS_TXN_ID]: buildMockReceipt() },
+          txnIdsInMempool: [PENDING_TXN_ID]
+        })
+
+        const { pendingOp } = await pollStatuses()
+
+        expect(pendingOp?.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+      })
+
+      test('a failed receipt makes the op Failure, not replaced', async () => {
+        const { pollStatuses } = await setupOps({
+          receiptsByTxnId: {
+            [PREVIOUS_TXN_ID]: buildMockReceipt(),
+            [PENDING_TXN_ID]: buildMockReceipt({ status: 0 })
+          }
+        })
+
+        const { pendingOp } = await pollStatuses()
+
+        expect(pendingOp?.status).toBe(AccountOpStatus.Failure)
+      })
     })
 
     test('should display pending txns banners', async () => {

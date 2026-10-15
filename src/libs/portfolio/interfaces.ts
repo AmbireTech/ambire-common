@@ -62,7 +62,15 @@ export type TokenResult = {
   }
   flags: {
     onGasTank: boolean
-    rewardsType: 'wallet-vesting' | 'wallet-rewards' | 'wallet-projected-rewards' | null
+    rewardsType:
+      | 'wallet-vesting'
+      | 'wallet-rewards'
+      /**
+       * @deprecated The wallet no longer adds a projected rewards token to the portfolio.
+       * Kept only for type compatibility.
+       */
+      | 'wallet-projected-rewards'
+      | null
     defiTokenType?: AssetType
     /**
      * A property used to link a token to a specific defi position. It's used
@@ -504,11 +512,20 @@ export type PortfolioDefiAppsResult = CommonResultProps & {
   defiPositions: DefiNetworkState
 }
 
-export type InternalPortfolioChain = 'defiApps' | 'gasTank' | 'rewards' | 'projectedRewards'
+export type InternalPortfolioChain =
+  | 'defiApps'
+  | 'gasTank'
+  | 'rewards'
+  /**
+   * @deprecated The wallet no longer stores projected rewards in the portfolio state.
+   * Kept only for type compatibility.
+   */
+  | 'projectedRewards'
 
 export type PortfolioKeyResult =
   | PortfolioRewardsResult
   | PortfolioGasTankResult
+  /** @deprecated The wallet no longer stores projected rewards in the portfolio state. */
   | PortfolioProjectedRewardsResult
   | PortfolioNetworkResult
   | PortfolioDefiAppsResult
@@ -543,6 +560,10 @@ export type NetworkState<T = PortfolioKeyResult> = {
 export type AccountState = {
   rewards?: NetworkState<PortfolioRewardsResult>
   gasTank?: NetworkState<PortfolioGasTankResult>
+  /**
+   * @deprecated The wallet no longer reads the projected rewards from the relayer's
+   * `portfolio-additional` endpoint, so this is never set. Kept only for type compatibility.
+   */
   projectedRewards?: NetworkState<PortfolioProjectedRewardsResult>
   /**
    * Stores "app" defi positions that are not linked to a specific network and have a slightly different structure (no addresses for assets).
