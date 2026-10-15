@@ -49,7 +49,7 @@ export const getPrivateKeyFromSeed = (
  * Brings a private key to a single comparable form (trimmed, lowercase, without the `0x` prefix),
  * so that the same key entered with or without a prefix or in a different case is detected as a duplicate.
  */
-const normalizePrivateKey = (privateKey: string) => {
+export const normalizePrivateKey = (privateKey: string) => {
   const trimmedPrivateKey = privateKey.trim().toLowerCase()
 
   return trimmedPrivateKey.startsWith('0x') ? trimmedPrivateKey.slice(2) : trimmedPrivateKey
@@ -104,6 +104,14 @@ export class KeyIterator implements KeyIteratorInterface {
     }
 
     throw new Error('keyIterator: invalid argument provided to constructor')
+  }
+
+  /**
+   * How many keys the iterator can serve. Only set for private keys, since a seed phrase
+   * can derive keys at any index (undefined means there is no limit).
+   */
+  get keysCount(): number | undefined {
+    return this.subType === 'private-key' ? this.#privateKeys.length : undefined
   }
 
   #getBaseWallet(): HDNodeWallet | null {
