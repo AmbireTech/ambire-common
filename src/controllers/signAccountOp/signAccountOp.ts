@@ -1692,22 +1692,31 @@ export class SignAccountOpController
       }
     }
 
-    // Safe txn, signed, with a future nonce: display an error. The earlier transactions
-    // may be either not sent yet or sent and still waiting to be confirmed
+    // Safe txn, signed, with a nonce other than the onchain one: display an error
     if (
       !!this.account.safeCreation &&
       !this.accountOp.meta?.isSafeDeploy &&
       accountState &&
-      this.accountOp.nonce &&
+      this.accountOp.nonce !== null &&
       this.accountOp.nonce !== accountState.nonce &&
       this.#accountOp.signed &&
       this.#accountOp.signed.length >= this.threshold
     ) {
-      errors.push({
-        title:
-          'Earlier transactions need to go through first. Send them, or wait for the ones already sent to be confirmed.',
-        action: 'refetch-account-state'
-      })
+      // A past nonce was already used by a confirmed transaction, so this one can never go through
+      if (this.accountOp.nonce < accountState.nonce) {
+        errors.push({
+          title:
+            'Another transaction from this account was already confirmed in its place, so this one can no longer go through. You can reject it.'
+        })
+      } else {
+        // A future nonce: the earlier transactions may be either not sent yet or sent and
+        // still waiting to be confirmed
+        errors.push({
+          title:
+            'Earlier transactions need to go through first. Send them, or wait for the ones already sent to be confirmed.',
+          action: 'refetch-account-state'
+        })
+      }
     }
 
     return errors

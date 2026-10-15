@@ -1158,6 +1158,37 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.canBroadcast).toBe(false)
   })
 
+  test('explains that a signed Safe transaction with an already used nonce can no longer go through', async () => {
+    const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
+    const accountState =
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!
+
+    accountState.nonce = 5n
+
+    controller.update({ accountOpData: { nonce: 4n } })
+
+    expect(controller.errors).toContainEqual({
+      title:
+        'Another transaction from this account was already confirmed in its place, so this one can no longer go through. You can reject it.'
+    })
+    expect(controller.canBroadcast).toBe(false)
+  })
+
+  test('checks the nonce of a signed Safe transaction even when it is 0', async () => {
+    const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
+    const accountState =
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!
+    accountState.nonce = 1n
+
+    controller.update({ accountOpData: { nonce: 0n } })
+
+    expect(controller.canBroadcast).toBe(false)
+  })
+
   test('does not change the nonce of a non-Safe or already-signed transaction', async () => {
     const { controller: nonSafeController } = await initDefaultFeeSelection()
     const { controller: signedSafeController } = await initSafeNonce([eoaSigner.keyPublicAddress])
