@@ -7,7 +7,9 @@ import { CIPHER } from '@/libs/keystore/keystore'
 
 import {
   APP_DATA_SYNC_PAYLOAD_VERSION,
+  AppDataSyncNewerVersionError,
   AppDataSyncPayload,
+  getAppDataSyncKeyAddrs,
   parseAppDataSyncPayload,
   serializeAppDataSyncPayload
 } from './appDataSync'
@@ -132,9 +134,27 @@ describe('appDataSync payload', () => {
   })
 
   it('rejects an unsupported payload version', () => {
-    expect(() => serializeAndParse({ ...buildPayload(), v: 2 })).toThrow(
+    expect(() => serializeAndParse({ ...buildPayload(), v: 0 })).toThrow(
+      'unsupported payload version 0'
+    )
+    expect(() => serializeAndParse({ ...buildPayload(), v: '2' })).toThrow(
       'unsupported payload version 2'
     )
+    expect(() => serializeAndParse({ ...buildPayload(), v: 1.5 })).toThrow(
+      'unsupported payload version 1.5'
+    )
+  })
+
+  it('tells a payload from a newer app apart, so the user is asked to update', () => {
+    expect(() => serializeAndParse({ ...buildPayload(), v: 3 })).toThrow(
+      AppDataSyncNewerVersionError
+    )
+  })
+
+  it('still reads the accounts-only payload that the released apps export', () => {
+    const accountsOnly = { ...buildPayload(), v: 1 as const }
+
+    expect(serializeAndParse(accountsOnly)).toEqual(accountsOnly)
   })
 
   it('rejects a payload without the password protected main key', () => {
@@ -298,6 +318,44 @@ describe('appDataSync payload', () => {
     expect(() => serializeAndParse(withoutSecret)).toThrow(
       'missing the password protected main key'
     )
+  })
+
+  describe('keys that travel along with the accounts', () => {
+    const eoa = (addr: string) => ({
+      addr,
+      associatedKeys: [addr],
+      initialPrivileges: [],
+      creation: null,
+      preferences: { label: addr, pfp: addr }
+    })
+    const safe = {
+      ...eoa('0x5afe000000000000000000000000000000005afE'),
+      associatedKeys: [EOA_ADDR, KEY_ADDR],
+      safeCreation: {
+        factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67' as const,
+        singleton: '0x29fcB43b46531BcA003ddC8FCB67FFE91900C762' as const,
+        saltNonce: `0x${'00'.repeat(32)}` as const,
+        setupData: '0x' as const,
+        version: '1.4.1'
+      }
+    }
+
+    it('takes the keys of every selected account, once', () => {
+      const [account] = buildPayload().accounts
+
+      expect(getAppDataSyncKeyAddrs([account!, eoa(EOA_ADDR), eoa(EOA_ADDR)])).toEqual([
+        KEY_ADDR,
+        EOA_ADDR
+      ])
+    })
+
+    it('leaves out the owners of a Safe whose accounts are not selected', () => {
+      expect(getAppDataSyncKeyAddrs([safe])).toEqual([])
+    })
+
+    it('takes only the Safe owners whose accounts are selected too', () => {
+      expect(getAppDataSyncKeyAddrs([safe, eoa(EOA_ADDR)])).toEqual([EOA_ADDR])
+    })
   })
 
   describe('settings, networks and contacts', () => {
