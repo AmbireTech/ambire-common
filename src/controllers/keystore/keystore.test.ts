@@ -12,6 +12,7 @@ import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
   LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
+import { PRIVACY_POOLS_SIGNING_KEY_PATH } from '../../consts/privacyPools'
 import { ExternalKey, IKeystoreController, InternalKey } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
@@ -506,34 +507,80 @@ describe('KeystoreController recovery phrase backup state', () => {
     expect(keystoreCtrl.seeds.filter((seed) => seed.notBackedUp)).toHaveLength(1)
   })
 
-  test('derives a Privacy Pools key exactly as from the phrase itself', async () => {
+  const addPhrase = async (seed: string, seedPassphrase?: string) => {
+    await keystoreCtrl.addTempSeed({
+      seed,
+      seedPassphrase,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+    await keystoreCtrl.persistTempSeed()
+
+    return keystoreCtrl.seeds.at(-1)!.id
+  }
+
+  test('derives the Privacy Pools signing key exactly as from the phrase itself', async () => {
     const seedId = await keystoreCtrl.addGeneratedSeed({})
     const { seed } = await keystoreCtrl.getSavedSeed(seedId)
-    const path = "m/28784'/1'/0'/0'/3'/0'"
 
-    const key = await keystoreCtrl.derivePrivacyPoolsKey(seedId, path)
-    // Derived again from the node kept since the first one
-    const keyAgain = await keystoreCtrl.derivePrivacyPoolsKey(seedId, path)
+    const key = await keystoreCtrl.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
+    const keyAgain = await keystoreCtrl.derivePrivacyPoolsKey(
+      seedId,
+      PRIVACY_POOLS_SIGNING_KEY_PATH
+    )
 
     const expectedKey = ethers.HDNodeWallet.fromMnemonic(
       ethers.Mnemonic.fromPhrase(seed),
-      path
+      PRIVACY_POOLS_SIGNING_KEY_PATH
     ).privateKey
     expect(key).toBe(expectedKey)
     expect(keyAgain).toBe(expectedKey)
   })
 
-  test('refuses a key outside the Privacy Pools paths, and any key once locked', async () => {
-    const seedId = await keystoreCtrl.addGeneratedSeed({})
-    await keystoreCtrl.derivePrivacyPoolsKey(seedId, "m/28784'/1'/0'/0'/0'/0'")
+  test('derives the Privacy Pools signing key with the phrase passphrase', async () => {
+    const withoutPassphrase = await addPhrase(process.env.SEED)
+    const withPassphrase = await addPhrase(process.env.SEED, 'extra word')
 
-    await expect(keystoreCtrl.derivePrivacyPoolsKey(seedId, "m/44'/60'/0'/0/0")).rejects.toThrow(
-      "refusing to derive a key outside Privacy Pools' paths"
+    const key = await keystoreCtrl.derivePrivacyPoolsKey(
+      withPassphrase,
+      PRIVACY_POOLS_SIGNING_KEY_PATH
     )
+
+    expect(key).toBe(
+      ethers.HDNodeWallet.fromMnemonic(
+        ethers.Mnemonic.fromPhrase(process.env.SEED, 'extra word'),
+        PRIVACY_POOLS_SIGNING_KEY_PATH
+      ).privateKey
+    )
+    expect(key).not.toBe(
+      await keystoreCtrl.derivePrivacyPoolsKey(withoutPassphrase, PRIVACY_POOLS_SIGNING_KEY_PATH)
+    )
+  })
+
+  test('refuses any key but the Privacy Pools signing key, and any key once locked', async () => {
+    const seedId = await keystoreCtrl.addGeneratedSeed({})
+    await keystoreCtrl.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
+
+    const refusedPaths = [
+      // The user's EVM keys
+      "m/44'/60'/0'/0/0",
+      // A note secret of the old BIP-32 scheme, below the signing key
+      "m/28784'/1'/0'/0'/0'/0'",
+      // Another Privacy Pools account, which the wallet never uses
+      "m/28784'/1'/1'",
+      // The parent of every Privacy Pools key
+      "m/28784'/1'",
+      `${PRIVACY_POOLS_SIGNING_KEY_PATH}/`,
+      ` ${PRIVACY_POOLS_SIGNING_KEY_PATH}`
+    ]
+    for (const path of refusedPaths) {
+      await expect(keystoreCtrl.derivePrivacyPoolsKey(seedId, path)).rejects.toThrow(
+        "refusing to derive a key outside Privacy Pools' paths"
+      )
+    }
 
     keystoreCtrl.lock()
     await expect(
-      keystoreCtrl.derivePrivacyPoolsKey(seedId, "m/28784'/1'/0'/0'/0'/0'")
+      keystoreCtrl.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
     ).rejects.toThrow('keystore: not unlocked')
   })
 

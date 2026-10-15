@@ -1,6 +1,10 @@
 import { JsonRpcProvider } from 'ethers'
 
-import { OxBowAspService, PrivacyPoolsV1Protocol } from '@kohaku-eth/privacy-pools'
+import {
+  OxBowAspService,
+  PrivacyPoolsV1Protocol,
+  SignatureSecretManager
+} from '@kohaku-eth/privacy-pools'
 import type { Host, Keystore } from '@kohaku-eth/plugins'
 
 import {
@@ -106,6 +110,9 @@ export class PrivacyPoolsProtocolRegistry implements PhraseScopedModule {
 
     const protocol = new PrivacyPoolsV1Protocol(host, {
       accountIndex: PRIVACY_POOLS_ACCOUNT_INDEX,
+      // Pinned rather than the SDK's default: the schemes derive different notes, so a default that
+      // changes in a bump would hide every note made before it
+      secretManager: SignatureSecretManager,
       // Skipped once this chain has a persisted store
       initialState: resolveInitialState,
       dataService,

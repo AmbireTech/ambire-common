@@ -1,3 +1,5 @@
+import { isHexString } from 'ethers'
+
 import type { EthereumProvider, TxLog } from '@kohaku-eth/provider'
 
 /** Blocks per `eth_getLogs` call: the widest range the wallet's RPC accepts. */
@@ -39,6 +41,10 @@ export type PrivacyPoolsLogsParams = {
 export const createParallelLogSource =
   ({ provider }: { provider: EthereumProvider }) =>
   async (params: PrivacyPoolsLogsParams): Promise<TxLog[]> => {
+    // The SDK types the address as any string, the provider as hex
+    const { address } = params
+    if (!isHexString(address)) throw new Error(`privacy pools: not a hex address (${address})`)
+
     const toBlock = params.toBlock ?? (await provider.getBlockNumber())
     const step = params.maxQuerySize ?? LOG_WINDOW_BLOCKS
 
@@ -51,7 +57,7 @@ export const createParallelLogSource =
     const readWindow = async ({ from, to }: { from: bigint; to: bigint }): Promise<TxLog[]> => {
       for (let attempt = 1; ; attempt += 1) {
         try {
-          return await provider.getLogs({ address: params.address, fromBlock: from, toBlock: to })
+          return await provider.getLogs({ address, fromBlock: from, toBlock: to })
         } catch (error) {
           if (attempt >= MAX_ATTEMPTS) throw error
 

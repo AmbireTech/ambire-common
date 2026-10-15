@@ -86,18 +86,23 @@ export const createKohakuStorage = ({
  * `MnemonicKeystore`. `deriveKey` must whitelist its paths - see
  * `KeystoreController.derivePrivacyPoolsKey`.
  *
- * Cached because every sync derives two keys per deposit index, each a pbkdf2 over the seed.
- * Dropped with the instance, so a lock or seed change clears it.
+ * Cached because the SDK asks for its signing key on every note it signs, and each derivation is a
+ * pbkdf2 over the seed. Cached as a promise, so chains syncing at once share one derivation, and
+ * dropped on failure, so the next call retries. Dropped with the instance, so a lock or seed
+ * change clears it.
  */
 export const createKohakuKeystore = (deriveKey: (path: string) => Promise<Hex>): Keystore => {
-  const cache = new Map<string, Hex>()
+  const cache = new Map<string, Promise<Hex>>()
 
   return {
-    async deriveAt(path: string) {
+    deriveAt(path: string) {
       const cached = cache.get(path)
       if (cached) return cached
 
-      const key = await deriveKey(path)
+      const key = deriveKey(path).catch((error) => {
+        if (cache.get(path) === key) cache.delete(path)
+        throw error
+      })
       cache.set(path, key)
 
       return key
@@ -133,7 +138,8 @@ export const createKohakuProvider = (
       blockNumber: BigInt(log.blockNumber),
       topics: [...log.topics],
       data: log.data,
-      address: log.address
+      address: log.address,
+      logIndex: log.index
     }))
   },
 
@@ -159,7 +165,8 @@ export const createKohakuProvider = (
         blockNumber: BigInt(log.blockNumber),
         topics: [...log.topics],
         data: log.data,
-        address: log.address
+        address: log.address,
+        logIndex: log.index
       }))
     }
   },

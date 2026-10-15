@@ -32,6 +32,8 @@ export class DataService {
 
 export const createPPv1Broadcaster = notAvailable('createPPv1Broadcaster')
 
+export const SignatureSecretManager = notAvailable('SignatureSecretManager')
+
 export const createSagaLogSource = notAvailable('createSagaLogSource')
 
 export const Prover = notAvailable('Prover')

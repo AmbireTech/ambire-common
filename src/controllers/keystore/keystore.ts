@@ -39,7 +39,7 @@ import {
   DERIVATION_OPTIONS,
   HD_PATH_TEMPLATE_TYPE
 } from '../../consts/derivation'
-import { PRIVACY_POOLS_DERIVATION_PATH_PREFIX } from '../../consts/privacyPools'
+import { PRIVACY_POOLS_SIGNING_KEY_PATH } from '../../consts/privacyPools'
 import { Account } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
@@ -135,9 +135,6 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   areSeedsLoaded = false
 
   #tempSeed: KeystoreTempSeed | null = null
-
-  /** Each seed's Privacy Pools root node, cached while unlocked - see `derivePrivacyPoolsKey`. */
-  #privacyPoolsRootNodes = new Map<KeystoreSeed['id'], Promise<HDNodeWallet>>()
 
   #keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
 
@@ -241,7 +238,6 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
 
   lock() {
     this.#mainKey = null
-    this.#privacyPoolsRootNodes.clear()
     if (this.#tempSeed) this.deleteTempSeed(false)
 
     this.#seedsToAddOnKeystoreReady = []
@@ -1011,7 +1007,6 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     await this.initialLoadPromise
 
     this.#keystoreSeeds = this.#keystoreSeeds.filter((s) => s.id !== id)
-    this.#privacyPoolsRootNodes.delete(id)
     await this.#storage.set('keystoreSeeds', this.#keystoreSeeds)
 
     this.emitUpdate()
@@ -1542,49 +1537,27 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Derives one Privacy Pools note secret from a stored recovery phrase, so the phrase never
-   * reaches `@kohaku-eth/privacy-pools`, whose bundled keystore would keep it.
+   * Derives a recovery phrase's Privacy Pools signing key, so the phrase never reaches
+   * `@kohaku-eth/privacy-pools`, whose bundled keystore would keep it.
    *
-   * The prefix check is the security boundary: the SDK chooses the paths, so without it a bug or a
-   * malicious bump could get the user's EVM keys.
+   * The path check is the security boundary: the SDK chooses the paths, so without it a bug or a
+   * malicious bump could get the user's EVM keys. Only `PRIVACY_POOLS_SIGNING_KEY_PATH` passes.
    *
-   * Keys come from the prefix's node, derived once while unlocked to skip a decryption and a PBKDF2
-   * per key. That node can only reach Privacy Pools keys.
+   * Not cached here: each call decrypts the phrase and runs a PBKDF2, so callers keep the key while
+   * unlocked - see `createKohakuKeystore`.
    */
   async derivePrivacyPoolsKey(seedId: KeystoreSeed['id'], path: string): Promise<Hex> {
     await this.initialLoadPromise
 
     if (!this.isUnlocked) throw new Error('keystore: not unlocked')
 
-    if (!path.startsWith(PRIVACY_POOLS_DERIVATION_PATH_PREFIX))
+    if (path !== PRIVACY_POOLS_SIGNING_KEY_PATH)
       throw new Error(`keystore: refusing to derive a key outside Privacy Pools' paths (${path})`)
 
-    const rootNode = await this.#getPrivacyPoolsRootNode(seedId)
+    const { seed, seedPassphrase } = await this.getSavedSeed(seedId)
 
-    return rootNode.derivePath(path.slice(PRIVACY_POOLS_DERIVATION_PATH_PREFIX.length))
+    return HDNodeWallet.fromMnemonic(Mnemonic.fromPhrase(seed, seedPassphrase), path)
       .privateKey as Hex
-  }
-
-  #getPrivacyPoolsRootNode(seedId: KeystoreSeed['id']): Promise<HDNodeWallet> {
-    const cached = this.#privacyPoolsRootNodes.get(seedId)
-    if (cached) return cached
-
-    const rootNode = this.getSavedSeed(seedId).then(({ seed, seedPassphrase }) =>
-      HDNodeWallet.fromMnemonic(
-        Mnemonic.fromPhrase(seed, seedPassphrase),
-        // Without the trailing slash, which `fromMnemonic` would read as an empty last segment
-        PRIVACY_POOLS_DERIVATION_PATH_PREFIX.slice(0, -1)
-      )
-    )
-    // Cached as a promise so concurrent calls share one derivation
-    this.#privacyPoolsRootNodes.set(seedId, rootNode)
-    // Dropped on failure, so the next call retries
-    rootNode.catch(() => {
-      if (this.#privacyPoolsRootNodes.get(seedId) === rootNode)
-        this.#privacyPoolsRootNodes.delete(seedId)
-    })
-
-    return rootNode
   }
 
   async #changeKeystorePassword(newSecret: string, oldSecret?: string, extraEntropy?: string) {

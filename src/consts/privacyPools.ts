@@ -10,21 +10,20 @@ import { ZERO_ADDRESS } from '../services/socket/constants'
 export const PRIVACY_POOLS_NATIVE_ASSET_ADDRESS = '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'
 
 /**
- * Privacy Pools' BIP-32 prefix, from the SDK's `SecretManager`:
- * `m/28784'/1'/<account>'/<type>'/<deposit>'/<note>'`, where `<type>` is 0 for the nullifier, 1 for
- * the salt and 2 for the paymaster withdrawal's signer, and `<note>` is 0 for the deposit and n for
- * the change of its nth withdrawal.
- *
- * Security boundary: `KeystoreController.derivePrivacyPoolsKey` refuses any path outside it, since
- * the plugin asks for arbitrary paths and could otherwise reach the user's EVM keys.
- */
-export const PRIVACY_POOLS_DERIVATION_PATH_PREFIX = "m/28784'/1'/"
-
-/**
  * Fixed so a phrase alone recovers its notes, at the cost of one identity per phrase. Never infer
  * another index: a wrong one points the wallet at an empty set of notes.
  */
 export const PRIVACY_POOLS_ACCOUNT_INDEX = 0
+
+/**
+ * The one key Privacy Pools needs per phrase, from the SDK's `SignatureSecretManager`: every note's
+ * nullifier, salt and paymaster withdrawal signer are derived from this key's EIP-712 signature of
+ * the note, `PrivacyPoolNote(depositIndex, secretIndex)`.
+ *
+ * Security boundary: `KeystoreController.derivePrivacyPoolsKey` refuses any other path, since the
+ * plugin asks for arbitrary paths and could otherwise reach the user's EVM keys.
+ */
+export const PRIVACY_POOLS_SIGNING_KEY_PATH = `m/28784'/1'/${PRIVACY_POOLS_ACCOUNT_INDEX}'`
 
 /**
  * fatlabs' CDN of the pools' event history as signed, content-addressed files: one request and
