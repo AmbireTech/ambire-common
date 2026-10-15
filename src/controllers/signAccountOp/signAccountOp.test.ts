@@ -1002,7 +1002,7 @@ describe('SignAccountOp Controller ', () => {
     return { controller, storageCtrl, accountsCtrl }
   }
 
-  const initSafeNonce = async (signed: string[] = []) => {
+  const initSafeNonce = async (signed: string[] = [], estimatedAccountNonce = 3) => {
     const feePaymentOptions = getDefaultFeeSelectionOptions().map((option) => ({
       ...option,
       paidBy: safeAccount.addr
@@ -1024,7 +1024,7 @@ describe('SignAccountOp Controller ', () => {
           deploymentGas: 0n,
           gasUsed: 25000n,
           feePaymentOptions,
-          ambireAccountNonce: 3,
+          ambireAccountNonce: estimatedAccountNonce,
           flags: {}
         },
         flags: {},
@@ -1176,6 +1176,14 @@ describe('SignAccountOp Controller ', () => {
     expect(controller.accountOp.nonce).toBe(3n)
 
     controller.setSafeNonce(1n << 256n)
+    expect(controller.accountOp.nonce).toBe(3n)
+  })
+
+  test('keeps the Safe nonce it was created with when the estimation reports another one', async () => {
+    const { controller } = await initSafeNonce([], 7)
+
+    controller.update({ hasNewEstimation: true })
+
     expect(controller.accountOp.nonce).toBe(3n)
   })
 

@@ -95,7 +95,6 @@ import {
 import {
   AccountOpIdentifiedBy,
   getAccountOpRecipients,
-  getSafeNonceAfterPendingAccountOps,
   getSubmittedAccountOpNonce,
   SubmittedAccountOp
 } from '../../libs/accountOp/submittedAccountOp'
@@ -135,7 +134,6 @@ import {
   confirm,
   getAlreadySignedOwners,
   getImportedSignersThatHaveNotSigned,
-  getNonce,
   getSafeTxnHash,
   getSigs,
   propose,
@@ -782,7 +780,9 @@ export class SignAccountOpController
   }
 
   #updateNonce(nonce: bigint) {
-    if (this.#customSafeNonce !== null) return
+    // A Safe's nonce is set once, when its request is created (see RequestsController) or when
+    // the user picks one, and is never changed from here afterwards
+    if (this.account.safeCreation) return
     this.#updateAccountOp({ nonce })
   }
 
@@ -3394,34 +3394,6 @@ export class SignAccountOpController
         !isSafeDeploy &&
         (this.#accountOp.signed?.length || 0) < this.threshold
       ) {
-        // If the Safe txn is not already signed, fetch the latest nonce unless
-        // the user explicitly selected one for this transaction, or the transaction
-        // speeds up / cancels an already sent one, as it must keep that transaction's nonce.
-        // Sent but not yet confirmed transactions count as taken, so this one is queued
-        // after them instead of replacing one of them.
-        if (
-          !this.accountOp.safeTx &&
-          this.#customSafeNonce === null &&
-          !this.isSpeedUpTransaction
-        ) {
-          const latestNonce = await getNonce(this.accountOp.accountAddr, this.provider).catch(
-            (e) => {
-              console.log('failed to retrieve the latest nonce for Safe')
-              console.log(e)
-              return null
-            }
-          )
-          if (latestNonce !== null) {
-            this.#updateNonce(
-              getSafeNonceAfterPendingAccountOps(
-                latestNonce,
-                this.#activity.broadcastedButNotConfirmed[this.account.addr] || [],
-                this.accountOp.chainId
-              )
-            )
-          }
-        }
-
         const prevSignedSigs = getSigs(this.accountOp.signature)
         const nowSignedSigs: Hex[] = []
 
