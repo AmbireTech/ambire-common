@@ -856,15 +856,17 @@ describe('Main Controller ', () => {
       } as any
     }
 
-    const createSwapAccountOps = () => {
+    const createSwapAccountOps = (meta: Record<string, unknown> = {}) => {
       const accountOp = {
         accountAddr: accounts[0]!.addr,
         chainId: 1n,
         calls: [],
-        meta: { swapTxn: { activeRouteId: SIGNED_ROUTE_ID, userTxIndex: 0, chainId: 1 } }
+        meta: { swapTxn: { activeRouteId: SIGNED_ROUTE_ID, userTxIndex: 0, chainId: 1 }, ...meta }
       } as any
       const submittedAccountOp = {
         ...accountOp,
+        // The sign controller passes a shallow copy of the meta
+        meta: { ...accountOp.meta },
         txnId: TXN_ID,
         identifiedBy: { type: 'Transaction', identifier: TXN_ID }
       } as any
@@ -910,6 +912,20 @@ describe('Main Controller ', () => {
       await mainCtrl.commonHandlerForBroadcastSuccess(createSwapAccountOps())
 
       expect(mainCtrl.swapAndBridge.activeRoutes).toHaveLength(0)
+    })
+
+    test('should not store the quote of a Safe batch swap in the activity', async () => {
+      const mainCtrl = await setupController()
+      // Safe accounts pass the quote along with the swap when adding it to the batch
+      const accountOps = createSwapAccountOps({ quote: createQuote(SIGNED_ROUTE_ID) })
+
+      await mainCtrl.commonHandlerForBroadcastSuccess(accountOps)
+
+      // The quote is still used to add the active route before it's deleted
+      expect(mainCtrl.swapAndBridge.activeRoutes).toHaveLength(1)
+      const [storedAccountOp] = jest.mocked(mainCtrl.activity.addAccountOp).mock.calls[0]!
+      expect(storedAccountOp.meta).not.toHaveProperty('quote')
+      expect(storedAccountOp.meta?.swapTxn?.activeRouteId).toBe(SIGNED_ROUTE_ID)
     })
   })
 })
