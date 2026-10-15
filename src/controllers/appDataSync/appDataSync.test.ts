@@ -9,7 +9,8 @@ import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { USER_FEATURE_FLAGS } from '../../consts/featureFlags'
 import {
   AppDataSyncExportOptions,
-  parseAppDataSyncPayload
+  parseAppDataSyncPayload,
+  serializeAppDataSyncPayload
 } from '../../libs/appDataSync/appDataSync'
 import { MainController } from '../main/main'
 
@@ -360,6 +361,20 @@ describe('AppDataSyncController', () => {
 
       expect(importingDevice.appDataSync.emittedErrors.at(-1)?.message).toContain(
         'do not contain Ambire accounts'
+      )
+      expect(importingDevice.accounts.accounts).toHaveLength(0)
+    })
+
+    test('asks the user to update when the QR codes come from a newer app', async () => {
+      const importingDevice = await makeImportingDevice({ withPassword: true })
+
+      await importingDevice.appDataSync.importData({
+        payload: serializeAppDataSyncPayload({ v: 3 } as any),
+        password: IMPORTING_PASS
+      })
+
+      expect(importingDevice.appDataSync.emittedErrors.at(-1)?.message).toContain(
+        'newer version of Ambire'
       )
       expect(importingDevice.accounts.accounts).toHaveLength(0)
     })

@@ -28,7 +28,21 @@ import { parse, stringify } from '../richJson/richJson'
  */
 export const APP_DATA_SYNC_UR_TYPE = 'ambire-account-sync'
 
-export const APP_DATA_SYNC_PAYLOAD_VERSION = 1
+/**
+ * 2 added the settings, networks and contacts and allowed syncing no accounts at all. An older
+ * app rejects it rather than taking the accounts and silently dropping the rest.
+ */
+export const APP_DATA_SYNC_PAYLOAD_VERSION = 2
+/** Accounts and their keys only, which every version of the payload still holds the same way */
+const ACCOUNTS_ONLY_PAYLOAD_VERSION = 1
+
+/** Thrown for a payload exported by a newer app, so the user can be told to update this one */
+export class AppDataSyncNewerVersionError extends Error {
+  constructor(version: number) {
+    super(`appDataSync: payload version ${version} is newer than this app supports`)
+    this.name = 'AppDataSyncNewerVersionError'
+  }
+}
 
 /**
  * Settings that the products share: the privacy opt-outs kept in ambire-common and the
@@ -59,7 +73,7 @@ export type AppDataSyncExportOptions = {
  * re-encrypts everything with its own main key.
  */
 export type AppDataSyncPayload = {
-  v: typeof APP_DATA_SYNC_PAYLOAD_VERSION
+  v: typeof APP_DATA_SYNC_PAYLOAD_VERSION | typeof ACCOUNTS_ONLY_PAYLOAD_VERSION
   /**
    * Always present, even with nothing encrypted to sync, because unlocking it is how the
    * importing device confirms the user knows the exporting device's password
@@ -76,6 +90,19 @@ export type AppDataSyncPayload = {
   /** The manually added contacts. Missing when the user did not choose to sync them */
   contacts?: Contacts
 }
+
+/**
+ * The keys that travel along with the selected accounts. A Safe's owners are accounts
+ * of their own, so their keys travel only if the user selected those accounts as well.
+ */
+export const getAppDataSyncKeyAddrs = (accounts: Account[]): Account['associatedKeys'] =>
+  Array.from(
+    new Set(
+      accounts
+        .filter((account) => !account.safeCreation)
+        .flatMap((account) => account.associatedKeys)
+    )
+  )
 
 const requireGcmPayload = (payload: any, what: string) => {
   if (!tryParseGcmPayload(payload))
@@ -275,7 +302,9 @@ export const parseAppDataSyncPayload = (bytes: Uint8Array): AppDataSyncPayload =
     throw new Error('appDataSync: the scanned data is not a valid sync payload')
   }
 
-  if (payload?.v !== APP_DATA_SYNC_PAYLOAD_VERSION)
+  if (Number.isInteger(payload?.v) && payload.v > APP_DATA_SYNC_PAYLOAD_VERSION)
+    throw new AppDataSyncNewerVersionError(payload.v)
+  if (payload?.v !== APP_DATA_SYNC_PAYLOAD_VERSION && payload?.v !== ACCOUNTS_ONLY_PAYLOAD_VERSION)
     throw new Error(`appDataSync: unsupported payload version ${payload?.v}`)
 
   validateAccounts(payload.accounts)

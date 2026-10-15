@@ -262,7 +262,8 @@ const safe = new SafeController({
   networks: networksCtrl,
   providers: providersCtrl,
   storage: storageCtrl,
-  accounts: accountsCtrl
+  accounts: accountsCtrl,
+  keystore
 })
 
 const activityCtrl = new ActivityController(
@@ -1335,6 +1336,30 @@ describe('SwapAndBridge Controller', () => {
     }
 
     await check()
+  })
+  test('should not refresh the quote while the swap is being signed, even if the screen that proceeded is gone', async () => {
+    const quoteBeingSigned = swapAndBridgeController.quote
+    expect(quoteBeingSigned).toBeTruthy()
+    const getQuoteSpy = jest.spyOn(socketAPIMock, 'quote')
+
+    swapAndBridgeController.setUserProceeded(true)
+    // A real sign controller can't be built here, as estimating the swap needs the network.
+    // Signing with a hardware wallet that waits for the user to confirm on the device:
+    const isSigningSpy = jest
+      .spyOn(swapAndBridgeController, 'isSignAndBroadcastInProgress', 'get')
+      .mockReturnValue(true)
+    // The popup is force-unloaded once the request window that took over the signing opens
+    swapAndBridgeController.unloadScreen('popup', true)
+    expect(swapAndBridgeController.hasProceeded).toBe(false)
+
+    expect(swapAndBridgeController.formStatus).toBe(SwapAndBridgeFormStatus.Proceeded)
+    await swapAndBridgeController.updateQuote({ skipQuoteUpdateOnSameValues: false })
+    expect(getQuoteSpy).not.toHaveBeenCalled()
+    expect(swapAndBridgeController.quote).toBe(quoteBeingSigned)
+
+    // e.g. the user rejected on the device
+    isSigningSpy.mockReturnValue(false)
+    expect(swapAndBridgeController.formStatus).not.toBe(SwapAndBridgeFormStatus.Proceeded)
   })
   describe('continuous quote updates', () => {
     beforeEach(() => {
