@@ -11,6 +11,13 @@ import { getHdPathFromTemplate } from '../../utils/hdPath'
 import { isDerivedForSmartAccountKeyOnly } from '../account/account'
 import { getDefaultKeyLabel, getExistingKeyLabel } from '../keys/keys'
 
+/**
+ * The maximum number of private keys that can be imported at once (bulk import).
+ * Every imported account adds background work (portfolio and account state updates on every
+ * network), so the limit is kept low until the performance with more accounts is measured.
+ */
+export const MAX_BULK_PRIVATE_KEYS = 20
+
 export function isValidPrivateKey(value: string): boolean {
   try {
     return !!new Wallet(value)
