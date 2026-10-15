@@ -1046,7 +1046,8 @@ describe('SignAccountOp Controller ', () => {
       expect(updateAccountStateSpy).toHaveBeenCalledWith(
         controller.accountOp.accountAddr,
         'pending',
-        [controller.accountOp.chainId]
+        [controller.accountOp.chainId],
+        true
       )
       expect(controller.isRefetchingAccountState).toBe(false)
     })

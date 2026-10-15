@@ -846,9 +846,12 @@ export class SignAccountOpController
     this.emitUpdate()
 
     try {
-      await this.#accounts.updateAccountState(this.accountOp.accountAddr, 'pending', [
-        this.accountOp.chainId
-      ])
+      await this.#accounts.updateAccountState(
+        this.accountOp.accountAddr,
+        'pending',
+        [this.accountOp.chainId],
+        true
+      )
       await this.#simulateAndEstimate()
     } catch (error) {
       this.emitError({

@@ -409,11 +409,13 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     if (!this.accounts.some((account) => account.addr === addr)) return
     if (!this.accountStates[addr]) this.accountStates[addr] = {}
 
-    // if the block tag is pending & we already have a state from the same or a newer block,
+    // if the block tag is pending & we already have a state from a newer block,
     // we keep it. We do this because rogue RPCs sometimes mess up the pending state.
+    // A pending result from the same block is saved, as the pending block can change
+    // without a new block number.
     // Other results need no block check, as the queue saves them in call order
     const current = this.accountStates[addr][chainIdKey]
-    if (blockTag === 'pending' && current && current.currentBlock >= accountState.currentBlock) {
+    if (blockTag === 'pending' && current && current.currentBlock > accountState.currentBlock) {
       return
     }
 

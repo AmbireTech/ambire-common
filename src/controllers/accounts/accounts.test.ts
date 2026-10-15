@@ -336,6 +336,20 @@ describe('AccountsController account state fetching', () => {
     )
   })
 
+  test('a pending result from the same block replaces the stored state', async () => {
+    const { accountsCtrl, fetches } = ctrl
+    const updateFirst = accountsCtrl.updateAccountState(ADDR_A, 'pending', [ETHEREUM.chainId])
+    await flushPromises()
+    fetches[0]!.resolve([makeAccountState(ADDR_A, 100n)])
+    await updateFirst
+    const updateSecond = accountsCtrl.updateAccountState(ADDR_A, 'pending', [ETHEREUM.chainId])
+    await flushPromises()
+    fetches[1]!.resolve([{ ...makeAccountState(ADDR_A, 100n), nonce: 101n }])
+    await updateSecond
+
+    expect(accountsCtrl.accountStates[ADDR_A]?.[ETHEREUM.chainId.toString()]?.nonce).toBe(101n)
+  })
+
   test('a removed account is not written back by a running fetch', async () => {
     const { accountsCtrl, fetches } = ctrl
     const update = accountsCtrl.updateAccountState(ADDR_A, 'latest', [BASE.chainId])
