@@ -1062,8 +1062,10 @@ export class MainController extends EventEmitter implements IMainController {
         }
       }
 
-      // no need to keep it in storage
+      // no need to keep it in storage. The submitted account op, which is the one stored
+      // in the activity, has a shallow copy of the meta, so it has to be deleted there too
       delete accountOp.meta.quote
+      delete submittedAccountOp.meta?.quote
     }
 
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
