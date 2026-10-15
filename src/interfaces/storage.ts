@@ -3,7 +3,7 @@ import { Contacts } from '@/interfaces/addressBook'
 import { EmailVaultData } from '@/interfaces/emailVault'
 
 import { FeatureFlags } from '../consts/featureFlags'
-import { SentToHistory, SignedMessage } from '../controllers/activity/types'
+import { FeePayersHistory, SentToHistory, SignedMessage } from '../controllers/activity/types'
 import { SubmittedAccountOp, SubmittedAccountOpLike } from '../libs/accountOp/submittedAccountOp'
 import { NetworksWithPositionsByAccounts } from '../libs/defiPositions/types'
 import { Erc7730PersistedRegistryCache } from '../libs/humanizer/erc7730/types'
@@ -53,6 +53,7 @@ export type StorageProps = {
   externalAccountOps: { [key: string]: { [key: string]: SubmittedAccountOpLike[] } }
   signedMessages: { [key: AccountId]: SignedMessage[] }
   sentToHistory: SentToHistory
+  feePayersHistory: FeePayersHistory
   /**
    * Which backend the transaction history was last written to. Recorded rather than a
    * "migrated" boolean because it says what is true rather than what happened: a session that

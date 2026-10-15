@@ -68,6 +68,7 @@ import {
   HardwareWalletSigningRequest,
   ISignAccountOpController,
   noStateUpdateStatuses,
+  SafeFeePayerLinks,
   SignAccountOpBanner,
   SignAccountOpError,
   SigningStatus,
@@ -342,6 +343,13 @@ export class SignAccountOpController
    * gas tank, or payment by another EOA
    */
   selectedOption: FeePaymentOption | undefined = undefined
+
+  /**
+   * Safes only, null for other accounts. Paying the fee from an EOA publicly links it to the
+   * Safe, unless it's an owner (listed in the Safe itself) or already paid for the Safe before.
+   * Lowercased addresses; `linked` excludes the owners.
+   */
+  safeFeePayerLinks: SafeFeePayerLinks | null = null
 
   status: Status | null = null
 
@@ -1413,6 +1421,48 @@ export class SignAccountOpController
     }
   }
 
+  #updateSafeFeePayerLinks() {
+    if (!this.account.safeCreation) {
+      this.safeFeePayerLinks = null
+      return
+    }
+
+    // The owners can differ per chain, so the chain's state wins over the ones from the import
+    const accountState =
+      this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
+    const owners = (accountState?.associatedKeys || this.account.associatedKeys).map((addr) =>
+      addr.toLowerCase()
+    )
+    const linked = this.#activity
+      .getFeePayers(this.account.addr, this.#network.chainId)
+      .map((addr) => addr.toLowerCase())
+      .filter((addr) => !owners.includes(addr))
+
+    this.safeFeePayerLinks = { owners, linked }
+  }
+
+  /** Lower is better: owners first, then payers already linked, then the rest */
+  #getSafeFeePayerRank(paidBy: string): number {
+    if (!this.safeFeePayerLinks) return 0
+
+    const paidByLowercased = paidBy.toLowerCase()
+    if (this.safeFeePayerLinks.owners.includes(paidByLowercased)) return 0
+    if (this.safeFeePayerLinks.linked.includes(paidByLowercased)) return 1
+    return 2
+  }
+
+  /**
+   * Whether the selected fee payer would publicly link a new EOA to this Safe.
+   * The Safe paying by itself (e.g. through the gas tank) links nothing.
+   */
+  get isFeePayerNotLinkedToSafe(): boolean {
+    const paidBy = this.accountOp.gasFeePayment?.paidBy
+    if (!this.safeFeePayerLinks || !paidBy) return false
+    if (paidBy.toLowerCase() === this.account.addr.toLowerCase()) return false
+
+    return this.#getSafeFeePayerRank(paidBy) === 2
+  }
+
   #setDefaults() {
     // Set the first signer as the default one.
     // If there are more available signers, the user will be able to select a different signer from the application.
@@ -1444,9 +1494,17 @@ export class SignAccountOpController
         .filter((feeOption) => feeOption.paidBy === this.accountOp.accountAddr)
         .sort(this.#sortFeeOptions.bind(this))
 
+      this.#updateSafeFeePayerLinks()
+
+      // For Safes, the payers that don't link a new EOA to the Safe come first,
+      // so one of them becomes the default
       const payOptionsPaidByEOA = this.estimation.availableFeeOptions
         .filter((feeOption) => feeOption.paidBy !== this.accountOp.accountAddr)
-        .sort(this.#sortFeeOptions.bind(this))
+        .sort(
+          (a, b) =>
+            this.#getSafeFeePayerRank(a.paidBy) - this.#getSafeFeePayerRank(b.paidBy) ||
+            this.#sortFeeOptions(a, b)
+        )
 
       // Set default feeToken and paidBy
       if (!this.feeTokenResult && !this.#paidBy) {
@@ -4728,6 +4786,7 @@ export class SignAccountOpController
       canEnableErc4337: this.canEnableErc4337,
       threshold: this.threshold,
       canBroadcast: this.canBroadcast,
+      isFeePayerNotLinkedToSafe: this.isFeePayerNotLinkedToSafe,
       hasSafeApiFailed: this.hasSafeApiFailed,
       hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
       safeEip712Data: this.safeEip712Data,
