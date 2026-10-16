@@ -113,7 +113,10 @@ export interface AccountOp {
        * with the newly selected fee once the estimation comes in
        */
       replacedFees?: Pick<GasFeePayment, 'gasPrice' | 'maxPriorityFeePerGas' | 'amount'>
-      /** When the pending transaction that is being sped up was sent, in milliseconds */
+      /**
+       * When the transaction was first sent, in milliseconds. When a speed up is sped up again,
+       * it's carried over from the first one, so it always refers to the very first attempt
+       */
       replacedSentAt?: number
       /** Finds the pending transaction that is being sped up, to stop if it gets processed first */
       replacedIdentifiedBy?: AccountOpIdentifiedBy

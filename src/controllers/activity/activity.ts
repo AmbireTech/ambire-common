@@ -43,6 +43,7 @@ import {
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
+import { collapseReplacedAccountOps } from '../../libs/activity/replacements'
 import { recordRecipient } from '../../libs/activity/sentToHistory'
 import { getTransferLogNfts, getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { filterStaticBlacklistedAddrs } from '../../libs/portfolio/blacklist'
@@ -596,6 +597,14 @@ export class ActivityController extends EventEmitter implements IActivityControl
       )
     }
 
+    // A transaction and its speed ups are shown as one row, the one that got (or will get)
+    // onchain. Not for benzin, which looks up one specific transaction
+    const visibleItems = filters.identifiedBy
+      ? filteredItems
+      : collapseReplacedAccountOps(filteredItems)
+    const replacedOpsCount = filteredItems.length - visibleItems.length
+    filteredItems = visibleItems
+
     // Scoped to the rendered chains; an identifiedBy filter has no stored count, so items are it.
     const storedTotal = filters.identifiedBy
       ? 0
@@ -613,8 +622,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
       filteredItems,
       pagination.fromPage,
       pagination.itemsPerPage,
-      // Floored at what is already loaded, because a failed count returns 0.
-      Math.max(storedTotal + externalTotal, filteredItems.length)
+      // Floored at what is already loaded, because a failed count returns 0. The stored count
+      // includes the replaced ops hidden above, so they are taken out of it
+      Math.max(storedTotal + externalTotal - replacedOpsCount, filteredItems.length)
     )
 
     this.setDashboardBannersSeen(sessionId, filters.account)
@@ -1999,7 +2009,8 @@ export class ActivityController extends EventEmitter implements IActivityControl
         .sort((a, b) => b.timestamp - a.timestamp)
         .slice(0, 10)
 
-      const pendingOps = latestOps.filter(
+      // A transaction and its pending speed ups are one transaction for the user
+      const pendingOps = collapseReplacedAccountOps(latestOps).filter(
         (op) =>
           op.status === AccountOpStatus.Pending ||
           op.status === AccountOpStatus.BroadcastedButNotConfirmed
