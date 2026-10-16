@@ -39,12 +39,12 @@ const speeds = [
   },
   {
     name: 'fast',
-    fullBlocksToTolerate: 5,
+    fullBlocksToTolerate: 3,
     legacyGasPriceAddBps: 200n
   },
   {
     name: 'ape',
-    fullBlocksToTolerate: 12,
+    fullBlocksToTolerate: 4,
     legacyGasPriceAddBps: 500n
   }
 ]
