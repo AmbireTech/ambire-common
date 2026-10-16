@@ -129,6 +129,7 @@ import {
 import { hasRelayerSupport, relayerAdditionalNetworks } from '../../libs/networks/networks'
 import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { GetOptions, TokenResult } from '../../libs/portfolio'
+import { getSafeFeePayerRank, isUnlinkedSafeFeePayer } from '../../libs/safe/feePayerLinks'
 import { getSafeTxn } from '../../libs/safe/helpers'
 import {
   canHotOwnersMeetSafeThreshold,
@@ -1442,15 +1443,45 @@ export class SignAccountOpController
     this.safeFeePayerLinks = { owners, linked, lastUsed: feePayers[0] || null }
   }
 
-  /** Lower is better: the last payer first, then owners, then payers already linked, then the rest */
+  /** See getSafeFeePayerRank. Every payer ranks the same for accounts that aren't Safes */
   #getSafeFeePayerRank(paidBy: string): number {
     if (!this.safeFeePayerLinks) return 0
 
-    const paidByLowercased = paidBy.toLowerCase()
-    if (this.safeFeePayerLinks.lastUsed === paidByLowercased) return 0
-    if (this.safeFeePayerLinks.owners.includes(paidByLowercased)) return 1
-    if (this.safeFeePayerLinks.linked.includes(paidByLowercased)) return 2
-    return 3
+    return getSafeFeePayerRank(paidBy, this.safeFeePayerLinks)
+  }
+
+  #isUnlinkedSafeFeePayer(paidBy: string): boolean {
+    if (!this.safeFeePayerLinks) return false
+
+    return isUnlinkedSafeFeePayer(paidBy, this.account.addr, this.safeFeePayerLinks)
+  }
+
+  /**
+   * Whether signing only adds a Safe owner's signature and nothing gets executed. The signature
+   * covers just the calls and the nonce, not who pays the fee, so no fee payment is needed for it.
+   * A 1/1 Safe with its only key here executes right after signing, so it always needs one.
+   */
+  get #isCollectingSafeSignatureOnly(): boolean {
+    if (!this.account.safeCreation || this.accountOp.meta?.isSafeDeploy) return false
+    if (this.canBroadcast) return false
+
+    const isQuickBroadcast = this.threshold === 1 && this.accountKeyStoreKeys.length === 1
+    return !isQuickBroadcast && (this.accountOp.signed?.length || 0) < this.threshold
+  }
+
+  /**
+   * Safes only: no payer is selected because the only default left would publicly link a new
+   * EOA to the Safe, so the user has to choose one before executing.
+   */
+  get isSafeFeePayerChoiceRequired(): boolean {
+    return (
+      !!this.safeFeePayerLinks &&
+      this.canBroadcast &&
+      !this.isSponsored &&
+      this.estimation.status === EstimationStatus.Success &&
+      !!this.estimation.availableFeeOptions.length &&
+      !this.#paidBy
+    )
   }
 
   /**
@@ -1459,14 +1490,9 @@ export class SignAccountOpController
    */
   get isFeePayerNotLinkedToSafe(): boolean {
     const paidBy = this.accountOp.gasFeePayment?.paidBy
-    if (!this.safeFeePayerLinks || !paidBy) return false
-    const paidByLowercased = paidBy.toLowerCase()
-    if (paidByLowercased === this.account.addr.toLowerCase()) return false
+    if (!paidBy) return false
 
-    return (
-      !this.safeFeePayerLinks.owners.includes(paidByLowercased) &&
-      !this.safeFeePayerLinks.linked.includes(paidByLowercased)
-    )
+    return this.#isUnlinkedSafeFeePayer(paidBy)
   }
 
   #setDefaults() {
@@ -1516,13 +1542,17 @@ export class SignAccountOpController
       // Set default feeToken and paidBy
       if (!this.feeTokenResult && !this.#paidBy) {
         const selected = this.#getDefaultFeeOption(payOptionsPaidByUsOrGasTank, payOptionsPaidByEOA)
-        if (selected) {
-          this.feeTokenResult = selected.token
-          this.#paidBy = selected.paidBy
-        } else {
+        // Linking a new EOA to the Safe is the user's call, so it's never made a default.
+        // No payer is set and the user picks one, see isSafeFeePayerChoiceRequired
+        const isPayerLeftToUser = !!selected && this.#isUnlinkedSafeFeePayer(selected.paidBy)
+
+        if (!selected) {
           console.error(
             'Failed to set a default selected option. Perhaps native is not always returned for the account?'
           )
+        } else if (!isPayerLeftToUser) {
+          this.feeTokenResult = selected.token
+          this.#paidBy = selected.paidBy
         }
       }
     }
@@ -2318,7 +2348,7 @@ export class SignAccountOpController
       this.isInitialized &&
       (this.accountOp.meta?.isSafeDeploy ||
         (this.accountOp.signingKeyAddr && this.accountOp.signingKeyType)) &&
-      this.accountOp.gasFeePayment
+      (this.accountOp.gasFeePayment || this.#isCollectingSafeSignatureOnly)
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
 
@@ -3375,9 +3405,10 @@ export class SignAccountOpController
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
 
-    if (!this.accountOp.gasFeePayment || !this.selectedOption) {
-      const message = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
-      return this.#emitSigningErrorAndResetToReadyToSign({ message })
+    const missingGasFeePaymentMessage = `Unable to sign the transaction. During the preparation step, required information about paying the gas fee was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
+    const hasGasFeePayment = !!this.accountOp.gasFeePayment && !!this.selectedOption
+    if (!hasGasFeePayment && !this.#isCollectingSafeSignatureOnly) {
+      return this.#emitSigningErrorAndResetToReadyToSign({ message: missingGasFeePaymentMessage })
     }
 
     if (!this.estimation.estimation) {
@@ -3388,9 +3419,11 @@ export class SignAccountOpController
     await this.#persistPendingFeeTokenPreference()
 
     const estimation = this.estimation.estimation as FullEstimationSummary
-    const broadcastOption = this.accountOp.gasFeePayment.broadcastOption
+    // Missing only while collecting a Safe signature, see #isCollectingSafeSignatureOnly
+    const broadcastOption = this.accountOp.gasFeePayment?.broadcastOption
     const isUsingPaymaster = !!estimation.bundlerEstimation?.paymaster.isUsable()
-    const shouldSignDeployAuth = this.baseAccount.shouldSignDeployAuth(broadcastOption)
+    const shouldSignDeployAuth =
+      !!broadcastOption && this.baseAccount.shouldSignDeployAuth(broadcastOption)
 
     // tell the FE where we are
     if (shouldSignDeployAuth) {
@@ -3406,7 +3439,8 @@ export class SignAccountOpController
     // decide what to do from that point onwards
 
     const isExternalSignerInvolved =
-      this.accountOp.gasFeePayment.paidByKeyType !== 'internal' ||
+      (!!this.accountOp.gasFeePayment &&
+        this.accountOp.gasFeePayment.paidByKeyType !== 'internal') ||
       this.accountOp.signingKeyType !== 'internal'
     const isCollectingSafeSignature =
       !!this.account.safeCreation &&
@@ -3439,7 +3473,10 @@ export class SignAccountOpController
     delete this.#accountOp.activatorCall
 
     // @EntryPoint activation for SA
-    if (this.baseAccount.shouldIncludeActivatorCall(this.accountOp.gasFeePayment.paidBy)) {
+    if (
+      this.accountOp.gasFeePayment &&
+      this.baseAccount.shouldIncludeActivatorCall(this.accountOp.gasFeePayment.paidBy)
+    ) {
       this.#accountOp.activatorCall = getActivatorCall(this.accountOp.accountAddr)
     }
 
@@ -3559,6 +3596,12 @@ export class SignAccountOpController
         if (isQuickBroadcast && broadcastOption === BROADCAST_OPTIONS.byBundler) {
           this.status = { type: SigningStatus.SafeQuickBroadcastBundler }
         }
+      } else if (!this.accountOp.gasFeePayment || !this.selectedOption) {
+        // Only collecting a Safe signature goes without a fee payment, everything below pays it
+        return this.#emitSigningErrorAndResetToReadyToSign({
+          message: missingGasFeePaymentMessage,
+          accountState
+        })
       } else if (
         broadcastOption === BROADCAST_OPTIONS.bySelf ||
         broadcastOption === BROADCAST_OPTIONS.bySelf7702
@@ -4343,8 +4386,14 @@ export class SignAccountOpController
         this.status.type === SigningStatus.Queued &&
         (this.accountOp.signed || []).length >= this.threshold
       ) {
-        this.status.type = SigningStatus.ReadyToSign
-        this.emitUpdate()
+        // Executing needs a payer, which the user may still have to pick
+        // (see isSafeFeePayerChoiceRequired), so without one the status is worked out again
+        if (this.accountOp.gasFeePayment) {
+          this.status.type = SigningStatus.ReadyToSign
+          this.emitUpdate()
+        } else {
+          this.updateStatus()
+        }
       }
     })().finally(() => {
       this.signAndBroadcastPromise = undefined
@@ -4794,6 +4843,7 @@ export class SignAccountOpController
       threshold: this.threshold,
       canBroadcast: this.canBroadcast,
       isFeePayerNotLinkedToSafe: this.isFeePayerNotLinkedToSafe,
+      isSafeFeePayerChoiceRequired: this.isSafeFeePayerChoiceRequired,
       hasSafeApiFailed: this.hasSafeApiFailed,
       hardwareWalletSigningRequest: this.hardwareWalletSigningRequest,
       safeEip712Data: this.safeEip712Data,
