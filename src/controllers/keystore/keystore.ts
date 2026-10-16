@@ -1610,7 +1610,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     paidByKeyType?: Key['type']
   ): Key | Error {
     const feePayerKeys = this.keys.filter((key) => key.addr === paidByKeyAddr)
-    let feePayerKey = feePayerKeys[0]
+    // A private key pays on its own, so it is the default, like it is for signing
+    let feePayerKey = feePayerKeys.find((key) => key.type === 'internal') ?? feePayerKeys[0]
 
     if (paidByKeyType) {
       feePayerKey = feePayerKeys.find((key) => key.type === paidByKeyType) || feePayerKey

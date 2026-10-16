@@ -982,3 +982,82 @@ describe('app data sync between two devices', () => {
     expect(importingKeystore.seeds).toHaveLength(1)
   })
 })
+
+describe('KeystoreController fee payer key', () => {
+  const accountAddr = '0x0000000000000000000000000000000000000001'
+  const hardwareOnlyAddr = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
+  let keystoreCtrl: IKeystoreController
+
+  const externalKey = (addr: string, type: 'trezor' | 'ledger'): ExternalKey => ({
+    addr,
+    type,
+    dedicatedToOneSA: false,
+    label: `${type} key`,
+    meta: {
+      deviceId: '1',
+      deviceModel: type,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      index: 1,
+      createdAt: new Date().getTime()
+    }
+  })
+
+  beforeEach(async () => {
+    const storageCtrl = new StorageController(produceMemoryStore())
+    const uiCtrl = new UiController({ uiManager })
+    keystoreCtrl = new KeystoreController('default', storageCtrl, keystoreSigners, uiCtrl)
+    await keystoreCtrl.addSecret('password', pass, '', false)
+    await keystoreCtrl.unlockWithSecret('password', pass)
+    // The hardware wallet keys are added first, so the private key is not the first one stored
+    await keystoreCtrl.addKeysExternallyStored([
+      externalKey(keyPublicAddress, 'trezor'),
+      externalKey(keyPublicAddress, 'ledger'),
+      externalKey(hardwareOnlyAddr, 'trezor'),
+      externalKey(hardwareOnlyAddr, 'ledger')
+    ])
+    await keystoreCtrl.addKeys([
+      {
+        addr: keyPublicAddress,
+        label: 'Key 1',
+        type: 'internal',
+        privateKey: privKey,
+        dedicatedToOneSA: true,
+        meta: { createdAt: new Date().getTime() }
+      }
+    ])
+  })
+
+  test('defaults to the private key, even when it was added after the other keys', () => {
+    const key = keystoreCtrl.getFeePayerKey(accountAddr, keyPublicAddress)
+
+    expect(key).not.toBeInstanceOf(Error)
+    expect(key).toEqual(expect.objectContaining({ addr: keyPublicAddress, type: 'internal' }))
+  })
+
+  test('returns the kind of key asked for over the private key', () => {
+    const key = keystoreCtrl.getFeePayerKey(accountAddr, keyPublicAddress, 'ledger')
+
+    expect(key).toEqual(expect.objectContaining({ addr: keyPublicAddress, type: 'ledger' }))
+  })
+
+  test('falls back to the private key when the kind asked for is not stored', () => {
+    const key = keystoreCtrl.getFeePayerKey(accountAddr, keyPublicAddress, 'lattice')
+
+    expect(key).toEqual(expect.objectContaining({ addr: keyPublicAddress, type: 'internal' }))
+  })
+
+  test('defaults to the first key stored when there is no private key', () => {
+    const key = keystoreCtrl.getFeePayerKey(accountAddr, hardwareOnlyAddr)
+
+    expect(key).toEqual(expect.objectContaining({ addr: hardwareOnlyAddr, type: 'trezor' }))
+  })
+
+  test('returns an error when no key for the address is stored', () => {
+    const key = keystoreCtrl.getFeePayerKey(
+      accountAddr,
+      '0x0000000000000000000000000000000000000002'
+    )
+
+    expect(key).toBeInstanceOf(Error)
+  })
+})

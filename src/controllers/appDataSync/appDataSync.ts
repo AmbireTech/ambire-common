@@ -14,8 +14,10 @@ import { ISwapAndBridgeController } from '@/interfaces/swapAndBridge'
 import { IUiController } from '@/interfaces/ui'
 import {
   APP_DATA_SYNC_PAYLOAD_VERSION,
+  AppDataSyncNewerVersionError,
   AppDataSyncExportOptions,
   AppDataSyncPayload,
+  getAppDataSyncKeyAddrs,
   parseAppDataSyncPayload,
   serializeAppDataSyncPayload
 } from '@/libs/appDataSync/appDataSync'
@@ -131,8 +133,10 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
           error: new Error('appDataSync: nothing to sync')
         })
 
-      const keyAddrs = Array.from(new Set(accounts.flatMap((account) => account.associatedKeys)))
-      const { secret, keys, seeds } = await this.#keystore.exportForSync(keyAddrs, includeSeeds)
+      const { secret, keys, seeds } = await this.#keystore.exportForSync(
+        getAppDataSyncKeyAddrs(accounts),
+        includeSeeds
+      )
 
       return serializeAppDataSyncPayload({
         v: APP_DATA_SYNC_PAYLOAD_VERSION,
@@ -178,7 +182,9 @@ export class AppDataSyncController extends EventEmitter implements IAppDataSyncC
         throw new EmittableError({
           level: 'expected',
           message:
-            'The scanned QR codes do not contain Ambire accounts, or not all of them were scanned. Please try again.',
+            error instanceof AppDataSyncNewerVersionError
+              ? 'The QR codes come from a newer version of Ambire. Please update this app and scan them again.'
+              : 'The scanned QR codes do not contain Ambire accounts, or not all of them were scanned. Please try again.',
           error: error instanceof Error ? error : new Error('appDataSync: invalid sync payload')
         })
       }

@@ -682,7 +682,8 @@ const init = async (
     networks: networksCtrl,
     providers: providersCtrl,
     storage: storageCtrl,
-    accounts: accountsCtrl
+    accounts: accountsCtrl,
+    keystore
   })
   const activity = new ActivityController(
     storageCtrl,
@@ -1037,41 +1038,34 @@ describe('SignAccountOp Controller ', () => {
   describe('refetchAccountState', () => {
     test('refreshes the account state and clears the loading state', async () => {
       const { controller, accountsCtrl } = await initDefaultFeeSelection()
-      const accountState =
-        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
-          controller.accountOp.chainId.toString()
-        ]!
-      const forceFetchPendingStateSpy = jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
-        .mockResolvedValue(accountState)
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
+        .mockResolvedValue(undefined)
 
       await expect(controller.refetchAccountState()).resolves.toBeUndefined()
 
-      expect(forceFetchPendingStateSpy).toHaveBeenCalledWith(
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(
         controller.accountOp.accountAddr,
-        controller.accountOp.chainId
+        'pending',
+        [controller.accountOp.chainId],
+        true
       )
       expect(controller.isRefetchingAccountState).toBe(false)
     })
 
     test('ignores concurrent refresh attempts', async () => {
       const { controller, accountsCtrl } = await initDefaultFeeSelection()
-      const accountState =
-        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
-          controller.accountOp.chainId.toString()
-        ]!
       const pendingRefresh = createDeferred<void>()
-      const forceFetchPendingStateSpy = jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
         .mockImplementation(async () => {
           await pendingRefresh.promise
-          return accountState
         })
 
       const firstRefresh = controller.refetchAccountState()
       await controller.refetchAccountState()
 
-      expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(1)
+      expect(updateAccountStateSpy).toHaveBeenCalledTimes(1)
       expect(controller.isRefetchingAccountState).toBe(true)
 
       pendingRefresh.resolve()
@@ -1083,15 +1077,11 @@ describe('SignAccountOp Controller ', () => {
     test('emits fetch errors without rejecting and allows retrying', async () => {
       const { restore } = suppressConsole()
       const { controller, accountsCtrl } = await initDefaultFeeSelection()
-      const accountState =
-        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
-          controller.accountOp.chainId.toString()
-        ]!
       const fetchError = new Error('RPC timeout')
-      const forceFetchPendingStateSpy = jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
         .mockRejectedValueOnce(fetchError)
-        .mockResolvedValueOnce(accountState)
+        .mockResolvedValueOnce(undefined)
       const onError = jest.fn()
       controller.onError(onError)
 
@@ -1106,7 +1096,7 @@ describe('SignAccountOp Controller ', () => {
 
       await expect(controller.refetchAccountState()).resolves.toBeUndefined()
 
-      expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(2)
+      expect(updateAccountStateSpy).toHaveBeenCalledTimes(2)
       expect(controller.isRefetchingAccountState).toBe(false)
       restore()
     })
@@ -1209,11 +1199,11 @@ describe('SignAccountOp Controller ', () => {
   test('uses the saved fee speed as the default for a new signing request', async () => {
     const { controller } = await initDefaultFeeSelection(undefined, {
       initialSetStorage: async (storageCtrl) => {
-        await storageCtrl.set('signAccountOpFeeSpeedPreference', { '1': FeeSpeed.Medium })
+        await storageCtrl.set('signAccountOpFeeSpeedPreference', { '1': FeeSpeed.Ape })
       }
     })
 
-    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Ape)
   })
 
   test('ignores a saved fee speed belonging to another chain', async () => {
@@ -1223,7 +1213,8 @@ describe('SignAccountOp Controller ', () => {
       }
     })
 
-    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Fast)
+    // falls back to the default speed
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
   })
 
   test('persists a user selected fee speed right away, for the current chain only', async () => {
@@ -1868,8 +1859,8 @@ describe('SignAccountOp Controller ', () => {
           maxPriorityFeePerGas: toBeHex(1000000000n) as Hex
         },
         medium: {
-          maxFeePerGas: toBeHex(4000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(2000000000n) as Hex
+          maxFeePerGas: toBeHex(10000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
         },
         fast: {
           maxFeePerGas: toBeHex(10000000000n) as Hex,
@@ -1887,6 +1878,8 @@ describe('SignAccountOp Controller ', () => {
       paidBy: smartAccount.addr,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal',
+      // the $1 USDC fee expected below is calculated with the medium gas price
+      speed: FeeSpeed.Fast,
       hasNewEstimation: true
     })
 
@@ -2344,8 +2337,9 @@ describe('Negative cases', () => {
       '0x0000000000000000000000000000000000000000'
     )
     expect(controller.accountOp.gasFeePayment!.feeTokenChainId).toEqual(137n)
-    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(300n)
-    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(600n)
+    // the default speed is medium
+    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(200n)
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(400n)
 
     const typedData = getTypedData(
       network.chainId,

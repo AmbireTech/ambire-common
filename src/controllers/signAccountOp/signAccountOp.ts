@@ -334,7 +334,7 @@ export class SignAccountOpController
 
   pendingFeeTokenPreference: SignAccountOpFeeTokenPreference | null = null
 
-  selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Fast
+  selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Medium
 
   /**
    * The selected payment option for txn broadcasting.
@@ -556,7 +556,8 @@ export class SignAccountOpController
     this.#signAccountOpPreference = signAccountOpPreference
     this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
     this.selectedFeeSpeed =
-      this.#signAccountOpPreference.feeSpeedPreference[network.chainId.toString()] || FeeSpeed.Fast
+      this.#signAccountOpPreference.feeSpeedPreference[network.chainId.toString()] ||
+      FeeSpeed.Medium
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
@@ -775,7 +776,7 @@ export class SignAccountOpController
     this.#paidBy = null
     this.feeTokenResult = null
     this.selectedOption = undefined
-    this.selectedFeeSpeed = FeeSpeed.Fast
+    this.selectedFeeSpeed = FeeSpeed.Medium
     this.feeSpeeds = {}
     this.#updateAccountOp({ gasFeePayment: null })
   }
@@ -846,9 +847,11 @@ export class SignAccountOpController
     this.emitUpdate()
 
     try {
-      await this.#accounts.forceFetchPendingState(
+      await this.#accounts.updateAccountState(
         this.accountOp.accountAddr,
-        this.accountOp.chainId
+        'pending',
+        [this.accountOp.chainId],
+        true
       )
       await this.#simulateAndEstimate()
     } catch (error) {
@@ -1800,11 +1803,17 @@ export class SignAccountOpController
       pendingPortfolioState.criticalError?.simulationErrorMsg.indexOf('nonce did not increment') !==
         -1
     ) {
-      const pendingAccountState = await this.#accounts.forceFetchPendingState(
+      await this.#accounts.updateAccountState(
         this.accountOp.accountAddr,
-        this.accountOp.chainId
+        'pending',
+        [this.accountOp.chainId],
+        true
       )
-      this.#updateNonce(pendingAccountState.nonce)
+      const pendingAccountState =
+        this.#accounts.accountStates[this.accountOp.accountAddr]?.[
+          this.accountOp.chainId.toString()
+        ]
+      if (pendingAccountState) this.#updateNonce(pendingAccountState.nonce)
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -2280,7 +2289,7 @@ export class SignAccountOpController
     this.hasCustomGasPrices = false
     this.gasFeeChangedConfirmationRequired = false
     this.previousFee = null
-    this.selectedFeeSpeed = FeeSpeed.Fast
+    this.selectedFeeSpeed = FeeSpeed.Medium
     this.#paidBy = null
     this.feeTokenResult = null
     this.pendingFeeTokenPreference = null
@@ -2682,9 +2691,9 @@ export class SignAccountOpController
       return
     }
 
-    // set fast if available
-    if (speeds.find(({ type, disabled }) => type === FeeSpeed.Fast && !disabled)) {
-      this.selectedFeeSpeed = FeeSpeed.Fast
+    // set medium if available
+    if (speeds.find(({ type, disabled }) => type === FeeSpeed.Medium && !disabled)) {
+      this.selectedFeeSpeed = FeeSpeed.Medium
       return
     }
 
@@ -3129,7 +3138,12 @@ export class SignAccountOpController
       if (newEstimate instanceof Error) {
         if (counter === 0) {
           await this.#accounts
-            .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+            .updateAccountState(
+              this.accountOp.accountAddr,
+              'pending',
+              [this.accountOp.chainId],
+              true
+            )
 
             .catch((e) => console.error(e))
           return this.#getInitialUserOp(true, eip7702Auth, 1)
@@ -3259,7 +3273,7 @@ export class SignAccountOpController
     if (errorResponse.message.indexOf('invalid account nonce') !== -1) {
       // continue on error as this is an attempt for an UX improvement
       await this.#accounts
-        .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+        .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
 
         .catch((e) => console.error(e))
     }
@@ -4377,7 +4391,7 @@ export class SignAccountOpController
           ? 'Broadcast failed because of a pending transaction. Please try again'
           : 'Signer key not supported on this network'
         this.#accounts
-          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
       } else if (isUnderpriced(originalMessage)) {
@@ -4405,7 +4419,7 @@ export class SignAccountOpController
       ) {
         message = 'Pending transaction detected. Please try again in a few seconds'
         this.#accounts
-          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
       }
