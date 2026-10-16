@@ -82,7 +82,7 @@ const DEFAULT_VALIDATION_FORM_MSGS: {
   recipientAddress: {
     message: '',
     severity: 'error',
-    gate: 'block'
+    shouldHold: false
   }
 }
 

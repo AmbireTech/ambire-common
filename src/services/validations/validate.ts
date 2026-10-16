@@ -126,28 +126,26 @@ function getTimeAgo(date: Date): string {
 }
 
 /**
- * What the form buttons must do for the current recipient:
- * - 'none' - the normal button
- * - 'hold' - the user must hold the button to proceed (a risk the user can accept)
- * - 'block' - the button is disabled (a risk the user must not accept)
+ * The result of one check of the recipient.
+ * `shouldHold` (hold-to-proceed) is possible only for a warning: an error already disables the
+ * buttons of the form, and a success message needs no confirmation from the user.
  */
-export type RecipientGate = 'none' | 'hold' | 'block'
+type RecipientCheckResult =
+  | { severity: 'success' | 'error'; message: string; shouldHold?: never }
+  | { severity: 'warning'; message: string; shouldHold?: boolean }
 
-export type RecipientValidation = Validation & { gate: RecipientGate }
+/** Returns `undefined` when the check doesn't apply to the recipient */
+type RecipientCheck = () => RecipientCheckResult | undefined
 
-type RecipientRule = {
-  /** Lazy, so that a rule that is not needed does not do any work */
-  applies: () => boolean
-  validation: () => Validation
-  gate: RecipientGate
+export type RecipientValidation = Validation & {
+  /** True if the user must hold the button to proceed (a risk the user can accept) */
+  shouldHold: boolean
 }
-
-const GATE_STRENGTH: { [key in RecipientGate]: number } = { none: 0, hold: 1, block: 2 }
 
 const validateSendTransferAddress = (
   address: string,
   selectedAccAddr: string,
-  addressConfirmed: any,
+  addressConfirmed: boolean,
   isRecipientAddressUnknown: boolean,
   isRecipientHumanizerKnownTokenOrSmartContract: boolean,
   _isDomain: boolean,
@@ -168,141 +166,125 @@ const validateSendTransferAddress = (
     return {
       message: '',
       severity: 'success',
-      gate: 'none'
+      shouldHold: false
     }
   }
 
-  const getUnsupportedNetworkReason = () => {
-    if (!chainId) return undefined
-
-    const accountNetworks = getSupportedNetworks(networks, accountStates, recepientAccount)
-    const foundNetwork = accountNetworks.find((n) => n.chainId === chainId)
-    if (foundNetwork && foundNetwork.isNotSupported && foundNetwork.notSupportedReason) {
-      return foundNetwork.notSupportedReason
-    }
-    return undefined
-  }
-
-  // The only gate that depends on the agreement of the user: the message stays the same, but the
-  // hold is released once the user agrees to send to the unknown address.
-  const isUnknownRecipientHold =
-    isRecipientAddressUnknown &&
-    !addressConfirmed &&
-    !isRecipientHumanizerKnownTokenOrSmartContract &&
-    !!isRecipientAddressFirstTimeSend
-
-  // The single source of truth for both the message under the input and the state of the buttons,
-  // so a rule can't require a hold (or a block) without also explaining why.
-  // The message comes from the FIRST rule that applies, so the order is the priority of the messages.
-  // The gate is the STRONGEST gate of ALL the rules that apply, so a more important message
+  // The single source of truth for both the message under the input and the hold-to-proceed state
+  // of the buttons, so a check can't require a hold without also explaining why.
+  // The message comes from the FIRST check that applies, so the order is the priority of the messages.
+  // The hold is required if ANY check that applies requires it, so a more important message
   // can't hide a lower priority hold.
-  const rules: RecipientRule[] = [
+  const checks: RecipientCheck[] = [
     // A known scam address is the most severe problem, so it takes priority over every other message.
-    // The severity is 'error' and the gate is 'block' - sending to a known scam address is never
-    // something we let the user proceed with.
-    {
-      applies: () => !!isRecipientAddressBlacklisted,
-      validation: () => ({
+    // The severity is 'error' so that the buttons of the form stay disabled - sending to a known scam
+    // address is never something we let the user proceed with.
+    () => {
+      if (!isRecipientAddressBlacklisted) return undefined
+
+      return {
         message: 'This address is known for stealing funds. Anything you send to it will be lost.',
         severity: 'error'
-      }),
-      gate: 'block'
+      }
     },
     // A domain the user sent to before now resolves to a different address - it may have expired and
     // been re-pointed.
-    {
-      applies: () => !!recipientDomainAddressChange,
-      validation: () => ({
+    () => {
+      if (!recipientDomainAddressChange) return undefined
+
+      return {
         message:
           'This name now resolves to a different address than the last time you sent to it. Verify the new recipient before proceeding.',
-        severity: 'warning'
-      }),
-      gate: 'hold'
+        severity: 'warning',
+        shouldHold: true
+      }
     },
-    {
-      applies: () => address.toLowerCase() === selectedAccAddr.toLowerCase(),
-      validation: () => ({
+    () => {
+      if (address.toLowerCase() !== selectedAccAddr.toLowerCase()) return undefined
+
+      return {
         message: "You're about to send funds back to yourself.",
         severity: 'warning'
-      }),
-      gate: 'none'
+      }
     },
     // check if the account is supported on the receiving network
-    {
-      applies: () => !!getUnsupportedNetworkReason(),
-      validation: () => ({
-        message: getUnsupportedNetworkReason() || '',
+    () => {
+      if (!chainId) return undefined
+
+      const accountNetworks = getSupportedNetworks(networks, accountStates, recepientAccount)
+      const foundNetwork = accountNetworks.find((n) => n.chainId === chainId)
+      if (!foundNetwork || !foundNetwork.isNotSupported || !foundNetwork.notSupportedReason) {
+        return undefined
+      }
+
+      return {
+        message: foundNetwork.notSupportedReason,
         severity: 'warning'
-      }),
-      gate: 'none'
+      }
     },
-    {
-      applies: () => isRecipientHumanizerKnownTokenOrSmartContract,
-      validation: () => ({
+    () => {
+      if (!isRecipientHumanizerKnownTokenOrSmartContract) return undefined
+
+      return {
         message: 'You are trying to send tokens to a smart contract. Doing so would burn them.',
         severity: 'error'
-      }),
-      gate: 'block'
+      }
     },
     // poisoning detected - require hold-to-proceed as an additional safety step
-    {
-      applies: () => !!addressPoisoningMatch,
-      validation: () => ({
+    () => {
+      if (!addressPoisoningMatch) return undefined
+
+      return {
         message: getAddressPoisoningWarningMessage(
-          formatAddressPoisoningMatchForMessage(addressPoisoningMatch as AddressPoisoningMatch)
+          formatAddressPoisoningMatchForMessage(addressPoisoningMatch)
         ),
-        severity: 'warning'
-      }),
-      gate: 'hold'
+        severity: 'warning',
+        shouldHold: true
+      }
     },
-    {
-      applies: () => !!isRecipientAddressViewOnly,
-      validation: () => ({
+    () => {
+      if (!isRecipientAddressViewOnly) return undefined
+
+      return {
         message: VIEW_ONLY_RECIPIENT_MESSAGE,
-        severity: 'warning'
-      }),
-      gate: 'hold'
+        severity: 'warning',
+        shouldHold: true
+      }
     },
-    {
-      applies: () => !!isRecipientAddressFirstTimeSend,
-      validation: () => {
-        let message = isRecipientAddressUnknown
+    // The only check that depends on the agreement of the user: the message stays the same, but
+    // the hold is released once the user agrees to send to the unknown address.
+    () => {
+      if (!isRecipientAddressFirstTimeSend) return undefined
+
+      return {
+        message: isRecipientAddressUnknown
           ? FIRST_TIME_SEND_MESSAGE
-          : FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE
-        if (lastRecipientTransactionDate) {
-          message = `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`
-        }
-        return {
-          message,
-          severity: lastRecipientTransactionDate ? 'success' : 'warning'
-        }
-      },
-      gate: isUnknownRecipientHold ? 'hold' : 'none'
+          : FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE,
+        severity: 'warning',
+        shouldHold:
+          isRecipientAddressUnknown &&
+          !addressConfirmed &&
+          !isRecipientHumanizerKnownTokenOrSmartContract
+      }
     },
-    {
-      applies: () => !!lastRecipientTransactionDate,
-      validation: () => ({
-        message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate as Date)}.`,
+    () => {
+      if (!lastRecipientTransactionDate) return undefined
+
+      return {
+        message: `Last transaction to this address was ${getTimeAgo(lastRecipientTransactionDate)}.`,
         severity: 'success'
-      }),
-      gate: 'none'
+      }
     }
   ]
 
-  const appliedRules = rules.filter((rule) => rule.applies())
+  const results = checks
+    .map((check) => check())
+    .filter((result): result is RecipientCheckResult => !!result)
 
-  const gate = appliedRules.reduce<RecipientGate>(
-    (strongest, rule) =>
-      GATE_STRENGTH[rule.gate] > GATE_STRENGTH[strongest] ? rule.gate : strongest,
-    'none'
-  )
+  const [firstResult] = results
+  const validation: Validation = firstResult ?? { severity: 'success', message: '' }
 
-  const validation: Validation = appliedRules[0]?.validation() ?? {
-    severity: 'success',
-    message: ''
-  }
-
-  return { ...validation, gate }
+  return { ...validation, shouldHold: results.some((result) => !!result.shouldHold) }
 }
 
 const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult): Validation => {

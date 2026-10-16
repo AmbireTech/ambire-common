@@ -9,6 +9,8 @@ const RECIPIENT = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'
 const SELECTED_ACCOUNT = '0xf9D6794F16CDbdC5b4873AEdeF4dC69d8D5edcaD'
 const CHANGED_MESSAGE =
   'This name now resolves to a different address than the last time you sent to it. Verify the new recipient before proceeding.'
+const POISONING_MESSAGE_START = 'Possible address poisoning'
+const POISONING_LOOKALIKE = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA91111'
 const VIEW_ONLY_MESSAGE =
   "This account is view-only in Ambire, so you can't move funds out of it from here. Make sure you can access it before you send."
 const BLACKLISTED_MESSAGE =
@@ -113,14 +115,14 @@ describe('validateSendTransferAddress - view-only recipient', () => {
 
     expect(result.message).toBe(VIEW_ONLY_MESSAGE)
     expect(result.severity).toBe('warning')
-    expect(result.gate).toBe('hold')
+    expect(result.shouldHold).toBe(true)
   })
 
   it('does not warn when the recipient is not view-only', () => {
     const result = validate({ isRecipientAddressViewOnly: false })
 
     expect(result.message).not.toBe(VIEW_ONLY_MESSAGE)
-    expect(result.gate).toBe('none')
+    expect(result.shouldHold).toBe(false)
   })
 
   it('keeps the hold even if a higher priority warning provides the message', () => {
@@ -130,7 +132,7 @@ describe('validateSendTransferAddress - view-only recipient', () => {
     })
 
     expect(result.message).toBe(CHANGED_MESSAGE)
-    expect(result.gate).toBe('hold')
+    expect(result.shouldHold).toBe(true)
   })
 
   it('is not released by the agreement of the user for unknown addresses', () => {
@@ -141,36 +143,97 @@ describe('validateSendTransferAddress - view-only recipient', () => {
       isRecipientAddressUnknownAgreed: true
     })
 
-    expect(result.gate).toBe('hold')
+    expect(result.shouldHold).toBe(true)
   })
 })
 
-describe('validateSendTransferAddress - gate', () => {
-  it('blocks a blacklisted recipient', () => {
-    expect(validate({ isRecipientAddressBlacklisted: true }).gate).toBe('block')
+describe('validateSendTransferAddress - address poisoning', () => {
+  const addressPoisoningMatch: AddressPoisoningMatch = {
+    matchedAddress: POISONING_LOOKALIKE,
+    matchedPrefixCharsCount: 36,
+    matchedSuffixCharsCount: 0
+  }
+
+  it('warns about the look-alike address and requires a hold', () => {
+    const result = validate({ addressPoisoningMatch, isRecipientAddressFirstTimeSend: true })
+
+    expect(result.severity).toBe('warning')
+    expect(result.message.startsWith(POISONING_MESSAGE_START)).toBe(true)
+    expect(result.shouldHold).toBe(true)
   })
 
-  it('blocks a smart contract recipient', () => {
-    const result = validate({ isRecipientHumanizerKnownTokenOrSmartContract: true })
-
-    expect(result.severity).toBe('error')
-    expect(result.gate).toBe('block')
-  })
-
-  it('blocks even when other rules require a hold', () => {
+  it('shows the poisoning warning instead of the first-time-send message', () => {
     const result = validate({
-      isRecipientAddressBlacklisted: true,
-      isRecipientAddressViewOnly: true,
+      addressPoisoningMatch,
+      isRecipientAddressFirstTimeSend: true,
+      isRecipientAddressUnknown: true
+    })
+
+    expect(result.message.startsWith(POISONING_MESSAGE_START)).toBe(true)
+  })
+
+  it('requires a hold even after the user agrees to send to the unknown address', () => {
+    const result = validate({
+      addressPoisoningMatch,
+      isRecipientAddressFirstTimeSend: true,
+      isRecipientAddressUnknown: true,
+      isRecipientAddressUnknownAgreed: true
+    })
+
+    expect(result.shouldHold).toBe(true)
+  })
+
+  it('keeps the hold when a higher priority warning provides the message', () => {
+    const result = validate({
+      addressPoisoningMatch,
       recipientDomainAddressChange: { previousAddress: SELECTED_ACCOUNT }
     })
 
-    expect(result.gate).toBe('block')
+    expect(result.message).toBe(CHANGED_MESSAGE)
+    expect(result.shouldHold).toBe(true)
+  })
+
+  it('is overridden by the blacklist error, which disables the buttons', () => {
+    const result = validate({ addressPoisoningMatch, isRecipientAddressBlacklisted: true })
+
+    expect(result.message).toBe(BLACKLISTED_MESSAGE)
+    expect(result.severity).toBe('error')
+  })
+
+  it('does not require a hold when there is no poisoning match', () => {
+    const result = validate({ addressPoisoningMatch: null })
+
+    expect(result.message.startsWith(POISONING_MESSAGE_START)).toBe(false)
+    expect(result.shouldHold).toBe(false)
+  })
+})
+
+describe('validateSendTransferAddress - hold-to-proceed', () => {
+  it('does not hold for errors, because they disable the buttons instead', () => {
+    const blacklisted = validate({ isRecipientAddressBlacklisted: true })
+    const smartContract = validate({ isRecipientHumanizerKnownTokenOrSmartContract: true })
+
+    expect(blacklisted.severity).toBe('error')
+    expect(blacklisted.shouldHold).toBe(false)
+    expect(smartContract.severity).toBe('error')
+    expect(smartContract.shouldHold).toBe(false)
+  })
+
+  it('does not hold for an unknown first-time smart contract recipient', () => {
+    const result = validate({
+      isRecipientHumanizerKnownTokenOrSmartContract: true,
+      isRecipientAddressUnknown: true,
+      isRecipientAddressFirstTimeSend: true
+    })
+
+    expect(result.severity).toBe('error')
+    expect(result.shouldHold).toBe(false)
   })
 
   it('requires a hold for a changed domain address', () => {
     expect(
-      validate({ recipientDomainAddressChange: { previousAddress: SELECTED_ACCOUNT } }).gate
-    ).toBe('hold')
+      validate({ recipientDomainAddressChange: { previousAddress: SELECTED_ACCOUNT } }).shouldHold
+    ).toBe(true)
   })
 
   it('requires a hold for an unknown first-time recipient until the user agrees', () => {
@@ -181,9 +244,9 @@ describe('validateSendTransferAddress - gate', () => {
     const beforeAgreeing = validate(unknownFirstTime)
     const afterAgreeing = validate({ ...unknownFirstTime, isRecipientAddressUnknownAgreed: true })
 
-    expect(beforeAgreeing.gate).toBe('hold')
+    expect(beforeAgreeing.shouldHold).toBe(true)
     // The agreement releases only the hold - the message stays the same
-    expect(afterAgreeing.gate).toBe('none')
+    expect(afterAgreeing.shouldHold).toBe(false)
     expect(afterAgreeing.message).toBe(beforeAgreeing.message)
   })
 
@@ -193,19 +256,26 @@ describe('validateSendTransferAddress - gate', () => {
       isRecipientAddressFirstTimeSend: true
     })
 
-    expect(result.gate).toBe('none')
+    expect(result.shouldHold).toBe(false)
   })
 
   it('does not require a hold for a recipient the user already sent to', () => {
     const result = validate({ lastRecipientTransactionDate: new Date() })
 
     expect(result.severity).toBe('success')
-    expect(result.gate).toBe('none')
+    expect(result.shouldHold).toBe(false)
   })
 
-  it('has no gate while the address is invalid or resolving', () => {
-    expect(validate({ recipient: 'not-an-address', isRecipientAddressViewOnly: true }).gate).toBe(
-      'none'
-    )
+  it('does not require a hold when sending to yourself', () => {
+    const result = validate({ recipient: SELECTED_ACCOUNT })
+
+    expect(result.severity).toBe('warning')
+    expect(result.shouldHold).toBe(false)
+  })
+
+  it('does not require a hold while the address is invalid', () => {
+    expect(
+      validate({ recipient: 'not-an-address', isRecipientAddressViewOnly: true }).shouldHold
+    ).toBe(false)
   })
 })
