@@ -1,6 +1,8 @@
 import { expect } from '@jest/globals'
 
-import { AccountStates } from '../../interfaces/account'
+import { AMBIRE_ACCOUNT_FACTORY } from '../../consts/deploy'
+import { Account, AccountStates } from '../../interfaces/account'
+import { networks as defaultNetworks } from '../../consts/networks'
 import { Network } from '../../interfaces/network'
 import { AddressPoisoningMatch } from '../../interfaces/transfer'
 import { validateSendTransferAddress } from './validate'
@@ -32,6 +34,9 @@ const validate = (overrides: {
   addressPoisoningMatch?: AddressPoisoningMatch | null
   lastRecipientTransactionDate?: Date | null
   recipient?: string
+  networks?: Network[]
+  recipientAccount?: Account
+  chainId?: bigint
 }) =>
   validateSendTransferAddress(
     overrides.recipient ?? RECIPIENT,
@@ -41,10 +46,10 @@ const validate = (overrides: {
     overrides.isRecipientHumanizerKnownTokenOrSmartContract ?? false,
     overrides.isDomain ?? true,
     false,
-    networks,
+    overrides.networks ?? networks,
     accountStates,
-    undefined,
-    undefined,
+    overrides.recipientAccount,
+    overrides.chainId,
     overrides.isRecipientAddressFirstTimeSend ?? false,
     overrides.lastRecipientTransactionDate ?? null,
     overrides.addressPoisoningMatch ?? null,
@@ -277,5 +282,135 @@ describe('validateSendTransferAddress - hold-to-proceed', () => {
     expect(
       validate({ recipient: 'not-an-address', isRecipientAddressViewOnly: true }).shouldHold
     ).toBe(false)
+  })
+})
+
+describe('validateSendTransferAddress - which result wins', () => {
+  const SMART_CONTRACT_MESSAGE =
+    'You are trying to send tokens to a smart contract. Doing so would burn them.'
+
+  it('shows an error over a warning, so that the buttons are disabled', () => {
+    const result = validate({
+      isRecipientHumanizerKnownTokenOrSmartContract: true,
+      recipientDomainAddressChange: { previousAddress: SELECTED_ACCOUNT }
+    })
+
+    expect(result.message).toBe(SMART_CONTRACT_MESSAGE)
+    expect(result.severity).toBe('error')
+    expect(result.shouldHold).toBe(false)
+  })
+
+  it('shows the blacklist error before the smart contract error', () => {
+    const result = validate({
+      isRecipientAddressBlacklisted: true,
+      isRecipientHumanizerKnownTokenOrSmartContract: true
+    })
+
+    expect(result.message).toBe(BLACKLISTED_MESSAGE)
+  })
+
+  it('shows a warning that requires a hold over a plain warning', () => {
+    const result = validate({ recipient: SELECTED_ACCOUNT, isRecipientAddressViewOnly: true })
+
+    // Otherwise the self-send warning would show and the hold would be lost
+    expect(result.message).toBe(VIEW_ONLY_MESSAGE)
+    expect(result.shouldHold).toBe(true)
+  })
+
+  it('shows a plain warning over a success message', () => {
+    const result = validate({
+      recipient: SELECTED_ACCOUNT,
+      lastRecipientTransactionDate: new Date()
+    })
+
+    expect(result.severity).toBe('warning')
+    expect(result.shouldHold).toBe(false)
+  })
+
+  it('shows the plain warning once the user agrees and the hold is released', () => {
+    // The first-time-send warning requires a hold until the user agrees
+    const unknownFirstTime = {
+      recipient: SELECTED_ACCOUNT,
+      isRecipientAddressUnknown: true,
+      isRecipientAddressFirstTimeSend: true
+    }
+
+    expect(validate(unknownFirstTime).shouldHold).toBe(true)
+    expect(validate(unknownFirstTime).message).toBe('First time sending to this address.')
+
+    const afterAgreeing = validate({ ...unknownFirstTime, isRecipientAddressUnknownAgreed: true })
+    expect(afterAgreeing.shouldHold).toBe(false)
+    expect(afterAgreeing.message).toBe("You're about to send funds back to yourself.")
+  })
+})
+
+describe('validateSendTransferAddress - recipient account not supported on the network', () => {
+  const ethereum = defaultNetworks.find((n) => n.chainId === 1n)!
+  const NOT_SUPPORTED_MESSAGE = 'Ambire smart accounts are not supported on this network'
+  // An Ambire v2 smart account, which needs the contracts to be deployed on the network
+  const smartAccount: Account = {
+    addr: RECIPIENT,
+    initialPrivileges: [],
+    associatedKeys: [],
+    creation: {
+      factoryAddr: AMBIRE_ACCOUNT_FACTORY,
+      bytecode: '0x',
+      salt: '0x'
+    },
+    preferences: { label: 'Smart account', pfp: RECIPIENT }
+  }
+  const networkWithoutContracts: Network = { ...ethereum, areContractsDeployed: false }
+  const unsupported = {
+    networks: [networkWithoutContracts],
+    recipientAccount: smartAccount,
+    chainId: ethereum.chainId
+  }
+
+  it('warns with the reason, without requiring a hold', () => {
+    const result = validate(unsupported)
+
+    expect(result.message).toBe(NOT_SUPPORTED_MESSAGE)
+    expect(result.severity).toBe('warning')
+    // Only an error disables the buttons, so the user can still proceed
+    expect(result.shouldHold).toBe(false)
+  })
+
+  it('does not warn when the account is supported on the network', () => {
+    const result = validate({
+      ...unsupported,
+      networks: [{ ...ethereum, areContractsDeployed: true, hasRelayer: true }]
+    })
+
+    expect(result.message).not.toBe(NOT_SUPPORTED_MESSAGE)
+  })
+
+  it('does not warn when no network is selected', () => {
+    expect(validate({ ...unsupported, chainId: undefined }).message).not.toBe(NOT_SUPPORTED_MESSAGE)
+  })
+
+  it('does not warn when the recipient is not an account of the wallet', () => {
+    expect(validate({ ...unsupported, recipientAccount: undefined }).message).not.toBe(
+      NOT_SUPPORTED_MESSAGE
+    )
+  })
+
+  it('shows the warning over a success message', () => {
+    const result = validate({ ...unsupported, lastRecipientTransactionDate: new Date() })
+
+    expect(result.message).toBe(NOT_SUPPORTED_MESSAGE)
+  })
+
+  it('shows a warning that requires a hold over it', () => {
+    const result = validate({ ...unsupported, isRecipientAddressViewOnly: true })
+
+    expect(result.message).toBe(VIEW_ONLY_MESSAGE)
+    expect(result.shouldHold).toBe(true)
+  })
+
+  it('shows an error over it', () => {
+    const result = validate({ ...unsupported, isRecipientAddressBlacklisted: true })
+
+    expect(result.message).toBe(BLACKLISTED_MESSAGE)
+    expect(result.severity).toBe('error')
   })
 })

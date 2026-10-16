@@ -142,6 +142,17 @@ export type RecipientValidation = Validation & {
   shouldHold: boolean
 }
 
+/**
+ * The lower the rank, the more important the result. An error comes first because it disables the
+ * buttons. A warning that requires a hold comes before a plain warning, so that a plain warning
+ * can't hide a hold. A success message comes last.
+ */
+const getRecipientCheckRank = (result: RecipientCheckResult) => {
+  if (result.severity === 'error') return 0
+  if (result.severity === 'warning') return result.shouldHold ? 1 : 2
+  return 3
+}
+
 const validateSendTransferAddress = (
   address: string,
   selectedAccAddr: string,
@@ -172,9 +183,10 @@ const validateSendTransferAddress = (
 
   // The single source of truth for both the message under the input and the hold-to-proceed state
   // of the buttons, so a check can't require a hold without also explaining why.
-  // The message comes from the FIRST check that applies, so the order is the priority of the messages.
-  // The hold is required if ANY check that applies requires it, so a more important message
-  // can't hide a lower priority hold.
+  // The checks that apply are sorted by how important they are (see getRecipientCheckRank) and the
+  // FIRST one decides everything: an error disables the buttons, a warning that requires a hold makes
+  // the user hold the button. The order of the checks below is the tie-breaker between equally
+  // important checks (the sort is stable).
   const checks: RecipientCheck[] = [
     // A known scam address is the most severe problem, so it takes priority over every other message.
     // The severity is 'error' so that the buttons of the form stay disabled - sending to a known scam
@@ -280,11 +292,12 @@ const validateSendTransferAddress = (
   const results = checks
     .map((check) => check())
     .filter((result): result is RecipientCheckResult => !!result)
+    .sort((a, b) => getRecipientCheckRank(a) - getRecipientCheckRank(b))
 
   const [firstResult] = results
-  const validation: Validation = firstResult ?? { severity: 'success', message: '' }
+  if (!firstResult) return { severity: 'success', message: '', shouldHold: false }
 
-  return { ...validation, shouldHold: results.some((result) => !!result.shouldHold) }
+  return { ...firstResult, shouldHold: !!firstResult.shouldHold }
 }
 
 const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult): Validation => {
