@@ -28,8 +28,7 @@ const makeRequest = ({
           factoryAddr: accountAddr,
           singleton: accountAddr,
           saltNonce: '0x00',
-          setupData: '0x',
-          version: '1.4.1'
+          setupData: '0x'
         }
       : undefined,
     preferences: { label: 'Test Account', pfp: accountAddr }

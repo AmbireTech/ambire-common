@@ -77,8 +77,15 @@ export class Safe extends BaseAccount {
 
   getAvailableFeeOptions(
     estimation: FullEstimationSummary,
-    feePaymentOptions: FeePaymentOption[]
+    feePaymentOptions: FeePaymentOption[],
+    op: AccountOp
   ): FeePaymentOption[] {
+    if (op.meta?.isSafeDeploy) {
+      return feePaymentOptions.filter(
+        (option) => option.paidBy !== this.account.addr && isNative(option.token)
+      )
+    }
+
     const hasPaymaster =
       estimation.bundlerEstimation &&
       estimation.bundlerEstimation.paymaster.isUsable() &&
@@ -143,6 +150,12 @@ export class Safe extends BaseAccount {
   }
 
   getBroadcastCalldata(accountOp: AccountOp): Hex {
+    if (accountOp.meta?.isSafeDeploy) {
+      const deploymentCall = accountOp.calls[0]
+      if (!deploymentCall) throw new Error('Safe deployment transaction is missing')
+      return deploymentCall.data as Hex
+    }
+
     const exec = new Interface(execTransactionAbi)
     const calls = getSignableCalls(accountOp)
     const coder = new AbiCoder()
@@ -186,7 +199,7 @@ export class Safe extends BaseAccount {
     }
   }
 
-  // we're not deploying safe accounts
+  // Safe deployment does not use Ambire entry point deployment authorization.
   shouldSignDeployAuth(): boolean {
     return false
   }
@@ -227,11 +240,12 @@ export class Safe extends BaseAccount {
 
   /**
    * Final commitment Safe data can differ according to the Safe v.
+   * The version is chain specific, so it's taken from the account state.
    * We encapsulate the logic here
    */
   getTxnTypedData(safeTx: SafeTx) {
-    const safeCreation = this.account.safeCreation!
-    if (safeCreation.version.startsWith('1.1.') || safeCreation.version.startsWith('1.2'))
+    const safeVersion = this.accountState.safeVersion ?? ''
+    if (safeVersion.startsWith('1.1.') || safeVersion.startsWith('1.2'))
       return getSafeV1TypedData(this.account.addr as Hex, safeTx)
 
     return getSafeTypedData(this.network.chainId, this.account.addr as Hex, safeTx)

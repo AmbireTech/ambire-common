@@ -45,6 +45,7 @@ import {
 import { Account, AccountOnchainState, IAccountsController } from '../../interfaces/account'
 import { IActivityController } from '../../interfaces/activity'
 import { Price } from '../../interfaces/assets'
+import { IContractInfoController } from '../../interfaces/contractInfo'
 import { DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
 import { IErc7730Controller } from '../../interfaces/erc7730'
 import { ErrorRef, IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
@@ -105,6 +106,7 @@ import {
   buildRawTransaction
 } from '../../libs/broadcast/broadcast'
 import { getUnauthenticatedDapps, isSigningAuthPlatform } from '../../libs/dapps/helpers'
+import { withDecodedCalls } from '../../libs/decodeCall'
 import { PaymasterErrorReponse, PaymasterSuccessReponse, Sponsor } from '../../libs/erc7677/types'
 import { getHumanReadableBroadcastError } from '../../libs/errorHumanizer'
 import { insufficientPaymasterFunds } from '../../libs/errorHumanizer/errors'
@@ -173,6 +175,7 @@ import { ZERO_ADDRESS } from '../../services/socket/constants'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
 import { withTimeout } from '../../utils/with-timeout'
+import { SELECTOR_LOADING_DEADLINE_MS } from '../contractInfo/contractInfo'
 import { EstimationController } from '../estimation/estimation'
 import { EstimationStatus } from '../estimation/types'
 import { GasPriceController } from '../gasPrice/gasPrice'
@@ -249,6 +252,13 @@ export class SignAccountOpController
   #callRelayer: BindedRelayerCall
 
   #erc7730: IErc7730Controller
+
+  #contractInfo: IContractInfoController
+
+  // Call datas of the current humanization whose selectors are still being fetched
+  #callDatasWithPendingSelectors: Set<string> = new Set()
+
+  #selectorLoadingTimeout?: ReturnType<typeof setTimeout>
 
   #accounts: IAccountsController
 
@@ -441,7 +451,7 @@ export class SignAccountOpController
   /**
    * Should this signAccountOp instance simulate the accountOp it's
    * preparing as well as estimate. Simulaton is required in the
-   * original signAccountOp but should be avoided in swap&bridge
+   * original signAccountOp but should be avoided in swap&bridge and Safe deployments.
    */
   #shouldSimulate: boolean
 
@@ -485,6 +495,7 @@ export class SignAccountOpController
     type,
     callRelayer,
     erc7730,
+    contractInfo,
     accounts,
     networks,
     keystore,
@@ -510,6 +521,7 @@ export class SignAccountOpController
     type?: SignAccountOpType
     callRelayer: BindedRelayerCall
     erc7730: IErc7730Controller
+    contractInfo: IContractInfoController
     accounts: IAccountsController
     networks: INetworksController
     keystore: IKeystoreController
@@ -535,6 +547,7 @@ export class SignAccountOpController
     this.#type = type || 'default'
     this.#callRelayer = callRelayer
     this.#erc7730 = erc7730
+    this.#contractInfo = contractInfo
     this.#accounts = accounts
     this.#keystore = keystore
     this.#portfolio = portfolio
@@ -612,7 +625,7 @@ export class SignAccountOpController
       }),
       this.#featureFlags
     )
-    this.#shouldSimulate = shouldSimulate
+    this.#shouldSimulate = shouldSimulate && !this.#accountOp.meta?.isSafeDeploy
 
     this.#onBroadcastSuccess = onBroadcastSuccess
     if (onBroadcastFailed) this.#onBroadcastFailed = onBroadcastFailed
@@ -834,9 +847,11 @@ export class SignAccountOpController
     this.emitUpdate()
 
     try {
-      await this.#accounts.forceFetchPendingState(
+      await this.#accounts.updateAccountState(
         this.accountOp.accountAddr,
-        this.accountOp.chainId
+        'pending',
+        [this.accountOp.chainId],
+        true
       )
       await this.#simulateAndEstimate()
     } catch (error) {
@@ -865,7 +880,7 @@ export class SignAccountOpController
   }
 
   #updateSafeEip712Data() {
-    if (!this.account.safeCreation) {
+    if (!this.account.safeCreation || this.accountOp.meta?.isSafeDeploy) {
       this.safeEip712Data = null
       return
     }
@@ -1106,8 +1121,16 @@ export class SignAccountOpController
     this.#gasPriceInterval.start({ runImmediately: true, timeout: GAS_PRICE_UPDATE_INTERVAL })
   }
 
+  #withDecodedCalls(humanization: IrCall[]) {
+    return withDecodedCalls(
+      humanization,
+      (data) => this.#contractInfo.decodeCallData(data),
+      (data) => this.#callDatasWithPendingSelectors.has(data)
+    )
+  }
+
   #setHumanization(humanization: IrCall[], existingHumanizationId?: number) {
-    this.#humanization = humanization
+    this.#humanization = this.#withDecodedCalls(humanization)
     this.isHumanizing = false
     const currentHumanizationId = existingHumanizationId ?? this.createHumanizationId()
     this.humanizationId = currentHumanizationId
@@ -1200,7 +1223,60 @@ export class SignAccountOpController
     return true
   }
 
+  #clearSelectorLoading() {
+    clearTimeout(this.#selectorLoadingTimeout)
+    this.#selectorLoadingTimeout = undefined
+    this.#callDatasWithPendingSelectors.clear()
+  }
+
+  #onCallDataSelectorsSettled(humanizationId: number, data: string) {
+    if (!this.isCurrentHumanization(humanizationId)) return
+
+    this.#callDatasWithPendingSelectors.delete(data)
+    if (!this.#callDatasWithPendingSelectors.size) this.#clearSelectorLoading()
+    this.#redecodeHumanization(humanizationId)
+  }
+
+  /**
+   * Fetches the selectors of every call without holding back the humanization. Each call shows
+   * as loading until its own selectors arrive, or until SELECTOR_LOADING_DEADLINE_MS passes, and
+   * is decoded again once they do.
+   */
+  #fetchSelectorsForCalls(humanizationId: number) {
+    this.#clearSelectorLoading()
+    const callDatas = [...new Set(this.accountOp.calls.map(({ data }) => data))]
+    callDatas.forEach((data) => this.#callDatasWithPendingSelectors.add(data))
+
+    this.#selectorLoadingTimeout = setTimeout(() => {
+      this.#selectorLoadingTimeout = undefined
+      this.#callDatasWithPendingSelectors.clear()
+      this.#redecodeHumanization(humanizationId)
+    }, SELECTOR_LOADING_DEADLINE_MS)
+
+    // Fetched one call data at a time so each call stops loading on its own. They still share
+    // requests, since selectors asked for close together are batched.
+    callDatas.forEach((data) => {
+      this.#contractInfo
+        .fetchSelectorsForCallDatas([data])
+        .then(() => this.#onCallDataSelectorsSettled(humanizationId, data))
+        .catch((error) => {
+          this.emitError({
+            level: 'silent',
+            message: 'Could not show the details of this transaction.',
+            error:
+              error instanceof Error
+                ? error
+                : new Error('signAccountOp: decoding the calls with fetched selectors failed')
+          })
+        })
+    })
+  }
+
   async #applyDescriptorFirstHumanization(humanizationId: number) {
+    // Started alongside the descriptors so the decoded fallback is ready for any call that turns
+    // out to have no descriptor, without the descriptors ever waiting on it
+    this.#fetchSelectorsForCalls(humanizationId)
+
     await this.applyDescriptorFirstHumanization({
       humanizationId,
       fetchDescriptor: () => this.#erc7730.getDescriptorsForAccountOp(this.accountOp),
@@ -1209,6 +1285,20 @@ export class SignAccountOpController
       applyFallbackHumanization: (currentHumanizationId) =>
         this.#setFallbackHumanization(currentHumanizationId)
     })
+  }
+
+  /**
+   * Decodes the shown calls again for selectors that arrived after they were shown, or once they
+   * stop loading, emitting only when that changed any of them.
+   */
+  #redecodeHumanization(humanizationId: number) {
+    if (!this.isCurrentHumanization(humanizationId) || this.isHumanizing) return
+
+    const humanization = this.#withDecodedCalls(this.#humanization)
+    if (humanization === this.#humanization) return
+
+    this.#humanization = humanization
+    this.emitUpdate()
   }
 
   humanize() {
@@ -1334,6 +1424,7 @@ export class SignAccountOpController
     // In that case, on the application, we want the "Sign" button to be clickable/enabled,
     // and we have to check and expose the `SignAccountOp` controller's inner state to make this check possible.
     if (
+      !this.accountOp.meta?.isSafeDeploy &&
       this.accountKeyStoreKeys.length &&
       (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType)
     ) {
@@ -1442,17 +1533,25 @@ export class SignAccountOpController
         title: 'Insufficient funds to cover the fee.'
       })
 
-    // if the Safe txn is not deployed, display an error
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-    if (!!this.account.safeCreation && accountState && !accountState.isDeployed) {
+
+    if (
+      !!this.account.safeCreation &&
+      accountState &&
+      !accountState.isDeployed &&
+      !this.accountOp.meta?.isSafeDeploy
+    ) {
       errors.push({
-        title: `Safe not activated on ${this.#network.name}. Please activate it from Safe Global`
+        title: `Your Safe account isn't active on ${this.#network.name} yet. Activate it first, then try again.`
       })
     }
 
     // It may occur, only if there are no available signer.
-    if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
+    if (
+      !this.accountOp.meta?.isSafeDeploy &&
+      (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
+    )
       errors.push({
         title: 'No keys available to sign this transaction.',
         code: 'NO_KEYS_AVAILABLE'
@@ -1600,6 +1699,7 @@ export class SignAccountOpController
     // Safe txn, signed, with a future nonce: display an error
     if (
       !!this.account.safeCreation &&
+      !this.accountOp.meta?.isSafeDeploy &&
       accountState &&
       this.accountOp.nonce &&
       this.accountOp.nonce !== accountState.nonce &&
@@ -1703,11 +1803,17 @@ export class SignAccountOpController
       pendingPortfolioState.criticalError?.simulationErrorMsg.indexOf('nonce did not increment') !==
         -1
     ) {
-      const pendingAccountState = await this.#accounts.forceFetchPendingState(
+      await this.#accounts.updateAccountState(
         this.accountOp.accountAddr,
-        this.accountOp.chainId
+        'pending',
+        [this.accountOp.chainId],
+        true
       )
-      this.#updateNonce(pendingAccountState.nonce)
+      const pendingAccountState =
+        this.#accounts.accountStates[this.accountOp.accountAddr]?.[
+          this.accountOp.chainId.toString()
+        ]
+      if (pendingAccountState) this.#updateNonce(pendingAccountState.nonce)
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -2146,8 +2252,8 @@ export class SignAccountOpController
 
     if (
       this.isInitialized &&
-      this.accountOp.signingKeyAddr &&
-      this.accountOp.signingKeyType &&
+      (this.accountOp.meta?.isSafeDeploy ||
+        (this.accountOp.signingKeyAddr && this.accountOp.signingKeyType)) &&
       this.accountOp.gasFeePayment
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
@@ -2169,6 +2275,8 @@ export class SignAccountOpController
     this.#simulateAndEstimateOrSimulateInterval.stop()
     this.#gasPriceInterval.stop()
     this.#stopRefetching = true
+    this.stopHumanization()
+    this.#clearSelectorLoading()
     // Destroy sub-controllers
     this.estimation.destroy()
     this.gasPrice.destroy()
@@ -3030,7 +3138,12 @@ export class SignAccountOpController
       if (newEstimate instanceof Error) {
         if (counter === 0) {
           await this.#accounts
-            .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+            .updateAccountState(
+              this.accountOp.accountAddr,
+              'pending',
+              [this.accountOp.chainId],
+              true
+            )
 
             .catch((e) => console.error(e))
           return this.#getInitialUserOp(true, eip7702Auth, 1)
@@ -3160,7 +3273,7 @@ export class SignAccountOpController
     if (errorResponse.message.indexOf('invalid account nonce') !== -1) {
       // continue on error as this is an attempt for an UX improvement
       await this.#accounts
-        .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+        .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
 
         .catch((e) => console.error(e))
     }
@@ -3189,7 +3302,11 @@ export class SignAccountOpController
 
     this.#hwCleanup()
 
-    if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
+    const isSafeDeploy = !!this.accountOp.meta?.isSafeDeploy
+    const signingKeyAddr = this.accountOp.signingKeyAddr
+    const signingKeyType = this.accountOp.signingKeyType
+
+    if (!isSafeDeploy && (!signingKeyAddr || !signingKeyType)) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
@@ -3228,7 +3345,9 @@ export class SignAccountOpController
       this.accountOp.gasFeePayment.paidByKeyType !== 'internal' ||
       this.accountOp.signingKeyType !== 'internal'
     const isCollectingSafeSignature =
-      !!this.account.safeCreation && (this.accountOp.signed?.length || 0) < this.threshold
+      !!this.account.safeCreation &&
+      !isSafeDeploy &&
+      (this.accountOp.signed?.length || 0) < this.threshold
     const isImmediatelyWaitingForPaymaster =
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
       isUsingPaymaster &&
@@ -3271,8 +3390,11 @@ export class SignAccountOpController
     }
 
     try {
-      if (
+      if (isSafeDeploy) {
+        this.#updateAccountOp({ signature: '0x' })
+      } else if (
         this.account.safeCreation &&
+        !isSafeDeploy &&
         this.#accountOp.signed &&
         this.#accountOp.signed.length >= this.threshold &&
         broadcastOption !== BROADCAST_OPTIONS.byBundler
@@ -3280,6 +3402,7 @@ export class SignAccountOpController
         // all's good, proceed to broadcast
       } else if (
         this.account.safeCreation &&
+        !isSafeDeploy &&
         (this.#accountOp.signed?.length || 0) < this.threshold
       ) {
         // If the Safe txn is not already signed, fetch the latest nonce unless
@@ -3300,12 +3423,8 @@ export class SignAccountOpController
         const prevSignedSigs = getSigs(this.accountOp.signature)
         const nowSignedSigs: Hex[] = []
 
-        const safeSigner = await this.#keystore.getSigner(
-          this.accountOp.signingKeyAddr,
-          this.accountOp.signingKeyType
-        )
-        if (safeSigner.init)
-          safeSigner.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
+        const safeSigner = await this.#keystore.getSigner(signingKeyAddr!, signingKeyType!)
+        if (safeSigner.init) safeSigner.init(this.#externalSignerControllers[signingKeyType!])
 
         const { safeTxn, typedData, safeTxnHash, signingRequest } =
           this.#getSafeSigningData(accountState)
@@ -3319,8 +3438,8 @@ export class SignAccountOpController
 
         // all the signers that have signed
         const allSigners = this.accountOp.signed
-          ? this.accountOp.signed.concat([this.accountOp.signingKeyAddr])
-          : [this.accountOp.signingKeyAddr]
+          ? this.accountOp.signed.concat([signingKeyAddr!])
+          : [signingKeyAddr!]
 
         const isQuickBroadcast =
           this.threshold === 1 &&
@@ -3451,7 +3570,6 @@ export class SignAccountOpController
         }
         this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
-        const signer = await this.#getDefaultSigner()
         const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
 
         const paymaster = erc4337Estimation.paymaster
@@ -3473,6 +3591,7 @@ export class SignAccountOpController
         // sign the 7702 authorization if needed
         let eip7702Auth
         if (this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) {
+          const signer = await this.#getDefaultSigner()
           if (isExternalSignerInvolved)
             this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
           const contract = getContractImplementation(
@@ -3503,6 +3622,7 @@ export class SignAccountOpController
         }
 
         if (shouldSignDeployAuth) {
+          const signer = await this.#getDefaultSigner()
           const epActivatorTypedData = await getEntryPointAuthorization(
             this.account.addr,
             this.#network.chainId,
@@ -3584,6 +3704,7 @@ export class SignAccountOpController
 
         // safe accounts have their signature prepopulated
         if (!this.account.safeCreation) {
+          const signer = await this.#getDefaultSigner()
           // Which signature format a 7702 EOA needs is dictated by the delegator
           // it points to, not by the key type: the Ambire 7702 account validates
           // the Ambire4337AccountOp typed data in unprotected mode, while the
@@ -3713,8 +3834,7 @@ export class SignAccountOpController
       !accountOp ||
       !estimation ||
       !requestId ||
-      !accountOp.signingKeyAddr ||
-      !accountOp.signingKeyType ||
+      (!accountOp.meta?.isSafeDeploy && (!accountOp.signingKeyAddr || !accountOp.signingKeyType)) ||
       !accountOp.signature ||
       !bundlerSwitcher ||
       !accountOp.gasFeePayment
@@ -3782,7 +3902,7 @@ export class SignAccountOpController
     //   2. Device interaction runs inside #withHardwareWalletSigningRequest
     //      so the "confirm on your device" UI shows while the PQ1 waits
     //      for its physical confirmation.
-    if (accountOp.signingKeyType === 'pq1') {
+    if (accountOp.signingKeyType === 'pq1' && accountOp.signingKeyAddr) {
       try {
         const { gasFeePayment } = accountOp
         if (
@@ -4271,7 +4391,7 @@ export class SignAccountOpController
           ? 'Broadcast failed because of a pending transaction. Please try again'
           : 'Signer key not supported on this network'
         this.#accounts
-          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
       } else if (isUnderpriced(originalMessage)) {
@@ -4299,7 +4419,7 @@ export class SignAccountOpController
       ) {
         message = 'Pending transaction detected. Please try again in a few seconds'
         this.#accounts
-          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
       }
@@ -4564,6 +4684,7 @@ export class SignAccountOpController
 
   get canBroadcast() {
     if (!this.account.safeCreation) return true
+    if (this.accountOp.meta?.isSafeDeploy) return true
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]

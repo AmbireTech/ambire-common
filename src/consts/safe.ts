@@ -5,10 +5,20 @@
  */
 export const SAFE_NETWORKS = [
   1, 10, 56, 100, 130, 137, 143, 146, 480, 999, 5000, 8453, 9745, 42161, 42220, 43114, 57073, 59144,
-  747474, 4326, 8217, 4663, 534352
+  747474, 4326, 8217, 4663, 534352, 5042
 ]
 
 export const SAFE_API_TIMEOUT_MS = 15000
+
+export const SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE =
+  "We can't activate this Safe account on this network. To use it here, activate it in the Safe app first."
+
+/**
+ * Shown when preparing the activation of a Safe failed for a reason that may be temporary
+ * (e.g. the network didn't respond), so trying again may work.
+ */
+export const SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE =
+  "We couldn't prepare the activation of your Safe account on this network. Please try again."
 
 // Keep Safe Transaction Service requests below its bulk request limits.
 export const SAFE_API_BATCH_SIZE = 4

@@ -84,7 +84,11 @@ export interface SelectedAccountPortfolio {
   portfolioState: SelectedAccountPortfolioState
   walletStaking?: PortfolioNetworkResult['walletStaking']
   verification: SelectedAccountPortfolioVerification | null
-  projectedRewardsStats: ProjectedRewardsStats | null
+  /**
+   * @deprecated The wallet no longer calculates the projected rewards stats, so this is
+   * never set. Kept only for type compatibility.
+   */
+  projectedRewardsStats?: ProjectedRewardsStats | null
   /** The account's invite key for the Ambire Mobile app, if the relayer has one for it. */
   mobileInviteKey?: string
 }

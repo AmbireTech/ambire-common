@@ -1,5 +1,4 @@
 import { ethErrors } from 'eth-rpc-errors'
-import { getBytes } from 'ethers'
 
 import EmittableError from '@/classes/EmittableError'
 import { AMBIRE_ACCOUNT_FACTORY } from '@/consts/deploy'
@@ -15,6 +14,7 @@ import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
 import { SignedMessage } from '@/controllers/activity/types'
 import { AddressBookController } from '@/controllers/addressBook/addressBook'
+import { AppDataSyncController } from '@/controllers/appDataSync/appDataSync'
 import { AutoLoginController } from '@/controllers/autoLogin/autoLogin'
 import { AccountData, BannerController } from '@/controllers/banner/banner'
 import { ContinuousUpdatesController } from '@/controllers/continuousUpdates/continuousUpdates'
@@ -54,6 +54,7 @@ import { Account, IAccountsController } from '@/interfaces/account'
 import { IAccountPickerController } from '@/interfaces/accountPicker'
 import { IActivityController } from '@/interfaces/activity'
 import { IAddressBookController } from '@/interfaces/addressBook'
+import { IAppDataSyncController } from '@/interfaces/appDataSync'
 import { IAutoLoginController } from '@/interfaces/autoLogin'
 import { Banner, IBannerController } from '@/interfaces/banner'
 import { IContractInfoController } from '@/interfaces/contractInfo'
@@ -78,6 +79,7 @@ import { IMainController, STATUS_WRAPPED_METHODS } from '@/interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '@/interfaces/network'
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
+import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { IPortfolioController } from '@/interfaces/portfolio'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
@@ -103,12 +105,6 @@ import {
   SubmittedAccountOp
 } from '@/libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '@/libs/accountOp/types'
-import {
-  ACCOUNTS_SYNC_PAYLOAD_VERSION,
-  AccountsSyncPayload,
-  parseAccountsSyncPayload,
-  serializeAccountsSyncPayload
-} from '@/libs/accountsSync/accountsSync'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
@@ -219,6 +215,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   survey: ISurveyController
 
+  appDataSync: IAppDataSyncController
+
   accountOpsToBeConfirmed: { [key: string]: { [key: string]: AccountOp } } = {}
 
   lastUpdate: Date = new Date()
@@ -254,7 +252,8 @@ export class MainController extends EventEmitter implements IMainController {
     featureFlags,
     keystoreSigners,
     externalSignerControllers,
-    uiManager
+    uiManager,
+    idb
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     appVersion: string
@@ -271,6 +270,7 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
+    idb?: AmbireIdbDatabase
   }) {
     super(eventEmitterRegistry)
     this.#storageAPI = storageAPI
@@ -371,7 +371,8 @@ export class MainController extends EventEmitter implements IMainController {
       networks: this.networks,
       providers: this.providers,
       storage: this.storage,
-      accounts: this.accounts
+      accounts: this.accounts,
+      keystore: this.keystore
     })
 
     this.survey = new SurveyController({
@@ -391,10 +392,12 @@ export class MainController extends EventEmitter implements IMainController {
         const currentSelectedAcc = this.selectedAccount.account
         if (!currentSelectedAcc) return { status: 'no-selected-account' }
         let totalUsdBalance = this.selectedAccount.portfolio.totalBalance
-        let numberOfTransactions = this.activity.getAccountOpsForAccount({
-          accountAddr: currentSelectedAcc.addr,
-          sortAccOps: false
-        }).length
+        // Not getAccountOpsForAccount().length — that returns the in-memory cache, which
+        // on the IndexedDB backend holds only the bounded startup window, so a heavy
+        // account would report ~20 per chain and match the wrong minTxnsTotal bucket.
+        const numberOfTransactions = this.activity.getTotalOpsCountForAccount(
+          currentSelectedAcc.addr
+        )
         const hasKeys =
           getAccountKeysCount({
             accountAddr: currentSelectedAcc.addr,
@@ -434,6 +437,7 @@ export class MainController extends EventEmitter implements IMainController {
       velcroUrl,
       this.banner,
       this.featureFlags,
+      this.ui,
       eventEmitterRegistry,
       this.verification,
       platform
@@ -504,6 +508,13 @@ export class MainController extends EventEmitter implements IMainController {
       ui: this.ui,
       eventEmitterRegistry
     })
+    this.contractInfo = new ContractInfoController({
+      eventEmitterRegistry,
+      fetch: this.fetch,
+      storage: this.storage,
+      featureFlags: this.featureFlags,
+      ui: this.ui
+    })
     this.signMessage = new SignMessageController(
       this.keystore,
       this.providers,
@@ -531,7 +542,8 @@ export class MainController extends EventEmitter implements IMainController {
       async (network: Network) => {
         await this.setContractsDeployedToTrueIfDeployed(network)
       },
-      eventEmitterRegistry
+      eventEmitterRegistry,
+      idb
     )
     this.walletToken = new WalletTokenController({
       eventEmitterRegistry,
@@ -575,6 +587,7 @@ export class MainController extends EventEmitter implements IMainController {
       phishing: this.phishing,
       dapps: this.dapps,
       erc7730: this.erc7730,
+      contractInfo: this.contractInfo,
       swapProvider: new SwapProviderParallelExecutor(
         [LiFiProvider, SocketProvider, UniswapProvider, CowSwapProvider],
         () => this.networks.networks.map((network) => ({ chainId: Number(network.chainId) })),
@@ -613,6 +626,16 @@ export class MainController extends EventEmitter implements IMainController {
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this),
       ui: this.ui
     })
+    this.appDataSync = new AppDataSyncController({
+      eventEmitterRegistry,
+      keystore: this.keystore,
+      accounts: this.accounts,
+      networks: this.networks,
+      addressBook: this.addressBook,
+      featureFlags: this.featureFlags,
+      swapAndBridge: this.swapAndBridge,
+      ui: this.ui
+    })
     this.transfer = new TransferController(
       this.callRelayer,
       this.storage,
@@ -634,6 +657,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.commonHandlerForBroadcastSuccess.bind(this),
       this.ui,
       this.erc7730,
+      this.contractInfo,
       platform,
       eventEmitterRegistry
     )
@@ -683,6 +707,7 @@ export class MainController extends EventEmitter implements IMainController {
       phishing: this.phishing,
       dapps: this.dapps,
       erc7730: this.erc7730,
+      contractInfo: this.contractInfo,
       accounts: this.accounts,
       networks: this.networks,
       providers: this.providers,
@@ -722,13 +747,6 @@ export class MainController extends EventEmitter implements IMainController {
         this.transactionManager?.formState.resetForm() // TODO: the form should be reset in a success state in FE
       },
       onBroadcastFailed: this.#handleBroadcastFailed.bind(this)
-    })
-
-    this.contractInfo = new ContractInfoController({
-      eventEmitterRegistry,
-      fetch: this.fetch,
-      storage: this.storage,
-      featureFlags: this.featureFlags
     })
 
     this.initialLoadPromise = this.#load().finally(() => {
@@ -785,15 +803,25 @@ export class MainController extends EventEmitter implements IMainController {
             await this.keystore.updateKeystoreKeys()
           }
         )
+        // A view added or focused while the wallet was locked fetched nothing for the other
+        // Safes. The other operations that set this status are cheap here, as recently
+        // fetched Safes are skipped.
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#fetchAllSafesPending()
       }
     })
 
     this.ui.uiEvent.on('addView', async (view: View) => {
+      if (this.keystore.isUnlocked) {
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+        this.#fetchAllSafesPending()
+      }
       if (isExtensionOverlayView(view)) await this.onPopupOpen(view.id)
     })
 
     this.ui.uiEvent.on('viewFocus', () => {
-      this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.#fetchAllSafesPending()
     })
   }
 
@@ -834,9 +862,7 @@ export class MainController extends EventEmitter implements IMainController {
         })
       }
 
-      if (!this.accounts.areAccountStatesLoading) {
-        this.accounts.updateAccountState(selectedAccountAddr)
-      }
+      this.accounts.updateAccountState(selectedAccountAddr)
     }
 
     this.ui.updateView(viewId, { isReady: true })
@@ -957,7 +983,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
-      this.activity.forceEmitUpdate(),
+      this.activity.onSelectedAccountChange(toAccountAddr),
       this.requests.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.swapAndBridge.forceEmitUpdate(),
@@ -1027,26 +1053,28 @@ export class MainController extends EventEmitter implements IMainController {
     if (accountOp.meta?.swapTxn) {
       // we need a quote to be able to add an active route
       const quote = accountOp.meta.quote || this.swapAndBridge.quote
-      if (quote) {
+      // and it must be the quote the swap was built from, e.g. not one the form refreshed
+      // to in the meantime, otherwise the active route can't be matched to this transaction
+      if (quote?.selectedRoute?.routeId === accountOp.meta.swapTxn.activeRouteId) {
         try {
           this.swapAndBridge.addActiveRoute({
             quote,
             userTxIndex: accountOp.meta?.swapTxn.userTxIndex,
-            routeStatus: !!quote?.selectedRoute ? 'in-progress' : 'ready'
+            routeStatus: 'in-progress'
           })
-          if (quote.selectedRoute) {
-            this.swapAndBridge.updateActiveRoute(quote.selectedRoute.routeId, {
-              userTxHash: submittedAccountOp.txnId,
-              identifiedBy: submittedAccountOp.identifiedBy
-            })
-          }
+          this.swapAndBridge.updateActiveRoute(quote.selectedRoute.routeId, {
+            userTxHash: submittedAccountOp.txnId,
+            identifiedBy: submittedAccountOp.identifiedBy
+          })
         } catch (e) {
           console.log('failed to add an active route', e)
         }
       }
 
-      // no need to keep it in storage
+      // no need to keep it in storage. The submitted account op, which is the one stored
+      // in the activity, has a shallow copy of the meta, so it has to be deleted there too
       delete accountOp.meta.quote
+      delete submittedAccountOp.meta?.quote
     }
 
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
@@ -1521,10 +1549,13 @@ export class MainController extends EventEmitter implements IMainController {
     const updatedAccountsOpsByAccount =
       await this.activity.updateAccountsOpsStatuses(addressesWithPendingOps)
 
+    const safeDeployStatusUpdates: Promise<void>[] = []
     Object.values(updatedAccountsOpsByAccount).forEach(
       ({ updatedAccountsOps: accUpdatedAccountsOps }) => {
         accUpdatedAccountsOps.forEach((op) => {
           this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op)
+
+          safeDeployStatusUpdates.push(this.requests.handleSafeDeployStatusUpdate(op))
 
           // we scan for logs only if Success & a dapp interaction has been made
           // because only a dapp interaction might have a receiving txn after;
@@ -1550,6 +1581,7 @@ export class MainController extends EventEmitter implements IMainController {
         })
       }
     )
+    await Promise.all(safeDeployStatusUpdates)
 
     Object.entries(updatedAccountsOpsByAccount).forEach(
       async ([
@@ -1565,52 +1597,56 @@ export class MainController extends EventEmitter implements IMainController {
         if (shouldEmitUpdate) {
           this.emitUpdate()
 
-          if (chainsToUpdate.length) {
-            const networks = chainsToUpdate
-              ? this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
-              : undefined
+          const finalizedAccountOps = updatedAccountsOps.filter(
+            (op) =>
+              op.status !== AccountOpStatus.Pending &&
+              op.status !== AccountOpStatus.BroadcastedButNotConfirmed
+          )
 
-            if (networks?.length) {
-              // The account state must be updated before the portfolio
-              // as the portfolio has internal checks whether the nonce has changed
-              // to decide if to force refetch certain data
-              await this.accounts.updateAccountState(
-                accountAddr,
-                'latest',
-                networks?.map((net) => net.chainId)
-              )
+          const networks = this.networks.networks.filter((n) => chainsToUpdate.includes(n.chainId))
 
-              const finalizedAccountOps = updatedAccountsOps.filter(
-                (op) =>
-                  op.status !== AccountOpStatus.Pending &&
-                  op.status !== AccountOpStatus.BroadcastedButNotConfirmed
-              )
+          if (networks.length) {
+            // The account state must be updated before the portfolio
+            // as the portfolio has internal checks whether the nonce has changed
+            // to decide if to force refetch certain data
+            await this.accounts.updateAccountState(
+              accountAddr,
+              'latest',
+              networks.map((net) => net.chainId),
+              true
+            )
 
-              // Schedule an update that will refetch new defi positions (if any)
-              chainsToUpdate.forEach((chainId) => {
-                this.portfolio.scheduleUpdate({
-                  accountId: accountAddr,
-                  chainId,
-                  bypassServerSideCache: true
-                })
+            // Schedule an update that will refetch new defi positions (if any)
+            chainsToUpdate.forEach((chainId) => {
+              this.portfolio.scheduleUpdate({
+                accountId: accountAddr,
+                chainId,
+                bypassServerSideCache: true
               })
-              // Discard the simulation (that also updates the portfolio, but doesn't force update defi)
-              await this.portfolio.discardSimulation(finalizedAccountOps)
+            })
+          }
 
-              // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
-              this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+          // Discard the simulation (that also updates the portfolio, but doesn't force update defi).
+          // Runs for every finalized op, as ops finalized without a receipt (replaced, rejected,
+          // stuck) leave chainsToUpdate empty, yet their pending simulation must still leave the dashboard
+          if (finalizedAccountOps.length) {
+            await this.portfolio.discardSimulation(finalizedAccountOps)
+          }
+
+          if (networks.length) {
+            // Reports to Sentry if the portfolio was not updated after a confirmed AccountOp
+            this.portfolio.reportMissedPortfolioUpdateAfterUpdatedAccountOp(
+              accountAddr,
+              updatedAccountsOps
+            )
+
+            Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
+              // eslint-disable-next-line @typescript-eslint/no-floating-promises
+              this.portfolio.updateSelectedAccount(
                 accountAddr,
-                updatedAccountsOps
+                this.networks.networks.filter((n) => chainIds.includes(n.chainId))
               )
-
-              Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
-                // eslint-disable-next-line @typescript-eslint/no-floating-promises
-                this.portfolio.updateSelectedAccount(
-                  accountAddr,
-                  this.networks.networks.filter((n) => chainIds.includes(n.chainId))
-                )
-              })
-            }
+            })
           }
         }
 
@@ -1708,102 +1744,6 @@ export class MainController extends EventEmitter implements IMainController {
     await this.withStatus('updateAccounts', async () => this.#updateAccounts(accountsUpdate))
   }
 
-  /**
-   * Runs an accounts sync step and replies to the UI request that triggered it, so the
-   * UI can await the result instead of watching a transient status.
-   */
-  async #withSyncResponse(
-    callName: 'exportAccountsForSync' | 'importAccountsFromSync',
-    requestId: string | undefined,
-    fn: () => Promise<any>
-  ) {
-    await this.withStatus(callName, async () => {
-      try {
-        const res = await fn()
-
-        if (requestId) this.ui.message.sendUiMessage({ requestId, ok: true, res })
-      } catch (error: any) {
-        // Rethrown, so that `withStatus` emits (and reports) the error as usual
-        if (requestId)
-          this.ui.message.sendUiMessage({
-            requestId,
-            ok: false,
-            error: error?.message || `${callName} failed`
-          })
-
-        throw error
-      }
-    })
-  }
-
-  /**
-   * Prepares the selected accounts and the keys controlling them for the other Ambire
-   * product and returns the payload, which the UI displays as animated QR codes.
-   * Everything sensitive leaves this device encrypted, see `keystore.exportForSync`.
-   *
-   * `includeSeeds` lets the user leave the recovery phrases of the selected accounts
-   * behind, in which case only the accounts and their keys are sent over.
-   */
-  async exportAccountsForSync(
-    addrs: Account['addr'][],
-    includeSeeds: boolean = true,
-    requestId?: string
-  ) {
-    await this.#withSyncResponse('exportAccountsForSync', requestId, async () => {
-      const accounts = this.accounts.accounts.filter((account) => addrs.includes(account.addr))
-
-      if (!accounts.length)
-        throw new EmittableError({
-          level: 'expected',
-          message: 'Select at least one account to sync.',
-          error: new Error('main: no accounts to sync')
-        })
-
-      const keyAddrs = Array.from(new Set(accounts.flatMap((account) => account.associatedKeys)))
-      const { secret, keys, seeds } = await this.keystore.exportForSync(keyAddrs, includeSeeds)
-
-      return serializeAccountsSyncPayload({
-        v: ACCOUNTS_SYNC_PAYLOAD_VERSION,
-        secret,
-        accounts,
-        keys,
-        seeds
-      })
-    })
-  }
-
-  /**
-   * Takes over the accounts and keys scanned from the other Ambire product's QR codes.
-   * `payload` is the hex encoded data assembled from the scanned codes and `password`
-   * is the device password of the product that exported them.
-   */
-  async importAccountsFromSync(
-    { payload, password }: { payload: string; password: string },
-    requestId?: string
-  ) {
-    await this.#withSyncResponse('importAccountsFromSync', requestId, async () => {
-      let parsedPayload: AccountsSyncPayload
-      try {
-        parsedPayload = parseAccountsSyncPayload(getBytes(payload))
-      } catch (error: any) {
-        throw new EmittableError({
-          level: 'expected',
-          message:
-            'The scanned QR codes do not contain Ambire accounts, or not all of them were scanned. Please try again.',
-          error: error instanceof Error ? error : new Error('main: invalid accounts sync payload')
-        })
-      }
-
-      // The accounts are added only if the keys made it in, so that the user doesn't
-      // end up with accounts they cannot sign with
-      await this.keystore.importFromSync(parsedPayload, password)
-      await this.#updateAccounts({
-        accountsToAdd: parsedPayload.accounts,
-        accountAddressesToRemove: []
-      })
-    })
-  }
-
   async reloadSelectedAccount(options?: {
     chainIds?: bigint[]
     maxDataAgeMs?: number
@@ -1829,13 +1769,8 @@ export class MainController extends EventEmitter implements IMainController {
     await Promise.all([
       // When we trigger `reloadSelectedAccount` (for instance, from Dashboard -> Refresh balance icon),
       // it's very likely that the account state is already in the process of being updated.
-      // If we try to run the same action, `withStatus` validation will throw an error.
-      // So, we perform this safety check to prevent the error.
-      // However, even if we don't trigger an update here, it's not a big problem,
-      // as the account state will be updated anyway, and its update will be very recent.
-      !this.accounts.areAccountStatesLoading && this.selectedAccount.account?.addr
-        ? this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds)
-        : Promise.resolve(),
+      // That fetch is reused, so this causes no extra fetch.
+      this.accounts.updateAccountState(this.selectedAccount.account.addr, 'pending', chainIds),
       // `updateSelectedAccountPortfolio` doesn't rely on `withStatus` validation internally,
       // as the PortfolioController already exposes flags that are highly sufficient for the UX.
       // Additionally, if we trigger the portfolio update twice (i.e., running a long-living interval + force update from the Dashboard),
@@ -1863,6 +1798,19 @@ export class MainController extends EventEmitter implements IMainController {
     })
 
     return this.#fetchSafeTxnsPromise
+  }
+
+  /**
+   * Fetches the pending txns of the selected Safe, and then the pending counts of the other
+   * Safes, one after the other so they don't compete for the Safe API's rate limit
+   */
+  async #fetchAllSafesPending() {
+    await this.fetchSafeTxns([]).catch((e) => e) // we catch the error inside
+
+    // do not make Safe requests for the other Safes if the wallet is locked
+    if (!this.keystore.isUnlocked) return
+
+    await this.safe.updateOtherSafesPendingCounts(this.selectedAccount.account?.addr)
   }
 
   async refreshSafeTxns() {
@@ -2088,7 +2036,6 @@ export class MainController extends EventEmitter implements IMainController {
       txnId: null,
       userOpHash: null
     }
-
     if (submittedAccountOp) {
       meta.txnId = submittedAccountOp.txnId
       meta.identifiedBy = submittedAccountOp.identifiedBy

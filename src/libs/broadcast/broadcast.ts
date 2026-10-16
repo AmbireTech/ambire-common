@@ -150,13 +150,16 @@ export async function getTxnData(
   call?: Call
 ): Promise<{ to: Hex | undefined; value: bigint; data: Hex; gasLimit?: bigint }> {
   if (account.safeCreation) {
-    const safeData = getSafeBroadcastTxn(op, accountState)
+    const safeData = op.meta?.isSafeDeploy ? op.calls[0] : getSafeBroadcastTxn(op, accountState)
+    if (!safeData) throw new Error('Safe deployment transaction is missing')
     const gasFeePayment = op.gasFeePayment as GasFeePayment
     const simulatedGasLimit = gasFeePayment.simulatedGasLimit
 
     if (gasFeePayment.isCustomGasLimit) {
       return {
-        ...safeData,
+        to: safeData.to as Hex | undefined,
+        value: safeData.value,
+        data: safeData.data as Hex,
         gasLimit: simulatedGasLimit
       }
     }
@@ -172,7 +175,9 @@ export async function getTxnData(
     )
 
     return {
-      ...safeData,
+      to: safeData.to as Hex | undefined,
+      value: safeData.value,
+      data: safeData.data as Hex,
       gasLimit: estimatedGasLimit > simulatedGasLimit ? estimatedGasLimit : simulatedGasLimit
     }
   }

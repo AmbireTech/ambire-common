@@ -1,5 +1,6 @@
 import { generateUuid } from '@/utils/uuid'
 
+import { AccountStates } from '../../interfaces/account'
 import { DappProviderRequest } from '../../interfaces/dapp'
 import {
   CallsUserRequest,
@@ -119,3 +120,12 @@ export const isSignedSafeCallsRequest = (request: UserRequest): boolean =>
   request.kind === 'calls' &&
   !!request.signAccountOp.account.safeCreation &&
   !!request.signAccountOp.accountOp.signed?.length
+
+// todo: description
+export const isWaitingForSafeDeployment = (
+  request: UserRequest,
+  accountStates: AccountStates
+): boolean =>
+  request.kind === 'calls' &&
+  !!request.signAccountOp.account.safeCreation &&
+  !accountStates[request.meta.accountAddr]?.[request.meta.chainId.toString()]?.isDeployed

@@ -52,7 +52,6 @@ export interface SafeAccountCreation {
   singleton: Hex
   saltNonce: Hex
   setupData: Hex
-  version: string
 }
 
 export interface AmbireSmartAccountIdentityCreateRequest {
@@ -111,6 +110,12 @@ export interface AccountOnchainState {
   delegatedContract: Hex | null
   delegatedContractName: 'AMBIRE' | 'METAMASK' | 'UNKNOWN' | null
   threshold: number
+  /**
+   * The Safe contracts version on this chain. Read from the proxy when the Safe
+   * is deployed, otherwise from the singleton it will be deployed with.
+   * `null` for non-Safe accounts or when the version cannot be read
+   */
+  safeVersion: string | null
   updatedAt: number
 }
 
