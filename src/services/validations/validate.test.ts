@@ -127,7 +127,7 @@ describe('validateSendTransferAddress - view-only recipient', () => {
     const result = validate({ isRecipientAddressViewOnly: false })
 
     expect(result.message).not.toBe(VIEW_ONLY_MESSAGE)
-    expect(result.shouldHold).toBe(false)
+    expect(result.shouldHold).toBeFalsy()
   })
 
   it('keeps the hold even if a higher priority warning provides the message', () => {
@@ -209,7 +209,7 @@ describe('validateSendTransferAddress - address poisoning', () => {
     const result = validate({ addressPoisoningMatch: null })
 
     expect(result.message.startsWith(POISONING_MESSAGE_START)).toBe(false)
-    expect(result.shouldHold).toBe(false)
+    expect(result.shouldHold).toBeFalsy()
   })
 })
 
@@ -219,9 +219,9 @@ describe('validateSendTransferAddress - hold-to-proceed', () => {
     const smartContract = validate({ isRecipientHumanizerKnownTokenOrSmartContract: true })
 
     expect(blacklisted.severity).toBe('error')
-    expect(blacklisted.shouldHold).toBe(false)
+    expect(blacklisted.shouldHold).toBeFalsy()
     expect(smartContract.severity).toBe('error')
-    expect(smartContract.shouldHold).toBe(false)
+    expect(smartContract.shouldHold).toBeFalsy()
   })
 
   it('does not hold for an unknown first-time smart contract recipient', () => {
@@ -232,7 +232,7 @@ describe('validateSendTransferAddress - hold-to-proceed', () => {
     })
 
     expect(result.severity).toBe('error')
-    expect(result.shouldHold).toBe(false)
+    expect(result.shouldHold).toBeFalsy()
   })
 
   it('requires a hold for a changed domain address', () => {
@@ -251,7 +251,7 @@ describe('validateSendTransferAddress - hold-to-proceed', () => {
 
     expect(beforeAgreeing.shouldHold).toBe(true)
     // The agreement releases only the hold - the message stays the same
-    expect(afterAgreeing.shouldHold).toBe(false)
+    expect(afterAgreeing.shouldHold).toBeFalsy()
     expect(afterAgreeing.message).toBe(beforeAgreeing.message)
   })
 
@@ -261,27 +261,27 @@ describe('validateSendTransferAddress - hold-to-proceed', () => {
       isRecipientAddressFirstTimeSend: true
     })
 
-    expect(result.shouldHold).toBe(false)
+    expect(result.shouldHold).toBeFalsy()
   })
 
   it('does not require a hold for a recipient the user already sent to', () => {
     const result = validate({ lastRecipientTransactionDate: new Date() })
 
     expect(result.severity).toBe('success')
-    expect(result.shouldHold).toBe(false)
+    expect(result.shouldHold).toBeFalsy()
   })
 
   it('does not require a hold when sending to yourself', () => {
     const result = validate({ recipient: SELECTED_ACCOUNT })
 
     expect(result.severity).toBe('warning')
-    expect(result.shouldHold).toBe(false)
+    expect(result.shouldHold).toBeFalsy()
   })
 
   it('does not require a hold while the address is invalid', () => {
     expect(
       validate({ recipient: 'not-an-address', isRecipientAddressViewOnly: true }).shouldHold
-    ).toBe(false)
+    ).toBeFalsy()
   })
 })
 
@@ -297,7 +297,7 @@ describe('validateSendTransferAddress - which result wins', () => {
 
     expect(result.message).toBe(SMART_CONTRACT_MESSAGE)
     expect(result.severity).toBe('error')
-    expect(result.shouldHold).toBe(false)
+    expect(result.shouldHold).toBeFalsy()
   })
 
   it('shows the blacklist error before the smart contract error', () => {
@@ -324,7 +324,7 @@ describe('validateSendTransferAddress - which result wins', () => {
     })
 
     expect(result.severity).toBe('warning')
-    expect(result.shouldHold).toBe(false)
+    expect(result.shouldHold).toBeFalsy()
   })
 
   it('shows the plain warning once the user agrees and the hold is released', () => {
@@ -339,7 +339,7 @@ describe('validateSendTransferAddress - which result wins', () => {
     expect(validate(unknownFirstTime).message).toBe('First time sending to this address.')
 
     const afterAgreeing = validate({ ...unknownFirstTime, isRecipientAddressUnknownAgreed: true })
-    expect(afterAgreeing.shouldHold).toBe(false)
+    expect(afterAgreeing.shouldHold).toBeFalsy()
     expect(afterAgreeing.message).toBe("You're about to send funds back to yourself.")
   })
 })
@@ -372,7 +372,7 @@ describe('validateSendTransferAddress - recipient account not supported on the n
     expect(result.message).toBe(NOT_SUPPORTED_MESSAGE)
     expect(result.severity).toBe('warning')
     // Only an error disables the buttons, so the user can still proceed
-    expect(result.shouldHold).toBe(false)
+    expect(result.shouldHold).toBeFalsy()
   })
 
   it('does not warn when the account is supported on the network', () => {

@@ -398,7 +398,7 @@ describe('Transfer Controller', () => {
     await transferController.update({ isRecipientAddressUnknownAgreed: true })
 
     const afterAgreeing = transferController.validationFormMsgs.recipientAddress
-    expect(afterAgreeing.shouldHold).toBe(false)
+    expect(afterAgreeing.shouldHold).toBeFalsy()
     expect(afterAgreeing.message).toBe(beforeAgreeing.message)
   })
 
@@ -417,13 +417,13 @@ describe('Transfer Controller', () => {
     const { recipientAddress } = transferController.validationFormMsgs
     // The error disables the buttons of the form, so there is nothing to hold
     expect(recipientAddress.severity).toBe('error')
-    expect(recipientAddress.shouldHold).toBe(false)
+    expect(recipientAddress.shouldHold).toBeFalsy()
   })
 
   test('should not require a hold when there is no recipient yet', async () => {
     const { transferController } = await prepareTest()
 
-    expect(transferController.validationFormMsgs.recipientAddress.shouldHold).toBe(false)
+    expect(transferController.validationFormMsgs.recipientAddress.shouldHold).toBeFalsy()
   })
 
   test('should allow proceeding with a Colibri-verified ENS recipient', async () => {

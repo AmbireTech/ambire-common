@@ -81,8 +81,7 @@ const DEFAULT_VALIDATION_FORM_MSGS: {
   },
   recipientAddress: {
     message: '',
-    severity: 'error',
-    shouldHold: false
+    severity: 'error'
   }
 }
 

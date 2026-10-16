@@ -126,21 +126,17 @@ function getTimeAgo(date: Date): string {
 }
 
 /**
- * The result of one check of the recipient.
+ * The validation of the recipient of a transfer.
  * `shouldHold` (hold-to-proceed) is possible only for a warning: an error already disables the
  * buttons of the form, and a success message needs no confirmation from the user.
+ * When `shouldHold` is true, the user must hold the button to proceed (a risk the user can accept).
  */
-type RecipientCheckResult =
+export type RecipientValidation =
   | { severity: 'success' | 'error'; message: string; shouldHold?: never }
   | { severity: 'warning'; message: string; shouldHold?: boolean }
 
 /** Returns `undefined` when the check doesn't apply to the recipient */
-type RecipientCheck = () => RecipientCheckResult | undefined
-
-export type RecipientValidation = Validation & {
-  /** True if the user must hold the button to proceed (a risk the user can accept) */
-  shouldHold: boolean
-}
+type RecipientCheck = () => RecipientValidation | undefined
 
 const validateSendTransferAddress = (
   address: string,
@@ -165,8 +161,7 @@ const validateSendTransferAddress = (
   if (!isValidAddress(address) || isRecipientDomainResolving) {
     return {
       message: '',
-      severity: 'success',
-      shouldHold: false
+      severity: 'success'
     }
   }
 
@@ -291,10 +286,10 @@ const validateSendTransferAddress = (
 
   for (const check of checks) {
     const result = check()
-    if (result) return { ...result, shouldHold: !!result.shouldHold }
+    if (result) return result
   }
 
-  return { severity: 'success', message: '', shouldHold: false }
+  return { severity: 'success', message: '' }
 }
 
 const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult): Validation => {
