@@ -798,7 +798,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    */
   async addGeneratedSeed({ extraEntropy }: { extraEntropy?: string }): Promise<string> {
     const [seedId] = await this.#addSeeds([this.#generateNotBackedUpSeed(extraEntropy)])
-    if (!seedId) throw new Error('keystore: the generated seed was not stored')
+    if (!seedId)
+      throw new EmittableError({
+        message: 'The new recovery phrase could not be saved. Please try again.',
+        level: 'major',
+        error: new Error('keystore: the generated seed was not stored')
+      })
 
     return seedId
   }
