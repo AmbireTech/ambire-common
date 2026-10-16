@@ -217,11 +217,14 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
       epoch: null
     }
     const derivation = (async () => {
-      await this.#sync.queue(chainId, seedId)
-      // Pinned to the sync just awaited
+      const config = getChainConfig(chainId)
+      // prepareShield syncs anyway, so a chain already on this device only waits for a running
+      // sync. A new chain still goes through the queue, which reads its history once.
+      if (await this.#registry.isChainCold(config)) await this.#sync.queue(chainId, seedId)
+      else await this.#sync.getRunningSync(seedId, chainId)
+      // Pinned to the latest finished sync
       entry.epoch = this.#sync.getEpoch(chainId, seedId)
 
-      const config = getChainConfig(chainId)
       const protocol = await this.#registry.getProtocol(chainId, seedId)
       const { txns } = await protocol.prepareShield({
         asset: { __type: 'erc20', contract: toPrivacyPoolsAssetAddress(ZERO_ADDRESS) },

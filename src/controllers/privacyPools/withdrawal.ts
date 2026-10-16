@@ -407,7 +407,7 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       this.#failOperation(
         { ...operation, phase: 'broadcasting' },
         error,
-        'The transfer could not be sent. Please try again.',
+        'We could not confirm the transfer yet. Check your balance before you send it again.',
         'silent'
       )
       this.#ctx.emitUpdate()

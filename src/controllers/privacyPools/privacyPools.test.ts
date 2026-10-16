@@ -13,12 +13,12 @@ import {
 } from '../../consts/privacyPools'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
-import { IrCall } from '../../libs/humanizer/interfaces'
-import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IUiController, View } from '../../interfaces/ui'
+import { IrCall } from '../../libs/humanizer/interfaces'
+import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { StorageController } from '../storage/storage'
@@ -1422,9 +1422,8 @@ describe('PrivacyPoolsController', () => {
       await expect(building).rejects.toThrow(EmittableError)
 
       preparedDepositTarget = ETHEREUM_ENTRYPOINT
-      const retrying = buildDeposit(controller)
-      await releaseSync('seed-b')
-      await expect(retrying).resolves.toHaveLength(1)
+      await expect(buildDeposit(controller)).resolves.toHaveLength(1)
+      expect(runningSyncs).toHaveLength(0)
     })
 
     it('prepends an approval only when the allowance does not cover an ERC-20', async () => {
@@ -1495,9 +1494,8 @@ describe('PrivacyPoolsController', () => {
       const syncing = controller.syncChain('1')
       await releaseSync('seed-b')
       await syncing
-      const next = buildDeposit(controller)
-      await releaseSync('seed-b')
-      await expect(next).resolves.toHaveLength(1)
+      await expect(buildDeposit(controller)).resolves.toHaveLength(1)
+      expect(runningSyncs).toHaveLength(0)
     })
 
     it('does not block a deposit over a broadcast it did not prepare', async () => {
@@ -1831,7 +1829,7 @@ describe('PrivacyPoolsController', () => {
       await broadcasting
     })
 
-    it('keeps the send form when the transfer could not be sent', async () => {
+    it('clears the send form when the transfer could not be sent', async () => {
       const { controller } = await prepareSignedWithdrawal()
       controller.updateSendForm({ recipientFieldValue: WITHDRAWAL_RECIPIENT, amount: '0.1' })
       jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
@@ -1842,11 +1840,10 @@ describe('PrivacyPoolsController', () => {
 
       const broadcasting = controller.broadcastWithdrawal()
       await waitUntil(() => controller.operation?.status === 'failed')
-
-      expect(controller.hasPersistedSendForm).toBe(true)
-
       await releaseSync('seed-a')
       await broadcasting
+
+      expect(controller.hasPersistedSendForm).toBe(false)
     })
 
     it('reports a transfer that could not be sent without a toast, as the open sheet shows it', async () => {
@@ -1861,7 +1858,9 @@ describe('PrivacyPoolsController', () => {
       const broadcasting = controller.broadcastWithdrawal()
       await waitUntil(() => controller.operation?.status === 'failed')
 
-      expect(controller.operation?.error).toBe('The transfer could not be sent. Please try again.')
+      expect(controller.operation?.error).toBe(
+        'We could not confirm the transfer yet. Check your balance before you send it again.'
+      )
       expect(controller.emittedErrors.slice(errorCount)).toEqual([
         expect.objectContaining({ level: 'silent' })
       ])

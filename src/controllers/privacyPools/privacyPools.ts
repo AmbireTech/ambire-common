@@ -617,10 +617,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     const attempt = await this.#withdrawal.broadcast(operation)
     if (!attempt) return
 
-    // Sent, so a reopened popup starts on a blank form, as after a regular transfer
-    const isSentFromSelectedAccount =
-      attempt.isSent && operation.seedId === this.#getSelectedSeedId()
-    if (isSentFromSelectedAccount && this.#sendForm.clear()) this.emitUpdate()
+    // Also when it failed, as it may still land, so a reopened popup starts on a blank form
+    if (operation.seedId === this.#getSelectedSeedId() && this.#sendForm.clear()) this.emitUpdate()
 
     // Picks up the spent note and its change note
     await this.syncChain(operation.chainId)
@@ -709,6 +707,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#ui.uiEvent.off('updateView', this.#onUpdateView)
     this.#ui.uiEvent.off('removeView', this.#onRemoveView)
     this.#teardown()
+    super.destroy()
   }
 
   toJSON() {
