@@ -86,7 +86,9 @@ export const humanizePrivacyPoolsWithdrawal = ({
     {
       type: 'single-value',
       label: 'Recipient',
-      value: getAddressVisualization(recipient),
+      // A name lookup would send the recipient to our services, where it could be linked to the
+      // account that deposited
+      value: { ...getAddressVisualization(recipient), isLocalLabelOnly: true },
       hasSeparatorBefore: true
     },
     {

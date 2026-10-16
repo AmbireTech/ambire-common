@@ -99,6 +99,11 @@ export type HumanizerVisualization = (
   chainId?: bigint
   verification?: BlacklistedStatus
   mlMi?: boolean
+  /**
+   * Names the address only from what the wallet already knows (accounts, contacts), with no
+   * lookup that sends it out of the wallet.
+   */
+  isLocalLabelOnly?: boolean
 }
 export interface IrCall extends Omit<Call, 'to'> {
   fullVisualization?: HumanizerVisualization[]

@@ -126,7 +126,7 @@ describe('Privacy Pools humanizer', () => {
         {
           type: 'single-value',
           label: 'Recipient',
-          value: getAddressVisualization(RECIPIENT),
+          value: { ...getAddressVisualization(RECIPIENT), isLocalLabelOnly: true },
           hasSeparatorBefore: true
         },
         {
