@@ -215,6 +215,16 @@ const SLOWED_DOWN_REESTIMATE_STEP = 10000
 /** After this many reestimates the loop gives up and stops refetching. */
 export const MAX_REESTIMATES = 20
 
+/**
+ * Statuses of a pending transaction that mean it was processed and its place (nonce) is taken,
+ * so a speed up of it can't go through anymore
+ */
+const SPEED_UP_REPLACED_TXN_PROCESSED_STATUSES = [
+  AccountOpStatus.Success,
+  AccountOpStatus.Failure,
+  AccountOpStatus.UnknownButPastNonce
+]
+
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
   rpcGasPrices?: GasSpeeds
@@ -490,6 +500,8 @@ export class SignAccountOpController
   #simulateAndEstimateOrSimulateInterval: IRecurringTimeout
 
   #onDappsUpdateUnsubscribe?: () => void
+
+  #onActivityUpdateUnsubscribe?: () => void
 
   constructor({
     eventEmitterRegistry,
@@ -1115,6 +1127,46 @@ export class SignAccountOpController
       timeout: ESTIMATE_UPDATE_INTERVAL
     })
     this.#gasPriceInterval.start({ runImmediately: true, timeout: GAS_PRICE_UPDATE_INTERVAL })
+
+    if (this.isSpeedUpTransaction) {
+      this.#onActivityUpdateUnsubscribe = this.#activity.onUpdate(
+        () => this.#stopIfSpeedUpNotNeeded(),
+        'sign-account-op-speed-up'
+      )
+      // The pending transaction may have been processed while the request was opening
+      this.#stopIfSpeedUpNotNeeded()
+    }
+  }
+
+  /**
+   * During a speed up, the pending transaction that is being replaced may get processed before
+   * the speed up is signed. Its place (nonce) is then taken, so there's nothing left to sign
+   */
+  #stopIfSpeedUpNotNeeded() {
+    const replacedIdentifiedBy = this.#accountOp.meta?.speedUp?.replacedIdentifiedBy
+    if (!this.isSpeedUpTransaction || !replacedIdentifiedBy) return
+    // Once signing has started, the broadcast reports what happened instead
+    if (
+      this.status?.type === SigningStatus.InProgress ||
+      this.status?.type === SigningStatus.WaitingForPaymaster ||
+      this.status?.type === SigningStatus.Done ||
+      this.status?.type === SigningStatus.SpeedUpNotNeeded
+    )
+      return
+
+    const replacedAccountOp = this.#activity.findByIdentifiedBy(
+      replacedIdentifiedBy,
+      this.#accountOp.accountAddr,
+      this.#accountOp.chainId
+    )
+    if (
+      !replacedAccountOp ||
+      !SPEED_UP_REPLACED_TXN_PROCESSED_STATUSES.includes(replacedAccountOp.status)
+    )
+      return
+
+    this.#stopIntervals()
+    this.updateStatus(SigningStatus.SpeedUpNotNeeded)
   }
 
   #withDecodedCalls(humanization: IrCall[]) {
@@ -2211,8 +2263,10 @@ export class SignAccountOpController
       this.status?.type === SigningStatus.InProgress ||
       this.status?.type === SigningStatus.WaitingForPaymaster
     const isDone = this.status?.type === SigningStatus.Done
+    // final, the speed up can't go through anymore
+    const isSpeedUpNotNeeded = this.status?.type === SigningStatus.SpeedUpNotNeeded
 
-    if (isInTheMiddleOfSigning || isDone) return
+    if (isInTheMiddleOfSigning || isDone || isSpeedUpNotNeeded) return
 
     // Set to EstimationError if not retrying
     if (this.estimation.error && !this.estimation.isRetryingFailure()) {
@@ -2278,6 +2332,8 @@ export class SignAccountOpController
     this.gasPrice.destroy()
     this.#onDappsUpdateUnsubscribe?.()
     this.#onDappsUpdateUnsubscribe = undefined
+    this.#onActivityUpdateUnsubscribe?.()
+    this.#onActivityUpdateUnsubscribe = undefined
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined

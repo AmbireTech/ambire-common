@@ -10,6 +10,7 @@ import { UserOperation } from '../userOperation/types'
 import { AccountOpStatus, Call, CallTuple } from './types'
 
 import type { SafeMultisigTransactionResponse } from '@safe-global/types-kit'
+import type { AccountOpIdentifiedBy } from './submittedAccountOp'
 
 // This is an abstract representation of the gas fee payment
 // 1) it cannot contain details about maxFeePerGas/baseFee because some networks might not be aware of EIP-1559; it only cares about total amount
@@ -112,6 +113,10 @@ export interface AccountOp {
        * with the newly selected fee once the estimation comes in
        */
       replacedFees?: Pick<GasFeePayment, 'gasPrice' | 'maxPriorityFeePerGas' | 'amount'>
+      /** When the pending transaction that is being sped up was sent, in milliseconds */
+      replacedSentAt?: number
+      /** Finds the pending transaction that is being sped up, to stop if it gets processed first */
+      replacedIdentifiedBy?: AccountOpIdentifiedBy
     }
     /**
      * @deprecated No longer written or read anywhere. Used to hold the descriptor-backed

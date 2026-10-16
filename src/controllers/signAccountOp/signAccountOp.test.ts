@@ -51,6 +51,7 @@ import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import * as broadcastLib from '../../libs/broadcast/broadcast'
 import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../libs/decodeCall'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
@@ -5202,5 +5203,162 @@ describe('RPC gas prices with a bundler fallback', () => {
     ).toBe(BigInt(bundlerGasPrices.slow.maxFeePerGas))
     controller.update({ feeToken: nativeFeeTokenPolygon, paidBy: eoaAccount.addr })
     expect(controller.selectedOptionGasPrices).toEqual(bundlerGasPrices)
+  })
+})
+
+describe('speed up of a pending transaction', () => {
+  const replacedIdentifiedBy = {
+    type: 'Transaction' as const,
+    identifier: `0x${'ab'.repeat(32)}`
+  }
+  const speedUpGasPrices: GasSpeeds = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+
+  const initSpeedUp = async ({ isSpeedUp = true }: { isSpeedUp?: boolean } = {}) => {
+    const accountOp = createEOAAccountOp(eoaAccount)
+    ;(accountOp.op.calls as any) = [
+      { to: '0x0000000000000000000000000000000000000000', value: 1n, data: '0x' }
+    ]
+    if (isSpeedUp) {
+      accountOp.op.meta = {
+        ...accountOp.op.meta,
+        speedUp: { enabled: true, replacedIdentifiedBy }
+      }
+    }
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 0n,
+        addedNative: 5000n,
+        token: {
+          address: '0x0000000000000000000000000000000000000000',
+          amount: parseEther('1'),
+          symbol: 'ETH',
+          name: 'Ether',
+          chainId: 1n,
+          decimals: 18,
+          priceIn: [],
+          marketDataIn: [],
+          flags: { onGasTank: false, rewardsType: null, canTopUpGasTank: true, isFeeToken: true }
+        }
+      }
+    ]
+
+    return init(
+      eoaAccount,
+      accountOp,
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 10000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 10000n,
+          feePaymentOptions,
+          ambireAccountNonce: Number(EOA_SIMULATION_NONCE),
+          flags: {}
+        },
+        flags: {},
+        updatedAt: Date.now()
+      } as any,
+      speedUpGasPrices,
+      false
+    )
+  }
+
+  /** The callback the controller subscribed to activity updates with */
+  const getActivityUpdateCallback = (onUpdateSpy: { mock: { calls: any[][] } }) =>
+    onUpdateSpy.mock.calls.find(([, id]) => id === 'sign-account-op-speed-up')?.[0] as
+      | (() => void)
+      | undefined
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  test.each([
+    AccountOpStatus.Success,
+    AccountOpStatus.Failure,
+    AccountOpStatus.UnknownButPastNonce
+  ])(
+    'stops when the original transaction gets the %s status while signing is pending',
+    async (status) => {
+      const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+      const findSpy = jest
+        .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+        .mockReturnValue(undefined)
+      const { controller } = await initSpeedUp()
+      expect(controller.status?.type).not.toBe(SigningStatus.SpeedUpNotNeeded)
+
+      findSpy.mockReturnValue({ status } as any)
+      getActivityUpdateCallback(onUpdateSpy)?.()
+
+      expect(findSpy).toHaveBeenCalledWith(replacedIdentifiedBy, eoaAccount.addr, 1n)
+      expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+      expect(controller.readyToSign).toBe(false)
+    }
+  )
+
+  test('stops right away when the original transaction was processed before opening', async () => {
+    jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue({ status: AccountOpStatus.Success } as any)
+    const { controller } = await initSpeedUp()
+
+    expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+  })
+
+  test.each([AccountOpStatus.BroadcastedButNotConfirmed, AccountOpStatus.BroadcastButStuck])(
+    'keeps going while the original transaction has the %s status',
+    async (status) => {
+      const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+      jest
+        .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+        .mockReturnValue({ status } as any)
+      const { controller } = await initSpeedUp()
+
+      getActivityUpdateCallback(onUpdateSpy)?.()
+
+      expect(controller.status?.type).not.toBe(SigningStatus.SpeedUpNotNeeded)
+    }
+  )
+
+  test('does not override the status once signing has started', async () => {
+    const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+    const findSpy = jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue(undefined)
+    const { controller } = await initSpeedUp()
+    controller.updateStatus(SigningStatus.InProgress)
+
+    findSpy.mockReturnValue({ status: AccountOpStatus.Success } as any)
+    getActivityUpdateCallback(onUpdateSpy)?.()
+
+    expect(controller.status?.type).toBe(SigningStatus.InProgress)
+  })
+
+  test('stays stopped after later updates', async () => {
+    jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue({ status: AccountOpStatus.Success } as any)
+    const { controller } = await initSpeedUp()
+
+    controller.updateStatus()
+    controller.update({ hasNewEstimation: true })
+
+    expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+  })
+
+  test('does not watch the activity when it is not a speed up', async () => {
+    const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
+    const findSpy = jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+    await initSpeedUp({ isSpeedUp: false })
+
+    expect(getActivityUpdateCallback(onUpdateSpy)).toBeUndefined()
+    expect(findSpy).not.toHaveBeenCalled()
   })
 })
