@@ -317,6 +317,18 @@ describe('validateSendTransferAddress - which result wins', () => {
     expect(result.shouldHold).toBe(true)
   })
 
+  it('shows the self-send warning for a first-time send to your own account', () => {
+    const result = validate({
+      recipient: SELECTED_ACCOUNT,
+      isRecipientAddressUnknown: false,
+      isRecipientAddressFirstTimeSend: true
+    })
+
+    // Both are plain warnings, so the order of the checks decides
+    expect(result.message).toBe("You're about to send funds back to yourself.")
+    expect(result.shouldHold).toBeFalsy()
+  })
+
   it('shows a plain warning over a success message', () => {
     const result = validate({
       recipient: SELECTED_ACCOUNT,

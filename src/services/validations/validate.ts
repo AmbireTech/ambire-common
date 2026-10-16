@@ -167,14 +167,13 @@ const validateSendTransferAddress = (
 
   // The single source of truth for both the message under the input and the hold-to-proceed state
   // of the buttons, so a check can't require a hold without also explaining why.
-  // The checks are ordered by how important they are and the FIRST one that applies decides
-  // everything, so the order below is the priority:
-  // 1. errors - they disable the buttons of the form
-  // 2. warnings that require a hold - the user must hold the button to proceed
-  // 3. warnings that don't require a hold
-  // 4. success messages
-  // A warning that requires a hold must stay above every plain warning, otherwise the plain warning
-  // would be the first one that applies and the hold would be lost.
+  // All the checks run and the most important result that applies decides everything:
+  // 1. an error - it disables the buttons of the form
+  // 2. a warning that requires a hold - the user must hold the button to proceed
+  // 3. a warning that doesn't require a hold
+  // 4. a success message
+  // So a plain warning can't hide a hold. The order of the checks below only decides between
+  // results of the same importance (the first one wins).
   const checks: RecipientCheck[] = [
     // A known scam address is the most severe problem, so it takes priority over every other message.
     // The severity is 'error' so that the buttons of the form stay disabled - sending to a known scam
@@ -228,19 +227,6 @@ const validateSendTransferAddress = (
         shouldHold: true
       }
     },
-    // The first time sending to an unknown address requires a hold until the user agrees. Once the
-    // user agrees, the check below shows the same message without the hold.
-    () => {
-      if (!isRecipientAddressFirstTimeSend || !isRecipientAddressUnknown || addressConfirmed) {
-        return undefined
-      }
-
-      return {
-        message: FIRST_TIME_SEND_MESSAGE,
-        severity: 'warning',
-        shouldHold: true
-      }
-    },
     () => {
       if (address.toLowerCase() !== selectedAccAddr.toLowerCase()) return undefined
 
@@ -264,6 +250,8 @@ const validateSendTransferAddress = (
         severity: 'warning'
       }
     },
+    // The first time sending to an unknown address requires a hold until the user agrees. The
+    // message stays the same after that, only the hold is released.
     () => {
       if (!isRecipientAddressFirstTimeSend) return undefined
 
@@ -271,7 +259,8 @@ const validateSendTransferAddress = (
         message: isRecipientAddressUnknown
           ? FIRST_TIME_SEND_MESSAGE
           : FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE,
-        severity: 'warning'
+        severity: 'warning',
+        shouldHold: isRecipientAddressUnknown && !addressConfirmed
       }
     },
     () => {
@@ -284,12 +273,19 @@ const validateSendTransferAddress = (
     }
   ]
 
-  for (const check of checks) {
-    const result = check()
-    if (result) return result
-  }
+  const relevantChecks = checks
+    .map((check) => check())
+    .filter((result): result is RecipientValidation => !!result)
 
-  return { severity: 'success', message: '' }
+  return (
+    relevantChecks.find((result) => result.severity === 'error') ||
+    relevantChecks.find((result) => result.severity === 'warning' && result.shouldHold) ||
+    relevantChecks.find((result) => result.severity === 'warning') ||
+    relevantChecks.find((result) => result.severity === 'success') || {
+      severity: 'success',
+      message: ''
+    }
+  )
 }
 
 const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult): Validation => {
