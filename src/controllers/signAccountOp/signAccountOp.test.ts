@@ -110,6 +110,7 @@ import { UiController } from '../ui/ui'
 import { clearDiscoverTxnTokensCache } from './discoverTxnTokens'
 import { getFeeSpeedIdentifier, SignAccountOpType } from './helper'
 import { FeeSpeed, MAX_REESTIMATES, SignAccountOpController, SigningStatus } from './signAccountOp'
+import { SpeedUp } from './speedUp'
 import { SignAccountOpPreferenceController } from './signAccountOpPreference'
 import { SignAccountOpTesterController } from './signAccountOpTester'
 
@@ -488,6 +489,8 @@ const init = async (
      * get to run. For tests that drive those intervals themselves.
      */
     pauseOnInit?: boolean
+    /** Builds the SpeedUp passed to the controller, for tests of speeding up a transaction */
+    createSpeedUp?: (activity: ActivityController) => SpeedUp
   }
 ) => {
   const storage: Storage = produceMemoryStore()
@@ -800,6 +803,7 @@ const init = async (
     shouldSimulate: false,
     onUpdateAfterTraceCallSuccess: options?.onUpdateAfterTraceCallSuccess,
     onBroadcastSuccess: options?.onBroadcastSuccess || (async () => {}),
+    speedUp: options?.createSpeedUp?.(activity),
     estimateController: estimationController,
     gasPriceController
   })
@@ -5266,7 +5270,12 @@ describe('speed up of a pending transaction', () => {
         updatedAt: Date.now()
       } as any,
       speedUpGasPrices,
-      false
+      false,
+      {
+        createSpeedUp: isSpeedUp
+          ? (activity) => new SpeedUp({ accountOp: accountOp.op, activity })
+          : undefined
+      }
     )
   }
 
@@ -5353,7 +5362,7 @@ describe('speed up of a pending transaction', () => {
     expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
   })
 
-  test('does not watch the activity when it is not a speed up', async () => {
+  test('does not watch the activity when no SpeedUp is passed', async () => {
     const onUpdateSpy = jest.spyOn(ActivityController.prototype, 'onUpdate')
     const findSpy = jest.spyOn(ActivityController.prototype, 'findByIdentifiedBy')
     await initSpeedUp({ isSpeedUp: false })

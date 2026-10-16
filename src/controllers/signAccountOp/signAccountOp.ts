@@ -117,7 +117,6 @@ import {
   FullEstimationSummary
 } from '../../libs/estimate/interfaces'
 import { calculateFeeAmount } from '../../libs/fees/fees'
-import { getSpeedUpGasPrices } from '../../libs/gasPrice/speedUp'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { Erc7730CallDescriptors } from '../../libs/humanizer/erc7730/types'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
@@ -197,6 +196,7 @@ import {
   SignAccountOpFeeTokenPreference,
   SignAccountOpPreferenceController
 } from './signAccountOpPreference'
+import { SpeedUp } from './speedUp'
 
 import type { SpeedCalc, Status } from '../../interfaces/signAccountOp'
 // Re-exporting for backwards compatibility with existing importers
@@ -214,16 +214,6 @@ const SLOWED_DOWN_REESTIMATE_STEP = 10000
 
 /** After this many reestimates the loop gives up and stops refetching. */
 export const MAX_REESTIMATES = 20
-
-/**
- * Statuses of a pending transaction that mean it was processed and its place (nonce) is taken,
- * so a speed up of it can't go through anymore
- */
-const SPEED_UP_REPLACED_TXN_PROCESSED_STATUSES = [
-  AccountOpStatus.Success,
-  AccountOpStatus.Failure,
-  AccountOpStatus.UnknownButPastNonce
-]
 
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
@@ -501,7 +491,8 @@ export class SignAccountOpController
 
   #onDappsUpdateUnsubscribe?: () => void
 
-  #onActivityUpdateUnsubscribe?: () => void
+  /** Set only when speeding up a pending transaction, see SpeedUp */
+  #speedUp?: SpeedUp
 
   constructor({
     eventEmitterRegistry,
@@ -528,7 +519,8 @@ export class SignAccountOpController
     shouldSimulate,
     onUpdateAfterTraceCallSuccess,
     onBroadcastSuccess,
-    onBroadcastFailed
+    onBroadcastFailed,
+    speedUp
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
@@ -555,6 +547,8 @@ export class SignAccountOpController
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
+    /** Pass only when speeding up a pending transaction */
+    speedUp?: SpeedUp
   }) {
     super(eventEmitterRegistry, false)
     this.#type = type || 'default'
@@ -587,6 +581,7 @@ export class SignAccountOpController
     this.#phishing = phishing
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
+    this.#speedUp = speedUp
     this.#updateSafeEip712Data()
 
     if (this.#accountOp.signature && this.#accountOp.txnId) {
@@ -675,7 +670,7 @@ export class SignAccountOpController
   }
 
   get isSpeedUpTransaction(): boolean {
-    return !!this.#accountOp.meta?.speedUp?.enabled
+    return !!this.#speedUp
   }
 
   #updateAccountOp(accountOp: Partial<AccountOp>) {
@@ -952,29 +947,18 @@ export class SignAccountOpController
     }
   }
 
-  #syncSpeedUpFeeSelectionFromEstimation() {
-    if (
-      !this.isSpeedUpTransaction ||
-      this.estimation.status !== EstimationStatus.Success ||
-      !this.accountOp.gasFeePayment
-    ) {
-      return
-    }
+  /** A speed up must be paid the same way as the pending transaction it replaces */
+  #selectSpeedUpFeeOption() {
+    if (!this.#speedUp || this.estimation.status !== EstimationStatus.Success) return
 
-    const selectedOption = this.estimation.availableFeeOptions.find(
-      (option) =>
-        option.paidBy === this.accountOp.gasFeePayment?.paidBy &&
-        option.token.address === this.accountOp.gasFeePayment?.inToken &&
-        (!this.accountOp.gasFeePayment?.feeTokenChainId ||
-          option.token.chainId === this.accountOp.gasFeePayment?.feeTokenChainId) &&
-        option.token.flags.onGasTank === this.accountOp.gasFeePayment?.isGasTank
+    const replacedFeeOption = this.#speedUp.findReplacedFeeOption(
+      this.estimation.availableFeeOptions
     )
+    if (!replacedFeeOption) return
 
-    if (!selectedOption) return
-
-    this.#paidBy = selectedOption.paidBy
-    this.feeTokenResult = selectedOption.token
-    this.selectedOption = selectedOption
+    this.#paidBy = replacedFeeOption.paidBy
+    this.feeTokenResult = replacedFeeOption.token
+    this.selectedOption = replacedFeeOption
   }
 
   /**
@@ -983,10 +967,7 @@ export class SignAccountOpController
    * running, so speeds that are already above that minimum are used as they are
    */
   #applySpeedUpMinFees(gasPrices?: GasSpeeds): GasSpeeds | undefined {
-    const replacedFees = this.accountOp.meta?.speedUp?.replacedFees
-    if (!this.isSpeedUpTransaction || !replacedFees || !gasPrices) return gasPrices
-
-    return getSpeedUpGasPrices(gasPrices, replacedFees)
+    return this.#speedUp ? this.#speedUp.applyMinFees(gasPrices) : gasPrices
   }
 
   async #getDefaultSigner() {
@@ -1128,40 +1109,22 @@ export class SignAccountOpController
     })
     this.#gasPriceInterval.start({ runImmediately: true, timeout: GAS_PRICE_UPDATE_INTERVAL })
 
-    if (this.isSpeedUpTransaction) {
-      this.#onActivityUpdateUnsubscribe = this.#activity.onUpdate(
-        () => this.#stopIfSpeedUpNotNeeded(),
-        'sign-account-op-speed-up'
-      )
-      // The pending transaction may have been processed while the request was opening
-      this.#stopIfSpeedUpNotNeeded()
-    }
+    // Started after the intervals, so they can be stopped if the pending transaction
+    // was already processed while the request was opening
+    this.#speedUp?.watchReplacedTransaction(() => this.#stopSpeedUp())
   }
 
   /**
    * During a speed up, the pending transaction that is being replaced may get processed before
    * the speed up is signed. Its place (nonce) is then taken, so there's nothing left to sign
    */
-  #stopIfSpeedUpNotNeeded() {
-    const replacedIdentifiedBy = this.#accountOp.meta?.speedUp?.replacedIdentifiedBy
-    if (!this.isSpeedUpTransaction || !replacedIdentifiedBy) return
+  #stopSpeedUp() {
     // Once signing has started, the broadcast reports what happened instead
     if (
       this.status?.type === SigningStatus.InProgress ||
       this.status?.type === SigningStatus.WaitingForPaymaster ||
       this.status?.type === SigningStatus.Done ||
       this.status?.type === SigningStatus.SpeedUpNotNeeded
-    )
-      return
-
-    const replacedAccountOp = this.#activity.findByIdentifiedBy(
-      replacedIdentifiedBy,
-      this.#accountOp.accountAddr,
-      this.#accountOp.chainId
-    )
-    if (
-      !replacedAccountOp ||
-      !SPEED_UP_REPLACED_TXN_PROCESSED_STATUSES.includes(replacedAccountOp.status)
     )
       return
 
@@ -2143,8 +2106,6 @@ export class SignAccountOpController
           : null
       }
 
-      this.#syncSpeedUpFeeSelectionFromEstimation()
-
       if (feeToken && paidBy && !isSpeedUpTransaction) {
         this.#paidBy = paidBy
         this.feeTokenResult = feeToken
@@ -2187,7 +2148,8 @@ export class SignAccountOpController
 
       // Set defaults, if some of the optional params are omitted
       this.#setDefaults()
-      if (isSpeedUpTransaction) this.#syncSpeedUpFeeSelectionFromEstimation()
+      // After the defaults, so the default fee option gets replaced with the pending transaction's
+      this.#selectSpeedUpFeeOption()
 
       if (
         this.estimation.status === EstimationStatus.Success &&
@@ -2332,8 +2294,7 @@ export class SignAccountOpController
     this.gasPrice.destroy()
     this.#onDappsUpdateUnsubscribe?.()
     this.#onDappsUpdateUnsubscribe = undefined
-    this.#onActivityUpdateUnsubscribe?.()
-    this.#onActivityUpdateUnsubscribe = undefined
+    this.#speedUp?.destroy()
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined

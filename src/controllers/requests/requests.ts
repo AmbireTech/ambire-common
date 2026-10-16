@@ -126,6 +126,7 @@ import { AutoLoginController } from '../autoLogin/autoLogin'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
+import { SpeedUp } from '../signAccountOp/speedUp'
 
 import type { EIP712TypedData } from '@safe-global/types-kit'
 import type { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
@@ -3486,7 +3487,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
             await this.#portfolio.updateSelectedAccount(account.addr, [network])
           },
           onBroadcastSuccess: this.#onBroadcastSuccess,
-          onBroadcastFailed: this.#onBroadcastFailed
+          onBroadcastFailed: this.#onBroadcastFailed,
+          speedUp:
+            providedAccountOp && SpeedUp.isSpeedUp(providedAccountOp)
+              ? new SpeedUp({ accountOp: providedAccountOp, activity: this.#activity })
+              : undefined
         }),
 
         dappPromises
