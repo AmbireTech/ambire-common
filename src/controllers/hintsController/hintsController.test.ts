@@ -1,7 +1,11 @@
 import { describe, expect, test } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
-import { isAssetMetadataStale, TOKEN_METADATA_MAX_AGE_MS } from '../../libs/portfolio/helpers'
+import {
+  isAssetMetadataStale,
+  mergeCollectionHints,
+  TOKEN_METADATA_MAX_AGE_MS
+} from '../../libs/portfolio/helpers'
 import { CollectionMetadataEntry, TokenMetadataEntry } from '../../libs/portfolio/interfaces'
 import { StorageController } from '../storage/storage'
 import { HintsController } from './hintsController'
@@ -298,6 +302,25 @@ describe('HintsController custom and hidden collectibles', () => {
       await hints.removeCustomToken({ address: APES, chainId: ETHEREUM_CHAIN_ID }, ACCOUNT)
 
       expect(getCollectibleHints(hints).learn[APES]).toEqual([1n])
+    })
+
+    test('requests collectible #0 by its id', async () => {
+      const { hintsCtrl: hints } = await prepareTest()
+
+      await hints.addCustomToken({
+        address: APES,
+        chainId: ETHEREUM_CHAIN_ID,
+        standard: 'ERC721',
+        tokenId: 0n
+      })
+
+      expect(hints.addErc721sToBeLearned([[APES, [0n]]], ACCOUNT, ETHEREUM_CHAIN_ID)).toBe(true)
+      expect(hints.addErc721sToBeLearned([[APES, [0n]]], ACCOUNT, ETHEREUM_CHAIN_ID)).toBe(false)
+
+      const specialHints = getCollectibleHints(hints)
+
+      expect(specialHints.learn[APES]).toEqual([0n])
+      expect(mergeCollectionHints({ apiHints: {}, specialHints })[APES]).toEqual([0n])
     })
 
     test('keeps requesting the whole collection it was asked to enumerate', async () => {

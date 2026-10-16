@@ -1169,11 +1169,11 @@ describe('SignAccountOp Controller ', () => {
   test('uses the saved fee speed as the default for a new signing request', async () => {
     const { controller } = await initDefaultFeeSelection(undefined, {
       initialSetStorage: async (storageCtrl) => {
-        await storageCtrl.set('signAccountOpFeeSpeedPreference', { '1': FeeSpeed.Medium })
+        await storageCtrl.set('signAccountOpFeeSpeedPreference', { '1': FeeSpeed.Ape })
       }
     })
 
-    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Ape)
   })
 
   test('ignores a saved fee speed belonging to another chain', async () => {
@@ -1183,7 +1183,8 @@ describe('SignAccountOp Controller ', () => {
       }
     })
 
-    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Fast)
+    // falls back to the default speed
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
   })
 
   test('persists a user selected fee speed right away, for the current chain only', async () => {
@@ -1828,8 +1829,8 @@ describe('SignAccountOp Controller ', () => {
           maxPriorityFeePerGas: toBeHex(1000000000n) as Hex
         },
         medium: {
-          maxFeePerGas: toBeHex(4000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(2000000000n) as Hex
+          maxFeePerGas: toBeHex(10000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
         },
         fast: {
           maxFeePerGas: toBeHex(10000000000n) as Hex,
@@ -1847,6 +1848,8 @@ describe('SignAccountOp Controller ', () => {
       paidBy: smartAccount.addr,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal',
+      // the $1 USDC fee expected below is calculated with the medium gas price
+      speed: FeeSpeed.Fast,
       hasNewEstimation: true
     })
 
@@ -2304,8 +2307,9 @@ describe('Negative cases', () => {
       '0x0000000000000000000000000000000000000000'
     )
     expect(controller.accountOp.gasFeePayment!.feeTokenChainId).toEqual(137n)
-    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(300n)
-    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(600n)
+    // the default speed is medium
+    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(200n)
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(400n)
 
     const typedData = getTypedData(
       network.chainId,
@@ -4478,9 +4482,9 @@ describe('RPC gas prices with a bundler fallback', () => {
     const option = controller.estimation.availableFeeOptions.find(
       (o) => o.paidBy === paidBy && o.token.address === feeToken.address
     )!
-    return controller.feeSpeeds[getFeeSpeedIdentifier(option, controller.accountOp.accountAddr)]!.find(
-      ({ type }) => type === speed
-    )!
+    return controller.feeSpeeds[
+      getFeeSpeedIdentifier(option, controller.accountOp.accountAddr)
+    ]!.find(({ type }) => type === speed)!
   }
 
   /**
@@ -4615,9 +4619,9 @@ describe('RPC gas prices with a bundler fallback', () => {
     // (see the gasPrice controller tests)
 
     expect(controller.gasPrice.areGasPricesUsedFromBundlerEstimation).toBe(true)
-    expect(
-      controller.baseAccount.getGasPriceFetchStrategy(controller.isErc4337Enabled)
-    ).toBe('rpcWithBundlerFallback')
+    expect(controller.baseAccount.getGasPriceFetchStrategy(controller.isErc4337Enabled)).toBe(
+      'rpcWithBundlerFallback'
+    )
   })
 
   test('custom gas prices override both collections', async () => {
@@ -4640,9 +4644,9 @@ describe('RPC gas prices with a bundler fallback', () => {
     // the test environment has no Polygon state for the Safe, so use an Ambire smart
     // account, which prefers the bundler outside Ethereum just the same
     const { controller } = await initSmartAccount(137n, nativeFeeTokenPolygon, smartAccount)
-    expect(
-      controller.baseAccount.getGasPriceFetchStrategy(controller.isErc4337Enabled)
-    ).toBe('bundlerWithRpcFallback')
+    expect(controller.baseAccount.getGasPriceFetchStrategy(controller.isErc4337Enabled)).toBe(
+      'bundlerWithRpcFallback'
+    )
 
     controller.update({ rpcGasPrices })
 

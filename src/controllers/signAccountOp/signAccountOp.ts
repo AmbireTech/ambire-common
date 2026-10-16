@@ -324,7 +324,7 @@ export class SignAccountOpController
 
   pendingFeeTokenPreference: SignAccountOpFeeTokenPreference | null = null
 
-  selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Fast
+  selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Medium
 
   /**
    * The selected payment option for txn broadcasting.
@@ -543,7 +543,8 @@ export class SignAccountOpController
     this.#signAccountOpPreference = signAccountOpPreference
     this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
     this.selectedFeeSpeed =
-      this.#signAccountOpPreference.feeSpeedPreference[network.chainId.toString()] || FeeSpeed.Fast
+      this.#signAccountOpPreference.feeSpeedPreference[network.chainId.toString()] ||
+      FeeSpeed.Medium
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
@@ -762,7 +763,7 @@ export class SignAccountOpController
     this.#paidBy = null
     this.feeTokenResult = null
     this.selectedOption = undefined
-    this.selectedFeeSpeed = FeeSpeed.Fast
+    this.selectedFeeSpeed = FeeSpeed.Medium
     this.feeSpeeds = {}
     this.#updateAccountOp({ gasFeePayment: null })
   }
@@ -2180,7 +2181,7 @@ export class SignAccountOpController
     this.hasCustomGasPrices = false
     this.gasFeeChangedConfirmationRequired = false
     this.previousFee = null
-    this.selectedFeeSpeed = FeeSpeed.Fast
+    this.selectedFeeSpeed = FeeSpeed.Medium
     this.#paidBy = null
     this.feeTokenResult = null
     this.pendingFeeTokenPreference = null
@@ -2582,9 +2583,9 @@ export class SignAccountOpController
       return
     }
 
-    // set fast if available
-    if (speeds.find(({ type, disabled }) => type === FeeSpeed.Fast && !disabled)) {
-      this.selectedFeeSpeed = FeeSpeed.Fast
+    // set medium if available
+    if (speeds.find(({ type, disabled }) => type === FeeSpeed.Medium && !disabled)) {
+      this.selectedFeeSpeed = FeeSpeed.Medium
       return
     }
 
