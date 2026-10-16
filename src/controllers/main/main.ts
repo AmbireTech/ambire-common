@@ -79,7 +79,6 @@ import { IMainController, STATUS_WRAPPED_METHODS } from '@/interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '@/interfaces/network'
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
-import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { IPortfolioController } from '@/interfaces/portfolio'
 import { IPrivacyPoolsController } from '@/interfaces/privacyPools'
 import { IProvidersController } from '@/interfaces/provider'
@@ -123,6 +122,7 @@ import { CowSwapAPI } from '@/services/cowswap/api'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketV3API } from '@/services/socketv3/api'
+import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
@@ -980,13 +980,24 @@ export class MainController extends EventEmitter implements IMainController {
       maxDataAgeMsUnused: 60 * 60 * 1000
     })
 
+    await this.#forceEmitSelectedAccountUpdates(toAccountAddr)
+  }
+
+  /** Pushes the selected account's getters to the UI. `accountAddr` is null for a Privacy Pools one. */
+  async #forceEmitSelectedAccountUpdates(accountAddr: string | null) {
+    const accountScopedUpdates = accountAddr
+      ? [
+          this.activity.onSelectedAccountChange(accountAddr),
+          this.dapps.onSelectedAccountChange(accountAddr)
+        ]
+      : [this.activity.forceEmitUpdate()]
+
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
-      this.activity.onSelectedAccountChange(toAccountAddr),
+      ...accountScopedUpdates,
       this.requests.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.swapAndBridge.forceEmitUpdate(),
-      this.dapps.onSelectedAccountChange(toAccountAddr),
       this.forceEmitUpdate()
     ])
   }
@@ -1061,7 +1072,11 @@ export class MainController extends EventEmitter implements IMainController {
    */
   async #selectPrivacyPoolsAccount(seedId: string) {
     if (!this.#hasPrivacyPoolsAccount(seedId)) {
-      console.error(`Privacy Pools account of recovery phrase ${seedId} does not exist`)
+      this.emitError({
+        level: 'major',
+        message: 'The account you selected could not be found. Please select another account.',
+        error: new Error('main: the Privacy Pools account to select does not exist')
+      })
       return
     }
 
@@ -1070,14 +1085,7 @@ export class MainController extends EventEmitter implements IMainController {
     this.swapAndBridge.reset()
     this.transfer.reset({ destroyAccountOp: true })
 
-    // forceEmitUpdate to update the getters in the FE state of the ctrls
-    await Promise.all([
-      this.activity.forceEmitUpdate(),
-      this.requests.forceEmitUpdate(),
-      this.addressBook.forceEmitUpdate(),
-      this.swapAndBridge.forceEmitUpdate(),
-      this.forceEmitUpdate()
-    ])
+    await this.#forceEmitSelectedAccountUpdates(null)
   }
 
   /**
