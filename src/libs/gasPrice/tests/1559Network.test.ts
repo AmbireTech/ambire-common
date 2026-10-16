@@ -13,14 +13,14 @@ const baseNetwork = networks.find((net) => net.chainId === 8453n)!
 const getByName = (recommendations: Gas1559Recommendation[], name: string) =>
   recommendations.find((recommendation) => recommendation.name === name)!
 
-// The reward fixtures below hold one row per block with the p20, p50, p80 and p90
+// The reward fixtures below hold one row per block with the p25, p50, p80 and p90
 // tips - the percentiles slow, medium, fast and ape follow, in that order
 
 describe('1559 Network gas price tests', () => {
   // Mock providers throw errors we can ignore
   suppressConsoleBeforeEach()
 
-  test('should request the last 3 blocks with the p20, p50, p80 and p90 tips', async () => {
+  test('should request the last 3 blocks with the p25, p50, p80 and p90 tips', async () => {
     const provider = MockProvider.init({ ethMaxPriorityFeePerGas: 100n })
     const sendSpy = jest.spyOn(provider, 'send')
 
@@ -30,7 +30,7 @@ describe('1559 Network gas price tests', () => {
     expect(feeHistoryCall).toBeDefined()
     const [blockCount, , rewardPercentiles] = feeHistoryCall![1]
     expect(Number(BigInt(blockCount))).toBe(3)
-    expect(rewardPercentiles).toEqual([20, 50, 80, 90])
+    expect(rewardPercentiles).toEqual([25, 50, 80, 90])
     provider.destroy()
   })
 
@@ -56,15 +56,15 @@ describe('1559 Network gas price tests', () => {
     const gasPriceData = await getGasPriceRecommendations(provider, network)
     const gasPrice = gasPriceData.gasPrice as Gas1559Recommendation[]
 
-    // slow, medium, fast and ape tolerate 1, 2, 3 and 4 full blocks (+12.5% base fee each)
+    // slow, medium, fast and ape tolerate 2, 3, 3 and 4 full blocks (+12.5% base fee each)
     expect(getByName(gasPrice, 'slow')).toEqual({
       name: 'slow',
-      baseFeePerGas: ethers.parseUnits('1.35', 'gwei'),
+      baseFeePerGas: ethers.parseUnits('1.51875', 'gwei'),
       maxPriorityFeePerGas: ethers.parseUnits('1', 'gwei')
     })
     expect(getByName(gasPrice, 'medium')).toEqual({
       name: 'medium',
-      baseFeePerGas: ethers.parseUnits('1.51875', 'gwei'),
+      baseFeePerGas: ethers.parseUnits('1.70859375', 'gwei'),
       maxPriorityFeePerGas: ethers.parseUnits('2', 'gwei')
     })
     expect(getByName(gasPrice, 'fast')).toEqual({
@@ -91,16 +91,16 @@ describe('1559 Network gas price tests', () => {
     const gasPriceData = await getGasPriceRecommendations(provider, network)
     const gasPrice = gasPriceData.gasPrice as Gas1559Recommendation[]
 
-    // slow, medium, fast and ape tolerate 1, 2, 3 and 4 full blocks (+12.5% base fee each)
+    // slow, medium, fast and ape tolerate 2, 3, 3 and 4 full blocks (+12.5% base fee each)
     // and with no percentiles, each tip is 25% higher than the previous speed's one
     expect(getByName(gasPrice, 'slow')).toEqual({
       name: 'slow',
-      baseFeePerGas: ethers.parseUnits('1.35', 'gwei'),
+      baseFeePerGas: ethers.parseUnits('1.51875', 'gwei'),
       maxPriorityFeePerGas: ethers.parseUnits('1', 'gwei')
     })
     expect(getByName(gasPrice, 'medium')).toEqual({
       name: 'medium',
-      baseFeePerGas: ethers.parseUnits('1.51875', 'gwei'),
+      baseFeePerGas: ethers.parseUnits('1.70859375', 'gwei'),
       maxPriorityFeePerGas: ethers.parseUnits('1.25', 'gwei')
     })
     expect(getByName(gasPrice, 'fast')).toEqual({
@@ -134,9 +134,9 @@ describe('1559 Network gas price tests', () => {
     const gasPriceData = await getGasPriceRecommendations(provider, baseNetwork)
     const gasPrice = gasPriceData.gasPrice as Gas1559Recommendation[]
 
-    expect(getByName(gasPrice, 'slow').baseFeePerGas).toBe(ethers.parseUnits('1.125', 'gwei'))
+    expect(getByName(gasPrice, 'slow').baseFeePerGas).toBe(ethers.parseUnits('1.265625', 'gwei'))
     expect(getByName(gasPrice, 'medium').baseFeePerGas).toBe(
-      ethers.parseUnits('1.265625', 'gwei')
+      ethers.parseUnits('1.423828125', 'gwei')
     )
     expect(getByName(gasPrice, 'fast').baseFeePerGas).toBe(
       ethers.parseUnits('1.423828125', 'gwei')
@@ -304,7 +304,7 @@ describe('1559 Network gas price tests', () => {
     const recommendations = gasPrice as Gas1559Recommendation[]
     const getBaseFeeAfterFullBlocks = (fullBlocks: number) =>
       Array.from({ length: fullBlocks }).reduce<bigint>((fee) => fee + fee / 8n, nextBlockBaseFee)
-    const toleratedFullBlocksBySpeed = { slow: 1, medium: 2, fast: 3, ape: 4 }
+    const toleratedFullBlocksBySpeed = { slow: 2, medium: 3, fast: 3, ape: 4 }
 
     Object.entries(toleratedFullBlocksBySpeed).forEach(([name, toleratedFullBlocks]) => {
       const { baseFeePerGas } = getByName(recommendations, name)

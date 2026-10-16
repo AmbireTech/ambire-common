@@ -29,12 +29,12 @@ const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
 const speeds = [
   {
     name: 'slow',
-    fullBlocksToTolerate: 1,
+    fullBlocksToTolerate: 2,
     legacyGasPriceAddBps: 0n
   },
   {
     name: 'medium',
-    fullBlocksToTolerate: 2,
+    fullBlocksToTolerate: 3,
     legacyGasPriceAddBps: 100n
   },
   {
@@ -54,7 +54,7 @@ const speeds = [
 const MIN_PRIORITY_FEE_STEP_BPS = 2500n
 
 const FEE_HISTORY_BLOCK_COUNT = 3
-const FEE_HISTORY_REWARD_PERCENTILES = [20, 50, 80, 90]
+const FEE_HISTORY_REWARD_PERCENTILES = [25, 50, 80, 90]
 
 export interface GasPriceRecommendation {
   name: string
