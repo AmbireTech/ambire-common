@@ -63,6 +63,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   #ui: IUiController | null = null
 
+  /** The selected regular account. Also null while a Privacy Pools account is selected. */
   account: Account | null = null
 
   /**

@@ -26,9 +26,9 @@ export const PRIVACY_POOLS_ACCOUNT_INDEX = 0
 export const PRIVACY_POOLS_SIGNING_KEY_PATH = `m/28784'/1'/${PRIVACY_POOLS_ACCOUNT_INDEX}'`
 
 /**
- * fatlabs' CDN of the pools' event history as signed, content-addressed files: one request and
- * about a second per pool, against thousands of `eth_getLogs` calls. Only Ethereum's pools are
- * published, not the entrypoint. Every file is checked against the signed manifest before use.
+ * fatlabs' CDN of the entrypoint's and the pools' event history as signed, content-addressed
+ * files, against thousands of `eth_getLogs` calls: a chain's first read takes about 18 s. Only
+ * Ethereum is published. Every file is checked against the signed manifest before use.
  */
 export const PRIVACY_POOLS_SAGA_SYNC_URL = 'https://saga.fatsolutions.xyz'
 
