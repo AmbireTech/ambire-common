@@ -45,6 +45,8 @@ export type PrivacyPoolsContext = {
   kohakuStorage: Storage
   lock: LockGeneration
   hasAccount: (seedId: string) => boolean
+  /** USD price of a pool's asset, or null when unknown - see `PrivacyPoolsController.prices`. */
+  getTokenPrice: (chainId: string, tokenAddress: string) => number | null
   /**
    * Called by a module where its own flow changes what the UI shows. What the controller calls
    * from a subscription, or together with other changes, does not emit - at most it returns

@@ -28,7 +28,7 @@ import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
 import { Call } from '../../libs/accountOp/types'
 import { createKohakuStorage } from '../../libs/kohaku/host'
-import { fetchPrivacyPoolsPrices } from '../../libs/privacyPools/prices'
+import { fetchPrivacyPoolsPrices, getPrivacyPoolsPriceKey } from '../../libs/privacyPools/prices'
 import {
   createProverFactory,
   PrivacyPoolsProverFactory,
@@ -173,6 +173,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       }),
       lock: this.#lock,
       hasAccount: (seedId) => this.#hasAccount(seedId),
+      getTokenPrice: (chainId, tokenAddress) =>
+        this.prices[getPrivacyPoolsPriceKey(chainId, tokenAddress)] ?? null,
       emitUpdate: () => this.emitUpdate(),
       emitError: (error) => this.emitError(error)
     }

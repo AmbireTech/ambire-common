@@ -290,8 +290,10 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
         phase: 'ready',
         quote: { feeAmount: fee, amountAfterFee: amount - fee, expectedFeeAmount },
         humanization: humanizePrivacyPoolsWithdrawal({
+          chainId,
           withdrawal: paymasterWithdrawal,
-          expectedFeeAmount
+          expectedFeeAmount,
+          usdPrice: this.#ctx.getTokenPrice(chainId, tokenAddress)
         })
       })
       // Not kept if a lock or a cancel superseded it
@@ -341,8 +343,10 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
       ...operation,
       quote: { ...operation.quote, expectedFeeAmount },
       humanization: humanizePrivacyPoolsWithdrawal({
+        chainId: operation.chainId,
         withdrawal: pendingWithdrawal.paymasterWithdrawal,
-        expectedFeeAmount
+        expectedFeeAmount,
+        usdPrice: this.#ctx.getTokenPrice(operation.chainId, operation.tokenAddress)
       })
     })
     this.#ctx.emitUpdate()

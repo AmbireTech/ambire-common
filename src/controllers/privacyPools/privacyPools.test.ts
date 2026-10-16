@@ -2064,15 +2064,21 @@ describe('PrivacyPoolsController', () => {
       }
     }
 
-    /** The card of the proved transfer, with what the recipient gets when it is known. */
-    const humanizedSend = (expectedToReceive: bigint | null) => ({
+    /**
+     * The card of the proved transfer: what the recipient gets and the fee are the expected ones
+     * when the transfer was simulated, otherwise the bounds the fee cap sets.
+     */
+    const humanizedSend = (expectedFee: bigint | null) => ({
       intent: [{ type: 'action', content: 'Send' }],
       rows: [
         { label: 'Amount to Send', address: ZERO_ADDRESS, value: WITHDRAWAL_AMOUNT },
-        ...(expectedToReceive === null
-          ? []
-          : [{ label: 'Estimated to Receive', address: ZERO_ADDRESS, value: expectedToReceive }]),
-        { label: 'Recipient', address: WITHDRAWAL_RECIPIENT.toLowerCase(), value: undefined }
+        {
+          label: 'Recipient Receives',
+          address: ZERO_ADDRESS,
+          value: WITHDRAWAL_AMOUNT - (expectedFee ?? WITHDRAWAL_FEE)
+        },
+        { label: 'Recipient', address: WITHDRAWAL_RECIPIENT.toLowerCase(), value: undefined },
+        { label: 'Network fee', address: ZERO_ADDRESS, value: expectedFee ?? WITHDRAWAL_FEE }
       ]
     })
 
@@ -2080,11 +2086,11 @@ describe('PrivacyPoolsController', () => {
       const { controller } = await prepareSignedWithdrawal()
 
       expect(describeHumanization(controller.operation?.humanization)).toEqual(
-        humanizedSend(WITHDRAWAL_AMOUNT - (WITHDRAWAL_FEE - WITHDRAWAL_REFUND))
+        humanizedSend(WITHDRAWAL_FEE - WITHDRAWAL_REFUND)
       )
     })
 
-    it('leaves out what the recipient gets when the transfer could not be run', async () => {
+    it('shows the bounds of what the recipient gets and the fee when the transfer could not be run', async () => {
       simulateWithdrawal = async () => {
         throw new Error('the method eth_simulateV1 does not exist/is not available')
       }
@@ -2182,7 +2188,7 @@ describe('PrivacyPoolsController', () => {
 
         // Its refund goes to the recipient too, so they get the amount net of the expected fee
         expect(describeHumanization(controller.operation?.humanization)).toEqual(
-          humanizedSend(WITHDRAWAL_AMOUNT - (WITHDRAWAL_FEE - WITHDRAWAL_REFUND))
+          humanizedSend(WITHDRAWAL_FEE - WITHDRAWAL_REFUND)
         )
       })
 

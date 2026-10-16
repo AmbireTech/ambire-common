@@ -1,11 +1,17 @@
 import {
   fromPrivacyPoolsAssetAddress,
+  getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig
 } from '../../../../consts/privacyPools'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { readPrivacyPoolsDeposit } from '../../../privacyPools/deposit'
 import { PrivacyPoolsPaymasterWithdrawal } from '../../../privacyPools/paymasterWithdrawal'
-import { HumanizerCallModule, HumanizerErc7730Row, IrCall } from '../../interfaces'
+import {
+  HumanizerCallModule,
+  HumanizerErc7730Row,
+  HumanizerVisualization,
+  IrCall
+} from '../../interfaces'
 import {
   getAction,
   getAddressVisualization,
@@ -41,28 +47,56 @@ export const privacyPoolsModule: HumanizerCallModule = (accountOp: AccountOp, ca
  * ERC-4337 userOp of a single-use sender, so it is described from what `readPaymasterWithdrawal`
  * read out of it, as no ERC-7730 descriptor could.
  *
- * The amount is what leaves the account; the fee comes out of it. What the recipient gets is shown
- * only when the withdrawal could be simulated: the fee cap alone would make it look far smaller
- * than it is, as the unused part of the fee is refunded to the recipient.
+ * The amount is what leaves the account; the fee comes out of it. The fee locked into the proof is
+ * only a cap: the unused part is refunded to the recipient. So when the withdrawal could be
+ * simulated, what the recipient gets and the fee are the expected ones; otherwise they are the
+ * least the recipient gets and the most the fee can be, and say so.
+ *
+ * The token is one of the pools' configured assets, so its symbol and decimals go with it and the
+ * card shows right away. The fee also carries the token's price, to show what it costs in USD.
  */
 export const humanizePrivacyPoolsWithdrawal = ({
-  withdrawal: { recipient, tokenAddress, amount },
-  expectedFeeAmount
+  chainId,
+  withdrawal: { recipient, tokenAddress, amount, fee },
+  expectedFeeAmount,
+  usdPrice
 }: {
+  chainId: string
   withdrawal: PrivacyPoolsPaymasterWithdrawal
   /** The fee the simulation expects, or null when it could not be run. */
   expectedFeeAmount: bigint | null
+  /** USD price of the withdrawn token, or null when unknown. */
+  usdPrice: number | null
 }): IrCall => {
+  const isSimulated = expectedFeeAmount !== null
+  const shownFee = expectedFeeAmount ?? fee
+  const asset = getPrivacyPoolsAsset(BigInt(chainId), tokenAddress)
+  const getAssetToken = (value: bigint): HumanizerVisualization => ({
+    ...getToken(tokenAddress, value),
+    ...(asset && { tokenInfo: { symbol: asset.symbol, decimals: asset.decimals } })
+  })
   const rows: HumanizerErc7730Row[] = [
-    { type: 'single-value', label: 'Amount to Send', value: getToken(tokenAddress, amount) }
-  ]
-  if (expectedFeeAmount !== null)
-    rows.push({
+    { type: 'single-value', label: 'Amount to Send', value: getAssetToken(amount) },
+    {
       type: 'single-value',
-      label: 'Estimated to Receive',
-      value: getToken(tokenAddress, amount - expectedFeeAmount)
-    })
-  rows.push({ type: 'single-value', label: 'Recipient', value: getAddressVisualization(recipient) })
+      label: 'Recipient Receives',
+      value: getAssetToken(amount - shownFee),
+      valuePrefix: isSimulated ? '≈' : 'at least'
+    },
+    {
+      type: 'single-value',
+      label: 'Recipient',
+      value: getAddressVisualization(recipient),
+      hasSeparatorBefore: true
+    },
+    {
+      type: 'single-value',
+      label: 'Network fee',
+      value: { ...getAssetToken(shownFee), ...(usdPrice !== null && { usdPrice }) },
+      ...(isSimulated ? {} : { valuePrefix: 'up to' }),
+      hasSeparatorBefore: true
+    }
+  ]
 
   return {
     // No raw call: nothing in the userOp is a call the user's account makes
