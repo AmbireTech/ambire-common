@@ -142,17 +142,6 @@ export type RecipientValidation = Validation & {
   shouldHold: boolean
 }
 
-/**
- * The lower the rank, the more important the result. An error comes first because it disables the
- * buttons. A warning that requires a hold comes before a plain warning, so that a plain warning
- * can't hide a hold. A success message comes last.
- */
-const getRecipientCheckRank = (result: RecipientCheckResult) => {
-  if (result.severity === 'error') return 0
-  if (result.severity === 'warning') return result.shouldHold ? 1 : 2
-  return 3
-}
-
 const validateSendTransferAddress = (
   address: string,
   selectedAccAddr: string,
@@ -183,10 +172,14 @@ const validateSendTransferAddress = (
 
   // The single source of truth for both the message under the input and the hold-to-proceed state
   // of the buttons, so a check can't require a hold without also explaining why.
-  // The checks that apply are sorted by how important they are (see getRecipientCheckRank) and the
-  // FIRST one decides everything: an error disables the buttons, a warning that requires a hold makes
-  // the user hold the button. The order of the checks below is the tie-breaker between equally
-  // important checks (the sort is stable).
+  // The checks are ordered by how important they are and the FIRST one that applies decides
+  // everything, so the order below is the priority:
+  // 1. errors - they disable the buttons of the form
+  // 2. warnings that require a hold - the user must hold the button to proceed
+  // 3. warnings that don't require a hold
+  // 4. success messages
+  // A warning that requires a hold must stay above every plain warning, otherwise the plain warning
+  // would be the first one that applies and the hold would be lost.
   const checks: RecipientCheck[] = [
     // A known scam address is the most severe problem, so it takes priority over every other message.
     // The severity is 'error' so that the buttons of the form stay disabled - sending to a known scam
@@ -199,6 +192,14 @@ const validateSendTransferAddress = (
         severity: 'error'
       }
     },
+    () => {
+      if (!isRecipientHumanizerKnownTokenOrSmartContract) return undefined
+
+      return {
+        message: 'You are trying to send tokens to a smart contract. Doing so would burn them.',
+        severity: 'error'
+      }
+    },
     // A domain the user sent to before now resolves to a different address - it may have expired and
     // been re-pointed.
     () => {
@@ -207,6 +208,40 @@ const validateSendTransferAddress = (
       return {
         message:
           'This name now resolves to a different address than the last time you sent to it. Verify the new recipient before proceeding.',
+        severity: 'warning',
+        shouldHold: true
+      }
+    },
+    // poisoning detected - require hold-to-proceed as an additional safety step
+    () => {
+      if (!addressPoisoningMatch) return undefined
+
+      return {
+        message: getAddressPoisoningWarningMessage(
+          formatAddressPoisoningMatchForMessage(addressPoisoningMatch)
+        ),
+        severity: 'warning',
+        shouldHold: true
+      }
+    },
+    () => {
+      if (!isRecipientAddressViewOnly) return undefined
+
+      return {
+        message: VIEW_ONLY_RECIPIENT_MESSAGE,
+        severity: 'warning',
+        shouldHold: true
+      }
+    },
+    // The first time sending to an unknown address requires a hold until the user agrees. Once the
+    // user agrees, the check below shows the same message without the hold.
+    () => {
+      if (!isRecipientAddressFirstTimeSend || !isRecipientAddressUnknown || addressConfirmed) {
+        return undefined
+      }
+
+      return {
+        message: FIRST_TIME_SEND_MESSAGE,
         severity: 'warning',
         shouldHold: true
       }
@@ -235,48 +270,13 @@ const validateSendTransferAddress = (
       }
     },
     () => {
-      if (!isRecipientHumanizerKnownTokenOrSmartContract) return undefined
-
-      return {
-        message: 'You are trying to send tokens to a smart contract. Doing so would burn them.',
-        severity: 'error'
-      }
-    },
-    // poisoning detected - require hold-to-proceed as an additional safety step
-    () => {
-      if (!addressPoisoningMatch) return undefined
-
-      return {
-        message: getAddressPoisoningWarningMessage(
-          formatAddressPoisoningMatchForMessage(addressPoisoningMatch)
-        ),
-        severity: 'warning',
-        shouldHold: true
-      }
-    },
-    () => {
-      if (!isRecipientAddressViewOnly) return undefined
-
-      return {
-        message: VIEW_ONLY_RECIPIENT_MESSAGE,
-        severity: 'warning',
-        shouldHold: true
-      }
-    },
-    // The only check that depends on the agreement of the user: the message stays the same, but
-    // the hold is released once the user agrees to send to the unknown address.
-    () => {
       if (!isRecipientAddressFirstTimeSend) return undefined
 
       return {
         message: isRecipientAddressUnknown
           ? FIRST_TIME_SEND_MESSAGE
           : FIRST_TIME_SEND_IN_ADDRESS_BOOK_MESSAGE,
-        severity: 'warning',
-        shouldHold:
-          isRecipientAddressUnknown &&
-          !addressConfirmed &&
-          !isRecipientHumanizerKnownTokenOrSmartContract
+        severity: 'warning'
       }
     },
     () => {
@@ -289,15 +289,12 @@ const validateSendTransferAddress = (
     }
   ]
 
-  const results = checks
-    .map((check) => check())
-    .filter((result): result is RecipientCheckResult => !!result)
-    .sort((a, b) => getRecipientCheckRank(a) - getRecipientCheckRank(b))
+  for (const check of checks) {
+    const result = check()
+    if (result) return { ...result, shouldHold: !!result.shouldHold }
+  }
 
-  const [firstResult] = results
-  if (!firstResult) return { severity: 'success', message: '', shouldHold: false }
-
-  return { ...firstResult, shouldHold: !!firstResult.shouldHold }
+  return { severity: 'success', message: '', shouldHold: false }
 }
 
 const validateSendTransferAmount = (amount: string, selectedAsset: TokenResult): Validation => {
