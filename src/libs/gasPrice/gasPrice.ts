@@ -26,41 +26,35 @@ const BASE_FEE_MAX_CHANGE_DENOMINATOR = 8n
 //   EIP-1559 txns pay only the actual base fee + tip, maxFeePerGas is a cap
 // * legacyGasPriceAddBps - buffer for non-1559 networks. Unlike the base fee
 //   headroom, the legacy gasPrice is paid in full, so it's kept small
-// * priority fee ranges are relative to slow and prevent high percentiles from
-//   producing disproportionately expensive recommendations
 const speeds = [
   {
     name: 'slow',
     fullBlocksToTolerate: 1,
-    legacyGasPriceAddBps: 0n,
-    priorityFeeMinAddBps: 0n,
-    priorityFeeMaxAddBps: 0n
+    legacyGasPriceAddBps: 0n
   },
   {
     name: 'medium',
     fullBlocksToTolerate: 2,
-    legacyGasPriceAddBps: 100n,
-    priorityFeeMinAddBps: 1250n,
-    priorityFeeMaxAddBps: 2500n
+    legacyGasPriceAddBps: 100n
   },
   {
     name: 'fast',
     fullBlocksToTolerate: 5,
-    legacyGasPriceAddBps: 200n,
-    priorityFeeMinAddBps: 2500n,
-    priorityFeeMaxAddBps: 5000n
+    legacyGasPriceAddBps: 200n
   },
   {
     name: 'ape',
     fullBlocksToTolerate: 12,
-    legacyGasPriceAddBps: 500n,
-    priorityFeeMinAddBps: 5000n,
-    priorityFeeMaxAddBps: 10000n
+    legacyGasPriceAddBps: 500n
   }
 ]
 
-const FEE_HISTORY_BLOCK_COUNT = 5
-const FEE_HISTORY_REWARD_PERCENTILES = [25, 50, 75, 95]
+// each speed's tip is at least 25% higher than the previous speed's one,
+// so the speeds stay distinct even when the recent tips are all the same
+const MIN_PRIORITY_FEE_STEP_BPS = 2500n
+
+const FEE_HISTORY_BLOCK_COUNT = 3
+const FEE_HISTORY_REWARD_PERCENTILES = [20, 50, 80, 90]
 
 export interface GasPriceRecommendation {
   name: string
@@ -100,12 +94,6 @@ function getBaseFeeAfterFullBlocks(baseFee: bigint, fullBlocks: number): bigint 
     increasedBaseFee += increasedBaseFee / BASE_FEE_MAX_CHANGE_DENOMINATOR
   }
   return increasedBaseFee
-}
-
-function clamp(value: bigint, min: bigint, max: bigint): bigint {
-  if (value < min) return min
-  if (value > max) return max
-  return value
 }
 
 function getMedianPriorityFeesFromHistory(rewards: bigint[][]): bigint[] {
@@ -162,24 +150,24 @@ async function get1559GasPriceRecommendations(
       : estimatedPriorityFee
   const fee: Gas1559Recommendation[] = []
 
-  speeds.forEach(
-    ({ name, fullBlocksToTolerate, priorityFeeMinAddBps, priorityFeeMaxAddBps }, i) => {
-      const baseFeePerGas = getBaseFeeAfterFullBlocks(expectedBaseFee, fullBlocksToTolerate)
-      const minPriorityFee = increaseByBps(slowPriorityFee, priorityFeeMinAddBps)
-      const maxPriorityFee = increaseByBps(slowPriorityFee, priorityFeeMaxAddBps)
-      const maxPriorityFeePerGas = clamp(
-        priorityFees[i] || minPriorityFee,
-        minPriorityFee,
-        maxPriorityFee
-      )
+  speeds.forEach(({ name, fullBlocksToTolerate }, i) => {
+    const baseFeePerGas = getBaseFeeAfterFullBlocks(expectedBaseFee, fullBlocksToTolerate)
+    const previousSpeed = fee[i - 1]
+    const minPriorityFee = previousSpeed
+      ? increaseByBps(previousSpeed.maxPriorityFeePerGas, MIN_PRIORITY_FEE_STEP_BPS)
+      : slowPriorityFee
+    // no upper limit: the median of the recent blocks ignores a single
+    // expensive block, while a lasting spike is followed so the txn gets in
+    const percentilePriorityFee = priorityFees[i] ?? 0n
+    const maxPriorityFeePerGas =
+      percentilePriorityFee > minPriorityFee ? percentilePriorityFee : minPriorityFee
 
-      fee.push({
-        name,
-        baseFeePerGas,
-        maxPriorityFeePerGas
-      })
-    }
-  )
+    fee.push({
+      name,
+      baseFeePerGas,
+      maxPriorityFeePerGas
+    })
+  })
 
   return fee
 }

@@ -1,6 +1,6 @@
 import { ethers } from 'ethers'
 
-import { describe, expect, test } from '@jest/globals'
+import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsoleBeforeEach } from '../../../../test/helpers/console'
 import { networks } from '../../../consts/networks'
@@ -13,23 +13,38 @@ const baseNetwork = networks.find((net) => net.chainId === 8453n)!
 const getByName = (recommendations: Gas1559Recommendation[], name: string) =>
   recommendations.find((recommendation) => recommendation.name === name)!
 
+// The reward fixtures below hold one row per block with the p20, p50, p80 and p90
+// tips - the percentiles slow, medium, fast and ape follow, in that order
+
 describe('1559 Network gas price tests', () => {
   // Mock providers throw errors we can ignore
   suppressConsoleBeforeEach()
+
+  test('should request the last 3 blocks with the p20, p50, p80 and p90 tips', async () => {
+    const provider = MockProvider.init({ ethMaxPriorityFeePerGas: 100n })
+    const sendSpy = jest.spyOn(provider, 'send')
+
+    await getGasPriceRecommendations(provider, network)
+
+    const feeHistoryCall = sendSpy.mock.calls.find(([method]) => method === 'eth_feeHistory')
+    expect(feeHistoryCall).toBeDefined()
+    const [blockCount, , rewardPercentiles] = feeHistoryCall![1]
+    expect(Number(BigInt(blockCount))).toBe(3)
+    expect(rewardPercentiles).toEqual([20, 50, 80, 90])
+    provider.destroy()
+  })
 
   test('should use fee history next block base fee and reward percentiles for speed recommendations', async () => {
     const provider = MockProvider.init({
       ethMaxPriorityFeePerGas: 100n,
       feeHistory: {
         baseFeePerGas: [
-          ethers.parseUnits('1', 'gwei'),
-          ethers.parseUnits('1.05', 'gwei'),
           ethers.parseUnits('1.1', 'gwei'),
           ethers.parseUnits('1.15', 'gwei'),
           ethers.parseUnits('1.18', 'gwei'),
           ethers.parseUnits('1.2', 'gwei')
         ],
-        reward: Array.from({ length: 5 }, () => [
+        reward: Array.from({ length: 3 }, () => [
           ethers.parseUnits('1', 'gwei'),
           ethers.parseUnits('2', 'gwei'),
           ethers.parseUnits('3', 'gwei'),
@@ -50,19 +65,19 @@ describe('1559 Network gas price tests', () => {
     expect(getByName(gasPrice, 'medium')).toEqual({
       name: 'medium',
       baseFeePerGas: ethers.parseUnits('1.51875', 'gwei'),
-      maxPriorityFeePerGas: ethers.parseUnits('1.25', 'gwei')
+      maxPriorityFeePerGas: ethers.parseUnits('2', 'gwei')
     })
     expect(getByName(gasPrice, 'fast')).toEqual({
       name: 'fast',
       // 2.16243896484375 gwei, rounded down to wei
       baseFeePerGas: 2162438964n,
-      maxPriorityFeePerGas: ethers.parseUnits('1.5', 'gwei')
+      maxPriorityFeePerGas: ethers.parseUnits('3', 'gwei')
     })
     expect(getByName(gasPrice, 'ape')).toEqual({
       name: 'ape',
       // 1.2 gwei * 1.125^12, rounded down to wei on each block
       baseFeePerGas: 4931868801n,
-      maxPriorityFeePerGas: ethers.parseUnits('2', 'gwei')
+      maxPriorityFeePerGas: ethers.parseUnits('5', 'gwei')
     })
     provider.destroy()
   })
@@ -78,6 +93,7 @@ describe('1559 Network gas price tests', () => {
     const gasPrice = gasPriceData.gasPrice as Gas1559Recommendation[]
 
     // slow, medium, fast and ape tolerate 1, 2, 5 and 12 full blocks (+12.5% base fee each)
+    // and with no percentiles, each tip is 25% higher than the previous speed's one
     expect(getByName(gasPrice, 'slow')).toEqual({
       name: 'slow',
       baseFeePerGas: ethers.parseUnits('1.35', 'gwei'),
@@ -86,19 +102,19 @@ describe('1559 Network gas price tests', () => {
     expect(getByName(gasPrice, 'medium')).toEqual({
       name: 'medium',
       baseFeePerGas: ethers.parseUnits('1.51875', 'gwei'),
-      maxPriorityFeePerGas: ethers.parseUnits('1.125', 'gwei')
+      maxPriorityFeePerGas: ethers.parseUnits('1.25', 'gwei')
     })
     expect(getByName(gasPrice, 'fast')).toEqual({
       name: 'fast',
       // 2.16243896484375 gwei, rounded down to wei
       baseFeePerGas: 2162438964n,
-      maxPriorityFeePerGas: ethers.parseUnits('1.25', 'gwei')
+      maxPriorityFeePerGas: ethers.parseUnits('1.5625', 'gwei')
     })
     expect(getByName(gasPrice, 'ape')).toEqual({
       name: 'ape',
       // 1.2 gwei * 1.125^12, rounded down to wei on each block
       baseFeePerGas: 4931868801n,
-      maxPriorityFeePerGas: ethers.parseUnits('1.5', 'gwei')
+      maxPriorityFeePerGas: ethers.parseUnits('1.953125', 'gwei')
     })
     provider.destroy()
   })
@@ -108,14 +124,12 @@ describe('1559 Network gas price tests', () => {
       baseFeePerGas: ethers.parseUnits('2', 'gwei'),
       feeHistory: {
         baseFeePerGas: [
-          ethers.parseUnits('2', 'gwei'),
-          ethers.parseUnits('1.8', 'gwei'),
           ethers.parseUnits('1.6', 'gwei'),
           ethers.parseUnits('1.4', 'gwei'),
           ethers.parseUnits('1.2', 'gwei'),
           ethers.parseUnits('1', 'gwei')
         ],
-        reward: Array.from({ length: 5 }, () => [100000n, 200000n, 300000n, 500000n])
+        reward: Array.from({ length: 3 }, () => [100000n, 200000n, 300000n, 500000n])
       }
     })
 
@@ -136,15 +150,14 @@ describe('1559 Network gas price tests', () => {
   test('should use median priority fees so one expensive block does not distort recommendations', async () => {
     const regularRewards = [
       ethers.parseUnits('1', 'gwei'),
-      ethers.parseUnits('1.2', 'gwei'),
-      ethers.parseUnits('1.4', 'gwei'),
-      ethers.parseUnits('1.8', 'gwei')
+      ethers.parseUnits('2', 'gwei'),
+      ethers.parseUnits('3', 'gwei'),
+      ethers.parseUnits('5', 'gwei')
     ]
     const provider = MockProvider.init({
       ethMaxPriorityFeePerGas: 100n,
       feeHistory: {
         reward: [
-          regularRewards,
           regularRewards,
           [
             ethers.parseUnits('10', 'gwei'),
@@ -152,7 +165,6 @@ describe('1559 Network gas price tests', () => {
             ethers.parseUnits('30', 'gwei'),
             ethers.parseUnits('50', 'gwei')
           ],
-          regularRewards,
           regularRewards
         ]
       }
@@ -165,22 +177,63 @@ describe('1559 Network gas price tests', () => {
       ethers.parseUnits('1', 'gwei')
     )
     expect(getByName(recommendations, 'medium').maxPriorityFeePerGas).toBe(
-      ethers.parseUnits('1.2', 'gwei')
+      ethers.parseUnits('2', 'gwei')
     )
     expect(getByName(recommendations, 'fast').maxPriorityFeePerGas).toBe(
-      ethers.parseUnits('1.4', 'gwei')
+      ethers.parseUnits('3', 'gwei')
     )
     expect(getByName(recommendations, 'ape').maxPriorityFeePerGas).toBe(
-      ethers.parseUnits('1.8', 'gwei')
+      ethers.parseUnits('5', 'gwei')
     )
     provider.destroy()
   })
 
-  test('should cap priority fee percentiles relative to slow', async () => {
+  test('should follow a spike that lasts for most of the recent blocks', async () => {
+    const expensiveRewards = [
+      ethers.parseUnits('10', 'gwei'),
+      ethers.parseUnits('20', 'gwei'),
+      ethers.parseUnits('30', 'gwei'),
+      ethers.parseUnits('50', 'gwei')
+    ]
     const provider = MockProvider.init({
       ethMaxPriorityFeePerGas: 100n,
       feeHistory: {
-        reward: Array.from({ length: 5 }, () => [
+        reward: [
+          [
+            ethers.parseUnits('1', 'gwei'),
+            ethers.parseUnits('2', 'gwei'),
+            ethers.parseUnits('3', 'gwei'),
+            ethers.parseUnits('5', 'gwei')
+          ],
+          expensiveRewards,
+          expensiveRewards
+        ]
+      }
+    })
+
+    const { gasPrice } = await getGasPriceRecommendations(provider, network)
+    const recommendations = gasPrice as Gas1559Recommendation[]
+
+    expect(getByName(recommendations, 'slow').maxPriorityFeePerGas).toBe(
+      ethers.parseUnits('10', 'gwei')
+    )
+    expect(getByName(recommendations, 'medium').maxPriorityFeePerGas).toBe(
+      ethers.parseUnits('20', 'gwei')
+    )
+    expect(getByName(recommendations, 'fast').maxPriorityFeePerGas).toBe(
+      ethers.parseUnits('30', 'gwei')
+    )
+    expect(getByName(recommendations, 'ape').maxPriorityFeePerGas).toBe(
+      ethers.parseUnits('50', 'gwei')
+    )
+    provider.destroy()
+  })
+
+  test('should not cap high priority fee percentiles relative to slow', async () => {
+    const provider = MockProvider.init({
+      ethMaxPriorityFeePerGas: 100n,
+      feeHistory: {
+        reward: Array.from({ length: 3 }, () => [
           ethers.parseUnits('1', 'gwei'),
           ethers.parseUnits('10', 'gwei'),
           ethers.parseUnits('20', 'gwei'),
@@ -193,13 +246,47 @@ describe('1559 Network gas price tests', () => {
     const recommendations = gasPrice as Gas1559Recommendation[]
 
     expect(getByName(recommendations, 'medium').maxPriorityFeePerGas).toBe(
-      ethers.parseUnits('1.25', 'gwei')
+      ethers.parseUnits('10', 'gwei')
     )
     expect(getByName(recommendations, 'fast').maxPriorityFeePerGas).toBe(
-      ethers.parseUnits('1.5', 'gwei')
+      ethers.parseUnits('20', 'gwei')
     )
     expect(getByName(recommendations, 'ape').maxPriorityFeePerGas).toBe(
-      ethers.parseUnits('2', 'gwei')
+      ethers.parseUnits('40', 'gwei')
+    )
+    provider.destroy()
+  })
+
+  test('should keep each speed tip at least 25% above the previous speed tip', async () => {
+    const provider = MockProvider.init({
+      ethMaxPriorityFeePerGas: 100n,
+      feeHistory: {
+        reward: Array.from({ length: 3 }, () => [
+          ethers.parseUnits('1', 'gwei'),
+          ethers.parseUnits('1.1', 'gwei'),
+          ethers.parseUnits('5', 'gwei'),
+          ethers.parseUnits('5.5', 'gwei')
+        ])
+      }
+    })
+
+    const { gasPrice } = await getGasPriceRecommendations(provider, network)
+    const recommendations = gasPrice as Gas1559Recommendation[]
+
+    expect(getByName(recommendations, 'slow').maxPriorityFeePerGas).toBe(
+      ethers.parseUnits('1', 'gwei')
+    )
+    // the 1.1 gwei percentile is raised to 25% above slow
+    expect(getByName(recommendations, 'medium').maxPriorityFeePerGas).toBe(
+      ethers.parseUnits('1.25', 'gwei')
+    )
+    // the 5 gwei percentile is already more than 25% above medium
+    expect(getByName(recommendations, 'fast').maxPriorityFeePerGas).toBe(
+      ethers.parseUnits('5', 'gwei')
+    )
+    // the 5.5 gwei percentile is raised to 25% above fast, not slow
+    expect(getByName(recommendations, 'ape').maxPriorityFeePerGas).toBe(
+      ethers.parseUnits('6.25', 'gwei')
     )
     provider.destroy()
   })
@@ -209,8 +296,8 @@ describe('1559 Network gas price tests', () => {
     const provider = MockProvider.init({
       ethMaxPriorityFeePerGas: 100n,
       feeHistory: {
-        baseFeePerGas: Array.from({ length: 6 }, () => nextBlockBaseFee),
-        reward: Array.from({ length: 5 }, () => [100000n, 200000n, 300000n, 500000n])
+        baseFeePerGas: Array.from({ length: 4 }, () => nextBlockBaseFee),
+        reward: Array.from({ length: 3 }, () => [100000n, 200000n, 300000n, 500000n])
       }
     })
 
