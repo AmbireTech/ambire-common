@@ -13,14 +13,14 @@ const baseNetwork = networks.find((net) => net.chainId === 8453n)!
 const getByName = (recommendations: Gas1559Recommendation[], name: string) =>
   recommendations.find((recommendation) => recommendation.name === name)!
 
-// The reward fixtures below hold one row per block with the p25, p50, p80 and p90
+// The reward fixtures below hold one row per block with the p25, p50, p72 and p88
 // tips - the percentiles slow, medium, fast and ape follow, in that order
 
 describe('1559 Network gas price tests', () => {
   // Mock providers throw errors we can ignore
   suppressConsoleBeforeEach()
 
-  test('should request the last 3 blocks with the p25, p50, p80 and p90 tips', async () => {
+  test('should request the last 3 blocks with the p25, p50, p72 and p88 tips', async () => {
     const provider = MockProvider.init({ ethMaxPriorityFeePerGas: 100n })
     const sendSpy = jest.spyOn(provider, 'send')
 
@@ -30,7 +30,7 @@ describe('1559 Network gas price tests', () => {
     expect(feeHistoryCall).toBeDefined()
     const [blockCount, , rewardPercentiles] = feeHistoryCall![1]
     expect(Number(BigInt(blockCount))).toBe(3)
-    expect(rewardPercentiles).toEqual([25, 50, 80, 90])
+    expect(rewardPercentiles).toEqual([25, 50, 72, 88])
     provider.destroy()
   })
 
