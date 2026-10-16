@@ -79,3 +79,41 @@ export const defaultFeatureFlags: FeatureFlags = {
   namoshiDomains: true,
   gnsDomains: true
 }
+
+/**
+ * Who controls each feature flag: 'user' flags are the privacy opt-outs the user toggles in
+ * the settings (and syncs between products), 'internal' ones are set by each product itself.
+ * Every flag must be listed, so a new one cannot be added without deciding its scope.
+ */
+export const featureFlagScopes = {
+  withTransactionManagerController: 'internal',
+  withEmailVaultController: 'internal',
+  withContinuousUpdatesController: 'internal',
+  testnetMode: 'internal',
+  tokenAndDefiAutoDiscovery: 'user',
+  clearSigning: 'user',
+  apiForFunctionSelectors: 'user',
+  gasTank: 'user',
+  networkConfig: 'user',
+  ambireSmartAccounts: 'user',
+  scamAndPhishingChecker: 'user',
+  tokenPrices: 'user',
+  erc4337: 'user',
+  eip7702: 'user',
+  keepEnsProfilesUpToDate: 'user',
+  swapAndBridgeTokenInfo: 'user',
+  ledgerSigningReports: 'user',
+  walletStakingWithdrawalsLookup: 'user',
+  namoshiDomains: 'internal',
+  gnsDomains: 'internal'
+} as const satisfies Record<keyof FeatureFlags, 'user' | 'internal'>
+
+/** A feature flag the user controls, see `featureFlagScopes` */
+export type UserFeatureFlag = {
+  [K in keyof typeof featureFlagScopes]: (typeof featureFlagScopes)[K] extends 'user' ? K : never
+}[keyof typeof featureFlagScopes]
+
+/** The feature flags the user controls, see `featureFlagScopes` */
+export const USER_FEATURE_FLAGS = (Object.keys(featureFlagScopes) as (keyof FeatureFlags)[]).filter(
+  (flag): flag is UserFeatureFlag => featureFlagScopes[flag] === 'user'
+)

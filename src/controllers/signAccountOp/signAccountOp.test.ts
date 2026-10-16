@@ -60,6 +60,7 @@ import { ERC7730_DESCRIPTOR_WAIT_MS } from '../../libs/humanizer/erc7730/consts'
 import { HumanizerWarning } from '../../libs/humanizer/interfaces'
 import { hasErc7730Humanization, UNLIMITED_APPROVAL_WARNING_CODE } from '../../libs/humanizer/utils'
 import { KeystoreSigner } from '../../libs/keystoreSigner/keystoreSigner'
+import { AbstractPaymaster } from '../../libs/paymaster/abstractPaymaster'
 import { TokenResult } from '../../libs/portfolio'
 import { AccountState } from '../../libs/portfolio/interfaces'
 import { PORTFOLIO_STATE } from '../../libs/portfolio/testData'
@@ -681,7 +682,8 @@ const init = async (
     networks: networksCtrl,
     providers: providersCtrl,
     storage: storageCtrl,
-    accounts: accountsCtrl
+    accounts: accountsCtrl,
+    keystore
   })
   const activity = new ActivityController(
     storageCtrl,
@@ -1036,41 +1038,34 @@ describe('SignAccountOp Controller ', () => {
   describe('refetchAccountState', () => {
     test('refreshes the account state and clears the loading state', async () => {
       const { controller, accountsCtrl } = await initDefaultFeeSelection()
-      const accountState =
-        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
-          controller.accountOp.chainId.toString()
-        ]!
-      const forceFetchPendingStateSpy = jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
-        .mockResolvedValue(accountState)
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
+        .mockResolvedValue(undefined)
 
       await expect(controller.refetchAccountState()).resolves.toBeUndefined()
 
-      expect(forceFetchPendingStateSpy).toHaveBeenCalledWith(
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(
         controller.accountOp.accountAddr,
-        controller.accountOp.chainId
+        'pending',
+        [controller.accountOp.chainId],
+        true
       )
       expect(controller.isRefetchingAccountState).toBe(false)
     })
 
     test('ignores concurrent refresh attempts', async () => {
       const { controller, accountsCtrl } = await initDefaultFeeSelection()
-      const accountState =
-        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
-          controller.accountOp.chainId.toString()
-        ]!
       const pendingRefresh = createDeferred<void>()
-      const forceFetchPendingStateSpy = jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
         .mockImplementation(async () => {
           await pendingRefresh.promise
-          return accountState
         })
 
       const firstRefresh = controller.refetchAccountState()
       await controller.refetchAccountState()
 
-      expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(1)
+      expect(updateAccountStateSpy).toHaveBeenCalledTimes(1)
       expect(controller.isRefetchingAccountState).toBe(true)
 
       pendingRefresh.resolve()
@@ -1082,15 +1077,11 @@ describe('SignAccountOp Controller ', () => {
     test('emits fetch errors without rejecting and allows retrying', async () => {
       const { restore } = suppressConsole()
       const { controller, accountsCtrl } = await initDefaultFeeSelection()
-      const accountState =
-        accountsCtrl.accountStates[controller.accountOp.accountAddr]![
-          controller.accountOp.chainId.toString()
-        ]!
       const fetchError = new Error('RPC timeout')
-      const forceFetchPendingStateSpy = jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
+      const updateAccountStateSpy = jest
+        .spyOn(accountsCtrl, 'updateAccountState')
         .mockRejectedValueOnce(fetchError)
-        .mockResolvedValueOnce(accountState)
+        .mockResolvedValueOnce(undefined)
       const onError = jest.fn()
       controller.onError(onError)
 
@@ -1105,7 +1096,7 @@ describe('SignAccountOp Controller ', () => {
 
       await expect(controller.refetchAccountState()).resolves.toBeUndefined()
 
-      expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(2)
+      expect(updateAccountStateSpy).toHaveBeenCalledTimes(2)
       expect(controller.isRefetchingAccountState).toBe(false)
       restore()
     })
@@ -4995,5 +4986,217 @@ describe('Call data decoding', () => {
 
     expect(controller.humanization).toBe(fallbackHumanization)
     expect(controller.humanization[1]!.decodedCall).toBeUndefined()
+  })
+})
+
+describe('RPC gas prices with a bundler fallback', () => {
+  suppressConsoleBeforeEach()
+
+  afterEach(() => {
+    jest.restoreAllMocks()
+  })
+
+  const toGasSpeeds = (base: bigint): GasSpeeds => ({
+    slow: { maxFeePerGas: toBeHex(base) as Hex, maxPriorityFeePerGas: toBeHex(base / 2n) as Hex },
+    medium: {
+      maxFeePerGas: toBeHex(base * 2n) as Hex,
+      maxPriorityFeePerGas: toBeHex(base) as Hex
+    },
+    fast: {
+      maxFeePerGas: toBeHex(base * 3n) as Hex,
+      maxPriorityFeePerGas: toBeHex((base * 3n) / 2n) as Hex
+    },
+    ape: {
+      maxFeePerGas: toBeHex(base * 4n) as Hex,
+      maxPriorityFeePerGas: toBeHex(base * 2n) as Hex
+    }
+  })
+  const rpcGasPrices = toGasSpeeds(1000n)
+  const bundlerGasPrices = toGasSpeeds(5000n)
+  const customGasPrices = toGasSpeeds(9000n)
+
+  const getSpeed = (
+    controller: SignAccountOpController,
+    paidBy: string,
+    speed: FeeSpeed,
+    feeToken: TokenResult = nativeFeeToken
+  ) => {
+    const option = controller.estimation.availableFeeOptions.find(
+      (o) => o.paidBy === paidBy && o.token.address === feeToken.address
+    )!
+    return controller.feeSpeeds[
+      getFeeSpeedIdentifier(option, controller.accountOp.accountAddr)
+    ]!.find(({ type }) => type === speed)!
+  }
+
+  /**
+   * Builds a smart account signAccountOp with two native fee options: the account paying
+   * by itself and an EOA paying for it (a broadcast outside the bundler). The estimation
+   * comes with bundler gas prices, as a successful bundler estimation would.
+   * A Safe pays by itself through the bundler, making it the default account here
+   */
+  const initSmartAccount = async (
+    chainId: bigint,
+    feeToken: TokenResult,
+    account: Account = safeAccount
+  ) => {
+    // the gas prices are driven by the test, not fetched from the network
+    const fetchSpy = jest.spyOn(GasPriceController.prototype, 'fetch').mockResolvedValue(undefined)
+    const option = {
+      availableAmount: 1000000000000000000n,
+      gasUsed: 25000n,
+      addedNative: 0n,
+      token: feeToken
+    }
+    const feePaymentOptions = [
+      { ...option, paidBy: account.addr },
+      { ...option, paidBy: eoaAccount.addr }
+    ]
+    const paymaster = {
+      isUsable: () => false,
+      isSponsored: () => false,
+      getEstimationData: () => null
+    } as unknown as AbstractPaymaster
+
+    const { controller } = await init(
+      account,
+      createAccountOp(account, chainId),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 25000n, feePaymentOptions },
+        ambireEstimation: {
+          deploymentGas: 0n,
+          gasUsed: 25000n,
+          feePaymentOptions,
+          ambireAccountNonce: 0,
+          flags: {}
+        },
+        bundlerEstimation: {
+          callGasLimit: toBeHex(30000n),
+          preVerificationGas: toBeHex(50000n),
+          verificationGasLimit: toBeHex(100000n),
+          paymasterVerificationGasLimit: toBeHex(0n),
+          paymasterPostOpGasLimit: toBeHex(0n),
+          gasPrice: bundlerGasPrices,
+          paymaster,
+          flags: {}
+        },
+        bundlerGasPrices,
+        flags: {},
+        updatedAt: Date.now()
+      },
+      bundlerGasPrices,
+      false,
+      // otherwise the estimate interval runs a real estimation right away and puts the
+      // mocked one in a loading state, which skips the fee speeds calculation
+      { pauseOnInit: true }
+    )
+
+    return { controller, fetchSpy }
+  }
+
+  test('uses the RPC gas prices for an EOA paying on Ethereum and the bundler ones for the Safe itself', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+
+    // as the gas price controller would pass them
+    controller.update({ rpcGasPrices })
+
+    // broadcast by another EOA: the RPC gas prices, with no increase on top
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Fast).gasPrice).toBe(
+      BigInt(rpcGasPrices.fast.maxFeePerGas)
+    )
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Fast).maxPriorityFeePerGas).toBe(
+      BigInt(rpcGasPrices.fast.maxPriorityFeePerGas)
+    )
+    // broadcast by the bundler: the bundler gas prices
+    expect(getSpeed(controller, safeAccount.addr, FeeSpeed.Fast).gasPrice).toBe(
+      BigInt(bundlerGasPrices.fast.maxFeePerGas)
+    )
+  })
+
+  test('exposes the gas prices of the selected fee option', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+    controller.update({ rpcGasPrices })
+
+    controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    expect(controller.selectedOptionGasPrices).toEqual(rpcGasPrices)
+    expect(controller.toJSON().selectedOptionGasPrices).toEqual(rpcGasPrices)
+
+    controller.update({ feeToken: nativeFeeToken, paidBy: safeAccount.addr })
+    expect(controller.selectedOptionGasPrices).toEqual(bundlerGasPrices)
+  })
+
+  test('falls back to the bundler gas prices until the RPC ones are fetched', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+
+    expect(controller.rpcGasPrices).toBeUndefined()
+    // slow is not increased, so it equals the bundler collection
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Slow).gasPrice).toBe(
+      BigInt(bundlerGasPrices.slow.maxFeePerGas)
+    )
+  })
+
+  test('a gas price controller update does not overwrite the bundler estimation gas prices', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+
+    // the gas price controller mirrors the RPC gas prices in both of its fields
+    controller.gasPrice.gasPrices = rpcGasPrices
+    controller.gasPrice.rpcGasPrices = rpcGasPrices
+    await controller.emitGasPriceUpdate()
+
+    expect(controller.gasPrices).toEqual(bundlerGasPrices)
+    expect(controller.rpcGasPrices).toEqual(rpcGasPrices)
+    expect(getSpeed(controller, safeAccount.addr, FeeSpeed.Fast).gasPrice).toBe(
+      BigInt(bundlerGasPrices.fast.maxFeePerGas)
+    )
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Fast).gasPrice).toBe(
+      BigInt(rpcGasPrices.fast.maxFeePerGas)
+    )
+  })
+
+  test('marks the gas prices as coming from the bundler estimation on Ethereum', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+
+    // the flag is truthful, and the strategy is what keeps the RPC fetch going
+    // (see the gasPrice controller tests)
+
+    expect(controller.gasPrice.areGasPricesUsedFromBundlerEstimation).toBe(true)
+    expect(controller.baseAccount.getGasPriceFetchStrategy(controller.isErc4337Enabled)).toBe(
+      'rpcWithBundlerFallback'
+    )
+  })
+
+  test('custom gas prices override both collections', async () => {
+    const { controller } = await initSmartAccount(1n, nativeFeeToken)
+    controller.update({ rpcGasPrices })
+
+    controller.update({ customGasPrices })
+
+    expect(getSpeed(controller, eoaAccount.addr, FeeSpeed.Fast).gasPrice).toBe(
+      BigInt(customGasPrices.fast.maxFeePerGas)
+    )
+    expect(getSpeed(controller, safeAccount.addr, FeeSpeed.Fast).gasPrice).toBe(
+      BigInt(customGasPrices.fast.maxFeePerGas)
+    )
+    controller.update({ feeToken: nativeFeeToken, paidBy: eoaAccount.addr })
+    expect(controller.selectedOptionGasPrices).toEqual(customGasPrices)
+  })
+
+  test('ignores the RPC gas prices outside Ethereum', async () => {
+    // the test environment has no Polygon state for the Safe, so use an Ambire smart
+    // account, which prefers the bundler outside Ethereum just the same
+    const { controller } = await initSmartAccount(137n, nativeFeeTokenPolygon, smartAccount)
+    expect(controller.baseAccount.getGasPriceFetchStrategy(controller.isErc4337Enabled)).toBe(
+      'bundlerWithRpcFallback'
+    )
+
+    controller.update({ rpcGasPrices })
+
+    // slow is not increased, so it equals the bundler collection
+    expect(
+      getSpeed(controller, eoaAccount.addr, FeeSpeed.Slow, nativeFeeTokenPolygon).gasPrice
+    ).toBe(BigInt(bundlerGasPrices.slow.maxFeePerGas))
+    controller.update({ feeToken: nativeFeeTokenPolygon, paidBy: eoaAccount.addr })
+    expect(controller.selectedOptionGasPrices).toEqual(bundlerGasPrices)
   })
 })

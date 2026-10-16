@@ -268,6 +268,31 @@ describe('StorageController', () => {
       expect(await storageCtrl.get('passedMigrations', [])).toContain(MIGRATION_KEY)
     })
 
+    // The reported case: a stored op without calls made indexSentToHistoryFromAccountsOps throw,
+    // which skipped this migration on every start and left the phishing list unsorted.
+    test('still runs when the history holds an op without calls', async () => {
+      const ACCOUNT = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      const storageCtrl = await bootWithPendingMigrations(
+        ['indexSentToHistoryFromAccountsOps', MIGRATION_KEY],
+        {
+          accountsOps: { [ACCOUNT]: { '1': [{ id: 'malformed', timestamp: 1 }] } },
+          phishing: {
+            version: 1,
+            updatedAt: 1,
+            domains: ['zz-scam.io', 'aa-scam.org'],
+            addresses: []
+          }
+        }
+      )
+
+      expect(await storageCtrl.get('phishing', null)).toEqual(
+        expect.objectContaining({ domains: ['aa-scam.org', 'zz-scam.io'] })
+      )
+      expect(await storageCtrl.get('passedMigrations', [])).toEqual(
+        expect.arrayContaining(['indexSentToHistoryFromAccountsOps', MIGRATION_KEY])
+      )
+    })
+
     test('leaves a malformed list as it is instead of throwing', async () => {
       const malformed = { version: 1, updatedAt: 1, domains: 'not-a-list', addresses: [] }
       const storageCtrl = await bootWithPendingMigrations([MIGRATION_KEY], {
