@@ -1829,8 +1829,8 @@ describe('SignAccountOp Controller ', () => {
           maxPriorityFeePerGas: toBeHex(1000000000n) as Hex
         },
         medium: {
-          maxFeePerGas: toBeHex(4000000000n) as Hex,
-          maxPriorityFeePerGas: toBeHex(2000000000n) as Hex
+          maxFeePerGas: toBeHex(10000000000n) as Hex,
+          maxPriorityFeePerGas: toBeHex(5000000000n) as Hex
         },
         fast: {
           maxFeePerGas: toBeHex(10000000000n) as Hex,
@@ -1848,6 +1848,8 @@ describe('SignAccountOp Controller ', () => {
       paidBy: smartAccount.addr,
       signingKeyAddr: eoaSigner.keyPublicAddress,
       signingKeyType: 'internal',
+      // the $1 USDC fee expected below is calculated with the medium gas price
+      speed: FeeSpeed.Fast,
       hasNewEstimation: true
     })
 
@@ -4480,9 +4482,9 @@ describe('RPC gas prices with a bundler fallback', () => {
     const option = controller.estimation.availableFeeOptions.find(
       (o) => o.paidBy === paidBy && o.token.address === feeToken.address
     )!
-    return controller.feeSpeeds[getFeeSpeedIdentifier(option, controller.accountOp.accountAddr)]!.find(
-      ({ type }) => type === speed
-    )!
+    return controller.feeSpeeds[
+      getFeeSpeedIdentifier(option, controller.accountOp.accountAddr)
+    ]!.find(({ type }) => type === speed)!
   }
 
   /**
@@ -4617,9 +4619,9 @@ describe('RPC gas prices with a bundler fallback', () => {
     // (see the gasPrice controller tests)
 
     expect(controller.gasPrice.areGasPricesUsedFromBundlerEstimation).toBe(true)
-    expect(
-      controller.baseAccount.getGasPriceFetchStrategy(controller.isErc4337Enabled)
-    ).toBe('rpcWithBundlerFallback')
+    expect(controller.baseAccount.getGasPriceFetchStrategy(controller.isErc4337Enabled)).toBe(
+      'rpcWithBundlerFallback'
+    )
   })
 
   test('custom gas prices override both collections', async () => {
@@ -4642,9 +4644,9 @@ describe('RPC gas prices with a bundler fallback', () => {
     // the test environment has no Polygon state for the Safe, so use an Ambire smart
     // account, which prefers the bundler outside Ethereum just the same
     const { controller } = await initSmartAccount(137n, nativeFeeTokenPolygon, smartAccount)
-    expect(
-      controller.baseAccount.getGasPriceFetchStrategy(controller.isErc4337Enabled)
-    ).toBe('bundlerWithRpcFallback')
+    expect(controller.baseAccount.getGasPriceFetchStrategy(controller.isErc4337Enabled)).toBe(
+      'bundlerWithRpcFallback'
+    )
 
     controller.update({ rpcGasPrices })
 
