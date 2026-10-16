@@ -107,10 +107,11 @@ export interface AccountOp {
       /**
        * The fees of the pending transaction that is being sped up. The new fee of every
        * speed is kept at least 12.5% above these, so the network accepts the replacement.
+       * `amount` is the fee that was paid, so the UI can compare it with the new one.
        * Kept here, separately from `gasFeePayment`, because `gasFeePayment` gets replaced
        * with the newly selected fee once the estimation comes in
        */
-      replacedFees?: Pick<GasFeePayment, 'gasPrice' | 'maxPriorityFeePerGas'>
+      replacedFees?: Pick<GasFeePayment, 'gasPrice' | 'maxPriorityFeePerGas' | 'amount'>
     }
     /**
      * @deprecated No longer written or read anywhere. Used to hold the descriptor-backed
