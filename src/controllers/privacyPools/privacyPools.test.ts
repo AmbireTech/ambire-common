@@ -1849,6 +1849,27 @@ describe('PrivacyPoolsController', () => {
       await broadcasting
     })
 
+    it('reports a transfer that could not be sent without a toast, as the open sheet shows it', async () => {
+      const { controller } = await prepareSignedWithdrawal()
+      jest.mocked(createPPv1Broadcaster).mockReturnValueOnce({
+        broadcast: async () => {
+          throw new Error('bundler rejected it')
+        }
+      } as any)
+      const errorCount = controller.emittedErrors.length
+
+      const broadcasting = controller.broadcastWithdrawal()
+      await waitUntil(() => controller.operation?.status === 'failed')
+
+      expect(controller.operation?.error).toBe('The transfer could not be sent. Please try again.')
+      expect(controller.emittedErrors.slice(errorCount)).toEqual([
+        expect.objectContaining({ level: 'silent' })
+      ])
+
+      await releaseSync('seed-a')
+      await broadcasting
+    })
+
     describe('sent a while after it was proved', () => {
       const RECHECK_AFTER_MS = 30 * 1000
       let now: number

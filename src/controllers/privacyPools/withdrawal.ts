@@ -403,10 +403,12 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
 
       return { operation, isSent: isCurrentOperation }
     } catch (error: any) {
+      // Silent: the confirmation sheet is open and shows the error itself
       this.#failOperation(
         { ...operation, phase: 'broadcasting' },
         error,
-        'The transfer could not be sent. Please try again.'
+        'The transfer could not be sent. Please try again.',
+        'silent'
       )
       this.#ctx.emitUpdate()
 
@@ -674,14 +676,23 @@ export class PrivacyPoolsWithdrawal implements PhraseScopedModule {
     this.#pendingWithdrawal = null
   }
 
-  /** Shows an `EmittableError`'s message, or `fallback` for SDK, bundler and chain errors. */
-  #failOperation(operation: PrivacyPoolsOperation, error: any, fallback: string) {
+  /**
+   * Shows an `EmittableError`'s message, or `fallback` for SDK, bundler and chain errors. Also as a
+   * toast, unless `level` is 'silent' because the UI shows the failed operation itself - the error
+   * is reported either way.
+   */
+  #failOperation(
+    operation: PrivacyPoolsOperation,
+    error: any,
+    fallback: string,
+    level: 'major' | 'silent' = 'major'
+  ) {
     const message = error instanceof EmittableError ? error.message : fallback
 
     this.#updateOperation({ ...operation, status: 'failed', error: message })
     this.#ctx.emitError({
       message,
-      level: 'major',
+      level,
       error: toPrivacyPoolsSdkError(error, 'privacyPools: withdrawal failed')
     })
   }
