@@ -206,6 +206,8 @@ export type PrivacyPoolsSendForm = {
 
 /** The entrypoint's deposit requirements for one asset, read from the chain as 0xBow tunes them. */
 export type PrivacyPoolsDepositAssetConfig = {
+  /** The pool the entrypoint sends the asset's deposits to. */
+  poolAddress: string
   minimumDepositAmount: bigint
 }
 

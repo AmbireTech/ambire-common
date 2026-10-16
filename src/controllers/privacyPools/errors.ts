@@ -76,6 +76,11 @@ export const privacyPoolsErrors = {
       `A Privacy Pools account accepts at least ${formatUnits(minimumDeposit, decimals)} ${symbol} at a time.`,
       'deposit below the entrypoint minimum'
     ),
+  depositUnsupportedPool: (symbol: string, poolAddress: string) =>
+    expectedError(
+      `Sending ${symbol} to a Privacy Pools account is not supported yet.`,
+      `no paymaster adapter for pool ${poolAddress}`
+    ),
   depositAwaitingChain: () =>
     expectedError(
       'Your previous transfer to this Privacy Pools account is still being confirmed. Please try again once it is.',

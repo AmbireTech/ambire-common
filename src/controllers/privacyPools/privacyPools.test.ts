@@ -1406,6 +1406,16 @@ describe('PrivacyPoolsController', () => {
       expect(runningSyncs).toHaveLength(0)
     })
 
+    it('refuses a deposit into a pool the paymaster has no adapter for', async () => {
+      const { controller } = await prepareTest()
+      entrypointPool = '0x000000000000000000000000000000000000bEEF'
+
+      await expect(buildDeposit(controller)).rejects.toThrow(
+        'Sending ETH to a Privacy Pools account is not supported yet.'
+      )
+      expect(runningSyncs).toHaveLength(0)
+    })
+
     it('refuses a deposit into an account the wallet does not have', async () => {
       const { controller } = await prepareTest({ accounts: ['seed-a'] })
 

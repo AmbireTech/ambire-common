@@ -106,9 +106,14 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     if (amount > asset.maxDeposit)
       throw privacyPoolsErrors.depositAboveMaximum(asset.maxDeposit, asset)
 
-    const { minimumDepositAmount } = await this.loadAssetConfig(chainId, tokenAddress)
+    const { minimumDepositAmount, poolAddress } = await this.loadAssetConfig(chainId, tokenAddress)
     if (amount < minimumDepositAmount)
       throw privacyPoolsErrors.depositBelowMinimum(minimumDepositAmount, asset)
+
+    // A pool the paymaster has no adapter for, e.g. one 0xBow replaced, could not be sent out of
+    // until an update adds it, so the funds would wait for that update.
+    if (!config.paymaster?.poolAdapters[poolAddress.toLowerCase()])
+      throw privacyPoolsErrors.depositUnsupportedPool(asset.symbol, poolAddress)
 
     const precommitment = await this.#getNextDepositPrecommitment(chainId, seedId)
 
@@ -143,12 +148,11 @@ export class PrivacyPoolsDeposits implements PhraseScopedModule {
     const config = getChainConfig(chainId)
 
     try {
-      const { minimumDepositAmount } = await readEntrypointAssetConfig({
+      const assetConfig = await readEntrypointAssetConfig({
         provider: getChainProvider(this.#ctx.providers, chainId),
         entrypointAddress: config.entrypointAddress,
         assetAddress: toPrivacyPoolsAssetAddress(tokenAddress)
       })
-      const assetConfig = { minimumDepositAmount }
 
       this.assetConfigs = { ...this.assetConfigs, [key]: assetConfig }
       this.#ctx.emitUpdate()
