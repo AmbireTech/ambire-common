@@ -117,6 +117,7 @@ import {
   FullEstimationSummary
 } from '../../libs/estimate/interfaces'
 import { calculateFeeAmount } from '../../libs/fees/fees'
+import { getSpeedUpGasPrices } from '../../libs/gasPrice/speedUp'
 import { humanizeAccountOp } from '../../libs/humanizer'
 import { Erc7730CallDescriptors } from '../../libs/humanizer/erc7730/types'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
@@ -575,7 +576,6 @@ export class SignAccountOpController
     this.fromRequestId = fromRequestId
     this.#accountOp = structuredClone(accountOp)
     this.#updateSafeEip712Data()
-    this.#setSpeedUpGasPrices()
 
     if (this.#accountOp.signature && this.#accountOp.txnId) {
       this.#accountOp.signed = getAlreadySignedOwners(
@@ -965,20 +965,16 @@ export class SignAccountOpController
     this.selectedOption = selectedOption
   }
 
-  #setSpeedUpGasPrices() {
-    const gasFeePayment = this.accountOp.gasFeePayment
-    if (!this.isSpeedUpTransaction || !gasFeePayment) return
+  /**
+   * When speeding up a pending transaction, raises the gas prices of every speed
+   * to the minimum the network needs to accept the replacement. The estimation keeps
+   * running, so speeds that are already above that minimum are used as they are
+   */
+  #applySpeedUpMinFees(gasPrices?: GasSpeeds): GasSpeeds | undefined {
+    const replacedFees = this.accountOp.meta?.speedUp?.replacedFees
+    if (!this.isSpeedUpTransaction || !replacedFees || !gasPrices) return gasPrices
 
-    const maxFeePerGas = toBeHex(gasFeePayment.gasPrice) as Hex
-    const maxPriorityFeePerGas = toBeHex(gasFeePayment.maxPriorityFeePerGas || 0n) as Hex
-
-    this.gasPrices = {
-      slow: { maxFeePerGas, maxPriorityFeePerGas },
-      medium: { maxFeePerGas, maxPriorityFeePerGas },
-      fast: { maxFeePerGas, maxPriorityFeePerGas },
-      ape: { maxFeePerGas, maxPriorityFeePerGas }
-    }
-    this.hasCustomGasPrices = true
+    return getSpeedUpGasPrices(gasPrices, replacedFees)
   }
 
   async #getDefaultSigner() {
@@ -2114,7 +2110,7 @@ export class SignAccountOpController
         }
       }
 
-      if (speed && this.isInitialized && !isSpeedUpTransaction) {
+      if (speed && this.isInitialized) {
         this.selectedFeeSpeed = speed
         // Only an explicitly picked speed becomes the default for the network.
         // Speeds set while switching the fee token are a fallback, not a choice
@@ -2726,7 +2722,9 @@ export class SignAccountOpController
 
       const nativeRatio = this.#getNativeToFeeTokenRatio(option.token)
       const shouldUseRpcGasPrices = this.#shouldUseRpcGasPrices(broadcastOption)
-      const gasPrices = shouldUseRpcGasPrices ? this.rpcGasPrices : this.gasPrices
+      const gasPrices = this.#applySpeedUpMinFees(
+        shouldUseRpcGasPrices ? this.rpcGasPrices : this.gasPrices
+      )
       // the RPC gas prices are used only for broadcasts outside erc-4337,
       // so they should not be increased
       const increasedGasPrices = shouldUseRpcGasPrices
@@ -4645,14 +4643,17 @@ export class SignAccountOpController
    * (see BaseAccount.getGasPriceFetchStrategy)
    */
   get selectedOptionGasPrices(): GasSpeeds | undefined {
-    if (!this.selectedOption) return this.gasPrices
+    if (!this.selectedOption) return this.#applySpeedUpMinFees(this.gasPrices)
 
     const broadcastOption = this.baseAccount.getBroadcastOption(this.selectedOption, {
       op: this.accountOp,
       isSponsored: this.isSponsored
     })
 
-    return this.#shouldUseRpcGasPrices(broadcastOption) ? this.rpcGasPrices : this.gasPrices
+    // Raised like the fee speeds, so the advanced options don't start below the speed up minimum
+    return this.#applySpeedUpMinFees(
+      this.#shouldUseRpcGasPrices(broadcastOption) ? this.rpcGasPrices : this.gasPrices
+    )
   }
 
   get canSetCustomGasPrices(): boolean {

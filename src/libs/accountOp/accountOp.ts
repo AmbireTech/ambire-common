@@ -104,6 +104,13 @@ export interface AccountOp {
     }
     speedUp?: {
       enabled: boolean
+      /**
+       * The fees of the pending transaction that is being sped up. The new fee of every
+       * speed is kept at least 12.5% above these, so the network accepts the replacement.
+       * Kept here, separately from `gasFeePayment`, because `gasFeePayment` gets replaced
+       * with the newly selected fee once the estimation comes in
+       */
+      replacedFees?: Pick<GasFeePayment, 'gasPrice' | 'maxPriorityFeePerGas'>
     }
     /**
      * @deprecated No longer written or read anywhere. Used to hold the descriptor-backed
