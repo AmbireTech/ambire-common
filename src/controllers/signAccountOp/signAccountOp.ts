@@ -2582,9 +2582,9 @@ export class SignAccountOpController
       return
     }
 
-    // set fast if available
-    if (speeds.find(({ type, disabled }) => type === FeeSpeed.Fast && !disabled)) {
-      this.selectedFeeSpeed = FeeSpeed.Fast
+    // set medium if available
+    if (speeds.find(({ type, disabled }) => type === FeeSpeed.Medium && !disabled)) {
+      this.selectedFeeSpeed = FeeSpeed.Medium
       return
     }
 

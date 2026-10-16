@@ -54,7 +54,7 @@ const speeds = [
 const MIN_PRIORITY_FEE_STEP_BPS = 2500n
 
 const FEE_HISTORY_BLOCK_COUNT = 3
-const FEE_HISTORY_REWARD_PERCENTILES = [25, 50, 80, 90]
+const FEE_HISTORY_REWARD_PERCENTILES = [25, 50, 72, 88]
 
 export interface GasPriceRecommendation {
   name: string

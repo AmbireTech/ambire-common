@@ -1169,11 +1169,11 @@ describe('SignAccountOp Controller ', () => {
   test('uses the saved fee speed as the default for a new signing request', async () => {
     const { controller } = await initDefaultFeeSelection(undefined, {
       initialSetStorage: async (storageCtrl) => {
-        await storageCtrl.set('signAccountOpFeeSpeedPreference', { '1': FeeSpeed.Medium })
+        await storageCtrl.set('signAccountOpFeeSpeedPreference', { '1': FeeSpeed.Ape })
       }
     })
 
-    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Ape)
   })
 
   test('ignores a saved fee speed belonging to another chain', async () => {
@@ -1183,7 +1183,8 @@ describe('SignAccountOp Controller ', () => {
       }
     })
 
-    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Fast)
+    // falls back to the default speed
+    expect(controller.selectedFeeSpeed).toBe(FeeSpeed.Medium)
   })
 
   test('persists a user selected fee speed right away, for the current chain only', async () => {
@@ -2304,8 +2305,9 @@ describe('Negative cases', () => {
       '0x0000000000000000000000000000000000000000'
     )
     expect(controller.accountOp.gasFeePayment!.feeTokenChainId).toEqual(137n)
-    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(300n)
-    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(600n)
+    // the default speed is medium
+    expect(controller.accountOp.gasFeePayment!.maxPriorityFeePerGas).toEqual(200n)
+    expect(controller.accountOp.gasFeePayment!.gasPrice).toEqual(400n)
 
     const typedData = getTypedData(
       network.chainId,
