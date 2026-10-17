@@ -779,11 +779,30 @@ describe('RequestsController ', () => {
       expect(getCallsRequests(controller)).toHaveLength(2)
     })
 
-    test('a speed up keeps the nonce of the transaction it replaces', async () => {
-      const { controller } = await prepareTest()
+    // The replaced transaction is still pending, so the pending account state is one nonce ahead
+    const mockPendingNonce = (
+      accountsCtrl: Awaited<ReturnType<typeof prepareTest>>['accountsCtrl']
+    ) => {
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+      accountsCtrl.accountStates[accountAddr]!['1']!.nonce = 8n
+    }
+
+    test('a Safe speed up keeps the nonce of the transaction it replaces', async () => {
+      const { controller, accountsCtrl } = await prepareTest(false, true)
+      mockPendingNonce(accountsCtrl)
       await buildSpeedUpRequest(controller, { nonce: 7n })
 
+      // The Safe transaction is built from this nonce, and its signatures are for it
       expect(getCallsRequests(controller)[0]!.signAccountOp.accountOp.nonce).toBe(7n)
+    })
+
+    test('a smart account speed up uses the pending nonce, so it can be simulated', async () => {
+      const { controller, accountsCtrl } = await prepareTest()
+      mockPendingNonce(accountsCtrl)
+      await buildSpeedUpRequest(controller, { nonce: 7n })
+
+      // The simulation runs on the pending block, where the replaced transaction raised it to 8
+      expect(getCallsRequests(controller)[0]!.signAccountOp.accountOp.nonce).toBe(8n)
     })
   })
 

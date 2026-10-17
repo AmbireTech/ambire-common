@@ -7,22 +7,25 @@ import { collapseReplacedAccountOps, getReplacementKey } from './replacements'
 const ACCOUNT = '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'
 const OTHER_EOA = '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'
 
-const buildOp = ({
-  id,
-  status = AccountOpStatus.BroadcastedButNotConfirmed,
-  timestamp = 0,
-  eoaNonce = 5n,
-  paidBy = ACCOUNT,
-  chainId = 1n
-}: {
+const buildOp = (params: {
   id: string
   status?: AccountOpStatus
   timestamp?: number
   eoaNonce?: bigint | null
   paidBy?: string
   chainId?: bigint
-}): SubmittedAccountOpLike =>
-  ({
+}): SubmittedAccountOpLike => {
+  const {
+    id,
+    status = AccountOpStatus.BroadcastedButNotConfirmed,
+    timestamp = 0,
+    paidBy = ACCOUNT,
+    chainId = 1n
+  } = params
+  // Not a destructuring default, as that would also replace an explicit `eoaNonce: undefined`
+  const eoaNonce = 'eoaNonce' in params ? params.eoaNonce : 5n
+
+  return {
     id,
     accountAddr: ACCOUNT,
     chainId,
@@ -41,7 +44,8 @@ const buildOp = ({
       broadcastOption: 'bySelf',
       paidByKeyType: 'internal'
     }
-  }) as SubmittedAccountOpLike
+  } as SubmittedAccountOpLike
+}
 
 const ids = (ops: SubmittedAccountOpLike[]) => ops.map((op) => op.id)
 

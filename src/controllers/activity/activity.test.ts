@@ -1640,7 +1640,7 @@ describe('Activity Controller ', () => {
 
   describe('Speed ups', () => {
     const SENDER = SUBMITTED_ACCOUNT_OP.accountAddr
-    const buildAttempt = (txnId: string, timestamp: number, eoaNonce: bigint | undefined = 5n) =>
+    const buildAttempt = (txnId: string, timestamp: number, eoaNonce: bigint | null = 5n) =>
       buildSubmittedAccountOp({
         txnId,
         identifiedBy: { type: 'Transaction', identifier: txnId },
@@ -1674,8 +1674,9 @@ describe('Activity Controller ', () => {
 
     test('keeps transactions without a known nonce as separate rows', async () => {
       const { controller, sessionId } = await prepareTest()
-      await controller.addAccountOp(buildAttempt(`0x${'05'.repeat(32)}`, 1000, undefined))
-      await controller.addAccountOp(buildAttempt(`0x${'06'.repeat(32)}`, 2000, undefined))
+      // null, as passing undefined would fall back to the default nonce
+      await controller.addAccountOp(buildAttempt(`0x${'05'.repeat(32)}`, 1000, null))
+      await controller.addAccountOp(buildAttempt(`0x${'06'.repeat(32)}`, 2000, null))
 
       await controller.filterAccountsOps(sessionId, { account: SENDER, chainId: 1n })
 

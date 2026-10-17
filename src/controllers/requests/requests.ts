@@ -3454,9 +3454,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
         !!account.safeCreation || isSpeedUpRequest
           ? `${baseRequestId}-${generateUuid()}`
           : baseRequestId
-      // A speed up keeps the nonce of the transaction it replaces, as that's what makes it a
-      // replacement. Its signature was made for that nonce and isn't made again
-      const speedUpNonce = isSpeedUpRequest ? providedAccountOp?.nonce : undefined
+      // A Safe speed up keeps the Safe nonce of the transaction it replaces: the Safe transaction
+      // is built from it and its signatures, which aren't made again, are for that nonce.
+      // Other accounts don't put the account nonce in the broadcast (the EOA nonce, eoaNonce,
+      // is kept separately), and their simulation runs on the pending block, where the replaced
+      // transaction has already raised the nonce. Keeping the old one there makes it fail
+      const speedUpNonce =
+        isSpeedUpRequest && account.safeCreation ? providedAccountOp?.nonce : undefined
       const initialNonce =
         speedUpNonce ??
         (account.safeCreation && !meta.safeTxnProps && accountOpNonce === undefined
