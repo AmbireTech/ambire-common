@@ -50,7 +50,7 @@ const createActivity = (initialStatus?: AccountOpStatus) => {
     listener = undefined
   })
   const activity = {
-    onUpdate: jest.fn((cb: () => void) => {
+    onUpdate: jest.fn((cb: () => void, _id?: string) => {
       listener = cb
       return unsubscribe
     }),
@@ -60,6 +60,7 @@ const createActivity = (initialStatus?: AccountOpStatus) => {
   return {
     activity: activity as unknown as IActivityController,
     findByIdentifiedBy: activity.findByIdentifiedBy,
+    onUpdate: activity.onUpdate,
     unsubscribe,
     setStatus: (newStatus: AccountOpStatus) => {
       status = newStatus
@@ -212,7 +213,7 @@ describe('SpeedUp', () => {
     test('calls back right away when the pending transaction was already processed', () => {
       const { activity, findByIdentifiedBy } = createActivity(AccountOpStatus.Success)
       const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
-      const onProcessed = jest.fn()
+      const onProcessed = jest.fn(() => false)
 
       speedUp.watchReplacedTransaction(onProcessed)
 
@@ -229,7 +230,7 @@ describe('SpeedUp', () => {
         AccountOpStatus.BroadcastedButNotConfirmed
       )
       const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
-      const onProcessed = jest.fn()
+      const onProcessed = jest.fn(() => false)
       speedUp.watchReplacedTransaction(onProcessed)
       expect(onProcessed).not.toHaveBeenCalled()
 
@@ -246,7 +247,7 @@ describe('SpeedUp', () => {
     ])('does not call back while the pending transaction has the %s status', (status) => {
       const { activity, emitUpdate } = createActivity(status)
       const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
-      const onProcessed = jest.fn()
+      const onProcessed = jest.fn(() => false)
 
       speedUp.watchReplacedTransaction(onProcessed)
       emitUpdate()
@@ -257,7 +258,7 @@ describe('SpeedUp', () => {
     test('does not call back when the pending transaction is not in the activity', () => {
       const { activity, emitUpdate } = createActivity()
       const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
-      const onProcessed = jest.fn()
+      const onProcessed = jest.fn(() => false)
 
       speedUp.watchReplacedTransaction(onProcessed)
       emitUpdate()
@@ -271,7 +272,7 @@ describe('SpeedUp', () => {
         accountOp: createAccountOp({ meta: { speedUp: { enabled: true } } }),
         activity
       })
-      const onProcessed = jest.fn()
+      const onProcessed = jest.fn(() => false)
 
       speedUp.watchReplacedTransaction(onProcessed)
       emitUpdate()
@@ -280,15 +281,43 @@ describe('SpeedUp', () => {
       expect(onProcessed).not.toHaveBeenCalled()
     })
 
-    test('keeps calling back on later updates, so a busy caller can act later', () => {
-      const { activity, emitUpdate } = createActivity(AccountOpStatus.Success)
+    test('stops watching once the caller is done with the speed up', () => {
+      const { activity, unsubscribe, emitUpdate } = createActivity(AccountOpStatus.Success)
       const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
-      const onProcessed = jest.fn()
+      const onProcessed = jest.fn(() => true)
+
+      speedUp.watchReplacedTransaction(onProcessed)
+      emitUpdate()
+
+      expect(onProcessed).toHaveBeenCalledTimes(1)
+      expect(unsubscribe).toHaveBeenCalledTimes(1)
+    })
+
+    test('listens with an id of its own, so closing one speed up does not stop another', () => {
+      const { activity, onUpdate } = createActivity(AccountOpStatus.BroadcastedButNotConfirmed)
+      new SpeedUp({ accountOp: createAccountOp(), activity }).watchReplacedTransaction(
+        jest.fn(() => false)
+      )
+      new SpeedUp({ accountOp: createAccountOp(), activity }).watchReplacedTransaction(
+        jest.fn(() => false)
+      )
+
+      const [firstId, secondId] = onUpdate.mock.calls.map(([, id]) => id)
+      expect(firstId).toEqual(expect.stringContaining('sign-account-op-speed-up'))
+      expect(firstId).not.toBe(secondId)
+    })
+
+    test('keeps calling back while the caller is busy, so it can act later', () => {
+      const { activity, unsubscribe, emitUpdate } = createActivity(AccountOpStatus.Success)
+      const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
+      // e.g. in the middle of signing
+      const onProcessed = jest.fn(() => false)
 
       speedUp.watchReplacedTransaction(onProcessed)
       emitUpdate()
 
       expect(onProcessed).toHaveBeenCalledTimes(2)
+      expect(unsubscribe).not.toHaveBeenCalled()
     })
 
     test('stops listening to the activity once destroyed', () => {
@@ -296,7 +325,7 @@ describe('SpeedUp', () => {
         AccountOpStatus.BroadcastedButNotConfirmed
       )
       const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
-      const onProcessed = jest.fn()
+      const onProcessed = jest.fn(() => false)
       speedUp.watchReplacedTransaction(onProcessed)
 
       speedUp.destroy()
@@ -311,8 +340,8 @@ describe('SpeedUp', () => {
       const { activity, unsubscribe } = createActivity(AccountOpStatus.BroadcastedButNotConfirmed)
       const speedUp = new SpeedUp({ accountOp: createAccountOp(), activity })
 
-      speedUp.watchReplacedTransaction(jest.fn())
-      speedUp.watchReplacedTransaction(jest.fn())
+      speedUp.watchReplacedTransaction(jest.fn(() => false))
+      speedUp.watchReplacedTransaction(jest.fn(() => false))
 
       expect(unsubscribe).toHaveBeenCalledTimes(1)
       expect(activity.onUpdate).toHaveBeenCalledTimes(2)

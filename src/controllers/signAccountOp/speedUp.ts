@@ -5,6 +5,7 @@ import { AccountOpStatus } from '../../libs/accountOp/types'
 import { FeePaymentOption } from '../../libs/estimate/interfaces'
 import { getSpeedUpGasPrices } from '../../libs/gasPrice/speedUp'
 import { GasSpeeds } from '../../services/bundlers/types'
+import { generateUuid } from '../../utils/uuid'
 
 /**
  * Statuses of a pending transaction that mean it was processed and its place (nonce) is taken,
@@ -95,21 +96,30 @@ export class SpeedUp {
 
   /**
    * Calls `onProcessed` when the pending transaction gets processed, and right away if it
-   * already was. It keeps calling it on every later activity update, so a caller that is busy
-   * the first time (e.g. in the middle of signing) can act on a later call
+   * already was. `onProcessed` returns whether it's done with the speed up: if not (e.g. it's
+   * in the middle of signing), it's called again on the next activity update, otherwise the
+   * activity stops being watched
    */
-  watchReplacedTransaction(onProcessed: () => void) {
-    this.#unsubscribeFromActivity?.()
+  watchReplacedTransaction(onProcessed: () => boolean) {
+    this.#stopWatchingReplacedTransaction()
 
     const checkReplacedTransaction = () => {
-      if (this.#isReplacedTransactionProcessed()) onProcessed()
+      if (!this.#isReplacedTransactionProcessed()) return
+      if (onProcessed()) this.#stopWatchingReplacedTransaction()
     }
 
+    // Unique, as unsubscribing removes every listener with the same id, which would stop
+    // the other open speed ups from watching their transactions
     this.#unsubscribeFromActivity = this.#activity.onUpdate(
       checkReplacedTransaction,
-      'sign-account-op-speed-up'
+      `sign-account-op-speed-up-${generateUuid()}`
     )
     checkReplacedTransaction()
+  }
+
+  #stopWatchingReplacedTransaction() {
+    this.#unsubscribeFromActivity?.()
+    this.#unsubscribeFromActivity = undefined
   }
 
   #isReplacedTransactionProcessed(): boolean {
@@ -127,7 +137,6 @@ export class SpeedUp {
   }
 
   destroy() {
-    this.#unsubscribeFromActivity?.()
-    this.#unsubscribeFromActivity = undefined
+    this.#stopWatchingReplacedTransaction()
   }
 }

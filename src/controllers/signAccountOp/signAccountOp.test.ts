@@ -5282,9 +5282,9 @@ describe('speed up of a pending transaction', () => {
 
   /** The callback the controller subscribed to activity updates with */
   const getActivityUpdateCallback = (onUpdateSpy: { mock: { calls: any[][] } }) =>
-    onUpdateSpy.mock.calls.find(([, id]) => id === 'sign-account-op-speed-up')?.[0] as
-      | (() => void)
-      | undefined
+    onUpdateSpy.mock.calls.find(
+      ([, id]) => typeof id === 'string' && id.startsWith('sign-account-op-speed-up')
+    )?.[0] as (() => void) | undefined
 
   afterEach(() => {
     jest.restoreAllMocks()

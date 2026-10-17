@@ -1116,20 +1116,27 @@ export class SignAccountOpController
 
   /**
    * During a speed up, the pending transaction that is being replaced may get processed before
-   * the speed up is signed. Its place (nonce) is then taken, so there's nothing left to sign
+   * the speed up is signed. Its place (nonce) is then taken, so there's nothing left to sign.
+   * Returns whether it's done with the speed up, so the activity no longer needs to be watched
    */
-  #stopSpeedUp() {
-    // Once signing has started, the broadcast reports what happened instead
+  #stopSpeedUp(): boolean {
+    // Signing is in progress, so this is checked again on the next activity update.
+    // If the broadcast fails because the nonce is taken, the request is stopped then
     if (
       this.status?.type === SigningStatus.InProgress ||
-      this.status?.type === SigningStatus.WaitingForPaymaster ||
+      this.status?.type === SigningStatus.WaitingForPaymaster
+    )
+      return false
+    // Already broadcast or already stopped
+    if (
       this.status?.type === SigningStatus.Done ||
       this.status?.type === SigningStatus.SpeedUpNotNeeded
     )
-      return
+      return true
 
     this.#stopIntervals()
     this.updateStatus(SigningStatus.SpeedUpNotNeeded)
+    return true
   }
 
   #withDecodedCalls(humanization: IrCall[]) {
