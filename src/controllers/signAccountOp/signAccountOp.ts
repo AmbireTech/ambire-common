@@ -134,7 +134,6 @@ import {
   confirm,
   getAlreadySignedOwners,
   getImportedSignersThatHaveNotSigned,
-  getNonce,
   getSafeTxnHash,
   getSigs,
   propose,
@@ -1696,20 +1695,31 @@ export class SignAccountOpController
       }
     }
 
-    // Safe txn, signed, with a future nonce: display an error
+    // Safe txn, signed, with a nonce other than the onchain one: display an error
     if (
       !!this.account.safeCreation &&
       !this.accountOp.meta?.isSafeDeploy &&
       accountState &&
-      this.accountOp.nonce &&
+      this.accountOp.nonce !== null &&
       this.accountOp.nonce !== accountState.nonce &&
       this.#accountOp.signed &&
       this.#accountOp.signed.length >= this.threshold
     ) {
-      errors.push({
-        title: 'You need to broadcast pending transactions before this one.',
-        action: 'refetch-account-state'
-      })
+      // A past nonce was already used by a confirmed transaction, so this one can never go through
+      if (this.accountOp.nonce < accountState.nonce) {
+        errors.push({
+          title:
+            'Another transaction from this account was already confirmed in its place, so this one can no longer go through. You can reject it.'
+        })
+      } else {
+        // A future nonce: the earlier transactions may be either not sent yet or sent and
+        // still waiting to be confirmed
+        errors.push({
+          title:
+            'Earlier transactions need to go through first. Send them, or wait for the ones already sent to be confirmed.',
+          action: 'refetch-account-state'
+        })
+      }
     }
 
     return errors
@@ -3405,21 +3415,6 @@ export class SignAccountOpController
         !isSafeDeploy &&
         (this.#accountOp.signed?.length || 0) < this.threshold
       ) {
-        // If the Safe txn is not already signed, fetch the latest nonce unless
-        // the user explicitly selected one for this transaction.
-        if (!this.accountOp.safeTx && this.#customSafeNonce === null) {
-          const latestNonce = await getNonce(this.accountOp.accountAddr, this.provider).catch(
-            (e) => {
-              console.log('failed to retrieve the latest nonce for Safe')
-              console.log(e)
-              return null
-            }
-          )
-          if (latestNonce) {
-            this.#updateNonce(latestNonce)
-          }
-        }
-
         const prevSignedSigs = getSigs(this.accountOp.signature)
         const nowSignedSigs: Hex[] = []
 
