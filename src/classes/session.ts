@@ -9,8 +9,8 @@ export interface SessionInitProps {
   /**
    * The browser frame the dApp runs in: 0 is the tab's top frame, anything else is an iframe.
    * Only platforms that can report it from a trusted source pass it (the extension reads it
-   * from `chrome.runtime.MessageSender`); it stays undefined on mobile WebViews (main-frame
-   * only injection) and for WalletConnect, which has no frame at all.
+   * from `chrome.runtime.MessageSender`, the mobile WebView from the native frame info of each
+   * message); it stays undefined for WalletConnect, which has no frame at all.
    */
   frameId?: number
   /**
