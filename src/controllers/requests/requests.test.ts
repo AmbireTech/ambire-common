@@ -25,6 +25,7 @@ import {
 } from '../../interfaces/userRequest'
 import { AccountOpStatus } from '../../libs/accountOp/types'
 import * as safeLib from '../../libs/safe/safe'
+import { SwapAndBridgeFormStatus } from '../../libs/swapAndBridge/constants'
 import { generateUuid } from '../../utils/uuid'
 import { SignAccountOpController } from '../signAccountOp/signAccountOp'
 
@@ -815,6 +816,88 @@ describe('RequestsController ', () => {
 
     expect(controller.userRequests.length).toBe(1)
     expect(controller.userRequests[0]!.kind).toBe('calls')
+  })
+
+  describe('build swap and bridge request', () => {
+    const SELECTED_ROUTE_ID = 'selected-route'
+
+    const createQuote = (routeId: string) => {
+      const route = { routeId, providerId: 'lifi', steps: [], userTxs: [] }
+
+      return {
+        fromAsset: { address: ZeroAddress, symbol: 'ETH' },
+        toAsset: { address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', symbol: 'USDC' },
+        selectedRoute: route,
+        routes: [route]
+      } as any
+    }
+
+    const prepareSwapTest = async (
+      transactionRouteId: string,
+      formStatus = SwapAndBridgeFormStatus.ReadyToSubmit
+    ) => {
+      const testSetup = await prepareTest()
+      const { swapAndBridge } = testSetup.mainCtrl
+      const swapTxn = {
+        activeRouteId: transactionRouteId,
+        approvalData: null,
+        chainId: 1,
+        txData: '0x',
+        txTarget: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
+        userTxIndex: 0,
+        value: '0'
+      }
+      jest
+        .spyOn(swapAndBridge, 'signAccountOpController', 'get')
+        .mockReturnValue({ accountOp: { meta: { swapTxn } } } as any)
+      jest.spyOn(swapAndBridge, 'formStatus', 'get').mockReturnValue(formStatus)
+      swapAndBridge.quote = createQuote(SELECTED_ROUTE_ID)
+
+      return testSetup
+    }
+
+    test('adds the active route of the transaction, even if the form quote changes meanwhile', async () => {
+      const { controller, mainCtrl } = await prepareSwapTest(SELECTED_ROUTE_ID)
+      const getAccountState = mainCtrl.accounts.getOrFetchAccountOnChainState.bind(
+        mainCtrl.accounts
+      )
+      jest
+        .spyOn(mainCtrl.accounts, 'getOrFetchAccountOnChainState')
+        .mockImplementationOnce(async (...args) => {
+          // e.g. the quote refreshes while the request is being built
+          mainCtrl.swapAndBridge.quote = createQuote('refreshed-route')
+          return getAccountState(...args)
+        })
+
+      await controller.build({ type: 'swapAndBridgeRequest', params: { openActionWindow: false } })
+
+      expect(controller.userRequests).toHaveLength(1)
+      expect(mainCtrl.swapAndBridge.activeRoutes.map((r) => r.activeRouteId)).toEqual([
+        SELECTED_ROUTE_ID
+      ])
+    })
+
+    test('does not add the swap while the transaction of the selected route is being prepared', async () => {
+      // The user selected another route, but the transaction is still built for the previous one.
+      // The form is not ready to submit then, but the screen may not have received that yet
+      const { controller, mainCtrl } = await prepareSwapTest(
+        'previously-selected-route',
+        SwapAndBridgeFormStatus.ReadyToEstimate
+      )
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await controller.build({ type: 'swapAndBridgeRequest', params: { openActionWindow: false } })
+
+      expect(controller.userRequests).toHaveLength(0)
+      expect(mainCtrl.swapAndBridge.activeRoutes).toHaveLength(0)
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          level: 'major',
+          message: 'The selected route is still loading. Please try again in a moment.'
+        })
+      )
+    })
   })
 
   test('emits the updated calls when adding another request to a queued batch', async () => {
