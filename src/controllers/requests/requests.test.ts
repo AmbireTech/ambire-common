@@ -667,6 +667,126 @@ describe('RequestsController ', () => {
     expect(controller.currentUserRequest?.id).toBe('arrived-request')
     expect(controller.requestWindow.windowProps).not.toBe(null)
   })
+  describe('speed ups', () => {
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const replacedAccountOpId = 'replaced-account-op-id'
+    const call = { to: '0xa07D75aacEFd11b425AF7181958F0F85c312f143', value: 1n, data: '0x' }
+
+    const buildBatchRequest = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: { calls: [call], meta: { accountAddr, chainId: 1n } }
+        }
+      })
+
+    const buildSpeedUpRequest = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      { replacedTxnId, nonce = 0n }: { replacedTxnId?: string; nonce?: bigint } = {}
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          executionType: 'queue',
+          userRequestParams: {
+            calls: [call],
+            meta: { accountAddr, chainId: 1n },
+            accountOp: {
+              id: replacedAccountOpId,
+              accountAddr,
+              chainId: 1n,
+              signingKeyAddr: null,
+              signingKeyType: null,
+              gasLimit: null,
+              gasFeePayment: null,
+              nonce,
+              signature: null,
+              calls: [{ ...call, id: 'replaced-call-id' }],
+              meta: {
+                speedUp: {
+                  enabled: true,
+                  ...(replacedTxnId && {
+                    replacedIdentifiedBy: { type: 'Transaction', identifier: replacedTxnId }
+                  })
+                }
+              }
+            } as AccountOp
+          }
+        }
+      })
+
+    const getCallsRequests = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+      controller.userRequests.filter((r) => r.kind === 'calls')
+
+    test('a speed up is not added to the batch already open on the same chain', async () => {
+      const { controller } = await prepareTest()
+      await buildBatchRequest(controller)
+      await buildSpeedUpRequest(controller)
+
+      const [batch, speedUp] = getCallsRequests(controller)
+      expect(getCallsRequests(controller)).toHaveLength(2)
+      expect(batch!.signAccountOp.isSpeedUpTransaction).toBe(false)
+      expect(batch!.signAccountOp.accountOp.calls).toHaveLength(1)
+      expect(speedUp!.signAccountOp.isSpeedUpTransaction).toBe(true)
+      expect(speedUp!.id).not.toBe(batch!.id)
+    })
+
+    test('new calls are not added to an open speed up', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller)
+      await buildBatchRequest(controller)
+
+      const speedUp = getCallsRequests(controller).find((r) => r.signAccountOp.isSpeedUpTransaction)
+      expect(getCallsRequests(controller)).toHaveLength(2)
+      expect(speedUp!.signAccountOp.accountOp.calls).toHaveLength(1)
+    })
+
+    test('a speed up gets an account op id of its own', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller)
+
+      const [speedUp] = getCallsRequests(controller)
+      expect(speedUp!.signAccountOp.accountOp.id).toBeTruthy()
+      expect(speedUp!.signAccountOp.accountOp.id).not.toBe(replacedAccountOpId)
+    })
+
+    test('batching normal calls still works next to an open speed up', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller)
+      await buildBatchRequest(controller)
+      await buildBatchRequest(controller)
+
+      const batch = getCallsRequests(controller).find((r) => !r.signAccountOp.isSpeedUpTransaction)
+      expect(getCallsRequests(controller)).toHaveLength(2)
+      expect(batch!.signAccountOp.accountOp.calls).toHaveLength(2)
+    })
+
+    test('pressing Speed up again reopens the open speed up of that transaction', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller, { replacedTxnId: `0x${'aa'.repeat(32)}` })
+      await buildSpeedUpRequest(controller, { replacedTxnId: `0x${'aa'.repeat(32)}` })
+
+      expect(getCallsRequests(controller)).toHaveLength(1)
+      expect(getCallsRequests(controller)[0]!.signAccountOp.accountOp.calls).toHaveLength(1)
+    })
+
+    test('speed ups of different transactions are separate requests', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller, { replacedTxnId: `0x${'aa'.repeat(32)}` })
+      await buildSpeedUpRequest(controller, { replacedTxnId: `0x${'bb'.repeat(32)}` })
+
+      expect(getCallsRequests(controller)).toHaveLength(2)
+    })
+
+    test('a speed up keeps the nonce of the transaction it replaces', async () => {
+      const { controller } = await prepareTest()
+      await buildSpeedUpRequest(controller, { nonce: 7n })
+
+      expect(getCallsRequests(controller)[0]!.signAccountOp.accountOp.nonce).toBe(7n)
+    })
+  })
+
   describe('closing the side panel', () => {
     /** Requests show up in the panel, which has no window of its own. */
     const prepareSidePanelTest = async () => {

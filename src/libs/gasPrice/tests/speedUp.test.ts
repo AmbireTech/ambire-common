@@ -5,7 +5,7 @@ import { describe, expect, test } from '@jest/globals'
 import { Hex } from '../../../interfaces/hex'
 import { GasSpeeds } from '../../../services/bundlers/types'
 import { gasPriceToBundlerFormat } from '../gasPrice'
-import { getSpeedUpGasPrices } from '../speedUp'
+import { getFeeIncreasePercent, getSpeedUpGasPrices } from '../speedUp'
 
 const gwei = 1000000000n
 
@@ -125,5 +125,28 @@ describe('getSpeedUpGasPrices', () => {
     const result = toBigIntSpeeds(getSpeedUpGasPrices(gasPrices, { gasPrice: 100n * gwei }))
 
     expect(result.slow).toEqual({ maxFeePerGas: minMaxFee, maxPriorityFeePerGas: 0n })
+  })
+})
+
+describe('getFeeIncreasePercent', () => {
+  test('returns the increase in whole percent', () => {
+    expect(getFeeIncreasePercent(100n, 125n)).toBe(25)
+    expect(getFeeIncreasePercent(100n, 300n)).toBe(200)
+  })
+
+  test('rounds to the nearest whole percent', () => {
+    // 91 / 35 = 260%
+    expect(getFeeIncreasePercent(35n, 126n)).toBe(260)
+    // 1 / 3 = 33.33%
+    expect(getFeeIncreasePercent(3n, 4n)).toBe(33)
+  })
+
+  test('is null when the new fee is not higher', () => {
+    expect(getFeeIncreasePercent(100n, 100n)).toBeNull()
+    expect(getFeeIncreasePercent(100n, 90n)).toBeNull()
+  })
+
+  test('is null when the replaced fee is 0, as there is nothing to compare to', () => {
+    expect(getFeeIncreasePercent(0n, 100n)).toBeNull()
   })
 })

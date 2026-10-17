@@ -32,6 +32,7 @@ import {
   verifiedDapp
 } from '../../../test/helpers/dapps'
 import { mockUiManager } from '../../../test/helpers/ui'
+import { RecurringTimeout } from '../../classes/recurringTimeout/recurringTimeout'
 import { Session } from '../../classes/session'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
@@ -5360,6 +5361,31 @@ describe('speed up of a pending transaction', () => {
     controller.update({ hasNewEstimation: true })
 
     expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+  })
+
+  test('stays stopped after a reset of the status', async () => {
+    jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue({ status: AccountOpStatus.Success } as any)
+    const { controller } = await initSpeedUp()
+
+    controller.resetStatus()
+
+    expect(controller.status?.type).toBe(SigningStatus.SpeedUpNotNeeded)
+  })
+
+  test('does not restart refetching when resumed', async () => {
+    jest
+      .spyOn(ActivityController.prototype, 'findByIdentifiedBy')
+      .mockReturnValue({ status: AccountOpStatus.Success } as any)
+    const { controller } = await initSpeedUp()
+    const startSpy = jest.spyOn(RecurringTimeout.prototype, 'start')
+    const restartSpy = jest.spyOn(RecurringTimeout.prototype, 'restart')
+
+    controller.resume()
+
+    expect(startSpy).not.toHaveBeenCalled()
+    expect(restartSpy).not.toHaveBeenCalled()
   })
 
   test('does not watch the activity when no SpeedUp is passed', async () => {

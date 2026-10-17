@@ -59,3 +59,14 @@ export function getSpeedUpGasPrices(gasPrices: GasSpeeds, replacedFees: Replaced
     ape: raiseToMin(gasPrices.ape)
   }
 }
+
+/**
+ * How much more a replacement (speed up) pays than the transaction it replaces, in whole
+ * percent. Null when it isn't higher (e.g. the replacement needs less gas) or the replaced fee
+ * is 0. Both amounts must be in the same token
+ */
+export function getFeeIncreasePercent(replacedAmount: bigint, newAmount: bigint): number | null {
+  if (replacedAmount <= 0n || newAmount <= replacedAmount) return null
+
+  return Math.round(Number(((newAmount - replacedAmount) * 10000n) / replacedAmount) / 100)
+}

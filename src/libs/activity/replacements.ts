@@ -4,6 +4,9 @@ import { AccountOpStatus } from '../accountOp/types'
 /** Statuses of an account op that got onchain, so it's the one that replaced the others */
 const PROCESSED_STATUSES = [AccountOpStatus.Success, AccountOpStatus.Failure]
 
+const isProcessed = ({ status }: SubmittedAccountOpLike) =>
+  !!status && PROCESSED_STATUSES.includes(status)
+
 /**
  * Account ops sent by the same EOA with the same nonce replace each other (e.g. a speed up),
  * so only one of them can end up onchain. Returns the key they share, or null for ops that
@@ -24,8 +27,8 @@ const isBetterRepresentative = (
   candidate: SubmittedAccountOpLike,
   current: SubmittedAccountOpLike
 ): boolean => {
-  const isCandidateProcessed = PROCESSED_STATUSES.includes(candidate.status)
-  const isCurrentProcessed = PROCESSED_STATUSES.includes(current.status)
+  const isCandidateProcessed = isProcessed(candidate)
+  const isCurrentProcessed = isProcessed(current)
   if (isCandidateProcessed !== isCurrentProcessed) return isCandidateProcessed
 
   return candidate.timestamp > current.timestamp

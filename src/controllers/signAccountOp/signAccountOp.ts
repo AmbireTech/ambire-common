@@ -2369,6 +2369,9 @@ export class SignAccountOpController
    * That is because they may be stopped (after inactivity).
    */
   #resumeIntervals(opts?: { haveCallsChanged?: boolean }) {
+    // Nothing is left to estimate once the transaction being sped up was processed
+    if (this.status?.type === SigningStatus.SpeedUpNotNeeded) return
+
     const { haveCallsChanged = false } = opts || {}
 
     // we want to restart the interval if signAccountOp is for a Safe.
@@ -2420,6 +2423,9 @@ export class SignAccountOpController
   }
 
   resetStatus() {
+    // Final, the speed up can't go through anymore no matter what is reset
+    if (this.status?.type === SigningStatus.SpeedUpNotNeeded) return
+
     this.status = null
     this.emitUpdate()
   }

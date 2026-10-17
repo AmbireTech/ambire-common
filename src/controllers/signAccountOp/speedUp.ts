@@ -121,7 +121,9 @@ export class SpeedUp {
       this.#chainId
     )
 
-    return !!replacedAccountOp && REPLACED_TXN_PROCESSED_STATUSES.includes(replacedAccountOp.status)
+    const replacedStatus = replacedAccountOp?.status
+
+    return !!replacedStatus && REPLACED_TXN_PROCESSED_STATUSES.includes(replacedStatus)
   }
 
   destroy() {

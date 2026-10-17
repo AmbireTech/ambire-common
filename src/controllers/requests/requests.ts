@@ -763,6 +763,24 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     await this.requestWindow.openWindowPromise
   }
 
+  /**
+   * An open request that already speeds up the same pending transaction. Pressing Speed up
+   * again reopens it, as a second one would compete with it for the same nonce
+   */
+  #findOpenSpeedUpRequest(accountOp: AccountOp): CallsUserRequest | undefined {
+    const replacedIdentifier = accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier
+    if (!replacedIdentifier) return undefined
+
+    return this.userRequests.find(
+      (r): r is CallsUserRequest =>
+        r.kind === 'calls' &&
+        r.signAccountOp.isSpeedUpTransaction &&
+        r.meta.chainId === accountOp.chainId &&
+        r.signAccountOp.accountOp.meta?.speedUp?.replacedIdentifiedBy?.identifier ===
+          replacedIdentifier
+    )
+  }
+
   #getSafeDeployRequest(accountAddr: string, chainId: bigint): CallsUserRequest | undefined {
     return this.userRequests.find(
       (r): r is CallsUserRequest =>
@@ -3253,30 +3271,39 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     let callUserRequest: CallsUserRequest | undefined
     const isSafeAccount = !!this.#accounts.accounts.find((a) => a.addr === meta.accountAddr)
       ?.safeCreation
-    const existingUserRequest = this.userRequests.find(
-      (r) =>
-        r.kind === 'calls' &&
-        // done like this so 1) a safe onchain rejection tx is not bundled with a normal batch
-        // 2) a fetched rejection is bundled with the current local present rejection.
-        // Only for Safes - any other account would get a second request under the same id as
-        // its batch, which replaces the batch and drops what was in it
-        (!isSafeAccount ||
-          isSafeRejectionCall(calls, meta.accountAddr) ===
-            isSafeRejectionCall(r.signAccountOp.accountOp.calls, meta.accountAddr)) &&
-        !!r.meta.isSafeDeploy === !!meta.isSafeDeploy &&
-        r.meta.accountAddr === meta.accountAddr &&
-        r.meta.chainId === meta.chainId &&
-        (accountOpNonce === undefined ||
-          (!r.signAccountOp.accountOp.signature &&
-            getAccountOpNonce(r.signAccountOp.accountOp) === accountOpNonce)) &&
-        // find an accountOp with no txnId, if the meta does not have a Safe
-        // txnId. If it has, it should not get the existingUserRequest
-        ((!meta.safeTxnProps?.txnId && !r.signAccountOp.accountOp.txnId) ||
-          // if meta has txnId, the accountOp should have the same txnId
-          (meta.safeTxnProps?.txnId &&
-            r.signAccountOp.accountOp.txnId &&
-            meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId))
-    ) as CallsUserRequest | undefined
+    // A speed up replaces one pending transaction as it is, so it's always a request of its own:
+    // it's never added to a batch and nothing gets added to it. Otherwise its calls would be
+    // sent again as a new transaction instead of replacing the pending one. A speed up of the
+    // same transaction that is already open is reopened instead of building another one
+    const isSpeedUpRequest = !!providedAccountOp && SpeedUp.isSpeedUp(providedAccountOp)
+    const existingUserRequest =
+      isSpeedUpRequest && providedAccountOp
+        ? this.#findOpenSpeedUpRequest(providedAccountOp)
+        : (this.userRequests.find(
+            (r) =>
+              r.kind === 'calls' &&
+              !r.signAccountOp.isSpeedUpTransaction &&
+              // done like this so 1) a safe onchain rejection tx is not bundled with a normal batch
+              // 2) a fetched rejection is bundled with the current local present rejection.
+              // Only for Safes - any other account would get a second request under the same id as
+              // its batch, which replaces the batch and drops what was in it
+              (!isSafeAccount ||
+                isSafeRejectionCall(calls, meta.accountAddr) ===
+                  isSafeRejectionCall(r.signAccountOp.accountOp.calls, meta.accountAddr)) &&
+              !!r.meta.isSafeDeploy === !!meta.isSafeDeploy &&
+              r.meta.accountAddr === meta.accountAddr &&
+              r.meta.chainId === meta.chainId &&
+              (accountOpNonce === undefined ||
+                (!r.signAccountOp.accountOp.signature &&
+                  getAccountOpNonce(r.signAccountOp.accountOp) === accountOpNonce)) &&
+              // find an accountOp with no txnId, if the meta does not have a Safe
+              // txnId. If it has, it should not get the existingUserRequest
+              ((!meta.safeTxnProps?.txnId && !r.signAccountOp.accountOp.txnId) ||
+                // if meta has txnId, the accountOp should have the same txnId
+                (meta.safeTxnProps?.txnId &&
+                  r.signAccountOp.accountOp.txnId &&
+                  meta.safeTxnProps?.txnId === r.signAccountOp.accountOp.txnId))
+          ) as CallsUserRequest | undefined)
 
     // A Safe is deployed once per chain, so a pending deployment is reused as it is. Adding
     // the deployment to it a second time would make the whole transaction fail
@@ -3339,7 +3366,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           // if we're updating a signAccountOp with external data (txnId / signature),
           // we do not wish to continue any further down as race conditions may happen
           return
-        } else {
+        } else if (!existingUserRequest.signAccountOp.isSpeedUpTransaction) {
           existingUserRequest.signAccountOp.update({
             accountOpData: {
               calls: [
@@ -3421,15 +3448,20 @@ export class RequestsController extends EventEmitter implements IRequestsControl
       const network = this.#networks.networks.find((n) => n.chainId === meta.chainId)!
 
       const baseRequestId = `${meta.accountAddr}-${meta.chainId}${meta.safeTxnProps?.txnId ? `-${meta.safeTxnProps.txnId}` : ''}`
-      // add a unique id for safe requests as we want to make sure
-      // new requests do not replace already existing ones
-      const requestId = !!account.safeCreation
-        ? `${baseRequestId}-${generateUuid()}`
-        : baseRequestId
+      // add a unique id for safe and speed up requests as we want to make sure
+      // new requests do not replace already existing ones (e.g. the batch on the same chain)
+      const requestId =
+        !!account.safeCreation || isSpeedUpRequest
+          ? `${baseRequestId}-${generateUuid()}`
+          : baseRequestId
+      // A speed up keeps the nonce of the transaction it replaces, as that's what makes it a
+      // replacement. Its signature was made for that nonce and isn't made again
+      const speedUpNonce = isSpeedUpRequest ? providedAccountOp?.nonce : undefined
       const initialNonce =
-        account.safeCreation && !meta.safeTxnProps && accountOpNonce === undefined
+        speedUpNonce ??
+        (account.safeCreation && !meta.safeTxnProps && accountOpNonce === undefined
           ? this.#getFirstFreeNonce(meta.accountAddr, meta.chainId, accountState.nonce)
-          : (accountOpNonce ?? meta.safeTxnProps?.nonce ?? accountState.nonce)
+          : (accountOpNonce ?? meta.safeTxnProps?.nonce ?? accountState.nonce))
       await this.#signAccountOpPreference.initialLoadPromise
       callUserRequest = {
         id: requestId,
@@ -3456,7 +3488,13 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           contractInfo: this.#contractInfo,
           fromRequestId: requestId,
           accountOp: providedAccountOp
-            ? { ...providedAccountOp, nonce: initialNonce }
+            ? {
+                ...providedAccountOp,
+                // A speed up is a transaction of its own, so it gets its own id. The activity
+                // stores account ops by id, so a shared one would overwrite the replaced one
+                ...(isSpeedUpRequest && { id: generateUuid() }),
+                nonce: initialNonce
+              }
             : {
                 id: generateUuid(),
                 accountAddr: meta.accountAddr,
@@ -3489,7 +3527,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
           onBroadcastSuccess: this.#onBroadcastSuccess,
           onBroadcastFailed: this.#onBroadcastFailed,
           speedUp:
-            providedAccountOp && SpeedUp.isSpeedUp(providedAccountOp)
+            providedAccountOp && isSpeedUpRequest
               ? new SpeedUp({ accountOp: providedAccountOp, activity: this.#activity })
               : undefined
         }),
