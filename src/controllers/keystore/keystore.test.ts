@@ -13,6 +13,7 @@ import {
   LEGACY_POPULAR_DERIVATION_TEMPLATE
 } from '../../consts/derivation'
 import { PRIVACY_POOLS_SIGNING_KEY_PATH } from '../../consts/privacyPools'
+import { TORNADO_CASH_ACCOUNT_KEY_PATH } from '../../consts/tornadoCash'
 import { ExternalKey, IKeystoreController, InternalKey } from '../../interfaces/keystore'
 import { getPrivateKeyFromSeed, KeyIterator } from '../../libs/keyIterator/keyIterator'
 import { stripHexPrefix } from '../../utils/stripHexPrefix'
@@ -522,9 +523,14 @@ describe('KeystoreController recovery phrase backup state', () => {
     const seedId = await keystoreCtrl.addGeneratedSeed({})
     const { seed } = await keystoreCtrl.getSavedSeed(seedId)
 
-    const key = await keystoreCtrl.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
-    const keyAgain = await keystoreCtrl.derivePrivacyPoolsKey(
+    const key = await keystoreCtrl.derivePrivacyKey(
       seedId,
+      'privacyPools',
+      PRIVACY_POOLS_SIGNING_KEY_PATH
+    )
+    const keyAgain = await keystoreCtrl.derivePrivacyKey(
+      seedId,
+      'privacyPools',
       PRIVACY_POOLS_SIGNING_KEY_PATH
     )
 
@@ -540,8 +546,9 @@ describe('KeystoreController recovery phrase backup state', () => {
     const withoutPassphrase = await addPhrase(process.env.SEED)
     const withPassphrase = await addPhrase(process.env.SEED, 'extra word')
 
-    const key = await keystoreCtrl.derivePrivacyPoolsKey(
+    const key = await keystoreCtrl.derivePrivacyKey(
       withPassphrase,
+      'privacyPools',
       PRIVACY_POOLS_SIGNING_KEY_PATH
     )
 
@@ -552,13 +559,17 @@ describe('KeystoreController recovery phrase backup state', () => {
       ).privateKey
     )
     expect(key).not.toBe(
-      await keystoreCtrl.derivePrivacyPoolsKey(withoutPassphrase, PRIVACY_POOLS_SIGNING_KEY_PATH)
+      await keystoreCtrl.derivePrivacyKey(
+        withoutPassphrase,
+        'privacyPools',
+        PRIVACY_POOLS_SIGNING_KEY_PATH
+      )
     )
   })
 
   test('refuses any key but the Privacy Pools signing key, and any key once locked', async () => {
     const seedId = await keystoreCtrl.addGeneratedSeed({})
-    await keystoreCtrl.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
+    await keystoreCtrl.derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
 
     const refusedPaths = [
       // The user's EVM keys
@@ -573,14 +584,14 @@ describe('KeystoreController recovery phrase backup state', () => {
       ` ${PRIVACY_POOLS_SIGNING_KEY_PATH}`
     ]
     for (const path of refusedPaths) {
-      await expect(keystoreCtrl.derivePrivacyPoolsKey(seedId, path)).rejects.toThrow(
-        "refusing to derive a key outside Privacy Pools' paths"
+      await expect(keystoreCtrl.derivePrivacyKey(seedId, 'privacyPools', path)).rejects.toThrow(
+        "refusing to derive a key outside privacyPools' paths"
       )
     }
 
     keystoreCtrl.lock()
     await expect(
-      keystoreCtrl.derivePrivacyPoolsKey(seedId, PRIVACY_POOLS_SIGNING_KEY_PATH)
+      keystoreCtrl.derivePrivacyKey(seedId, 'privacyPools', PRIVACY_POOLS_SIGNING_KEY_PATH)
     ).rejects.toThrow('keystore: not unlocked')
   })
 

@@ -364,7 +364,7 @@ class FakeKeystore extends EventEmitter {
   keys = []
 
   // The fake plugin learns its phrase from the "key" it derives
-  derivePrivacyPoolsKey = jest.fn(async (seedId: string) => seedId)
+  derivePrivacyKey = jest.fn(async (seedId: string) => seedId)
 
   fireUpdate() {
     this.emitUpdate()

@@ -20,7 +20,7 @@ export const PRIVACY_POOLS_ACCOUNT_INDEX = 0
  * nullifier, salt and paymaster withdrawal signer are derived from this key's EIP-712 signature of
  * the note, `PrivacyPoolNote(depositIndex, secretIndex)`.
  *
- * Security boundary: `KeystoreController.derivePrivacyPoolsKey` refuses any other path, since the
+ * Security boundary: `KeystoreController.derivePrivacyKey` refuses any other path, since the
  * plugin asks for arbitrary paths and could otherwise reach the user's EVM keys.
  */
 export const PRIVACY_POOLS_SIGNING_KEY_PATH = `m/28784'/1'/${PRIVACY_POOLS_ACCOUNT_INDEX}'`
