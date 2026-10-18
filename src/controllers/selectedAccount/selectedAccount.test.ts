@@ -450,7 +450,7 @@ describe('SelectedAccount Controller', () => {
       await mainCtrl.keystore.addSecret('password', 'password', '', false)
       await mainCtrl.keystore.unlockWithSecret('password', 'password')
 
-      await mainCtrl.addPrivacyPoolsAccountFromNewSeed({})
+      await mainCtrl.addPrivateAccountFromNewSeed({ providerId: 'privacyPools' })
 
       const [newSeed] = mainCtrl.keystore.seeds
       expect(newSeed?.notBackedUp).toBe(true)

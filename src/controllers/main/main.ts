@@ -1070,67 +1070,47 @@ export class MainController extends EventEmitter implements IMainController {
     return this.#getPrivateAccountSeedIds(providerId).includes(seedId)
   }
 
-  /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
-  async addPrivacyPoolsAccount(seedId: string) {
+  /** The controller that holds a privacy provider's accounts. */
+  #getPrivacyProviderController(providerId: PrivacyProviderId) {
+    return providerId === 'tornadoCash' ? this.tornadoCash : this.privacyPools
+  }
+
+  /** Adds the private account of a stored recovery phrase and selects it. */
+  async addPrivateAccount(privateAccount: PrivateAccountRef) {
     await this.initialLoadPromise
 
     // Wrapped as a whole, so a refused account is shown to the user
     await this.withStatus(
       'selectAccount',
       async () => {
-        await this.privacyPools.addAccount(seedId)
-        await this.#selectPrivateAccount({ providerId: 'privacyPools', seedId })
+        await this.#getPrivacyProviderController(privateAccount.providerId).addAccount(
+          privateAccount.seedId
+        )
+        await this.#selectPrivateAccount(privateAccount)
       },
       true
     )
   }
 
   /**
-   * Creates a recovery phrase with only a Privacy Pools account on it, and selects it. The phrase
-   * is stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
+   * Creates a recovery phrase with only a private account on it, and selects it. The phrase is
+   * stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
    */
-  async addPrivacyPoolsAccountFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+  async addPrivateAccountFromNewSeed({
+    providerId,
+    extraEntropy
+  }: {
+    providerId: PrivacyProviderId
+    extraEntropy?: string
+  }) {
     await this.initialLoadPromise
 
     await this.withStatus(
       'selectAccount',
       async () => {
         const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
-        await this.privacyPools.addAccount(seedId)
-        await this.#selectPrivateAccount({ providerId: 'privacyPools', seedId })
-      },
-      true
-    )
-  }
-
-  /** Adds the Tornado Cash account of a stored recovery phrase and selects it. */
-  async addTornadoCashAccount(seedId: string) {
-    await this.initialLoadPromise
-
-    // Wrapped as a whole, so a refused account is shown to the user
-    await this.withStatus(
-      'selectAccount',
-      async () => {
-        await this.tornadoCash.addAccount(seedId)
-        await this.#selectPrivateAccount({ providerId: 'tornadoCash', seedId })
-      },
-      true
-    )
-  }
-
-  /**
-   * Creates a recovery phrase with only a Tornado Cash account on it, and selects it. The phrase
-   * is stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
-   */
-  async addTornadoCashAccountFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
-    await this.initialLoadPromise
-
-    await this.withStatus(
-      'selectAccount',
-      async () => {
-        const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
-        await this.tornadoCash.addAccount(seedId)
-        await this.#selectPrivateAccount({ providerId: 'tornadoCash', seedId })
+        await this.#getPrivacyProviderController(providerId).addAccount(seedId)
+        await this.#selectPrivateAccount({ providerId, seedId })
       },
       true
     )
