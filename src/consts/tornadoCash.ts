@@ -1,3 +1,6 @@
+import { Hex } from '../interfaces/hex'
+import { getPrivacyPoolsBundlerUrl } from './privacyPools'
+
 /**
  * Fixed so a phrase alone recovers its notes, at the cost of one identity per phrase. Never infer
  * another index: a wrong one points the wallet at an empty set of notes.
@@ -35,14 +38,14 @@ export const TORNADO_CASH_PAYMASTER = {
 /** A Tornado Cash pool: it holds notes of one asset, each worth exactly `denomination`. */
 export type TornadoCashPool = {
   /** Lowercase. */
-  address: string
+  address: Hex
   /** The wallet's address of the asset: the zero address for ETH. */
   assetAddress: string
   symbol: string
   decimals: number
   denomination: bigint
   /** The paymaster's fee adapter for this pool, without which nothing could be withdrawn. */
-  feeAdapterAddress: string
+  feeAdapterAddress: Hex
 }
 
 const ETH = {
@@ -193,3 +196,6 @@ export const TORNADO_CASH_ACCOUNTS_STORAGE_KEY = 'tornadoCashAccounts'
  * transaction's size and fee.
  */
 export const TORNADO_CASH_MAX_NOTES_PER_DEPOSIT = 10
+
+/** Withdrawals go through the same Pimlico bundler as Privacy Pools'. */
+export const getTornadoCashBundlerUrl = getPrivacyPoolsBundlerUrl
