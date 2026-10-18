@@ -24,6 +24,7 @@ import { Domains } from './domains'
 import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from './keystore'
 import { Network } from './network'
 import { PrivacyPoolsAccount } from './privacyPools'
+import { PrivateAccountRef } from './privateAccount'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
 import type { FeeSpeed } from './signAccountOp'
@@ -82,7 +83,12 @@ export type StorageProps = {
   // Selected account
   dismissedBanners: (string | number)[]
   selectedAccount: string | null
-  /** Seed id of the selected Privacy Pools account. Exclusive with `selectedAccount`. */
+  /** The selected private account. Exclusive with `selectedAccount`. */
+  selectedPrivateAccount: PrivateAccountRef | null
+  /**
+   * Legacy: seed id of the selected Privacy Pools account, before `selectedPrivateAccount`. Only
+   * read as a fallback, and removed on the next selection.
+   */
   selectedPrivacyPoolsAccount: string | null
   selectedAccountDismissedBannerIds: { [key: string]: string[] }
   // Email vault

@@ -15,6 +15,7 @@ import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
+import { PrivateAccountRef } from '../../interfaces/privateAccount'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IUiController, View } from '../../interfaces/ui'
 import { IrCall } from '../../libs/humanizer/interfaces'
@@ -375,10 +376,10 @@ class FakeSelectedAccount extends EventEmitter {
 
   account = null
 
-  privacyPoolsAccountId: string | null = null
+  privateAccount: PrivateAccountRef | null = null
 
   select(seedId: string | null) {
-    this.privacyPoolsAccountId = seedId
+    this.privateAccount = seedId ? { providerId: 'privacyPools', seedId } : null
     this.emitUpdate()
   }
 }

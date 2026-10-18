@@ -93,6 +93,7 @@ import { ISurveyController } from '@/interfaces/survey'
 import { ISwapAndBridgeController, SwapAndBridgeActiveRoute } from '@/interfaces/swapAndBridge'
 import { ITransactionManagerController } from '@/interfaces/transactionManager'
 import { ITransferController } from '@/interfaces/transfer'
+import { PrivacyProviderId, PrivateAccountRef } from '@/interfaces/privateAccount'
 import { ITransfersScannerController } from '@/interfaces/transferScanner'
 import { isExtensionOverlayView, IUiController, UiManager, View } from '@/interfaces/ui'
 import { BenzinUserRequest, CallsUserRequest } from '@/interfaces/userRequest'
@@ -449,7 +450,7 @@ export class MainController extends EventEmitter implements IMainController {
       fetch: this.fetch,
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       proverFactory: privacyPoolsProverFactory,
-      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
+      onAccountsRemoved: (seedIds) => this.#onPrivateAccountsRemoved('privacyPools', seedIds)
     })
 
     this.portfolio = new PortfolioController(
@@ -938,9 +939,9 @@ export class MainController extends EventEmitter implements IMainController {
     await this.survey.initialLoadPromise
 
     await this.privacyPools.initialLoadPromise
-    // The restored Privacy Pools account may be gone, removed with its recovery phrase mid-load
-    const { privacyPoolsAccountId } = this.selectedAccount
-    if (privacyPoolsAccountId && !this.#hasPrivacyPoolsAccount(privacyPoolsAccountId)) {
+    // The restored private account may be gone, removed with its recovery phrase mid-load
+    const { privateAccount } = this.selectedAccount
+    if (privateAccount && !this.#hasPrivateAccount(privateAccount)) {
       await this.#selectFallbackAccount()
     }
 
@@ -999,7 +1000,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.#forceEmitSelectedAccountUpdates(toAccountAddr)
   }
 
-  /** Pushes the selected account's getters to the UI. `accountAddr` is null for a Privacy Pools one. */
+  /** Pushes the selected account's getters to the UI. `accountAddr` is null for a private one. */
   async #forceEmitSelectedAccountUpdates(accountAddr: string | null) {
     const accountScopedUpdates = accountAddr
       ? [
@@ -1035,8 +1036,15 @@ export class MainController extends EventEmitter implements IMainController {
     }
   }
 
-  #hasPrivacyPoolsAccount(seedId: string) {
-    return this.privacyPools.accounts.some((account) => account.seedId === seedId)
+  /** The seed ids of a privacy provider's accounts, in the order they were added. */
+  #getPrivateAccountSeedIds(providerId: PrivacyProviderId): string[] {
+    if (providerId === 'privacyPools') return this.privacyPools.accounts.map(({ seedId }) => seedId)
+
+    return []
+  }
+
+  #hasPrivateAccount({ providerId, seedId }: PrivateAccountRef) {
+    return this.#getPrivateAccountSeedIds(providerId).includes(seedId)
   }
 
   /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
@@ -1048,7 +1056,7 @@ export class MainController extends EventEmitter implements IMainController {
       'selectAccount',
       async () => {
         await this.privacyPools.addAccount(seedId)
-        await this.#selectPrivacyPoolsAccount(seedId)
+        await this.#selectPrivateAccount({ providerId: 'privacyPools', seedId })
       },
       true
     )
@@ -1066,38 +1074,38 @@ export class MainController extends EventEmitter implements IMainController {
       async () => {
         const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
         await this.privacyPools.addAccount(seedId)
-        await this.#selectPrivacyPoolsAccount(seedId)
+        await this.#selectPrivateAccount({ providerId: 'privacyPools', seedId })
       },
       true
     )
   }
 
-  async selectPrivacyPoolsAccount(seedId: string) {
+  async selectPrivateAccount(privateAccount: PrivateAccountRef) {
     await this.initialLoadPromise
 
     await this.withStatus(
       'selectAccount',
-      async () => this.#selectPrivacyPoolsAccount(seedId),
+      async () => this.#selectPrivateAccount(privateAccount),
       true
     )
   }
 
   /**
-   * Selects a Privacy Pools account, leaving no regular account selected. Apps are not told: what
-   * they should see then is undecided, so they keep their account.
+   * Selects a private account, leaving no regular account selected. Apps are not told: what they
+   * should see then is undecided, so they keep their account.
    */
-  async #selectPrivacyPoolsAccount(seedId: string) {
-    if (!this.#hasPrivacyPoolsAccount(seedId)) {
+  async #selectPrivateAccount(privateAccount: PrivateAccountRef) {
+    if (!this.#hasPrivateAccount(privateAccount)) {
       this.emitError({
         level: 'major',
         message: 'The account you selected could not be found. Please select another account.',
-        error: new Error('main: the Privacy Pools account to select does not exist')
+        error: new Error('main: the private account to select does not exist')
       })
       return
     }
 
     await this.#leaveSelectedAccount()
-    await this.selectedAccount.setPrivacyPoolsAccount(seedId)
+    await this.selectedAccount.setPrivateAccount(privateAccount)
     this.swapAndBridge.reset()
     this.transfer.reset({ destroyAccountOp: true })
 
@@ -1105,8 +1113,8 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Once the selected account is gone, selects the first regular account, else the first Privacy
-   * Pools account, else nothing (signed out).
+   * Once the selected account is gone, selects the first regular account, else the first private
+   * account (Privacy Pools ones first), else nothing (signed out).
    */
   async #selectFallbackAccount() {
     const [firstAccount] = this.accounts.accounts
@@ -1115,19 +1123,23 @@ export class MainController extends EventEmitter implements IMainController {
       return
     }
 
-    const [firstPrivacyPoolsAccount] = this.privacyPools.accounts
-    if (firstPrivacyPoolsAccount) {
-      await this.#selectPrivacyPoolsAccount(firstPrivacyPoolsAccount.seedId)
-      return
+    const providerIds: PrivacyProviderId[] = ['privacyPools', 'tornadoCash']
+    for (const providerId of providerIds) {
+      const [firstSeedId] = this.#getPrivateAccountSeedIds(providerId)
+      if (firstSeedId) {
+        await this.#selectPrivateAccount({ providerId, seedId: firstSeedId })
+        return
+      }
     }
 
-    await this.selectedAccount.setPrivacyPoolsAccount(null)
+    await this.selectedAccount.setPrivateAccount(null)
     this.emitUpdate()
   }
 
-  async #onPrivacyPoolsAccountsRemoved(seedIds: string[]) {
-    const { privacyPoolsAccountId } = this.selectedAccount
-    if (!privacyPoolsAccountId || !seedIds.includes(privacyPoolsAccountId)) return
+  async #onPrivateAccountsRemoved(providerId: PrivacyProviderId, seedIds: string[]) {
+    const { privateAccount } = this.selectedAccount
+    if (privateAccount?.providerId !== providerId || !seedIds.includes(privateAccount.seedId))
+      return
     // Still loading: `#load` makes the same check once ready
     if (!this.isReady) return
 
