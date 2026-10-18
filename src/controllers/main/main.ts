@@ -34,6 +34,7 @@ import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
 import { PrivacyPoolsController } from '@/controllers/privacyPools/privacyPools'
+import { TornadoCashController } from '@/controllers/tornadoCash/tornadoCash'
 import { ProvidersController } from '@/controllers/providers/providers'
 import { RequestsController } from '@/controllers/requests/requests'
 import { SafeController } from '@/controllers/safe/safe'
@@ -82,6 +83,7 @@ import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
 import { IPortfolioController } from '@/interfaces/portfolio'
 import { IPrivacyPoolsController } from '@/interfaces/privacyPools'
+import { ITornadoCashController, TornadoCashPluginFactory } from '@/interfaces/tornadoCash'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
 import { ISafeController } from '@/interfaces/safe'
@@ -215,6 +217,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   privacyPools: IPrivacyPoolsController
 
+  tornadoCash: ITornadoCashController
+
   requests: IRequestsController
 
   banner: IBannerController
@@ -261,6 +265,7 @@ export class MainController extends EventEmitter implements IMainController {
     uiManager,
     privacyPoolsCircuitsBaseUrl,
     privacyPoolsProverFactory,
+    tornadoCashPluginFactory,
     idb
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
@@ -282,6 +287,8 @@ export class MainController extends EventEmitter implements IMainController {
     privacyPoolsCircuitsBaseUrl: string
     /** Where to generate Privacy Pools proofs if not here - see `PrivacyPoolsController`. */
     privacyPoolsProverFactory?: PrivacyPoolsProverFactory
+    /** Where the Tornado Cash SDK runs; absent where it cannot - see `TornadoCashController`. */
+    tornadoCashPluginFactory?: TornadoCashPluginFactory
     idb?: AmbireIdbDatabase
   }) {
     super(eventEmitterRegistry)
@@ -451,6 +458,19 @@ export class MainController extends EventEmitter implements IMainController {
       circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
       proverFactory: privacyPoolsProverFactory,
       onAccountsRemoved: (seedIds) => this.#onPrivateAccountsRemoved('privacyPools', seedIds)
+    })
+
+    this.tornadoCash = new TornadoCashController({
+      eventEmitterRegistry,
+      keystore: this.keystore,
+      featureFlags: this.featureFlags,
+      networks: this.networks,
+      providers: this.providers,
+      selectedAccount: this.selectedAccount,
+      storage: this.storage,
+      fetch: this.fetch,
+      pluginFactory: tornadoCashPluginFactory,
+      onAccountsRemoved: (seedIds) => this.#onPrivateAccountsRemoved('tornadoCash', seedIds)
     })
 
     this.portfolio = new PortfolioController(
@@ -939,6 +959,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.survey.initialLoadPromise
 
     await this.privacyPools.initialLoadPromise
+    await this.tornadoCash.initialLoadPromise
     // The restored private account may be gone, removed with its recovery phrase mid-load
     const { privateAccount } = this.selectedAccount
     if (privateAccount && !this.#hasPrivateAccount(privateAccount)) {
@@ -1039,6 +1060,7 @@ export class MainController extends EventEmitter implements IMainController {
   /** The seed ids of a privacy provider's accounts, in the order they were added. */
   #getPrivateAccountSeedIds(providerId: PrivacyProviderId): string[] {
     if (providerId === 'privacyPools') return this.privacyPools.accounts.map(({ seedId }) => seedId)
+    if (providerId === 'tornadoCash') return this.tornadoCash.accounts.map(({ seedId }) => seedId)
 
     return []
   }
@@ -1075,6 +1097,39 @@ export class MainController extends EventEmitter implements IMainController {
         const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
         await this.privacyPools.addAccount(seedId)
         await this.#selectPrivateAccount({ providerId: 'privacyPools', seedId })
+      },
+      true
+    )
+  }
+
+  /** Adds the Tornado Cash account of a stored recovery phrase and selects it. */
+  async addTornadoCashAccount(seedId: string) {
+    await this.initialLoadPromise
+
+    // Wrapped as a whole, so a refused account is shown to the user
+    await this.withStatus(
+      'selectAccount',
+      async () => {
+        await this.tornadoCash.addAccount(seedId)
+        await this.#selectPrivateAccount({ providerId: 'tornadoCash', seedId })
+      },
+      true
+    )
+  }
+
+  /**
+   * Creates a recovery phrase with only a Tornado Cash account on it, and selects it. The phrase
+   * is stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
+   */
+  async addTornadoCashAccountFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'selectAccount',
+      async () => {
+        const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
+        await this.tornadoCash.addAccount(seedId)
+        await this.#selectPrivateAccount({ providerId: 'tornadoCash', seedId })
       },
       true
     )

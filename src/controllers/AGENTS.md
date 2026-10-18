@@ -174,6 +174,7 @@ ALWAYS update this list when creating a new controller, and provide a one-senten
 - **PhishingController** – Maintains and updates a list of phishing domains and addresses to protect users.
 - **PortfolioController** – Fetches and caches token balances, DeFi positions, and price data per account.
 - **PrivacyPoolsController** – Manages Privacy Pools (0xBow) accounts, at most one per recovery phrase, and their shielded notes: syncs pools, reports approved/pending balances, and builds deposit and withdrawal operations.
+- **TornadoCashController** – Manages Tornado Cash accounts, at most one per recovery phrase: runs the SDK through a platform plugin (an offscreen document on Chrome) for the selected account, syncs its notes on open and reports its balances.
 - **WalletTokenController** – Loads each account's pending $WALLET withdrawals (from the relayer's leave logs, or, when the user opts out, from local and user-entered transactions) and stores them as leave logs.
 - **RequestsController** – Handles all requests (e.g., signing, connecting to an app, etc.), which come from the app UI and dApps.
 - **SafeController** – Integrates with Safe (Gnosis Safe) multisig wallets for transaction and message fetching.

@@ -1,6 +1,11 @@
 import type { EthereumProvider } from '@kohaku-eth/provider'
 
+import { ControllerInterface } from './controller'
 import { Hex } from './hex'
+
+export type ITornadoCashController = ControllerInterface<
+  InstanceType<typeof import('../controllers/tornadoCash/tornadoCash').TornadoCashController>
+>
 
 /** A note the account owns, without its secrets or commitment, which would link it to the account. */
 export type TornadoCashNote = {
@@ -91,3 +96,42 @@ export type TornadoCashPlugin = {
  * cannot run (mobile, Firefox), which leaves Tornado Cash unavailable.
  */
 export type TornadoCashPluginFactory = (host: TornadoCashPluginHost) => Promise<TornadoCashPlugin>
+
+/** At most one per stored recovery phrase, and removed with it. */
+export type TornadoCashAccount = {
+  seedId: string
+  createdAt: number
+}
+
+/** Why Tornado Cash cannot act for the selected account. */
+export type TornadoCashUnavailableReason =
+  /** No Tornado Cash account is selected. */
+  | 'no-account'
+  /** This platform cannot run the SDK (mobile, Firefox). */
+  | 'unsupported-platform'
+  /** The user removed Ethereum, the only network Tornado Cash supports here. */
+  | 'unsupported-network'
+  | 'locked'
+
+export type TornadoCashSyncStatus = 'idle' | 'syncing' | 'ready'
+
+/** The selected account's sync. Nothing of it is kept for another account. */
+export type TornadoCashSyncState = {
+  status: TornadoCashSyncStatus
+  startedAt: number | null
+  lastSyncedAt: number | null
+  lastSyncDuration: number | null
+  /** The last sync failed, in plain words. Cleared by the next one that works. */
+  error: string | null
+}
+
+/** One asset's notes in the selected account. */
+export type TornadoCashTokenBalance = {
+  assetAddress: string
+  symbol: string
+  decimals: number
+  /** The sum of the notes. */
+  amount: bigint
+  /** How many notes of each amount, largest first. */
+  notes: { denomination: bigint; count: number }[]
+}

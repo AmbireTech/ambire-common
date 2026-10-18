@@ -25,6 +25,7 @@ import { Key, MainKeyEncryptedWithSecret, StoredKey, StoredKeystoreSeed } from '
 import { Network } from './network'
 import { PrivacyPoolsAccount } from './privacyPools'
 import { PrivateAccountRef } from './privateAccount'
+import { TornadoCashAccount } from './tornadoCash'
 import { SwapAndBridgeActiveRoute } from './swapAndBridge'
 
 import type { FeeSpeed } from './signAccountOp'
@@ -124,6 +125,9 @@ export type StorageProps = {
   privacyPoolsState: { [key: string]: string }
   /** The wallet's Privacy Pools accounts, at most one per stored recovery phrase. */
   privacyPoolsAccounts: PrivacyPoolsAccount[]
+  // Tornado Cash
+  /** The wallet's Tornado Cash accounts, at most one per stored recovery phrase. */
+  tornadoCashAccounts: TornadoCashAccount[]
   // Other
   signAccountOpFeeTokenPreference: {
     [chainId: string]: string | 'gasTank'
