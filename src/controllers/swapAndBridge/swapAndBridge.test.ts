@@ -262,7 +262,8 @@ const safe = new SafeController({
   networks: networksCtrl,
   providers: providersCtrl,
   storage: storageCtrl,
-  accounts: accountsCtrl
+  accounts: accountsCtrl,
+  keystore
 })
 
 const activityCtrl = new ActivityController(
@@ -679,7 +680,7 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController.toChainId = previousToChainId
     swapAndBridgeController.quote = previousQuote
   })
-  test('should emit token list updates while providers are still loading', async () => {
+  test('should display the to token list once the first provider answers, without waiting for the rest', async () => {
     const partialToken: SocketAPIToken = {
       address: '0x0000000000000000000000000000000000000001',
       chainId: 137,
@@ -703,34 +704,310 @@ describe('SwapAndBridge Controller', () => {
       (params: any) =>
         new Promise((resolve) => {
           resolveTokenList = resolve
-          params.onUpdate([partialToken])
+          params.onUpdate([partialToken], ['Slow provider'])
         })
     )
+
+    await swapAndBridgeController.updateForm({ toChainId: 137 }, { updateQuote: false })
+
+    expect(swapAndBridgeController.updateToTokenListStatus).toEqual('INITIAL')
+    expect(swapAndBridgeController.toTokenShortList).toContain(partialToken)
+    expect(swapAndBridgeController.toTokenListLoadingProviderNames).toEqual(['Slow provider'])
+
     let unsubscribe = () => {}
-    const partialUpdatePromise = new Promise<void>((resolve) => {
+    const finalUpdatePromise = new Promise<void>((resolve) => {
       unsubscribe = swapAndBridgeController.onUpdate(() => {
-        if (!swapAndBridgeController.toTokenShortList.includes(partialToken)) return
+        if (!swapAndBridgeController.toTokenShortList.includes(finalToken)) return
 
         unsubscribe()
         resolve()
       })
     })
 
-    const updatePromise = swapAndBridgeController.updateForm(
-      { toChainId: 137 },
-      { updateQuote: false }
-    )
-
-    await partialUpdatePromise
-    expect(swapAndBridgeController.updateToTokenListStatus).toEqual('LOADING')
-    expect(swapAndBridgeController.toTokenShortList).toContain(partialToken)
-
     resolveTokenList([partialToken, finalToken])
-    await updatePromise
-    expect(swapAndBridgeController.updateToTokenListStatus).toEqual('INITIAL')
-    expect(swapAndBridgeController.toTokenShortList).toContain(finalToken)
+    await finalUpdatePromise
+    expect(swapAndBridgeController.toTokenListLoadingProviderNames).toEqual([])
 
     getToTokenListSpy.mockRestore()
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  describe('requested to token missing from the first provider answer', () => {
+    const fastProviderTokenAddr = '0x0000000000000000000000000000000000000001'
+    const requestedTokenAddr = '0x0000000000000000000000000000000000000003'
+    const fromTokenOnBase = PORTFOLIO_TOKENS[1]! // cbBTC on Base
+    const createToken = (address: string, symbol: string, chainId: number): SocketAPIToken => ({
+      address,
+      chainId,
+      decimals: 18,
+      name: symbol,
+      symbol,
+      icon: '',
+      logoURI: ''
+    })
+
+    // The fast provider answers at once, the slow one only when told to
+    const mockSlowProvider = (fastProviderTokens: SocketAPIToken[]) => {
+      const slowProvider: {
+        reportTokenListUpdate: (tokens: SocketAPIToken[], loadingProviderNames: string[]) => void
+        resolveTokenList: (tokens: SocketAPIToken[]) => void
+      } = { reportTokenListUpdate: () => {}, resolveTokenList: () => {} }
+
+      jest.spyOn(socketAPIMock, 'getToTokenList').mockImplementation(
+        (params: any) =>
+          new Promise((resolve) => {
+            slowProvider.resolveTokenList = resolve
+            slowProvider.reportTokenListUpdate = params.onUpdate
+            params.onUpdate(fastProviderTokens, ['Slow provider'])
+          })
+      )
+
+      return slowProvider
+    }
+
+    const waitForUpdate = (isDone: () => boolean) =>
+      new Promise<void>((resolve) => {
+        const unsubscribe = swapAndBridgeController.onUpdate(() => {
+          if (!isDone()) return
+
+          unsubscribe()
+          resolve()
+        })
+      })
+
+    afterEach(async () => {
+      jest.mocked(socketAPIMock.getToTokenList).mockRestore()
+      jest.mocked(socketAPIMock.getToken).mockRestore()
+      swapAndBridgeController.reset()
+      await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+    })
+
+    test('is looked up and selected without waiting for a slower provider', async () => {
+      // Each test uses its own pair of networks, so it never hits a list cached by another test
+      const toChainId = 43114
+      const fastProviderToken = createToken(fastProviderTokenAddr, 'FAST', toChainId)
+      const slowProvider = mockSlowProvider([fastProviderToken])
+      const getTokenSpy = jest.spyOn(socketAPIMock, 'getToken')
+
+      await swapAndBridgeController.updateForm(
+        { toChainId, toSelectedTokenAddr: requestedTokenAddr },
+        { updateQuote: false }
+      )
+
+      expect(swapAndBridgeController.toTokenListLoadingProviderNames).toEqual(['Slow provider'])
+      expect(getTokenSpy).toHaveBeenCalledTimes(1)
+      expect(swapAndBridgeController.toSelectedToken?.address).toEqual(requestedTokenAddr)
+      expect(swapAndBridgeController.isToTokenSelectionPending).toBe(false)
+
+      slowProvider.resolveTokenList([fastProviderToken])
+      await wait(0)
+    })
+
+    test('is selected once a slower provider lists it, when the lookup finds nothing', async () => {
+      const toChainId = 43114
+      const fastProviderToken = createToken(fastProviderTokenAddr, 'FAST', toChainId)
+      const requestedToken = createToken(requestedTokenAddr, 'REQUESTED', toChainId)
+      const slowProvider = mockSlowProvider([fastProviderToken])
+      const getTokenSpy = jest.spyOn(socketAPIMock, 'getToken').mockResolvedValue(null as never)
+
+      await swapAndBridgeController.updateForm(
+        { fromSelectedToken: fromTokenOnBase, toChainId, toSelectedTokenAddr: requestedTokenAddr },
+        { updateQuote: false }
+      )
+
+      expect(getTokenSpy).toHaveBeenCalledTimes(1)
+      expect(swapAndBridgeController.toSelectedToken).toBeNull()
+      expect(swapAndBridgeController.isToTokenSelectionPending).toBe(true)
+
+      const selectionPromise = waitForUpdate(() => !!swapAndBridgeController.toSelectedToken)
+      const fullTokenList = [fastProviderToken, requestedToken]
+      slowProvider.reportTokenListUpdate(fullTokenList, [])
+      await selectionPromise
+
+      expect(swapAndBridgeController.toSelectedToken?.address).toEqual(requestedTokenAddr)
+      expect(getTokenSpy).toHaveBeenCalledTimes(1)
+
+      slowProvider.resolveTokenList(fullTokenList)
+      await wait(0)
+    })
+
+    test('stops loading once every provider answered without it and the lookup found nothing', async () => {
+      const toChainId = 137
+      const fastProviderToken = createToken(fastProviderTokenAddr, 'FAST', toChainId)
+      const slowProvider = mockSlowProvider([fastProviderToken])
+      const getTokenSpy = jest.spyOn(socketAPIMock, 'getToken').mockResolvedValue(null as never)
+
+      await swapAndBridgeController.updateForm(
+        { fromSelectedToken: fromTokenOnBase, toChainId, toSelectedTokenAddr: requestedTokenAddr },
+        { updateQuote: false }
+      )
+
+      expect(swapAndBridgeController.isToTokenSelectionPending).toBe(true)
+
+      const settledPromise = waitForUpdate(() => !swapAndBridgeController.isToTokenSelectionPending)
+      slowProvider.resolveTokenList([fastProviderToken])
+      await settledPromise
+
+      expect(swapAndBridgeController.toSelectedToken).toBeNull()
+      // Not looked up again for the slower provider's answer
+      expect(getTokenSpy).toHaveBeenCalledTimes(1)
+    })
+
+    test('is neither looked up nor selected when the list bans it', async () => {
+      const toChainId = 1
+      // An old JPYC, left out of the Ethereum to token list
+      const bannedTokenAddr = '0x431D5dfF03120AFA4bDf332c61A6e1766eF37BDB'
+      const bannedToken = createToken(bannedTokenAddr, 'JPYC', toChainId)
+      const fastProviderToken = createToken(fastProviderTokenAddr, 'FAST', toChainId)
+      const slowProvider = mockSlowProvider([fastProviderToken])
+      const getTokenSpy = jest
+        .spyOn(socketAPIMock, 'getToken')
+        // Stops finding it after two lookups, so a lookup loop fails the test instead of hanging it
+        .mockResolvedValueOnce(bannedToken)
+        .mockResolvedValueOnce(bannedToken)
+        .mockResolvedValue(null as never)
+
+      await swapAndBridgeController.updateForm(
+        { fromSelectedToken: fromTokenOnBase, toChainId, toSelectedTokenAddr: bannedTokenAddr },
+        { updateQuote: false }
+      )
+
+      expect(getTokenSpy).not.toHaveBeenCalled()
+      expect(swapAndBridgeController.toSelectedToken).toBeNull()
+      expect(swapAndBridgeController.isToTokenSelectionPending).toBe(false)
+
+      slowProvider.resolveTokenList([fastProviderToken])
+      await wait(0)
+    })
+  })
+  test('should look up a requested to token that no provider lists only once, even if the list updates meanwhile', async () => {
+    const toChainId = 8453
+    const missingToken: SocketAPIToken = {
+      address: '0x00000000000000000000000000000000000000aa',
+      chainId: toChainId,
+      decimals: 18,
+      name: 'Missing token',
+      symbol: 'MISSING',
+      icon: '',
+      logoURI: ''
+    }
+    const lookupStarted = createDeferred<void>()
+    const lookup = createDeferred<SocketAPIToken>()
+    const getTokenSpy = jest.spyOn(socketAPIMock, 'getToken').mockImplementation(async () => {
+      lookupStarted.resolve()
+      return lookup.promise
+    })
+
+    const selectionPromise = swapAndBridgeController.updateForm(
+      { toChainId, toSelectedTokenAddr: missingToken.address },
+      { updateQuote: false }
+    )
+    await lookupStarted.promise
+
+    // Portfolio refreshes and repeated requests for the same token while the lookup runs
+    const listUpdatesPromise = Promise.all([
+      swapAndBridgeController.updateToTokenList(false),
+      swapAndBridgeController.updateToTokenList(false, missingToken.address)
+    ])
+    await wait(0)
+
+    lookup.resolve(missingToken)
+    await Promise.all([selectionPromise, listUpdatesPromise])
+    await swapAndBridgeController.searchToToken(missingToken.address)
+
+    expect(getTokenSpy).toHaveBeenCalledTimes(1)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(missingToken.address)
+    const matchingAddresses = swapAndBridgeController.toTokenSearchResults
+      .map(({ address }) => address)
+      .filter((address) => address === missingToken.address)
+    expect(matchingAddresses).toEqual([missingToken.address])
+
+    getTokenSpy.mockRestore()
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should keep a to token added by address when a slower provider answers later', async () => {
+    // A network no other test fetches the list of, so the list is never cached
+    const toChainId = 534352
+    const createToken = (address: string, symbol: string): SocketAPIToken => ({
+      address,
+      chainId: toChainId,
+      decimals: 18,
+      name: symbol,
+      symbol,
+      icon: '',
+      logoURI: ''
+    })
+    const fastProviderToken = createToken('0x0000000000000000000000000000000000000001', 'FAST')
+    const slowProviderToken = createToken('0x0000000000000000000000000000000000000002', 'SLOW')
+    const addedTokenAddr = '0x00000000000000000000000000000000000000bb'
+    let reportTokenListUpdate!: (tokens: SocketAPIToken[], loadingProviderNames: string[]) => void
+    let resolveTokenList!: (tokens: SocketAPIToken[]) => void
+    const getToTokenListSpy = jest.spyOn(socketAPIMock, 'getToTokenList').mockImplementation(
+      (params: any) =>
+        new Promise((resolve) => {
+          resolveTokenList = resolve
+          reportTokenListUpdate = params.onUpdate
+          params.onUpdate([fastProviderToken], ['Slow provider'])
+        })
+    )
+
+    await swapAndBridgeController.updateForm({ toChainId }, { updateQuote: false })
+    await swapAndBridgeController.addToTokenByAddress(addedTokenAddr)
+
+    const getSearchedAddresses = () =>
+      swapAndBridgeController.toTokenSearchResults.map(({ address }) => address)
+    expect(getSearchedAddresses()).toEqual([addedTokenAddr])
+
+    let unsubscribe = () => {}
+    const laterAnswerPromise = new Promise<void>((resolve) => {
+      unsubscribe = swapAndBridgeController.onUpdate(() => {
+        if (!swapAndBridgeController.toTokenShortList.includes(slowProviderToken)) return
+
+        unsubscribe()
+        resolve()
+      })
+    })
+
+    const fullTokenList = [fastProviderToken, slowProviderToken]
+    reportTokenListUpdate(fullTokenList, [])
+    await laterAnswerPromise
+
+    expect(getSearchedAddresses()).toEqual([addedTokenAddr])
+
+    resolveTokenList(fullTokenList)
+    await wait(0)
+    getToTokenListSpy.mockRestore()
+    swapAndBridgeController.reset()
+    await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  test('should stop waiting for a requested to token when all providers get disabled', async () => {
+    // A network no other test fetches the list of, so the list is never cached
+    const toChainId = 5000
+    const listRequested = createDeferred<void>()
+    const providerAnswer = createDeferred<SocketAPIToken[]>()
+    const getToTokenListSpy = jest
+      .spyOn(socketAPIMock, 'getToTokenList')
+      .mockImplementation(async () => {
+        listRequested.resolve()
+        return providerAnswer.promise
+      })
+
+    const selectionPromise = swapAndBridgeController.updateForm(
+      { toChainId, toSelectedTokenAddr: '0x00000000000000000000000000000000000000cc' },
+      { updateQuote: false }
+    )
+    await listRequested.promise
+    expect(swapAndBridgeController.isToTokenSelectionPending).toBe(true)
+
+    await swapAndBridgeController.setSwapProviderEnabled('socket', false)
+
+    expect(swapAndBridgeController.isToTokenSelectionPending).toBe(false)
+
+    providerAnswer.resolve([])
+    await selectionPromise
+    getToTokenListSpy.mockRestore()
+    await swapAndBridgeController.setSwapProviderEnabled('socket', true)
     swapAndBridgeController.reset()
     await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
   })
@@ -806,7 +1083,7 @@ describe('SwapAndBridge Controller', () => {
     swapAndBridgeController.reset()
     await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
   })
-  test('should stop keeping a preselected to token after the user selects another one', async () => {
+  test('should keep a to token the user selected when the from token network changes', async () => {
     const toTokenAddr = '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58' // USDT
     const userSelectedToTokenAddr = '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aa3cf0DEc22' // cbETH
     const fromToken = PORTFOLIO_TOKENS[2]! // ETH on Optimism
@@ -825,11 +1102,106 @@ describe('SwapAndBridge Controller', () => {
 
     await swapAndBridgeController.updateForm({ fromSelectedToken: fromTokenOnAnotherChain })
 
-    // The default behavior applies again - the to token gets reset on a from network change
-    expect(swapAndBridgeController.toSelectedToken).toBeNull()
+    expect(swapAndBridgeController.fromChainId).toEqual(8453)
+    expect(swapAndBridgeController.toSelectedToken?.address).toEqual(userSelectedToTokenAddr)
 
     swapAndBridgeController.reset()
     await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+  })
+  describe('preselected to token while the to token list is still loading', () => {
+    const toTokenAddr = '0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf' // cbBTC, in the mocked list
+
+    // Holds the provider's answer until released, like a slow provider does
+    const holdToTokenList = () => {
+      const getToTokenList = socketAPIMock.getToTokenList.bind(socketAPIMock)
+      let release!: () => void
+      const released = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      let markRequested!: () => void
+      const requested = new Promise<void>((resolve) => {
+        markRequested = resolve
+      })
+      jest.spyOn(socketAPIMock, 'getToTokenList').mockImplementation(async (params: any) => {
+        markRequested()
+        await released
+        return getToTokenList(params)
+      })
+      return { requested, release }
+    }
+
+    afterEach(async () => {
+      swapAndBridgeController.reset()
+      await swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS)
+    })
+
+    test('is selected once the list loads', async () => {
+      // Each test uses its own network, so it never hits a list cached by another test
+      const toChainId = 42161
+      const { requested, release } = holdToTokenList()
+      swapAndBridgeController.reset()
+
+      const preselectPromise = swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+        preselectedToToken: { address: toTokenAddr, chainId: BigInt(toChainId) }
+      })
+      await requested
+      release()
+      await preselectPromise
+
+      expect(swapAndBridgeController.toChainId).toEqual(toChainId)
+      expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+    })
+
+    test('is kept when a portfolio refresh changes the from token balance while the list loads', async () => {
+      const toChainId = 56
+      const fromToken = PORTFOLIO_TOKENS[2]! // ETH on Optimism
+      const { requested, release } = holdToTokenList()
+      swapAndBridgeController.reset()
+
+      const preselectPromise = swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+        preselectedToken: { address: fromToken.address, chainId: fromToken.chainId },
+        preselectedToToken: { address: toTokenAddr, chainId: BigInt(toChainId) }
+      })
+      await requested
+
+      const refreshedPortfolio = PORTFOLIO_TOKENS.map((token) =>
+        token === fromToken ? { ...token, amount: token.amount + 1n } : token
+      )
+      const refreshPromise = swapAndBridgeController.updatePortfolioTokenList(refreshedPortfolio)
+      await wait(0)
+
+      release()
+      await Promise.all([preselectPromise, refreshPromise])
+
+      expect(swapAndBridgeController.toChainId).toEqual(toChainId)
+      expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+    })
+
+    test('is selected from the new list when the from token network changes while the list loads', async () => {
+      const toChainId = 534352
+      const fromToken = PORTFOLIO_TOKENS[2]! // ETH on Optimism
+      const fromTokenOnAnotherChain = PORTFOLIO_TOKENS[1]! // cbBTC on Base
+      const { requested, release } = holdToTokenList()
+      swapAndBridgeController.reset()
+
+      const preselectPromise = swapAndBridgeController.updatePortfolioTokenList(PORTFOLIO_TOKENS, {
+        preselectedToken: { address: fromToken.address, chainId: fromToken.chainId },
+        preselectedToToken: { address: toTokenAddr, chainId: BigInt(toChainId) }
+      })
+      await requested
+
+      const fromChangePromise = swapAndBridgeController.updateForm({
+        fromSelectedToken: fromTokenOnAnotherChain
+      })
+      await wait(0)
+
+      release()
+      await Promise.all([preselectPromise, fromChangePromise])
+
+      expect(swapAndBridgeController.fromChainId).toEqual(Number(fromTokenOnAnotherChain.chainId))
+      expect(swapAndBridgeController.toChainId).toEqual(toChainId)
+      expect(swapAndBridgeController.toSelectedToken?.address).toEqual(toTokenAddr)
+    })
   })
   test('should update toChainId', (done) => {
     let emitCounter = 0
@@ -964,6 +1336,30 @@ describe('SwapAndBridge Controller', () => {
     }
 
     await check()
+  })
+  test('should not refresh the quote while the swap is being signed, even if the screen that proceeded is gone', async () => {
+    const quoteBeingSigned = swapAndBridgeController.quote
+    expect(quoteBeingSigned).toBeTruthy()
+    const getQuoteSpy = jest.spyOn(socketAPIMock, 'quote')
+
+    swapAndBridgeController.setUserProceeded(true)
+    // A real sign controller can't be built here, as estimating the swap needs the network.
+    // Signing with a hardware wallet that waits for the user to confirm on the device:
+    const isSigningSpy = jest
+      .spyOn(swapAndBridgeController, 'isSignAndBroadcastInProgress', 'get')
+      .mockReturnValue(true)
+    // The popup is force-unloaded once the request window that took over the signing opens
+    swapAndBridgeController.unloadScreen('popup', true)
+    expect(swapAndBridgeController.hasProceeded).toBe(false)
+
+    expect(swapAndBridgeController.formStatus).toBe(SwapAndBridgeFormStatus.Proceeded)
+    await swapAndBridgeController.updateQuote({ skipQuoteUpdateOnSameValues: false })
+    expect(getQuoteSpy).not.toHaveBeenCalled()
+    expect(swapAndBridgeController.quote).toBe(quoteBeingSigned)
+
+    // e.g. the user rejected on the device
+    isSigningSpy.mockReturnValue(false)
+    expect(swapAndBridgeController.formStatus).not.toBe(SwapAndBridgeFormStatus.Proceeded)
   })
   describe('continuous quote updates', () => {
     beforeEach(() => {

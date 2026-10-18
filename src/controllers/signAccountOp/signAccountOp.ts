@@ -216,6 +216,7 @@ export const MAX_REESTIMATES = 20
 
 export type SignAccountOpUpdateProps = {
   gasPrices?: GasSpeeds
+  rpcGasPrices?: GasSpeeds
   customGasPrices?: GasSpeeds
   customGasLimit?: bigint
   feeToken?: TokenResult
@@ -297,7 +298,20 @@ export class SignAccountOpController
 
   #customSafeNonce: bigint | null = null
 
+  /**
+   * The gas prices used for broadcasting. With the `rpcWithBundlerFallback` strategy
+   * (see BaseAccount.getGasPriceFetchStrategy), these come from the bundler estimation
+   * and are used for bundler broadcasts only. While there's no bundler estimation,
+   * they're the gasPrice controller ones
+   */
   gasPrices?: GasSpeeds
+
+  /**
+   * The gas prices for broadcasts outside the bundler with the `rpcWithBundlerFallback`
+   * strategy (see BaseAccount.getGasPriceFetchStrategy). These are the RPC gas prices,
+   * or the bundler ones if the RPC has failed and the bundler fallback has succeeded
+   */
+  rpcGasPrices?: GasSpeeds
 
   hasCustomGasPrices: boolean = false
 
@@ -320,7 +334,7 @@ export class SignAccountOpController
 
   pendingFeeTokenPreference: SignAccountOpFeeTokenPreference | null = null
 
-  selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Fast
+  selectedFeeSpeed: FeeSpeed | null = FeeSpeed.Medium
 
   /**
    * The selected payment option for txn broadcasting.
@@ -437,7 +451,7 @@ export class SignAccountOpController
   /**
    * Should this signAccountOp instance simulate the accountOp it's
    * preparing as well as estimate. Simulaton is required in the
-   * original signAccountOp but should be avoided in swap&bridge
+   * original signAccountOp but should be avoided in swap&bridge and Safe deployments.
    */
   #shouldSimulate: boolean
 
@@ -542,7 +556,8 @@ export class SignAccountOpController
     this.#signAccountOpPreference = signAccountOpPreference
     this.feeTokenPreference = this.#signAccountOpPreference.feeTokenPreference
     this.selectedFeeSpeed =
-      this.#signAccountOpPreference.feeSpeedPreference[network.chainId.toString()] || FeeSpeed.Fast
+      this.#signAccountOpPreference.feeSpeedPreference[network.chainId.toString()] ||
+      FeeSpeed.Medium
     this.#externalSignerControllers = externalSignerControllers
     this.account = account
     const accountState = accounts.accountStates[account.addr]![network.chainId.toString()]! // ! is safe as otherwise, nothing will work
@@ -610,7 +625,7 @@ export class SignAccountOpController
       }),
       this.#featureFlags
     )
-    this.#shouldSimulate = shouldSimulate
+    this.#shouldSimulate = shouldSimulate && !this.#accountOp.meta?.isSafeDeploy
 
     this.#onBroadcastSuccess = onBroadcastSuccess
     if (onBroadcastFailed) this.#onBroadcastFailed = onBroadcastFailed
@@ -620,6 +635,7 @@ export class SignAccountOpController
       // Null when the controller is destroyed
       if (!this.gasPrice || this.#stopRefetching) {
         this.#gasPriceInterval.stop()
+        return
       }
 
       await this.gasPrice.fetch('major')
@@ -760,7 +776,7 @@ export class SignAccountOpController
     this.#paidBy = null
     this.feeTokenResult = null
     this.selectedOption = undefined
-    this.selectedFeeSpeed = FeeSpeed.Fast
+    this.selectedFeeSpeed = FeeSpeed.Medium
     this.feeSpeeds = {}
     this.#updateAccountOp({ gasFeePayment: null })
   }
@@ -831,9 +847,11 @@ export class SignAccountOpController
     this.emitUpdate()
 
     try {
-      await this.#accounts.forceFetchPendingState(
+      await this.#accounts.updateAccountState(
         this.accountOp.accountAddr,
-        this.accountOp.chainId
+        'pending',
+        [this.accountOp.chainId],
+        true
       )
       await this.#simulateAndEstimate()
     } catch (error) {
@@ -862,7 +880,7 @@ export class SignAccountOpController
   }
 
   #updateSafeEip712Data() {
-    if (!this.account.safeCreation) {
+    if (!this.account.safeCreation || this.accountOp.meta?.isSafeDeploy) {
       this.safeEip712Data = null
       return
     }
@@ -1078,9 +1096,14 @@ export class SignAccountOpController
       // if gas prices are not set OR there's no bundler estimation,
       // use the gas prices from the controller.
       // otherwise, we're good as gas price also come from the bundlerEstimation
-      if (!this.gasPrices || !this.estimation.estimation?.bundlerEstimation) {
-        this.update({ gasPrices: this.gasPrice.gasPrices })
-      }
+      const shouldUseControllerGasPrices =
+        !this.gasPrices || !this.estimation.estimation?.bundlerEstimation
+      const gasPrices = shouldUseControllerGasPrices ? this.gasPrice.gasPrices : undefined
+      // set only with the rpcWithBundlerFallback strategy (see BaseAccount.getGasPriceFetchStrategy)
+      const rpcGasPrices = this.gasPrice.rpcGasPrices
+      if (!gasPrices && !rpcGasPrices) return
+
+      this.update({ gasPrices, rpcGasPrices })
     })
 
     this.gasPrice.onError((error: ErrorRef) => {
@@ -1401,6 +1424,7 @@ export class SignAccountOpController
     // In that case, on the application, we want the "Sign" button to be clickable/enabled,
     // and we have to check and expose the `SignAccountOp` controller's inner state to make this check possible.
     if (
+      !this.accountOp.meta?.isSafeDeploy &&
       this.accountKeyStoreKeys.length &&
       (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType)
     ) {
@@ -1509,17 +1533,25 @@ export class SignAccountOpController
         title: 'Insufficient funds to cover the fee.'
       })
 
-    // if the Safe txn is not deployed, display an error
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
-    if (!!this.account.safeCreation && accountState && !accountState.isDeployed) {
+
+    if (
+      !!this.account.safeCreation &&
+      accountState &&
+      !accountState.isDeployed &&
+      !this.accountOp.meta?.isSafeDeploy
+    ) {
       errors.push({
-        title: `Safe not activated on ${this.#network.name}. Please activate it from Safe Global`
+        title: `Your Safe account isn't active on ${this.#network.name} yet. Activate it first, then try again.`
       })
     }
 
     // It may occur, only if there are no available signer.
-    if (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
+    if (
+      !this.accountOp.meta?.isSafeDeploy &&
+      (!this.accountOp.signingKeyType || !this.accountOp.signingKeyAddr)
+    )
       errors.push({
         title: 'No keys available to sign this transaction.',
         code: 'NO_KEYS_AVAILABLE'
@@ -1667,6 +1699,7 @@ export class SignAccountOpController
     // Safe txn, signed, with a future nonce: display an error
     if (
       !!this.account.safeCreation &&
+      !this.accountOp.meta?.isSafeDeploy &&
       accountState &&
       this.accountOp.nonce &&
       this.accountOp.nonce !== accountState.nonce &&
@@ -1770,11 +1803,17 @@ export class SignAccountOpController
       pendingPortfolioState.criticalError?.simulationErrorMsg.indexOf('nonce did not increment') !==
         -1
     ) {
-      const pendingAccountState = await this.#accounts.forceFetchPendingState(
+      await this.#accounts.updateAccountState(
         this.accountOp.accountAddr,
-        this.accountOp.chainId
+        'pending',
+        [this.accountOp.chainId],
+        true
       )
-      this.#updateNonce(pendingAccountState.nonce)
+      const pendingAccountState =
+        this.#accounts.accountStates[this.accountOp.accountAddr]?.[
+          this.accountOp.chainId.toString()
+        ]
+      if (pendingAccountState) this.#updateNonce(pendingAccountState.nonce)
       await this.#portfolio.simulateAccountOp(this.accountOp)
     }
 
@@ -1819,6 +1858,19 @@ export class SignAccountOpController
     }
 
     this.#reestimateCounter += 1
+  }
+
+  #startGasPriceIntervalIfNoCustomPrices() {
+    if (this.hasCustomGasPrices) {
+      this.#gasPriceInterval.stop()
+      return
+    }
+
+    this.#gasPriceInterval.start({
+      // Refetch immediately if the gas prices are stale
+      runImmediately:
+        !this.gasPrice.updatedAt || Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
+    })
   }
 
   /**
@@ -1878,6 +1930,7 @@ export class SignAccountOpController
 
   update({
     gasPrices,
+    rpcGasPrices,
     customGasPrices,
     customGasLimit,
     feeToken,
@@ -1917,16 +1970,7 @@ export class SignAccountOpController
 
       if (this.estimation.status === EstimationStatus.Success) {
         // Start the gas price interval in case it was stopped earlier
-        if (!this.hasCustomGasPrices) {
-          this.#gasPriceInterval.start({
-            // Refetch immediately if the gas prices are stale
-            runImmediately:
-              !this.gasPrice.updatedAt ||
-              Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
-          })
-        } else {
-          this.#gasPriceInterval.stop()
-        }
+        this.#startGasPriceIntervalIfNoCustomPrices()
 
         const estimation = this.estimation.estimation as FullEstimationSummary
         if (estimation.ambireEstimation && !isSpeedUpTransaction) {
@@ -1945,22 +1989,23 @@ export class SignAccountOpController
           if (!this.hasCustomGasPrices) {
             this.gasPrices = this.estimation.estimation.bundlerGasPrices
           }
-          // and we're stopping the gas price interval as
-          // we will use the bundler gas prices
-          this.#gasPriceInterval.stop()
           this.gasPrice.areGasPricesUsedFromBundlerEstimation = true
-        } else {
-          // if there's an estimate, but no bundlerGasPrices, resume the gas price
-          // controller refetch as there's no other way to fetch gas prices
-          if (!this.hasCustomGasPrices) {
-            this.#gasPriceInterval.start({
-              runImmediately:
-                !this.gasPrice.updatedAt ||
-                Date.now() - this.gasPrice.updatedAt > GAS_PRICE_UPDATE_INTERVAL
-            })
+          // and we're stopping the gas price interval as
+          // we will use the bundler gas prices, unless the account
+          // also needs the RPC gas prices for its non-bundler broadcasts
+          if (
+            this.baseAccount.getGasPriceFetchStrategy(
+              this.#featureFlags.isFeatureEnabled('erc4337')
+            ) === 'rpcWithBundlerFallback'
+          ) {
+            this.#startGasPriceIntervalIfNoCustomPrices()
           } else {
             this.#gasPriceInterval.stop()
           }
+        } else {
+          // if there's an estimate, but no bundlerGasPrices, resume the gas price
+          // controller refetch as there's no other way to fetch gas prices
+          this.#startGasPriceIntervalIfNoCustomPrices()
           this.gasPrice.areGasPricesUsedFromBundlerEstimation = false
         }
       }
@@ -2034,6 +2079,10 @@ export class SignAccountOpController
         this.#gasPriceInterval.stop()
       } else if (gasPrices && !this.hasCustomGasPrices) {
         this.gasPrices = gasPrices
+      }
+
+      if (rpcGasPrices) {
+        this.rpcGasPrices = rpcGasPrices
       }
 
       if (typeof customGasLimit !== 'undefined') {
@@ -2130,6 +2179,7 @@ export class SignAccountOpController
         !Object.keys(this.feeSpeeds).length ||
         Array.isArray(accountOpData?.calls) ||
         gasPrices ||
+        rpcGasPrices ||
         customGasPrices ||
         typeof customGasLimit !== 'undefined' ||
         this.#paidBy ||
@@ -2202,8 +2252,8 @@ export class SignAccountOpController
 
     if (
       this.isInitialized &&
-      this.accountOp.signingKeyAddr &&
-      this.accountOp.signingKeyType &&
+      (this.accountOp.meta?.isSafeDeploy ||
+        (this.accountOp.signingKeyAddr && this.accountOp.signingKeyType)) &&
       this.accountOp.gasFeePayment
     ) {
       this.status = { type: SigningStatus.ReadyToSign }
@@ -2235,10 +2285,11 @@ export class SignAccountOpController
     // Other cleanup
     this.#hwCleanup()
     this.gasPrices = undefined
+    this.rpcGasPrices = undefined
     this.hasCustomGasPrices = false
     this.gasFeeChangedConfirmationRequired = false
     this.previousFee = null
-    this.selectedFeeSpeed = FeeSpeed.Fast
+    this.selectedFeeSpeed = FeeSpeed.Medium
     this.#paidBy = null
     this.feeTokenResult = null
     this.pendingFeeTokenPreference = null
@@ -2571,34 +2622,51 @@ export class SignAccountOpController
    * That way we get a better bundler userOp acceptance rate and a
    * normal, intuitive UX
    */
-  #getIncreasedPrices(): GasSpeeds | null {
-    if (!this.gasPrices) return null
+  #getIncreasedPrices(gasPrices?: GasSpeeds): GasSpeeds | null {
+    if (!gasPrices) return null
 
     // no increase if the user has set them
-    if (this.hasCustomGasPrices) return this.gasPrices
+    if (this.hasCustomGasPrices) return gasPrices
 
     // no increase if there's no bundlerEstimation as this means
     // we're not using erc-4337 for broadcast
-    if (!this.estimation.estimation?.bundlerEstimation) return this.gasPrices
+    if (!this.estimation.estimation?.bundlerEstimation) return gasPrices
 
     return {
       slow: {
-        maxFeePerGas: this.gasPrices.slow.maxFeePerGas,
-        maxPriorityFeePerGas: this.gasPrices.slow.maxPriorityFeePerGas
+        maxFeePerGas: gasPrices.slow.maxFeePerGas,
+        maxPriorityFeePerGas: gasPrices.slow.maxPriorityFeePerGas
       },
       medium: {
-        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.medium.maxFeePerGas), 5n),
-        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.medium.maxPriorityFeePerGas), 5n)
+        maxFeePerGas: this.#addExtra(BigInt(gasPrices.medium.maxFeePerGas), 5n),
+        maxPriorityFeePerGas: this.#addExtra(BigInt(gasPrices.medium.maxPriorityFeePerGas), 5n)
       },
       fast: {
-        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.fast.maxFeePerGas), 7n),
-        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.fast.maxPriorityFeePerGas), 7n)
+        maxFeePerGas: this.#addExtra(BigInt(gasPrices.fast.maxFeePerGas), 7n),
+        maxPriorityFeePerGas: this.#addExtra(BigInt(gasPrices.fast.maxPriorityFeePerGas), 7n)
       },
       ape: {
-        maxFeePerGas: this.#addExtra(BigInt(this.gasPrices.ape.maxFeePerGas), 10n),
-        maxPriorityFeePerGas: this.#addExtra(BigInt(this.gasPrices.ape.maxPriorityFeePerGas), 10n)
+        maxFeePerGas: this.#addExtra(BigInt(gasPrices.ape.maxFeePerGas), 10n),
+        maxPriorityFeePerGas: this.#addExtra(BigInt(gasPrices.ape.maxPriorityFeePerGas), 10n)
       }
     }
+  }
+
+  /**
+   * Whether the broadcast option should use the RPC gas prices instead of the
+   * bundler ones. Applicable only with the `rpcWithBundlerFallback` strategy
+   * (see BaseAccount.getGasPriceFetchStrategy). If the RPC gas prices are not
+   * fetched yet, gasPrices are used as a fallback
+   */
+  #shouldUseRpcGasPrices(broadcastOption: string): boolean {
+    if (this.hasCustomGasPrices || !this.rpcGasPrices) return false
+    if (
+      this.baseAccount.getGasPriceFetchStrategy(this.#featureFlags.isFeatureEnabled('erc4337')) !==
+      'rpcWithBundlerFallback'
+    )
+      return false
+
+    return this.baseAccount.shouldUseRpcGasPrices(broadcastOption)
   }
 
   get #feeSpeedsLoading() {
@@ -2623,9 +2691,9 @@ export class SignAccountOpController
       return
     }
 
-    // set fast if available
-    if (speeds.find(({ type, disabled }) => type === FeeSpeed.Fast && !disabled)) {
-      this.selectedFeeSpeed = FeeSpeed.Fast
+    // set medium if available
+    if (speeds.find(({ type, disabled }) => type === FeeSpeed.Medium && !disabled)) {
+      this.selectedFeeSpeed = FeeSpeed.Medium
       return
     }
 
@@ -2650,9 +2718,21 @@ export class SignAccountOpController
         return
       }
 
+      // each available fee option should declare its estimation method
+      const broadcastOption = this.baseAccount.getBroadcastOption(option, {
+        op: this.accountOp,
+        isSponsored: this.isSponsored
+      })
+
       const nativeRatio = this.#getNativeToFeeTokenRatio(option.token)
-      const increasedGasPrices = this.#getIncreasedPrices()
-      if (!nativeRatio || !this.gasPrices || !increasedGasPrices) {
+      const shouldUseRpcGasPrices = this.#shouldUseRpcGasPrices(broadcastOption)
+      const gasPrices = shouldUseRpcGasPrices ? this.rpcGasPrices : this.gasPrices
+      // the RPC gas prices are used only for broadcasts outside erc-4337,
+      // so they should not be increased
+      const increasedGasPrices = shouldUseRpcGasPrices
+        ? gasPrices
+        : this.#getIncreasedPrices(gasPrices)
+      if (!nativeRatio || !gasPrices || !increasedGasPrices) {
         this.feeSpeeds[identifier] = []
         return
       }
@@ -2663,19 +2743,13 @@ export class SignAccountOpController
         op: this.accountOp
       })
 
-      // each available fee option should declare it's estimation method
-      const broadcastOption = this.baseAccount.getBroadcastOption(option, {
-        op: this.accountOp,
-        isSponsored: this.isSponsored
-      })
-
       const speeds = ['slow', 'medium', 'fast', 'ape']
       for (let i = 0; i < speeds.length; i++) {
         // we have two prices:
         // receivedPrices, from old lib/bundler
         // and increasedPrices, which we use for the fee only
         const speed = speeds[i] as FeeSpeed
-        const receivedPrices = this.gasPrices[speed]
+        const receivedPrices = gasPrices[speed]
         const increasedPrices = increasedGasPrices[speed]
 
         let amount
@@ -3064,7 +3138,12 @@ export class SignAccountOpController
       if (newEstimate instanceof Error) {
         if (counter === 0) {
           await this.#accounts
-            .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+            .updateAccountState(
+              this.accountOp.accountAddr,
+              'pending',
+              [this.accountOp.chainId],
+              true
+            )
 
             .catch((e) => console.error(e))
           return this.#getInitialUserOp(true, eip7702Auth, 1)
@@ -3194,7 +3273,7 @@ export class SignAccountOpController
     if (errorResponse.message.indexOf('invalid account nonce') !== -1) {
       // continue on error as this is an attempt for an UX improvement
       await this.#accounts
-        .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+        .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
 
         .catch((e) => console.error(e))
     }
@@ -3223,7 +3302,11 @@ export class SignAccountOpController
 
     this.#hwCleanup()
 
-    if (!this.accountOp.signingKeyAddr || !this.accountOp.signingKeyType) {
+    const isSafeDeploy = !!this.accountOp.meta?.isSafeDeploy
+    const signingKeyAddr = this.accountOp.signingKeyAddr
+    const signingKeyType = this.accountOp.signingKeyType
+
+    if (!isSafeDeploy && (!signingKeyAddr || !signingKeyType)) {
       const message = `Unable to sign the transaction. During the preparation step, required signing key information was found missing. ${RETRY_TO_INIT_ACCOUNT_OP_MSG}`
       return this.#emitSigningErrorAndResetToReadyToSign({ message })
     }
@@ -3262,7 +3345,9 @@ export class SignAccountOpController
       this.accountOp.gasFeePayment.paidByKeyType !== 'internal' ||
       this.accountOp.signingKeyType !== 'internal'
     const isCollectingSafeSignature =
-      !!this.account.safeCreation && (this.accountOp.signed?.length || 0) < this.threshold
+      !!this.account.safeCreation &&
+      !isSafeDeploy &&
+      (this.accountOp.signed?.length || 0) < this.threshold
     const isImmediatelyWaitingForPaymaster =
       broadcastOption === BROADCAST_OPTIONS.byBundler &&
       isUsingPaymaster &&
@@ -3305,8 +3390,11 @@ export class SignAccountOpController
     }
 
     try {
-      if (
+      if (isSafeDeploy) {
+        this.#updateAccountOp({ signature: '0x' })
+      } else if (
         this.account.safeCreation &&
+        !isSafeDeploy &&
         this.#accountOp.signed &&
         this.#accountOp.signed.length >= this.threshold &&
         broadcastOption !== BROADCAST_OPTIONS.byBundler
@@ -3314,6 +3402,7 @@ export class SignAccountOpController
         // all's good, proceed to broadcast
       } else if (
         this.account.safeCreation &&
+        !isSafeDeploy &&
         (this.#accountOp.signed?.length || 0) < this.threshold
       ) {
         // If the Safe txn is not already signed, fetch the latest nonce unless
@@ -3334,12 +3423,8 @@ export class SignAccountOpController
         const prevSignedSigs = getSigs(this.accountOp.signature)
         const nowSignedSigs: Hex[] = []
 
-        const safeSigner = await this.#keystore.getSigner(
-          this.accountOp.signingKeyAddr,
-          this.accountOp.signingKeyType
-        )
-        if (safeSigner.init)
-          safeSigner.init(this.#externalSignerControllers[this.accountOp.signingKeyType])
+        const safeSigner = await this.#keystore.getSigner(signingKeyAddr!, signingKeyType!)
+        if (safeSigner.init) safeSigner.init(this.#externalSignerControllers[signingKeyType!])
 
         const { safeTxn, typedData, safeTxnHash, signingRequest } =
           this.#getSafeSigningData(accountState)
@@ -3353,8 +3438,8 @@ export class SignAccountOpController
 
         // all the signers that have signed
         const allSigners = this.accountOp.signed
-          ? this.accountOp.signed.concat([this.accountOp.signingKeyAddr])
-          : [this.accountOp.signingKeyAddr]
+          ? this.accountOp.signed.concat([signingKeyAddr!])
+          : [signingKeyAddr!]
 
         const isQuickBroadcast =
           this.threshold === 1 &&
@@ -3485,7 +3570,6 @@ export class SignAccountOpController
         }
         this.#updateAccountOp({ signature: '0x' })
       } else if (broadcastOption === BROADCAST_OPTIONS.byBundler) {
-        const signer = await this.#getDefaultSigner()
         const erc4337Estimation = estimation.bundlerEstimation as Erc4337GasLimits
 
         const paymaster = erc4337Estimation.paymaster
@@ -3507,6 +3591,7 @@ export class SignAccountOpController
         // sign the 7702 authorization if needed
         let eip7702Auth
         if (this.baseAccount.shouldSignAuthorization(BROADCAST_OPTIONS.byBundler)) {
+          const signer = await this.#getDefaultSigner()
           if (isExternalSignerInvolved)
             this.shouldSignAuth = { type: '7702', text: 'Step 1/2 preparing account' }
           const contract = getContractImplementation(
@@ -3537,6 +3622,7 @@ export class SignAccountOpController
         }
 
         if (shouldSignDeployAuth) {
+          const signer = await this.#getDefaultSigner()
           const epActivatorTypedData = await getEntryPointAuthorization(
             this.account.addr,
             this.#network.chainId,
@@ -3618,6 +3704,7 @@ export class SignAccountOpController
 
         // safe accounts have their signature prepopulated
         if (!this.account.safeCreation) {
+          const signer = await this.#getDefaultSigner()
           // Which signature format a 7702 EOA needs is dictated by the delegator
           // it points to, not by the key type: the Ambire 7702 account validates
           // the Ambire4337AccountOp typed data in unprotected mode, while the
@@ -3747,8 +3834,7 @@ export class SignAccountOpController
       !accountOp ||
       !estimation ||
       !requestId ||
-      !accountOp.signingKeyAddr ||
-      !accountOp.signingKeyType ||
+      (!accountOp.meta?.isSafeDeploy && (!accountOp.signingKeyAddr || !accountOp.signingKeyType)) ||
       !accountOp.signature ||
       !bundlerSwitcher ||
       !accountOp.gasFeePayment
@@ -3816,7 +3902,7 @@ export class SignAccountOpController
     //   2. Device interaction runs inside #withHardwareWalletSigningRequest
     //      so the "confirm on your device" UI shows while the PQ1 waits
     //      for its physical confirmation.
-    if (accountOp.signingKeyType === 'pq1') {
+    if (accountOp.signingKeyType === 'pq1' && accountOp.signingKeyAddr) {
       try {
         const { gasFeePayment } = accountOp
         if (
@@ -4305,7 +4391,7 @@ export class SignAccountOpController
           ? 'Broadcast failed because of a pending transaction. Please try again'
           : 'Signer key not supported on this network'
         this.#accounts
-          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
       } else if (isUnderpriced(originalMessage)) {
@@ -4333,7 +4419,7 @@ export class SignAccountOpController
       ) {
         message = 'Pending transaction detected. Please try again in a few seconds'
         this.#accounts
-          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId])
+          .updateAccountState(this.accountOp.accountAddr, 'pending', [this.accountOp.chainId], true)
           .then(() => this.#simulateAndEstimateOrSimulateInterval.restart({ runImmediately: true }))
           .catch((e) => e)
       }
@@ -4553,6 +4639,22 @@ export class SignAccountOpController
     return this.baseAccount.canBroadcastByItself()
   }
 
+  /**
+   * The gas prices used by the selected fee option. They differ from gasPrices
+   * only with the `rpcWithBundlerFallback` strategy
+   * (see BaseAccount.getGasPriceFetchStrategy)
+   */
+  get selectedOptionGasPrices(): GasSpeeds | undefined {
+    if (!this.selectedOption) return this.gasPrices
+
+    const broadcastOption = this.baseAccount.getBroadcastOption(this.selectedOption, {
+      op: this.accountOp,
+      isSponsored: this.isSponsored
+    })
+
+    return this.#shouldUseRpcGasPrices(broadcastOption) ? this.rpcGasPrices : this.gasPrices
+  }
+
   get canSetCustomGasPrices(): boolean {
     if (!this.selectedOption) return false
 
@@ -4582,6 +4684,7 @@ export class SignAccountOpController
 
   get canBroadcast() {
     if (!this.account.safeCreation) return true
+    if (this.accountOp.meta?.isSafeDeploy) return true
 
     const accountState =
       this.#accounts.accountStates[this.account.addr]?.[this.#network.chainId.toString()]
@@ -4619,6 +4722,7 @@ export class SignAccountOpController
       isSignAndBroadcastInProgress: this.isSignAndBroadcastInProgress,
       banners: this.banners,
       canAccountBroadcastByItself: this.canAccountBroadcastByItself,
+      selectedOptionGasPrices: this.selectedOptionGasPrices,
       canSetCustomGasPrices: this.canSetCustomGasPrices,
       canSetCustomGas: this.canSetCustomGas,
       isErc4337Enabled: this.isErc4337Enabled,

@@ -114,6 +114,13 @@ export interface IrCall extends Omit<Call, 'to'> {
   decodedCall?: DecodedCall
   /** The call isn't decoded yet because the function signatures it needs are still being fetched. */
   isDecodingCall?: boolean
+  /**
+   * Set by a module whose visualization is built from data it verified against the call (e.g. a
+   * CoW Swap order that hashes to the order ID in the calldata). Such a visualization shows more
+   * than a generic ERC-7730 descriptor can derive from the calldata alone, so it's kept instead
+   * of the descriptor's.
+   */
+  preferredOverErc7730?: boolean
 }
 export interface IrMessage extends Message {
   fullVisualization?: HumanizerVisualization[]

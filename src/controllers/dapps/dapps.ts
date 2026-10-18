@@ -1604,6 +1604,21 @@ export class DappsController extends EventEmitter implements IDappsController {
   }
 
   /**
+   * True when the scam checker flags the app at `url`, or the page embedding it, as unsafe:
+   * blacklisted, or hosted on a suspicious platform without the user having trusted it. Used to
+   * keep auto-login away from such apps, since it signs without showing the warning. While the
+   * scam checker is turned off nothing is flagged, so auto-login keeps working as usual.
+   */
+  isDappFlaggedAsUnsafe(url: string, sessionId?: string): boolean {
+    const bannerId = this.getDappVerificationBanner([url], { sessionId })?.id
+
+    return (
+      bannerId === DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED ||
+      bannerId === DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING
+    )
+  }
+
+  /**
    * Returns the highest-priority dApp verification banner for the provided dApp URLs, or `null` if
    * the scam checker is disabled or no banner applies.
    *

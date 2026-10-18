@@ -67,7 +67,7 @@ import {
 import { Platform } from '../../interfaces/platform'
 import { IStorageController } from '../../interfaces/storage'
 import { IUiController } from '../../interfaces/ui'
-import { AccountsSyncPayload } from '../../libs/accountsSync/accountsSync'
+import { AppDataSyncPayload } from '../../libs/appDataSync/appDataSync'
 import { EntropyGenerator } from '../../libs/entropyGenerator/entropyGenerator'
 import { getDefaultKeyLabel } from '../../libs/keys/keys'
 import { ScryptAdapter } from '../../libs/scrypt/scryptAdapter'
@@ -426,7 +426,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   }
 
   /**
-   * Unwraps the main key of another device from a scanned accounts sync payload, with the
+   * Unwraps the main key of another device from a scanned app data sync payload, with the
    * same wrong password handling as unlocking this device.
    */
   async #unwrapSyncedMainKey(
@@ -834,7 +834,7 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
   /**
    * Adds seeds to the keystore in a single storage write and returns the ids they are
    * stored with, in the order they were passed. An `id` can be passed per seed to
-   * preserve the id it already had on another device (accounts sync), so that the
+   * preserve the id it already had on another device (app data sync), so that the
    * synced keys' `meta.fromSeedId` keeps pointing to it.
    */
   async #addSeeds(
@@ -1346,11 +1346,14 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * `includeSeeds` is what the user chose on the confirmation screen: with it off the
    * keys still travel (so the accounts can sign on the other device), but the recovery
    * phrases they were derived from stay on this device.
+   *
+   * The main key goes along even when nothing encrypted is exported (hardware wallet keys
+   * only, or no keys at all), so the other device always asks for this device's password.
    */
   async exportForSync(
     keyAddrs: Key['addr'][],
     includeSeeds: boolean = true
-  ): Promise<Pick<AccountsSyncPayload, 'secret' | 'keys' | 'seeds'>> {
+  ): Promise<Pick<AppDataSyncPayload, 'secret' | 'keys' | 'seeds'>> {
     await this.initialLoadPromise
 
     const secret = this.#keystoreSecrets.find((s) => s.id === 'password')
@@ -1403,8 +1406,12 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
    * Intentionally not wrapped in `withStatus` and lets errors propagate, because the
    * MainController orchestrates the whole migration (and must not add the accounts if
    * this fails).
+   *
+   * The password is required even without anything encrypted in the payload (hardware
+   * wallet keys only, or no keys at all), as unwrapping the main key is how the user
+   * confirms the sync came from their other device.
    */
-  async importFromSync(payload: AccountsSyncPayload, password: string) {
+  async importFromSync(payload: AppDataSyncPayload, password: string) {
     await this.initialLoadPromise
 
     const { secret, keys, seeds } = payload
@@ -1665,7 +1672,8 @@ export class KeystoreController extends EventEmitter implements IKeystoreControl
     paidByKeyType?: Key['type']
   ): Key | Error {
     const feePayerKeys = this.keys.filter((key) => key.addr === paidByKeyAddr)
-    let feePayerKey = feePayerKeys[0]
+    // A private key pays on its own, so it is the default, like it is for signing
+    let feePayerKey = feePayerKeys.find((key) => key.type === 'internal') ?? feePayerKeys[0]
 
     if (paidByKeyType) {
       feePayerKey = feePayerKeys.find((key) => key.type === paidByKeyType) || feePayerKey
