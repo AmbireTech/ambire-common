@@ -437,6 +437,10 @@ describe('Transfer Controller', () => {
 
 describe('Transfer Controller - Privacy Pools recipient', () => {
   const PRIVACY_POOLS_SEED_ID = 'privacy-pools-seed'
+  const PRIVACY_POOLS_RECIPIENT = {
+    providerId: 'privacyPools',
+    seedId: PRIVACY_POOLS_SEED_ID
+  } as const
   const ETH_DEPOSIT_LIMITS = { minimumDepositAmount: 10n ** 16n }
 
   /** A transfer screen open on a portfolio with ETH on Ethereum and POL on Polygon. */
@@ -476,7 +480,7 @@ describe('Transfer Controller - Privacy Pools recipient', () => {
     const { transferController } = await prepareOpenTransfer()
     expect(transferController.tokens.some(({ chainId }) => chainId === 137n)).toBe(true)
 
-    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+    await transferController.update({ privateRecipient: PRIVACY_POOLS_RECIPIENT })
 
     expect(
       transferController.tokens.map(({ chainId, address }) => `${chainId}:${address}`)
@@ -503,7 +507,7 @@ describe('Transfer Controller - Privacy Pools recipient', () => {
     })
     const programmaticUpdateCounterBefore = transferController.programmaticUpdateCounter
 
-    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+    await transferController.update({ privateRecipient: PRIVACY_POOLS_RECIPIENT })
 
     expect(transferController.addressState.fieldValue).toBe('')
     // So the field drops what was typed, instead of disagreeing with the controller
@@ -515,7 +519,7 @@ describe('Transfer Controller - Privacy Pools recipient', () => {
 
   test('typing an address goes back to sending to an address', async () => {
     const { transferController } = await prepareOpenTransfer()
-    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+    await transferController.update({ privateRecipient: PRIVACY_POOLS_RECIPIENT })
 
     await transferController.update({
       addressState: {
@@ -526,13 +530,13 @@ describe('Transfer Controller - Privacy Pools recipient', () => {
       }
     })
 
-    expect(transferController.privacyPoolsRecipient).toBeNull()
+    expect(transferController.privateRecipient).toBeNull()
     expect(transferController.tokens.some(({ chainId }) => chainId === 137n)).toBe(true)
   })
 
   test('refuses an amount below what a Privacy Pools account accepts', async () => {
     const { transferController } = await prepareOpenTransfer()
-    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+    await transferController.update({ privateRecipient: PRIVACY_POOLS_RECIPIENT })
 
     await transferController.update({ amount: '0.005' })
 
@@ -552,7 +556,7 @@ describe('Transfer Controller - Privacy Pools recipient', () => {
           error: new Error('pending deposit')
         })
       )
-    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+    await transferController.update({ privateRecipient: PRIVACY_POOLS_RECIPIENT })
 
     await transferController.update({ amount: '0.012' })
 
@@ -563,20 +567,37 @@ describe('Transfer Controller - Privacy Pools recipient', () => {
       tokenAddress: ZeroAddress,
       amount: 12n * 10n ** 15n
     })
-    expect(transferController.privacyPoolsDepositError).toBe(
+    expect(transferController.privateDepositError).toBe(
       'Your previous transfer to this Privacy Pools account is still being confirmed.'
     )
-    expect(transferController.isPreparingPrivacyPoolsDeposit).toBe(false)
+    expect(transferController.isPreparingPrivateDeposit).toBe(false)
     expect(transferController.signAccountOpController).toBeNull()
+  })
+
+  test('accepts only exact sums of Tornado Cash amounts for a Tornado Cash account', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    await transferController.update({
+      privateRecipient: { providerId: 'tornadoCash', seedId: PRIVACY_POOLS_SEED_ID }
+    })
+    expect(
+      transferController.tokens.map(({ chainId, address }) => `${chainId}:${address}`)
+    ).toEqual([`1:${ZeroAddress}`])
+
+    // Within the test wallet's balance, but not a sum of the pools' amounts
+    await transferController.update({ amount: '0.015' })
+    expect(transferController.validationFormMsgs.amount.message).toBe(
+      'Tornado Cash accepts only 0.1, 1, 10 or 100 ETH, or a sum of them.'
+    )
+    expect(transferController.isFormValid).toBe(false)
   })
 
   test('resetting the form goes back to sending to an address', async () => {
     const { transferController } = await prepareOpenTransfer()
-    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+    await transferController.update({ privateRecipient: PRIVACY_POOLS_RECIPIENT })
 
     transferController.resetForm()
 
-    expect(transferController.privacyPoolsRecipient).toBeNull()
+    expect(transferController.privateRecipient).toBeNull()
     expect(transferController.hasPersistedState).toBe(false)
   })
 })

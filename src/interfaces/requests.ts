@@ -12,6 +12,7 @@ import {
   RequestExecutionType,
   RequestPosition
 } from './userRequest'
+import { PrivateAccountRef } from './privateAccount'
 
 export type IRequestsController = ControllerInterface<
   InstanceType<typeof import('../controllers/requests/requests').RequestsController>
@@ -48,8 +49,8 @@ export type BuildRequest =
         recipientDomain: string | undefined
         selectedToken: TokenResult
         executionType: RequestExecutionType
-        /** Seed id of the Privacy Pools account to send to, which has no address. */
-        privacyPoolsSeedId?: string
+        /** The private account to send to, which has no address. */
+        privateRecipient?: PrivateAccountRef
       }
     }
   | {

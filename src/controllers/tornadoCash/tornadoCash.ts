@@ -1,6 +1,9 @@
+import { Interface } from 'ethers'
+
 import {
   TORNADO_CASH_ACCOUNTS_STORAGE_KEY,
   TORNADO_CASH_CHAIN_ID,
+  TORNADO_CASH_MAX_NOTES_PER_DEPOSIT,
   TORNADO_CASH_POOLS
 } from '../../consts/tornadoCash'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
@@ -20,8 +23,15 @@ import {
   TornadoCashTokenBalance,
   TornadoCashUnavailableReason
 } from '../../interfaces/tornadoCash'
+import { Call } from '../../libs/accountOp/types'
 import { createKohakuKeystore, createKohakuProvider } from '../../libs/kohaku/host'
 import { getPrivateAccountSeedId } from '../../libs/privateAccount/privateAccount'
+import { countTornadoCashNotes, splitIntoTornadoCashNotes } from '../../libs/tornadoCash/amounts'
+import {
+  encodeErc20Approve,
+  readErc20Approve,
+  readTornadoCashDeposit
+} from '../../libs/tornadoCash/deposit'
 import { TORNADO_CASH_PLUGIN_STOPPED_MESSAGE } from '../../libs/tornadoCash/plugin'
 import { fetchTornadoCashPrices } from '../../libs/tornadoCash/prices'
 import EventEmitter from '../eventEmitter/eventEmitter'
@@ -32,6 +42,27 @@ const STALE_SYNC_MS = 10 * 60 * 1000
 
 /** Prices are fetched again after this long, at the next sync. */
 const PRICES_MAX_AGE_MS = 10 * 60 * 1000
+
+/** How long a broadcast deposit blocks building one that reuses its notes - see `#broadcastDeposits`. */
+const DEPOSIT_CONFIRMATION_WINDOW_MS = 15 * 60 * 1000
+
+/** USDT refuses to change a non-zero allowance to another non-zero one. */
+const USDT_ADDRESS = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+
+const ALLOWANCE_INTERFACE = new Interface([
+  'function allowance(address owner, address spender) view returns (uint256)'
+])
+
+/** A deposit from a wallet account into a Tornado Cash account. */
+export type TornadoCashDepositParams = {
+  /** The Tornado Cash account receiving the funds. */
+  seedId: string
+  /** The wallet account sending them. */
+  accountAddr: string
+  /** The wallet's address of the asset: the zero address for ETH. */
+  assetAddress: string
+  amount: bigint
+}
 
 const CHAIN_ID = TORNADO_CASH_CHAIN_ID.toString()
 
@@ -89,6 +120,16 @@ export class TornadoCashController extends EventEmitter {
   #selectedSeedId: string | null = null
 
   #pricesFetchedAt = 0
+
+  /** Commitments of deposits this controller built, so a broadcast one can be recognised. */
+  #preparedCommitments = new Set<string>()
+
+  /**
+   * When each of its deposits was broadcast, by commitment. The SDK numbers a phrase's notes by
+   * the deposits it has seen mined, so one built before the last is mined reuses its notes and
+   * fails on chain. Not stored: it would link the sender to the account.
+   */
+  #broadcastDeposits = new Map<string, number>()
 
   /** At most one per stored recovery phrase, and removed with it. */
   accounts: TornadoCashAccount[] = []
@@ -391,6 +432,138 @@ export class TornadoCashController extends EventEmitter {
           error: error instanceof Error ? error : new Error('tornadoCash: dispose failed')
         })
       })
+  }
+
+  /**
+   * Builds the calls of a deposit into a Tornado Cash account, one per note, after syncing the
+   * pools (slow the first time). Everything the SDK returns is checked: only the supported pools,
+   * exactly the notes `amount` splits into, and approvals only for them.
+   */
+  async buildDepositCalls({
+    seedId,
+    accountAddr,
+    assetAddress,
+    amount
+  }: TornadoCashDepositParams): Promise<Call[]> {
+    await this.initialLoadPromise
+
+    if (!this.#hasAccount(seedId)) throw tornadoCashErrors.depositAccountRemoved()
+    if (!this.#pluginFactory) throw tornadoCashErrors.unsupportedPlatform()
+    if (!this.#providers.providers[CHAIN_ID]) throw tornadoCashErrors.unsupportedNetwork()
+    if (!this.#keystore.isUnlocked) throw tornadoCashErrors.locked()
+
+    const noteCounts = splitIntoTornadoCashNotes(assetAddress, amount)
+    if (!noteCounts) throw tornadoCashErrors.depositAmountNotSplittable(assetAddress)
+    if (countTornadoCashNotes(noteCounts) > TORNADO_CASH_MAX_NOTES_PER_DEPOSIT)
+      throw tornadoCashErrors.depositTooManyNotes()
+
+    const generation = this.#generation
+    const txs = await this.#withPlugin(seedId, (plugin) =>
+      plugin.prepareShield({ assetAddress, amount })
+    )
+    if (generation !== this.#generation) throw tornadoCashErrors.depositAccountRemoved()
+
+    const expectedDenominations = noteCounts.flatMap(({ pool, count }) =>
+      Array<bigint>(count).fill(pool.denomination)
+    )
+    const { calls, commitments } = this.#verifyDepositTxs(txs, assetAddress, expectedDenominations)
+
+    const now = Date.now()
+    const isReusingANote = commitments.some((commitment) => {
+      const broadcastAt = this.#broadcastDeposits.get(commitment)
+      return !!broadcastAt && now - broadcastAt < DEPOSIT_CONFIRMATION_WINDOW_MS
+    })
+    if (isReusingANote) throw tornadoCashErrors.depositPending()
+
+    commitments.forEach((commitment) => this.#preparedCommitments.add(commitment))
+
+    return [...(await this.#usdtAllowanceResets(calls, accountAddr)), ...calls]
+  }
+
+  #verifyDepositTxs(
+    txs: { to: string; data: string; value: bigint }[],
+    assetAddress: string,
+    expectedDenominations: bigint[]
+  ): { calls: Call[]; commitments: string[] } {
+    const asset = assetAddress.toLowerCase()
+    const isNative = asset === '0x0000000000000000000000000000000000000000'
+    const depositedDenominations: bigint[] = []
+    const commitments: string[] = []
+
+    const calls = txs.map((tx): Call => {
+      const deposit = readTornadoCashDeposit(tx)
+      if (deposit) {
+        const isRightAsset = deposit.pool.assetAddress.toLowerCase() === asset
+        const isRightValue = tx.value === (isNative ? deposit.pool.denomination : 0n)
+        if (!isRightAsset || !isRightValue) throw tornadoCashErrors.depositMisbuilt('deposit')
+
+        depositedDenominations.push(deposit.pool.denomination)
+        commitments.push(deposit.commitment)
+        return { to: tx.to, data: tx.data, value: tx.value }
+      }
+
+      const approve = readErc20Approve(tx)
+      const spenderPool = TORNADO_CASH_POOLS.find(({ address }) => address === approve?.spender)
+      const isPoolApproval =
+        !isNative &&
+        !!approve &&
+        tx.value === 0n &&
+        approve.token === asset &&
+        spenderPool?.assetAddress.toLowerCase() === asset &&
+        approve.amount === spenderPool.denomination
+      if (!isPoolApproval) throw tornadoCashErrors.depositMisbuilt('call')
+
+      return { to: tx.to, data: tx.data, value: 0n }
+    })
+
+    const sortDenominations = (list: bigint[]) => [...list].sort((a, b) => (a > b ? -1 : 1))
+    const isExactSplit =
+      sortDenominations(depositedDenominations).join() ===
+      sortDenominations(expectedDenominations).join()
+    if (!isExactSplit) throw tornadoCashErrors.depositMisbuilt('notes')
+
+    return { calls, commitments }
+  }
+
+  /** Zeroes the sender's USDT allowance to a pool first where it is not zero, as USDT requires. */
+  async #usdtAllowanceResets(calls: Call[], owner: string): Promise<Call[]> {
+    const spenders = [
+      ...new Set(
+        calls
+          .map(readErc20Approve)
+          .filter((approve) => approve?.token === USDT_ADDRESS)
+          .map((approve) => approve!.spender)
+      )
+    ]
+    const provider = this.#providers.providers[CHAIN_ID]
+    if (!spenders.length || !provider) return []
+
+    const resets = await Promise.all(
+      spenders.map(async (spender) => {
+        const result = await provider.call({
+          to: USDT_ADDRESS,
+          data: ALLOWANCE_INTERFACE.encodeFunctionData('allowance', [owner, spender])
+        })
+        const [allowance] = ALLOWANCE_INTERFACE.decodeFunctionResult('allowance', result)
+
+        return allowance > 0n
+          ? [{ to: USDT_ADDRESS, data: encodeErc20Approve(spender, 0n), value: 0n }]
+          : []
+      })
+    )
+
+    return resets.flat()
+  }
+
+  /** Recognises the deposits this controller built among a broadcast account op's calls. */
+  onAccountOpBroadcast({ chainId, calls }: { chainId: bigint; calls: Call[] }) {
+    if (chainId !== TORNADO_CASH_CHAIN_ID) return
+
+    calls
+      .map((call) => readTornadoCashDeposit({ to: call.to, data: call.data, value: call.value }))
+      .filter((deposit): deposit is NonNullable<typeof deposit> => !!deposit)
+      .filter(({ commitment }) => this.#preparedCommitments.has(commitment))
+      .forEach(({ commitment }) => this.#broadcastDeposits.set(commitment, Date.now()))
   }
 
   async #refreshPricesIfStale() {

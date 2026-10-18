@@ -1,3 +1,5 @@
+import { Interface } from 'ethers'
+
 import { expect, jest } from '@jest/globals'
 
 import { produceMemoryStore } from '../../../test/helpers'
@@ -226,6 +228,68 @@ describe('TornadoCashController', () => {
 
     expect(factory).toHaveBeenCalledTimes(2)
     expect(controller.syncState.error).toBeNull()
+  })
+
+  describe('deposits', () => {
+    const POOL_INTERFACE = new Interface(['function deposit(bytes32 _commitment) payable'])
+    const ETH_ADDRESS = '0x0000000000000000000000000000000000000000'
+    const depositTx = (denomination: bigint, commitment: string) => ({
+      to: poolOf('ETH', denomination).address,
+      data: POOL_INTERFACE.encodeFunctionData('deposit', [commitment]),
+      value: denomination
+    })
+    const COMMITMENT_1 = `0x${'01'.repeat(32)}`
+    const COMMITMENT_2 = `0x${'02'.repeat(32)}`
+    const depositParams = {
+      seedId: 'seed-a',
+      accountAddr: '0x0000000000000000000000000000000000000abc',
+      assetAddress: ETH_ADDRESS,
+      amount: ETHER + ETHER / 10n
+    }
+
+    const prepareDepositTest = async (txs: ReturnType<typeof depositTx>[]) => {
+      const { factory, plugins } = createFakePluginFactory([])
+      const test = await prepareTest({ pluginFactory: factory })
+      const ready = await factory({} as never)
+      plugins.length = 0
+      ;(factory as jest.Mock).mockImplementation(async () => ({
+        ...ready,
+        prepareShield: jest.fn(async () => txs)
+      }))
+
+      return test
+    }
+
+    it('returns the deposit calls when they are exactly the notes of the amount', async () => {
+      const txs = [depositTx(ETHER, COMMITMENT_1), depositTx(ETHER / 10n, COMMITMENT_2)]
+      const { controller } = await prepareDepositTest(txs)
+
+      expect(await controller.buildDepositCalls(depositParams)).toEqual(txs)
+    })
+
+    it('refuses an amount that is no sum of notes, and anything else the SDK builds', async () => {
+      const { controller } = await prepareDepositTest([depositTx(ETHER, COMMITMENT_1)])
+
+      await expect(
+        controller.buildDepositCalls({ ...depositParams, amount: ETHER / 20n })
+      ).rejects.toThrow('Tornado Cash accepts only 0.1, 1, 10 or 100 ETH, or a sum of them.')
+      // The SDK built 1 ETH for 1.1 ETH
+      await expect(controller.buildDepositCalls(depositParams)).rejects.toThrow(
+        'This send could not be prepared safely'
+      )
+    })
+
+    it('refuses a deposit that reuses the notes of one still on its way', async () => {
+      const txs = [depositTx(ETHER, COMMITMENT_1), depositTx(ETHER / 10n, COMMITMENT_2)]
+      const { controller } = await prepareDepositTest(txs)
+      const calls = await controller.buildDepositCalls(depositParams)
+
+      controller.onAccountOpBroadcast({ chainId: 1n, calls })
+
+      await expect(controller.buildDepositCalls(depositParams)).rejects.toThrow(
+        'Your last send to this account is still on its way.'
+      )
+    })
   })
 
   it('is unavailable where the SDK cannot run', async () => {

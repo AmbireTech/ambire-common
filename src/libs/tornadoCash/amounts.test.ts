@@ -1,6 +1,7 @@
 import { TORNADO_CASH_POOLS } from '../../consts/tornadoCash'
 import {
   countTornadoCashNotes,
+  describeTornadoCashAmounts,
   getTornadoCashPoolsOfAsset,
   pickTornadoCashNotes,
   splitIntoTornadoCashNotes,
@@ -64,5 +65,12 @@ describe('Tornado Cash amounts', () => {
     expect(pickTornadoCashNotes(owned, ETHER / 2n)).toBeNull()
     expect(pickTornadoCashNotes(owned, 3n * ETHER)).toBeNull()
     expect(pickTornadoCashNotes(owned, 0n)).toBeNull()
+  })
+})
+
+describe('describeTornadoCashAmounts', () => {
+  it("lists an asset's amounts smallest first", () => {
+    expect(describeTornadoCashAmounts(ETH)).toBe('0.1, 1, 10 or 100 ETH')
+    expect(describeTornadoCashAmounts(USDC)).toBe('100 or 1000 USDC')
   })
 })

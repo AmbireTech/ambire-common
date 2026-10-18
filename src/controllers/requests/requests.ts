@@ -80,6 +80,7 @@ import {
   UserRequest,
   UserRequestWaitingAccountSwitch
 } from '../../interfaces/userRequest'
+import { PrivateAccountRef } from '../../interfaces/privateAccount'
 import { BaseAccount } from '../../libs/account/BaseAccount'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, getAccountOpNonce, isSafeRejectionCall } from '../../libs/accountOp/accountOp'
@@ -2702,7 +2703,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     recipientDomain,
     selectedToken,
     executionType = 'open-request-window',
-    privacyPoolsSeedId
+    privateRecipient
   }: {
     amount: string
     amountInFiat: bigint
@@ -2710,7 +2711,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     recipientDomain: string | undefined
     selectedToken: TokenResult
     executionType: RequestExecutionType
-    privacyPoolsSeedId?: string
+    privateRecipient?: PrivateAccountRef
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -2743,11 +2744,11 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     )
 
     const paymasterService = getAmbirePaymasterService(baseAcc, this.#relayerUrl)
-    // A transfer to a Privacy Pools account is a deposit
-    const callsRequestParams = privacyPoolsSeedId
+    // A transfer to a private account is a deposit
+    const callsRequestParams = privateRecipient
       ? {
-          calls: await this.#transfer.buildPrivacyPoolsDepositCalls({
-            seedId: privacyPoolsSeedId,
+          calls: await this.#transfer.buildPrivateDepositCalls({
+            privateRecipient,
             selectedToken,
             amount
           }),

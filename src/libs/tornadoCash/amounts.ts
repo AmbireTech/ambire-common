@@ -1,3 +1,5 @@
+import { formatUnits } from 'ethers'
+
 import { TORNADO_CASH_POOLS, TornadoCashPool } from '../../consts/tornadoCash'
 
 /** How many notes of one pool. */
@@ -67,4 +69,20 @@ export const pickTornadoCashNotes = (
   }
 
   return remaining === 0n ? picked : null
+}
+
+/** An asset's amounts in words, smallest first, such as "0.1, 1, 10 or 100 ETH". */
+export const describeTornadoCashAmounts = (assetAddress: string): string => {
+  const pools = getTornadoCashPoolsOfAsset(assetAddress).reverse()
+  const [firstPool] = pools
+  if (!firstPool) return ''
+
+  const amounts = pools.map(({ denomination, decimals }) => {
+    const formatted = formatUnits(denomination, decimals)
+    return formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted
+  })
+  const last = amounts.pop()
+  const list = amounts.length ? `${amounts.join(', ')} or ${last}` : last
+
+  return `${list} ${firstPool.symbol}`
 }

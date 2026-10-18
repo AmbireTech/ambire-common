@@ -707,6 +707,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.contractInfo,
       platform,
       this.privacyPools,
+      this.tornadoCash,
       eventEmitterRegistry
     )
     this.domains = new DomainsController({
@@ -1290,6 +1291,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.activity.addAccountOp(submittedAccountOp)
     // Every deposit into a Privacy Pools account, however signed, is broadcast through here
     this.privacyPools.onAccountOpBroadcast(submittedAccountOp)
+    this.tornadoCash.onAccountOpBroadcast(submittedAccountOp)
     await this.ui.notification.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple

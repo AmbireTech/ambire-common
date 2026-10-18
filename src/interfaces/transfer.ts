@@ -2,6 +2,7 @@ import { HumanizerMeta } from '../libs/humanizer/interfaces'
 import { TokenResult } from '../libs/portfolio'
 import { ControllerInterface } from './controller'
 import { AddressStateOptional } from './domains'
+import { PrivateAccountRef } from './privateAccount'
 
 export type ITransferController = ControllerInterface<
   InstanceType<typeof import('../controllers/transfer/transfer').TransferController>
@@ -15,8 +16,8 @@ export interface TransferUpdate {
   addressState?: AddressStateOptional
   isRecipientAddressUnknownAgreed?: boolean
   amountFieldMode?: 'token' | 'fiat'
-  /** Seed id of a Privacy Pools account to send to instead of an address; null undoes it. */
-  privacyPoolsRecipient?: string | null
+  /** A private account to send to instead of an address; null undoes it. */
+  privateRecipient?: PrivateAccountRef | null
 }
 
 export type AddressPoisoningMatch = {
