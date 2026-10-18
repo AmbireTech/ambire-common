@@ -1,6 +1,14 @@
 import EmittableError from '../../classes/EmittableError'
 import { describeTornadoCashAmounts } from '../../libs/tornadoCash/amounts'
 
+/** An unexpected failure, keeping what caused it. `reason` stands in when that is not an `Error`. */
+const majorError = (message: string, cause: unknown, reason: string) =>
+  new EmittableError({
+    message,
+    level: 'major',
+    error: cause instanceof Error ? cause : new Error(`tornadoCash: ${reason}`)
+  })
+
 /** A refusal the user can act on. `reason` is logged, never shown. */
 const expectedError = (message: string, reason: string) =>
   new EmittableError({ message, level: 'expected', error: new Error(`tornadoCash: ${reason}`) })
@@ -47,6 +55,43 @@ export const tornadoCashErrors = {
     expectedError(
       'This send could not be prepared safely, so it was stopped. Please try again later.',
       `the SDK built an unexpected ${what}`
+    ),
+
+  // Withdrawals
+  withdrawalInProgress: () =>
+    expectedError(
+      'Another send from this account is in progress. Please wait until it finishes.',
+      'an operation is in flight'
+    ),
+  withdrawalInvalidRecipient: () =>
+    expectedError('Please enter a valid recipient address.', 'invalid recipient'),
+  withdrawalAmountNotSendable: () =>
+    expectedError(
+      'Tornado Cash can send only whole parts of your balance. Please pick an amount your parts add up to.',
+      'amount is no sum of owned notes'
+    ),
+  withdrawalNotPrepared: (cause?: unknown) =>
+    majorError(
+      'This send could not be prepared. Please try again in a moment.',
+      cause,
+      'the withdrawal could not be prepared'
+    ),
+  withdrawalNotReady: () => expectedError('Please prepare the send again.', 'no withdrawal ready'),
+  withdrawalNotSent: (cause?: unknown) =>
+    majorError(
+      'This send could not be submitted. Please try again in a moment.',
+      cause,
+      'the withdrawal could not be broadcast'
+    ),
+  withdrawalReverted: () =>
+    expectedError(
+      'This send did not go through. Your funds are still in your account. Please try again.',
+      'the withdrawal reverted'
+    ),
+  withdrawalNotConfirmed: () =>
+    expectedError(
+      'This send is taking longer than usual. Refresh your balance in a few minutes to see if it went through.',
+      'no receipt in time'
     ),
 
   // Accounts

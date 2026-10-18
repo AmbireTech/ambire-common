@@ -135,3 +135,25 @@ export type TornadoCashTokenBalance = {
   /** How many notes of each amount, largest first. */
   notes: { denomination: bigint; count: number }[]
 }
+
+/** A send from the selected Tornado Cash account. Never stored. */
+export type TornadoCashOperation = {
+  id: number
+  /** Proving and signing, waiting for the user's go, being sent, waiting to be included. */
+  phase: 'proving' | 'ready' | 'broadcasting' | 'finalizing'
+  status: 'pending' | 'success' | 'failed'
+  assetAddress: string
+  symbol: string
+  decimals: number
+  recipient: string
+  /** What leaves the account: whole notes. */
+  amount: bigint
+  /** Paid to the paymaster from the notes, known once ready. */
+  fee: bigint | null
+  /** `amount - fee`, known once ready. */
+  recipientReceives: bigint | null
+  notesCount: number
+  /** In plain words, when it failed. */
+  error: string | null
+  userOpHash: string | null
+}

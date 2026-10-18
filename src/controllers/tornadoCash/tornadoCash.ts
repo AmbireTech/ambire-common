@@ -36,6 +36,7 @@ import { TORNADO_CASH_PLUGIN_STOPPED_MESSAGE } from '../../libs/tornadoCash/plug
 import { fetchTornadoCashPrices } from '../../libs/tornadoCash/prices'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { TORNADO_CASH_SYNC_FAILED_MESSAGE, tornadoCashErrors } from './errors'
+import { countNotesPerPool, TornadoCashWithdrawal, TornadoCashWithdrawalParams } from './withdrawal'
 
 /** A sync older than this is redone when the account is opened. */
 const STALE_SYNC_MS = 10 * 60 * 1000
@@ -131,6 +132,8 @@ export class TornadoCashController extends EventEmitter {
    */
   #broadcastDeposits = new Map<string, number>()
 
+  #withdrawal: TornadoCashWithdrawal
+
   /** At most one per stored recovery phrase, and removed with it. */
   accounts: TornadoCashAccount[] = []
 
@@ -176,6 +179,19 @@ export class TornadoCashController extends EventEmitter {
     this.#fetch = fetch
     this.#pluginFactory = pluginFactory
     this.#onAccountsRemoved = onAccountsRemoved
+    this.#withdrawal = new TornadoCashWithdrawal({
+      fetch,
+      getSelectedSeedId: () => this.#getSelectedSeedId(),
+      getOwnedNotes: () =>
+        this.#notes && countNotesPerPool(this.#notes.map(({ poolAddress }) => poolAddress)),
+      withPlugin: (seedId, action) => this.#withPlugin(seedId, action),
+      getGeneration: () => this.#generation,
+      // The notes it spent are gone; a later sync would find it anyway
+      onSent: () => {
+        this.syncSelectedAccount().catch(() => {})
+      },
+      emitUpdate: () => this.emitUpdate()
+    })
 
     // Cleared when done so the resolved promise isn't carried in the state sent to the UI.
     this.initialLoadPromise = this.#load().finally(() => {
@@ -566,6 +582,30 @@ export class TornadoCashController extends EventEmitter {
       .forEach(({ commitment }) => this.#broadcastDeposits.set(commitment, Date.now()))
   }
 
+  /** The selected account's send, while one is prepared, sent or just finished. */
+  get operation() {
+    return this.#withdrawal.operation
+  }
+
+  /** Proves and signs a send of whole notes to `recipient`; the user confirms the fee next. */
+  async prepareWithdrawal(params: TornadoCashWithdrawalParams) {
+    await this.initialLoadPromise
+    if (this.unavailableReason) throw this.#getUnavailableError()
+
+    await this.#withdrawal.prepare(params)
+  }
+
+  /** Sends the prepared withdrawal. */
+  async broadcastWithdrawal() {
+    await this.#withdrawal.broadcast()
+  }
+
+  /** Drops a finished or unsent operation. */
+  dismissOperation() {
+    this.#withdrawal.dismiss()
+    this.emitUpdate()
+  }
+
   async #refreshPricesIfStale() {
     if (!this.#featureFlags.isFeatureEnabled('tokenPrices')) return
     if (Date.now() - this.#pricesFetchedAt < PRICES_MAX_AGE_MS) return
@@ -666,6 +706,7 @@ export class TornadoCashController extends EventEmitter {
   #teardown() {
     this.#generation += 1
     this.#dropPlugin()
+    this.#withdrawal.clear()
     this.#notes = null
     this.syncState = IDLE_SYNC
     this.emitUpdate()
@@ -684,7 +725,8 @@ export class TornadoCashController extends EventEmitter {
       ...super.toJSON(),
       unavailableReason: this.unavailableReason,
       isAvailableForSelectedAccount: this.isAvailableForSelectedAccount,
-      balances: this.balances
+      balances: this.balances,
+      operation: this.operation
     }
   }
 }
