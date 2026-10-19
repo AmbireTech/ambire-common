@@ -106,7 +106,7 @@ import {
 } from '@/libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
-import { KeyIterator } from '@/libs/keyIterator/keyIterator'
+import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
@@ -1387,7 +1387,7 @@ export class MainController extends EventEmitter implements IMainController {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
       const { walletSDK } = trezorCtrl
-      await this.accountPicker.setInitParams({
+      this.accountPicker.setInitParams({
         keyIterator: new TrezorKeyIterator({ walletSDK }),
         hdPathTemplate,
         pageSize: 5,
@@ -1420,7 +1420,7 @@ export class MainController extends EventEmitter implements IMainController {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
 
-      await this.accountPicker.setInitParams({
+      this.accountPicker.setInitParams({
         keyIterator: new LatticeKeyIterator({ controller: latticeCtrl }),
         hdPathTemplate,
         pageSize: 5,
@@ -2157,7 +2157,48 @@ export class MainController extends EventEmitter implements IMainController {
   }) {
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
     const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase)
-    await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+    this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+  }
+
+  async #accountPickerSetInitParamsFromPrivateKeys(privateKeys: string[]) {
+    if (!privateKeys.length) {
+      const message = 'Please enter at least one private key.'
+      throw new EmittableError({ message, level: 'major', error: new Error(message) })
+    }
+
+    if (privateKeys.length > MAX_BULK_PRIVATE_KEYS) {
+      const message = `You can import up to ${MAX_BULK_PRIVATE_KEYS} private keys at once. Please remove some and try again.`
+      throw new EmittableError({ message, level: 'major', error: new Error(message) })
+    }
+
+    let keyIterator: KeyIterator
+    try {
+      // Trims the keys, strips the 0x prefix and drops duplicates before validating them
+      keyIterator = new KeyIterator(privateKeys)
+    } catch (error: any) {
+      // The original error never includes the keys, so it is safe to report it
+      const message =
+        'One or more of the private keys you entered is not valid. Please check them and try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+
+    this.accountPicker.setInitParams({
+      keyIterator,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+  }
+
+  /**
+   * Prepares the account picker with a list of private keys (bulk import). The key at position N
+   * in the list is listed as the account at index N. Duplicates are dropped and the list is
+   * limited to `MAX_BULK_PRIVATE_KEYS` keys.
+   */
+  async accountPickerSetInitParamsFromPrivateKeys({ privateKeys }: { privateKeys: string[] }) {
+    await this.withStatus(
+      'accountPickerSetInitParamsFromPrivateKeys',
+      async () => this.#accountPickerSetInitParamsFromPrivateKeys(privateKeys),
+      true
+    )
   }
 
   /**

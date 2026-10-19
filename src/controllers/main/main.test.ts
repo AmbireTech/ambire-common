@@ -1,8 +1,11 @@
+import { toBeHex, Wallet } from 'ethers'
+
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
 import { AccountOnchainState } from '@/interfaces/account'
+import { ErrorRef } from '@/interfaces/eventEmitter'
 import { AccountOpStatus } from '@/libs/accountOp/types'
-import { KeyIterator } from '@/libs/keyIterator/keyIterator'
+import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
 import wait from '@/utils/wait'
 import { describe, expect, jest, test } from '@jest/globals'
 import { makeMainController } from '@test/helpers/mainController'
@@ -376,6 +379,130 @@ describe('Main Controller ', () => {
     expect(mainCtrl.accounts.accounts[0]!.associatedKeys).toContain(
       '0xb1b2d032AA2F52347fbcfd08E5C3Cc55216E8404'
     )
+  })
+
+  describe('accountPickerSetInitParamsFromPrivateKeys', () => {
+    const toPrivateKey = (n: number) => toBeHex(n, 32)
+    const getAddresses = (privateKeys: string[]) =>
+      privateKeys.map((privateKey) => new Wallet(privateKey).address)
+
+    const setInitParamsFromPrivateKeys = async (privateKeys: string[]) => {
+      const setInitParamsSpy = jest.spyOn(controller.accountPicker, 'setInitParams')
+      const emittedErrors: ErrorRef[] = []
+      const unsubscribe = controller.onError((error) => emittedErrors.push(error))
+
+      await controller.accountPickerSetInitParamsFromPrivateKeys({ privateKeys })
+
+      unsubscribe()
+      const initParams = setInitParamsSpy.mock.calls[0]?.[0]
+      setInitParamsSpy.mockRestore()
+      controller.accountPicker.setInitParams({
+        keyIterator: null,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      return { initParams, emittedErrors }
+    }
+
+    test('prepares the account picker with every private key in order', async () => {
+      const privateKeys = [1, 2, 3].map(toPrivateKey)
+
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys(privateKeys)
+
+      expect(emittedErrors).toEqual([])
+      expect(initParams?.hdPathTemplate).toBe(BIP44_STANDARD_DERIVATION_TEMPLATE)
+      expect(initParams?.keyIterator?.subType).toBe('private-key')
+      const addresses = await initParams?.keyIterator?.retrieve(
+        [{ from: 0, to: 9 }],
+        BIP44_STANDARD_DERIVATION_TEMPLATE
+      )
+      expect(addresses).toEqual(getAddresses(privateKeys))
+      expect(controller.statuses.accountPickerSetInitParamsFromPrivateKeys).toBe('INITIAL')
+    })
+
+    test('drops duplicates that differ only by the 0x prefix, letter case or spaces', async () => {
+      const privateKey = toPrivateKey(0xabc)
+      const privateKeys = [
+        privateKey,
+        privateKey.slice(2),
+        ` 0x${privateKey.slice(2).toUpperCase()} `,
+        toPrivateKey(2)
+      ]
+
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys(privateKeys)
+
+      expect(emittedErrors).toEqual([])
+      const addresses = await initParams?.keyIterator?.retrieve(
+        [{ from: 0, to: 9 }],
+        BIP44_STANDARD_DERIVATION_TEMPLATE
+      )
+      expect(addresses).toEqual(getAddresses([privateKey, toPrivateKey(2)]))
+    })
+
+    test('accepts exactly the maximum number of private keys', async () => {
+      const privateKeys = Array.from({ length: MAX_BULK_PRIVATE_KEYS }, (_, i) =>
+        toPrivateKey(i + 1)
+      )
+
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys(privateKeys)
+
+      expect(emittedErrors).toEqual([])
+      expect(initParams?.keyIterator).toBeTruthy()
+    })
+
+    test('rejects more private keys than the maximum', async () => {
+      const privateKeys = Array.from({ length: MAX_BULK_PRIVATE_KEYS + 1 }, (_, i) =>
+        toPrivateKey(i + 1)
+      )
+
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys(privateKeys)
+
+      expect(initParams).toBeUndefined()
+      expect(emittedErrors).toHaveLength(1)
+      expect(emittedErrors[0]!.message).toBe(
+        `You can import up to ${MAX_BULK_PRIVATE_KEYS} private keys at once. Please remove some and try again.`
+      )
+      expect(emittedErrors[0]!.level).toBe('major')
+    })
+
+    test('rejects an empty list', async () => {
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([])
+
+      expect(initParams).toBeUndefined()
+      expect(emittedErrors.map((e) => e.message)).toEqual([
+        'Please enter at least one private key.'
+      ])
+    })
+
+    test('rejects the whole list if any private key is invalid, without exposing the keys', async () => {
+      const validPrivateKey = toPrivateKey(1)
+      const invalidPrivateKey = `${toPrivateKey(2).slice(0, -1)}z`
+
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([
+        validPrivateKey,
+        invalidPrivateKey
+      ])
+
+      expect(initParams).toBeUndefined()
+      expect(emittedErrors).toHaveLength(1)
+      expect(emittedErrors[0]!.message).toBe(
+        'One or more of the private keys you entered is not valid. Please check them and try again.'
+      )
+      const reportedError = `${emittedErrors[0]!.message} ${emittedErrors[0]!.error?.message}`
+      expect(reportedError).not.toContain(validPrivateKey.slice(2))
+      expect(reportedError).not.toContain(invalidPrivateKey.slice(2))
+    })
+
+    test('rejects a recovery phrase passed as one of the private keys', async () => {
+      const { initParams, emittedErrors } = await setInitParamsFromPrivateKeys([
+        toPrivateKey(1),
+        process.env.SEED!
+      ])
+
+      expect(initParams).toBeUndefined()
+      expect(emittedErrors).toHaveLength(1)
+      expect(emittedErrors[0]!.error?.message).not.toContain(process.env.SEED!)
+    })
   })
 
   describe('updateAccounts', () => {
