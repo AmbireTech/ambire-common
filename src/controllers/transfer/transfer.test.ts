@@ -559,7 +559,13 @@ describe('Transfer Controller - Privacy Pools recipient', () => {
     await transferController.update({ privateRecipient: PRIVACY_POOLS_RECIPIENT })
 
     await transferController.update({ amount: '0.012' })
+    // Built only once the user proceeds, as it is slow
+    expect(buildDepositCalls).not.toHaveBeenCalled()
 
+    const preparationsCountBefore = transferController.privateDepositPreparationsCount
+    await transferController.preparePrivateDeposit()
+
+    expect(transferController.privateDepositPreparationsCount).toBe(preparationsCountBefore + 1)
     expect(buildDepositCalls).toHaveBeenCalledWith({
       seedId: PRIVACY_POOLS_SEED_ID,
       accountAddr: account.addr,
@@ -571,6 +577,27 @@ describe('Transfer Controller - Privacy Pools recipient', () => {
       'Your previous transfer to this Privacy Pools account is still being confirmed.'
     )
     expect(transferController.isPreparingPrivateDeposit).toBe(false)
+    expect(transferController.signAccountOpController).toBeNull()
+
+    // A new amount is a new deposit, which may well work
+    await transferController.update({ amount: '0.013' })
+    expect(transferController.privateDepositError).toBeNull()
+    expect(buildDepositCalls).toHaveBeenCalledTimes(1)
+  })
+
+  test('counts a preparation that has nothing to build', async () => {
+    const { mainCtrl, transferController } = await prepareOpenTransfer()
+    const buildDepositCalls = jest.spyOn(mainCtrl.privacyPools, 'buildDepositCalls')
+    await transferController.update({ privateRecipient: PRIVACY_POOLS_RECIPIENT })
+    // Below the minimum, so the form is not valid
+    await transferController.update({ amount: '0.005' })
+
+    const preparationsCountBefore = transferController.privateDepositPreparationsCount
+    await transferController.preparePrivateDeposit()
+
+    // So the UI stops waiting for it
+    expect(transferController.privateDepositPreparationsCount).toBe(preparationsCountBefore + 1)
+    expect(buildDepositCalls).not.toHaveBeenCalled()
     expect(transferController.signAccountOpController).toBeNull()
   })
 

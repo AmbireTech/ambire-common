@@ -168,14 +168,26 @@ export class TransferController extends EventEmitter implements ITransferControl
    */
   privateRecipient: PrivateAccountRef | null = null
 
-  /** Whether the deposit calls are being built. The first build per account syncs its network. */
+  /**
+   * Whether the deposit calls are being built, which starts once the user proceeds (see
+   * `preparePrivateDeposit`). The first build per account syncs its network.
+   */
   isPreparingPrivateDeposit = false
+
+  /**
+   * Counts the finished `preparePrivateDeposit` calls, whether they worked or not, so the UI can
+   * tell when the one it asked for is done.
+   */
+  privateDepositPreparationsCount = 0
 
   /** Why the deposit cannot be prepared, in words for the user. */
   privateDepositError: string | null = null
 
   /** Lets a newer deposit preparation discard the result of an older, slower one. */
   #privateDepositPreparationId = 0
+
+  /** What the account op's deposit calls were built for, so they are built again only on a change. */
+  #preparedPrivateDepositKey: string | null = null
 
   #privacyPools?: IPrivacyPoolsController
 
@@ -888,6 +900,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.privateDepositError = null
     this.isPreparingPrivateDeposit = false
     this.#privateDepositPreparationId += 1
+    this.#preparedPrivateDepositKey = null
 
     if (privateRecipient) {
       this.addressState = { ...DEFAULT_ADDRESS_STATE }
@@ -906,6 +919,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     this.privateDepositError = null
     this.isPreparingPrivateDeposit = false
     this.#privateDepositPreparationId += 1
+    this.#preparedPrivateDepositKey = null
   }
 
   /** Loads the entrypoint's deposit limits for the selected token. */
@@ -1300,8 +1314,9 @@ export class TransferController extends EventEmitter implements ITransferControl
     // shouldn't happen ever
     if (!this.#selectedAccount.account) return
 
+    // Building a private deposit's calls is slow, so it waits for the user to proceed
     if (this.privateRecipient) {
-      await this.#syncPrivateDeposit()
+      this.#dropOutdatedPrivateDeposit()
       return
     }
 
@@ -1399,9 +1414,60 @@ export class TransferController extends EventEmitter implements ITransferControl
     })
   }
 
+  /** Identifies what a deposit is built for: the recipient, the token and the amount. */
+  #getPrivateDepositKey() {
+    const token = this.#selectedToken
+    if (!this.privateRecipient || !token) return null
+
+    const { providerId, seedId } = this.privateRecipient
+    const amount = getSafeAmountFromFieldValue(this.amount, token.decimals)
+
+    return [providerId, seedId, token.chainId, token.address, amount].join(':')
+  }
+
+  /**
+   * Drops the deposit being built and the account op of a built one once the form no longer
+   * matches them. Kept while the user has proceeded, as the form cannot change then.
+   */
+  #dropOutdatedPrivateDeposit() {
+    if (this.hasProceeded) return
+
+    const key = this.#getPrivateDepositKey()
+    if (key && key === this.#preparedPrivateDepositKey && this.signAccountOpController) return
+    if (
+      !this.isPreparingPrivateDeposit &&
+      !this.signAccountOpController &&
+      !this.privateDepositError
+    )
+      return
+
+    this.#privateDepositPreparationId += 1
+    this.#preparedPrivateDepositKey = null
+    this.isPreparingPrivateDeposit = false
+    this.privateDepositError = null
+    this.destroySignAccountOp()
+  }
+
+  /**
+   * Builds the private deposit's calls and its account op, once the user proceeds. A no-op when
+   * they are already built for the form as it is. Counted in `privateDepositPreparationsCount`
+   * when done, whether it worked or not.
+   */
+  async preparePrivateDeposit() {
+    const isAlreadyPrepared =
+      !!this.signAccountOpController &&
+      this.#getPrivateDepositKey() === this.#preparedPrivateDepositKey
+
+    if (!isAlreadyPrepared) await this.#syncPrivateDeposit()
+
+    this.privateDepositPreparationsCount += 1
+    this.emitUpdate()
+  }
+
   async #syncPrivateDeposit() {
     const privateRecipient = this.privateRecipient
     const token = this.#selectedToken
+    const key = this.#getPrivateDepositKey()
     if (!privateRecipient || !token || !this.amount || !this.isFormValid) return
 
     this.#privateDepositPreparationId += 1
@@ -1441,6 +1507,7 @@ export class TransferController extends EventEmitter implements ITransferControl
     if (!isCurrent()) return
 
     this.isPreparingPrivateDeposit = false
+    this.#preparedPrivateDepositKey = key
 
     if (this.signAccountOpController) {
       this.signAccountOpController.update({ accountOpData: { calls } })

@@ -58,11 +58,6 @@ const DAI = {
   symbol: 'DAI',
   decimals: 18
 }
-const USDC = {
-  assetAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
-  symbol: 'USDC',
-  decimals: 6
-}
 const USDT = {
   assetAddress: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
   symbol: 'USDT',
@@ -79,8 +74,17 @@ const WBTC = {
  * pools, which nothing could withdraw from.
  *
  * Checked on chain (each adapter's `TORNADO_INSTANCE()` and each pool's `denomination()`), and
- * passed to the SDK as its paymaster config: its own `TornadoPaymasterConfigs` swaps the two USDC
- * pools' adapters (0.0.2-alpha.25), which would make every USDC withdrawal fail.
+ * passed to the SDK as its paymaster config.
+ *
+ * The USDC pools are left out on purpose, though the paymaster sponsors them. The SDK's own
+ * `TornadoPaymasterConfigs` swaps their adapters (0.0.2-alpha.25), which would make every USDC
+ * withdrawal fail, and the token withdrawal path is not yet tested on mainnet. Our config holds
+ * the right adapters, but until both are settled no one should deposit USDC they could not get
+ * out. To add them back (checked on chain):
+ * - USDC 100: pool `0xd96f2b1c14db8458374d9aca76e26c3d18364307`, adapter
+ *   `0xB1C7e712AF153073979AdC5ef8B1Cc5A7b0cf031`
+ * - USDC 1000: pool `0x4736dcf1b7a3d580672cce6e7c65cd5cc9cfba9d`, adapter
+ *   `0x44336242f9766b4c751F6958499C5cc18325e25B`
  */
 export const TORNADO_CASH_POOLS: readonly TornadoCashPool[] = [
   {
@@ -130,18 +134,6 @@ export const TORNADO_CASH_POOLS: readonly TornadoCashPool[] = [
     address: '0x23773e65ed146a459791799d01336db287f25334',
     denomination: 10n ** 23n,
     feeAdapterAddress: '0x83Ff713F0939409E1c6023bc8aaB3E49eD968c8D'
-  },
-  {
-    ...USDC,
-    address: '0xd96f2b1c14db8458374d9aca76e26c3d18364307',
-    denomination: 10n ** 8n,
-    feeAdapterAddress: '0xB1C7e712AF153073979AdC5ef8B1Cc5A7b0cf031'
-  },
-  {
-    ...USDC,
-    address: '0x4736dcf1b7a3d580672cce6e7c65cd5cc9cfba9d',
-    denomination: 10n ** 9n,
-    feeAdapterAddress: '0x44336242f9766b4c751F6958499C5cc18325e25B'
   },
   {
     ...USDT,

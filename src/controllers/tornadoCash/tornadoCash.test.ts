@@ -162,7 +162,7 @@ describe('TornadoCashController', () => {
       note('ETH', ETHER / 10n),
       note('ETH', ETHER),
       note('ETH', ETHER / 10n),
-      note('USDC', 10n ** 8n)
+      note('USDT', 10n ** 8n)
     ])
     const { controller, selectedAccount } = await prepareTest({ pluginFactory: factory })
     selectedAccount.select({ providerId: 'tornadoCash', seedId: 'seed-a' })
@@ -182,8 +182,8 @@ describe('TornadoCashController', () => {
         ]
       },
       {
-        assetAddress: poolOf('USDC', 10n ** 8n).assetAddress,
-        symbol: 'USDC',
+        assetAddress: poolOf('USDT', 10n ** 8n).assetAddress,
+        symbol: 'USDT',
         decimals: 6,
         amount: 10n ** 8n,
         notes: [{ denomination: 10n ** 8n, count: 1 }]

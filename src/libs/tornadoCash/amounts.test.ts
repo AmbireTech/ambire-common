@@ -9,6 +9,7 @@ import {
 } from './amounts'
 
 const ETH = '0x0000000000000000000000000000000000000000'
+const USDT = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
 const ETHER = 10n ** 18n
 
@@ -26,10 +27,15 @@ const asTenths = (noteCounts: TornadoCashNoteCount[] | null) =>
 
 describe('Tornado Cash amounts', () => {
   it("lists an asset's pools largest first, whatever the address case", () => {
-    expect(getTornadoCashPoolsOfAsset(USDC.toLowerCase()).map((pool) => pool.denomination)).toEqual(
+    expect(getTornadoCashPoolsOfAsset(USDT.toLowerCase()).map((pool) => pool.denomination)).toEqual(
       [10n ** 9n, 10n ** 8n]
     )
     expect(getTornadoCashPoolsOfAsset('0x0000000000000000000000000000000000000001')).toEqual([])
+  })
+
+  it('offers no USDC pools, as their withdrawals are not safe yet', () => {
+    expect(getTornadoCashPoolsOfAsset(USDC)).toEqual([])
+    expect(splitIntoTornadoCashNotes(USDC, 100n * 10n ** 6n)).toBeNull()
   })
 
   it('splits an amount into the fewest notes', () => {
@@ -43,7 +49,7 @@ describe('Tornado Cash amounts', () => {
     expect(splitIntoTornadoCashNotes(ETH, ETHER + ETHER / 100n)).toBeNull()
     expect(splitIntoTornadoCashNotes(ETH, ETHER / 20n)).toBeNull()
     expect(splitIntoTornadoCashNotes(ETH, 0n)).toBeNull()
-    expect(splitIntoTornadoCashNotes(USDC, 150n * 10n ** 6n)).toBeNull()
+    expect(splitIntoTornadoCashNotes(USDT, 150n * 10n ** 6n)).toBeNull()
     expect(
       splitIntoTornadoCashNotes('0x0000000000000000000000000000000000000001', ETHER)
     ).toBeNull()
@@ -71,6 +77,6 @@ describe('Tornado Cash amounts', () => {
 describe('describeTornadoCashAmounts', () => {
   it("lists an asset's amounts smallest first", () => {
     expect(describeTornadoCashAmounts(ETH)).toBe('0.1, 1, 10 or 100 ETH')
-    expect(describeTornadoCashAmounts(USDC)).toBe('100 or 1000 USDC')
+    expect(describeTornadoCashAmounts(USDT)).toBe('100 or 1000 USDT')
   })
 })
