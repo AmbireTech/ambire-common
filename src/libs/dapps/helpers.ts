@@ -222,6 +222,22 @@ export function getAccountsForDapp(
   return extensionSelectedAccountAddr ? [extensionSelectedAccountAddr] : []
 }
 
+/**
+ * Whether a dapp may send requests for the account. A dapp the user connected to only some
+ * accounts may use only those. Any other dapp follows the selected account, so it may ask for
+ * any account in the wallet.
+ */
+export function isAccountAllowedForDapp(
+  preferences: Dapp['accountPreferences'],
+  accountAddr: string
+): boolean {
+  if (!preferences?.enabled) return true
+
+  const normalizedAddr = accountAddr.toLowerCase()
+
+  return preferences.accounts.some((account) => account.toLowerCase() === normalizedAddr)
+}
+
 // Reconcile a dapp to the per-source connection invariant: `connectedSources` is the source of
 // truth and `isConnected` is always derived from it. Records written before per-source support
 // (or by a code path that updated only one of the two fields) can drift; this collapses them back.

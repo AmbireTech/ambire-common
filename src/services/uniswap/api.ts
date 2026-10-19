@@ -24,6 +24,7 @@ import {
   UniswapSwapResponse,
   UniswapTransactionRequest
 } from '../../interfaces/swapAndBridge'
+import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import {
   addCustomTokensIfNeeded,
   convertPortfolioTokenToSwapAndBridgeToToken,
@@ -31,8 +32,6 @@ import {
   isNoFeeToken,
   sortNativeTokenFirst
 } from '../../libs/swapAndBridge/swapAndBridge'
-import { getFeeExemptionReason } from '../../libs/swapAndBridge/fee'
-import type { FeeExemptionReason } from '../../libs/swapAndBridge/fee'
 import { AcrossAPI } from '../across/api'
 import {
   AMBIRE_FEE_TAKER_ADDRESS,
@@ -41,7 +40,10 @@ import {
   UNISWAP_SUPPORTED_CHAIN_IDS
 } from './constants'
 
+import type { FeeExemptionReason } from '../../libs/swapAndBridge/fee'
 const erc20Interface = new Interface(ERC20.abi)
+
+const GATEWAY_TIMEOUT_STATUS = 504
 
 type UniswapTokenListEntry = {
   address: string
@@ -300,6 +302,9 @@ export class UniswapAPI implements SwapProvider {
   areChainsSupported({ fromChainId, toChainId }: { fromChainId: number; toChainId: number }) {
     if (fromChainId === Number(CITREA_CHAIN_ID) || toChainId === Number(CITREA_CHAIN_ID))
       return false
+    // As of v2.111.3, Uniswap bridges (cross-chain routes) are temporarily disabled.
+    // Same-chain swaps are unaffected. Remove this check to re-enable bridging.
+    if (fromChainId !== toChainId) return false
 
     return (
       UNISWAP_SUPPORTED_CHAIN_IDS.includes(fromChainId) &&
@@ -307,20 +312,11 @@ export class UniswapAPI implements SwapProvider {
     )
   }
 
-  async #handleResponse<T>({
-    fetchPromise,
-    errorPrefix
-  }: {
-    fetchPromise: Promise<CustomResponse>
-    errorPrefix: string
-  }): Promise<T> {
-    this.#ensureApiKey()
-
-    let response: CustomResponse
+  async #withRequestTimeout(fetchPromise: Promise<CustomResponse>): Promise<CustomResponse> {
+    let timeoutPromise: NodeJS.Timeout | undefined
 
     try {
-      let timeoutPromise: NodeJS.Timeout | undefined
-      response = await Promise.race([
+      return await Promise.race([
         fetchPromise,
         new Promise<CustomResponse>((_, reject) => {
           timeoutPromise = setTimeout(() => {
@@ -332,8 +328,31 @@ export class UniswapAPI implements SwapProvider {
           }, this.#requestTimeoutMs)
         })
       ])
-
+    } finally {
       if (timeoutPromise) clearTimeout(timeoutPromise)
+    }
+  }
+
+  async #handleResponse<T>({
+    fetchPromise,
+    retryFetch,
+    errorPrefix
+  }: {
+    fetchPromise: Promise<CustomResponse>
+    /** Sent once more after a 504, with its own timeout. */
+    retryFetch?: () => Promise<CustomResponse>
+    errorPrefix: string
+  }): Promise<T> {
+    this.#ensureApiKey()
+
+    let response: CustomResponse
+
+    try {
+      response = await this.#withRequestTimeout(fetchPromise)
+
+      if (response.status === GATEWAY_TIMEOUT_STATUS && retryFetch) {
+        response = await this.#withRequestTimeout(retryFetch())
+      }
     } catch (e: any) {
       if (e instanceof SwapAndBridgeProviderApiError) throw e
 
@@ -402,9 +421,12 @@ export class UniswapAPI implements SwapProvider {
       sort: 'tvl'
     })
     const url = `${UNISWAP_API_BASE_URL}/tokens?${params.toString()}`
+    const fetchTokens = () => this.#fetch(url, { headers: this.#headers })
 
     const response = await this.#handleResponse<{ tokens?: UniswapTokenListEntry[] }>({
-      fetchPromise: this.#fetch(url, { headers: this.#headers }),
+      fetchPromise: fetchTokens(),
+      // Uniswap keeps ranking the tokens after a 504, so a retry usually works
+      retryFetch: fetchTokens,
       errorPrefix:
         'Unable to retrieve the list of supported receive tokens. Please reload to try again.'
     })

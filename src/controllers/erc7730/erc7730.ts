@@ -1,3 +1,6 @@
+import { keccak256 } from 'ethers'
+
+import { KNOWN_SAFE_PROXY_CODE_HASHES, KNOWN_SAFE_SINGLETONS } from '../../consts/safe'
 import { IEventEmitterRegistryController } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IProvidersController } from '../../interfaces/provider'
@@ -337,15 +340,26 @@ export class Erc7730Controller extends EventEmitter {
         cacheKey.safeSingleton(chainId, safeAddress),
         SAFE_SINGLETON_CACHE_TTL_MS,
         async () => {
-          const slotValue = await withTimeout(
-            () => provider.getStorage(safeAddress, SAFE_PROXY_SINGLETON_SLOT),
+          const [code, slotValue] = await withTimeout(
+            () =>
+              Promise.all([
+                provider.getCode(safeAddress),
+                provider.getStorage(safeAddress, SAFE_PROXY_SINGLETON_SLOT)
+              ]),
             {
               timeoutMs: ERC7730_DESCRIPTOR_WAIT_MS,
               message: `Timed out fetching Safe singleton: ${safeAddress}`
             }
           )
 
-          return getAddressFromStorageSlot(slotValue)
+          // Any contract can put a registered address in slot 0 to borrow its descriptor, but only
+          // a real SafeProxy forwards its calls to that address
+          if (!KNOWN_SAFE_PROXY_CODE_HASHES.has(keccak256(code))) return null
+
+          const singleton = getAddressFromStorageSlot(slotValue)
+          if (!singleton || !KNOWN_SAFE_SINGLETONS.has(singleton.toLowerCase())) return null
+
+          return singleton
         }
       )
     } catch (error: any) {

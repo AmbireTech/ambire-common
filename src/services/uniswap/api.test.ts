@@ -24,9 +24,14 @@ describe('UniswapAPI', () => {
   it('supports Uniswap chains and excludes Citrea', async () => {
     const uniswapApi = new UniswapAPI({ fetch: jest.fn() as any, apiKey: 'test-key' })
 
-    expect(uniswapApi.areChainsSupported({ fromChainId: 1, toChainId: 8453 })).toBe(true)
+    expect(uniswapApi.areChainsSupported({ fromChainId: 8453, toChainId: 8453 })).toBe(true)
+    // As of v2.111.3, Uniswap bridges (cross-chain routes) are temporarily disabled
+    expect(uniswapApi.areChainsSupported({ fromChainId: 1, toChainId: 8453 })).toBe(false)
     expect(
-      uniswapApi.areChainsSupported({ fromChainId: Number(CITREA_CHAIN_ID), toChainId: 1 })
+      uniswapApi.areChainsSupported({
+        fromChainId: Number(CITREA_CHAIN_ID),
+        toChainId: Number(CITREA_CHAIN_ID)
+      })
     ).toBe(false)
 
     const chains = await uniswapApi.getSupportedChains()
@@ -103,6 +108,49 @@ describe('UniswapAPI', () => {
     await expect(
       uniswapApi.getToTokenList({ fromChainId: 8453, toChainId: 8453 })
     ).resolves.toEqual([])
+  })
+
+  describe("when the token list request times out on Uniswap's gateway", () => {
+    // The gateway answers with an HTML page, not JSON
+    const gatewayTimeoutResponse = {
+      ok: false,
+      status: 504,
+      json: async () => {
+        throw new SyntaxError('Unexpected token < in JSON at position 0')
+      }
+    }
+    const usdc = {
+      address: tokenIn,
+      chainId: 1,
+      decimals: 6,
+      logoURI: '',
+      name: 'USD Coin',
+      symbol: 'USDC'
+    }
+
+    it('requests the list once more and returns the tokens of the retry', async () => {
+      const fetch = jest
+        .fn<() => Promise<any>>()
+        .mockResolvedValueOnce(gatewayTimeoutResponse)
+        .mockResolvedValueOnce(makeResponse({ tokens: [usdc] }))
+      const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
+
+      const tokens = await uniswapApi.getToTokenList({ fromChainId: 1, toChainId: 1 })
+
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(fetch.mock.calls[1]).toEqual(fetch.mock.calls[0])
+      expect(tokens.map(({ symbol }) => symbol)).toContain('USDC')
+    })
+
+    it('fails without retrying again when the retry times out too', async () => {
+      const fetch = jest.fn(async () => gatewayTimeoutResponse)
+      const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
+
+      await expect(uniswapApi.getToTokenList({ fromChainId: 1, toChainId: 1 })).rejects.toThrow(
+        'Unable to retrieve the list of supported receive tokens'
+      )
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
   })
 
   it('does not request tokens for an unsupported network pair', async () => {
@@ -189,6 +237,8 @@ describe('UniswapAPI', () => {
     expect(quote.routes[0]!.inputValueInUsd).toBe(1)
     expect(quote.routes[0]!.outputValueInUsd).toBe(0.99685215)
     expect(quote.routes[0]!.outputValueAfterGasInUsd).toBeCloseTo(0.89685215)
+    // Uniswap charges the network fee to the account, not from the received tokens
+    expect(quote.routes[0]!.networkFeeInToToken).toBeUndefined()
     expect(quote.routes[0]!.toAmount).toBe('999000')
     expect((quote.routes[0]!.toToken as any).priceUSD).toBe('0.99785')
     expect(quote.routes[0]!.steps[0]!.minAmountOut).toBe('994000')
@@ -214,6 +264,9 @@ describe('UniswapAPI', () => {
       })
     )
     const uniswapApi = new UniswapAPI({ fetch: fetch as any, apiKey: 'test-key' })
+    // As of v2.111.3, Uniswap bridges are temporarily disabled in areChainsSupported.
+    // Keep the Across tagging covered so it works once bridging is re-enabled
+    jest.spyOn(uniswapApi, 'areChainsSupported').mockReturnValue(true)
 
     const quote = await uniswapApi.quote({
       fromAsset: {

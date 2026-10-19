@@ -1,3 +1,4 @@
+import { errorCodes } from 'eth-rpc-errors'
 import { Wallet, ZeroAddress } from 'ethers'
 
 import { describe, expect, test } from '@jest/globals'
@@ -5,12 +6,13 @@ import { describe, expect, test } from '@jest/globals'
 import { makeDapp } from '../../../test/helpers/dapps'
 import { makeMainController } from '../../../test/helpers/mainController'
 import { Session } from '../../classes/session'
-import { SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE } from '../../consts/safe'
+import { SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE } from '../../consts/safe'
 import {
   DAPP_REJECTS_BEFORE_OFFERING_SILENCE,
-  DAPP_SILENCE_DURATION
+  DAPP_SILENCE_DURATION,
+  MAX_DAPP_CALLS_PER_REQUEST
 } from '../../consts/safeguards/dappRequestSpam'
-import { AccountOnchainState } from '../../interfaces/account'
+import { DAPP_VERIFICATION_BANNER_IDS } from '../../interfaces/dapp'
 import { Hex } from '../../interfaces/hex'
 import { Platform } from '../../interfaces/platform'
 import {
@@ -194,6 +196,7 @@ const prepareTest = async (
       type: 'default',
       callRelayer: mainCtrl.callRelayer,
       erc7730: mainCtrl.erc7730,
+      contractInfo: mainCtrl.contractInfo,
       accounts: mainCtrl.accounts,
       networks: mainCtrl.networks,
       keystore: mainCtrl.keystore,
@@ -333,6 +336,35 @@ const DAPP_CONNECT_REQUEST: DappConnectRequest = {
     }
   ]
 }
+
+const APP_WINDOW_ID = 2
+const OTHER_WINDOW_ID = 3
+
+const getDappConnectRequestFromWindow = (windowId: number): DappConnectRequest => ({
+  ...DAPP_CONNECT_REQUEST,
+  id: `dapp-connect-from-window-${windowId}`,
+  dappPromises: [
+    {
+      ...DAPP_CONNECT_REQUEST.dappPromises[0]!,
+      session: new Session({ tabId: 1, windowId, url: 'https://test-dApp.com' })
+    }
+  ]
+})
+
+/** A message to sign for the selected account, from the test app. */
+const makeMessageRequest = (
+  id: string,
+  reject: (err: any) => void
+): PlainTextMessageUserRequest => ({
+  id,
+  kind: 'message',
+  meta: {
+    params: { message: '0x48656c6c6f' },
+    accountAddr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+    chainId: 1n
+  },
+  dappPromises: [{ id, resolve: () => {}, reject, session: MOCK_SESSION, meta: {} }]
+})
 
 describe('RequestsController ', () => {
   beforeEach(() => {
@@ -611,6 +643,90 @@ describe('RequestsController ', () => {
     expect(controller.userRequests.map((r) => r.id)).toEqual(['arrived-request'])
     arrivedRequest.signAccountOp.destroy()
   })
+  test('shows a request that arrives while the request window closes instead of refusing it', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    const closedRequest = { ...DAPP_CONNECT_REQUEST, id: 'closed-request' }
+    const arrivedReject = jest.fn()
+    await controller.addUserRequests([closedRequest])
+    const closeView = uiCtrl.requestView.close.bind(uiCtrl.requestView)
+    let addArrivedRequest: Promise<void> | undefined
+    // Removing the window fires `windowRemoved` right away, so its handler runs while the close
+    // is still in flight, and the next request lands in the middle of both
+    jest.spyOn(uiCtrl.requestView, 'close').mockImplementationOnce(async (winId) => {
+      await closeView(winId)
+      addArrivedRequest = controller.addUserRequests([
+        makeMessageRequest('arrived-request', arrivedReject)
+      ])
+    })
+
+    await controller.closeRequestWindow()
+    await addArrivedRequest
+
+    expect(arrivedReject).not.toHaveBeenCalled()
+    expect(controller.userRequests.map((r) => r.id)).toEqual(['arrived-request'])
+    expect(controller.currentUserRequest?.id).toBe('arrived-request')
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+  })
+  describe('closing the side panel', () => {
+    /** Requests show up in the panel, which has no window of its own. */
+    const prepareSidePanelTest = async () => {
+      const context = await prepareTest()
+      jest.spyOn(context.uiCtrl.requestView, 'open').mockResolvedValue(null)
+      return context
+    }
+
+    test('turns away the request it shows', async () => {
+      const { controller } = await prepareSidePanelTest()
+      const shownReject = jest.fn()
+      await controller.addUserRequests([makeMessageRequest('shown-request', shownReject)])
+      expect(controller.requestWindow.windowProps).toBe(null)
+      expect(controller.currentUserRequest?.id).toBe('shown-request')
+
+      await controller.closeRequestWindow()
+
+      expect(shownReject).toHaveBeenCalledTimes(1)
+      expect(controller.userRequests).toHaveLength(0)
+      expect(controller.currentUserRequest).toBe(null)
+    })
+
+    test('a request that comes up while it closes is shown instead of turned away', async () => {
+      const { controller } = await prepareSidePanelTest()
+      const shownReject = jest.fn()
+      const arrivedReject = jest.fn()
+      await controller.addUserRequests([makeMessageRequest('shown-request', shownReject)])
+      // Something the close has to wait for, like a focus still in flight
+      let finishFocus: () => void = () => {}
+      controller.requestWindow.focusWindowPromise = new Promise((resolve) => {
+        finishFocus = () => resolve(null)
+      })
+
+      const close = controller.closeRequestWindow()
+      // A different kind than the one shown, as a second message would replace the first itself
+      const addArrivedRequest = controller.addUserRequests([
+        {
+          ...DAPP_CONNECT_REQUEST,
+          id: 'arrived-request',
+          dappPromises: [
+            {
+              id: 'arrived-request',
+              resolve: () => {},
+              reject: arrivedReject,
+              session: MOCK_SESSION,
+              meta: {}
+            }
+          ]
+        }
+      ])
+      finishFocus()
+      controller.requestWindow.focusWindowPromise = undefined
+      await Promise.all([close, addArrivedRequest])
+
+      expect(shownReject).toHaveBeenCalledTimes(1)
+      expect(arrivedReject).not.toHaveBeenCalled()
+      expect(controller.userRequests.map((r) => r.id)).toEqual(['arrived-request'])
+      expect(controller.currentUserRequest?.id).toBe('arrived-request')
+    })
+  })
   test('does not simulate a signed Safe transaction that is added to the queue', async () => {
     const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
     // @ts-expect-error makeMainController turns simulation off for every test, so turn it back on
@@ -747,7 +863,7 @@ describe('RequestsController ', () => {
     const chainId = 1n
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.threshold = 2
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const txnId = SAFE_TX_HASH
     const firstSigner = new Wallet(`0x${'1'.repeat(64)}`)
     const secondSigner = new Wallet(`0x${'2'.repeat(64)}`)
@@ -1275,11 +1391,8 @@ describe('RequestsController ', () => {
     const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
-    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue({
-      ...accountState,
-      nonce: 1n
-    })
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 1n
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const buildSafeRequest = (nonce: bigint, txnId: Hex) =>
       controller.build({
         type: 'calls',
@@ -1358,7 +1471,7 @@ describe('RequestsController ', () => {
     }
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
       to: '0x1234567890123456789012345678901234567890',
@@ -1425,7 +1538,7 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValue({
@@ -1464,6 +1577,191 @@ describe('RequestsController ', () => {
     deploymentRequest.signAccountOp.destroy()
   })
 
+  test('reopens the pending Safe deployment request when it is asked for again', async () => {
+    const { accountsCtrl, controller } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const account = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
+    account.safeCreation!.setupData = '0x1234'
+    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+    jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
+      to: '0x1234567890123456789012345678901234567890',
+      value: 0n,
+      data: '0x1234'
+    })
+
+    await controller.buildSafeDeploymentRequest(accountAddr, chainId)
+    const deploymentRequest = controller.userRequests[0]
+    if (deploymentRequest?.kind !== 'calls') throw new Error('Expected a calls request')
+    expect(controller.currentUserRequest).toBe(deploymentRequest)
+
+    // Already the current request, but the user may have closed the request window since
+    const openRequestWindowSpy = jest.spyOn(controller, 'openRequestWindow')
+    await expect(controller.buildSafeDeploymentRequest(accountAddr, chainId)).resolves.toBe(true)
+
+    expect(controller.userRequests).toEqual([deploymentRequest])
+    expect(controller.currentUserRequest).toBe(deploymentRequest)
+    expect(openRequestWindowSpy).toHaveBeenCalledTimes(1)
+
+    deploymentRequest.signAccountOp.destroy()
+  })
+
+  test('asks to try again when preparing the Safe deployment fails unexpectedly', async () => {
+    const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    jest
+      .spyOn(accountsCtrl, 'updateAccountState')
+      .mockRejectedValue(new Error('The network did not respond'))
+    const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
+    const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
+    const errorListener = jest.fn()
+    const unsubscribe = controller.onError(errorListener)
+
+    await expect(
+      controller.buildSafeDeploymentRequest(accountAddr, chainId, 'deploy-settings-request')
+    ).resolves.toBe(false)
+
+    expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
+    expect(controller.userRequests).toEqual([])
+    expect(sendUiMessageSpy).toHaveBeenCalledWith({
+      requestId: 'deploy-settings-request',
+      ok: false,
+      error: 'preparation-failed'
+    })
+    expect(errorListener).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: 'silent',
+        message: SAFE_DEPLOYMENT_PREPARATION_FAILED_MESSAGE
+      })
+    )
+
+    unsubscribe()
+  })
+
+  test('does not add a second deployment call to a deployment an app transaction queued meanwhile', async () => {
+    const { accountsCtrl, controller } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const account = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
+    account.safeCreation!.setupData = '0x1234'
+    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+    const deploymentCall = {
+      to: '0x1234567890123456789012345678901234567890',
+      value: 0n,
+      data: '0x1234' as Hex
+    }
+    let releaseDeploymentCall!: () => void
+    let signalDeploymentCallStarted!: () => void
+    const deploymentCallGate = new Promise<void>((resolve) => {
+      releaseDeploymentCall = resolve
+    })
+    const deploymentCallStarted = new Promise<void>((resolve) => {
+      signalDeploymentCallStarted = resolve
+    })
+    jest
+      .spyOn(safeLib, 'getSafeDeploymentCall')
+      .mockImplementationOnce(async () => {
+        signalDeploymentCallStarted()
+        await deploymentCallGate
+        return deploymentCall
+      })
+      .mockResolvedValue(deploymentCall)
+
+    const deploySettingsRequest = controller.buildSafeDeploymentRequest(accountAddr, chainId)
+    await deploymentCallStarted
+
+    // A transaction the wallet builds while Deploy settings is still preparing queues its own
+    // deployment of the same Safe on the same network
+    await controller.build({
+      type: 'calls',
+      params: {
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, data: '0x', value: 0n }],
+          meta: { accountAddr, chainId }
+        }
+      }
+    })
+    releaseDeploymentCall()
+    await deploySettingsRequest
+
+    const deploymentRequests = controller.userRequests.filter(
+      (request): request is CallsUserRequest =>
+        request.kind === 'calls' && !!request.meta.isSafeDeploy
+    )
+    expect(deploymentRequests).toHaveLength(1)
+    // Deploying the same Safe twice in one transaction makes the whole transaction fail
+    expect(deploymentRequests[0]!.signAccountOp.accountOp.calls).toHaveLength(1)
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
+
+  test('does not add a second deployment call when both wait for the same account switch', async () => {
+    const { accountsCtrl, controller, selectedAccountCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const safeAccount = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
+    safeAccount.safeCreation!.setupData = '0x1234'
+    await selectedAccountCtrl.setAccount(
+      accountsCtrl.accounts.find((candidate) => candidate.addr !== accountAddr)!
+    )
+    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+    jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue({
+      to: '0x1234567890123456789012345678901234567890',
+      value: 0n,
+      data: '0x1234'
+    })
+
+    // A transaction for the Safe is already waiting for the switch, so once the user switches
+    // it's added first and queues its own deployment of the Safe
+    await controller.build({
+      type: 'calls',
+      params: {
+        allowAccountSwitch: true,
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, data: '0x', value: 0n }],
+          meta: { accountAddr, chainId }
+        }
+      }
+    })
+    await controller.buildSafeDeploymentRequest(accountAddr, chainId)
+    expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(2)
+
+    await selectedAccountCtrl.setAccount(safeAccount)
+    const switchAccountRequests = controller.userRequests.filter(
+      (request) => request.kind === 'switchAccount'
+    )
+    for (const switchAccountRequest of switchAccountRequests) {
+      await controller.resolveUserRequest(null, switchAccountRequest.id)
+    }
+
+    expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+    const deploymentRequests = controller.userRequests.filter(
+      (request): request is CallsUserRequest =>
+        request.kind === 'calls' && !!request.meta.isSafeDeploy
+    )
+    expect(deploymentRequests).toHaveLength(1)
+    // Deploying the same Safe twice in one transaction makes the whole transaction fail
+    expect(deploymentRequests[0]!.signAccountOp.accountOp.calls).toHaveLength(1)
+    expect(
+      controller.userRequests.filter(
+        (request) => request.kind === 'calls' && !request.meta.isSafeDeploy
+      )
+    ).toHaveLength(1)
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
+
   test('coalesces concurrent Safe deployment requests for the same account and network', async () => {
     const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -1480,12 +1778,11 @@ describe('RequestsController ', () => {
     const stateFetchStarted = new Promise<void>((resolve) => {
       signalStateFetchStarted = resolve
     })
-    const forceFetchPendingStateSpy = jest
-      .spyOn(accountsCtrl, 'forceFetchPendingState')
+    const updateAccountStateSpy = jest
+      .spyOn(accountsCtrl, 'updateAccountState')
       .mockImplementation(async () => {
         signalStateFetchStarted()
         await stateFetchGate
-        return accountState
       })
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
@@ -1508,7 +1805,7 @@ describe('RequestsController ', () => {
     )
 
     await stateFetchStarted
-    expect(forceFetchPendingStateSpy).toHaveBeenCalledTimes(1)
+    expect(updateAccountStateSpy).toHaveBeenCalledTimes(1)
     releaseStateFetch()
 
     await expect(Promise.all([firstRequest, secondRequest])).resolves.toEqual([true, true])
@@ -1539,7 +1836,7 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest
       .spyOn(safeLib, 'getSafeDeploymentCall')
       .mockResolvedValueOnce(null)
@@ -1575,7 +1872,7 @@ describe('RequestsController ', () => {
     expect(sendUiMessageSpy).toHaveBeenCalledWith({
       requestId: 'deploy-settings-request',
       ok: false,
-      error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+      error: 'unavailable'
     })
   })
 
@@ -1587,7 +1884,7 @@ describe('RequestsController ', () => {
     account.safeCreation!.setupData = '0x1234'
     const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue(null)
     const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
 
@@ -1599,7 +1896,7 @@ describe('RequestsController ', () => {
     expect(sendUiMessageSpy).toHaveBeenCalledWith({
       requestId: 'deploy-settings-request',
       ok: false,
-      error: SAFE_DEPLOYMENT_UNAVAILABLE_MESSAGE
+      error: 'unavailable'
     })
   })
 
@@ -1607,8 +1904,7 @@ describe('RequestsController ', () => {
     const { accountsCtrl, controller, uiCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const chainId = 1n
-    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
     const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
 
@@ -1624,6 +1920,132 @@ describe('RequestsController ', () => {
       res: { alreadyDeployed: true }
     })
   })
+
+  test('asks to switch to a Safe that is not selected before building its deployment from Deploy settings', async () => {
+    const { accountsCtrl, controller, selectedAccountCtrl, uiCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    const safeAccount = accountsCtrl.accounts.find((candidate) => candidate.addr === accountAddr)!
+    safeAccount.safeCreation!.setupData = '0x1234'
+    await selectedAccountCtrl.setAccount(
+      accountsCtrl.accounts.find((candidate) => candidate.addr !== accountAddr)!
+    )
+    const accountState = accountsCtrl.accountStates[accountAddr]![chainId.toString()]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+    const getSafeDeploymentCallSpy = jest
+      .spyOn(safeLib, 'getSafeDeploymentCall')
+      .mockResolvedValue({
+        to: '0x1234567890123456789012345678901234567890',
+        value: 0n,
+        data: '0x1234'
+      })
+    const sendUiMessageSpy = jest.spyOn(uiCtrl.message, 'sendUiMessage')
+
+    await expect(
+      controller.buildSafeDeploymentRequest(accountAddr, chainId, 'deploy-settings-request')
+    ).resolves.toBe(true)
+
+    expect(controller.userRequests).toHaveLength(1)
+    const switchAccountRequest = controller.userRequests[0]
+    expect(switchAccountRequest?.kind).toBe('switchAccount')
+    expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(1)
+    const waitingDeployment = controller.userRequestsWaitingAccountSwitch[0]
+    expect(waitingDeployment?.kind).toBe('calls')
+    expect(waitingDeployment?.meta).toMatchObject({ accountAddr, chainId, isSafeDeploy: true })
+    // Kept unbuilt while waiting, so nothing is estimated for an account the user isn't on
+    expect(waitingDeployment).not.toHaveProperty('signAccountOp')
+    expect(sendUiMessageSpy).toHaveBeenCalledWith({
+      requestId: 'deploy-settings-request',
+      ok: true,
+      res: { alreadyDeployed: false }
+    })
+
+    // Asking again reuses the waiting deployment instead of queueing a second switch, and
+    // brings the switch request back in case the user closed the request window
+    const openRequestWindowSpy = jest.spyOn(controller, 'openRequestWindow')
+    await expect(controller.buildSafeDeploymentRequest(accountAddr, chainId)).resolves.toBe(true)
+
+    expect(controller.userRequests).toHaveLength(1)
+    expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(1)
+    expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
+    expect(controller.currentUserRequest).toBe(switchAccountRequest)
+    expect(openRequestWindowSpy).toHaveBeenCalledTimes(1)
+
+    await selectedAccountCtrl.setAccount(safeAccount)
+    await controller.resolveUserRequest(null, switchAccountRequest!.id)
+
+    expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+    expect(controller.userRequests).toHaveLength(1)
+    const deploymentRequest = controller.userRequests[0]
+    if (deploymentRequest?.kind !== 'calls') throw new Error('Expected a calls request')
+    expect(deploymentRequest.meta).toMatchObject({ accountAddr, chainId, isSafeDeploy: true })
+    expect(deploymentRequest.signAccountOp.accountOp.calls).toHaveLength(1)
+
+    deploymentRequest.signAccountOp.destroy()
+  })
+
+  test('queues a Safe deployment before a transaction the wallet builds on an undeployed network', async () => {
+    const { accountsCtrl, controller } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const account = accountsCtrl.accounts.find(({ addr }) => addr === accountAddr)!
+    // Complete creation data, so the Safe can be deployed without recovering anything first
+    account.safeCreation = { ...account.safeCreation!, setupData: '0x1234' }
+    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
+    accountState.isDeployed = false
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
+    const getSafeDeploymentCallSpy = jest
+      .spyOn(safeLib, 'getSafeDeploymentCall')
+      .mockResolvedValue({
+        to: '0x1234567890123456789012345678901234567890',
+        value: 0n,
+        data: '0x1234'
+      })
+
+    await controller.build({
+      type: 'calls',
+      params: {
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, data: '0x', value: 0n }],
+          meta: { accountAddr, chainId: 1n }
+        }
+      }
+    })
+
+    expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
+    const [deploymentRequest, transactionRequest] = controller.userRequests
+    if (deploymentRequest?.kind !== 'calls' || transactionRequest?.kind !== 'calls') {
+      throw new Error('Expected two calls requests')
+    }
+    expect(controller.userRequests).toHaveLength(2)
+    expect(deploymentRequest.meta.isSafeDeploy).toBe(true)
+    expect(transactionRequest.meta.isSafeDeploy).toBeUndefined()
+    expect(controller.currentUserRequest).toBe(deploymentRequest)
+
+    // a second transaction joins the waiting batch and reuses the pending deployment
+    await controller.build({
+      type: 'calls',
+      params: {
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, data: '0x', value: 0n }],
+          meta: { accountAddr, chainId: 1n }
+        }
+      }
+    })
+
+    expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
+    expect(
+      controller.userRequests.filter((r) => r.kind === 'calls' && r.meta.isSafeDeploy)
+    ).toHaveLength(1)
+    expect(controller.currentUserRequest).toBe(deploymentRequest)
+
+    await controller.rejectUserRequests('User rejected the Safe deployment.', [
+      deploymentRequest.id
+    ])
+
+    expect(controller.userRequests).toEqual([])
+  })
+
   test('rejects only the safs of the specified Safe on the specified chain', async () => {
     const { controller, getCallsRequest, portfolioCtrl } = await prepareTest(false, true)
     const safeAccountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
@@ -1743,7 +2165,7 @@ describe('RequestsController ', () => {
 
         await controller.handleSafeDeployStatusUpdate(makeSafeDeployOp(status))
 
-        expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+        expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], true)
         expect(rejectSpy).not.toHaveBeenCalled()
       }
     )
@@ -1874,7 +2296,7 @@ describe('RequestsController ', () => {
       const accountState = accountsCtrl.accountStates[accountAddr]![1]!
       accountState.isSmarterEoa = true
       accountState.delegatedContract = '0x1234567890123456789012345678901234567890'
-      jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
       const findDeployDataSpy = jest.spyOn(safeLib, 'findDeployData')
       const getSafeDeploymentCallSpy = jest.spyOn(safeLib, 'getSafeDeploymentCall')
 
@@ -1911,7 +2333,7 @@ describe('RequestsController ', () => {
 
     await controller.resolveUserRequest({}, benzinRequest.id)
 
-    expect(updateAccountStateSpy).toHaveBeenCalledWith(accountAddr, 'latest', [chainId])
+    expect(updateAccountStateSpy).toHaveBeenCalledWith(accountAddr, 'latest', [chainId], true)
     expect(controller.userRequests).toEqual([transactionRequest])
     expect(controller.currentUserRequest).toBe(transactionRequest)
     expect(resumeSpy).toHaveBeenCalledTimes(1)
@@ -1984,8 +2406,7 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
 
     const recoveredSafeCreation = {
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
@@ -2050,8 +2471,7 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'findDeployData').mockResolvedValue({
       factoryAddr: '0x1234567890123456789012345678901234567890' as Hex,
       singleton: '0x2345678901234567890123456789012345678901' as Hex,
@@ -2107,8 +2527,7 @@ describe('RequestsController ', () => {
       state.isDeployed = false
     })
     accountsCtrl.accountStates[accountAddr]![10]!.isDeployed = true
-    const accountState = accountsCtrl.accountStates[accountAddr]![1]!
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     const incompleteSafeCreation = {
       factoryAddr: '0x' as Hex,
       singleton: '0x' as Hex,
@@ -2163,7 +2582,7 @@ describe('RequestsController ', () => {
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
     const accountState = accountsCtrl.accountStates[accountAddr]![1]!
     accountState.isDeployed = false
-    jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
+    jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
     jest.spyOn(safeLib, 'getSafeDeploymentCall').mockResolvedValue(null)
     const reject = jest.fn()
 
@@ -2259,7 +2678,6 @@ describe('RequestsController ', () => {
       account.safeCreation = { ...account.safeCreation!, setupData: '0x1234' }
       const accountState = accountsCtrl.accountStates[safeAccountAddr]![1]!
       accountState.isDeployed = false
-      jest.spyOn(accountsCtrl, 'forceFetchPendingState').mockResolvedValue(accountState)
       // the onchain check confirms the Safe is still not deployed
       const updateAccountStateSpy = jest
         .spyOn(accountsCtrl, 'updateAccountState')
@@ -2284,7 +2702,7 @@ describe('RequestsController ', () => {
 
       await controller.addUserRequests([messageRequest])
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], false)
       expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
       const [deploymentRequest, addedMessageRequest] = controller.userRequests
       if (deploymentRequest?.kind !== 'calls') throw new Error('Expected a deployment request')
@@ -2370,27 +2788,6 @@ describe('RequestsController ', () => {
       expect(controller.userRequests).toEqual([])
     })
 
-    test('adds a single Safe deployment for messages added together', async () => {
-      const { controller, getSafeDeploymentCallSpy } = await prepareUndeployedSafe()
-      const plainMessageRequest = getMessageRequest({ id: 'safe-message' })
-      const typedMessageRequest = getTypedMessageRequest({ id: 'safe-typed-message' })
-
-      await controller.addUserRequests([plainMessageRequest, typedMessageRequest])
-
-      expect(getSafeDeploymentCallSpy).toHaveBeenCalledTimes(1)
-      const safeDeployRequests = getSafeDeployRequests(controller.userRequests)
-      expect(safeDeployRequests).toHaveLength(1)
-      expect(controller.userRequests).toEqual([
-        safeDeployRequests[0],
-        plainMessageRequest,
-        typedMessageRequest
-      ])
-
-      await controller.rejectUserRequests('User rejected the Safe deployment.', [
-        safeDeployRequests[0]!.id
-      ])
-    })
-
     test('does not deploy a Safe that is already deployed on the network of the message', async () => {
       const { accountState, controller, getSafeDeploymentCallSpy, updateAccountStateSpy } =
         await prepareUndeployedSafe()
@@ -2415,7 +2812,7 @@ describe('RequestsController ', () => {
 
       await controller.addUserRequests([messageRequest])
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], false)
       expect(getSafeDeploymentCallSpy).not.toHaveBeenCalled()
       expect(controller.userRequests).toEqual([messageRequest])
     })
@@ -2545,7 +2942,7 @@ describe('RequestsController ', () => {
 
       await controller.resolveUserRequest({}, benzinRequest.id)
 
-      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n])
+      expect(updateAccountStateSpy).toHaveBeenCalledWith(safeAccountAddr, 'latest', [1n], true)
       expect(controller.userRequests).toEqual([benzinRequest, messageRequest])
       expect(controller.currentUserRequest).toBe(benzinRequest)
     })
@@ -2689,40 +3086,73 @@ describe('RequestsController ', () => {
     expect(destroySpy).toHaveBeenCalledTimes(1)
   })
 
-  test('rejecting an account switch removes the pending request and its simulation', async () => {
-    const { controller, getCallsRequest, portfolioCtrl, selectedAccountCtrl } = await prepareTest()
-    const req = await getCallsRequest({
-      addr: accounts[0]!.addr,
-      chainId: 1n
-    })
-    const rejectMock = jest.fn()
-    req.dappPromises = [
-      {
-        id: 'account-switch-request',
-        resolve: jest.fn(),
-        reject: rejectMock,
-        session: MOCK_SESSION,
-        meta: {}
-      }
+  describe('wallet-built calls for an account that is not selected', () => {
+    const OTHER_ACCOUNT_ADDR = accounts[0]!.addr
+    const TRANSFER_CALLS = [
+      { to: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', data: '0x', value: 1n }
     ]
-    const destroySpy = jest.spyOn(req.signAccountOp, 'destroy')
-    const overrideSimulationResultsSpy = jest.spyOn(portfolioCtrl, 'overrideSimulationResults')
 
-    await controller.addUserRequests([req], { allowAccountSwitch: true })
+    const buildCallsForOtherAccount = (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller']
+    ) =>
+      controller.build({
+        type: 'calls',
+        params: {
+          allowAccountSwitch: true,
+          userRequestParams: {
+            calls: TRANSFER_CALLS,
+            meta: { accountAddr: OTHER_ACCOUNT_ADDR, chainId: 1n }
+          }
+        }
+      })
 
-    const switchAccountRequest = controller.userRequests[0]!
-    expect(switchAccountRequest.kind).toBe('switchAccount')
-    expect(controller.userRequestsWaitingAccountSwitch).toStrictEqual([req])
+    test('refusing the switch leaves nothing behind', async () => {
+      const { controller, selectedAccountCtrl, accountsCtrl } = await prepareTest()
 
-    await controller.rejectUserRequests('User rejected', [switchAccountRequest.id])
-    await selectedAccountCtrl.setAccount(accounts[0]!)
+      await buildCallsForOtherAccount(controller)
 
-    expect(rejectMock).toHaveBeenCalledTimes(1)
-    expect(overrideSimulationResultsSpy).toHaveBeenCalledWith(req.signAccountOp.accountOp)
-    expect(destroySpy).toHaveBeenCalledTimes(1)
-    expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
-    expect(controller.userRequests).toHaveLength(0)
+      const [switchAccountRequest] = controller.userRequests
+      expect(controller.userRequests).toHaveLength(1)
+      expect(switchAccountRequest!.kind).toBe('switchAccount')
+      // Kept unbuilt while waiting, so nothing is estimated for an account the user isn't on
+      expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(1)
+      expect(controller.userRequestsWaitingAccountSwitch[0]).not.toHaveProperty('signAccountOp')
+
+      await controller.rejectUserRequests('User rejected', [switchAccountRequest!.id])
+      await selectedAccountCtrl.setAccount(
+        accountsCtrl.accounts.find((a) => a.addr === OTHER_ACCOUNT_ADDR)!
+      )
+
+      expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+      expect(controller.userRequests).toHaveLength(0)
+    })
+
+    test('joins the batch the other account already has once the user switches', async () => {
+      const { controller, selectedAccountCtrl, accountsCtrl, getCallsRequest } = await prepareTest()
+      const existingBatch = await getCallsRequest({ addr: OTHER_ACCOUNT_ADDR, chainId: 1n })
+      await controller.addUserRequests([existingBatch], { executionType: 'queue' })
+
+      await buildCallsForOtherAccount(controller)
+
+      // Asked first, not slipped into a batch the user isn't looking at
+      expect(existingBatch.signAccountOp.accountOp.calls).toHaveLength(1)
+      const switchAccountRequest = controller.userRequests.find((r) => r.kind === 'switchAccount')
+      expect(switchAccountRequest).toBeDefined()
+
+      await selectedAccountCtrl.setAccount(
+        accountsCtrl.accounts.find((a) => a.addr === OTHER_ACCOUNT_ADDR)!
+      )
+      await controller.resolveUserRequest(null, switchAccountRequest!.id)
+
+      const otherAccountBatches = controller.userRequests.filter((r) => r.kind === 'calls')
+      expect(otherAccountBatches).toEqual([existingBatch])
+      expect(existingBatch.signAccountOp.accountOp.calls).toHaveLength(2)
+      expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+
+      existingBatch.signAccountOp.destroy()
+    })
   })
+
   test('add multiple user requests', async () => {
     const { controller, getCallsRequest } = await prepareTest()
     const SIGN_ACCOUNT_OP_REQUEST = await getCallsRequest({
@@ -2874,6 +3304,76 @@ describe('RequestsController ', () => {
     expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
     expect(controller.requestWindow.windowProps).toBe(null)
   })
+  test('should ask whether the panel is open in the window of the app that made the request', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    const isOpen = jest.fn(() => true)
+    uiCtrl.panel = { isOpen }
+
+    await controller.addUserRequests([getDappConnectRequestFromWindow(APP_WINDOW_ID)])
+
+    expect(isOpen).toHaveBeenCalledWith(APP_WINDOW_ID)
+  })
+  test('should open a request window when the panel is open only in another window', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: (windowId) => windowId === OTHER_WINDOW_ID }
+    const request = getDappConnectRequestFromWindow(APP_WINDOW_ID)
+
+    await controller.addUserRequests([request])
+
+    expect(controller.currentUserRequest).toBe(request)
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+  })
+  test('should show the request in the panel open in the window of the app', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    uiCtrl.panel = { isOpen: (windowId) => windowId === APP_WINDOW_ID }
+    const request = getDappConnectRequestFromWindow(APP_WINDOW_ID)
+
+    await controller.addUserRequests([request])
+
+    expect(controller.currentUserRequest).toBe(request)
+    expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('should ask about any window when the request has no app window', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+    const isOpen = jest.fn(() => true)
+    uiCtrl.panel = { isOpen }
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+
+    expect(isOpen).toHaveBeenCalledWith(undefined)
+    expect(controller.requestWindow.windowProps).toBe(null)
+  })
+  test('should move the request from its window into the panel once the panel is open', async () => {
+    const { controller, uiCtrl, getWindowId } = await prepareTest()
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+
+    uiCtrl.panel = { isOpen: () => true }
+    const closeRequestView = jest.spyOn(uiCtrl.requestView, 'close')
+    const focusRequestView = jest.spyOn(uiCtrl.requestView, 'focus')
+
+    await controller.setCurrentUserRequestById(DAPP_CONNECT_REQUEST.id)
+
+    expect(closeRequestView).toHaveBeenCalledWith(getWindowId())
+    expect(focusRequestView).not.toHaveBeenCalled()
+    expect(controller.requestWindow.windowProps).toBe(null)
+    expect(controller.currentUserRequest).toBe(DAPP_CONNECT_REQUEST)
+    expect(controller.userRequests).toContain(DAPP_CONNECT_REQUEST)
+  })
+  test('should keep the request window that must not be closed while the panel is open', async () => {
+    const { controller, uiCtrl } = await prepareTest()
+
+    await controller.addUserRequests([DAPP_CONNECT_REQUEST])
+
+    uiCtrl.panel = { isOpen: () => true }
+    const closeRequestView = jest.spyOn(uiCtrl.requestView, 'close')
+
+    await controller.focusRequestWindow({ reopenIfNeeded: false })
+
+    expect(closeRequestView).not.toHaveBeenCalled()
+    expect(controller.requestWindow.windowProps).not.toBe(null)
+  })
   test('should reject the active request on close when there is no request window', async () => {
     const { controller, uiCtrl } = await prepareTest()
     uiCtrl.panel = { isOpen: () => true }
@@ -2953,7 +3453,7 @@ describe('RequestsController ', () => {
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
       dappPromise: { id: string; reject: (err: any) => void },
       session = MOCK_SESSION,
-      callOverrides: { data?: string } = {}
+      callOverrides: { data?: string; from?: string; to?: string } = {}
     ) =>
       controller.build({
         type: 'dappRequest',
@@ -3269,15 +3769,7 @@ describe('RequestsController ', () => {
 
       // No cached state to fall back on and nothing to fetch, so this one cannot be prepared
       delete accountsCtrl.accountStates[ACCOUNT_ADDR]!['10']
-      jest
-        .spyOn(accountsCtrl, 'forceFetchPendingState')
-        .mockImplementation(async (_addr: string, chainId: bigint) =>
-          // The real method reads the state from a map, so it resolves with `undefined` when
-          // nothing was fetched, even though its signature doesn't say so
-          chainId === 10n
-            ? (undefined as unknown as AccountOnchainState)
-            : accountsCtrl.accountStates[ACCOUNT_ADDR]![chainId.toString()]!
-        )
+      jest.spyOn(accountsCtrl, 'updateAccountState').mockResolvedValue(undefined)
 
       await controller.addUserRequests([unfetchable, fine])
 
@@ -3289,6 +3781,350 @@ describe('RequestsController ', () => {
 
       unfetchable.signAccountOp.destroy()
       fine.signAccountOp.destroy()
+    })
+
+    test('an empty transaction to the account itself joins the batch it already has', async () => {
+      const { controller } = await prepareTest(true)
+      const [transfer, emptyToSelf] = makeRejectMocks(2) as [
+        { id: string; reject: jest.Mock },
+        { id: string; reject: jest.Mock }
+      ]
+
+      await sendTransaction(controller, transfer)
+      const [existingBatch] = controller.userRequests.filter(
+        (r) => r.kind === 'calls'
+      ) as CallsUserRequest[]
+      const destroyExistingBatch = jest.spyOn(existingBatch!.signAccountOp, 'destroy')
+
+      // Looks like a Safe cancellation, which only Safe accounts keep apart from the batch
+      await sendTransaction(controller, emptyToSelf, MOCK_SESSION, { to: FROM })
+
+      const callsRequests = controller.userRequests.filter((r) => r.kind === 'calls')
+      expect(callsRequests).toEqual([existingBatch])
+      expect(existingBatch!.signAccountOp.accountOp.calls).toHaveLength(2)
+      expect(existingBatch!.dappPromises.map((p) => p.id)).toEqual([transfer.id, emptyToSelf.id])
+      expect(destroyExistingBatch).not.toHaveBeenCalled()
+
+      destroyExistingBatch.mockRestore()
+      existingBatch!.signAccountOp.destroy()
+    })
+
+    const OTHER_ACCOUNT_ADDR = accounts[0]!.addr
+
+    type TestContext = Awaited<ReturnType<typeof prepareTest>>
+
+    const sendTransactionFromOtherAccount = (
+      controller: TestContext['controller'],
+      dappPromise: { id: string; reject: (err: any) => void }
+    ) => sendTransaction(controller, dappPromise, MOCK_SESSION, { from: OTHER_ACCOUNT_ADDR })
+
+    const selectAccount = ({ accountsCtrl, selectedAccountCtrl }: TestContext, addr: string) =>
+      selectedAccountCtrl.setAccount(accountsCtrl.accounts.find((a) => a.addr === addr)!)
+
+    const getSwitchAccountRequests = (controller: TestContext['controller']) =>
+      controller.userRequests.filter((r) => r.kind === 'switchAccount')
+
+    /** What the switch screen does once the user agrees to switch. */
+    const acceptAccountSwitch = async (context: TestContext) => {
+      const [switchAccountRequest] = getSwitchAccountRequests(context.controller)
+      expect(switchAccountRequest).toBeDefined()
+
+      await selectAccount(context, OTHER_ACCOUNT_ADDR)
+      await context.controller.resolveUserRequest(null, switchAccountRequest!.id)
+    }
+
+    describe('transactions for an account that is not selected', () => {
+      const getOtherAccountBatches = (controller: TestContext['controller']) =>
+        controller.userRequests.filter(
+          (r) => r.kind === 'calls' && r.meta.accountAddr === OTHER_ACCOUNT_ADDR
+        ) as CallsUserRequest[]
+
+      /** Leaves the other account with a batch of one transaction and goes back to the selected one. */
+      const seedOtherAccountBatch = async (
+        context: TestContext,
+        dappPromise: { id: string; reject: (err: any) => void }
+      ) => {
+        await selectAccount(context, OTHER_ACCOUNT_ADDR)
+        await sendTransactionFromOtherAccount(context.controller, dappPromise)
+        await selectAccount(context, ACCOUNT_ADDR)
+
+        const [seededBatch] = getOtherAccountBatches(context.controller)
+        expect(seededBatch?.signAccountOp.accountOp.calls).toHaveLength(1)
+
+        return seededBatch!
+      }
+
+      test('asks to switch accounts before adding to a batch the other account already has', async () => {
+        const context = await prepareTest(true)
+        const { controller } = context
+        const [seeded, incoming] = makeRejectMocks(2) as [
+          { id: string; reject: jest.Mock },
+          { id: string; reject: jest.Mock }
+        ]
+        const seededBatch = await seedOtherAccountBatch(context, seeded)
+
+        await sendTransactionFromOtherAccount(controller, incoming)
+
+        const switchAccountRequests = getSwitchAccountRequests(controller)
+        expect(switchAccountRequests).toHaveLength(1)
+        expect(switchAccountRequests[0]!.meta.switchToAccountAddr).toBe(OTHER_ACCOUNT_ADDR)
+        expect(controller.currentUserRequest?.id).toBe(switchAccountRequests[0]!.id)
+
+        // Nothing joins the batch of an account the user isn't looking at
+        expect(seededBatch.signAccountOp.accountOp.calls).toHaveLength(1)
+        expect(seededBatch.dappPromises.map((p) => p.id)).toEqual([seeded.id])
+        expect(incoming.reject).not.toHaveBeenCalled()
+
+        seededBatch.signAccountOp.destroy()
+      })
+
+      test('adds the transaction to the batch the other account already has once the user switches', async () => {
+        const context = await prepareTest(true)
+        const { controller } = context
+        const [seeded, incoming] = makeRejectMocks(2) as [
+          { id: string; reject: jest.Mock },
+          { id: string; reject: jest.Mock }
+        ]
+        const seededBatch = await seedOtherAccountBatch(context, seeded)
+
+        await sendTransactionFromOtherAccount(controller, incoming)
+        await acceptAccountSwitch(context)
+
+        const otherAccountBatches = getOtherAccountBatches(controller)
+        expect(otherAccountBatches).toHaveLength(1)
+        // The batch is added to, not replaced - replacing it would drop the calls it already had
+        expect(otherAccountBatches[0]).toBe(seededBatch)
+        expect(seededBatch.signAccountOp.accountOp.calls).toHaveLength(2)
+        expect(seededBatch.dappPromises.map((p) => p.id)).toEqual([seeded.id, incoming.id])
+        expect(getSwitchAccountRequests(controller)).toHaveLength(0)
+        expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+        expect(seeded.reject).not.toHaveBeenCalled()
+        expect(incoming.reject).not.toHaveBeenCalled()
+
+        seededBatch.signAccountOp.destroy()
+      })
+
+      test('refusing the switch turns away only the new transaction', async () => {
+        const context = await prepareTest(true)
+        const { controller } = context
+        const [seeded, incoming] = makeRejectMocks(2) as [
+          { id: string; reject: jest.Mock },
+          { id: string; reject: jest.Mock }
+        ]
+        const seededBatch = await seedOtherAccountBatch(context, seeded)
+        const destroySeededBatch = jest.spyOn(seededBatch.signAccountOp, 'destroy')
+
+        await sendTransactionFromOtherAccount(controller, incoming)
+        await controller.rejectUserRequests('User rejected', [
+          getSwitchAccountRequests(controller)[0]!.id
+        ])
+
+        expect(incoming.reject).toHaveBeenCalledTimes(1)
+        expect(seeded.reject).not.toHaveBeenCalled()
+        expect(destroySeededBatch).not.toHaveBeenCalled()
+        expect(getOtherAccountBatches(controller)).toEqual([seededBatch])
+        expect(seededBatch.signAccountOp.accountOp.calls).toHaveLength(1)
+        expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+
+        destroySeededBatch.mockRestore()
+        seededBatch.signAccountOp.destroy()
+      })
+
+      test('transactions sent one after another end up in one batch once the user switches', async () => {
+        const context = await prepareTest(true)
+        const { controller } = context
+        const [first, second] = makeRejectMocks(2) as [
+          { id: string; reject: jest.Mock },
+          { id: string; reject: jest.Mock }
+        ]
+
+        await sendTransactionFromOtherAccount(controller, first)
+        await sendTransactionFromOtherAccount(controller, second)
+        await acceptAccountSwitch(context)
+
+        const otherAccountBatches = getOtherAccountBatches(controller)
+        expect(otherAccountBatches).toHaveLength(1)
+        expect(otherAccountBatches[0]!.signAccountOp.accountOp.calls).toHaveLength(2)
+        expect(otherAccountBatches[0]!.dappPromises.map((p) => p.id)).toEqual([first.id, second.id])
+        expect(getSwitchAccountRequests(controller)).toHaveLength(0)
+        expect(first.reject).not.toHaveBeenCalled()
+        expect(second.reject).not.toHaveBeenCalled()
+
+        otherAccountBatches[0]!.signAccountOp.destroy()
+      })
+
+      test('prepares the transaction with the onchain state of the account it is from', async () => {
+        const context = await prepareTest(true)
+        const getOrFetchAccountOnChainState = jest.spyOn(
+          context.accountsCtrl,
+          'getOrFetchAccountOnChainState'
+        )
+
+        await sendTransactionFromOtherAccount(context.controller, makeRejectMocks(1)[0]!)
+
+        expect(getOrFetchAccountOnChainState.mock.calls.map(([addr]) => addr)).toEqual([
+          OTHER_ACCOUNT_ADDR
+        ])
+      })
+
+      test('turns away a transaction from an account that is not in the wallet', async () => {
+        const { controller } = await prepareTest(true)
+        const [unknownAccountPromise] = makeRejectMocks(1)
+
+        await expect(
+          sendTransaction(controller, unknownAccountPromise!, MOCK_SESSION, {
+            from: Wallet.createRandom().address
+          })
+        ).rejects.toMatchObject({ code: errorCodes.provider.unauthorized })
+
+        expect(controller.userRequests).toHaveLength(0)
+        expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+      })
+
+      test('answers an app connected only to the selected account as if the other one is not in the wallet', async () => {
+        const { controller, dappsCtrl } = await prepareTest(true)
+        jest.spyOn(dappsCtrl, 'getDapp').mockReturnValue({
+          ...TEST_DAPP,
+          accountPreferences: {
+            enabled: true,
+            selectedAccount: ACCOUNT_ADDR,
+            accounts: [ACCOUNT_ADDR]
+          }
+        })
+        const [transaction, message] = makeRejectMocks(2)
+
+        await expect(
+          sendTransactionFromOtherAccount(controller, transaction!)
+        ).rejects.toMatchObject({ code: errorCodes.provider.unauthorized })
+        await expect(
+          controller.build({
+            type: 'dappRequest',
+            params: {
+              request: {
+                method: 'personal_sign',
+                params: ['0x48656c6c6f', OTHER_ACCOUNT_ADDR],
+                session: MOCK_SESSION
+              },
+              dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...message! }
+            }
+          })
+        ).rejects.toMatchObject({ code: errorCodes.provider.unauthorized })
+
+        expect(controller.userRequests).toHaveLength(0)
+        expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+      })
+
+      test('turns away too many transactions for another account before asking to switch', async () => {
+        const { controller } = await prepareTest(true)
+        const reject = jest.fn()
+
+        await controller.build({
+          type: 'dappRequest',
+          params: {
+            request: {
+              method: 'wallet_sendCalls',
+              params: [
+                {
+                  from: OTHER_ACCOUNT_ADDR,
+                  chainId: '0x1',
+                  calls: Array.from({ length: MAX_DAPP_CALLS_PER_REQUEST + 1 }, () => ({
+                    to: TO,
+                    value: '0x0',
+                    data: '0x'
+                  }))
+                }
+              ],
+              session: MOCK_SESSION
+            },
+            dappPromise: { id: 'too-many', resolve: () => {}, reject, session: MOCK_SESSION }
+          }
+        })
+
+        expect(reject).toHaveBeenCalledWith(
+          expect.objectContaining({ code: errorCodes.rpc.limitExceeded })
+        )
+        expect(getSwitchAccountRequests(controller)).toHaveLength(0)
+      })
+    })
+
+    describe('the request window when the user switches accounts', () => {
+      const signMessageFromOtherAccount = (
+        controller: TestContext['controller'],
+        dappPromise: { id: string; reject: (err: any) => void }
+      ) =>
+        controller.build({
+          type: 'dappRequest',
+          params: {
+            request: {
+              method: 'personal_sign',
+              params: ['0x48656c6c6f', OTHER_ACCOUNT_ADDR],
+              session: MOCK_SESSION
+            },
+            dappPromise: { resolve: () => {}, session: MOCK_SESSION, ...dappPromise }
+          }
+        })
+
+      test('shows the message in the same window once the user switches', async () => {
+        const context = await prepareTest(true)
+        const { controller, uiCtrl } = context
+        const [message] = makeRejectMocks(1) as [{ id: string; reject: jest.Mock }]
+        await signMessageFromOtherAccount(controller, message)
+        const switchWindowId = controller.requestWindow.windowProps?.id
+        expect(switchWindowId).toBeDefined()
+        const sideEffects = watchSideEffects(uiCtrl)
+
+        await acceptAccountSwitch(context)
+
+        expect(message.reject).not.toHaveBeenCalled()
+        expect(controller.currentUserRequest?.kind).toBe('message')
+        expect(controller.currentUserRequest?.dappPromises.map((p) => p.id)).toEqual([message.id])
+        // Going through a closed window on the way is what refused the message
+        expect(sideEffects.closeCount()).toBe(0)
+        expect(sideEffects.openCount()).toBe(0)
+        expect(controller.requestWindow.windowProps?.id).toBe(switchWindowId)
+      })
+
+      test('shows the transaction in the same window once the user switches', async () => {
+        const context = await prepareTest(true)
+        const { controller, uiCtrl } = context
+        const [transaction] = makeRejectMocks(1) as [{ id: string; reject: jest.Mock }]
+        await sendTransactionFromOtherAccount(controller, transaction)
+        const switchWindowId = controller.requestWindow.windowProps?.id
+        expect(switchWindowId).toBeDefined()
+        const sideEffects = watchSideEffects(uiCtrl)
+
+        await acceptAccountSwitch(context)
+
+        const batch = controller.currentUserRequest as CallsUserRequest
+        expect(transaction.reject).not.toHaveBeenCalled()
+        expect(batch.kind).toBe('calls')
+        expect(batch.meta.accountAddr).toBe(OTHER_ACCOUNT_ADDR)
+        expect(batch.dappPromises.map((p) => p.id)).toEqual([transaction.id])
+        expect(sideEffects.closeCount()).toBe(0)
+        expect(sideEffects.openCount()).toBe(0)
+        expect(controller.requestWindow.windowProps?.id).toBe(switchWindowId)
+
+        batch.signAccountOp.destroy()
+      })
+
+      test('refusing the switch closes the window and turns the message away', async () => {
+        const context = await prepareTest(true)
+        const { controller, uiCtrl } = context
+        const [message] = makeRejectMocks(1) as [{ id: string; reject: jest.Mock }]
+        await signMessageFromOtherAccount(controller, message)
+        const sideEffects = watchSideEffects(uiCtrl)
+
+        await controller.rejectUserRequests('User rejected', [
+          getSwitchAccountRequests(controller)[0]!.id
+        ])
+
+        expect(message.reject).toHaveBeenCalledTimes(1)
+        expect(controller.userRequests).toHaveLength(0)
+        expect(controller.userRequestsWaitingAccountSwitch).toHaveLength(0)
+        expect(controller.currentUserRequest).toBe(null)
+        expect(sideEffects.closeCount()).toBe(1)
+        expect(controller.requestWindow.windowProps).toBe(null)
+      })
     })
   })
 
@@ -3497,7 +4333,10 @@ describe('RequestsController ', () => {
 
     const buildEthSendTx = (
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
-      txParams: { from: string; to?: string; value?: string; data?: string }
+      txParams: { from: string; to?: string; value?: string; data?: string } & Record<
+        string,
+        unknown
+      >
     ) =>
       controller.build({
         type: 'dappRequest',
@@ -3518,7 +4357,7 @@ describe('RequestsController ', () => {
 
     const buildWalletSendCalls = (
       controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
-      calls: { to?: string; value?: string; data?: string }[]
+      calls: ({ to?: string; value?: string; data?: string } & Record<string, unknown>)[]
     ) =>
       controller.build({
         type: 'dappRequest',
@@ -3576,6 +4415,55 @@ describe('RequestsController ', () => {
       await expect(
         buildEthSendTx(controller, { from: FROM, to: VALID_TO, value: '0x0' })
       ).resolves.toBeUndefined()
+    })
+
+    describe('internal call fields a dApp must not be able to set', () => {
+      const INTERNAL_FIELDS = {
+        fullVisualization: [{ type: 'action', content: 'Sign In with Ethereum' }],
+        isFallback: false,
+        warnings: [{ content: 'fake', code: 'fake' }],
+        status: 'rejected',
+        txnId: '0x1234',
+        activeRouteId: 'some-route',
+        recipientDomain: 'vitalik.eth',
+        validationError: 'fake',
+        gas: '0x5208'
+      }
+      const getBuiltCalls = (controller: Awaited<ReturnType<typeof prepareTest>>['controller']) =>
+        controller.userRequests.flatMap((r) =>
+          r.kind === 'calls' ? r.signAccountOp.accountOp.calls : []
+        )
+
+      test('eth_sendTransaction keeps only to, data and value', async () => {
+        const { controller } = await prepareTest(true)
+
+        await buildEthSendTx(controller, {
+          from: FROM,
+          to: VALID_TO,
+          value: '0x1',
+          data: '0xABCD',
+          ...INTERNAL_FIELDS
+        })
+
+        const [call] = getBuiltCalls(controller)
+        expect(call).toBeDefined()
+        expect(call).toMatchObject({ to: VALID_TO, value: 1n, data: '0xabcd' })
+        Object.keys(INTERNAL_FIELDS).forEach((field) => expect(call).not.toHaveProperty(field))
+        expect(call).not.toHaveProperty('from')
+      })
+
+      test('wallet_sendCalls keeps only to, data and value', async () => {
+        const { controller } = await prepareTest(true)
+
+        await buildWalletSendCalls(controller, [
+          { to: VALID_TO, value: '0x1', data: '0xabcd', ...INTERNAL_FIELDS }
+        ])
+
+        const [call] = getBuiltCalls(controller)
+        expect(call).toBeDefined()
+        expect(call).toMatchObject({ to: VALID_TO, value: 1n, data: '0xabcd' })
+        Object.keys(INTERNAL_FIELDS).forEach((field) => expect(call).not.toHaveProperty(field))
+      })
     })
 
     test('rejects wallet_sendCalls when any call has odd-length hex data', async () => {
@@ -3878,6 +4766,92 @@ describe('SIWE auto-login and signing authentication', () => {
     expect(autoLoginSpy).toHaveBeenCalled()
     expect(resolve).toHaveBeenCalledWith({ hash: '0xdeadbeef' })
     expect(controller.userRequests.length).toBe(0)
+
+    jest.restoreAllMocks()
+  })
+
+  test.each([
+    ['blacklisted', DAPP_VERIFICATION_BANNER_IDS.BLACKLISTED],
+    ['hosted on a suspicious platform', DAPP_VERIFICATION_BANNER_IDS.SUSPICIOUS_HOSTING]
+  ])(
+    'does not sign on the user behalf for an app that is %s, even with an active policy',
+    async (_, bannerId) => {
+      const { controller, autoLoginCtrl, dappsCtrl } = await prepareTest(
+        true,
+        false,
+        'browser-webkit'
+      )
+
+      jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+      const verificationBannerSpy = jest
+        .spyOn(dappsCtrl, 'getDappVerificationBanner')
+        .mockReturnValue({ id: bannerId, type: 'error', title: '', text: '' })
+      const autoLoginSpy = jest
+        .spyOn(autoLoginCtrl, 'autoLogin')
+        .mockResolvedValue({ signature: '0xdeadbeef' } as any)
+
+      const resolve = await buildSiweRequest(controller)
+
+      // The verdict must be for the requesting page and its frame context, not some other app
+      expect(verificationBannerSpy).toHaveBeenCalledWith([MOCK_SESSION.origin], {
+        sessionId: MOCK_SESSION.sessionId
+      })
+      expect(autoLoginSpy).not.toHaveBeenCalled()
+      expect(resolve).not.toHaveBeenCalled()
+      // The request opens the sign message screen instead, where the warning is shown
+      expect(controller.userRequests.length).toBe(1)
+      expect(controller.userRequests[0]!.kind).toBe('siwe')
+
+      jest.restoreAllMocks()
+    }
+  )
+
+  test.each([
+    ['still being verified', DAPP_VERIFICATION_BANNER_IDS.LOADING],
+    ['not verified', DAPP_VERIFICATION_BANNER_IDS.FAILED_TO_GET_OR_UNKNOWN],
+    ['not in the catalog', DAPP_VERIFICATION_BANNER_IDS.NOT_IN_CATALOG]
+  ])('signs on the user behalf for an app that is %s', async (_, bannerId) => {
+    const { controller, autoLoginCtrl, dappsCtrl } = await prepareTest(
+      true,
+      false,
+      'browser-webkit'
+    )
+
+    jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+    jest
+      .spyOn(dappsCtrl, 'getDappVerificationBanner')
+      .mockReturnValue({ id: bannerId, type: 'warning', title: '', text: '' })
+    const autoLoginSpy = jest
+      .spyOn(autoLoginCtrl, 'autoLogin')
+      .mockResolvedValue({ signature: '0xdeadbeef' } as any)
+
+    const resolve = await buildSiweRequest(controller)
+
+    expect(autoLoginSpy).toHaveBeenCalled()
+    expect(resolve).toHaveBeenCalledWith({ hash: '0xdeadbeef' })
+    expect(controller.userRequests.length).toBe(0)
+
+    jest.restoreAllMocks()
+  })
+
+  test('signs on the user behalf when the scam checker is turned off', async () => {
+    const { controller, autoLoginCtrl, dappsCtrl } = await prepareTest(
+      true,
+      false,
+      'browser-webkit'
+    )
+
+    jest.spyOn(autoLoginCtrl, 'getAutoLoginStatus').mockReturnValue('active')
+    // A turned off scam checker reports no banner at all
+    jest.spyOn(dappsCtrl, 'getDappVerificationBanner').mockReturnValue(null)
+    const autoLoginSpy = jest
+      .spyOn(autoLoginCtrl, 'autoLogin')
+      .mockResolvedValue({ signature: '0xdeadbeef' } as any)
+
+    const resolve = await buildSiweRequest(controller)
+
+    expect(autoLoginSpy).toHaveBeenCalled()
+    expect(resolve).toHaveBeenCalledWith({ hash: '0xdeadbeef' })
 
     jest.restoreAllMocks()
   })

@@ -181,6 +181,45 @@ export class AddressBookController extends EventEmitter implements IAddressBookC
     this.#handleManuallyAddedContactsChange()
   }
 
+  /**
+   * Bulk-adds contacts coming from another device. A contact whose address is already in
+   * the Address Book gets the incoming name, the rest of the Address Book stays untouched.
+   * Addresses of the wallet's own accounts are skipped, as they are contacts already.
+   */
+  async mergeContacts(contacts: Contacts) {
+    await this.initialLoadPromise
+
+    const walletAccountAddrs = new Set(
+      this.#accounts.accounts.map((account) => account.addr.toLowerCase())
+    )
+    const now = Date.now()
+
+    contacts.forEach(({ name, address }) => {
+      if (walletAccountAddrs.has(address.toLowerCase())) return
+
+      const trimmedName = name.trim()
+      const existingContact = this.#findManuallyAddedContactWithAddress(address)
+
+      if (!existingContact) {
+        this.#manuallyAddedContacts.push({
+          name: trimmedName,
+          address: getAddress(address),
+          createdAt: now,
+          updatedAt: now
+        })
+        return
+      }
+
+      if (existingContact.name === trimmedName) return
+
+      this.#manuallyAddedContacts = this.#manuallyAddedContacts.map((contact) =>
+        contact === existingContact ? { ...contact, name: trimmedName, updatedAt: now } : contact
+      )
+    })
+
+    this.#handleManuallyAddedContactsChange()
+  }
+
   toJSON() {
     return {
       ...this,

@@ -142,6 +142,58 @@ describe('PhishingController', () => {
     expect(controller.getDomainBlacklistedStatus('https://rewards.ambire.com')).toBe('VERIFIED')
   })
 
+  test('should blacklist subdomains of a listed domain', async () => {
+    const { controller } = await prepareTest(['foourmemez.com'])
+    expect(controller.getDomainBlacklistedStatus('https://app.foourmemez.com')).toBe('BLACKLISTED')
+    expect(controller.getDomainBlacklistedStatus('https://foourmemez.com.evil.io')).toBe('VERIFIED')
+  })
+
+  describe('sorted lists', () => {
+    const UNSORTED_DOMAINS = ['zz-scam.io', 'foourmemez.com', 'aa-scam.org', 'foourmemez.com']
+    const UNSORTED_ADDRESSES = [
+      '0x77777777789a8bbee6c64381e5e89e501fb0e4c8',
+      '0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e'
+    ]
+
+    // The sortPhishingLists storage migration normally sorts the stored lists, but a failing
+    // earlier migration skips it, and then the check on load is the only thing standing between an
+    // unsorted list and lookups that silently show listed scams as safe.
+    test('a list the storage migration did not sort is still looked up correctly', async () => {
+      const { controller } = await prepareTest(UNSORTED_DOMAINS, UNSORTED_ADDRESSES)
+
+      UNSORTED_DOMAINS.forEach((domain) =>
+        expect(controller.getDomainBlacklistedStatus(`https://${domain}`)).toBe('BLACKLISTED')
+      )
+      UNSORTED_ADDRESSES.forEach((address) =>
+        expect(controller.getAddressBlacklistedStatus(address)).toBe('BLACKLISTED')
+      )
+      expect(controller.getDomainBlacklistedStatus('https://mm-safe.com')).toBe('VERIFIED')
+    })
+
+    test('a list the storage migration did not sort is sorted in memory, not written on load', async () => {
+      const { controller, mainCtrl } = await prepareTest(UNSORTED_DOMAINS, UNSORTED_ADDRESSES, true)
+      const storageSetSpy = jest.spyOn(mainCtrl.storage, 'set')
+
+      await controller.init()
+
+      expect(storageSetSpy.mock.calls.filter(([key]) => key === 'phishing')).toHaveLength(0)
+      expect(controller.getDomainBlacklistedStatus('https://aa-scam.org')).toBe('BLACKLISTED')
+    })
+
+    test('a list stored sorted is not written again on load', async () => {
+      const { controller, mainCtrl } = await prepareTest(
+        ['aa-scam.org', 'foourmemez.com'],
+        ['0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e'],
+        true
+      )
+      const storageSetSpy = jest.spyOn(mainCtrl.storage, 'set')
+
+      await controller.init()
+
+      expect(storageSetSpy.mock.calls.filter(([key]) => key === 'phishing')).toHaveLength(0)
+    })
+  })
+
   test('should get addresses blacklisted status', async () => {
     const { controller } = await prepareTest([], ['0x20a9ff01b49cd8967cdd8081c547236eed1d1a4e'])
     expect(

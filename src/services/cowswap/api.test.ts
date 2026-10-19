@@ -1,4 +1,4 @@
-import { getAddress, Interface, ZeroAddress } from 'ethers'
+import { formatUnits, getAddress, Interface, ZeroAddress } from 'ethers'
 
 import { describe, expect, it, jest } from '@jest/globals'
 
@@ -10,6 +10,7 @@ import {
   COWSWAP_TOKEN_LIST_URL,
   COWSWAP_VAULT_RELAYER_ADDRESS
 } from './constants'
+import { getCowSwapOrderStruct, getCowSwapOrderUid } from './helper'
 
 const settlementInterface = new Interface(['function setPreSignature(bytes orderUid, bool signed)'])
 const ethFlowInterface = new Interface([
@@ -64,6 +65,11 @@ const makeQuoteParams = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 })
 
+/** The buy amount CoW quotes after deducting its network cost in the fixture below */
+const quotedBuyAmount = 500000000000000n
+/** The fixture's network cost (1% of the sell amount), converted to the buy token */
+const networkFeeInBuyToken = (quotedBuyAmount * 10000n) / 990000n
+
 const makeQuoteFetch = () =>
   jest.fn(async (_url: any, init: any) => {
     const request = JSON.parse(init.body)
@@ -77,7 +83,7 @@ const makeQuoteFetch = () =>
         buyToken: request.buyToken,
         receiver: request.receiver,
         sellAmount: (totalSellAmount - networkFee).toString(),
-        buyAmount: '500000000000000',
+        buyAmount: quotedBuyAmount.toString(),
         validTo: Math.floor(Date.now() / 1000) + 1800,
         appData: request.appData,
         appDataHash: request.appDataHash,
@@ -340,11 +346,38 @@ describe('CowSwapAPI', () => {
       sellAmount: '1000000',
       from: userAddress
     })
-    const quotedBuyAmount = 500000000000000n
-    const buyAmountBeforeFees = quotedBuyAmount + (quotedBuyAmount * 10000n) / 990000n
+    const buyAmountBeforeFees = quotedBuyAmount + networkFeeInBuyToken
     const expectedPartnerFee = (buyAmountBeforeFees * 50n) / 10000n
-    expect(route.toAmount).toBe((quotedBuyAmount - expectedPartnerFee).toString())
-    expect(BigInt(route.steps[0]!.minAmountOut)).toBeLessThan(BigInt(route.toAmount))
+    const expectedAmountAfterNetworkCost = quotedBuyAmount - expectedPartnerFee
+    const expectedMinAmountOut =
+      expectedAmountAfterNetworkCost - (expectedAmountAfterNetworkCost * 50n) / 10000n
+    expect(route.toAmount).toBe((expectedAmountAfterNetworkCost + networkFeeInBuyToken).toString())
+    expect(route.networkFeeInToToken).toBe(networkFeeInBuyToken.toString())
+    expect(BigInt(route.toAmount) - BigInt(route.networkFeeInToToken!)).toBe(
+      expectedAmountAfterNetworkCost
+    )
+    expect(route.userTxs[0]!.toAmount).toBe(route.toAmount)
+    expect(route.steps[0]!.minAmountOut).toBe(expectedMinAmountOut.toString())
+    expect((route.rawRoute as any).order.buyAmount).toBe(expectedMinAmountOut.toString())
+    expect(route.outputValueInUsd).toBeCloseTo(Number(formatUnits(route.toAmount, 18)) * 2000, 10)
+    expect(route.outputValueAfterGasInUsd).toBeCloseTo(
+      Number(formatUnits(expectedAmountAfterNetworkCost, 18)) * 2000,
+      10
+    )
+  })
+
+  it('never lets the order require the network cost that solvers deduct from the output', async () => {
+    const api = new CowSwapAPI({ fetch: makeQuoteFetch() as any, apiKey: cowSwapApiKey })
+
+    const route = (await api.quote(makeQuoteParams({ feePercent: 0 }))).routes[0]!
+    const orderBuyAmount = BigInt((route.rawRoute as any).order.buyAmount)
+
+    // the displayed amount includes the network cost, but the signed order must stay
+    // below what CoW quoted after deducting it, otherwise it can never be filled
+    expect(BigInt(route.toAmount)).toBeGreaterThan(quotedBuyAmount)
+    expect(orderBuyAmount).toBeLessThan(quotedBuyAmount)
+    expect(orderBuyAmount).toBe(quotedBuyAmount - (quotedBuyAmount * 50n) / 10000n)
+    expect(route.outputValueAfterGasInUsd!).toBeLessThan(route.outputValueInUsd)
   })
 
   it('builds one batchable approval plus on-chain PreSign request without posting early', async () => {
@@ -371,6 +404,29 @@ describe('CowSwapAPI', () => {
     expect(signed).toBe(true)
   })
 
+  it('attaches the pre-signed order, which hashes back to the pre-signed order ID', async () => {
+    const api = new CowSwapAPI({ fetch: makeQuoteFetch() as any, apiKey: cowSwapApiKey })
+    const route = (await api.quote(makeQuoteParams())).routes[0]!
+    const rawRoute = route.rawRoute as any
+
+    const transaction = await api.startRoute(route)
+    const [orderUid] = settlementInterface.decodeFunctionData('setPreSignature', transaction.txData)
+
+    expect(transaction.cowSwapOrder).toEqual(getCowSwapOrderStruct(rawRoute.order))
+    expect(transaction.cowSwapOrder).toMatchObject({
+      sellToken: tokenIn,
+      buyToken: tokenOut,
+      receiver: userAddress,
+      sellAmount: '1000000',
+      appData: rawRoute.order.appDataHash,
+      kind: 'sell',
+      partiallyFillable: false
+    })
+    expect(
+      getCowSwapOrderUid({ chainId: 1, order: transaction.cowSwapOrder!, owner: userAddress })
+    ).toBe(orderUid)
+  })
+
   it('uses the existing no-fee policy for wrap and unwrap operations', async () => {
     const fetch = makeQuoteFetch()
     const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
@@ -382,7 +438,7 @@ describe('CowSwapAPI', () => {
     expect(JSON.parse(request.appData).metadata.partnerFee).toBeUndefined()
     expect(result.routes[0]!.withConvenienceFee).toBe(false)
     expect(result.routes[0]!.feeExemptionReason).toBe('wrap-or-unwrap')
-    expect(result.routes[0]!.toAmount).toBe('500000000000000')
+    expect(result.routes[0]!.toAmount).toBe((quotedBuyAmount + networkFeeInBuyToken).toString())
   })
 
   it('uses the fee percentage supplied for the account', async () => {
@@ -392,13 +448,14 @@ describe('CowSwapAPI', () => {
     const result = await api.quote(makeQuoteParams({ feePercent: 0.25 }))
     const [, init] = fetch.mock.calls[0]!
     const request = JSON.parse((init as any).body)
-    const quotedBuyAmount = 500000000000000n
-    const buyAmountBeforeFees = quotedBuyAmount + (quotedBuyAmount * 10000n) / 990000n
+    const buyAmountBeforeFees = quotedBuyAmount + networkFeeInBuyToken
     const expectedPartnerFee = (buyAmountBeforeFees * 25n) / 10000n
 
     expect(JSON.parse(request.appData).metadata.partnerFee.volumeBps).toBe(25)
     expect(result.routes[0]!.withConvenienceFee).toBe(true)
-    expect(result.routes[0]!.toAmount).toBe((quotedBuyAmount - expectedPartnerFee).toString())
+    expect(result.routes[0]!.toAmount).toBe(
+      (quotedBuyAmount - expectedPartnerFee + networkFeeInBuyToken).toString()
+    )
   })
 
   it('does not include a fee when the supplied fee percentage is zero', async () => {
@@ -412,7 +469,7 @@ describe('CowSwapAPI', () => {
     expect(JSON.parse(request.appData).metadata.partnerFee).toBeUndefined()
     expect(result.routes[0]!.withConvenienceFee).toBe(false)
     expect(result.routes[0]!.feeExemptionReason).toBeUndefined()
-    expect(result.routes[0]!.toAmount).toBe('500000000000000')
+    expect(result.routes[0]!.toAmount).toBe((quotedBuyAmount + networkFeeInBuyToken).toString())
   })
 
   it('does not include a fee for fee-exempt tokens', async () => {
@@ -504,6 +561,8 @@ describe('CowSwapAPI', () => {
     expect(ethFlowOrder.validTo).toBe(BigInt(rawRoute.order.validTo))
     expect(ethFlowOrder.partiallyFillable).toBe(false)
     expect(ethFlowOrder.quoteId).toBe(7n)
+    // the ETH Flow calldata already contains the whole order, so nothing is attached
+    expect(transaction.cowSwapOrder).toBeUndefined()
   })
 
   it('waits for the order service to index a newly mined ETH Flow order', async () => {
