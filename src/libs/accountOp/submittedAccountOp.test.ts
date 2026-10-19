@@ -2,10 +2,11 @@ import { encodeFunctionData, parseAbi } from 'viem'
 
 import {
   getAccountOpRecipients,
+  getCallsWithTxnIds,
   getSubmittedAccountOpNonce,
   SubmittedAccountOp
 } from './submittedAccountOp'
-import { Call } from './types'
+import { AccountOpStatus, Call } from './types'
 
 const USDC = '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48'
 const NFT = '0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D'
@@ -24,6 +25,48 @@ const erc721 = parseAbi([
 ])
 
 describe('SubmittedAccountOp', () => {
+  describe('getCallsWithTxnIds', () => {
+    const opWithThreeCalls = (identifier: string) =>
+      ({
+        calls: [
+          { id: 'revoke', to: USDC, value: 0n, data: '0x' },
+          { id: 'approval', to: USDC, value: 0n, data: '0x' },
+          { id: 'swap', to: BOB, value: 0n, data: '0x' }
+        ],
+        identifiedBy: { type: 'MultipleTxns', identifier }
+      }) as SubmittedAccountOp
+
+    test('gives each call the hash of its own txn when all of them were sent', () => {
+      const calls = getCallsWithTxnIds(opWithThreeCalls('0xa-0xb-0xc'))
+
+      expect(calls.map((c) => c.txnId)).toEqual(['0xa', '0xb', '0xc'])
+      expect(calls.every((c) => c.status === AccountOpStatus.BroadcastedButNotConfirmed)).toBe(true)
+    })
+
+    test('marks the calls that were not sent as rejected, without a hash', () => {
+      const calls = getCallsWithTxnIds(opWithThreeCalls('0xa'))
+
+      expect(calls).toHaveLength(3)
+      expect(calls[0]).toMatchObject({
+        id: 'revoke',
+        txnId: '0xa',
+        status: AccountOpStatus.BroadcastedButNotConfirmed
+      })
+      expect(calls[1]).toMatchObject({ id: 'approval', status: AccountOpStatus.Rejected })
+      expect(calls[1]!.txnId).toBeUndefined()
+      expect(calls[2]).toMatchObject({ id: 'swap', status: AccountOpStatus.Rejected })
+    })
+
+    test('does not change the calls of the given account op', () => {
+      const op = opWithThreeCalls('0xa')
+
+      getCallsWithTxnIds(op)
+
+      expect(op.calls[0]!.txnId).toBeUndefined()
+      expect(op.calls[0]!.status).toBeUndefined()
+    })
+  })
+
   describe('getSubmittedAccountOpNonce', () => {
     const userOperationNonce = 1n << 192n
 

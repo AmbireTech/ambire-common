@@ -68,7 +68,7 @@ import { isSidePanelView, IUiController, View } from '../../interfaces/ui'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp } from '../../libs/accountOp/accountOp'
-import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { getCallsWithTxnIds, SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
 import { getIntentBanners } from '../../libs/banners/banners'
 import { getAmbirePaymasterService } from '../../libs/erc7677/erc7677'
@@ -476,6 +476,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #getVisibleUserRequests: () => UserRequest[]
 
   hasProceeded: boolean = false
+
+  /**
+   * The txns of a swap that went out before the rest of it failed, e.g. the approval was
+   * sent but the swap was rejected on the hardware wallet. Until they are confirmed the form
+   * is blocked: retrying earlier would send them again or replace them while still pending.
+   * Once confirmed, the swap is built again from the onchain state (e.g. without the approval).
+   */
+  #sentSwapPartAwaitingConfirmation: {
+    accountAddr: string
+    chainId: bigint
+    identifier: string
+  } | null = null
 
   #relayerUrl: string
 
@@ -3235,6 +3247,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   // update active route if needed on SubmittedAccountOp update
   handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op: SubmittedAccountOp) {
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#handleSentSwapPartResolved(op)
     this.#handleUpdateActiveRouteFromSwapTxnMeta(op)
 
     op.calls.forEach((call) => {
@@ -3244,6 +3258,34 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#handleUpdateActiveRoutesUserTxData(call.id, op)
       this.#handleActiveRoutesCompleted(call.id, op.status)
     })
+  }
+
+  #isWaitingForSentSwapPart(accountAddr: string | undefined, chainId: bigint | number | null) {
+    const sentSwapPart = this.#sentSwapPartAwaitingConfirmation
+    if (!sentSwapPart || !accountAddr || chainId === null) return false
+
+    return sentSwapPart.accountAddr === accountAddr && sentSwapPart.chainId === BigInt(chainId)
+  }
+
+  async #handleSentSwapPartResolved(op: SubmittedAccountOp) {
+    if (op.status === AccountOpStatus.BroadcastedButNotConfirmed) return
+    if (!this.#isWaitingForSentSwapPart(op.accountAddr, op.chainId)) return
+    if (this.#sentSwapPartAwaitingConfirmation?.identifier !== op.identifiedBy.identifier) return
+
+    this.#sentSwapPartAwaitingConfirmation = null
+    this.emitUpdate()
+
+    // The quote isn't refreshed while waiting, so it may be outdated. The new one builds
+    // only the txns still needed, e.g. no approval if the sent one was confirmed
+    try {
+      await this.updateQuote({ skipPreviousQuoteRemoval: true, skipQuoteUpdateOnSameValues: false })
+    } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to refresh the swap quote after the sent part of a swap was confirmed',
+        error
+      })
+    }
   }
 
   #handleUpdateActiveRouteFromSwapTxnMeta(submittedAccountOp: SubmittedAccountOp) {
@@ -3643,7 +3685,19 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
         await this.#onBroadcastSuccess(props)
       },
-      onBroadcastFailed: this.#onBroadcastFailed
+      onBroadcastFailed: this.#onBroadcastFailed,
+      onPartialBroadcast: async (sentAccountOp) => {
+        await this.#activity.addAccountOp({
+          ...sentAccountOp,
+          calls: getCallsWithTxnIds(sentAccountOp)
+        })
+        this.#sentSwapPartAwaitingConfirmation = {
+          accountAddr: sentAccountOp.accountAddr,
+          chainId: sentAccountOp.chainId,
+          identifier: sentAccountOp.identifiedBy.identifier
+        }
+        this.emitUpdate()
+      }
     })
 
     this.emitUpdate()
@@ -3672,6 +3726,17 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
       // Need to clean the pending results for THIS signAccountOpController
       await this.#portfolio.overrideSimulationResults(signAccountOpController.accountOp)
+
+      // Part of its txns went out, so it can't be signed again. That would send them twice.
+      // A new one is built once they are confirmed (see #handleSentSwapPartResolved)
+      const { accountAddr, chainId } = signAccountOpController.accountOp
+      if (
+        this.#signAccountOpController === signAccountOpController &&
+        this.#isWaitingForSentSwapPart(accountAddr, chainId)
+      ) {
+        this.destroySignAccountOp()
+        this.emitUpdate()
+      }
     })
     // if the estimation emits an error, handle it
     this.#signAccountOpController.estimation.onUpdate(() => {
@@ -3721,6 +3786,13 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     ) {
       errors.push({
         title: `${fromSelectedTokenWithUpToDateAmount.symbol} detected in batch. Please complete the batch before continuing`
+      })
+    }
+
+    if (this.#isWaitingForSentSwapPart(this.#selectedAccount.account?.addr, this.fromChainId)) {
+      errors.push({
+        title:
+          'Part of your previous swap was sent and is waiting to be confirmed. You can try again once it is done.'
       })
     }
 
