@@ -1640,6 +1640,18 @@ export class MainController extends EventEmitter implements IMainController {
               updatedAccountsOps
             )
 
+            // The update above may have been served by an RPC that doesn't have the confirmed
+            // block yet, so it's retried shortly instead of waiting for the scheduled update
+            this.portfolio
+              .refreshPortfolioBehindConfirmedAccountOps(accountAddr, updatedAccountsOps)
+              .catch((error) => {
+                this.emitError({
+                  level: 'silent',
+                  message: 'Failed to refresh the portfolio after a confirmed transaction.',
+                  error: error instanceof Error ? error : new Error(String(error))
+                })
+              })
+
             Object.entries(portfoliosToUpdate).forEach(([accountAddr, chainIds]) => {
               // eslint-disable-next-line @typescript-eslint/no-floating-promises
               this.portfolio.updateSelectedAccount(

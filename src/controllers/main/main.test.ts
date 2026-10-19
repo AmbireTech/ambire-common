@@ -509,6 +509,10 @@ describe('Main Controller ', () => {
       jest
         .spyOn(mainCtrl.portfolio, 'reportMissedPortfolioUpdateAfterUpdatedAccountOp')
         .mockImplementation(() => {})
+      // It waits between its retries, which would outlive the test
+      jest
+        .spyOn(mainCtrl.portfolio, 'refreshPortfolioBehindConfirmedAccountOps')
+        .mockResolvedValue(undefined)
 
       jest
         .spyOn(mainCtrl.swapAndBridge, 'handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate')
@@ -659,6 +663,55 @@ describe('Main Controller ', () => {
         chainId: 1n,
         bypassServerSideCache: true
       })
+      // ...and the portfolio is refreshed shortly if it's still behind the confirmed block
+      expect(mainCtrl.portfolio.refreshPortfolioBehindConfirmedAccountOps).toHaveBeenCalledWith(
+        senderAccount,
+        [pendingAccountOp, finalizedAccountOp]
+      )
+    })
+
+    test('reports a failed refresh after a confirmed AccountOp without throwing', async () => {
+      const mainCtrl = await setupController()
+      const confirmedAccountOp = {
+        id: 'confirmed-op',
+        accountAddr: senderAccount,
+        chainId: 1n,
+        status: AccountOpStatus.Success,
+        blockNumber: 100,
+        calls: []
+      } as any
+
+      jest
+        .spyOn(mainCtrl.activity, 'broadcastedButNotConfirmed', 'get')
+        .mockReturnValue({ [senderAccount]: [confirmedAccountOp] })
+      jest.spyOn(mainCtrl.activity, 'updateAccountsOpsStatuses').mockResolvedValue({
+        [senderAccount]: {
+          shouldEmitUpdate: true,
+          chainsToUpdate: [1n],
+          portfoliosToUpdate: {},
+          shouldFetchSafeTxns: false,
+          newestOpTimestamp: Date.now(),
+          updatedAccountsOps: [confirmedAccountOp]
+        }
+      })
+      jest.spyOn(mainCtrl.accounts, 'updateAccountState').mockResolvedValue(undefined)
+      jest.spyOn(mainCtrl.portfolio, 'discardSimulation').mockResolvedValue(undefined)
+      jest.spyOn(mainCtrl.portfolio, 'scheduleUpdate').mockImplementation(() => {})
+      jest
+        .spyOn(mainCtrl.portfolio, 'refreshPortfolioBehindConfirmedAccountOps')
+        .mockRejectedValue(new Error('RPC down'))
+      const onError = jest.fn()
+      mainCtrl.onError(onError)
+
+      await mainCtrl.updateAccountsOpsStatuses()
+      await flushAsyncUpdates()
+
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({
+          level: 'silent',
+          message: 'Failed to refresh the portfolio after a confirmed transaction.'
+        })
+      )
     })
 
     // Ops finalized without a receipt: activity leaves chainsToUpdate empty for them.
