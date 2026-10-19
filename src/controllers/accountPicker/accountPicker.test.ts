@@ -279,6 +279,45 @@ describe('AccountPicker', () => {
     expect(controller.accountsOnPage).toHaveLength(0)
   })
 
+  test('should stop adding the next account automatically when reset mid-selection', async () => {
+    const { controller } = await prepareTest()
+    const keyIterator = new KeyIterator(process.env.SEED)
+    const retrieve = keyIterator.retrieve.bind(keyIterator)
+    let releaseRetrieve: () => void = () => {}
+    const retrieveReleased = new Promise<void>((resolve) => {
+      releaseRetrieve = resolve
+    })
+    let isRetrieveCalled = false
+
+    jest.spyOn(keyIterator, 'retrieve').mockImplementation(async (indices, hdPathTemplate) => {
+      isRetrieveCalled = true
+      await retrieveReleased
+      return retrieve(indices, hdPathTemplate)
+    })
+
+    controller.setInitParams({
+      keyIterator,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldSearchForLinkedAccounts: false
+    })
+    const initPromise = controller.init()
+    while (!isRetrieveCalled) await wait(0)
+
+    const resetPromise = controller.reset()
+    releaseRetrieve()
+    await Promise.all([initPromise, resetPromise])
+
+    const notInitializedErrors = controller.emittedErrors.filter(
+      (e) =>
+        e.error.message ===
+        'accountPicker: requested a method of the AccountPicker controller, but the controller was not initialized'
+    )
+    expect(notInitializedErrors).toHaveLength(0)
+    expect(controller.isInitialized).toBe(false)
+    expect(controller.addedAccountsFromCurrentSession).toHaveLength(0)
+  })
+
   test('should find linked accounts', async () => {
     const { controller } = await prepareTest()
     const keyIterator = new KeyIterator(process.env.SEED)

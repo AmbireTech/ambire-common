@@ -475,6 +475,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     if (shouldAddNextAccountAutomatically) {
       await this.selectNextAccount()
+      // A reset during the selection leaves nothing to add
+      if (!this.isInitialized) return
       await this.addAccounts()
     } else {
       await this.forceEmitUpdate()
@@ -1090,6 +1092,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     const maxPages = 10000 // limit, acts as a safeguard to prevent infinite loops
 
     while (currentPage <= maxPages) {
+      // A reset mid-search (the user left the flow) un-initializes the picker. Without
+      // this, every remaining page would fail and emit a "not initialized" error.
+      if (!this.isInitialized) break
+
       // TODO: Flag that excludes getting smart account key addresses
       // Load the accounts for the current page
 
@@ -1124,7 +1130,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     }
 
     // Should never happen
-    if (!nextAccount) {
+    if (!nextAccount && this.isInitialized) {
       const message = 'accountPicker: selectNextAccount called, but no next account found.'
       this.emitError({ message, level: 'silent', error: new Error(message) })
     }

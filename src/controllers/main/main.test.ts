@@ -335,6 +335,49 @@ describe('Main Controller ', () => {
     expect(controller.accounts.accounts.map((a) => a.addr)).toContain(accToSelect.addr)
   })
 
+  describe('accountPickerSetInitParamsFromNewSeed', () => {
+    test('prepares the account picker with a new seed and replies to the UI request', async () => {
+      const { mainCtrl } = await makeMainController()
+      await mainCtrl.initialLoadPromise
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+
+      await mainCtrl.accountPickerSetInitParamsFromNewSeed({}, 'request-1')
+
+      expect(mainCtrl.accountPicker.initParams?.keyIterator?.subType).toBe('seed')
+      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-1', ok: true })
+    })
+
+    test('replies with an error when the call is refused', async () => {
+      const { mainCtrl } = await makeMainController()
+      await mainCtrl.initialLoadPromise
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+      // A previous call that is still running makes `withStatus` refuse this one. The
+      // statuses object is shared between instances, so it is restored for the next test.
+      mainCtrl.statuses.accountPickerSetInitParamsFromNewSeed = 'LOADING'
+      try {
+        await mainCtrl.accountPickerSetInitParamsFromNewSeed({}, 'request-2')
+      } finally {
+        mainCtrl.statuses.accountPickerSetInitParamsFromNewSeed = 'INITIAL'
+      }
+
+      expect(mainCtrl.accountPicker.initParams).toBeNull()
+      expect(sendUiMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: 'request-2', ok: false })
+      )
+    })
+
+    test('does not reply without a request id', async () => {
+      const { mainCtrl } = await makeMainController()
+      await mainCtrl.initialLoadPromise
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+
+      await mainCtrl.accountPickerSetInitParamsFromNewSeed({})
+
+      expect(mainCtrl.accountPicker.initParams).not.toBeNull()
+      expect(sendUiMessage).not.toHaveBeenCalled()
+    })
+  })
+
   test('should add accounts and merge the associated keys of the already added accounts', async () => {
     const privilege: [string, string] = [
       '0x699380c785819B2f400cb646b12C4C60b4dc7fcA',

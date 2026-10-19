@@ -2165,7 +2165,11 @@ export class MainController extends EventEmitter implements IMainController {
    * in the background. The phrase is never sent to the UI - the user gets prompted to
    * write it down later, once the account holds funds.
    */
-  async accountPickerSetInitParamsFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+  async accountPickerSetInitParamsFromNewSeed(
+    { extraEntropy }: { extraEntropy?: string },
+    requestId?: string
+  ) {
+    let isPrepared = false
     await this.withStatus(
       'accountPickerSetInitParamsFromNewSeed',
       async () => {
@@ -2174,8 +2178,18 @@ export class MainController extends EventEmitter implements IMainController {
         await this.accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({
           privKeyOrSeed: tempSeed.seed
         })
+        isPrepared = true
       },
       true
+    )
+
+    // Replies to the UI directly: a screen that is not subscribed at that moment (e.g.
+    // mid-transition on mobile) would miss the transient status and wait forever.
+    if (!requestId) return
+    this.ui.message.sendUiMessage(
+      isPrepared
+        ? { requestId, ok: true }
+        : { requestId, ok: false, error: 'Creating the new account failed' }
     )
   }
 
