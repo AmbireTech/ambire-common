@@ -13,7 +13,7 @@ import {
 import { SafeController } from './safe'
 
 jest.mock('../../libs/safe/safe', () => ({
-  ...jest.requireActual('../../libs/safe/safe'),
+  ...jest.requireActual<typeof import('../../libs/safe/safe')>('../../libs/safe/safe'),
   fetchAllPending: jest.fn(),
   findDeployData: jest.fn(),
   getApiKit: jest.fn(),
@@ -359,14 +359,24 @@ describe('SafeController createSafeAccount', () => {
       } as any,
       networks: { initialLoadPromise: Promise.resolve(), networks: [] } as any,
       providers: { providers: {} } as any,
-      storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any
+      storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any,
+      keystore: { getAccountKeys: () => [] } as any
     })
 
     return { controller, addAccounts }
   }
 
+  // withStatus resets the status to INITIAL before it resolves, so the statuses
+  // in between can be read only from the emitted updates
+  const recordCreateSafeAccountStatuses = (controller: SafeController) => {
+    const statuses: string[] = []
+    controller.onUpdate(() => statuses.push(controller.statuses.createSafeAccount))
+    return statuses
+  }
+
   it('adds the new Safe account with its counterfactual address', async () => {
     const { controller, addAccounts } = createControllerWithAddAccounts()
+    const statuses = recordCreateSafeAccountStatuses(controller)
     // verified against the v1.4.1 SafeProxyFactory, see libs/safe/safe.test.ts
     const owners = [OWNER, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'] as Hex[]
 
@@ -383,18 +393,23 @@ describe('SafeController createSafeAccount', () => {
         })
       })
     ])
-    expect(controller.statuses.createSafeAccount).toBe('SUCCESS')
+    expect(statuses).toContain('SUCCESS')
+    expect(statuses).not.toContain('ERROR')
+    expect(controller.statuses.createSafeAccount).toBe('INITIAL')
   })
 
   it('does not add an account for an invalid setup', async () => {
     const { controller, addAccounts } = createControllerWithAddAccounts()
+    const statuses = recordCreateSafeAccountStatuses(controller)
     const onError = jest.fn()
     controller.onError(onError)
 
     await controller.createSafeAccount([OWNER as Hex], 2)
 
     expect(addAccounts).not.toHaveBeenCalled()
-    expect(controller.statuses.createSafeAccount).toBe('ERROR')
+    expect(statuses).toContain('ERROR')
+    expect(statuses).not.toContain('SUCCESS')
+    expect(controller.statuses.createSafeAccount).toBe('INITIAL')
     expect(onError).toHaveBeenCalled()
   })
 })
