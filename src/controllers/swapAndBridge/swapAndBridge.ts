@@ -3270,6 +3270,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   async #refreshQuoteAfterPartialSwap() {
     try {
+      // A new quote would select the best route instead of the one the user picked,
+      // so only the txns are built again for it (reading the allowance from the chain)
+      if (this.quote?.selectedRoute?.isSelectedManually) {
+        if (this.#updateQuoteId) await this.initSignAccountOpIfNeeded(this.#updateQuoteId)
+        this.emitUpdate()
+        return
+      }
+
       await this.updateQuote({ skipPreviousQuoteRemoval: true, skipQuoteUpdateOnSameValues: false })
     } catch (error: any) {
       this.emitError({
