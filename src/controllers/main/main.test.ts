@@ -802,7 +802,7 @@ describe('Main Controller ', () => {
     test('should update account state and discard simulation even when selected account is different', async () => {
       const mainCtrl = await setupController()
 
-      await mainCtrl.selectedAccount.setAccount(mainCtrl.accounts.accounts[1]!)
+      await mainCtrl.selectedAccount.select({ account: mainCtrl.accounts.accounts[1]! })
 
       const finalizedAccountOp = {
         id: 'finalized-op',

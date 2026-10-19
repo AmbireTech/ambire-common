@@ -65,7 +65,7 @@ describe('AddressBookController', () => {
 
   it('wallet accounts are in contacts', async () => {
     await selectedAccountCtrl.initialLoadPromise
-    await selectedAccountCtrl.setAccount(MOCK_ACCOUNTS[0]!)
+    await selectedAccountCtrl.select({ account: MOCK_ACCOUNTS[0]! })
     expect(getContactFromName('Account 1')?.isWalletAccount).toBeTruthy()
     expect(getContactFromName('Account 1')?.address).toEqual(
       '0x66fE93c51726e6FD51668B0B0434ffcedD604d08'
@@ -76,13 +76,13 @@ describe('AddressBookController', () => {
     )
   })
   it('the selected account is left out of the contacts', async () => {
-    await selectedAccountCtrl.setAccount(MOCK_ACCOUNTS[1]!)
+    await selectedAccountCtrl.select({ account: MOCK_ACCOUNTS[1]! })
 
     expect(getContactFromName('Account 1')).toBeUndefined()
     expect(getContactFromName(DEFAULT_ACCOUNT_LABEL)?.isWalletAccount).toBeTruthy()
   })
   it('every wallet account is in contacts while a Privacy Pools account is selected', async () => {
-    await selectedAccountCtrl.setPrivacyPoolsAccount('privacy-pools-seed')
+    await selectedAccountCtrl.select({ privacyPoolsSeedId: 'privacy-pools-seed' })
 
     expect(selectedAccountCtrl.account).toBeNull()
     MOCK_ACCOUNTS.forEach(({ addr }) => {
@@ -91,7 +91,7 @@ describe('AddressBookController', () => {
       ).toBeTruthy()
     })
 
-    await selectedAccountCtrl.setAccount(MOCK_ACCOUNTS[0]!)
+    await selectedAccountCtrl.select({ account: MOCK_ACCOUNTS[0]! })
   })
   it('add contact', async () => {
     await addressBookController.addContact('vitaly', '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')

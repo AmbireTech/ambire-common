@@ -12,9 +12,11 @@ import { INetworksController } from '../../interfaces/network'
 import { IPortfolioController } from '../../interfaces/portfolio'
 import { IProvidersController } from '../../interfaces/provider'
 import {
+  AccountSelection,
   ISelectedAccountController,
   SelectedAccountBalanceByAccount,
-  SelectedAccountPortfolio
+  SelectedAccountPortfolio,
+  SelectedAccountType
 } from '../../interfaces/selectedAccount'
 import { IStorageController } from '../../interfaces/storage'
 import { isSmartAccount } from '../../libs/account/account'
@@ -63,7 +65,10 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
   #ui: IUiController | null = null
 
-  /** The selected regular account. Also null while a Privacy Pools account is selected. */
+  /**
+   * The selected regular account. Also null while a Privacy Pools account is selected, so read
+   * `selectedType` to tell that apart from being signed out.
+   */
   account: Account | null = null
 
   /**
@@ -205,10 +210,12 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     this.emitUpdate()
   }
 
-  async setAccount(account: Account | null) {
-    this.account = account
-    // Kept on null, which is also how `setPrivacyPoolsAccount` selects a Privacy Pools account
-    if (account) this.privacyPoolsAccountId = null
+  /** Selects a regular account or a Privacy Pools account in its place, never both. */
+  async select(selection: AccountSelection) {
+    // Both are set before the update goes out, so the UI never sees a mix of the two
+    this.account = selection && 'account' in selection ? selection.account : null
+    this.privacyPoolsAccountId =
+      selection && 'privacyPoolsSeedId' in selection ? selection.privacyPoolsSeedId : null
     this.balanceAffectingErrors = []
     this.resetSelectedAccountPortfolio({ skipUpdate: true })
 
@@ -228,22 +235,33 @@ export class SelectedAccountController extends EventEmitter implements ISelected
 
     this.emitUpdate()
 
-    if (!account) {
-      await this.#storage.remove('selectedAccount')
-    } else {
-      await this.#storage.set('selectedAccount', account.addr)
-      await this.#storage.remove('selectedPrivacyPoolsAccount')
-    }
+    await this.#persistSelection()
   }
 
-  /** Selects a Privacy Pools account, clearing the regular one. Null clears both (signed out). */
-  async setPrivacyPoolsAccount(seedId: string | null) {
-    // Set first, so no update goes out with neither selected, which the UI reads as signed out
-    this.privacyPoolsAccountId = seedId
-    await this.setAccount(null)
+  get selectedType(): SelectedAccountType {
+    if (this.account) return 'regular'
+    if (this.privacyPoolsAccountId) return 'privacyPools'
+    return null
+  }
 
-    if (seedId) await this.#storage.set('selectedPrivacyPoolsAccount', seedId)
-    else await this.#storage.remove('selectedPrivacyPoolsAccount')
+  // The new key is written before the other is removed: an interrupted write leaves both, and
+  // `#load` then prefers the regular account, instead of leaving neither and signing out.
+  async #persistSelection() {
+    if (this.account) {
+      // @TODO: Persist in one key once we have other accounts (like Tornado)
+      await this.#storage.set('selectedAccount', this.account.addr)
+      await this.#storage.remove('selectedPrivacyPoolsAccount')
+      return
+    }
+
+    if (this.privacyPoolsAccountId) {
+      await this.#storage.set('selectedPrivacyPoolsAccount', this.privacyPoolsAccountId)
+      await this.#storage.remove('selectedAccount')
+      return
+    }
+
+    await this.#storage.remove('selectedAccount')
+    await this.#storage.remove('selectedPrivacyPoolsAccount')
   }
 
   #updateSelectedAccount(skipUpdate: boolean = false) {
@@ -261,7 +279,8 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     isManualUpdate,
     skipUpdate
   }: { isManualUpdate?: boolean; skipUpdate?: boolean } = {}) {
-    if (!this.#portfolio || !this.account) return
+    // Also runs with no regular account, so the last one's portfolio doesn't outlive it
+    if (!this.#portfolio) return
 
     if (isManualUpdate) {
       this.#isManualUpdate = true
@@ -560,6 +579,7 @@ export class SelectedAccountController extends EventEmitter implements ISelected
     return {
       ...this,
       ...super.toJSON(),
+      selectedType: this.selectedType,
       banners: this.banners,
       deprecatedSmartAccountBanner: this.deprecatedSmartAccountBanner,
       autoLoginPolicies: this.autoLoginPolicies

@@ -50,7 +50,7 @@ const prepareTest = async () => {
     await storageCtrl.set('accounts', [account])
     await storageCtrl.set('selectedAccount', account.addr)
   })
-  await mainCtrl.selectedAccount.setAccount(account)
+  await mainCtrl.selectedAccount.select({ account })
   mainCtrl.transfer.resetForm()
 
   return {

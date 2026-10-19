@@ -129,7 +129,7 @@ describe('SelectedAccount Controller', () => {
     // NOTE! THE TEST ACCOUNT MUST HAVE AAVE DEFI BORROW FOR THIS TEST
     const { selectedAccountCtrl, portfolioCtrl } = await prepareTest()
 
-    await selectedAccountCtrl.setAccount(accounts[1]!)
+    await selectedAccountCtrl.select({ account: accounts[1]! })
 
     await portfolioCtrl.updateSelectedAccount('0xC2E6dFcc2C6722866aD65F211D5757e1D2879337')
     const PORTFOLIO_STATE_BEFORE = stringify(
@@ -181,7 +181,7 @@ describe('SelectedAccount Controller', () => {
 
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
 
-    await selectedAccountCtrl.setAccount(accounts[1]!)
+    await selectedAccountCtrl.select({ account: accounts[1]! })
 
     await portfolioCtrl.updateSelectedAccount(accounts[1]!.addr)
     await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
@@ -190,7 +190,7 @@ describe('SelectedAccount Controller', () => {
 
     const secondAccountTokensCount = selectedAccountCtrl.portfolio.tokens.length
 
-    await selectedAccountCtrl.setAccount(accounts[0]!)
+    await selectedAccountCtrl.select({ account: accounts[0]! })
 
     expect(selectedAccountCtrl.portfolio.isAllReady).toBe(true)
     expect(selectedAccountCtrl.portfolio.tokens.length).not.toBe(secondAccountTokensCount)
@@ -353,6 +353,18 @@ describe('SelectedAccount Controller', () => {
       expect(selectedAccountCtrl.account?.addr).toBe(accounts[1]!.addr)
       expect(selectedAccountCtrl.privacyPoolsAccountId).toBeNull()
       expect(await mainCtrl.storage.get('selectedPrivacyPoolsAccount', null)).toBeNull()
+    })
+
+    it("drops the regular account's portfolio, so no screen shows it for the Privacy Pools one", async () => {
+      const { mainCtrl, selectedAccountCtrl } = await preparePrivacyPoolsTest()
+      await mainCtrl.portfolio.updateSelectedAccount(accounts[0]!.addr)
+      await waitSelectedAccCtrlPortfolioAllReady(selectedAccountCtrl)
+      expect(selectedAccountCtrl.portfolio.tokens.length).toBeGreaterThan(0)
+
+      await mainCtrl.selectPrivacyPoolsAccount(PRIVACY_POOLS_SEED_ID)
+
+      expect(selectedAccountCtrl.selectedType).toBe('privacyPools')
+      expect(selectedAccountCtrl.portfolio).toEqual(DEFAULT_SELECTED_ACCOUNT_PORTFOLIO)
     })
 
     it('never reports neither account selected while switching between the two kinds', async () => {

@@ -2,8 +2,8 @@ import { getBytes, Wallet } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
-import { makeMainController } from '../../../test/helpers/mainController'
 import { suppressConsoleBeforeEach } from '../../../test/helpers/console'
+import { makeMainController } from '../../../test/helpers/mainController'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '../../consts/derivation'
 import { USER_FEATURE_FLAGS } from '../../consts/featureFlags'
@@ -213,7 +213,7 @@ describe('AppDataSyncController', () => {
     await importingDevice.networks.mergeNetworks([{ ...otherNetwork!, disabled: true }])
     // The Address Book has no contacts without a selected account
     await importingDevice.accounts.addAccounts([accounts[3]!])
-    await importingDevice.selectedAccount.setAccount(importingDevice.accounts.accounts[0]!)
+    await importingDevice.selectedAccount.select({ account: importingDevice.accounts.accounts[0]! })
     await importingDevice.addressBook.addContact('Old name', RENAMED_CONTACT_ADDR)
     await importingDevice.addressBook.addContact('Carol', UNTOUCHED_CONTACT_ADDR)
 
