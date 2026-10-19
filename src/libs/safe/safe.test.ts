@@ -766,11 +766,11 @@ describe('new Safe accounts', () => {
     [[ownerA], 1, '0xb89598D5fe26dD671f51F3292096FcDA38B63625'],
     [[ownerA, ownerB], 2, '0x913F170e793293e71749ee6CA674DF0469Ee3735']
   ])('derives the counterfactual address of %j with threshold %i', (owners, threshold, addr) => {
-    expect(getNewSafeAccount(owners as Hex[], threshold).addr).toBe(addr)
+    expect(getNewSafeAccount(owners as Hex[], threshold, []).addr).toBe(addr)
   })
 
   test('builds a Safe v1.4.1 account with a zero salt nonce', () => {
-    const account = getNewSafeAccount([ownerA, ownerB], 1)
+    const account = getNewSafeAccount([ownerA, ownerB], 1, [])
 
     expect(account.safeCreation).toEqual({
       factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
@@ -785,14 +785,20 @@ describe('new Safe accounts', () => {
       [ownerB, '0x01']
     ])
     expect(account.creation).toBeNull()
-    expect(account.preferences).toEqual({ label: 'Safe', pfp: account.addr })
+    expect(account.preferences).toEqual({ label: 'Account 1', pfp: account.addr })
+  })
+
+  test('labels the new Safe after the accounts already in the wallet', () => {
+    const prevAccount = getNewSafeAccount([ownerA], 1, [])
+
+    expect(getNewSafeAccount([ownerB], 1, [prevAccount]).preferences.label).toBe('Account 2')
   })
 
   test('derives a different address for a different threshold or owners order', () => {
-    const addr = getNewSafeAccount([ownerA, ownerB], 1).addr
+    const addr = getNewSafeAccount([ownerA, ownerB], 1, []).addr
 
-    expect(getNewSafeAccount([ownerA, ownerB], 2).addr).not.toBe(addr)
-    expect(getNewSafeAccount([ownerB, ownerA], 1).addr).not.toBe(addr)
+    expect(getNewSafeAccount([ownerA, ownerB], 2, []).addr).not.toBe(addr)
+    expect(getNewSafeAccount([ownerB, ownerA], 1, []).addr).not.toBe(addr)
   })
 
   test('rejects invalid setups', () => {

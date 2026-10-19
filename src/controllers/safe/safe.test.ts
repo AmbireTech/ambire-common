@@ -2,6 +2,7 @@ import { getAddress } from 'ethers'
 
 import { beforeEach, describe, expect, it, jest } from '@jest/globals'
 
+import { Account } from '../../interfaces/account'
 import { Hex } from '../../interfaces/hex'
 import { SafeAccountByOwner } from '../../interfaces/safe'
 import {
@@ -348,15 +349,29 @@ describe('SafeController findSafesByOwner', () => {
 })
 
 describe('SafeController createSafeAccount', () => {
-  const createControllerWithAddAccounts = () => {
-    const addAccounts = jest.fn(async () => undefined)
+  // verified against the v1.4.1 SafeProxyFactory, see libs/safe/safe.test.ts
+  const OWNERS = [OWNER, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'] as Hex[]
+  const SAFE_ADDR = '0x913F170e793293e71749ee6CA674DF0469Ee3735'
+
+  const createControllerWithAddAccounts = ({
+    accountsInWallet = [],
+    failsToAddAccounts = false
+  }: {
+    accountsInWallet?: Account[]
+    /** Mimics AccountsController.addAccounts, which emits its errors instead of throwing them */
+    failsToAddAccounts?: boolean
+  } = {}) => {
+    const accounts = {
+      accounts: [...accountsInWallet],
+      accountStates: {},
+      initialLoadPromise: Promise.resolve(),
+      addAccounts: jest.fn(async (accountsToAdd: Account[]) => {
+        if (!failsToAddAccounts) accounts.accounts.push(...accountsToAdd)
+      })
+    }
+    const { addAccounts } = accounts
     const controller = new SafeController({
-      accounts: {
-        accounts: [],
-        accountStates: {},
-        initialLoadPromise: Promise.resolve(),
-        addAccounts
-      } as any,
+      accounts: accounts as any,
       networks: { initialLoadPromise: Promise.resolve(), networks: [] } as any,
       providers: { providers: {} } as any,
       storage: { get: jest.fn(async (_key: string, fallback: unknown) => fallback) } as any,
@@ -377,15 +392,14 @@ describe('SafeController createSafeAccount', () => {
   it('adds the new Safe account with its counterfactual address', async () => {
     const { controller, addAccounts } = createControllerWithAddAccounts()
     const statuses = recordCreateSafeAccountStatuses(controller)
-    // verified against the v1.4.1 SafeProxyFactory, see libs/safe/safe.test.ts
-    const owners = [OWNER, '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5'] as Hex[]
 
-    await controller.createSafeAccount(owners, 2)
+    await controller.createSafeAccount(OWNERS, 2)
 
     expect(addAccounts).toHaveBeenCalledWith([
       expect.objectContaining({
-        addr: '0x913F170e793293e71749ee6CA674DF0469Ee3735',
-        associatedKeys: owners,
+        addr: SAFE_ADDR,
+        associatedKeys: OWNERS,
+        preferences: { label: 'Account 1', pfp: SAFE_ADDR },
         creation: null,
         safeCreation: expect.objectContaining({
           factoryAddr: '0x4e1DCf7AD4e460CfD30791CCC4F9c8a4f820ec67',
@@ -410,6 +424,38 @@ describe('SafeController createSafeAccount', () => {
     expect(statuses).toContain('ERROR')
     expect(statuses).not.toContain('SUCCESS')
     expect(controller.statuses.createSafeAccount).toBe('INITIAL')
+    expect(onError).toHaveBeenCalled()
+  })
+
+  it('errors when the same Safe is already in the wallet', async () => {
+    const { controller, addAccounts } = createControllerWithAddAccounts({
+      accountsInWallet: [{ addr: SAFE_ADDR } as Account]
+    })
+    const statuses = recordCreateSafeAccountStatuses(controller)
+    const onError = jest.fn()
+    controller.onError(onError)
+
+    await controller.createSafeAccount(OWNERS, 2)
+
+    expect(addAccounts).not.toHaveBeenCalled()
+    expect(statuses).toContain('ERROR')
+    expect(statuses).not.toContain('SUCCESS')
+    expect(controller.emittedErrors.at(-1)?.message).toContain('already in your wallet')
+  })
+
+  it('errors instead of succeeding when the account was not added', async () => {
+    const { controller, addAccounts } = createControllerWithAddAccounts({
+      failsToAddAccounts: true
+    })
+    const statuses = recordCreateSafeAccountStatuses(controller)
+    const onError = jest.fn()
+    controller.onError(onError)
+
+    await controller.createSafeAccount(OWNERS, 2)
+
+    expect(addAccounts).toHaveBeenCalled()
+    expect(statuses).toContain('ERROR')
+    expect(statuses).not.toContain('SUCCESS')
     expect(onError).toHaveBeenCalled()
   })
 })

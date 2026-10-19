@@ -30,6 +30,7 @@ import { CallsUserRequest, TypedMessageUserRequest } from '../../interfaces/user
 import { paginate } from '../../utils/paginate'
 import wait from '../../utils/wait'
 import { withTimeout } from '../../utils/with-timeout'
+import { getDefaultAccountPreferences } from '../account/account'
 import { Call } from '../accountOp/types'
 import { adaptTypedMessageForMetaMaskSigUtil } from '../signMessage/signMessage'
 import {
@@ -233,9 +234,14 @@ export function getNewSafeCreation(owners: Hex[], threshold: number): SafeAccoun
 
 /**
  * Builds a new, not yet deployed Safe v1.4.1 account with the given owners and threshold.
- * Its address is the counterfactual address the Safe will be deployed to.
+ * Its address is the counterfactual address the Safe will be deployed to. The accounts
+ * already in the wallet are used to give it the next default label.
  */
-export function getNewSafeAccount(owners: Hex[], threshold: number): Account {
+export function getNewSafeAccount(
+  owners: Hex[],
+  threshold: number,
+  prevAccounts: Account[]
+): Account {
   const safeCreation = getNewSafeCreation(owners, threshold)
   const addr = getAddress(getSafeProxyAddress(safeCreation, SAFE_V1_4_1.proxyCreationCode))
   const associatedKeys = owners.map((owner) => getAddress(owner))
@@ -246,10 +252,7 @@ export function getNewSafeAccount(owners: Hex[], threshold: number): Account {
     initialPrivileges: associatedKeys.map((owner) => [owner, '0x01']),
     creation: null,
     safeCreation,
-    preferences: {
-      label: 'Safe',
-      pfp: addr
-    }
+    preferences: getDefaultAccountPreferences(addr, prevAccounts)
   }
 }
 
