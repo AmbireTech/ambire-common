@@ -633,7 +633,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
 
     const keyIterator = new KeyIterator(keystoreSavedSeed.seed, keystoreSavedSeed.seedPassphrase)
     const accountPicker = accountPickerInitFn()
-    await accountPicker.setInitParams({
+    accountPicker.setInitParams({
       keyIterator,
       hdPathTemplate: keystoreSavedSeed.hdPathTemplate,
       pageSize: 10,
