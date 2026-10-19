@@ -100,6 +100,7 @@ import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
 import {
+  getCallsWithTxnIds,
   getDappIdentifier,
   isIdentifiedByUserOpHash,
   SubmittedAccountOp
@@ -1031,23 +1032,7 @@ export class MainController extends EventEmitter implements IMainController {
     const isBasicAccountBroadcastingMultiple =
       submittedAccountOp.identifiedBy.type === 'MultipleTxns'
     if (isBasicAccountBroadcastingMultiple) {
-      const txnIds = submittedAccountOp.identifiedBy.identifier.split('-')
-      const calls = submittedAccountOp.calls.map((oneCall, i) => {
-        const localCall = { ...oneCall }
-
-        // if there's no tx id, we set it to Rejected and continue.
-        // it means broadcast has failed
-        if (!(i in txnIds)) {
-          localCall.status = AccountOpStatus.Rejected
-          return localCall
-        }
-
-        localCall.txnId = txnIds[i] as Hex
-        localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
-        return localCall
-      })
-
-      submittedAccountOp.calls = calls
+      submittedAccountOp.calls = getCallsWithTxnIds(submittedAccountOp)
     }
 
     if (accountOp.meta?.swapTxn) {

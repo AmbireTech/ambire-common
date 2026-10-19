@@ -16,7 +16,12 @@ import { BindedRelayerCall } from '../../libs/relayerCall/relayerCall'
 import { EstimationController } from '../estimation/estimation'
 import { GasPriceController } from '../gasPrice/gasPrice'
 import { SignAccountOpType } from './helper'
-import { OnBroadcastFailed, OnBroadcastSuccess, SignAccountOpController } from './signAccountOp'
+import {
+  OnBroadcastFailed,
+  OnBroadcastSuccess,
+  OnPartialBroadcast,
+  SignAccountOpController
+} from './signAccountOp'
 import { SignAccountOpPreferenceController } from './signAccountOpPreference'
 
 export class SignAccountOpTesterController extends SignAccountOpController {
@@ -51,6 +56,7 @@ export class SignAccountOpTesterController extends SignAccountOpController {
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
+    onPartialBroadcast?: OnPartialBroadcast
     estimateController: EstimationController
     gasPriceController: GasPriceController
     phishing: IPhishingController

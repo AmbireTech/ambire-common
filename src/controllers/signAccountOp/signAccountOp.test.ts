@@ -51,6 +51,7 @@ import { TraceCallDiscoveryStatus } from '../../interfaces/signAccountOp'
 import { Storage } from '../../interfaces/storage'
 import { getBaseAccount } from '../../libs/account/getBaseAccount'
 import { AccountOp, accountOpSignableHash } from '../../libs/accountOp/accountOp'
+import { AccountOpStatus } from '../../libs/accountOp/types'
 import * as broadcastLib from '../../libs/broadcast/broadcast'
 import { CALLDATA_SELECTOR_HEX_LENGTH } from '../../libs/decodeCall'
 import { InnerCallFailureError } from '../../libs/errorDecoder/customErrors'
@@ -477,6 +478,7 @@ const init = async (
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
     externalSignerControllers?: ExternalSignerControllers
     onBroadcastSuccess?: (params: any) => Promise<void>
+    onPartialBroadcast?: (sentAccountOp: any) => Promise<void>
     featureFlags?: Partial<FeatureFlags>
     contractInfoFetch?: Fetch
     // Lets several controllers share one, like the requests of a real wallet do
@@ -799,6 +801,7 @@ const init = async (
     shouldSimulate: false,
     onUpdateAfterTraceCallSuccess: options?.onUpdateAfterTraceCallSuccess,
     onBroadcastSuccess: options?.onBroadcastSuccess || (async () => {}),
+    onPartialBroadcast: options?.onPartialBroadcast,
     estimateController: estimationController,
     gasPriceController
   })
@@ -3942,8 +3945,13 @@ describe('broadcasting a batch one transaction at a time', () => {
     return batch
   }
 
-  const initBatch = async (overrides?: { callRelayer?: any }) => {
+  const initBatch = async (overrides?: {
+    callRelayer?: any
+    type?: SignAccountOpType
+    onPartialBroadcast?: (sentAccountOp: any) => Promise<void>
+  }) => {
     const submittedAccountOps: any[] = []
+    const sentAccountOps: any[] = []
     const broadcastStatusesOnSuccess: SignAccountOpTesterController['broadcastStatus'][] = []
     let broadcastingController: SignAccountOpTesterController | undefined
     const feePaymentOptions = [
@@ -3971,17 +3979,23 @@ describe('broadcasting a batch one transaction at a time', () => {
         // sends the whole batch as one transaction and takes a single signature.
         featureFlags: { eip7702: false },
         callRelayer: overrides?.callRelayer || ((async () => ({})) as any),
+        type: overrides?.type,
         onBroadcastSuccess: async ({ submittedAccountOp }: any) => {
           submittedAccountOps.push(submittedAccountOp)
           if (broadcastingController) {
             broadcastStatusesOnSuccess.push(broadcastingController.broadcastStatus)
           }
-        }
+        },
+        onPartialBroadcast:
+          overrides?.onPartialBroadcast ||
+          (async (sentAccountOp: any) => {
+            sentAccountOps.push(sentAccountOp)
+          })
       }
     )
     broadcastingController = controller
 
-    return { controller, submittedAccountOps, broadcastStatusesOnSuccess }
+    return { controller, submittedAccountOps, sentAccountOps, broadcastStatusesOnSuccess }
   }
 
   /**
@@ -4130,6 +4144,104 @@ describe('broadcasting a batch one transaction at a time', () => {
     // failure is the whole story.
     expect(submittedAccountOps).toHaveLength(0)
     expect(getPartialBroadcastError(controller)).toBeUndefined()
+  })
+
+  test('records a partly sent batch as broadcast, without reporting a partial broadcast', async () => {
+    const { controller, submittedAccountOps, sentAccountOps } = await initBatch()
+    mockBroadcastChain(1)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Outside the built-in swap the sent part is the result of the broadcast, so it
+    // goes through the regular success handler
+    expect(submittedAccountOps).toHaveLength(1)
+    expect(sentAccountOps).toHaveLength(0)
+  })
+
+  describe('in the built-in swap', () => {
+    const initSwapBatch = (onPartialBroadcast?: (sentAccountOp: any) => Promise<void>) =>
+      initBatch({ type: 'one-click-swap-and-bridge', onPartialBroadcast })
+
+    test('reports the sent part and fails, without recording it as a successful broadcast', async () => {
+      const { controller, submittedAccountOps, sentAccountOps } = await initSwapBatch()
+      mockBroadcastChain(1)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      // The swap can't be shown as sent, as the user has to retry the rest of it
+      expect(submittedAccountOps).toHaveLength(0)
+      expect(getPartialBroadcastError(controller)).toBeUndefined()
+      expect(controller.emittedErrors.some((e: any) => e.level === 'major')).toBe(true)
+
+      expect(sentAccountOps).toHaveLength(1)
+      const [sentAccountOp] = sentAccountOps
+      expect(sentAccountOp.status).toBe(AccountOpStatus.BroadcastedButNotConfirmed)
+      expect(sentAccountOp.identifiedBy).toEqual({ type: 'MultipleTxns', identifier: '0xhash1' })
+      expect(sentAccountOp.txnId).toBe('0xhash1')
+      // The calls that were not sent are kept, so they can be marked as such
+      expect(sentAccountOp.calls).toHaveLength(3)
+      // The nonce of the first sent txn, as the activity uses it to detect replaced txns
+      expect(sentAccountOp.eoaNonce).toBe(7n)
+    })
+
+    test('names every sent txn in the reported part', async () => {
+      const { controller, sentAccountOps } = await initSwapBatch()
+      mockBroadcastChain(2)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(sentAccountOps).toHaveLength(1)
+      expect(sentAccountOps[0].identifiedBy.identifier).toBe('0xhash1-0xhash2')
+      expect(sentAccountOps[0].txnId).toBe('0xhash2')
+    })
+
+    test('forgets the nonce after a partial send, so a retry reads it from the network', async () => {
+      const { controller } = await initSwapBatch()
+      mockBroadcastChain(1)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      // Keeping the nonce would make a retry send the already sent txns again
+      // or replace them while still pending
+      expect(controller.accountOp.eoaNonce).toBeUndefined()
+    })
+
+    test('reports nothing when nothing was sent', async () => {
+      const { controller, submittedAccountOps, sentAccountOps } = await initSwapBatch()
+      mockBroadcastChain(0)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(sentAccountOps).toHaveLength(0)
+      expect(submittedAccountOps).toHaveLength(0)
+    })
+
+    test('reports nothing when the whole batch was sent', async () => {
+      const { controller, submittedAccountOps, sentAccountOps } = await initSwapBatch()
+      mockBroadcastChain(null)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      expect(sentAccountOps).toHaveLength(0)
+      expect(submittedAccountOps).toHaveLength(1)
+    })
+
+    test('still shows why the batch stopped when reporting the sent part fails', async () => {
+      const { controller } = await initSwapBatch(async () => {
+        throw new Error('activity is unavailable')
+      })
+      mockBroadcastChain(1)
+
+      await controller.signAndBroadcast().catch(() => {})
+
+      const reportError = controller.emittedErrors.find((e: any) =>
+        e.message.startsWith('Failed to report the sent part')
+      )
+      expect(reportError).toBeDefined()
+      expect(reportError.level).toBe('silent')
+      expect(controller.emittedErrors.some((e: any) => e.level === 'major')).toBe(true)
+      expect(controller.status?.type).toBe(SigningStatus.ReadyToSign)
+    })
   })
 })
 
