@@ -3912,7 +3912,7 @@ describe('broadcasting a batch one transaction at a time', () => {
     return batch
   }
 
-  const initBatch = async (overrides?: { callRelayer?: any }) => {
+  const initBatch = async (overrides?: { callRelayer?: any; type?: SignAccountOpType }) => {
     const submittedAccountOps: any[] = []
     const broadcastStatusesOnSuccess: SignAccountOpTesterController['broadcastStatus'][] = []
     let broadcastingController: SignAccountOpTesterController | undefined
@@ -3940,6 +3940,7 @@ describe('broadcasting a batch one transaction at a time', () => {
         // Without this the account broadcasts through an EIP-7702 delegation, which
         // sends the whole batch as one transaction and takes a single signature.
         featureFlags: { eip7702: false },
+        type: overrides?.type,
         callRelayer: overrides?.callRelayer || ((async () => ({})) as any),
         onBroadcastSuccess: async ({ submittedAccountOp }: any) => {
           submittedAccountOps.push(submittedAccountOp)
@@ -3959,7 +3960,7 @@ describe('broadcasting a batch one transaction at a time', () => {
    * sent, with `failFromIndex` naming the first signature that refuses.
    */
   const mockBroadcastChain = (failFromIndex: number | null) => {
-    jest
+    const buildRawTransaction = jest
       .spyOn(broadcastLib, 'buildRawTransaction')
       .mockImplementation(async () => ({ to: '0x', value: 0n }) as any)
 
@@ -3979,7 +3980,7 @@ describe('broadcasting a batch one transaction at a time', () => {
       .spyOn(broadcastLib, 'broadcastTransaction')
       .mockImplementation(async () => ({ hash: `0xhash${signedCount}` }) as any)
 
-    return { signRawTransaction, broadcastTransaction }
+    return { buildRawTransaction, signRawTransaction, broadcastTransaction }
   }
 
   const getPartialBroadcastError = (controller: any) =>
@@ -4088,6 +4089,50 @@ describe('broadcasting a batch one transaction at a time', () => {
     expect(submittedAccountOps).toHaveLength(1)
     expect(submittedAccountOps[0].calls).toHaveLength(3)
     expect(getPartialBroadcastError(controller)).toBeUndefined()
+  })
+
+  test('retries only the transactions that were not sent in the built-in swap', async () => {
+    const { controller, submittedAccountOps } = await initBatch({
+      type: 'one-click-swap-and-bridge'
+    })
+    mockBroadcastChain(1)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // The built-in swap lets the user retry instead of recording the part that went out.
+    // Signing the sent ones again would send them twice (e.g. a second approval), or
+    // replace them while they are still pending if their nonce was reused.
+    expect(submittedAccountOps).toHaveLength(0)
+    expect(controller.accountOp.calls.map((call) => call.value)).toEqual([2n, 3n])
+    expect(controller.accountOp.eoaNonce).toBe(8n)
+
+    const { buildRawTransaction, broadcastTransaction } = mockBroadcastChain(null)
+    buildRawTransaction.mockClear()
+    broadcastTransaction.mockClear()
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    const sentNoncesAndValues = buildRawTransaction.mock.calls.map((args) => [
+      args[5],
+      args[7]?.value
+    ])
+    expect(sentNoncesAndValues).toEqual([
+      [8, 2n],
+      [9, 3n]
+    ])
+    expect(broadcastTransaction).toHaveBeenCalledTimes(2)
+    expect(submittedAccountOps).toHaveLength(1)
+    expect(submittedAccountOps[0].calls).toHaveLength(2)
+  })
+
+  test('starts the whole batch over in the built-in swap when nothing was sent', async () => {
+    const { controller } = await initBatch({ type: 'one-click-swap-and-bridge' })
+    mockBroadcastChain(0)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(controller.accountOp.calls).toHaveLength(3)
+    expect(controller.accountOp.eoaNonce).toBeUndefined()
   })
 
   test('reports a plain failure, not a partial success, when nothing was sent', async () => {

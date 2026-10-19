@@ -3934,7 +3934,7 @@ export class SignAccountOpController
       } catch (error: any) {
         console.error('Error broadcasting', error)
 
-        // reset the eoaNonce on error
+        // reset the eoaNonce on error (the built-in swap keeps it if some txns were sent, see below)
         this.#updateAccountOp({ eoaNonce: undefined })
 
         // for multiple txn cases
@@ -3943,7 +3943,7 @@ export class SignAccountOpController
         // to #1 and #2 and create a submittedAccountOp
         //
         // unless it's the build-in swap - we want to throw an error and
-        // allow the user to retry in this case
+        // allow the user to retry the txns that were not sent in this case
         if (multipleTxnsBroadcastRes.length && this.#type !== 'one-click-swap-and-bridge') {
           transactionRes = {
             nonce: senderNonce,
@@ -3969,6 +3969,11 @@ export class SignAccountOpController
             error
           })
         } else {
+          // The sent txns can't be taken back. Signing them again on retry would
+          // send them twice (e.g. a second approval) or replace the still pending ones.
+          if (multipleTxnsBroadcastRes.length)
+            this.#keepOnlyUnsentCalls(multipleTxnsBroadcastRes.length, senderNonce)
+
           return this.throwBroadcastAccountOp({ error, accountState })
         }
       } finally {
@@ -4377,6 +4382,20 @@ export class SignAccountOpController
     this.gasFeeChangedConfirmationRequired = false
     this.previousFee = null
     this.emitUpdate()
+  }
+
+  /**
+   * Drops the calls of a partly sent batch that were already broadcast and keeps
+   * the nonce of the first unsent one, so a retry continues from where it stopped.
+   * Re-estimates, as the fee of the remaining calls differs.
+   */
+  #keepOnlyUnsentCalls(sentCount: number, firstNonce: number) {
+    this.#updateAccountOp({
+      calls: this.accountOp.calls.slice(sentCount),
+      eoaNonce: BigInt(firstNonce + sentCount)
+    })
+    this.humanize()
+    this.#resumeIntervals({ haveCallsChanged: true })
   }
 
   /**
