@@ -2,8 +2,14 @@ import { decodeFunctionData, isAddress, parseAbi, toFunctionSelector, type Hex }
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { registeredCoinTypes } from '../../const/coinType'
-import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getLabel, isHexCall } from '../../utils'
+import { HumanizerCallModule, HumanizerVisualizationItem, IrCall } from '../../interfaces'
+import {
+  getAction,
+  getAddressVisualization,
+  getLabel,
+  isHexCall,
+  getLegacyVisualization
+} from '../../utils'
 
 const ENS_CONTROLLER = '0x253553366Da8546fC250F225fe3d25d0C782303b'
 const ENS_RESOLVER = '0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63'
@@ -57,7 +63,7 @@ export const ensModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCal
 
       fullVisualization.push(getLabel('for'), getLabel(durationLabel, true))
 
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     }
 
     if (call.data.slice(0, 10) === renewSelector) {
@@ -71,17 +77,20 @@ export const ensModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCal
         getLabel(durationLabel, true)
       ]
 
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     }
 
     if (call.data.slice(0, 10) === commitSelector) {
       return {
         ...call,
-        fullVisualization: [getAction('Request'), getLabel('to register an ENS record')]
+        fullVisualization: getLegacyVisualization([
+          getAction('Request'),
+          getLabel('to register an ENS record')
+        ])
       }
     }
   }
-  const resolverMatcher: Record<string, (data: Hex) => HumanizerVisualization[]> = {
+  const resolverMatcher: Record<string, (data: Hex) => HumanizerVisualizationItem[]> = {
     [setTextSelector]: (data) => {
       const { args } = decodeFunctionData({ abi: setTextAbi, data })
       const [, key, value] = args
@@ -116,23 +125,24 @@ export const ensModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCal
 
   if (call.to && call.to.toLowerCase() === ENS_RESOLVER.toLowerCase()) {
     const resolverHandler = resolverMatcher[call.data.slice(0, 10)]
-    if (resolverHandler) return { ...call, fullVisualization: resolverHandler(call.data) }
+    if (resolverHandler)
+      return { ...call, fullVisualization: getLegacyVisualization(resolverHandler(call.data)) }
 
     if (call.data.slice(0, 10) === multicallSelector) {
       const { args } = decodeFunctionData({ abi: multicallAbi, data: call.data })
       const [data] = args
       const separator = getLabel('and')
       const fullVisualization = data
-        .map((i): HumanizerVisualization[] => {
+        .map((i): HumanizerVisualizationItem[] => {
           const handler = resolverMatcher[i.slice(0, 10)]
           return handler ? handler(i) : [getAction('Unknown ENS action')]
         })
         .reduce(
-          (acc: HumanizerVisualization[], curr: HumanizerVisualization[], index: number) =>
+          (acc: HumanizerVisualizationItem[], curr: HumanizerVisualizationItem[], index: number) =>
             acc.concat(index ? [separator, ...curr] : curr),
           []
         )
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     }
   }
   if (
@@ -146,12 +156,12 @@ export const ensModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCal
 
     return {
       ...call,
-      fullVisualization: [
+      fullVisualization: getLegacyVisualization([
         getAction('Renew'),
         ...names.map((name: string) => getLabel(`${name}.eth`, true)),
         getLabel('for'),
         getLabel(durationLabel, true)
-      ]
+      ])
     }
   }
   return call

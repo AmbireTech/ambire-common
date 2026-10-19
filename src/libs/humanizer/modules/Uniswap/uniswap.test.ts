@@ -4,7 +4,7 @@ import { expect } from '@jest/globals'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
+import { HumanizerMeta, HumanizerVisualizationItem, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import {
   getAction,
@@ -202,7 +202,7 @@ describe('uniswap', () => {
     let irCalls: IrCall[] = accountOp.calls
     irCalls = irCalls.map((c) => uniswapHumanizer(accountOp, c, humanizerInfo as HumanizerMeta))
     expect(irCalls.length).toBe(expectedhumanization.length)
-    compareHumanizerVisualizations(irCalls, expectedhumanization as HumanizerVisualization[][])
+    compareHumanizerVisualizations(irCalls, expectedhumanization as HumanizerVisualizationItem[][])
   })
 
   test('uniSwap', () => {
@@ -239,7 +239,7 @@ describe('uniswap', () => {
       ]
     ]
     expect(irCalls.length).toEqual(expectedVisualization.length)
-    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
+    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualizationItem[][])
   })
   test('Reduce', () => {
     accountOp.calls = [...transactions.reduce]
@@ -271,7 +271,7 @@ describe('uniswap', () => {
     ]
     expect(irCalls.length).toEqual(expectedVisualization.length)
 
-    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
+    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualizationItem[][])
   })
   test('Liquidity', async () => {
     accountOp.calls = [...transactions.liquidity]
@@ -292,7 +292,7 @@ describe('uniswap', () => {
       ]
     ]
     expect(irCalls.length).toEqual(expectedVisualization.length)
-    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
+    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualizationItem[][])
   })
   test('swap calls (second one takes funds from contract)', () => {
     // this is the sentinel value the tested logic is written for
@@ -320,7 +320,7 @@ describe('uniswap', () => {
     ]
 
     expect(irCalls.length).toEqual(expectedVisualization.length)
-    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
+    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualizationItem[][])
   })
   test('univ4', () => {
     accountOp.calls = [
@@ -363,7 +363,7 @@ describe('uniswap', () => {
     ]
 
     expect(irCalls.length).toEqual(expectedVisualization.length)
-    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
+    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualizationItem[][])
   })
 
   test('uni v2 + path as bytes', () => {
@@ -388,7 +388,7 @@ describe('uniswap', () => {
       uniswapHumanizer(accountOp, c, humanizerInfo as HumanizerMeta)
     )
     expect(irCalls.length).toEqual(expectedVisualization.length)
-    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
+    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualizationItem[][])
   })
   test('Universal router + v4 + more complex deduplicating', () => {
     accountOp.calls = [
@@ -417,7 +417,7 @@ describe('uniswap', () => {
     )
 
     expect(irCalls.length).toEqual(expectedVisualization.length)
-    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
+    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualizationItem[][])
   })
 
   test('Universal router v4 swap with take pair', () => {
@@ -448,7 +448,7 @@ describe('uniswap', () => {
     )
 
     expect(irCalls.length).toEqual(expectedVisualization.length)
-    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
+    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualizationItem[][])
   })
 
   // 0x...0002 is a uniswap alias for the account of the sender, so no tokens leave the account
@@ -474,7 +474,7 @@ describe('uniswap', () => {
     )
 
     expect(irCalls.length).toEqual(expectedVisualization.length)
-    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
+    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualizationItem[][])
   })
 
   test('Universal router 2.1.1', () => {
@@ -503,7 +503,7 @@ describe('uniswap', () => {
     )
 
     expect(irCalls.length).toEqual(expectedVisualization.length)
-    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
+    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualizationItem[][])
   })
 
   test('SwapProxy forwarding to the Universal Router', () => {
@@ -534,6 +534,6 @@ describe('uniswap', () => {
     )
 
     expect(irCalls.length).toEqual(expectedVisualization.length)
-    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualization[][])
+    compareHumanizerVisualizations(irCalls, expectedVisualization as HumanizerVisualizationItem[][])
   })
 })

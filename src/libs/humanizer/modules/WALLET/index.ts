@@ -3,7 +3,14 @@ import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 import { STK_WALLET, WALLET_STAKING_ADDR, WALLET_TOKEN } from '../../../../consts/addresses'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { HexIrCall, getAction, getLabel, getToken, isHexCall } from '../../utils'
+import {
+  HexIrCall,
+  getAction,
+  getLabel,
+  getToken,
+  isHexCall,
+  getLegacyVisualization
+} from '../../utils'
 import { StakingPools } from './stakingPools'
 // update return ir to be {...ir,calls:newCalls} instead of {calls:newCalls} everywhere
 import { WALLETSupplyControllerMapping } from './WALLETSupplyController'
@@ -81,14 +88,14 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, call: IrCall) =>
     if (matcher.stakingPool[selector]) {
       return {
         ...call,
-        fullVisualization: matcher.stakingPool[selector](call)
+        fullVisualization: getLegacyVisualization(matcher.stakingPool[selector](call))
       }
     }
   }
   if (matcher.supplyController[selector]) {
     return {
       ...call,
-      fullVisualization: matcher.supplyController[selector](call)
+      fullVisualization: getLegacyVisualization(matcher.supplyController[selector](call))
     }
   }
   if (
@@ -98,7 +105,7 @@ export const WALLETModule: HumanizerCallModule = (_: AccountOp, call: IrCall) =>
   ) {
     return {
       ...call,
-      fullVisualization: matcher.stkWallet[selector](call)
+      fullVisualization: getLegacyVisualization(matcher.stkWallet[selector](call))
     }
   }
   return call

@@ -2,7 +2,13 @@ import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { HexIrCall, getAction, getAddressVisualization, isHexCall } from '../../utils'
+import {
+  HexIrCall,
+  getAction,
+  getAddressVisualization,
+  isHexCall,
+  getLegacyVisualization
+} from '../../utils'
 
 const deployModuleAbi = parseAbi([
   'function deployModule(address masterCopy, bytes memory initializer, uint256 saltNonce)'
@@ -16,7 +22,7 @@ const ModuleProxyFactoryModule: HumanizerCallModule = (accOp: AccountOp, call: I
       const { args } = decodeFunctionData({ abi: deployModuleAbi, data: call.data })
       const [masterCopy] = args
       const fullVisualization = [getAction('Deploy module'), getAddressVisualization(masterCopy)]
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     }
   }
   if (call.fullVisualization || !isHexCall(call)) return call

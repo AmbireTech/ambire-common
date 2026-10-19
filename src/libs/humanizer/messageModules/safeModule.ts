@@ -1,7 +1,7 @@
 import { isAddress } from 'ethers'
 
 import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
+import { HumanizerTypedMessageModule, HumanizerVisualizationItem } from '../interfaces'
 import { getDelegateCallWarning, getSafeHumanization } from '../modules/Safe'
 import { genericErc20Humanizer } from '../modules/Tokens'
 import { getAction, getAddressVisualization, getBreak, getLabel } from '../utils'
@@ -22,7 +22,7 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
     0,
     nonce
   )
-  const fullVisualization: HumanizerVisualization[] = []
+  const fullVisualization: HumanizerVisualizationItem[] = []
   if (!isAddress(verifyingContract)) return {}
   fullVisualization.push(
     ...[
@@ -35,7 +35,7 @@ export const safeMessageModule: HumanizerTypedMessageModule = (message: Message)
       : [])
   )
   if (humanizedCall.fullVisualization) {
-    fullVisualization.push(...humanizedCall.fullVisualization)
+    fullVisualization.push(...humanizedCall.fullVisualization.intent)
   }
   const delegateCallWarnings = operation !== undefined ? getDelegateCallWarning(operation, to) : []
   if (delegateCallWarnings.length) {

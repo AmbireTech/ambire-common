@@ -3,7 +3,7 @@ import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 import { STK_WALLET } from '../../../../consts/addresses'
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { HexIrCall, getAction, getToken, isHexCall } from '../../utils'
+import { HexIrCall, getAction, getToken, isHexCall, getLegacyVisualization } from '../../utils'
 
 const claimTokensAbi = parseAbi([
   'function claimTokens(uint256 index, uint256 amount, bytes32[] merkleProof)'
@@ -29,14 +29,20 @@ export const airdropsModule: HumanizerCallModule = (accountOp: AccountOp, call: 
       const { args } = decodeFunctionData({ abi: claimTokensAbi, data: call.data })
       const [, amount] = args
       const fullVisualization = [getAction('Claim'), getToken(WTC_TOKEN_ADDRESS, amount)]
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     },
     [claimSelector]: (call: HexIrCall) => {
       const { args } = decodeFunctionData({ abi: claimAbi, data: call.data })
       const [, , amount] = args
       if (!call.to) return call
       if (!distributors[call.to]) return call
-      return { ...call, fullVisualization: [getAction('Claim'), getToken(STK_WALLET, amount)] }
+      return {
+        ...call,
+        fullVisualization: getLegacyVisualization([
+          getAction('Claim'),
+          getToken(STK_WALLET, amount)
+        ])
+      }
     }
   }
   if (!isHexCall(call)) return call

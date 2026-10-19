@@ -11,7 +11,8 @@ import {
   getRecipientText,
   getToken,
   getTokenWithChain,
-  isHexCall
+  isHexCall,
+  getLegacyVisualization
 } from '../../utils'
 
 const depositV3Abi = parseAbi([
@@ -81,7 +82,7 @@ const AcrossModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   }
   const selector = call.data.slice(0, 10)
   if (call.fullVisualization || !isHexCall(call) || !matcher[selector]) return call
-  return { ...call, fullVisualization: matcher[selector](call) }
+  return { ...call, fullVisualization: getLegacyVisualization(matcher[selector](call)) }
 }
 
 export default AcrossModule

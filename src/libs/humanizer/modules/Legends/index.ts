@@ -15,7 +15,8 @@ import {
   getAddressVisualization,
   getImage,
   getLabel,
-  isHexCall
+  isHexCall,
+  getLegacyVisualization
 } from '../../utils'
 
 const ONCHAIN_TXNS_LEGENDS_ADDRESS = '0x1415926535897932384626433832795028841971'
@@ -147,7 +148,7 @@ const legendsModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
     return call
   const match = matcher[call.data.slice(0, 10)]
   if (!match) return call
-  return { ...call, fullVisualization: match(call) }
+  return { ...call, fullVisualization: getLegacyVisualization(match(call)) }
 }
 
 export default legendsModule

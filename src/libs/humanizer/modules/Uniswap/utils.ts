@@ -1,7 +1,7 @@
 import { zeroAddress } from 'viem'
 
 import { networks } from '../../../../consts/networks'
-import { HumanizerVisualization } from '../../interfaces'
+import { HumanizerVisualizationItem } from '../../interfaces'
 import { getLabel, getRecipientText } from '../../utils'
 
 const WRAPPED_NATIVE_TOKEN_ADDRESSES = new Set(
@@ -20,26 +20,29 @@ export function parsePath(pathBytes: any) {
   return path
 }
 
-export const getUniRecipientText = (accAddr: string, recAddr: string): HumanizerVisualization[] =>
+export const getUniRecipientText = (
+  accAddr: string,
+  recAddr: string
+): HumanizerVisualizationItem[] =>
   ['0x0000000000000000000000000000000000000001', zeroAddress].includes(recAddr)
     ? []
     : getRecipientText(accAddr, recAddr)
 
 export const joinWithAndLabel = (
-  humanizations: HumanizerVisualization[][]
-): HumanizerVisualization[] =>
+  humanizations: HumanizerVisualizationItem[][]
+): HumanizerVisualizationItem[] =>
   humanizations
     .filter((h) => h.length)
     .reduce((acc, arr) => [...acc, ...arr, getLabel('and')], [])
     .slice(0, -1)
 
 const isSwap = (
-  call: HumanizerVisualization[] | undefined
+  call: HumanizerVisualizationItem[] | undefined
 ): call is [
-  HumanizerVisualization,
-  HumanizerVisualization,
-  HumanizerVisualization,
-  HumanizerVisualization
+  HumanizerVisualizationItem,
+  HumanizerVisualizationItem,
+  HumanizerVisualizationItem,
+  HumanizerVisualizationItem
 ] =>
   !!call &&
   call.length >= 4 &&
@@ -51,8 +54,8 @@ const isSwap = (
   call[3].type === 'token'
 
 const isTake = (
-  call: HumanizerVisualization[] | undefined
-): call is [HumanizerVisualization, HumanizerVisualization] =>
+  call: HumanizerVisualizationItem[] | undefined
+): call is [HumanizerVisualizationItem, HumanizerVisualizationItem] =>
   !!call &&
   call.length === 2 &&
   !!call[0] &&
@@ -62,8 +65,8 @@ const isTake = (
   call[1].type === 'token'
 
 const isWrap = (
-  call: HumanizerVisualization[] | undefined
-): call is [HumanizerVisualization, HumanizerVisualization] =>
+  call: HumanizerVisualizationItem[] | undefined
+): call is [HumanizerVisualizationItem, HumanizerVisualizationItem] =>
   !!call &&
   call.length >= 2 &&
   !!call[0]?.content &&
@@ -72,8 +75,8 @@ const isWrap = (
   call[1].type === 'token'
 
 const isUnwrap = (
-  call: HumanizerVisualization[] | undefined
-): call is [HumanizerVisualization, HumanizerVisualization] =>
+  call: HumanizerVisualizationItem[] | undefined
+): call is [HumanizerVisualizationItem, HumanizerVisualizationItem] =>
   !!call &&
   call.length >= 2 &&
   !!call[0]?.content &&
@@ -82,8 +85,8 @@ const isUnwrap = (
   call[1].type === 'token'
 
 const isSend = (
-  call: HumanizerVisualization[] | undefined
-): call is [HumanizerVisualization, HumanizerVisualization] =>
+  call: HumanizerVisualizationItem[] | undefined
+): call is [HumanizerVisualizationItem, HumanizerVisualizationItem] =>
   !!call &&
   call.length >= 2 &&
   !!call[0]?.content &&
@@ -91,17 +94,17 @@ const isSend = (
   call[0].content?.includes('Send') &&
   call[1].type === 'token'
 
-const getDeadlineValue = (call: HumanizerVisualization[]) => {
+const getDeadlineValue = (call: HumanizerVisualizationItem[]) => {
   const deadline = call.find((item) => item.type === 'deadline')
   return deadline?.value
 }
 
-const getSendRecipient = (call: HumanizerVisualization[]) => {
+const getSendRecipient = (call: HumanizerVisualizationItem[]) => {
   const recipient = call.find((item) => item.type === 'address')
   return recipient?.address?.toLowerCase()
 }
 
-export const uniReduce = (_calls: HumanizerVisualization[][]): HumanizerVisualization[] => {
+export const uniReduce = (_calls: HumanizerVisualizationItem[][]): HumanizerVisualizationItem[] => {
   const calls = _calls
   const originalCallsLength = calls.length
   for (let i = 0; i < calls.length; i++) {

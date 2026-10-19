@@ -3,7 +3,7 @@ import { ZeroAddress } from 'ethers'
 import { describe } from '@jest/globals'
 
 import humanizerInfo from '../../../../consts/humanizer/humanizerInfo.json'
-import { HumanizerMeta, HumanizerVisualization, IrCall } from '../../interfaces'
+import { HumanizerMeta, HumanizerVisualizationItem, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getLabel } from '../../utils'
 import { genericErc20Humanizer } from '../Tokens'
@@ -19,7 +19,7 @@ const txns: IrCall[] = [
 
 describe('singleton factory', () => {
   test('basic', () => {
-    const expectedVisualizations: HumanizerVisualization[][] = [
+    const expectedVisualizations: HumanizerVisualizationItem[][] = [
       [
         getAction('Deploy a contract'),
         getLabel('via'),

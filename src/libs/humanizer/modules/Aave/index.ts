@@ -1,6 +1,6 @@
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { isHexCall } from '../../utils'
+import { isHexCall, getLegacyVisualization } from '../../utils'
 import { aaveLendingPoolV2 } from './aaveLendingPoolV2'
 import { aaveV3Pool } from './aaveV3'
 import { aaveWethGatewayV2 } from './aaveWethGatewayV2'
@@ -14,5 +14,7 @@ const matcher = {
 export const aaveHumanizer: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   if (!call.to || !isHexCall(call)) return call
   const sigHash = call.data.slice(0, 10)
-  return matcher[sigHash] ? { ...call, fullVisualization: matcher[sigHash](accountOp, call) } : call
+  return matcher[sigHash]
+    ? { ...call, fullVisualization: getLegacyVisualization(matcher[sigHash](accountOp, call)) }
+    : call
 }

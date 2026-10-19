@@ -1,11 +1,12 @@
 import { getAddress, Hex, isAddress, isHex, zeroAddress } from 'viem'
 
 import {
-  HumanizerErc7730Row,
+  HumanizerRow,
   HumanizerMeta,
-  HumanizerVisualization,
+  HumanizerVisualizationItem,
   HumanizerWarning,
-  IrCall
+  IrCall,
+  RichHumanizerVisualization
 } from './interfaces'
 
 export type HexIrCall = IrCall & { data: Hex }
@@ -92,23 +93,23 @@ export const randomId = (): number => Math.floor(Math.random() * Number.MAX_SAFE
 export function getLabel(
   content: string | bigint | number,
   isBold?: boolean
-): HumanizerVisualization {
+): HumanizerVisualizationItem {
   return { type: 'label', content: content.toString(), id: randomId(), isBold }
 }
 export function getAction(
   content: string,
   options?: { warning?: boolean }
-): HumanizerVisualization {
+): HumanizerVisualizationItem {
   return { type: 'action', content, id: randomId(), warning: options?.warning }
 }
-export function getImage(content: string): HumanizerVisualization {
+export function getImage(content: string): HumanizerVisualizationItem {
   return { type: 'image', content, id: randomId() }
 }
-export function getBreak(): HumanizerVisualization {
+export function getBreak(): HumanizerVisualizationItem {
   return { type: 'break', id: randomId() }
 }
 
-export function getAddressVisualization(_address: string): HumanizerVisualization {
+export function getAddressVisualization(_address: string): HumanizerVisualizationItem {
   const address = _address.toLowerCase()
   return { type: 'address', address, id: randomId() }
 }
@@ -117,7 +118,7 @@ export function getToken(
   _address: string,
   amount: bigint,
   chainId?: bigint
-): HumanizerVisualization {
+): HumanizerVisualizationItem {
   const address = _address.toLowerCase()
   return {
     type: 'token',
@@ -131,40 +132,50 @@ export function getTokenWithChain(
   address: string,
   amount: bigint,
   chainId?: bigint
-): HumanizerVisualization {
+): HumanizerVisualizationItem {
   return getToken(address, amount, chainId)
 }
 
-export function getChain(chainId: bigint): HumanizerVisualization {
+export function getChain(chainId: bigint): HumanizerVisualizationItem {
   return { type: 'chain', id: randomId(), chainId }
 }
 
-export function getText(text: string, mlMi?: boolean): HumanizerVisualization {
+export function getText(text: string, mlMi?: boolean): HumanizerVisualizationItem {
   return { type: 'text', content: text, id: randomId(), mlMi }
 }
 
-/** The visualizations a row renders - a `call` row keeps its parts flat, every other row has one. */
-export function getErc7730RowValues(row: HumanizerErc7730Row): HumanizerVisualization[] {
-  return row.type === 'call' ? row.value : [row.value]
+/** The visualizations a row renders - a `call` row renders its whole nested visualization, every other row has one value. */
+export function getRowValues(row: HumanizerRow): HumanizerVisualizationItem[] {
+  return row.type === 'call' ? row.value.intent : [row.value]
 }
 
 /** A `call` row renders an embedded call inline and has no label of its own. */
-export function getErc7730RowLabel(row: HumanizerErc7730Row): string {
+export function getRowLabel(row: HumanizerRow): string {
   return row.type === 'call' ? '' : row.label
 }
 
-export function getErc7730Visualization(
+/**
+ * Wraps the flat parts a legacy humanizer module produced into the structure every humanization
+ * has. The parts are the whole `intent`, and there are no fields to show as rows.
+ */
+export function getLegacyVisualization(
+  intent: HumanizerVisualizationItem[],
+  dapp?: IrCall['dapp']
+): RichHumanizerVisualization {
+  return { intent, excludedFieldPaths: [], fields: [], dapp }
+}
+
+export function getRichVisualization(
   intent: string | undefined,
-  rows: HumanizerErc7730Row[],
+  rows: HumanizerRow[],
   dapp?: IrCall['dapp'],
   // Present only when the format used an `interpolatedIntent` that fully
   // resolved: `parts` is the structured breakdown to render, `usedFieldPaths`
-  // is which fields (by `HumanizerErc7730Row.path`) it already rendered inline
-  // - see `excludedFieldPaths` on `HumanizerErc7730Visualization`.
-  interpolated?: { parts: HumanizerVisualization[]; usedFieldPaths: string[] }
-): HumanizerVisualization {
+  // is which fields (by `HumanizerRow.path`) it already rendered inline
+  // - see `excludedFieldPaths` on `RichHumanizerVisualization`.
+  interpolated?: { parts: HumanizerVisualizationItem[]; usedFieldPaths: string[] }
+): RichHumanizerVisualization {
   return {
-    type: 'erc7730',
     // When interpolation succeeded, show the rich breakdown and exclude
     // whatever fields it already rendered inline (that can legitimately be
     // every field, e.g. when the whole template referenced them all).
@@ -173,43 +184,40 @@ export function getErc7730Visualization(
     intent: interpolated?.parts ?? (intent ? [getAction(intent)] : []),
     excludedFieldPaths: interpolated?.usedFieldPaths ?? [],
     fields: rows,
-    dapp,
-    id: randomId()
+    dapp
   }
 }
 
-export function flattenHumanizerVisualizations(
-  visualizations: HumanizerVisualization[] = []
-): HumanizerVisualization[] {
-  return visualizations.flatMap((visualization) => {
-    if (visualization.type !== 'erc7730') return [visualization]
+/**
+ * Every item a visualization contains: its `intent` and the values of all its `fields` (not just
+ * the ones displayed as rows, so values that only show up inline in `intent` are still found),
+ * including those of the visualizations nested in `call` rows.
+ */
+export function flattenHumanizerVisualization(
+  visualization?: RichHumanizerVisualization
+): HumanizerVisualizationItem[] {
+  if (!visualization) return []
 
-    return [
-      visualization,
-      // `fields` (every field, not just the ones displayed as rows) so nested
-      // values that only show up inline in `intent` (e.g. a token amount) are
-      // still discovered here.
-      ...flattenHumanizerVisualizations(visualization.fields.flatMap(getErc7730RowValues))
-    ]
-  })
+  return [
+    ...visualization.intent,
+    ...visualization.fields.flatMap((row) =>
+      row.type === 'call' ? flattenHumanizerVisualization(row.value) : [row.value]
+    )
+  ]
 }
 
 export function hasErc7730Humanization(humanization?: IrCall[]): boolean {
-  return !!humanization?.some((call) =>
-    flattenHumanizerVisualizations(call.fullVisualization).some(
-      (visualization) => visualization.type === 'erc7730'
-    )
-  )
+  return !!humanization?.some((call) => call.isErc7730)
 }
 
-export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualization[] {
+export function getOnBehalfOf(onBehalfOf: string, sender: string): HumanizerVisualizationItem[] {
   return onBehalfOf.toLowerCase() !== sender.toLowerCase()
     ? [getLabel('on behalf of'), getAddressVisualization(onBehalfOf)]
     : []
 }
 
 // @TODO on some humanization of uniswap there is recipient 0x000...000
-export function getRecipientText(from: string, recipient: string): HumanizerVisualization[] {
+export function getRecipientText(from: string, recipient: string): HumanizerVisualizationItem[] {
   return from.toLowerCase() === recipient.toLowerCase()
     ? []
     : [getLabel('and send it to'), getAddressVisualization(recipient)]
@@ -231,7 +239,7 @@ export function getDeadlineText(deadline: bigint): string {
   return `valid until ${deadlineDate.toLocaleString()}`
 }
 
-export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualization {
+export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizationItem {
   const deadline = BigInt(deadlineSecs) * 1000n
   return {
     type: 'deadline',
@@ -239,15 +247,15 @@ export function getDeadline(deadlineSecs: bigint | number): HumanizerVisualizati
     id: randomId()
   }
 }
-export function getLink(url: string, content: string): HumanizerVisualization {
+export function getLink(url: string, content: string): HumanizerVisualizationItem {
   return { type: 'link', url, content, id: randomId() }
 }
 
-export function getWrapping(address: string, amount: bigint): HumanizerVisualization[] {
+export function getWrapping(address: string, amount: bigint): HumanizerVisualizationItem[] {
   return [getAction('Wrap'), getToken(address, amount)]
 }
 
-export function getUnwrapping(address: string, amount: bigint): HumanizerVisualization[] {
+export function getUnwrapping(address: string, amount: bigint): HumanizerVisualizationItem[] {
   return [getAction('Unwrap'), getToken(address, amount)]
 }
 

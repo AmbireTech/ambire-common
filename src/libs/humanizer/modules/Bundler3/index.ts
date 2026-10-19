@@ -3,9 +3,9 @@ import { decodeFunctionData, toFunctionSelector } from 'viem'
 import { AccountOp } from '../../../accountOp/accountOp'
 import {
   HumanizerCallModule,
-  HumanizerVisualization,
   HumanizerWarning,
-  IrCall
+  IrCall,
+  RichHumanizerVisualization
 } from '../../interfaces'
 import {
   getAction,
@@ -14,7 +14,8 @@ import {
   getLabel,
   getToken,
   isHexCall,
-  padCallData
+  padCallData,
+  getLegacyVisualization
 } from '../../utils'
 import {
   erc4626DepositAbi,
@@ -57,7 +58,7 @@ interface BundleCall {
   value: bigint
   skipRevert: boolean
   callbackHash: string
-  fullVisualization?: HumanizerVisualization[]
+  fullVisualization?: RichHumanizerVisualization
   warnings?: HumanizerWarning[]
 }
 
@@ -91,7 +92,11 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
       const [marketParams, assets, onBehalf] = args
       const collateral = marketParams.collateralToken
       const fullVisualization = [getBreak(), getAction('Supply'), getToken(collateral, assets)]
-      return { ...call, fullVisualization, warnings: getWarnings(accAddr, onBehalf) }
+      return {
+        ...call,
+        fullVisualization: getLegacyVisualization(fullVisualization),
+        warnings: getWarnings(accAddr, onBehalf)
+      }
     },
     [morphoBorrowSelector]: (call) => {
       const { args } = decodeFunctionData({
@@ -106,7 +111,11 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
         getToken(loanToken, assets),
         getLabel('loan')
       ]
-      return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
+      return {
+        ...call,
+        fullVisualization: getLegacyVisualization(fullVisualization),
+        warnings: getWarnings(accAddr, receiver)
+      }
     },
     [morphoRepaySelector]: (call) => {
       const { args } = decodeFunctionData({
@@ -116,7 +125,11 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
       const [marketParams, assets, , , onBehalf] = args
       const loanToken = marketParams.loanToken
       const fullVisualization = [getBreak(), getAction('Repay'), getToken(loanToken, assets)]
-      return { ...call, fullVisualization, warnings: getWarnings(accAddr, onBehalf) }
+      return {
+        ...call,
+        fullVisualization: getLegacyVisualization(fullVisualization),
+        warnings: getWarnings(accAddr, onBehalf)
+      }
     },
     [morphoWithdrawCollateralSelector]: (call) => {
       const { args } = decodeFunctionData({
@@ -130,7 +143,11 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
         getAction('Withdraw'),
         getToken(collateralToken, assets)
       ]
-      return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
+      return {
+        ...call,
+        fullVisualization: getLegacyVisualization(fullVisualization),
+        warnings: getWarnings(accAddr, receiver)
+      }
     },
     [morphoFlashLoanSelector]: (call) => {
       const { args } = decodeFunctionData({
@@ -143,7 +160,7 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
         getAction('Execute flash loan for'),
         getToken(token, assets)
       ]
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     },
     [erc4626MintSelector]: (call) => {
       const { args } = decodeFunctionData({
@@ -156,7 +173,11 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
         getAction('Supply to vault'),
         getAddressVisualization(vault)
       ]
-      return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
+      return {
+        ...call,
+        fullVisualization: getLegacyVisualization(fullVisualization),
+        warnings: getWarnings(accAddr, receiver)
+      }
     },
     [erc4626DepositSelector]: (call) => {
       const { args } = decodeFunctionData({
@@ -169,7 +190,11 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
         getAction('Mint from vault'),
         getAddressVisualization(vault)
       ]
-      return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
+      return {
+        ...call,
+        fullVisualization: getLegacyVisualization(fullVisualization),
+        warnings: getWarnings(accAddr, receiver)
+      }
     },
     [erc4626WithdrawSelector]: (call) => {
       const { args } = decodeFunctionData({
@@ -182,7 +207,11 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
         getAction('Withdraw from vault'),
         getAddressVisualization(vault)
       ]
-      return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
+      return {
+        ...call,
+        fullVisualization: getLegacyVisualization(fullVisualization),
+        warnings: getWarnings(accAddr, receiver)
+      }
     },
     [erc4626RedeemSelector]: (call) => {
       const { args } = decodeFunctionData({
@@ -195,7 +224,11 @@ const decodeGeneralAdapter = (accAddr: string, bundle: readonly BundleCall[]) =>
         getAction('Withdraw from vault'),
         getAddressVisualization(vault)
       ]
-      return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
+      return {
+        ...call,
+        fullVisualization: getLegacyVisualization(fullVisualization),
+        warnings: getWarnings(accAddr, receiver)
+      }
     }
   }
 
@@ -217,11 +250,13 @@ const Bundler3Module: HumanizerCallModule = (accOp: AccountOp, call: IrCall): Ir
       const { args } = decodeFunctionData({ abi: multicallAbi, data: call.data })
       const [bundle] = args
       const decodedBundle = decodeGeneralAdapter(accOp.accountAddr, bundle)
-      const bundleVisualization = decodedBundle.map((c) => c.fullVisualization || []).flat()
+      const bundleVisualization = decodedBundle.map((c) => c.fullVisualization?.intent || []).flat()
       if (bundleVisualization.length) bundleVisualization.shift()
       return {
         ...call,
-        fullVisualization: bundleVisualization.length ? bundleVisualization : undefined
+        fullVisualization: bundleVisualization.length
+          ? getLegacyVisualization(bundleVisualization)
+          : undefined
       }
     }
   }

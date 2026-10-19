@@ -13,7 +13,7 @@ import { AccountOp, isSafeRejectionCall } from '../../../accountOp/accountOp'
 import { decodeMultiSend } from '../../../safe/helpers'
 import {
   HumanizerCallModule,
-  HumanizerVisualization,
+  HumanizerVisualizationItem,
   HumanizerWarning,
   IrCall
 } from '../../interfaces'
@@ -27,7 +27,8 @@ import {
   getWarning,
   HexIrCall,
   isHexCall,
-  padCallData
+  padCallData,
+  getLegacyVisualization
 } from '../../utils'
 
 const addOwnerWithThresholdAbi = parseAbi([
@@ -113,10 +114,10 @@ export const getSafeHumanization = (
   data?: string,
   setupHookDepth = 0,
   nonce?: string | number | bigint | null
-): { visuals?: HumanizerVisualization[]; warnings?: HumanizerWarning[] } | undefined => {
+): { visuals?: HumanizerVisualizationItem[]; warnings?: HumanizerWarning[] } | undefined => {
   if (!data || !isHex(data)) return
 
-  const fullVisualization: HumanizerVisualization[] = []
+  const fullVisualization: HumanizerVisualizationItem[] = []
   const warnings: HumanizerWarning[] = []
 
   const selector = data.substring(0, 10)
@@ -516,7 +517,11 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
       const delegateCallWarnings = getDelegateCallWarning(bigintOperation, to)
       if (delegateCallWarnings.length) warnings.push(...delegateCallWarnings)
 
-      return { ...matchedCall, fullVisualization, warnings }
+      return {
+        ...matchedCall,
+        fullVisualization: getLegacyVisualization(fullVisualization),
+        warnings
+      }
     }
   }
   let newCall = call
@@ -531,7 +536,9 @@ const SafeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): IrCall
   if (safeSpecificHumanization) {
     newCall = {
       ...call,
-      fullVisualization: safeSpecificHumanization.visuals,
+      fullVisualization: safeSpecificHumanization.visuals
+        ? getLegacyVisualization(safeSpecificHumanization.visuals)
+        : undefined,
       warnings: safeSpecificHumanization.warnings
     }
   } else if (isHexCall(call)) {

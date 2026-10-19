@@ -3,7 +3,7 @@ import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 import { AccountOp } from '../../../accountOp/accountOp'
 import {
   HumanizerCallModule,
-  HumanizerVisualization,
+  HumanizerVisualizationItem,
   HumanizerWarning,
   IrCall
 } from '../../interfaces'
@@ -19,7 +19,8 @@ import {
   isHexCall,
   isUnlimitedAmount,
   mergeWarnings,
-  padCallData
+  padCallData,
+  getLegacyVisualization
 } from '../../utils'
 
 // MetaMorpho vaults are ERC-4626 + ERC-20 + ERC-2612 (permit) + OZ Multicall contracts.
@@ -53,7 +54,7 @@ const erc4626RedeemAbi = parseAbi([
 ])
 
 interface DecodedInnerCall {
-  visualization: HumanizerVisualization[]
+  visualization: HumanizerVisualizationItem[]
   matched: boolean
   // collected while the inner call is decoded, e.g. when it turns out to be an approval with
   // no limit. A nested bundle carries up every warning the calls inside it produced
@@ -63,7 +64,7 @@ interface DecodedInnerCall {
 // inner calls not matching one of these selectors are rendered as "Unknown call" rather
 // than dropping the whole multicall's humanization
 type DecodedInnerCallResult = {
-  visualization: HumanizerVisualization[]
+  visualization: HumanizerVisualizationItem[]
   warning?: HumanizerWarning
 }
 
@@ -193,7 +194,7 @@ const unmatched = (): DecodedInnerCall => ({
 
 const multicallSelector = toFunctionSelector(multicallAbi[0])
 
-const joinWithBreaks = (decoded: DecodedInnerCall[]): HumanizerVisualization[] => {
+const joinWithBreaks = (decoded: DecodedInnerCall[]): HumanizerVisualizationItem[] => {
   const visualization = decoded.flatMap((c) => [getBreak(), ...c.visualization])
   visualization.shift()
 
@@ -267,7 +268,11 @@ const MetaMorphoModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): 
   const fullVisualization = joinWithBreaks(decoded)
   const warnings = decoded.flatMap((c) => c.warnings)
 
-  return { ...call, fullVisualization, warnings: mergeWarnings(call.warnings, warnings) }
+  return {
+    ...call,
+    fullVisualization: getLegacyVisualization(fullVisualization),
+    warnings: mergeWarnings(call.warnings, warnings)
+  }
 }
 
 export default MetaMorphoModule

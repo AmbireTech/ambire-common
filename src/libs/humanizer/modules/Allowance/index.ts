@@ -8,7 +8,8 @@ import {
   getLabel,
   getToken,
   HexIrCall,
-  isHexCall
+  isHexCall,
+  getLegacyVisualization
 } from '../../utils'
 
 const setAllowanceAbi = parseAbi([
@@ -62,7 +63,7 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
         getLabel(getAllowanceResetText(BigInt(resetTimeMin)))
       ]
 
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     },
     [addDelegateSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: addDelegateAbi, data: call.data })
@@ -70,7 +71,7 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
 
       const fullVisualization = [getAction('Add delegate'), getAddressVisualization(delegate)]
 
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     },
     [removeDelegateSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: removeDelegateAbi, data: call.data })
@@ -79,7 +80,7 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
       const fullVisualization = [getAction('Remove delegate'), getAddressVisualization(delegate)]
       if (removeAllowances) fullVisualization.push(getLabel('and set allowance to 0'))
 
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     },
     [deleteAllowanceSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: deleteAllowanceAbi, data: call.data })
@@ -91,7 +92,7 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
         getToken(token, 0n)
       ]
 
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     },
     [executeAllowanceTransferSelector]: (call) => {
       const { args } = decodeFunctionData({
@@ -107,7 +108,7 @@ const AllowanceModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
         getToken(token, amount)
       ]
 
-      return { ...call, fullVisualization }
+      return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
     }
   }
   if (call.fullVisualization || !isHexCall(call)) return call

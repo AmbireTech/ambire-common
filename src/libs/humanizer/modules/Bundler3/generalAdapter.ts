@@ -1,6 +1,6 @@
 import { decodeFunctionData, parseAbi, toFunctionSelector, zeroAddress } from 'viem'
 
-import { HumanizerVisualization, HumanizerWarning, IrCall } from '../../interfaces'
+import { HumanizerWarning, IrCall, RichHumanizerVisualization } from '../../interfaces'
 import {
   getAction,
   getAddressVisualization,
@@ -12,7 +12,8 @@ import {
   getWrapping,
   HexIrCall,
   isHexCall,
-  padCallData
+  padCallData,
+  getLegacyVisualization
 } from '../../utils'
 
 export const erc20TransferFromAbi = parseAbi([
@@ -66,7 +67,7 @@ export interface BundleCall {
   value: bigint
   skipRevert: boolean
   callbackHash: string
-  fullVisualization?: HumanizerVisualization[]
+  fullVisualization?: RichHumanizerVisualization
   warnings?: HumanizerWarning[]
 }
 
@@ -106,7 +107,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getLabel('To'),
       getAddressVisualization(receiver)
     ]
-    return { ...call, fullVisualization }
+    return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
   },
   [toFunctionSelector(erc20TransferAbi[0])]: (
     _accAddr: string,
@@ -121,7 +122,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getLabel('To'),
       getAddressVisualization(receiver)
     ]
-    return { ...call, fullVisualization }
+    return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
   },
   [toFunctionSelector(nativeTransferAbi[0])]: (
     _accAddr: string,
@@ -136,7 +137,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getLabel('To'),
       getAddressVisualization(receiver)
     ]
-    return { ...call, fullVisualization }
+    return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
   },
   [toFunctionSelector(wrapNativeAbi[0])]: (
     _accAddr: string,
@@ -145,7 +146,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     const { args } = decodeFunctionData({ abi: wrapNativeAbi, data: padCallData(call.data, 1) })
     const [amount] = args
     const fullVisualization = [getBreak(), ...getWrapping(zeroAddress, amount)]
-    return { ...call, fullVisualization }
+    return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
   },
   [toFunctionSelector(unwrapNativeAbi[0])]: (
     _accAddr: string,
@@ -154,7 +155,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
     const { args } = decodeFunctionData({ abi: unwrapNativeAbi, data: padCallData(call.data, 1) })
     const [amount] = args
     const fullVisualization = [getBreak(), ...getUnwrapping(zeroAddress, amount)]
-    return { ...call, fullVisualization }
+    return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
   },
   [toFunctionSelector(permit2TransferFromAbi[0])]: (
     _accAddr: string,
@@ -172,7 +173,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getLabel('To'),
       getAddressVisualization(receiver)
     ]
-    return { ...call, fullVisualization }
+    return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
   },
   [toFunctionSelector(morphoSupplyCollateralAbi[0])]: (
     accAddr: string,
@@ -185,7 +186,11 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getAction('Supply'),
       getToken(marketParams.collateralToken, assets)
     ]
-    return { ...call, fullVisualization, warnings: getWarnings(accAddr, onBehalf) }
+    return {
+      ...call,
+      fullVisualization: getLegacyVisualization(fullVisualization),
+      warnings: getWarnings(accAddr, onBehalf)
+    }
   },
   [toFunctionSelector(morphoBorrowAbi[0])]: (
     accAddr: string,
@@ -198,7 +203,11 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getAction('Borrow'),
       getToken(marketParams.loanToken, assets)
     ]
-    return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
+    return {
+      ...call,
+      fullVisualization: getLegacyVisualization(fullVisualization),
+      warnings: getWarnings(accAddr, receiver)
+    }
   },
   [toFunctionSelector(morphoRepayAbi[0])]: (
     accAddr: string,
@@ -211,7 +220,11 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getAction('Repay'),
       getToken(marketParams.loanToken, toRepayAssets(assets, shares, maxSharePriceE27))
     ]
-    return { ...call, fullVisualization, warnings: getWarnings(accAddr, onBehalf) }
+    return {
+      ...call,
+      fullVisualization: getLegacyVisualization(fullVisualization),
+      warnings: getWarnings(accAddr, onBehalf)
+    }
   },
   [toFunctionSelector(morphoWithdrawCollateralAbi[0])]: (
     accAddr: string,
@@ -227,7 +240,11 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getAction('Withdraw'),
       getToken(marketParams.collateralToken, assets)
     ]
-    return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
+    return {
+      ...call,
+      fullVisualization: getLegacyVisualization(fullVisualization),
+      warnings: getWarnings(accAddr, receiver)
+    }
   },
   [toFunctionSelector(morphoFlashLoanAbi[0])]: (
     _accAddr: string,
@@ -240,7 +257,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getAction('Execute flash loan for'),
       getToken(token, assets)
     ]
-    return { ...call, fullVisualization }
+    return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
   },
   [toFunctionSelector(erc4626MintAbi[0])]: (
     accAddr: string,
@@ -253,7 +270,11 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getAction('Supply to vault'),
       getAddressVisualization(vault)
     ]
-    return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
+    return {
+      ...call,
+      fullVisualization: getLegacyVisualization(fullVisualization),
+      warnings: getWarnings(accAddr, receiver)
+    }
   },
   [toFunctionSelector(erc4626DepositAbi[0])]: (
     accAddr: string,
@@ -266,7 +287,11 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getAction('Mint from vault'),
       getAddressVisualization(vault)
     ]
-    return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
+    return {
+      ...call,
+      fullVisualization: getLegacyVisualization(fullVisualization),
+      warnings: getWarnings(accAddr, receiver)
+    }
   },
   [toFunctionSelector(erc4626WithdrawAbi[0])]: (
     accAddr: string,
@@ -282,7 +307,11 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getAction('Withdraw from vault'),
       getAddressVisualization(vault)
     ]
-    return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
+    return {
+      ...call,
+      fullVisualization: getLegacyVisualization(fullVisualization),
+      warnings: getWarnings(accAddr, receiver)
+    }
   },
   [toFunctionSelector(erc4626RedeemAbi[0])]: (
     accAddr: string,
@@ -295,7 +324,11 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getAction('Withdraw from vault'),
       getAddressVisualization(vault)
     ]
-    return { ...call, fullVisualization, warnings: getWarnings(accAddr, receiver) }
+    return {
+      ...call,
+      fullVisualization: getLegacyVisualization(fullVisualization),
+      warnings: getWarnings(accAddr, receiver)
+    }
   },
   [toFunctionSelector(publicAllocatorReallocateToAbi[0])]: (
     _accAddr: string,
@@ -310,7 +343,7 @@ const matcher: Record<string, (accAddr: string, call: HexIrCall) => IrCall | und
       getAddressVisualization(vault)
     ]
 
-    return { ...call, fullVisualization }
+    return { ...call, fullVisualization: getLegacyVisualization(fullVisualization) }
   }
 }
 

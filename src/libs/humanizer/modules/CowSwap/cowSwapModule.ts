@@ -11,7 +11,7 @@ import {
 import { CowSwapOrderStruct } from '../../../../interfaces/swapAndBridge'
 import { getCowSwapOrderUid } from '../../../../services/cowswap/helper'
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerCallModule, HumanizerVisualization, IrCall } from '../../interfaces'
+import { HumanizerCallModule, HumanizerVisualizationItem, IrCall } from '../../interfaces'
 import {
   HexIrCall,
   getAction,
@@ -20,7 +20,8 @@ import {
   getLabel,
   getRecipientText,
   getToken,
-  isHexCall
+  isHexCall,
+  getLegacyVisualization
 } from '../../utils'
 
 const settleAbi = [
@@ -116,8 +117,8 @@ const getTokenAtIndex = (tokens: readonly string[], index: bigint): string | nul
   return tokens[Number(index)] || null
 }
 
-const getOrderUidVisualization = (orderUid: string): HumanizerVisualization[] => {
-  const orderDeadine: null | HumanizerVisualization =
+const getOrderUidVisualization = (orderUid: string): HumanizerVisualizationItem[] => {
+  const orderDeadine: null | HumanizerVisualizationItem =
     !isHex(orderUid) || orderUid.length !== 114
       ? null
       : getDeadline(BigInt(`0x${orderUid.slice(-8)}`))
@@ -161,7 +162,7 @@ const getVerifiedOrderStruct = (
 const getOrderStructVisualization = (
   accountOp: AccountOp,
   order: CowSwapOrderStruct
-): HumanizerVisualization[] => {
+): HumanizerVisualizationItem[] => {
   const { chainId, accountAddr } = accountOp
   const buyTokenAddress =
     order.buyToken.toLowerCase() === NATIVE_TOKEN_PLACEHOLDER_ADDRESS ? zeroAddress : order.buyToken
@@ -187,7 +188,7 @@ const getOrderVisualization = (
   accountOp: AccountOp,
   tokens: readonly string[],
   order: CowSwapOrder
-): HumanizerVisualization[] => {
+): HumanizerVisualizationItem[] => {
   const sellToken = getTokenAtIndex(tokens, order.sellTokenIndex)
   const buyToken = getTokenAtIndex(tokens, order.buyTokenIndex)
   if (!sellToken || !buyToken) return []
@@ -208,7 +209,7 @@ const getSettlementVisualization = (
   accountOp: AccountOp,
   tokens: readonly string[],
   trades: readonly CowSwapOrder[]
-): HumanizerVisualization[] => {
+): HumanizerVisualizationItem[] => {
   if (!trades.length) return [getAction('Settle CowSwap orders')]
 
   const tradeVisualizations = trades
@@ -247,7 +248,7 @@ const formatDurationText = (seconds: bigint): string => {
 const getTwapVisualization = (
   accountOp: AccountOp,
   staticInput: `0x${string}`
-): HumanizerVisualization[] | null => {
+): HumanizerVisualizationItem[] | null => {
   const decoded = decodeAbiParameters(twapStaticInputAbiParams, staticInput)
 
   const [sellToken, buyToken, receiver, partSellAmount, minPartLimit, t0, n, t] = decoded
@@ -269,7 +270,7 @@ const getTwapVisualization = (
 const getConditionalOrderVisualization = (
   accountOp: AccountOp,
   params: ConditionalOrderParams
-): HumanizerVisualization[] => {
+): HumanizerVisualizationItem[] => {
   const handler = params.handler.toLowerCase()
 
   if (handler === TWAP_HANDLER_ADDRESS) {
@@ -332,13 +333,13 @@ const humanizeOrderUidCallWithVerifiedOrder = (
 
   return {
     ...call,
-    fullVisualization: [...actionVisualization, ...orderVisualization],
+    fullVisualization: getLegacyVisualization([...actionVisualization, ...orderVisualization]),
     preferredOverErc7730: true
   }
 }
 
 const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
-  const matcher: Record<string, (call: HexIrCall) => HumanizerVisualization[]> = {
+  const matcher: Record<string, (call: HexIrCall) => HumanizerVisualizationItem[]> = {
     [swapSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: swapAbi, data: call.data })
       const [, tokens, order] = args
@@ -405,7 +406,7 @@ const CowSwapModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) 
   const match = matcher[call.data.slice(0, 10)]
   if (!match) return call
 
-  return { ...call, fullVisualization: match(hexCall) }
+  return { ...call, fullVisualization: getLegacyVisualization(match(hexCall)) }
 }
 
 export default CowSwapModule

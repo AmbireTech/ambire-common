@@ -13,7 +13,8 @@ import {
   getUnlimitedApprovalWarning,
   isHexCall,
   mergeWarnings,
-  padCallData
+  padCallData,
+  getLegacyVisualization
 } from '../../utils'
 
 // DAI predates EIP-2612, so its permit has no `value` param - only a boolean
@@ -34,13 +35,13 @@ const daiPermitModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
   if (!allowed)
     return {
       ...call,
-      fullVisualization: [
+      fullVisualization: getLegacyVisualization([
         getAction('Revoke approval'),
         getToken(call.to, 0n),
         getLabel('for'),
         getAddressVisualization(spender),
         ...getOnBehalfOf(holder, accOp.accountAddr)
-      ]
+      ])
     }
 
   // This permit has no amount field at all - `allowed` is the whole decision, and granting it
@@ -48,7 +49,7 @@ const daiPermitModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
   return {
     ...call,
     warnings: mergeWarnings(call.warnings, [getUnlimitedApprovalWarning(spender)]),
-    fullVisualization: [
+    fullVisualization: getLegacyVisualization([
       getAction('Grant approval'),
       getLabel('for'),
       getToken(call.to, MaxUint256),
@@ -57,7 +58,7 @@ const daiPermitModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall): I
       // an expiry of 0 means the permit never expires
       ...(expiry ? [getDeadline(expiry)] : []),
       ...getOnBehalfOf(holder, accOp.accountAddr)
-    ]
+    ])
   }
 }
 

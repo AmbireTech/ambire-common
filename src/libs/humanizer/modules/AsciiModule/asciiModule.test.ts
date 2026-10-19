@@ -42,9 +42,15 @@ describe('asciiHumanizer', () => {
       asciiModule(accountOp, c, humanizerInfo as HumanizerMeta)
     )
 
-    compareVisualizations(irCalls[0]!.fullVisualization!, [...humanizationPrefix, getText('hello')])
-    compareVisualizations(irCalls[1]!.fullVisualization!, [...humanizationPrefix, getText('hello')])
-    compareVisualizations(irCalls[2]!.fullVisualization!, [
+    compareVisualizations(irCalls[0]!.fullVisualization!.intent, [
+      ...humanizationPrefix,
+      getText('hello')
+    ])
+    compareVisualizations(irCalls[1]!.fullVisualization!.intent, [
+      ...humanizationPrefix,
+      getText('hello')
+    ])
+    compareVisualizations(irCalls[2]!.fullVisualization!.intent, [
       ...humanizationPrefix,
       getText('Some example onchain text message')
     ])

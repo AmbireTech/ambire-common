@@ -2,7 +2,7 @@ import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { HexIrCall, getAction, getLabel, isHexCall } from '../../utils'
+import { HexIrCall, getAction, getLabel, isHexCall, getLegacyVisualization } from '../../utils'
 
 const claimAbi = parseAbi([
   'function claim((address receiver, uint8 guildAction, uint256 userId, uint256 guildId, string guildName, uint256 createdAt) pinData, address adminTreasury, uint256 adminFee, uint256 signedAt, string cid, bytes signature) payable'
@@ -20,7 +20,7 @@ const GuildModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   }
   const match = matcher[call.data.slice(0, 10)]
   if (call.fullVisualization || !isHexCall(call) || !match) return call
-  return { ...call, fullVisualization: match(call) }
+  return { ...call, fullVisualization: getLegacyVisualization(match(call)) }
 }
 
 export default GuildModule

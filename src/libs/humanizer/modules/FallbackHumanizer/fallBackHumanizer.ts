@@ -8,7 +8,8 @@ import {
   getAddressVisualization,
   getKnownFunctionName,
   getLabel,
-  getToken
+  getToken,
+  getLegacyVisualization
 } from '../../utils'
 
 export const fallbackHumanizer: HumanizerCallModule = (
@@ -22,18 +23,21 @@ export const fallbackHumanizer: HumanizerCallModule = (
   switch (`${toKey}:${valueKey}:${dataKey}`) {
     case 'no-to:no-value:no-data':
     case 'no-to:no-value:has-data':
-      return { ...call, fullVisualization: [getAction('Deploy'), getLabel('contract')] }
+      return {
+        ...call,
+        fullVisualization: getLegacyVisualization([getAction('Deploy'), getLabel('contract')])
+      }
     case 'no-to:has-value:no-data':
     case 'no-to:has-value:has-data':
       return {
         ...call,
-        fullVisualization: [
+        fullVisualization: getLegacyVisualization([
           getAction('Deploy'),
           getLabel('contract'),
           getLabel('and'),
           getAction('Burn', { warning: true }),
           getToken(ZeroAddress, call.value)
-        ]
+        ])
       }
     case 'has-to:no-value:no-data':
       // preserve a visualization already set by an earlier, more specific module (e.g. a
@@ -42,17 +46,20 @@ export const fallbackHumanizer: HumanizerCallModule = (
       if (call.fullVisualization) return call
       return {
         ...call,
-        fullVisualization: [getAction('Empty call to'), getAddressVisualization(call.to!)]
+        fullVisualization: getLegacyVisualization([
+          getAction('Empty call to'),
+          getAddressVisualization(call.to!)
+        ])
       }
     case 'has-to:has-value:no-data':
       return {
         ...call,
-        fullVisualization: [
+        fullVisualization: getLegacyVisualization([
           getAction('Send'),
           getToken(ZeroAddress, call.value),
           getLabel('to'),
           getAddressVisualization(call.to!)
-        ]
+        ])
       }
     case 'has-to:no-value:has-data':
     case 'has-to:has-value:has-data':
@@ -64,7 +71,7 @@ export const fallbackHumanizer: HumanizerCallModule = (
         ? `${knownFunctionName.charAt(0).toUpperCase()}${knownFunctionName.slice(1)}`
         : undefined
       let fullVisualization =
-        call.fullVisualization ||
+        call.fullVisualization?.intent ||
         (capitalizedFunctionName
           ? [getAction(capitalizedFunctionName), getLabel('on'), getAddressVisualization(call.to!)]
           : [getAction('Interacting'), getLabel('with'), getAddressVisualization(call.to!)])
@@ -84,9 +91,9 @@ export const fallbackHumanizer: HumanizerCallModule = (
       return {
         ...call,
         isFallback: !call.fullVisualization,
-        fullVisualization
+        fullVisualization: getLegacyVisualization(fullVisualization)
       }
     default:
-      return { ...call, fullVisualization: [getAction('Empty call')] }
+      return { ...call, fullVisualization: getLegacyVisualization([getAction('Empty call')]) }
   }
 }

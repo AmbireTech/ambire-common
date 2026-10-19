@@ -1,6 +1,6 @@
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getWarning } from '../../utils'
+import { getAction, getWarning, getLegacyVisualization } from '../../utils'
 
 export const EMBEDDED_OPERATION_WARNING_CODE = 'AMBIRE_EMBEDDED_OPERATION'
 
@@ -17,7 +17,9 @@ export const embeddedAmbireOperationHumanizer: HumanizerCallModule = (
   if (call.to.toLowerCase() === accountOp.accountAddr.toLowerCase()) {
     return {
       ...call,
-      fullVisualization: [getAction('Allow multiple actions from this account')],
+      fullVisualization: getLegacyVisualization([
+        getAction('Allow multiple actions from this account')
+      ]),
       warnings: [
         ...(call.warnings || []),
         getWarning(

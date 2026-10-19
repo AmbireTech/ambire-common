@@ -1,5 +1,5 @@
 import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
+import { HumanizerTypedMessageModule, HumanizerVisualizationItem } from '../interfaces'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
 
 const visualizePermit = (
@@ -7,14 +7,14 @@ const visualizePermit = (
   tokenId: bigint,
   deadline: bigint,
   contract: string
-): HumanizerVisualization[] => {
+): HumanizerVisualizationItem[] => {
   const res = [
     getAction('Permit use of'),
     getToken(contract, tokenId),
     getLabel('to'),
     getAddressVisualization(spender)
   ]
-  if (getDeadline(deadline)) res.push(getDeadline(deadline) as HumanizerVisualization)
+  if (getDeadline(deadline)) res.push(getDeadline(deadline) as HumanizerVisualizationItem)
   return res
 }
 export const erc721Module: HumanizerTypedMessageModule = (message: Message) => {

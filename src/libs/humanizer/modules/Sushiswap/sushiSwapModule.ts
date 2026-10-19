@@ -9,7 +9,8 @@ import {
   getLabel,
   getRecipientText,
   getToken,
-  isHexCall
+  isHexCall,
+  getLegacyVisualization
 } from '../../utils'
 
 const processRouteAbi = parseAbi([
@@ -28,13 +29,13 @@ export const sushiSwapModule: HumanizerCallModule = (accountOp: AccountOp, call:
 
       return {
         ...call,
-        fullVisualization: [
+        fullVisualization: getLegacyVisualization([
           getAction('Swap'),
           getToken(tokenIn, amountIn),
           getLabel('for'),
           getToken(tokenOut, amountOutMin),
           ...getRecipientText(accountOp.accountAddr, to)
-        ]
+        ])
       }
     }
   }

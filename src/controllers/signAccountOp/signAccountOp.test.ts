@@ -3135,8 +3135,7 @@ describe('ERC-7730 humanization', () => {
       ).toHaveLength(1)
       expect(controller.humanization).toHaveLength(10)
       controller.humanization.forEach((humanizedCall, index) => {
-        expect(humanizedCall.fullVisualization?.[0]).toMatchObject({
-          type: 'erc7730',
+        expect(humanizedCall.fullVisualization).toMatchObject({
           intent: [expect.objectContaining({ content: 'Approve with ERC-7730' })],
           fields: [
             {
@@ -3161,8 +3160,7 @@ describe('ERC-7730 humanization', () => {
       await wait(0)
 
       expect(callRelayer).not.toHaveBeenCalled()
-      expect(controller.humanization[0]?.fullVisualization?.[0]).toMatchObject({
-        type: 'erc7730',
+      expect(controller.humanization[0]?.fullVisualization).toMatchObject({
         intent: [expect.objectContaining({ content: 'Approve with ERC-7730' })]
       })
     } finally {
@@ -3199,9 +3197,7 @@ describe('ERC-7730 humanization', () => {
         data: '0x'
       })
       expect(callRelayer).not.toHaveBeenCalled()
-      expect(controller.humanization[0]?.fullVisualization).not.toEqual(
-        expect.arrayContaining([expect.objectContaining({ type: 'erc7730' })])
-      )
+      expect(controller.humanization[0]?.isErc7730).toBeFalsy()
     } finally {
       controller.destroy()
     }
