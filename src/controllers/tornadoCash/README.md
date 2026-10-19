@@ -26,6 +26,9 @@ On opening the account (`syncIfStale`, 10 minutes), only once its phrase is back
 reads the pools' history from the saga CDN and the latest blocks from the chain; a cold read takes
 about a minute. Notes and balances live in memory only, so nothing on the device links a deposit
 to its withdrawal.
+The history is shared by every account, so the first read happens once per device:
+`isInitialSyncDone` (stored) drives the dashboard's "First sync" banner. Switching accounts drops the
+notes and syncs again, but reads only new blocks.
 
 ## Send to an account (deposit)
 

@@ -128,6 +128,8 @@ export type StorageProps = {
   // Tornado Cash
   /** The wallet's Tornado Cash accounts, at most one per stored recovery phrase. */
   tornadoCashAccounts: TornadoCashAccount[]
+  /** Whether this device has read the pools' history once. Public data, the same for every account. */
+  tornadoCashInitialSyncDone: boolean
   // Other
   signAccountOpFeeTokenPreference: {
     [chainId: string]: string | 'gasTank'

@@ -215,6 +215,34 @@ describe('TornadoCashController', () => {
     expect(plugins[1]!.dispose).toHaveBeenCalled()
   })
 
+  it('remembers the first sync for every account and stores it, but not a failed one', async () => {
+    const { factory } = createFakePluginFactory([note('ETH', ETHER)])
+    const { controller, selectedAccount, storage } = await prepareTest({
+      accounts: ['seed-a', 'seed-b'],
+      pluginFactory: factory
+    })
+    expect(controller.isInitialSyncDone).toBe(false)
+    selectedAccount.select({ providerId: 'tornadoCash', seedId: 'seed-a' })
+    ;(factory as jest.Mock).mockImplementationOnce(async () => {
+      throw new Error('offline')
+    })
+
+    await controller.syncSelectedAccount()
+    expect(controller.syncState.error).not.toBeNull()
+    expect(controller.isInitialSyncDone).toBe(false)
+
+    await controller.syncSelectedAccount()
+    expect(controller.isInitialSyncDone).toBe(true)
+
+    // Another account, and back: the history is already on the device
+    selectedAccount.select({ providerId: 'tornadoCash', seedId: 'seed-b' })
+    selectedAccount.select({ providerId: 'tornadoCash', seedId: 'seed-a' })
+    await flush()
+    expect(controller.syncState.lastSyncedAt).toBeNull()
+    expect(controller.isInitialSyncDone).toBe(true)
+    expect(await storage.get('tornadoCashInitialSyncDone', false)).toBe(true)
+  })
+
   it('starts a new plugin once when the running one stopped', async () => {
     const { factory, plugins } = createFakePluginFactory([note('ETH', ETHER)])
     const { controller, selectedAccount } = await prepareTest({ pluginFactory: factory })

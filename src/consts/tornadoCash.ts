@@ -191,6 +191,9 @@ export const TORNADO_CASH_ASSET_PATHS = {
 
 export const TORNADO_CASH_ACCOUNTS_STORAGE_KEY = 'tornadoCashAccounts'
 
+/** Whether this device has read the pools' history once, which the SDK then keeps. */
+export const TORNADO_CASH_INITIAL_SYNC_DONE_STORAGE_KEY = 'tornadoCashInitialSyncDone'
+
 /**
  * The most notes one send creates. Each note is its own deposit call, so this bounds the
  * transaction's size and fee.

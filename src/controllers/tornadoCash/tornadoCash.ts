@@ -2,6 +2,7 @@ import { Interface } from 'ethers'
 
 import {
   TORNADO_CASH_ACCOUNTS_STORAGE_KEY,
+  TORNADO_CASH_INITIAL_SYNC_DONE_STORAGE_KEY,
   TORNADO_CASH_CHAIN_ID,
   TORNADO_CASH_MAX_NOTES_PER_DEPOSIT,
   TORNADO_CASH_POOLS
@@ -140,6 +141,13 @@ export class TornadoCashController extends EventEmitter {
   /** The selected account's sync. */
   syncState: TornadoCashSyncState = IDLE_SYNC
 
+  /**
+   * Whether this device has read the pools' history - about a minute the first time. The SDK
+   * keeps it for every account, so later syncs, of any account, read only new blocks. Null until
+   * loaded.
+   */
+  isInitialSyncDone: boolean | null = null
+
   /** USD prices of the pools' assets, keyed by lowercase asset address (zero for ETH). */
   prices: { [assetAddress: string]: number } = {}
 
@@ -206,6 +214,10 @@ export class TornadoCashController extends EventEmitter {
     await this.#selectedAccount.initialLoadPromise
 
     this.accounts = await this.#storage.get(TORNADO_CASH_ACCOUNTS_STORAGE_KEY, [])
+    this.isInitialSyncDone = await this.#storage.get(
+      TORNADO_CASH_INITIAL_SYNC_DONE_STORAGE_KEY,
+      false
+    )
     // Phrases deleted while this controller was not running
     await this.#forgetAccountsOfDeletedSeeds()
 
@@ -360,6 +372,8 @@ export class TornadoCashController extends EventEmitter {
         await plugin.sync()
         return plugin.notes()
       })
+      // The history stays on the device even if the account changed meanwhile
+      await this.#markInitialSyncDone()
       if (generation !== this.#generation) return
 
       this.#notes = notes
@@ -685,6 +699,24 @@ export class TornadoCashController extends EventEmitter {
 
     await this.#persistAccounts()
     await this.#onAccountsRemoved(orphanedSeedIds)
+  }
+
+  async #markInitialSyncDone() {
+    if (this.isInitialSyncDone) return
+
+    this.isInitialSyncDone = true
+    this.emitUpdate()
+    try {
+      await this.#storage.set(TORNADO_CASH_INITIAL_SYNC_DONE_STORAGE_KEY, true)
+    } catch (error: any) {
+      // Only the next run's first sync would be labelled as such again
+      this.emitError({
+        level: 'silent',
+        message: 'tornadoCash: storing that the first sync is done failed',
+        error:
+          error instanceof Error ? error : new Error('tornadoCash: storing initial sync failed')
+      })
+    }
   }
 
   async #persistAccounts() {
