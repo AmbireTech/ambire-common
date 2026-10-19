@@ -393,10 +393,11 @@ class FakeUi {
     this.views.push({ id, type, currentRoute: route })
   }
 
-  navigate(id: string, route: string) {
+  navigate(id: string, route: string, searchParams?: View['searchParams']) {
     const view = this.views.find((v) => v.id === id) as View
     view.previousRoute = view.currentRoute
     view.currentRoute = route
+    view.searchParams = searchParams
     this.uiEvent.emit('updateView', view)
   }
 
@@ -1564,6 +1565,39 @@ describe('PrivacyPoolsController', () => {
         amount: '0.1'
       })
       expect(controller.hasPersistedSendForm).toBe(true)
+    })
+
+    it('picks the token the screen is opened for, like the regular Send', async () => {
+      const { controller, selectedAccount, ui } = await prepareTest()
+      selectedAccount.select('seed-a')
+      ui.open('view-1', 'popup', 'dashboard')
+
+      ui.navigate('view-1', SEND_ROUTE, { chainId: '1', address: '0xAbCd' })
+
+      expect(controller.sendForm.tokenId).toBe('1:0xabcd')
+      expect(controller.hasPersistedSendForm).toBe(false)
+    })
+
+    it('keeps the token pick of the form when the screen is opened without one', async () => {
+      const { controller, selectedAccount, ui } = await prepareTest()
+      selectedAccount.select('seed-a')
+      ui.open('view-1', 'popup', 'dashboard')
+      controller.updateSendForm({ tokenId: '1:0xabcd' })
+
+      ui.navigate('view-1', SEND_ROUTE)
+      ui.navigate('view-1', SEND_ROUTE, { chainId: '1' })
+
+      expect(controller.sendForm.tokenId).toBe('1:0xabcd')
+    })
+
+    it('ignores a token in the params of another screen', async () => {
+      const { controller, selectedAccount, ui } = await prepareTest()
+      selectedAccount.select('seed-a')
+      ui.open('view-1', 'popup', 'dashboard')
+
+      ui.navigate('view-1', 'transfer', { chainId: '1', address: '0xabcd' })
+
+      expect(controller.sendForm.tokenId).toBe('')
     })
 
     it('does not count a picked token alone as something to come back to', async () => {

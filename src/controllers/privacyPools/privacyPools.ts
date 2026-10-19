@@ -566,6 +566,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #onUpdateView = (view: View) => {
     if (this.#sendForm.isLeftByViewUpdate(view)) this.#leaveSendForm()
+    if (this.#sendForm.isTokenPickedByViewUpdate(view)) this.emitUpdate()
   }
 
   #onRemoveView = (view: View) => {
