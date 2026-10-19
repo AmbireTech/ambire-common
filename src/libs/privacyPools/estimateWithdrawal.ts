@@ -1,7 +1,8 @@
-import { concat, getAddress, id, Interface, toBeHex, toQuantity, zeroPadValue } from 'ethers'
+import { concat, getAddress, id, Interface, toQuantity } from 'ethers'
 
 import { isPrivacyPoolsNativeAsset } from '../../consts/privacyPools'
 import { RPCProvider } from '../../interfaces/provider'
+import { getPackedUserOp } from '../userOperation/userOperation'
 
 /** The parts of the SDK's serialized userOp a simulation reads. Not exported by the SDK. */
 export type PrivacyPoolsSerializedUserOperation = {
@@ -62,39 +63,7 @@ type SimulatedCall = {
   error?: { message?: string; data?: string }
 }
 
-const toUint128 = (value: string | undefined) => zeroPadValue(toBeHex(BigInt(value ?? 0)), 16)
-
 const isSameAddress = (a: string, b: string) => getAddress(a) === getAddress(b)
-
-/** Packs the userOp into the form `EntryPoint.handleOps` takes. */
-const packUserOperation = (userOperation: PrivacyPoolsSerializedUserOperation) => {
-  if (!userOperation.paymaster)
-    throw new Error('privacyPools: the withdrawal to simulate carries no paymaster')
-
-  return {
-    sender: userOperation.sender,
-    nonce: BigInt(userOperation.nonce),
-    // The sender takes on its code through the 7702 authorization, not through a factory
-    initCode: '0x',
-    callData: userOperation.callData,
-    accountGasLimits: concat([
-      toUint128(userOperation.verificationGasLimit),
-      toUint128(userOperation.callGasLimit)
-    ]),
-    preVerificationGas: BigInt(userOperation.preVerificationGas),
-    gasFees: concat([
-      toUint128(userOperation.maxPriorityFeePerGas),
-      toUint128(userOperation.maxFeePerGas)
-    ]),
-    paymasterAndData: concat([
-      userOperation.paymaster,
-      toUint128(userOperation.paymasterVerificationGasLimit),
-      toUint128(userOperation.paymasterPostOpGasLimit),
-      userOperation.paymasterData ?? '0x'
-    ]),
-    signature: userOperation.signature
-  }
-}
 
 /**
  * Thrown when the simulation ran and the withdrawal failed in it - unlike a node that could not
@@ -149,6 +118,9 @@ export const estimatePaymasterWithdrawalFee = async ({
   /** The fee locked into the proof, as `readPaymasterWithdrawal` decoded it. */
   fee: bigint
 }): Promise<PrivacyPoolsWithdrawalFeeEstimate> => {
+  if (!userOperation.paymaster)
+    throw new Error('privacyPools: the withdrawal to simulate carries no paymaster')
+
   const delegate = userOperation.eip7702Auth?.address
   if (!delegate)
     throw new Error('privacyPools: the withdrawal to simulate carries no 7702 authorization')
@@ -172,7 +144,7 @@ export const estimatePaymasterWithdrawalFee = async ({
               from: SIMULATION_CALLER,
               to: entryPointAddress,
               data: ENTRY_POINT_INTERFACE.encodeFunctionData('handleOps', [
-                [packUserOperation(userOperation)],
+                [{ ...getPackedUserOp(userOperation), signature: userOperation.signature }],
                 SIMULATION_BENEFICIARY
               ])
             }
