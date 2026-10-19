@@ -1387,7 +1387,7 @@ export class MainController extends EventEmitter implements IMainController {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
       const { walletSDK } = trezorCtrl
-      await this.accountPicker.setInitParams({
+      this.accountPicker.setInitParams({
         keyIterator: new TrezorKeyIterator({ walletSDK }),
         hdPathTemplate,
         pageSize: 5,
@@ -1420,7 +1420,7 @@ export class MainController extends EventEmitter implements IMainController {
 
       const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
 
-      await this.accountPicker.setInitParams({
+      this.accountPicker.setInitParams({
         keyIterator: new LatticeKeyIterator({ controller: latticeCtrl }),
         hdPathTemplate,
         pageSize: 5,
@@ -2157,7 +2157,7 @@ export class MainController extends EventEmitter implements IMainController {
   }) {
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
     const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase)
-    await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+    this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
   }
 
   async #accountPickerSetInitParamsFromPrivateKeys(privateKeys: string[]) {
@@ -2182,7 +2182,7 @@ export class MainController extends EventEmitter implements IMainController {
       throw new EmittableError({ message, level: 'major', error })
     }
 
-    await this.accountPicker.setInitParams({
+    this.accountPicker.setInitParams({
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
     })
