@@ -45,6 +45,7 @@ import {
   getAmountAfterFeeSync,
   getSanitizedAmount
 } from '../../libs/transfer/amount'
+import { getAmountsFromFieldValue } from '../../libs/transfer/fieldAmounts'
 import { getTransferRequestParams } from '../../libs/transfer/userRequest'
 import {
   validateSendTransferAddress,
@@ -55,16 +56,12 @@ import { getIsViewOnly } from '../../utils/accounts'
 import { getAddressFromAddressState, getDomainFromAddressState } from '../../utils/domains'
 import {
   convertTokenPriceToBigInt,
-  getSafeAmountFromFieldValue,
-  truncateFiatAmountDecimals
+  getSafeAmountFromFieldValue
 } from '../../utils/numbers/formatters'
 import { generateUuid } from '../../utils/uuid'
 import EventEmitter from '../eventEmitter/eventEmitter'
 import { OnBroadcastSuccess, SignAccountOpController } from '../signAccountOp/signAccountOp'
 import { SignAccountOpPreferenceController } from '../signAccountOp/signAccountOpPreference'
-
-const CONVERSION_PRECISION = 16
-const CONVERSION_PRECISION_POW = BigInt(10 ** CONVERSION_PRECISION)
 
 const DEFAULT_ADDRESS_STATE: AddressState = {
   fieldValue: '',
@@ -947,64 +944,17 @@ export class TransferController extends EventEmitter implements ITransferControl
       this.programmaticUpdateCounter += 1
     }
 
-    if (!fieldValue) {
-      this.amount = ''
-      this.amountInFiat = ''
-      return
-    }
-
-    const tokenPrice = this.selectedToken?.priceIn.find(
-      (p) => p.baseCurrency === HARD_CODED_CURRENCY
-    )?.price
-
-    if (!tokenPrice) {
-      this.amount = fieldValue
-      this.amountInFiat = ''
-      return
-    }
-
-    if (this.amountFieldMode === 'fiat' && typeof this.selectedToken?.decimals === 'number') {
-      this.amountInFiat = fieldValue
-
-      // Get the number of decimals
-      const amountInFiatDecimals = 10
-      const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
-
-      // Convert the numbers to big int
-      const sanitizedFiat = getSanitizedAmount(fieldValue, amountInFiatDecimals)
-      const amountInFiatBigInt = sanitizedFiat
-        ? parseUnits(sanitizedFiat, amountInFiatDecimals)
-        : 0n
-      this.amount = formatUnits(
-        (amountInFiatBigInt * CONVERSION_PRECISION_POW) / tokenPriceBigInt,
-        // Shift the decimal point by the number of decimals in the token price
-        amountInFiatDecimals + CONVERSION_PRECISION - tokenPriceDecimals
-      )
-
-      return
-    }
-    if (this.amountFieldMode === 'token') {
-      this.amount = fieldValue
-
-      if (!this.selectedToken) return
-
-      const formattedAmount = parseUnits(
-        getSafeAmountFromFieldValue(fieldValue, this.selectedToken.decimals),
-        this.selectedToken.decimals
-      )
-
-      const { tokenPriceBigInt, tokenPriceDecimals } = convertTokenPriceToBigInt(tokenPrice)
-
-      // The fiat field shows this as-is when switched to, so cut it down to a displayable
-      // precision instead of the token's full one (up to 18 decimals)
-      this.amountInFiat = truncateFiatAmountDecimals(
-        formatUnits(
-          formattedAmount * tokenPriceBigInt,
-          // Shift the decimal point by the number of decimals in the token price
-          this.selectedToken.decimals + tokenPriceDecimals
-        )
-      )
-    }
+    const { amount, amountInFiat } = getAmountsFromFieldValue({
+      fieldValue,
+      fieldMode: this.amountFieldMode,
+      price:
+        this.selectedToken?.priceIn.find((p) => p.baseCurrency === HARD_CODED_CURRENCY)?.price ??
+        null,
+      // Unused without a token, as there is no price then
+      decimals: this.selectedToken?.decimals ?? 0
+    })
+    this.amount = amount
+    this.amountInFiat = amountInFiat
   }
 
   #setTokenAmount(amount: string, isProgrammaticUpdate = false) {
