@@ -3425,12 +3425,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }, 'swap-and-bridge')
 
     this.#signAccountOpController.onError(async (error) => {
+      // Errors from background work (e.g. gas price refreshes) are silenced, as the
+      // user is often just browsing quotes. Errors from signing and broadcasting
+      // (e.g. a hardware wallet signing with a different key) are a direct result of
+      // the user's action, so keep their level to display them on the swap screen.
+      const isSigningOrBroadcastingError =
+        !!this.#signAccountOpController?.isSignAndBroadcastInProgress
+      this.emitError(isSigningOrBroadcastingError ? error : { ...error, level: 'silent' })
+
       // Need to clean the pending results for THIS signAccountOpController
       // specifically. NOT the one from the getter (this.signAccountOpController)
       // that is ALWAYS up-to-date with the current quote and the current form state.
       // Due to the async nature, it might not exist - an issue caught by our crash reporting.
-      this.emitError({ ...error, level: 'silent' })
-
       if (this.#signAccountOpController)
         await this.#portfolio.overrideSimulationResults(this.#signAccountOpController.accountOp)
     })
