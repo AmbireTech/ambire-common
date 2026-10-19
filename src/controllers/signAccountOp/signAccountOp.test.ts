@@ -3912,7 +3912,24 @@ describe('broadcasting a batch one transaction at a time', () => {
     return batch
   }
 
-  const initBatch = async (overrides?: { callRelayer?: any; type?: SignAccountOpType }) => {
+  /** Ties the batch to a swap route, the way the built-in swap builds its calls */
+  const tieBatchToSwapRoute = (batch: ReturnType<typeof createThreeCallBatch>) => {
+    const callIds = ['route-1-revoke-approval', 'route-1-approval', 'route-1']
+    batch.op.calls = batch.op.calls.map((call, i) => ({
+      ...call,
+      id: callIds[i],
+      activeRouteId: 'route-1'
+    }))
+    ;(batch.op as any).meta = { swapTxn: { activeRouteId: 'route-1' }, fromQuoteId: 'quote-1' }
+
+    return batch
+  }
+
+  const initBatch = async (overrides?: {
+    callRelayer?: any
+    type?: SignAccountOpType
+    isSwapRouteBatch?: boolean
+  }) => {
     const submittedAccountOps: any[] = []
     const broadcastStatusesOnSuccess: SignAccountOpTesterController['broadcastStatus'][] = []
     let broadcastingController: SignAccountOpTesterController | undefined
@@ -3925,9 +3942,15 @@ describe('broadcasting a batch one transaction at a time', () => {
         token: nativeFeeToken
       }
     ]
+    const batch = overrides?.isSwapRouteBatch
+      ? tieBatchToSwapRoute(createThreeCallBatch(eoaAccount))
+      : createThreeCallBatch(eoaAccount)
+    // The built-in swap starts without a saved nonce and reads it off the network
+    if (overrides?.type === 'one-click-swap-and-bridge') (batch.op as any).eoaNonce = undefined
+
     const { controller } = await init(
       eoaAccount,
-      createThreeCallBatch(eoaAccount),
+      batch,
       eoaSigner,
       {
         providerEstimation: { gasUsed: 10000n, feePaymentOptions },
@@ -3951,8 +3974,12 @@ describe('broadcasting a batch one transaction at a time', () => {
       }
     )
     broadcastingController = controller
+    // The nonce the network knows of. It counts only confirmed txns
+    const getNetworkNonce = jest
+      .spyOn(controller.provider, 'getTransactionCount')
+      .mockResolvedValue(7)
 
-    return { controller, submittedAccountOps, broadcastStatusesOnSuccess }
+    return { controller, submittedAccountOps, broadcastStatusesOnSuccess, getNetworkNonce }
   }
 
   /**
@@ -4092,6 +4119,7 @@ describe('broadcasting a batch one transaction at a time', () => {
   })
 
   test('retries only the transactions that were not sent in the built-in swap', async () => {
+    jest.spyOn(ActivityController.prototype, 'addAccountOp').mockResolvedValue(undefined)
     const { controller, submittedAccountOps } = await initBatch({
       type: 'one-click-swap-and-bridge'
     })
@@ -4099,7 +4127,7 @@ describe('broadcasting a batch one transaction at a time', () => {
 
     await controller.signAndBroadcast().catch(() => {})
 
-    // The built-in swap lets the user retry instead of recording the part that went out.
+    // The built-in swap lets the user retry instead of finishing with the part that went out.
     // Signing the sent ones again would send them twice (e.g. a second approval), or
     // replace them while they are still pending if their nonce was reused.
     expect(submittedAccountOps).toHaveLength(0)
@@ -4123,6 +4151,142 @@ describe('broadcasting a batch one transaction at a time', () => {
     expect(broadcastTransaction).toHaveBeenCalledTimes(2)
     expect(submittedAccountOps).toHaveLength(1)
     expect(submittedAccountOps[0].calls).toHaveLength(2)
+  })
+
+  test('records the sent part of the built-in swap in the activity, apart from the swap route', async () => {
+    const addAccountOp = jest
+      .spyOn(ActivityController.prototype, 'addAccountOp')
+      .mockResolvedValue(undefined)
+    const { controller } = await initBatch({
+      type: 'one-click-swap-and-bridge',
+      isSwapRouteBatch: true
+    })
+    mockBroadcastChain(2)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Without this the approval that went out would never appear in the activity,
+    // as the swap is retried without it.
+    expect(addAccountOp).toHaveBeenCalledTimes(1)
+    const recordedOp = addAccountOp.mock.calls[0]![0]
+    expect(recordedOp.calls.map((call) => call.value)).toEqual([1n, 2n])
+    expect(recordedOp.calls.map((call) => call.txnId)).toEqual(['0xhash1', '0xhash2'])
+    expect(recordedOp.identifiedBy).toEqual({ type: 'MultipleTxns', identifier: '0xhash1-0xhash2' })
+    expect(recordedOp.txnId).toBe('0xhash2')
+    expect(recordedOp.nonce).toBe(7n)
+    expect(recordedOp.eoaNonce).toBe(7n)
+
+    // The swap route follows the retry. Were the sent approval tied to it, resolving
+    // later would move the retried swap back to waiting for the approval.
+    expect(recordedOp.meta?.swapTxn?.activeRouteId).not.toBe('route-1')
+    expect(recordedOp.meta?.fromQuoteId).toBe('quote-1')
+    recordedOp.calls.forEach((call) => {
+      expect(call.activeRouteId).toBeUndefined()
+      expect(['route-1-revoke-approval', 'route-1-approval', 'route-1']).not.toContain(call.id)
+    })
+
+    // Still marked as a swap, so the activity shows it as one instead of as a send
+    expect(recordedOp.meta?.swapTxn).toBeDefined()
+
+    // The call left for the retry stays tied to the swap route
+    expect(controller.accountOp.calls.map((call) => call.id)).toEqual(['route-1'])
+    expect(controller.accountOp.calls[0]!.activeRouteId).toBe('route-1')
+    expect(controller.accountOp.meta?.swapTxn).toBeDefined()
+  })
+
+  test('still lets the built-in swap be retried when recording the sent part fails', async () => {
+    jest
+      .spyOn(ActivityController.prototype, 'addAccountOp')
+      .mockRejectedValue(new Error('storage is unavailable'))
+    const { controller } = await initBatch({ type: 'one-click-swap-and-bridge' })
+    mockBroadcastChain(1)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(controller.accountOp.calls.map((call) => call.value)).toEqual([2n, 3n])
+    expect(controller.accountOp.eoaNonce).toBe(8n)
+    const recordingError = controller.emittedErrors.find((e: any) =>
+      e.message.includes('Failed to record the sent part')
+    )
+    expect(recordingError?.level).toBe('silent')
+  })
+
+  test('does not record anything in the activity for the built-in swap when nothing was sent', async () => {
+    const addAccountOp = jest
+      .spyOn(ActivityController.prototype, 'addAccountOp')
+      .mockResolvedValue(undefined)
+    const { controller } = await initBatch({ type: 'one-click-swap-and-bridge' })
+    mockBroadcastChain(0)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(addAccountOp).not.toHaveBeenCalled()
+  })
+
+  test('keeps the nonce of the unsent swap txns when a retry sends nothing', async () => {
+    jest.spyOn(ActivityController.prototype, 'addAccountOp').mockResolvedValue(undefined)
+    const { controller } = await initBatch({ type: 'one-click-swap-and-bridge' })
+    mockBroadcastChain(1)
+    await controller.signAndBroadcast().catch(() => {})
+
+    // The second attempt is rejected before anything goes out
+    mockBroadcastChain(0)
+    await controller.signAndBroadcast().catch(() => {})
+
+    // The network still reports 7 while the first txn is pending. Reading it again
+    // would sign the next txn with the pending one's nonce and replace it.
+    expect(controller.accountOp.calls.map((call) => call.value)).toEqual([2n, 3n])
+    expect(controller.accountOp.eoaNonce).toBe(8n)
+
+    const { buildRawTransaction } = mockBroadcastChain(null)
+    buildRawTransaction.mockClear()
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(buildRawTransaction.mock.calls.map((args) => args[5])).toEqual([8, 9])
+  })
+
+  test('moves past the saved swap nonce when txns were sent from elsewhere since', async () => {
+    jest.spyOn(ActivityController.prototype, 'addAccountOp').mockResolvedValue(undefined)
+    const { controller, getNetworkNonce } = await initBatch({
+      type: 'one-click-swap-and-bridge'
+    })
+    mockBroadcastChain(1)
+    await controller.signAndBroadcast().catch(() => {})
+
+    getNetworkNonce.mockResolvedValue(12)
+    const { buildRawTransaction } = mockBroadcastChain(null)
+    buildRawTransaction.mockClear()
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Sending with the saved 8 would be refused, as the network is already past it
+    expect(buildRawTransaction.mock.calls.map((args) => args[5])).toEqual([12, 13])
+  })
+
+  test('falls back to the saved swap nonce when the network nonce cannot be read', async () => {
+    jest.spyOn(ActivityController.prototype, 'addAccountOp').mockResolvedValue(undefined)
+    const { controller, getNetworkNonce } = await initBatch({
+      type: 'one-click-swap-and-bridge'
+    })
+    mockBroadcastChain(1)
+    await controller.signAndBroadcast().catch(() => {})
+
+    getNetworkNonce.mockRejectedValue(new Error('RPC is unavailable'))
+    const { buildRawTransaction } = mockBroadcastChain(null)
+    buildRawTransaction.mockClear()
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(buildRawTransaction.mock.calls.map((args) => args[5])).toEqual([8, 9])
+  })
+
+  test('uses the saved nonce as is outside the built-in swap', async () => {
+    const { controller, getNetworkNonce } = await initBatch()
+    getNetworkNonce.mockResolvedValue(12)
+    const { buildRawTransaction } = mockBroadcastChain(null)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    expect(getNetworkNonce).not.toHaveBeenCalled()
+    expect(buildRawTransaction.mock.calls.map((args) => args[5])).toEqual([7, 8, 9])
   })
 
   test('starts the whole batch over in the built-in swap when nothing was sent', async () => {

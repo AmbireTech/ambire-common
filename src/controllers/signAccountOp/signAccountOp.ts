@@ -3845,10 +3845,7 @@ export class SignAccountOpController
         accountOp.gasFeePayment.broadcastOption === BROADCAST_OPTIONS.byOtherEOA
           ? accountOp.gasFeePayment.paidBy
           : accountOp.accountAddr
-      const senderNonce =
-        accountOp.eoaNonce !== null && typeof accountOp.eoaNonce !== 'undefined'
-          ? Number(accountOp.eoaNonce)
-          : await this.provider.getTransactionCount(senderAddr).catch((e) => e)
+      const senderNonce = await this.#getEoaSenderNonce(accountOp.eoaNonce, senderAddr)
 
       // @precaution
       if (senderNonce instanceof Error) {
@@ -3934,8 +3931,12 @@ export class SignAccountOpController
       } catch (error: any) {
         console.error('Error broadcasting', error)
 
-        // reset the eoaNonce on error (the built-in swap keeps it if some txns were sent, see below)
-        this.#updateAccountOp({ eoaNonce: undefined })
+        // reset the eoaNonce on error. The built-in swap keeps the one it had before this
+        // attempt, as it's ahead of the network's while txns from an earlier attempt are
+        // still pending. If some txns were sent in this attempt, it moves past them (see below)
+        this.#updateAccountOp({
+          eoaNonce: this.#type === 'one-click-swap-and-bridge' ? accountOp.eoaNonce : undefined
+        })
 
         // for multiple txn cases
         // if a batch of 5 txn is sent to Ledger for sign but the user reject
@@ -3971,8 +3972,14 @@ export class SignAccountOpController
         } else {
           // The sent txns can't be taken back. Signing them again on retry would
           // send them twice (e.g. a second approval) or replace the still pending ones.
-          if (multipleTxnsBroadcastRes.length)
+          if (multipleTxnsBroadcastRes.length) {
+            await this.#recordSentPartOfSwap(
+              accountOp,
+              multipleTxnsBroadcastRes.map((res) => res.hash),
+              senderNonce
+            )
             this.#keepOnlyUnsentCalls(multipleTxnsBroadcastRes.length, senderNonce)
+          }
 
           return this.throwBroadcastAccountOp({ error, accountState })
         }
@@ -4382,6 +4389,83 @@ export class SignAccountOpController
     this.gasFeeChangedConfirmationRequired = false
     this.previousFee = null
     this.emitUpdate()
+  }
+
+  /**
+   * The nonce to send the next EOA txn with. A nonce saved by the built-in swap
+   * (after part of its txns were sent) is ahead of the network's while those txns are
+   * still pending, and behind it if txns were sent from elsewhere since. So the higher
+   * one is used, falling back to the saved one if the network can't be reached.
+   */
+  async #getEoaSenderNonce(
+    savedNonce: AccountOp['eoaNonce'],
+    senderAddr: string
+  ): Promise<number | Error> {
+    const hasSavedNonce = savedNonce !== null && typeof savedNonce !== 'undefined'
+    if (hasSavedNonce && this.#type !== 'one-click-swap-and-bridge') return Number(savedNonce)
+
+    const networkNonce: number | Error = await this.provider
+      .getTransactionCount(senderAddr)
+      .catch((e) => e)
+    if (!hasSavedNonce) return networkNonce
+    if (networkNonce instanceof Error) return Number(savedNonce)
+
+    return Math.max(Number(savedNonce), networkNonce)
+  }
+
+  /**
+   * Records the txns of a partly sent built-in swap that went out, so they show in
+   * the activity even though the swap itself is retried without them.
+   * The record is detached from the swap route, as the route belongs to the retry:
+   * e.g. a sent approval that resolves later must not change the retried swap's progress.
+   * It's still marked as a swap, so the activity shows it as one.
+   */
+  async #recordSentPartOfSwap(accountOp: AccountOp, sentTxnHashes: string[], firstNonce: number) {
+    const swapTxn = accountOp.meta?.swapTxn
+    const sentCalls = accountOp.calls.slice(0, sentTxnHashes.length).map((call, i) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { activeRouteId, ...callWithoutActiveRoute } = call
+
+      return {
+        ...callWithoutActiveRoute,
+        // The swap route is matched to calls by their ids
+        id: call.id ? `${call.id}-sent-before-retry` : call.id,
+        txnId: sentTxnHashes[i] as Hex,
+        status: AccountOpStatus.BroadcastedButNotConfirmed
+      }
+    })
+    const submittedAccountOp: SubmittedAccountOp = {
+      ...accountOp,
+      calls: sentCalls,
+      eoaNonce: BigInt(firstNonce),
+      status: AccountOpStatus.BroadcastedButNotConfirmed,
+      txnId: sentTxnHashes[sentTxnHashes.length - 1],
+      nonce: BigInt(firstNonce),
+      identifiedBy: { type: 'MultipleTxns', identifier: sentTxnHashes.join('-') },
+      timestamp: new Date().getTime(),
+      isSingletonDeploy: !!sentCalls.find((call) => call.to && getAddress(call.to) === SINGLETON)
+    }
+    if (swapTxn) {
+      submittedAccountOp.meta = {
+        ...accountOp.meta,
+        // The swap route is matched to it by `activeRouteId`
+        swapTxn: { ...swapTxn, activeRouteId: `${swapTxn.activeRouteId}-sent-before-retry` }
+      }
+    }
+    if (!submittedAccountOp.meta || !Object.keys(submittedAccountOp.meta).length)
+      delete submittedAccountOp.meta
+
+    try {
+      await this.#activity.addAccountOp(submittedAccountOp)
+    } catch (error: any) {
+      // Not recording them must not stop the retry of the rest
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to record the sent part of a partly sent swap in the activity',
+        error,
+        sendCrashReport: true
+      })
+    }
   }
 
   /**
