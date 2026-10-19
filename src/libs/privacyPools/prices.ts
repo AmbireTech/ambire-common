@@ -17,8 +17,8 @@ export const getPrivacyPoolsPriceKey = (chainId: string | bigint, tokenAddress: 
   `${chainId.toString()}:${tokenAddress.toLowerCase()}`
 
 /**
- * USD value per chain of the approved (withdrawable) balances. An unpriced token adds nothing
- * rather than making the chain's value unknown.
+ * USD value per chain of the balances, the pending part included, as the account holds it. An
+ * unpriced token adds nothing rather than making the chain's value unknown.
  */
 export const getPrivacyPoolsValuePerChain = (
   balances: { [chainId: string]: PrivacyPoolsTokenBalance[] },
@@ -31,7 +31,7 @@ export const getPrivacyPoolsValuePerChain = (
         const price = prices[getPrivacyPoolsPriceKey(chainId, balance.tokenAddress)]
         if (price === undefined) return total
 
-        return total + Number(formatUnits(balance.approvedAmount, balance.decimals)) * price
+        return total + Number(formatUnits(balance.totalAmount, balance.decimals)) * price
       }, 0)
     ])
   )

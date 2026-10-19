@@ -17,17 +17,22 @@ const getBalance = (overrides: Partial<PrivacyPoolsTokenBalance>): PrivacyPoolsT
 })
 
 describe('getPrivacyPoolsValuePerChain', () => {
-  it('values only the approved part of each balance', () => {
+  it('values the pending part along with the approved one', () => {
     const values = getPrivacyPoolsValuePerChain(
       {
         '1': [
-          getBalance({ approvedAmount: 10n ** 18n, pendingAmount: 5n * 10n ** 18n }),
+          getBalance({
+            approvedAmount: 10n ** 18n,
+            pendingAmount: 5n * 10n ** 18n,
+            totalAmount: 6n * 10n ** 18n
+          }),
           getBalance({
             tokenAddress: USDC,
             symbol: 'USDC',
             decimals: 6,
             isNative: false,
-            approvedAmount: 2_500_000n
+            approvedAmount: 2_500_000n,
+            totalAmount: 2_500_000n
           })
         ]
       },
@@ -37,14 +42,14 @@ describe('getPrivacyPoolsValuePerChain', () => {
       }
     )
 
-    expect(values).toEqual({ '1': 2002.5 })
+    expect(values).toEqual({ '1': 12002.5 })
   })
 
   it('leaves out a token with no known price without dropping the chain', () => {
     const values = getPrivacyPoolsValuePerChain(
       {
-        '1': [getBalance({ approvedAmount: 10n ** 18n })],
-        '11155111': [getBalance({ approvedAmount: 10n ** 18n })]
+        '1': [getBalance({ totalAmount: 10n ** 18n })],
+        '11155111': [getBalance({ totalAmount: 10n ** 18n })]
       },
       { [getPrivacyPoolsPriceKey('1', '0x0000000000000000000000000000000000000000')]: 2000 }
     )
@@ -59,7 +64,7 @@ describe('getPrivacyPoolsValuePerChain', () => {
           getBalance({
             tokenAddress: USDC.toUpperCase().replace('0X', '0x'),
             decimals: 6,
-            approvedAmount: 1_000_000n
+            totalAmount: 1_000_000n
           })
         ]
       },
