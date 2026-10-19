@@ -36,7 +36,7 @@ import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { EOA_SIMULATION_NONCE } from '../../consts/deployless'
 import { FeatureFlags } from '../../consts/featureFlags'
-import { ESTIMATE_UPDATE_INTERVAL } from '../../consts/intervals'
+import { ESTIMATE_UPDATE_INTERVAL, GAS_PRICE_UPDATE_INTERVAL } from '../../consts/intervals'
 import { networks } from '../../consts/networks'
 import { Account } from '../../interfaces/account'
 import { Dapp, DAPP_VERIFICATION_BANNER_IDS, IDappsController } from '../../interfaces/dapp'
@@ -4656,5 +4656,71 @@ describe('RPC gas prices with a bundler fallback', () => {
     ).toBe(BigInt(bundlerGasPrices.slow.maxFeePerGas))
     controller.update({ feeToken: nativeFeeTokenPolygon, paidBy: eoaAccount.addr })
     expect(controller.selectedOptionGasPrices).toEqual(bundlerGasPrices)
+  })
+})
+
+describe('gas price refresh failures', () => {
+  suppressConsoleBeforeEach(true)
+  const refreshGasPrices = {
+    slow: { maxFeePerGas: toBeHex(200n) as Hex, maxPriorityFeePerGas: toBeHex(100n) as Hex },
+    medium: { maxFeePerGas: toBeHex(400n) as Hex, maxPriorityFeePerGas: toBeHex(200n) as Hex },
+    fast: { maxFeePerGas: toBeHex(600n) as Hex, maxPriorityFeePerGas: toBeHex(300n) as Hex },
+    ape: { maxFeePerGas: toBeHex(800n) as Hex, maxPriorityFeePerGas: toBeHex(400n) as Hex }
+  }
+  afterEach(() => {
+    jest.restoreAllMocks()
+    jest.useRealTimers()
+  })
+
+  /** Runs the gas price refresh loop once and returns the error levels it asked for */
+  const getRefreshErrorLevels = async (type: SignAccountOpType) => {
+    const feePaymentOptions = [
+      {
+        paidBy: eoaAccount.addr,
+        availableAmount: 1000000000000000000n,
+        gasUsed: 25000n,
+        addedNative: 0n,
+        token: nativeFeeToken
+      }
+    ]
+    const { controller } = await init(
+      eoaAccount,
+      createEOAAccountOp(eoaAccount),
+      eoaSigner,
+      {
+        providerEstimation: { gasUsed: 25000n, feePaymentOptions },
+        flags: {},
+        updatedAt: Date.now()
+      },
+      refreshGasPrices,
+      false,
+      { type, pauseOnInit: true }
+    )
+    const fetch = jest.spyOn(controller.gasPrice, 'fetch').mockImplementation(async () => {})
+    // The estimate loop is not under test and would otherwise hit the network
+    jest.spyOn(controller.estimation, 'estimate').mockImplementation(async () => {})
+
+    // Hand the loop over to the fake clock, as it was scheduled on the real one
+    jest.useFakeTimers()
+    controller.pause()
+    controller.resume()
+    fetch.mockClear()
+    await jest.advanceTimersByTimeAsync(GAS_PRICE_UPDATE_INTERVAL)
+
+    return fetch.mock.calls.map(([level]) => level)
+  }
+
+  test('keeps them silent on the swap screen, where users often just browse quotes', async () => {
+    const levels = await getRefreshErrorLevels('one-click-swap-and-bridge')
+
+    // Signing errors still show there, as they no longer get silenced along with these
+    expect(levels).toContain('silent')
+    expect(levels).not.toContain('major')
+  })
+
+  test('shows them everywhere else', async () => {
+    const levels = await getRefreshErrorLevels('default')
+
+    expect(levels).toContain('major')
   })
 })

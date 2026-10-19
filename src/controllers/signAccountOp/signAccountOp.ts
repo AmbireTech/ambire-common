@@ -625,7 +625,10 @@ export class SignAccountOpController
         return
       }
 
-      await this.gasPrice.fetch('major')
+      // Users often just browse quotes on the swap screen, so a failed background
+      // refresh shouldn't interrupt them with an error
+      const gasPriceErrorLevel = this.#type === 'one-click-swap-and-bridge' ? 'silent' : 'major'
+      await this.gasPrice.fetch(gasPriceErrorLevel)
     }, GAS_PRICE_UPDATE_INTERVAL)
 
     this.#simulateAndEstimateOrSimulateInterval = new RecurringTimeout(async () => {

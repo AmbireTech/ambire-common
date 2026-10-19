@@ -3424,21 +3424,18 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }, 'swap-and-bridge')
 
-    this.#signAccountOpController.onError(async (error) => {
-      // Errors from background work (e.g. gas price refreshes) are silenced, as the
-      // user is often just browsing quotes. Errors from signing and broadcasting
-      // (e.g. a hardware wallet signing with a different key) are a direct result of
-      // the user's action, so keep their level to display them on the swap screen.
-      const isSigningOrBroadcastingError =
-        !!this.#signAccountOpController?.isSignAndBroadcastInProgress
-      this.emitError(isSigningOrBroadcastingError ? error : { ...error, level: 'silent' })
+    // Need to use THIS signAccountOpController specifically, the one that emitted the error.
+    // NOT the field (this.#signAccountOpController), which can be replaced or nulled before
+    // the error arrives, and NOT the getter (this.signAccountOpController) that is ALWAYS
+    // up-to-date with the current quote and the current form state.
+    const signAccountOpController = this.#signAccountOpController
+    signAccountOpController.onError(async (error) => {
+      // Forwarded as is, as SignAccountOp already keeps its background errors silent
+      // on the swap screen (e.g. failed gas price refreshes)
+      this.emitError(error)
 
       // Need to clean the pending results for THIS signAccountOpController
-      // specifically. NOT the one from the getter (this.signAccountOpController)
-      // that is ALWAYS up-to-date with the current quote and the current form state.
-      // Due to the async nature, it might not exist - an issue caught by our crash reporting.
-      if (this.#signAccountOpController)
-        await this.#portfolio.overrideSimulationResults(this.#signAccountOpController.accountOp)
+      await this.#portfolio.overrideSimulationResults(signAccountOpController.accountOp)
     })
     // if the estimation emits an error, handle it
     this.#signAccountOpController.estimation.onUpdate(() => {
