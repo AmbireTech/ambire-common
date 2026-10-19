@@ -365,6 +365,9 @@ export class ContinuousUpdatesController extends EventEmitter {
 
     if (!this.#main.accounts.accounts.length) return // no accounts imported yet
 
+    // A private account has no address, so it has no account state
+    if (this.#main.selectedAccount.privateAccount) return
+
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to latest state')
       return
@@ -400,6 +403,9 @@ export class ContinuousUpdatesController extends EventEmitter {
   async #updateAccountStatePending() {
     await this.initialLoadPromise
     await this.#main.accounts.accountStateInitialLoadPromise
+
+    // A private account has no address, so it has no account state
+    if (this.#main.selectedAccount.privateAccount) return
 
     if (!this.#main.selectedAccount.account) {
       console.error('No selected account to update pending state')

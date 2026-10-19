@@ -1,3 +1,4 @@
+import { getPrivacyPoolsTokenId } from '../../consts/privacyPools'
 import { PrivacyPoolsSendForm } from '../../interfaces/privacyPools'
 import { IUiController, View } from '../../interfaces/ui'
 
@@ -46,6 +47,24 @@ export class PrivacyPoolsSendFormState {
 
     this.form = EMPTY_SEND_FORM
     this.resetCounter += 1
+
+    return true
+  }
+
+  /**
+   * Picks the token the view opened the screen for (`?chainId=1&address=0x...`, like the regular
+   * Send). Returns whether the form changed.
+   */
+  isTokenPickedByViewUpdate(view: View): boolean {
+    if (view.currentRoute !== SEND_ROUTE) return false
+
+    const { chainId, address } = view.searchParams || {}
+    if (!chainId || !address) return false
+
+    const tokenId = getPrivacyPoolsTokenId(chainId, address)
+    if (tokenId === this.form.tokenId) return false
+
+    this.update({ tokenId })
 
     return true
   }

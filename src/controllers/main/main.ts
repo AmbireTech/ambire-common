@@ -996,7 +996,7 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.isOffline = false
     await this.#leaveSelectedAccount()
-    await this.selectedAccount.setAccount(accountToSelect)
+    await this.selectedAccount.select({ account: accountToSelect })
     // Update reverse lookup data and ENS expiry
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.domains.reverseLookup(toAccountAddr, true, {
@@ -1141,7 +1141,7 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     await this.#leaveSelectedAccount()
-    await this.selectedAccount.setPrivateAccount(privateAccount)
+    await this.selectedAccount.select({ privateAccount })
     this.swapAndBridge.reset()
     this.transfer.reset({ destroyAccountOp: true })
 
@@ -1168,7 +1168,7 @@ export class MainController extends EventEmitter implements IMainController {
       }
     }
 
-    await this.selectedAccount.setPrivateAccount(null)
+    await this.selectedAccount.select(null)
     this.emitUpdate()
   }
 

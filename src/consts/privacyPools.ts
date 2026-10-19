@@ -193,6 +193,13 @@ export const getPrivacyPoolsStoreKey = ({
 export const isPrivacyPoolsNativeAsset = (address: string): boolean =>
   address.toLowerCase() === ZERO_ADDRESS
 
+/**
+ * Identifies a token of the Send form. Includes the chain, as the same token on two chains has
+ * different pools and must not collide.
+ */
+export const getPrivacyPoolsTokenId = (chainId: string, tokenAddress: string): string =>
+  `${chainId}:${tokenAddress.toLowerCase()}`
+
 /** Looks up a configured asset (see `PrivacyPoolsAsset`) by the wallet's address for it. */
 export const getPrivacyPoolsAsset = (
   chainId: bigint,

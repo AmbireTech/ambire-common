@@ -8,7 +8,18 @@ import {
   ProjectedRewardsStats,
   TokenResult as TokenResultInterface
 } from '../libs/portfolio/interfaces'
+import { Account } from './account'
 import { ControllerInterface } from './controller'
+import { PrivacyProviderId, PrivateAccountRef } from './privateAccount'
+
+/** What to select: a regular account, or a private account in its place. Null signs out. */
+export type AccountSelection = { account: Account } | { privateAccount: PrivateAccountRef } | null
+
+/**
+ * The kind of the selected account: 'regular', or the provider of the selected private account.
+ * Null when none is selected (signed out).
+ */
+export type SelectedAccountType = 'regular' | PrivacyProviderId | null
 
 export type ISelectedAccountController = ControllerInterface<
   InstanceType<
