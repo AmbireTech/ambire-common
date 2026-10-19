@@ -90,6 +90,7 @@ import {
   AccountOp,
   GasFeePayment,
   getAccountOpNonce,
+  getPq1BroadcastBlocker,
   getSignableCalls
 } from '../../libs/accountOp/accountOp'
 import {
@@ -3902,20 +3903,17 @@ export class SignAccountOpController
     //   2. Device interaction runs inside #withHardwareWalletSigningRequest
     //      so the "confirm on your device" UI shows while the PQ1 waits
     //      for its physical confirmation.
+    // The UserOperation is sent from the PQ1 wallet itself, so an op for any
+    // other account the PQ1 key can sign for (e.g. a Safe it is an owner of)
+    // is refused up front as well, instead of running its calls from the PQ1
+    // wallet. Both refusals come from `getPq1BroadcastBlocker`.
     if (accountOp.signingKeyType === 'pq1' && accountOp.signingKeyAddr) {
       try {
-        const { gasFeePayment } = accountOp
-        if (
-          gasFeePayment.isGasTank ||
-          gasFeePayment.paidBy !== accountOp.accountAddr ||
-          gasFeePayment.inToken !== ZeroAddress
-        ) {
-          return this.throwBroadcastAccountOp({
-            message:
-              'PQ1 accounts pay gas with the native token from the account itself. Please select the native-token fee option paid by this account and try again.',
-            accountState
-          })
+        const pq1BroadcastBlocker = getPq1BroadcastBlocker(accountOp)
+        if (pq1BroadcastBlocker) {
+          return this.throwBroadcastAccountOp({ message: pq1BroadcastBlocker, accountState })
         }
+        const { gasFeePayment } = accountOp
         const signer = await this.#keystore.getSigner(
           accountOp.signingKeyAddr,
           accountOp.signingKeyType
