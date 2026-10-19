@@ -3447,8 +3447,10 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     // no updates if the user has committed
     if (this.formStatus === SwapAndBridgeFormStatus.Proceeded) return
 
-    // shouldn't happen ever
-    if (!this.#selectedAccount.account) return
+    // Read once, as the selection can change while this awaits, and the quote guards below
+    // drop the result then. Missing when a Privacy Pools account is selected.
+    const { account } = this.#selectedAccount
+    if (!account) return
 
     // again it shouldn't happen but there might be a case where the from token
     // disappears because of a strange update event. It's fine to just not
@@ -3473,7 +3475,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     if (!provider) return
 
     const accountState = await this.#accounts.getOrFetchAccountOnChainState(
-      this.#selectedAccount.account.addr,
+      account.addr,
       network.chainId
     )
 
@@ -3517,18 +3519,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     const userRequestCalls =
       (
         this.#getUserRequests().find(
-          (r) =>
-            r.kind === 'calls' &&
-            r.id === `${this.#selectedAccount.account!.addr}-${network.chainId}`
+          (r) => r.kind === 'calls' && r.id === `${account.addr}-${network.chainId}`
         ) as CallsUserRequest
       )?.signAccountOp.accountOp.calls || []
 
-    const swapOrBridgeCalls = await getSwapAndBridgeCalls(
-      userTxn,
-      this.#selectedAccount.account,
-      provider,
-      accountState
-    )
+    const swapOrBridgeCalls = await getSwapAndBridgeCalls(userTxn, account, provider, accountState)
 
     if (this.#isQuoteIdObsoleteAfterAsyncOperation(quoteIdGuard)) return
 
@@ -3538,11 +3533,11 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       : !!this.fromChainId && !!this.toChainId && this.fromChainId !== this.toChainId
     const calls = !isIntent ? [...userRequestCalls, ...swapOrBridgeCalls] : [...swapOrBridgeCalls]
     const native = this.#portfolio
-      .getAccountPortfolioState(this.#selectedAccount.account.addr)
+      .getAccountPortfolioState(account.addr)
       [network.chainId.toString()]?.result?.tokens.find((token) => token.address === ZeroAddress)
     const nativePrice = native?.priceIn.find((price) => price.baseCurrency === 'usd')?.price
     const baseAcc = getBaseAccount(
-      this.#selectedAccount.account,
+      account,
       accountState,
       network,
       this.#featureFlags.isFeatureEnabled('erc4337'),
@@ -3587,7 +3582,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
     const accountOp: AccountOp = {
       id: generateUuid(),
-      accountAddr: this.#selectedAccount.account.addr,
+      accountAddr: account.addr,
       chainId: network.chainId,
       signingKeyAddr: null,
       signingKeyType: null,
@@ -3617,7 +3612,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       signAccountOpPreference: this.#signAccountOpPreference,
       externalSignerControllers: this.#externalSignerControllers,
       activity: this.#activity,
-      account: this.#selectedAccount.account,
+      account,
       network,
       provider,
       phishing: this.#phishing,
