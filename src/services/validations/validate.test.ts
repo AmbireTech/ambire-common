@@ -26,7 +26,6 @@ const validate = (overrides: {
   recipientDomainAddressChange?: { previousAddress: string } | null
   isRecipientAddressFirstTimeSend?: boolean
   isRecipientAddressUnknown?: boolean
-  isDomain?: boolean
   isRecipientAddressBlacklisted?: boolean
   isRecipientAddressViewOnly?: boolean
   isRecipientAddressUnknownAgreed?: boolean
@@ -44,7 +43,6 @@ const validate = (overrides: {
     overrides.isRecipientAddressUnknownAgreed ?? false,
     overrides.isRecipientAddressUnknown ?? false,
     overrides.isRecipientHumanizerKnownTokenOrSmartContract ?? false,
-    overrides.isDomain ?? true,
     false,
     overrides.networks ?? networks,
     accountStates,

@@ -592,7 +592,6 @@ export class TransferController extends EventEmitter implements ITransferControl
         this.isRecipientAddressUnknownAgreed,
         this.isRecipientAddressUnknown,
         this.isRecipientHumanizerKnownTokenOrSmartContract,
-        !!this.addressState.resolvedAddress,
         this.addressState.isDomainResolving,
         this.#networks.networks,
         this.#accounts.accountStates,

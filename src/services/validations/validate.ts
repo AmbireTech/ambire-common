@@ -144,7 +144,6 @@ const validateSendTransferAddress = (
   addressConfirmed: boolean,
   isRecipientAddressUnknown: boolean,
   isRecipientHumanizerKnownTokenOrSmartContract: boolean,
-  _isDomain: boolean,
   isRecipientDomainResolving: boolean,
   networks: Network[],
   accountStates: AccountStates,
