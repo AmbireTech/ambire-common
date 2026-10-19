@@ -6,6 +6,7 @@ import { ControllerInterface } from './controller'
 import { DappProviderRequest } from './dapp'
 import { Hex } from './hex'
 import { SwapAndBridgeActiveRoute, SwapAndBridgeQuote } from './swapAndBridge'
+import { TransferNft } from './transfer'
 import {
   CallsUserRequest,
   PendingDappPromise,
@@ -47,6 +48,15 @@ export type BuildRequest =
         recipientAddress: string
         recipientDomain: string | undefined
         selectedToken: TokenResult
+        executionType: RequestExecutionType
+      }
+    }
+  | {
+      type: 'nftTransferRequest'
+      params: {
+        nft: TransferNft
+        recipientAddress: string
+        recipientDomain: string | undefined
         executionType: RequestExecutionType
       }
     }

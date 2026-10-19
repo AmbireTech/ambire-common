@@ -285,6 +285,8 @@ export const validateERC20Token = async (
 
 const ERC721_INTERFACE_ID = '0x80ac58cd'
 const ERC1155_INTERFACE_ID = '0xd9b67a26'
+// Must never be supported, see ERC-165
+const INVALID_INTERFACE_ID = '0xffffffff'
 
 // Not available in the compiled IERC721 ABI
 const ERC721_METADATA_ABI = [
@@ -543,6 +545,45 @@ export const validateERC721Token = async (
       symbol: typeof symbol === 'string' ? symbol : null
     }
   }
+}
+
+/** Whether a collection declares the ERC-721 standard, see `getErc721InterfaceSupport` */
+export type Erc721InterfaceSupport = 'supported' | 'unsupported' | 'network-error'
+
+/**
+ * Whether a collection declares the ERC-721 standard through ERC-165.
+ *
+ * Stricter than `validateERC721Token`, which also accepts legacy collections that don't
+ * declare it, so they can still be shown. Those collections may not implement
+ * `safeTransferFrom`, which sending an NFT relies on, so they are reported as unsupported.
+ */
+export const getErc721InterfaceSupport = async (
+  address: string,
+  provider: RPCProvider
+): Promise<Erc721InterfaceSupport> => {
+  const metadata = new Contract(address, ERC721_METADATA_ABI, provider)
+  let hasNetworkError = false
+  const askSupportsInterface = (interfaceId: string): Promise<boolean> =>
+    metadata.supportsInterface!(interfaceId).then(
+      (supported: unknown) => supported === true,
+      (e: any) => {
+        if (isNetworkError(e)) hasNetworkError = true
+
+        // A revert is expected from a contract that doesn't implement ERC-165 at all
+        return false
+      }
+    )
+
+  const [supportsERC721, supportsInvalidInterface] = await Promise.all([
+    askSupportsInterface(ERC721_INTERFACE_ID),
+    // ERC-165 requires 0xffffffff to be unsupported. A contract that claims to support it
+    // answers "yes" to everything (e.g. a catch-all fallback), so its answer means nothing.
+    askSupportsInterface(INVALID_INTERFACE_ID)
+  ])
+
+  if (hasNetworkError) return 'network-error'
+
+  return supportsERC721 && !supportsInvalidInterface ? 'supported' : 'unsupported'
 }
 
 // fetch the amountPostSimulation for the token if set

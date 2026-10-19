@@ -6,6 +6,7 @@ import {
   erc721CollectionToLearnedAssetKeys,
   formatExternalHintsAPIResponse,
   getAssetCacheKey,
+  getErc721InterfaceSupport,
   getErc721Validity,
   getHintsError,
   getSpecialHints,
@@ -607,6 +608,37 @@ describe('Portfolio helpers', () => {
 
         expect(result.isValid).toBe(false)
         expect(result.error.type).toBe('network')
+      })
+    })
+
+    describe('getErc721InterfaceSupport', () => {
+      const check = (provider: any) => getErc721InterfaceSupport(COLLECTION, provider)
+
+      it('supports a collection that declares the ERC-721 interface', async () => {
+        expect(await check(getProvider(collectionOf(ERC721_ID)))).toBe('supported')
+      })
+
+      it('does not support a collection that declares only ERC-1155', async () => {
+        expect(await check(getProvider(collectionOf(ERC1155_ID)))).toBe('unsupported')
+      })
+
+      // Legacy collections (e.g. CryptoKitties) predate ERC-165 or declare a draft id, and may
+      // not implement safeTransferFrom - validateERC721Token still accepts them, for display
+      it('does not support a legacy collection that does not implement ERC-165', async () => {
+        const provider = getProvider(() => undefined)
+
+        expect(await check(provider)).toBe('unsupported')
+        expect((await validate(provider)).isValid).toBe(true)
+      })
+
+      // e.g. a contract with a catch-all fallback - ERC-165 requires 0xffffffff to be unsupported
+      it('does not support a contract that claims to support every interface', async () => {
+        expect(await check(getProvider(() => encode('bool', true)))).toBe('unsupported')
+        expect(await check(getProvider(() => encode('uint256', 2n)))).toBe('unsupported')
+      })
+
+      it('reports a network problem instead of treating it as unsupported', async () => {
+        expect(await check(getProvider(() => networkError()))).toBe('network-error')
       })
     })
 
