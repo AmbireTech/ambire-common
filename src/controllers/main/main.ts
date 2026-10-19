@@ -2153,9 +2153,9 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /**
-   * Starts the account picker from a recovery phrase or private key, and selects and
-   * prepares its next account for the personalize step - nothing is written yet. Replies
-   * to `requestId` once prepared.
+   * Sets the account picker up with a recovery phrase or private key, for the personalize
+   * step to select and prepare its next account (`init`) - nothing is written yet. Replies
+   * to `requestId` once set up.
    */
   async accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase(
     {
@@ -2170,13 +2170,13 @@ export class MainController extends EventEmitter implements IMainController {
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
     const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase)
     this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
-    await this.accountPicker.init(requestId)
+    if (requestId) this.ui.message.sendUiMessage({ requestId, ok: true })
   }
 
   /**
-   * Starts the account picker from a recovery phrase the user already saved, and selects
-   * and prepares its next account for the personalize step. Replies to `requestId` once
-   * prepared.
+   * Sets the account picker up with a recovery phrase the user already saved, for the
+   * personalize step to select and prepare its next account. Replies to `requestId` once
+   * set up.
    */
   async accountPickerSetInitParamsFromSavedSeed(seedId: string, requestId?: string) {
     const savedSeed = await this.keystore.getSavedSeed(seedId)
@@ -2193,20 +2193,20 @@ export class MainController extends EventEmitter implements IMainController {
 
     const keyIterator = new KeyIterator(savedSeed.seed, savedSeed.seedPassphrase)
     this.accountPicker.setInitParams({ keyIterator, hdPathTemplate: savedSeed.hdPathTemplate })
-    await this.accountPicker.init(requestId)
+    if (requestId) this.ui.message.sendUiMessage({ requestId, ok: true })
   }
 
   /**
-   * Creates a brand new recovery phrase and prepares its first account for the personalize
-   * step, all in the background - nothing is written until the user proceeds from there.
-   * The phrase is never sent to the UI - the user gets prompted to write it down later,
-   * once the account holds funds.
+   * Creates a brand new recovery phrase and sets the account picker up with it, for the
+   * personalize step to prepare its first account - nothing is written until the user
+   * proceeds from there. The phrase is never sent to the UI - the user gets prompted to
+   * write it down later, once the account holds funds.
    */
   async accountPickerSetInitParamsFromNewSeed(
     { extraEntropy }: { extraEntropy?: string },
     requestId?: string
   ) {
-    let isPrepared = false
+    let isSetUp = false
     await this.withStatus(
       'accountPickerSetInitParamsFromNewSeed',
       async () => {
@@ -2215,7 +2215,7 @@ export class MainController extends EventEmitter implements IMainController {
         await this.accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({
           privKeyOrSeed: tempSeed.seed
         })
-        isPrepared = this.accountPicker.readyToAddAccounts.length > 0
+        isSetUp = true
       },
       true
     )
@@ -2224,7 +2224,7 @@ export class MainController extends EventEmitter implements IMainController {
     // mid-transition on mobile) would miss the transient status and wait forever.
     if (!requestId) return
     this.ui.message.sendUiMessage(
-      isPrepared
+      isSetUp
         ? { requestId, ok: true }
         : { requestId, ok: false, error: 'Creating the new account failed' }
     )
