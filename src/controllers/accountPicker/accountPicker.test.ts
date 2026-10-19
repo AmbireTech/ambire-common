@@ -71,6 +71,8 @@ describe('AccountPicker', () => {
     expect(controller.pageSize).toEqual(DEFAULT_PAGE_SIZE)
     expect(controller.isInitialized).toBeTruthy()
     expect(controller.selectedAccounts.length).toEqual(1)
+    // Selected and prepared for the personalize step, but not added
+    expect(controller.readyToAddAccounts).toHaveLength(1)
     expect(controller.hdPathTemplate).toEqual(hdPathTemplate)
     expect(controller.shouldGetAccountsUsedOnNetworks).toBeFalsy()
     expect(controller.shouldSearchForLinkedAccounts).toBeFalsy()
@@ -95,7 +97,7 @@ describe('AccountPicker', () => {
       await controller.setPage({ page: 1 })
       controller.selectAccount(basicAccount)
       controller.deselectAccount(basicAccount)
-      await controller.addAccounts()
+      controller.prepareSelectedAccounts()
 
       await wait(500) // wait a bit for the errors to be emitted
 
@@ -135,7 +137,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldGetAccountsUsedOnNetworks: false,
       shouldSearchForLinkedAccounts: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     await controller.setPage({ page: 1 })
@@ -173,7 +175,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldGetAccountsUsedOnNetworks: false,
       shouldSearchForLinkedAccounts: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
 
@@ -220,7 +222,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldGetAccountsUsedOnNetworks: false,
       shouldSearchForLinkedAccounts: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     const { restore } = suppressConsole()
@@ -263,7 +265,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldGetAccountsUsedOnNetworks: false,
       shouldSearchForLinkedAccounts: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
 
@@ -279,7 +281,7 @@ describe('AccountPicker', () => {
     expect(controller.accountsOnPage).toHaveLength(0)
   })
 
-  test('should stop adding the next account automatically when reset mid-selection', async () => {
+  test('should stop preparing the next account automatically when reset mid-selection', async () => {
     const { controller } = await prepareTest()
     const keyIterator = new KeyIterator(process.env.SEED)
     const retrieve = keyIterator.retrieve.bind(keyIterator)
@@ -315,7 +317,7 @@ describe('AccountPicker', () => {
     )
     expect(notInitializedErrors).toHaveLength(0)
     expect(controller.isInitialized).toBe(false)
-    expect(controller.addedAccountsFromCurrentSession).toHaveLength(0)
+    expect(controller.readyToAddAccounts).toHaveLength(0)
   })
 
   test('should find linked accounts', async () => {
@@ -326,7 +328,7 @@ describe('AccountPicker', () => {
       pageSize: 3,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldGetAccountsUsedOnNetworks: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     await controller.setPage({ page: 1 })
@@ -361,7 +363,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     await controller.setPage({ page: 1 })
@@ -383,7 +385,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     await controller.setPage({ page: 1 })
@@ -405,7 +407,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     await controller.setPage({ page: 1 })
@@ -427,7 +429,7 @@ describe('AccountPicker', () => {
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
     await controller.setPage({ page: 1 })
@@ -455,7 +457,7 @@ describe('AccountPicker', () => {
       pageSize,
       shouldSearchForLinkedAccounts: false,
       shouldGetAccountsUsedOnNetworks: false,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
     await controller.init()
 

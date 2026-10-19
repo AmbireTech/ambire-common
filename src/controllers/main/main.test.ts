@@ -2,7 +2,9 @@ import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
 import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
 import { AccountOnchainState } from '@/interfaces/account'
 import { AccountOpStatus } from '@/libs/accountOp/types'
+import { isSmartAccount } from '@/libs/account/account'
 import { KeyIterator } from '@/libs/keyIterator/keyIterator'
+import { stringify } from '@/libs/richJson/richJson'
 import wait from '@/utils/wait'
 import { describe, expect, jest, test } from '@jest/globals'
 import { makeMainController } from '@test/helpers/mainController'
@@ -312,7 +314,7 @@ describe('Main Controller ', () => {
     controller.accountPicker.setInitParams({
       keyIterator,
       hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
-      shouldAddNextAccountAutomatically: false
+      shouldSelectNextAccountAutomatically: false
     })
 
     await controller.accountPicker.init()
@@ -331,8 +333,135 @@ describe('Main Controller ', () => {
 
     const accToSelect = controller.accountPicker.accountsOnPage[0]!.account
     controller.accountPicker.selectAccount(controller.accountPicker.accountsOnPage[0]!.account)
-    await controller.accountPicker.addAccounts().catch(console.error)
+    controller.accountPicker.prepareSelectedAccounts()
+    await controller.accountPicker.addPreparedAccounts()
     expect(controller.accounts.accounts.map((a) => a.addr)).toContain(accToSelect.addr)
+  })
+
+  describe('account picker: accounts are prepared, then added only on proceeding', () => {
+    const prepareNewSeedFlow = async () => {
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', accounts)
+      })
+      await mainCtrl.initialLoadPromise
+      await mainCtrl.keystore.addSecret('password', '12345678', '', true)
+      await mainCtrl.accountPickerSetInitParamsFromNewSeed({})
+
+      const snapshot = () => ({
+        accounts: mainCtrl.accounts.accounts.map((account) => account.addr),
+        keys: mainCtrl.keystore.keys.map((key) => `${key.addr}:${key.type}`),
+        seeds: mainCtrl.keystore.seeds.map((seed) => seed.id)
+      })
+
+      return { mainCtrl, picker: mainCtrl.accountPicker, snapshot }
+    }
+
+    test('init selects and prepares the next account, but writes nothing', async () => {
+      const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+
+      await picker.init()
+
+      expect(picker.readyToAddAccounts).toHaveLength(1)
+      expect(snapshot()).toEqual(before)
+      expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(true)
+    })
+
+    test('adds the prepared account, its key and the new recovery phrase on proceeding', async () => {
+      const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+      await picker.init()
+      const [prepared] = picker.readyToAddAccounts
+
+      await picker.addPreparedAccounts([
+        { addr: prepared!.addr, preferences: { ...prepared!.preferences, label: 'Savings' } }
+      ])
+
+      const after = snapshot()
+      expect(after.accounts).toEqual([...before.accounts, prepared!.addr])
+      expect(after.keys).toHaveLength(before.keys.length + 1)
+      expect(after.seeds).toHaveLength(before.seeds.length + 1)
+      expect(
+        mainCtrl.accounts.accounts.find((a) => a.addr === prepared!.addr)?.preferences.label
+      ).toBe('Savings')
+      // The flow is done
+      expect(picker.isInitialized).toBe(false)
+      expect(picker.readyToAddAccounts).toHaveLength(0)
+    })
+
+    test('going back (reset) writes nothing and drops the generated recovery phrase', async () => {
+      const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+      await picker.init()
+
+      await picker.reset()
+
+      expect(snapshot()).toEqual(before)
+      expect(picker.readyToAddAccounts).toHaveLength(0)
+      expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(false)
+    })
+
+    test('adding more accounts prepares the whole selection again', async () => {
+      const { picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+      await picker.init()
+
+      // Back on the picker, a second account is selected and prepared
+      await picker.setPage({ page: 1, pageSize: 5 })
+      const secondAccount = picker.accountsOnPage.find(
+        ({ account, isLinked }) =>
+          !isLinked &&
+          !isSmartAccount(account) &&
+          !picker.readyToAddAccounts.some((prepared) => prepared.addr === account.addr)
+      )!.account
+      picker.selectAccount(secondAccount)
+      picker.prepareSelectedAccounts()
+      expect(picker.readyToAddAccounts).toHaveLength(2)
+
+      await picker.addPreparedAccounts()
+      expect(snapshot().accounts).toHaveLength(before.accounts.length + 2)
+    })
+
+    test('adds the accounts prepared by a flow without keys (view-only)', async () => {
+      const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+      const viewOnlyAccount = {
+        addr: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8',
+        associatedKeys: [],
+        initialPrivileges: [],
+        creation: null,
+        preferences: { label: 'Watched', pfp: '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8' }
+      }
+
+      await picker.prepareAccounts({ accounts: [viewOnlyAccount] })
+      expect(picker.readyToAddAccounts).toEqual([viewOnlyAccount])
+      // The new recovery phrase of the abandoned flow went with the reset
+      expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(false)
+      expect(snapshot()).toEqual(before)
+
+      await picker.addPreparedAccounts()
+      expect(snapshot().accounts).toContain(viewOnlyAccount.addr)
+      expect(snapshot().keys).toEqual(before.keys)
+    })
+
+    test('never sends the private keys of the prepared accounts to the UI', async () => {
+      const { picker } = await prepareNewSeedFlow()
+      await picker.init()
+      const privateKeys = picker
+        .retrieveInternalKeysOfSelectedAccounts()
+        .map((key) => key.privateKey)
+      expect(privateKeys.length).toBeGreaterThan(0)
+
+      // Every state the UI receives, while prepared and while being added
+      const serializedStates = [stringify(picker.toJSON())]
+      const unsubscribe = picker.onUpdate(() => serializedStates.push(stringify(picker.toJSON())))
+      await picker.addPreparedAccounts()
+      unsubscribe()
+
+      serializedStates.forEach((serializedState) =>
+        privateKeys.forEach((privateKey) => expect(serializedState).not.toContain(privateKey))
+      )
+    })
   })
 
   describe('accountPickerSetInitParamsFromNewSeed', () => {

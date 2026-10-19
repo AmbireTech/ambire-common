@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-floating-promises */
 import { getCreate2Address, keccak256 } from 'ethers'
 
 import EmittableError from '../../classes/EmittableError'
@@ -13,6 +12,7 @@ import { HARDWARE_WALLET_DEVICE_NAMES } from '../../consts/hardwareWallets'
 import {
   Account,
   AccountOnchainState,
+  AccountPreferences,
   AccountOnPage,
   AccountWithNetworkMeta,
   DerivedAccount,
@@ -40,7 +40,6 @@ import {
   getAccountImportStatus,
   getBasicAccount,
   getDefaultAccountPreferences,
-  getEmailAccount,
   getSmartAccount,
   isDerivedForSmartAccountKeyOnly,
   isSmartAccount
@@ -55,7 +54,14 @@ export const DEFAULT_PAGE = 1
 export const DEFAULT_PAGE_SIZE = 1
 const DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS = true
 const DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS = true
-const DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY = true
+const DEFAULT_SHOULD_SELECT_NEXT_ACCOUNT_AUTOMATICALLY = true
+
+/** What adding the prepared accounts writes (see `addPreparedAccounts`). */
+export type PreparedAccounts = {
+  accounts: Account[]
+  keys: ReadyToAddKeys
+  accountsToRemove: Account[]
+}
 
 /**
  * Account Picker Controller
@@ -87,7 +93,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     pageSize?: number
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
-    shouldAddNextAccountAutomatically?: boolean
+    shouldSelectNextAccountAutomatically?: boolean
   } | null = null
 
   keyIterator?: KeyIterator | null
@@ -100,7 +106,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS
 
-  shouldAddNextAccountAutomatically = DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY
+  shouldSelectNextAccountAutomatically = DEFAULT_SHOULD_SELECT_NEXT_ACCOUNT_AUTOMATICALLY
 
   /* This is only the index of the current page */
   page: number = DEFAULT_PAGE
@@ -113,24 +119,37 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   selectedAccountsFromCurrentSession: SelectedAccountForImport[] = []
 
-  // Accounts which identity is created on the Relayer (if needed), and are ready
-  // to be added to the user's account list by the Main Controller
+  /**
+   * The accounts the current flow is about to add, prepared by `prepareSelectedAccounts`
+   * or `prepareAccounts`. The personalize step shows them, and nothing is written until
+   * `addPreparedAccounts` - going back from it only resets the flow.
+   */
   readyToAddAccounts: Account[] = []
 
   // Accounts that were selected in a previous session but are now deselected in the current one
   readyToRemoveAccounts: Account[] = []
 
-  // The keys for the `readyToAddAccounts`, that are ready to be added to the
-  // user's keystore by the Main Controller
-  readyToAddKeys: ReadyToAddKeys = { internal: [], external: [] }
+  /**
+   * Keys handed in by a flow without a key iterator (`prepareAccounts`). Private, as
+   * internal keys carry the private key and the public state goes to the UI. The keys of
+   * selected accounts are derived only when they are added.
+   */
+  #readyToAddKeys: ReadyToAddKeys | null = null
 
-  // Identity for the smart accounts must be created on the Relayer, this
-  // represents the status of the operation, needed managing UI state
+  /**
+   * The selection `readyToAddAccounts` was prepared from, which their keys are derived
+   * from. Kept apart from the live selection, so changing that on the picker without
+   * preparing again (and leaving) leaves the prepared accounts intact.
+   */
+  #preparedSelection: SelectedAccountForImport[] = []
+
+  /** The accounts to remove once the prepared ones are added, kept apart for the same reason. */
+  #preparedAccountsToRemove: Account[] = []
+
+  // The status of writing the prepared accounts (`addPreparedAccounts`)
   addAccountsStatus: 'LOADING' | 'SUCCESS' | 'INITIAL' = 'INITIAL'
 
   selectNextAccountStatus: 'LOADING' | 'SUCCESS' | 'INITIAL' = 'INITIAL'
-
-  #addedAccountsFromCurrentSession: Account[] = []
 
   accountsLoading: boolean = false
 
@@ -150,9 +169,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   addAccountsPromise?: Promise<void>
 
-  #onAddAccountsSuccessCallback: () => Promise<void>
-
-  #onAddAccountsSuccessCallbackPromise?: Promise<void>
+  #onAddPreparedAccounts: (prepared: PreparedAccounts) => Promise<void>
 
   #controllerSubscriptions: Function[] = []
 
@@ -172,11 +189,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
   #shouldDebounceFlags: { [key: string]: boolean } = {}
 
-  #addAccountsOnKeystoreReady: {
-    accounts?: SelectedAccountForImport[]
-    requestId?: string
-  } | null = null
-
   constructor({
     eventEmitterRegistry,
     accounts,
@@ -188,7 +200,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch,
     featureFlags,
     sendUiMessage,
-    onAddAccountsSuccessCallback
+    onAddPreparedAccounts
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     accounts: IAccountsController
@@ -200,7 +212,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     fetch: Fetch
     featureFlags?: IFeatureFlagsController
     sendUiMessage: (params: {}) => void
-    onAddAccountsSuccessCallback: () => Promise<void>
+    onAddPreparedAccounts: (prepared: PreparedAccounts) => Promise<void>
   }) {
     super(eventEmitterRegistry)
     this.#accounts = accounts
@@ -211,7 +223,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#externalSignerControllers = externalSignerControllers
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#sendUiMessage = sendUiMessage
-    this.#onAddAccountsSuccessCallback = onAddAccountsSuccessCallback
+    this.#onAddPreparedAccounts = onAddPreparedAccounts
 
     this.#controllerSubscriptions.push(
       this.#accounts.onUpdate(() => {
@@ -225,18 +237,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           },
           20
         )
-      })
-    )
-
-    this.#controllerSubscriptions.push(
-      this.#keystore.onUpdate(() => {
-        if (this.#addAccountsOnKeystoreReady && this.#keystore.isReadyToStoreKeys) {
-          this.addAccounts(
-            this.#addAccountsOnKeystoreReady.accounts,
-            this.#addAccountsOnKeystoreReady.requestId
-          )
-          this.#addAccountsOnKeystoreReady = null
-        }
       })
     )
   }
@@ -418,16 +418,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     return nextSelectedAccount.filter((a) => !readyToRemoveAccountsAddr.includes(a.account.addr))
   }
 
-  get addedAccountsFromCurrentSession() {
-    return this.#addedAccountsFromCurrentSession
-  }
-
-  set addedAccountsFromCurrentSession(val: Account[]) {
-    this.#addedAccountsFromCurrentSession = Array.from(
-      new Map(val.map((account) => [account.addr, account])).values()
-    )
-  }
-
   setInitParams(params: {
     keyIterator: KeyIterator | null
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
@@ -435,14 +425,20 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     pageSize?: number
     shouldSearchForLinkedAccounts?: boolean
     shouldGetAccountsUsedOnNetworks?: boolean
-    shouldAddNextAccountAutomatically?: boolean
+    shouldSelectNextAccountAutomatically?: boolean
   }) {
     this.initParams = params
     this.emitUpdate()
   }
 
-  async init() {
+  /**
+   * Starts the picker from `initParams`. With `shouldSelectNextAccountAutomatically` (the
+   * flows that go straight to the personalize step) it also selects the next account and
+   * prepares it. Replies to `requestId` once done, so the flow moves on only then.
+   */
+  async init(requestId?: string) {
     if (!this.initParams) {
+      this.#replyToRequest(requestId, 'The account picker has nothing to start from')
       this.emitError({
         level: 'silent',
         message: 'AccountPickerController init failed: missing initParams.',
@@ -458,13 +454,16 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       pageSize,
       shouldSearchForLinkedAccounts = DEFAULT_SHOULD_SEARCH_FOR_LINKED_ACCOUNTS,
       shouldGetAccountsUsedOnNetworks = DEFAULT_SHOULD_GET_ACCOUNTS_USED_ON_NETWORKS,
-      shouldAddNextAccountAutomatically = DEFAULT_SHOULD_ADD_NEXT_ACCOUNT_AUTOMATICALLY
+      shouldSelectNextAccountAutomatically = DEFAULT_SHOULD_SELECT_NEXT_ACCOUNT_AUTOMATICALLY
     } = this.initParams
 
     await this.reset(false)
 
     this.keyIterator = keyIterator
-    if (!this.keyIterator) return this.#throwMissingKeyIterator()
+    if (!this.keyIterator) {
+      this.#replyToRequest(requestId, 'The account picker is missing a key iterator')
+      return this.#throwMissingKeyIterator()
+    }
     this.page = page || DEFAULT_PAGE
     if (pageSize) this.pageSize = pageSize
     this.hdPathTemplate = hdPathTemplate
@@ -473,14 +472,28 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.shouldSearchForLinkedAccounts = shouldSearchForLinkedAccounts
     this.shouldGetAccountsUsedOnNetworks = shouldGetAccountsUsedOnNetworks
 
-    if (shouldAddNextAccountAutomatically) {
-      await this.selectNextAccount()
-      // A reset during the selection leaves nothing to add
-      if (!this.isInitialized) return
-      await this.addAccounts()
-    } else {
+    if (!shouldSelectNextAccountAutomatically) {
       await this.forceEmitUpdate()
+      this.#replyToRequest(requestId)
+      return
     }
+
+    try {
+      await this.selectNextAccount()
+    } catch (error: any) {
+      this.#replyToRequest(requestId, error?.message || 'Finding the next account failed')
+      this.#emitCaughtError(error, 'Finding the next account failed. Please try again.')
+      return
+    }
+
+    // A reset during the selection leaves nothing to prepare
+    if (!this.isInitialized) {
+      this.#replyToRequest(requestId, 'The account selection was cancelled')
+      return
+    }
+
+    this.prepareSelectedAccounts()
+    this.#replyToRequest(requestId)
   }
 
   get type() {
@@ -503,7 +516,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       this.#findAndSetLinkedAccountsAbortController.abort()
       this.#findAndSetLinkedAccountsAbortController = undefined
     }
-    if (resetInitParams) this.initParams = null
+    if (resetInitParams) {
+      // A recovery phrase generated (or typed in) for this flow only lives as long as it
+      const keyIterator = this.keyIterator || this.initParams?.keyIterator
+      if (this.#keystore.isKeyIteratorInitializedWithTempSeed(keyIterator)) {
+        this.#keystore.deleteTempSeed()
+      }
+      this.initParams = null
+    }
     this.keyIterator = null
     this.selectedAccountsFromCurrentSession = []
     this.page = DEFAULT_PAGE
@@ -521,11 +541,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#derivedAccounts = []
     this.#linkedAccounts = []
     this.readyToAddAccounts = []
+    this.readyToRemoveAccounts = []
+    this.#readyToAddKeys = null
+    this.#preparedSelection = []
+    this.#preparedAccountsToRemove = []
     this.networksWithAccountStateError = []
-    this.readyToAddKeys = { internal: [], external: [] }
     this.isInitialized = false
-    this.addedAccountsFromCurrentSession = []
-    this.#addAccountsOnKeystoreReady = null
 
     await this.forceEmitUpdate()
   }
@@ -690,7 +711,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    * For internal keys only! Returns the ready to be added internal (private)
    * keys of the currently selected accounts.
    */
-  retrieveInternalKeysOfSelectedAccounts() {
+  retrieveInternalKeysOfSelectedAccounts(
+    selectedAccounts: SelectedAccountForImport[] = this.selectedAccountsFromCurrentSession
+  ) {
     if (!this.hdPathTemplate) {
       this.#throwMissingHdPath()
       return []
@@ -702,7 +725,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     }
 
     return this.keyIterator?.retrieveInternalKeys(
-      this.selectedAccountsFromCurrentSession,
+      selectedAccounts,
       this.hdPathTemplate,
       this.#keystore.keys
     )
@@ -875,13 +898,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   #updateStateWithTheLatestFromAccounts() {
     this.#alreadyImportedAccounts = [...this.#accounts.accounts]
 
-    this.addedAccountsFromCurrentSession = Array.from(
-      new Set([
-        ...(this.addedAccountsFromCurrentSession
-          .map((a) => this.#accounts.accounts.find((acc) => acc.addr === a.addr))
-          .filter(Boolean) as Account[])
-      ])
-    )
     this.#derivedAccounts = this.#derivedAccounts.map((derivedAcc) => {
       const updatedAccount = this.#accounts.accounts.find(
         (acc) => acc.addr === derivedAcc.account.addr
@@ -901,183 +917,204 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.readyToRemoveAccounts = this.readyToRemoveAccounts.filter((a) =>
       accountsAddr.includes(a.addr)
     )
-    this.readyToAddAccounts = this.readyToAddAccounts.filter((a) => !accountsAddr.includes(a.addr))
 
     this.emitUpdate()
   }
 
   /**
-   * Triggers the process of adding accounts via the AccountPicker flow by
-   * creating identity for the smart accounts (if needed) on the Relayer.
-   * Then the `onAccountPickerSuccess` listener in the Main Controller gets
-   * triggered, which uses the `readyToAdd...` properties to further set
-   * the newly added accounts data (like preferences, keys and others)
+   * Prepares the selected accounts to be added: the personalize step shows them and
+   * `addPreparedAccounts` adds them - nothing is written before. Built from the whole
+   * selection each time, so going back to the picker to change it and preparing again is
+   * all "add more accounts" takes.
    */
-  async addAccounts(accounts?: SelectedAccountForImport[], requestId?: string) {
-    this.addAccountsPromise = this.#addAccounts(accounts, requestId).finally(() => {
+  prepareSelectedAccounts(requestId?: string) {
+    if (!this.isInitialized) {
+      this.#replyToRequest(requestId, 'The account picker is not initialized')
+      return this.#throwNotInitialized()
+    }
+
+    this.#preparedSelection = [...this.selectedAccountsFromCurrentSession]
+    this.#preparedAccountsToRemove = [...this.readyToRemoveAccounts]
+    this.readyToAddAccounts = this.#preparedSelection.map(({ account }, i) => {
+      const alreadyImportedAcc = this.#alreadyImportedAccounts.find((a) => a.addr === account.addr)
+
+      return {
+        ...account,
+        // Persist the already imported account preferences on purpose, otherwise,
+        // re-importing the same account via different key type(s) would reset them.
+        preferences: alreadyImportedAcc
+          ? alreadyImportedAcc.preferences
+          : getDefaultAccountPreferences(account.addr, this.#alreadyImportedAccounts, i)
+      }
+    })
+    this.#readyToAddKeys = null
+
+    this.emitUpdate()
+    this.#replyToRequest(requestId)
+  }
+
+  /**
+   * Prepares accounts from a flow that has no key iterator (view-only, Safe, account
+   * JSON), for the personalize step to show and `addPreparedAccounts` to add.
+   */
+  async prepareAccounts(
+    {
+      accounts,
+      keys = { internal: [], external: [] },
+      accountsToRemove = []
+    }: { accounts: Account[]; keys?: ReadyToAddKeys; accountsToRemove?: Account[] },
+    requestId?: string
+  ) {
+    await this.reset()
+
+    this.readyToAddAccounts = accounts
+    this.#preparedAccountsToRemove = accountsToRemove
+    this.#readyToAddKeys = keys
+    this.#preparedSelection = []
+
+    this.emitUpdate()
+    this.#replyToRequest(requestId)
+  }
+
+  /**
+   * Adds the prepared accounts - with the names (preferences) the user gave them - and
+   * their keys, removes the accounts to remove, and resets the picker: the flow is done.
+   * Replies to `requestId` once everything is written.
+   */
+  async addPreparedAccounts(
+    preferences: { addr: Account['addr']; preferences: AccountPreferences }[] = [],
+    requestId?: string
+  ) {
+    this.addAccountsPromise = this.#addPreparedAccounts(preferences).finally(() => {
       this.addAccountsPromise = undefined
     })
 
     try {
       await this.addAccountsPromise
     } catch (error: any) {
-      this.#replyToImportRequest(requestId, error?.message || 'Adding the accounts failed')
-
-      throw error
+      this.addAccountsStatus = 'INITIAL'
+      this.emitUpdate()
+      this.#replyToRequest(requestId, error?.message || 'Adding the accounts failed')
+      this.#emitCaughtError(error, 'Adding the accounts failed. Please try again.')
+      return
     }
+
+    await this.reset()
+    this.#replyToRequest(requestId)
+  }
+
+  async #addPreparedAccounts(
+    preferences: { addr: Account['addr']; preferences: AccountPreferences }[]
+  ) {
+    this.addAccountsStatus = 'LOADING'
+    await this.forceEmitUpdate()
+
+    const preferencesByAddr = new Map(preferences.map((p) => [p.addr, p.preferences]))
+    const accounts = this.readyToAddAccounts.map((account) => ({
+      ...account,
+      preferences: preferencesByAddr.get(account.addr) || account.preferences
+    }))
+
+    await this.#onAddPreparedAccounts({
+      accounts,
+      keys: this.#readyToAddKeys || this.#getKeysOfPreparedSelection(),
+      accountsToRemove: this.#preparedAccountsToRemove
+    })
+
+    this.addAccountsStatus = 'SUCCESS'
+    await this.forceEmitUpdate()
+  }
+
+  /** The keys of the prepared accounts, derived only now as internal ones are private. */
+  #getKeysOfPreparedSelection(): ReadyToAddKeys {
+    if (!this.keyIterator) return { internal: [], external: [] }
+
+    if (this.type === 'internal') {
+      return {
+        internal: this.retrieveInternalKeysOfSelectedAccounts(this.#preparedSelection),
+        external: []
+      }
+    }
+
+    const keyType = this.type as ExternalKey['type']
+
+    const deviceIds: { [key in ExternalKey['type']]: string } = {
+      ledger: this.#externalSignerControllers.ledger?.deviceId || '',
+      trezor: this.#externalSignerControllers.trezor?.deviceId || '',
+      lattice: this.#externalSignerControllers?.lattice?.deviceId || '',
+      qr: this.#externalSignerControllers.qr?.deviceId || '',
+      nfc: this.#externalSignerControllers.nfc?.deviceId || '',
+      pq1: this.#externalSignerControllers.pq1?.deviceId || ''
+    }
+
+    const deviceModels: { [key in ExternalKey['type']]: string } = {
+      ledger: this.#externalSignerControllers.ledger?.deviceModel || '',
+      trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
+      lattice: this.#externalSignerControllers.lattice?.deviceModel || '',
+      qr: this.#externalSignerControllers.qr?.deviceModel || '',
+      nfc: this.#externalSignerControllers.nfc?.deviceModel || '',
+      pq1: this.#externalSignerControllers.pq1?.deviceModel || ''
+    }
+
+    const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || ''
+
+    const nfcWalletType = this.#externalSignerControllers.nfc?.nfcWalletType
+
+    const hdPathTemplate = this.hdPathTemplate as HD_PATH_TEMPLATE_TYPE
+
+    const external = this.#preparedSelection.flatMap(({ account, accountKeys }) =>
+      accountKeys.map(({ addr, index }, i) => ({
+        addr,
+        type: keyType,
+        label: `${HARDWARE_WALLET_DEVICE_NAMES[keyType]} ${
+          getExistingKeyLabel(this.#keystore.keys, addr, keyType as Key['type']) ||
+          getDefaultKeyLabel(
+            this.#keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
+            i
+          )
+        }`,
+        dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index),
+        meta: {
+          deviceId: deviceIds[keyType],
+          deviceModel: deviceModels[keyType],
+          // always defined in the case of external keys
+          hdPathTemplate,
+          ...(keyType === 'qr'
+            ? {
+                masterFingerprint
+              }
+            : {}),
+          ...(keyType === 'nfc'
+            ? {
+                nfcWalletType
+              }
+            : {}),
+          index,
+          createdAt: new Date().getTime()
+        }
+      }))
+    )
+
+    return { internal: [], external }
   }
 
   /**
-   * Replies to the UI request that triggered the import (if there is one), so the UI can
-   * await the import completing instead of watching the transient `addAccountsStatus`.
+   * Replies to the UI request behind a call (if there is one), so the UI can await it
+   * instead of watching a transient status.
    */
-  #replyToImportRequest(requestId?: string, error?: string) {
+  #replyToRequest(requestId?: string, error?: string) {
     if (!requestId) return
 
     this.#sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true })
   }
 
-  async #addAccounts(accounts?: SelectedAccountForImport[], requestId?: string) {
-    if (!this.isInitialized) {
-      this.#replyToImportRequest(requestId, 'The account picker is not initialized')
-
-      return this.#throwNotInitialized()
-    }
-    if (!this.keyIterator) {
-      this.#replyToImportRequest(requestId, 'The account picker is missing a key iterator')
-
-      return this.#throwMissingKeyIterator()
-    }
-
-    if (!this.#keystore.isReadyToStoreKeys) {
-      // The import resumes (and replies to the request) once the keystore is ready.
-      this.#addAccountsOnKeystoreReady = { accounts, requestId }
+  #emitCaughtError(error: any, fallbackMessage: string) {
+    if (error && 'message' in error && 'level' in error && 'error' in error) {
+      this.emitError(error)
       return
     }
 
-    this.addAccountsStatus = 'LOADING'
-    await this.forceEmitUpdate()
-
-    this.readyToAddAccounts = [
-      ...(accounts || this.selectedAccountsFromCurrentSession).map((x, i) => {
-        const alreadyImportedAcc = this.#alreadyImportedAccounts.find(
-          (a) => a.addr === x.account.addr
-        )
-
-        return {
-          ...x.account,
-          // Persist the already imported account preferences on purpose, otherwise,
-          // re-importing the same account via different key type(s) would reset them.
-          preferences: alreadyImportedAcc
-            ? alreadyImportedAcc.preferences
-            : getDefaultAccountPreferences(x.account.addr, this.#alreadyImportedAccounts, i)
-        }
-      })
-    ]
-
-    const readyToAddKeys: ReadyToAddKeys = {
-      internal: [],
-      external: []
-    }
-
-    if (this.type === 'internal') {
-      readyToAddKeys.internal = this.retrieveInternalKeysOfSelectedAccounts()
-    } else {
-      // External keys flow
-      const keyType = this.type as ExternalKey['type']
-
-      const deviceIds: { [key in ExternalKey['type']]: string } = {
-        ledger: this.#externalSignerControllers.ledger?.deviceId || '',
-        trezor: this.#externalSignerControllers.trezor?.deviceId || '',
-        lattice: this.#externalSignerControllers?.lattice?.deviceId || '',
-        qr: this.#externalSignerControllers.qr?.deviceId || '',
-        nfc: this.#externalSignerControllers.nfc?.deviceId || '',
-        pq1: this.#externalSignerControllers.pq1?.deviceId || ''
-      }
-
-      const deviceModels: { [key in ExternalKey['type']]: string } = {
-        ledger: this.#externalSignerControllers.ledger?.deviceModel || '',
-        trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
-        lattice: this.#externalSignerControllers.lattice?.deviceModel || '',
-        qr: this.#externalSignerControllers.qr?.deviceModel || '',
-        nfc: this.#externalSignerControllers.nfc?.deviceModel || '',
-        pq1: this.#externalSignerControllers.pq1?.deviceModel || ''
-      }
-
-      const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || ''
-
-      const nfcWalletType = this.#externalSignerControllers.nfc?.nfcWalletType
-
-      const hdPathTemplate = this.hdPathTemplate as HD_PATH_TEMPLATE_TYPE
-
-      const readyToAddExternalKeys = this.selectedAccountsFromCurrentSession.flatMap(
-        ({ account, accountKeys }) =>
-          accountKeys.map(({ addr, index }, i) => ({
-            addr,
-            type: keyType,
-            label: `${HARDWARE_WALLET_DEVICE_NAMES[this.type as ExternalKey['type']]} ${
-              getExistingKeyLabel(this.#keystore.keys, addr, this.type as Key['type']) ||
-              getDefaultKeyLabel(
-                this.#keystore.keys.filter((key) => account.associatedKeys.includes(key.addr)),
-                i
-              )
-            }`,
-            dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index),
-            meta: {
-              deviceId: deviceIds[keyType],
-              deviceModel: deviceModels[keyType],
-              // always defined in the case of external keys
-              hdPathTemplate,
-              ...(keyType === 'qr'
-                ? {
-                    masterFingerprint
-                  }
-                : {}),
-              ...(keyType === 'nfc'
-                ? {
-                    nfcWalletType
-                  }
-                : {}),
-              index,
-              createdAt: new Date().getTime()
-            }
-          }))
-      )
-
-      readyToAddKeys.external = readyToAddExternalKeys
-    }
-
-    this.readyToAddKeys = readyToAddKeys
-
-    this.addedAccountsFromCurrentSession = [
-      ...this.addedAccountsFromCurrentSession,
-      ...this.readyToAddAccounts
-    ]
-
-    this.selectedAccountsFromCurrentSession = []
-    this.#onAddAccountsSuccessCallbackPromise = this.#onAddAccountsSuccessCallback().finally(() => {
-      this.#onAddAccountsSuccessCallbackPromise = undefined
-    })
-
-    // Explicitly emit an update here because the front-end needs this state immediately,
-    // without waiting for the promise below to resolve.
-    // Previously, this caused a bug in AccountPersonalizeScreen where
-    // `addedAccountsFromCurrentSession` was still empty while waiting for the Promise.
-    // As a result, the app redirected to the NextRoute instead of showing the Personalize screen.
-    await this.forceEmitUpdate()
-
-    await this.#onAddAccountsSuccessCallbackPromise
-
-    this.addAccountsStatus = 'SUCCESS'
-    await this.forceEmitUpdate()
-
-    this.#updateStateWithTheLatestFromAccounts()
-
-    this.#replyToImportRequest(requestId)
-
-    // reset the addAccountsStatus in the next tick to ensure the FE receives the 'SUCCESS' state
-    this.addAccountsStatus = 'INITIAL'
-    await this.forceEmitUpdate()
+    this.emitError({ level: 'major', message: fallbackMessage, error })
   }
 
   async selectNextAccount() {
@@ -1140,47 +1177,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     this.selectNextAccountStatus = 'INITIAL'
     await this.forceEmitUpdate()
-  }
-
-  async createAndAddEmailAccount(selectedAccount: SelectedAccountForImport) {
-    const {
-      account: { email },
-      accountKeys: [recoveryKey]
-    } = selectedAccount
-    if (!this.isInitialized) return this.#throwNotInitialized()
-    if (!this.keyIterator) return this.#throwMissingKeyIterator()
-
-    const keyPublicAddress: string | undefined = (
-      await this.keyIterator.retrieve([{ from: 0, to: 1 }])
-    )[0]
-
-    if (!keyPublicAddress) {
-      const message =
-        'accountPicker: createAndAddEmailAccount called, but failed to derive the public key address.'
-      this.emitError({ message, level: 'silent', error: new Error(message) })
-      return
-    }
-
-    const emailSmartAccount = await getEmailAccount(
-      {
-        emailFrom: email!,
-        secondaryKey: recoveryKey!.addr
-      },
-      keyPublicAddress
-    )
-
-    await this.addAccounts([{ ...selectedAccount, account: { ...emailSmartAccount, email } }])
-  }
-
-  // updates the account picker state so the main ctrl receives the readyToAddAccounts
-  // that should be added to the storage of the app
-  async addExistingEmailAccounts(accounts: Account[]) {
-    // There is no need to call the addAccounts method in order to add that
-    // account to the relayer because this func will be called only for accounts returned
-    // from relayer that only need to be stored in the storage of the app
-    this.readyToAddAccounts = accounts
-    this.addAccountsStatus = 'SUCCESS'
-    this.emitUpdate()
   }
 
   removeNetworkData(chainId: bigint) {
@@ -1642,7 +1638,6 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
       accountsOnPage: this.accountsOnPage,
       allKeysOnPage: this.allKeysOnPage,
       selectedAccounts: this.selectedAccounts,
-      addedAccountsFromCurrentSession: this.addedAccountsFromCurrentSession,
       type: this.type,
       subType: this.subType,
       derivableHdPathTemplates: this.derivableHdPathTemplates

@@ -637,7 +637,7 @@ export class StorageController extends EventEmitter implements IStorageControlle
       keyIterator,
       hdPathTemplate: keystoreSavedSeed.hdPathTemplate,
       pageSize: 10,
-      shouldAddNextAccountAutomatically: false,
+      shouldSelectNextAccountAutomatically: false,
       shouldGetAccountsUsedOnNetworks: false,
       shouldSearchForLinkedAccounts: true
     })

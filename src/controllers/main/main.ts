@@ -9,7 +9,10 @@ import {
 import { FeatureFlags } from '@/consts/featureFlags'
 import humanizerInfo from '@/consts/humanizer/humanizerInfo.json'
 import { LOCKED_EXTENSION_PORTFOLIO_UPDATE_INTERVAL } from '@/consts/intervals'
-import { AccountPickerController } from '@/controllers/accountPicker/accountPicker'
+import {
+  AccountPickerController,
+  PreparedAccounts
+} from '@/controllers/accountPicker/accountPicker'
 import { AccountsController } from '@/controllers/accounts/accounts'
 import { ActivityController } from '@/controllers/activity/activity'
 import { SignedMessage } from '@/controllers/activity/types'
@@ -472,7 +475,7 @@ export class MainController extends EventEmitter implements IMainController {
        * view-only accounts import flow bypasses the AccountPicker, this method
        * won't click for them.
        */
-      onAddAccountsSuccessCallback: this.#onAccountPickerSuccess.bind(this)
+      onAddPreparedAccounts: this.#onAccountPickerSuccess.bind(this)
     })
     this.addressBook = new AddressBookController(
       this.storage,
@@ -796,7 +799,7 @@ export class MainController extends EventEmitter implements IMainController {
               fetch: this.fetch,
               featureFlags: this.featureFlags,
               sendUiMessage: this.ui.message.sendUiMessage,
-              onAddAccountsSuccessCallback: async () => {}
+              onAddPreparedAccounts: async () => {}
             }),
           this.keystore,
           async () => {
@@ -992,10 +995,12 @@ export class MainController extends EventEmitter implements IMainController {
     ])
   }
 
-  async #onAccountPickerSuccess() {
+  /** Writes what the account picker prepared, once the user proceeds from the personalize step. */
+  async #onAccountPickerSuccess({ accounts, keys, accountsToRemove }: PreparedAccounts) {
     if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator))
       await this.keystore.persistTempSeed()
 
+    let internalKeys = keys.internal
     const storedSeed = await this.keystore.getKeystoreSeed(this.accountPicker.keyIterator)
     if (storedSeed) {
       await this.keystore.updateSeed({
@@ -1003,22 +1008,21 @@ export class MainController extends EventEmitter implements IMainController {
         hdPathTemplate: this.accountPicker.hdPathTemplate
       })
 
-      this.accountPicker.readyToAddKeys.internal = this.accountPicker.readyToAddKeys.internal.map(
-        (key) => ({ ...key, meta: { ...key.meta, fromSeedId: storedSeed.id } })
-      )
+      internalKeys = internalKeys.map((key) => ({
+        ...key,
+        meta: { ...key.meta, fromSeedId: storedSeed.id }
+      }))
     }
 
     // Should be separate (not combined in Promise.all, since firing multiple
     // keystore actions is not possible (the #wrapKeystoreAction listens for the
     // first one to finish and skips the parallel one, if one is requested).
-    await this.keystore.addKeys(this.accountPicker.readyToAddKeys.internal)
-    await this.keystore.addKeysExternallyStored(this.accountPicker.readyToAddKeys.external)
+    await this.keystore.addKeys(internalKeys)
+    await this.keystore.addKeysExternallyStored(keys.external)
 
     await this.#updateAccounts({
-      accountsToAdd: this.accountPicker.readyToAddAccounts,
-      accountAddressesToRemove: this.accountPicker.readyToRemoveAccounts.map(
-        (account) => account.addr
-      )
+      accountsToAdd: accounts,
+      accountAddressesToRemove: accountsToRemove.map((account) => account.addr)
     })
   }
 
@@ -1357,7 +1361,7 @@ export class MainController extends EventEmitter implements IMainController {
         keyIterator,
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false
+        shouldSelectNextAccountAutomatically: false
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Ledger device. Please try again.'
@@ -1391,7 +1395,7 @@ export class MainController extends EventEmitter implements IMainController {
         keyIterator: new TrezorKeyIterator({ walletSDK }),
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false
+        shouldSelectNextAccountAutomatically: false
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Trezor device. Please try again.'
@@ -1424,7 +1428,7 @@ export class MainController extends EventEmitter implements IMainController {
         keyIterator: new LatticeKeyIterator({ controller: latticeCtrl }),
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false
+        shouldSelectNextAccountAutomatically: false
       })
     } catch (error: any) {
       const message = error?.message || 'Could not unlock the Lattice1 device. Please try again.'
@@ -1477,7 +1481,7 @@ export class MainController extends EventEmitter implements IMainController {
         keyIterator,
         hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false,
+        shouldSelectNextAccountAutomatically: false,
         shouldSearchForLinkedAccounts: false
       })
     } catch (error: any) {
@@ -1521,7 +1525,7 @@ export class MainController extends EventEmitter implements IMainController {
         keyIterator,
         hdPathTemplate: keyIterator.hdPathTemplate,
         pageSize: 5,
-        shouldAddNextAccountAutomatically: false,
+        shouldSelectNextAccountAutomatically: false,
         shouldSearchForLinkedAccounts: false
       })
     } catch (error: any) {
@@ -2148,22 +2152,55 @@ export class MainController extends EventEmitter implements IMainController {
     this.emitUpdate()
   }
 
-  async accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({
-    privKeyOrSeed,
-    seedPassphrase
-  }: {
-    privKeyOrSeed: string
-    seedPassphrase?: string | null
-  }) {
+  /**
+   * Starts the account picker from a recovery phrase or private key, and selects and
+   * prepares its next account for the personalize step - nothing is written yet. Replies
+   * to `requestId` once prepared.
+   */
+  async accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase(
+    {
+      privKeyOrSeed,
+      seedPassphrase
+    }: {
+      privKeyOrSeed: string
+      seedPassphrase?: string | null
+    },
+    requestId?: string
+  ) {
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
     const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase)
-    await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+    this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+    await this.accountPicker.init(requestId)
   }
 
   /**
-   * Creates a brand new recovery phrase and prepares the account picker with it, all
-   * in the background. The phrase is never sent to the UI - the user gets prompted to
-   * write it down later, once the account holds funds.
+   * Starts the account picker from a recovery phrase the user already saved, and selects
+   * and prepares its next account for the personalize step. Replies to `requestId` once
+   * prepared.
+   */
+  async accountPickerSetInitParamsFromSavedSeed(seedId: string, requestId?: string) {
+    const savedSeed = await this.keystore.getSavedSeed(seedId)
+    if (!savedSeed) {
+      if (requestId) {
+        this.ui.message.sendUiMessage({
+          requestId,
+          ok: false,
+          error: 'The recovery phrase was not found'
+        })
+      }
+      return
+    }
+
+    const keyIterator = new KeyIterator(savedSeed.seed, savedSeed.seedPassphrase)
+    this.accountPicker.setInitParams({ keyIterator, hdPathTemplate: savedSeed.hdPathTemplate })
+    await this.accountPicker.init(requestId)
+  }
+
+  /**
+   * Creates a brand new recovery phrase and prepares its first account for the personalize
+   * step, all in the background - nothing is written until the user proceeds from there.
+   * The phrase is never sent to the UI - the user gets prompted to write it down later,
+   * once the account holds funds.
    */
   async accountPickerSetInitParamsFromNewSeed(
     { extraEntropy }: { extraEntropy?: string },
@@ -2178,7 +2215,7 @@ export class MainController extends EventEmitter implements IMainController {
         await this.accountPickerSetInitParamsFromPrivateKeyOrSeedPhrase({
           privKeyOrSeed: tempSeed.seed
         })
-        isPrepared = true
+        isPrepared = this.accountPicker.readyToAddAccounts.length > 0
       },
       true
     )
