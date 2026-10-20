@@ -1,6 +1,6 @@
 import { ethers } from 'hardhat'
 
-import { wrapEthSign, wrapMultiSig, wrapTypedData } from '../ambireSign'
+import { wrapEthSign, wrapMultiSig, wrapTypedData } from '../../ambireSign'
 import {
   addressOne,
   addressThree,
@@ -12,8 +12,8 @@ import {
   validSig,
   wallet2,
   wallet3
-} from '../config'
-import { deployAmbireAccountHardhatNetwork } from '../implementations'
+} from '../../config'
+import { deployAmbireAccountHardhatNetwork } from '../../implementations'
 
 /**
  * Generate the multisig address that will have permissions to sign
