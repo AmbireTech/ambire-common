@@ -1917,6 +1917,8 @@ describe('SignAccountOp Controller ', () => {
     expect(eoaAccount.addr).toEqual(signerAddr)
     // If signing is successful, we expect controller's status to be done
     expect(controller.status).toEqual({ type: 'done' })
+    // The relayer broadcasts without a key, so no device prompt should stay open
+    expect(controller.activeSigningKeyType).toBeNull()
 
     // USDC decimals 6, that's why we divide by 1e6
     const fee = controller.accountOp!.gasFeePayment!.amount / BigInt(1e6)
@@ -2363,6 +2365,10 @@ describe('Negative cases', () => {
 
     // If signing is successful, we expect controller's status to be done
     expect(controller.status).toEqual({ type: 'done' })
+    // The fee payer signs the broadcast right after, so the key stays set until then
+    // and the device prompt doesn't close and reopen in between
+    expect(controller.activeSigningKeyType).toBe(controller.accountOp.signingKeyType)
+    expect(controller.activeSigningKeyType).not.toBeNull()
   })
 })
 
@@ -4118,6 +4124,40 @@ describe('broadcasting a batch one transaction at a time', () => {
     expect(submittedAccountOps).toHaveLength(1)
     expect(submittedAccountOps[0].calls).toHaveLength(3)
     expect(getPartialBroadcastError(controller)).toBeUndefined()
+  })
+
+  test('keeps the fee payer key active between the signatures and clears it after the batch', async () => {
+    const { controller } = await initBatch()
+    const { broadcastTransaction } = mockBroadcastChain(null)
+    const activeKeyTypesBetweenSignatures: (string | null)[] = []
+    broadcastTransaction.mockImplementation(async () => {
+      activeKeyTypesBetweenSignatures.push(controller.activeSigningKeyType)
+
+      return { hash: `0xhash${activeKeyTypesBetweenSignatures.length}` } as any
+    })
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Clearing it between the signatures would make the device prompt in the UI
+    // close and reopen for every transaction in the batch
+    const feePayerKeyType = controller.accountOp.gasFeePayment?.paidByKeyType
+    expect(feePayerKeyType).toBeTruthy()
+    expect(activeKeyTypesBetweenSignatures).toEqual([
+      feePayerKeyType,
+      feePayerKeyType,
+      feePayerKeyType
+    ])
+    expect(controller.activeSigningKeyType).toBeNull()
+  })
+
+  test('clears the active signing key type when a signature in the batch is refused', async () => {
+    const { controller } = await initBatch()
+    mockBroadcastChain(1)
+
+    await controller.signAndBroadcast().catch(() => {})
+
+    // Otherwise the UI keeps asking to confirm on a device that waits for nothing
+    expect(controller.activeSigningKeyType).toBeNull()
   })
 
   test('reports a plain failure, not a partial success, when nothing was sent', async () => {
