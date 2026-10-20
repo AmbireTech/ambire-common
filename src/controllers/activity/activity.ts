@@ -43,7 +43,7 @@ import {
   updateOpStatus
 } from '../../libs/accountOp/submittedAccountOp'
 import { AccountOpStatus, Call } from '../../libs/accountOp/types'
-import { recordFeePayer } from '../../libs/activity/feePayersHistory'
+import { recordFeePayer, recordFeePayerOfOp } from '../../libs/activity/feePayersHistory'
 import { recordRecipient } from '../../libs/activity/sentToHistory'
 import { getTransferLogNfts, getTransferLogTokens } from '../../libs/logsParser/parseLogs'
 import { filterStaticBlacklistedAddrs } from '../../libs/portfolio/blacklist'
@@ -446,6 +446,41 @@ export class ActivityController extends EventEmitter implements IActivityControl
 
     // After the update on purpose — nothing here is rendered.
     await this.#persistence.finalizeInit(accountsOps)
+    await this.#backfillFeePayersHistory()
+  }
+
+  /**
+   * Seeds feePayersHistory from every stored op, once.
+   *
+   * getFeePayers answers from that index plus the ops in memory. The index is only written on
+   * broadcast, and the ops in memory are just the recent window per chain on IDB, so without this
+   * a payer used before the index existed reads as "not linked yet" and the user is warned for
+   * nothing. Runs here rather than as a storage migration because those cannot read IDB, where
+   * the history lives on the extension.
+   *
+   * The flag is set only after a successful read, so a failed one is retried on the next start.
+   * Never rejects: it runs inside #load, and a throw there would break the controller for the
+   * whole session over an index that only makes a warning more precise.
+   */
+  async #backfillFeePayersHistory() {
+    try {
+      if (await this.#storage.get('feePayersHistoryBackfilled', false)) return
+
+      let hasChanged = false
+      const hasReadEveryOp = await this.#persistence.forEachStoredOp((accountAddr, op) => {
+        if (recordFeePayerOfOp(this.#feePayersHistory, accountAddr, op)) hasChanged = true
+      })
+      if (!hasReadEveryOp) return
+
+      if (hasChanged) await this.#storage.set('feePayersHistory', this.#feePayersHistory)
+      await this.#storage.set('feePayersHistoryBackfilled', true)
+    } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: 'The accounts that paid fees for your earlier transactions could not be saved.',
+        error
+      })
+    }
   }
 
   /** Total ops ever. Not the in-memory lengths — those are only the startup window. */
@@ -911,9 +946,9 @@ export class ActivityController extends EventEmitter implements IActivityControl
    * links nothing new to the account publicly.
    *
    * Only knows what this wallet broadcast: a payer used from another wallet or device is missing,
-   * which errs on the side of warning the user. The index is filled on broadcast, so the ops in
-   * memory (the recent ones, see STARTUP_RECENT_OPS_LIMIT) are merged in to also cover the ones
-   * broadcast before the index existed.
+   * which errs on the side of warning the user. The index is filled on broadcast and backfilled
+   * once from the whole stored history (#backfillFeePayersHistory). The ops in memory (the recent
+   * ones, see STARTUP_RECENT_OPS_LIMIT) are merged in too, in case that pass could not run yet.
    */
   getFeePayers(accountAddr: string, chainId: bigint): string[] {
     const checksummedAccountAddr = getAddressCaught(accountAddr)

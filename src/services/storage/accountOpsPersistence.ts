@@ -1,6 +1,6 @@
 import { IActivityOpsBackend, InternalAccountsOps } from '../../interfaces/activity'
 import { IStorageController, StorageProps } from '../../interfaces/storage'
-import { SubmittedAccountOp } from '../../libs/accountOp/submittedAccountOp'
+import { SubmittedAccountOp, SubmittedAccountOpLike } from '../../libs/accountOp/submittedAccountOp'
 import { ActivityIdbStorage, ActivityKeyValueStorage } from './activityIdb'
 import { AmbireIdbDatabase } from './idbDatabase'
 import { ReportPersistenceError, toPersistenceError } from './persistenceError'
@@ -402,6 +402,23 @@ export class AccountOpsPersistence {
     } catch (error) {
       // Leave the previous value; getTotalOpsCount falls back to the cache sum if unset.
       this.#report('The transaction count could not be refreshed.', error, 'count ops')
+    }
+  }
+
+  /**
+   * Calls `visit` once for every stored op, from whichever backend is active. Reads the whole
+   * history, so only for one-time passes over it. Never rejects: returns false when the read
+   * failed, so the caller can retry the pass on a later start.
+   */
+  async forEachStoredOp(
+    visit: (accountAddr: string, op: SubmittedAccountOp | SubmittedAccountOpLike) => void
+  ): Promise<boolean> {
+    try {
+      await this.#adapter.forEachOp(visit)
+      return true
+    } catch (error) {
+      this.#report('Your transaction history could not be read.', error, 'read every stored op')
+      return false
     }
   }
 

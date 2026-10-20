@@ -353,6 +353,97 @@ describe('ActivityController — key-value path (no IDB)', () => {
 // from existing history once — otherwise known recipients read as first-time.
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Fee payer backfill
+//
+// getFeePayers answers from feePayersHistory plus the ops in memory. The index is only written
+// on broadcast and the startup read is only a window, so a payer that paid before the index
+// existed, outside that window, would read as "not linked yet" without the one-time backfill.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('ActivityController — fee payers backfilled from the whole history', () => {
+  const OLD_PAYER = '0x1111111111111111111111111111111111111111'
+  const RECENT_PAYER = '0x2222222222222222222222222222222222222222'
+  const REJECTED_PAYER = '0x3333333333333333333333333333333333333333'
+
+  const makePaidOp = (id: string, timestamp: number, paidBy: string, status?: AccountOpStatus) => ({
+    ...makeOp(id, timestamp, status),
+    gasFeePayment: { paidBy } as any
+  })
+
+  // The oldest op is the only one OLD_PAYER paid for, and it is well outside the startup window
+  const history = () => [
+    makePaidOp('old', 1000, OLD_PAYER),
+    makePaidOp('rejected', 1500, REJECTED_PAYER, AccountOpStatus.Rejected),
+    ...Array.from({ length: 30 }, (_, i) => makePaidOp(`recent-${i}`, 2000 + i, RECENT_PAYER))
+  ]
+
+  test('IDB: a payer outside the startup window is indexed, once, and the flag is set', async () => {
+    await new ActivityIdbStorage(db).migrateFromStorage(legacyBlob(history()) as any)
+    await storage.set('activityStorageBackend', 'idb')
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    // The startup window does not reach the oldest op, so only the backfill can know OLD_PAYER
+    expect(
+      controller.getAccountOpsForAccount({ accountAddr: ACC }).map((op) => op.id)
+    ).not.toContain('old')
+    expect(controller.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER, OLD_PAYER])
+    expect(await storage.get('feePayersHistory', {})).toEqual({
+      [ACC]: { '1': { [RECENT_PAYER]: 2029, [OLD_PAYER]: 1000 } }
+    })
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(true)
+  })
+
+  test('IDB: does not run again once the flag is set', async () => {
+    await new ActivityIdbStorage(db).migrateFromStorage(legacyBlob(history()) as any)
+    await storage.set('activityStorageBackend', 'idb')
+    await storage.set('feePayersHistoryBackfilled', true)
+    const forEachOpSpy = jest.spyOn(ActivityIdbStorage.prototype, 'forEachOp')
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    expect(forEachOpSpy).not.toHaveBeenCalled()
+    expect(controller.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER])
+  })
+
+  test('IDB: a failed read leaves the flag unset, so the pass is retried on the next start', async () => {
+    await new ActivityIdbStorage(db).migrateFromStorage(legacyBlob(history()) as any)
+    await storage.set('activityStorageBackend', 'idb')
+    jest
+      .spyOn(ActivityIdbStorage.prototype, 'forEachOp')
+      .mockRejectedValueOnce(new Error('read failed'))
+
+    const controller = makeController(storage, db)
+    await awaitLoadOnly(controller)
+
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(false)
+    expect(controller.emittedErrors.length).toBeGreaterThan(0)
+    // Still answers from the ops in memory
+    expect(controller.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER])
+
+    const retried = makeController(storage, db)
+    await awaitLoadOnly(retried)
+
+    expect(retried.getFeePayers(ACC, CHAIN_1)).toEqual([RECENT_PAYER, OLD_PAYER])
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(true)
+  })
+
+  test('key-value: the payers of the whole stored history are indexed', async () => {
+    await storage.set('accountsOps', legacyBlob(history()) as any)
+
+    const controller = makeController(storage, undefined)
+    await awaitLoadOnly(controller)
+
+    expect(await storage.get('feePayersHistory', {})).toEqual({
+      [ACC]: { '1': { [RECENT_PAYER]: 2029, [OLD_PAYER]: 1000 } }
+    })
+    expect(await storage.get('feePayersHistoryBackfilled', false)).toBe(true)
+  })
+})
+
 describe('ActivityController — recipients indexed by the storage migration', () => {
   const OLD_RECIPIENT = '0xF0cD725D2195b1D3f4BD038c3786005B793237DB'
 
