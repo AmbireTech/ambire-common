@@ -295,6 +295,63 @@ describe('AccountPicker', () => {
       expect(controller.readyToAddAccounts).toHaveLength(1)
     })
 
+    test('should keep the prepared account selected after leaving the picker to add more', async () => {
+      const { controller } = await prepareTest()
+      controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      await controller.initIfNotStarted()
+      const preparedAddr = controller.readyToAddAccounts[0]!.addr
+
+      // Going back from the picker (opened for more accounts) to the personalize step
+      controller.resetAccountsSelection()
+
+      expect(controller.readyToAddAccounts.map(({ addr }) => addr)).toEqual([preparedAddr])
+      expect(controller.selectedAccounts.map(({ account }) => account.addr)).toContain(preparedAddr)
+    })
+
+    test('should drop the selection changes made since preparing when leaving the picker', async () => {
+      const { controller } = await prepareTest()
+      controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      await controller.initIfNotStarted()
+      await controller.setPage({ page: 1, pageSize: 5 })
+      const prepared = controller.selectedAccounts[0]!.account
+      const another = controller.accountsOnPage.find(
+        ({ account, isLinked }) =>
+          account.addr !== prepared.addr && !isLinked && !isSmartAccount(account)
+      )!.account
+
+      controller.deselectAccount(prepared)
+      controller.selectAccount(another)
+      controller.resetAccountsSelection()
+
+      expect(controller.selectedAccounts.map(({ account }) => account.addr)).toEqual([
+        prepared.addr
+      ])
+    })
+
+    test('should clear the selection when leaving the picker with nothing prepared', async () => {
+      const { controller } = await prepareTest()
+      controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        shouldSelectNextAccountAutomatically: false,
+        shouldGetAccountsUsedOnNetworks: false,
+        shouldSearchForLinkedAccounts: false
+      })
+      await controller.init()
+      await controller.setPage({ page: 1 })
+      controller.selectAccount(controller.accountsOnPage[0]!.account)
+
+      controller.resetAccountsSelection()
+
+      expect(controller.selectedAccounts).toHaveLength(0)
+    })
+
     test('should do nothing without init params', async () => {
       const { controller } = await prepareTest()
       const initSpy = jest.spyOn(controller, 'init')

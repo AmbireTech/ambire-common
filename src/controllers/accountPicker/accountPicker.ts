@@ -576,9 +576,14 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#controllerSubscriptions = []
   }
 
+  /**
+   * Drops the changes made to the selection since it was last prepared - all of it when
+   * nothing is prepared - so leaving the picker for the personalize step keeps the
+   * selection in line with the accounts shown there.
+   */
   resetAccountsSelection() {
-    this.selectedAccountsFromCurrentSession = []
-    this.readyToRemoveAccounts = []
+    this.selectedAccountsFromCurrentSession = [...this.#preparedSelection]
+    this.readyToRemoveAccounts = [...this.#preparedAccountsToRemove]
 
     this.emitUpdate()
   }
