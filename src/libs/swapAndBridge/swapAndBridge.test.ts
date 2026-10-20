@@ -19,6 +19,7 @@ import {
   getFeeTokenForSponsorship,
   getIsBridgeRoute,
   getIsIntentRoute,
+  getSentPartOfSwap,
   getSwapAndBridgeCalls,
   getSwapSponsorship,
   sortTokenListResponse
@@ -792,6 +793,73 @@ describe('swapAndBridge lib', () => {
       // The function catches errors and returns null
       expect(result).toBeNull()
     })
+  })
+})
+
+describe('getSentPartOfSwap', () => {
+  const ROUTE_ID = 'route-1'
+  const partlySentSwap = (
+    identifier: string,
+    meta: any = { swapTxn: { activeRouteId: ROUTE_ID } }
+  ) =>
+    ({
+      id: 'op-1',
+      accountAddr: '0xB674F3fd5F43464dB0448a57529eAF37F04cceA5',
+      chainId: 8453n,
+      calls: [
+        { id: `${ROUTE_ID}-approval`, activeRouteId: ROUTE_ID, to: '0x01', value: 0n, data: '0x' },
+        { id: ROUTE_ID, activeRouteId: ROUTE_ID, to: '0x02', value: 0n, data: '0x' }
+      ],
+      identifiedBy: { type: 'MultipleTxns', identifier },
+      meta
+    }) as any
+
+  test('keeps only the sent calls, each with the hash of its own txn', () => {
+    const { calls } = getSentPartOfSwap(partlySentSwap('0xa'))
+
+    // Speeding up the record must not include the swap that was never sent
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ txnId: '0xa', to: '0x01' })
+  })
+
+  test('keeps every call when all of them were sent before the failure', () => {
+    const { calls } = getSentPartOfSwap(partlySentSwap('0xa-0xb'))
+
+    expect(calls.map((c) => c.txnId)).toEqual(['0xa', '0xb'])
+  })
+
+  test('detaches the record from the swap route, so the route of a retry is not affected', () => {
+    const sentPart = getSentPartOfSwap(partlySentSwap('0xa'))
+    const activeRouteIds = [
+      sentPart.meta?.swapTxn?.activeRouteId,
+      ...sentPart.calls.map((c) => c.id)
+    ]
+
+    expect(activeRouteIds).not.toContain(ROUTE_ID)
+    expect(activeRouteIds).not.toContain(`${ROUTE_ID}-approval`)
+    expect(sentPart.calls[0]!.activeRouteId).toBeUndefined()
+    // Still a swap, so the activity shows it as one
+    expect(sentPart.meta?.swapTxn).toBeDefined()
+  })
+
+  test('works for a record without swap meta', () => {
+    const op = partlySentSwap('0xa')
+    delete op.meta
+
+    const sentPart = getSentPartOfSwap(op)
+
+    expect(sentPart.meta).toBeUndefined()
+    expect(sentPart.calls).toHaveLength(1)
+  })
+
+  test('does not change the given account op', () => {
+    const op = partlySentSwap('0xa')
+
+    getSentPartOfSwap(op)
+
+    expect(op.calls).toHaveLength(2)
+    expect(op.calls[0].id).toBe(`${ROUTE_ID}-approval`)
+    expect(op.meta.swapTxn.activeRouteId).toBe(ROUTE_ID)
   })
 })
 
