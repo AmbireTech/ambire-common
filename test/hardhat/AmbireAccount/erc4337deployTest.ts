@@ -1,16 +1,16 @@
 import { BaseContract, keccak256, toUtf8Bytes } from 'ethers'
 import { ethers } from 'hardhat'
 
-import { Hex } from '../../src/interfaces/hex'
-import { getProxyDeployBytecode, PrivLevels } from '../../src/libs/proxyDeploy/deploy'
-import { wrapEthSign, wrapTypedData } from '../ambireSign'
-import { abiCoder, chainId, expect, provider } from '../config'
+import { Hex } from '../../../src/interfaces/hex'
+import { getProxyDeployBytecode, PrivLevels } from '../../../src/libs/proxyDeploy/deploy'
+import { wrapEthSign, wrapTypedData } from '../../ambireSign'
+import { abiCoder, chainId, expect, provider } from '../../config'
 import {
   buildUserOp,
   getAccountGasLimits,
   getGasFees,
   getPriviledgeTxnWithCustomHash
-} from '../helpers'
+} from '../../helpers'
 
 const salt = '0x0'
 
