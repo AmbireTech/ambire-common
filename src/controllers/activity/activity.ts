@@ -130,6 +130,13 @@ const normalizeTxnId = (txnId?: string | null) => txnId?.toLowerCase()
 const ACCOUNT_OP_PENDING_TIMEOUT_MINS = 30
 
 /**
+ * How many times a page may load more account ops to make up for the ones merged with their
+ * speed ups. Each time loads exactly what the page is missing, so one is almost always enough.
+ * The cap only guards against a history made of almost nothing but replaced transactions
+ */
+const MAX_EXTRA_LOADS_FOR_REPLACED_OPS = 5
+
+/**
  * Take all txnIds from the account op
  * - normal case: accountOp.txnId
  * - MultipleTxns case: each call.txnId
@@ -531,7 +538,6 @@ export class ActivityController extends EventEmitter implements IActivityControl
     const accountKey = internalKey ?? filters.account
     const externalKey = getAccountOpsAccountKey(this.#externalAccountOps, filters.account)
 
-    let internalAccountOpsByChain = this.#accountsOps[accountKey] || {}
     const externalAccountOpsByChain = (externalKey && this.#externalAccountOps[externalKey]) || {}
 
     // The chains this call renders; a filter naming a disabled network is ignored, as below.
@@ -540,70 +546,101 @@ export class ActivityController extends EventEmitter implements IActivityControl
         ? [String(filters.chainId)]
         : enabledNetworkChainIds
 
+    // Collects what is loaded so far into the rows to render. Run again after loading more
+    const collectItems = () => {
+      const internalAccountOpsByChain = this.#accountsOps[accountKey] || {}
+      const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(
+        internalAccountOpsByChain
+      ).filter(([chainId]) => enabledNetworkChainIds.includes(chainId))
+      const internalAccountOps = new Set(
+        internalAccountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
+      )
+
+      // Internal txnIds, so an external op duplicating one is dropped at the merge point below.
+      const internalTxnIds = new Set(
+        [...internalAccountOps].flatMap((op) => getInternalAccountOpTxnIds(op).map(normalizeTxnId))
+      )
+      // Shared with the count below, so what is rendered and what is counted cannot drift apart.
+      const isNotDuplicateOfInternal = (extOp: SubmittedAccountOpLike) =>
+        !extOp.txnId || !internalTxnIds.has(normalizeTxnId(extOp.txnId))
+
+      const accountOpsEntriesOnEnabledNetworks = enabledNetworkChainIds
+        .map(
+          (chainId) =>
+            [
+              chainId,
+              [
+                ...(internalAccountOpsByChain[chainId] || []),
+                ...(externalAccountOpsByChain[chainId] || []).filter(isNotDuplicateOfInternal)
+              ]
+            ] as const
+        )
+        .filter(([, accountOps]) => accountOps.length)
+      let items: SubmittedAccountOpLike[]
+
+      if (filters.chainId && enabledNetworkChainIds.includes(String(filters.chainId))) {
+        items = [
+          ...(accountOpsEntriesOnEnabledNetworks.find(
+            ([chainId]) => chainId === String(filters.chainId)
+          )?.[1] || [])
+        ]
+      } else {
+        items = accountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
+      }
+
+      // By default, account ops are grouped by network and sorted in descending order.
+      // However, when internal and external ops are mixed, they need a final sort even
+      // when a network filter is present.
+      items.sort((a, b) => b.timestamp - a.timestamp)
+
+      // for benzin fetching
+      if (filters.identifiedBy) {
+        items = items.filter(
+          (i) => i.identifiedBy && i.identifiedBy.identifier === filters.identifiedBy!.identifier
+        )
+      }
+
+      // A transaction and its speed ups are shown as one row, the one that got (or will get)
+      // onchain. Not for benzin, which looks up one specific transaction
+      const visibleItems = filters.identifiedBy ? items : collapseReplacedAccountOps(items)
+
+      return {
+        internalAccountOps,
+        isNotDuplicateOfInternal,
+        visibleItems,
+        loadedCount: items.length,
+        replacedOpsCount: items.length - visibleItems.length
+      }
+    }
+
     // Enough for this page, per chain: an account-wide read would spend the budget on disabled
     // networks and render a short page. Pending and external ops are already in memory.
     const pageEnd = (pagination.fromPage + 1) * pagination.itemsPerPage
-    await this.#persistence.ensureRecentLoaded(accountKey, pageEnd, chainIdsToRender)
-    internalAccountOpsByChain = this.#accountsOps[accountKey] || internalAccountOpsByChain
+    let loadLimit = pageEnd
+    await this.#persistence.ensureRecentLoaded(accountKey, loadLimit, chainIdsToRender)
+    let collected = collectItems()
 
-    const internalAccountOpsEntriesOnEnabledNetworks = Object.entries(
-      internalAccountOpsByChain
-    ).filter(([chainId]) => enabledNetworkChainIds.includes(chainId))
-    const internalAccountOps = new Set(
-      internalAccountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
-    )
+    // Merging speed ups into one row leaves fewer rows than were loaded, so load what's missing
+    // until the page is full. Otherwise this page would be short, and the next one, which starts
+    // where a full page would end, would skip the rows in between
+    for (
+      let extraLoads = 0;
+      extraLoads < MAX_EXTRA_LOADS_FOR_REPLACED_OPS &&
+      collected.replacedOpsCount > 0 &&
+      collected.visibleItems.length < pageEnd;
+      extraLoads++
+    ) {
+      const loadedCountBefore = collected.loadedCount
+      loadLimit += pageEnd - collected.visibleItems.length
 
-    // Internal txnIds, so an external op duplicating one is dropped at the merge point below.
-    const internalTxnIds = new Set(
-      [...internalAccountOps].flatMap((op) => getInternalAccountOpTxnIds(op).map(normalizeTxnId))
-    )
-    // Shared with the count below, so what is rendered and what is counted cannot drift apart.
-    const isNotDuplicateOfInternal = (extOp: SubmittedAccountOpLike) =>
-      !extOp.txnId || !internalTxnIds.has(normalizeTxnId(extOp.txnId))
-
-    const accountOpsEntriesOnEnabledNetworks = enabledNetworkChainIds
-      .map(
-        (chainId) =>
-          [
-            chainId,
-            [
-              ...(internalAccountOpsByChain[chainId] || []),
-              ...(externalAccountOpsByChain[chainId] || []).filter(isNotDuplicateOfInternal)
-            ]
-          ] as const
-      )
-      .filter(([, accountOps]) => accountOps.length)
-    let filteredItems: SubmittedAccountOpLike[]
-
-    if (filters.chainId && enabledNetworkChainIds.includes(String(filters.chainId))) {
-      filteredItems = [
-        ...(accountOpsEntriesOnEnabledNetworks.find(
-          ([chainId]) => chainId === String(filters.chainId)
-        )?.[1] || [])
-      ]
-    } else {
-      filteredItems = accountOpsEntriesOnEnabledNetworks.flatMap(([, accountOps]) => accountOps)
+      await this.#persistence.ensureRecentLoaded(accountKey, loadLimit, chainIdsToRender)
+      collected = collectItems()
+      // Nothing more is stored, so this is the last page
+      if (collected.loadedCount === loadedCountBefore) break
     }
 
-    // By default, account ops are grouped by network and sorted in descending order.
-    // However, when internal and external ops are mixed, they need a final sort even
-    // when a network filter is present.
-    filteredItems.sort((a, b) => b.timestamp - a.timestamp)
-
-    // for benzin fetching
-    if (filters.identifiedBy) {
-      filteredItems = filteredItems.filter(
-        (i) => i.identifiedBy && i.identifiedBy.identifier === filters.identifiedBy!.identifier
-      )
-    }
-
-    // A transaction and its speed ups are shown as one row, the one that got (or will get)
-    // onchain. Not for benzin, which looks up one specific transaction
-    const visibleItems = filters.identifiedBy
-      ? filteredItems
-      : collapseReplacedAccountOps(filteredItems)
-    const replacedOpsCount = filteredItems.length - visibleItems.length
-    filteredItems = visibleItems
+    const { internalAccountOps, isNotDuplicateOfInternal, replacedOpsCount } = collected
+    const filteredItems = collected.visibleItems
 
     // Scoped to the rendered chains; an identifiedBy filter has no stored count, so items are it.
     const storedTotal = filters.identifiedBy
