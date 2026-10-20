@@ -45,9 +45,22 @@ const getTokens = () => {
   return structuredClone(ETHEREUM_TOKENS.concat(POLYGON_TOKENS))
 }
 
-const prepareTest = async () => {
+// An account of the wallet that no key in the keystore can sign for (view-only), used as a recipient
+const VIEW_ONLY_RECIPIENT_ADDRESS = '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'
+const viewOnlyRecipientAccount = {
+  addr: VIEW_ONLY_RECIPIENT_ADDRESS,
+  initialPrivileges: [],
+  associatedKeys: [VIEW_ONLY_RECIPIENT_ADDRESS],
+  creation: null,
+  preferences: {
+    label: 'View-only recipient',
+    pfp: VIEW_ONLY_RECIPIENT_ADDRESS
+  }
+}
+
+const prepareTest = async (extraAccounts: (typeof viewOnlyRecipientAccount)[] = []) => {
   const { mainCtrl } = await makeMainController(async (storageCtrl) => {
-    await storageCtrl.set('accounts', [account])
+    await storageCtrl.set('accounts', [account, ...extraAccounts])
     await storageCtrl.set('selectedAccount', account.addr)
   })
   await mainCtrl.selectedAccount.select({ account })
@@ -331,6 +344,90 @@ describe('Transfer Controller', () => {
       amount: transferController.maxAmount
     })
   })
+  test('should require hold-to-proceed and explain it when the recipient is a view-only account', async () => {
+    const { transferController } = await prepareTest([viewOnlyRecipientAccount])
+
+    await transferController.update({
+      addressState: {
+        fieldValue: VIEW_ONLY_RECIPIENT_ADDRESS,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    const { recipientAddress } = transferController.validationFormMsgs
+    expect(transferController.isRecipientAddressViewOnly).toBe(true)
+    // A hold without a message was the bug: the user saw a green text next to a hold button
+    expect(recipientAddress.shouldHold).toBe(true)
+    expect(recipientAddress.severity).toBe('warning')
+    expect(recipientAddress.message).toContain('view-only')
+    expect(transferController.toJSON().validationFormMsgs.recipientAddress.shouldHold).toBe(true)
+  })
+
+  test('should keep the hold for a view-only recipient after the user agrees to send to an unknown address', async () => {
+    const { transferController } = await prepareTest([viewOnlyRecipientAccount])
+
+    await transferController.update({
+      addressState: {
+        fieldValue: VIEW_ONLY_RECIPIENT_ADDRESS,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+    await transferController.update({ isRecipientAddressUnknownAgreed: true })
+
+    expect(transferController.validationFormMsgs.recipientAddress.shouldHold).toBe(true)
+  })
+
+  test('should release the hold for an unknown recipient after the user agrees, without changing the message', async () => {
+    const { transferController } = await prepareTest()
+
+    await transferController.update({
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    const beforeAgreeing = { ...transferController.validationFormMsgs.recipientAddress }
+    expect(transferController.isRecipientAddressViewOnly).toBe(false)
+    expect(beforeAgreeing.shouldHold).toBe(true)
+
+    await transferController.update({ isRecipientAddressUnknownAgreed: true })
+
+    const afterAgreeing = transferController.validationFormMsgs.recipientAddress
+    expect(afterAgreeing.shouldHold).toBeFalsy()
+    expect(afterAgreeing.message).toBe(beforeAgreeing.message)
+  })
+
+  test('should not require a hold or block when the recipient is a smart contract', async () => {
+    const { transferController } = await prepareTest()
+
+    await transferController.update({
+      addressState: {
+        fieldValue: XWALLET_ADDRESS,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    const { recipientAddress } = transferController.validationFormMsgs
+    // The error disables the buttons of the form, so there is nothing to hold
+    expect(recipientAddress.severity).toBe('error')
+    expect(recipientAddress.shouldHold).toBeFalsy()
+  })
+
+  test('should not require a hold when there is no recipient yet', async () => {
+    const { transferController } = await prepareTest()
+
+    expect(transferController.validationFormMsgs.recipientAddress.shouldHold).toBeFalsy()
+  })
+
   test('should allow proceeding with a Colibri-verified ENS recipient', async () => {
     const { transferController, tokens } = await prepareTest()
     const domain = '0xbobby.eth'
