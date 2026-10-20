@@ -281,6 +281,67 @@ describe('AccountPicker', () => {
     expect(controller.accountsOnPage).toHaveLength(0)
   })
 
+  describe('initIfNotStarted', () => {
+    test('should select and prepare the next account of a picker that was only set up', async () => {
+      const { controller } = await prepareTest()
+      controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      await controller.initIfNotStarted()
+
+      expect(controller.isInitialized).toBe(true)
+      expect(controller.readyToAddAccounts).toHaveLength(1)
+    })
+
+    test('should do nothing without init params', async () => {
+      const { controller } = await prepareTest()
+      const initSpy = jest.spyOn(controller, 'init')
+
+      await controller.initIfNotStarted()
+
+      expect(initSpy).not.toHaveBeenCalled()
+      expect(controller.isInitialized).toBe(false)
+      expect(controller.readyToAddAccounts).toHaveLength(0)
+    })
+
+    test('should keep a started picker as it is, even with nothing prepared', async () => {
+      const { controller } = await prepareTest()
+      controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        shouldSelectNextAccountAutomatically: false,
+        shouldGetAccountsUsedOnNetworks: false,
+        shouldSearchForLinkedAccounts: false
+      })
+      await controller.init()
+      const initSpy = jest.spyOn(controller, 'init')
+
+      await controller.initIfNotStarted()
+
+      expect(initSpy).not.toHaveBeenCalled()
+      expect(controller.isInitialized).toBe(true)
+      expect(controller.readyToAddAccounts).toHaveLength(0)
+    })
+
+    test('should keep accounts a flow prepared already', async () => {
+      const { controller } = await prepareTest()
+      await controller.prepareAccounts({ accounts: [basicAccount] })
+      // Set up after preparing, so only the prepared accounts stop it from starting
+      controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+      const initSpy = jest.spyOn(controller, 'init')
+
+      await controller.initIfNotStarted()
+
+      expect(initSpy).not.toHaveBeenCalled()
+      expect(controller.readyToAddAccounts).toEqual([basicAccount])
+    })
+  })
+
   test('should stop preparing the next account automatically when reset mid-selection', async () => {
     const { controller } = await prepareTest()
     const keyIterator = new KeyIterator(process.env.SEED)

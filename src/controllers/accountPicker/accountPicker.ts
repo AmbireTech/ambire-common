@@ -432,6 +432,22 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   /**
+   * Starts the picker for the personalize step of a flow that only set it up (Create, a
+   * recovery phrase, a private key), selecting and preparing its next account. A picker
+   * started already (hardware wallets, back from the picker) or with prepared accounts keeps
+   * what it has. Decided here, as the UI's copy of the state can lag behind the flow that set
+   * it up (mobile holds updates back while a screen transition runs). Replies to `requestId`.
+   */
+  async initIfNotStarted(requestId?: string) {
+    if (!this.initParams || this.isInitialized || this.readyToAddAccounts.length) {
+      this.#replyToRequest(requestId)
+      return
+    }
+
+    await this.init(requestId)
+  }
+
+  /**
    * Starts the picker from `initParams`. With `shouldSelectNextAccountAutomatically` (the
    * flows that go straight to the personalize step) it also selects the next account and
    * prepares it. Replies to `requestId` once done, so the flow moves on only then.
@@ -1038,23 +1054,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     const keyType = this.type as ExternalKey['type']
 
-    const deviceIds: { [key in ExternalKey['type']]: string } = {
-      ledger: this.#externalSignerControllers.ledger?.deviceId || '',
-      trezor: this.#externalSignerControllers.trezor?.deviceId || '',
-      lattice: this.#externalSignerControllers?.lattice?.deviceId || '',
-      qr: this.#externalSignerControllers.qr?.deviceId || '',
-      nfc: this.#externalSignerControllers.nfc?.deviceId || '',
-      pq1: this.#externalSignerControllers.pq1?.deviceId || ''
-    }
-
-    const deviceModels: { [key in ExternalKey['type']]: string } = {
-      ledger: this.#externalSignerControllers.ledger?.deviceModel || '',
-      trezor: this.#externalSignerControllers.trezor?.deviceModel || '',
-      lattice: this.#externalSignerControllers.lattice?.deviceModel || '',
-      qr: this.#externalSignerControllers.qr?.deviceModel || '',
-      nfc: this.#externalSignerControllers.nfc?.deviceModel || '',
-      pq1: this.#externalSignerControllers.pq1?.deviceModel || ''
-    }
+    const signer = this.#externalSignerControllers[keyType]
 
     const masterFingerprint = this.#externalSignerControllers.qr?.masterFingerprint || ''
 
@@ -1075,8 +1075,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         }`,
         dedicatedToOneSA: isDerivedForSmartAccountKeyOnly(index),
         meta: {
-          deviceId: deviceIds[keyType],
-          deviceModel: deviceModels[keyType],
+          deviceId: signer?.deviceId || '',
+          deviceModel: signer?.deviceModel || '',
           // always defined in the case of external keys
           hdPathTemplate,
           ...(keyType === 'qr'

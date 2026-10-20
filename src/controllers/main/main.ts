@@ -2170,7 +2170,7 @@ export class MainController extends EventEmitter implements IMainController {
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
     const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase)
     this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
-    if (requestId) this.ui.message.sendUiMessage({ requestId, ok: true })
+    this.#replyToRequest(requestId)
   }
 
   /**
@@ -2180,20 +2180,11 @@ export class MainController extends EventEmitter implements IMainController {
    */
   async accountPickerSetInitParamsFromSavedSeed(seedId: string, requestId?: string) {
     const savedSeed = await this.keystore.getSavedSeed(seedId)
-    if (!savedSeed) {
-      if (requestId) {
-        this.ui.message.sendUiMessage({
-          requestId,
-          ok: false,
-          error: 'The recovery phrase was not found'
-        })
-      }
-      return
-    }
+    if (!savedSeed) return this.#replyToRequest(requestId, 'The recovery phrase was not found')
 
     const keyIterator = new KeyIterator(savedSeed.seed, savedSeed.seedPassphrase)
     this.accountPicker.setInitParams({ keyIterator, hdPathTemplate: savedSeed.hdPathTemplate })
-    if (requestId) this.ui.message.sendUiMessage({ requestId, ok: true })
+    this.#replyToRequest(requestId)
   }
 
   /**
@@ -2222,12 +2213,17 @@ export class MainController extends EventEmitter implements IMainController {
 
     // Replies to the UI directly: a screen that is not subscribed at that moment (e.g.
     // mid-transition on mobile) would miss the transient status and wait forever.
+    this.#replyToRequest(requestId, isSetUp ? undefined : 'Creating the new account failed')
+  }
+
+  /**
+   * Replies to the UI request behind a call (if there is one), so the UI can await it
+   * instead of watching a transient status.
+   */
+  #replyToRequest(requestId?: string, error?: string) {
     if (!requestId) return
-    this.ui.message.sendUiMessage(
-      isSetUp
-        ? { requestId, ok: true }
-        : { requestId, ok: false, error: 'Creating the new account failed' }
-    )
+
+    this.ui.message.sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true })
   }
 
   // includes the getters in the stringified instance
