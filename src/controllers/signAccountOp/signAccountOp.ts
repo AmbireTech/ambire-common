@@ -245,6 +245,13 @@ export type OnBroadcastSuccess = (props: OnboardingSuccessProps) => Promise<void
 
 export type OnBroadcastFailed = (accountOp: AccountOp) => void
 
+/**
+ * Called when only the first txns of a batch broadcast one by one went out,
+ * e.g. the approval of a swap was sent but the swap itself was rejected on the device.
+ * Receives the sent part, so it can be recorded and tracked until confirmed.
+ */
+export type OnPartialBroadcast = (sentAccountOp: SubmittedAccountOp) => Promise<void>
+
 export class SignAccountOpController
   extends HumanizationController
   implements ISignAccountOpController
@@ -483,6 +490,8 @@ export class SignAccountOpController
 
   #onBroadcastFailed?: OnBroadcastFailed
 
+  #onPartialBroadcast?: OnPartialBroadcast
+
   #updateBlacklistedStatusPromise: Promise<void> | undefined
 
   signPromise: Promise<void> | undefined
@@ -524,7 +533,8 @@ export class SignAccountOpController
     shouldSimulate,
     onUpdateAfterTraceCallSuccess,
     onBroadcastSuccess,
-    onBroadcastFailed
+    onBroadcastFailed,
+    onPartialBroadcast
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     type?: SignAccountOpType
@@ -551,6 +561,7 @@ export class SignAccountOpController
     onUpdateAfterTraceCallSuccess?: () => Promise<void>
     onBroadcastSuccess: OnBroadcastSuccess
     onBroadcastFailed?: OnBroadcastFailed
+    onPartialBroadcast?: OnPartialBroadcast
   }) {
     super(eventEmitterRegistry, false)
     this.#type = type || 'default'
@@ -638,6 +649,7 @@ export class SignAccountOpController
 
     this.#onBroadcastSuccess = onBroadcastSuccess
     if (onBroadcastFailed) this.#onBroadcastFailed = onBroadcastFailed
+    if (onPartialBroadcast) this.#onPartialBroadcast = onPartialBroadcast
 
     // Intervals
     this.#gasPriceInterval = new RecurringTimeout(async () => {
@@ -647,7 +659,10 @@ export class SignAccountOpController
         return
       }
 
-      await this.gasPrice.fetch('major')
+      // Users often just browse quotes on the swap screen, so a failed background
+      // refresh shouldn't interrupt them with an error
+      const gasPriceErrorLevel = this.#type === 'one-click-swap-and-bridge' ? 'silent' : 'major'
+      await this.gasPrice.fetch(gasPriceErrorLevel)
     }, GAS_PRICE_UPDATE_INTERVAL)
 
     this.#simulateAndEstimateOrSimulateInterval = new RecurringTimeout(async () => {
@@ -4171,16 +4186,18 @@ export class SignAccountOpController
         // to #1 and #2 and create a submittedAccountOp
         //
         // unless it's the build-in swap - we want to throw an error and
-        // allow the user to retry in this case
+        // allow the user to retry in this case. The swap is told what was sent, so
+        // the retry is built only after the sent txns are confirmed
+        const sentTransactionRes = {
+          nonce: senderNonce,
+          identifiedBy: {
+            type: 'MultipleTxns' as const,
+            identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
+          },
+          txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
+        }
         if (multipleTxnsBroadcastRes.length && this.#type !== 'one-click-swap-and-bridge') {
-          transactionRes = {
-            nonce: senderNonce,
-            identifiedBy: {
-              type: 'MultipleTxns',
-              identifier: multipleTxnsBroadcastRes.map((res) => res.hash).join('-')
-            },
-            txnId: multipleTxnsBroadcastRes[multipleTxnsBroadcastRes.length - 1]?.hash
-          }
+          transactionRes = sentTransactionRes
 
           // The part that went out is reported as broadcast, so without saying this
           // the rest of the batch looks sent when it never was.
@@ -4197,6 +4214,29 @@ export class SignAccountOpController
             error
           })
         } else {
+          // The sent txns of the built-in swap can't be taken back, so they are reported.
+          // Signing the whole batch again would send them twice (e.g. a second approval)
+          if (multipleTxnsBroadcastRes.length && this.#onPartialBroadcast) {
+            try {
+              await this.#onPartialBroadcast(
+                this.#buildSubmittedAccountOp(
+                  accountOp,
+                  account,
+                  sentTransactionRes,
+                  BigInt(senderNonce)
+                )
+              )
+            } catch (e: any) {
+              // Not reporting them must not hide the error that stopped the batch
+              this.emitError({
+                level: 'silent',
+                message: 'Failed to report the sent part of a partly sent batch',
+                error: e,
+                sendCrashReport: true
+              })
+            }
+          }
+
           return this.throwBroadcastAccountOp({ error, accountState })
         }
       } finally {
@@ -4297,26 +4337,12 @@ export class SignAccountOpController
         message: 'No transaction response received after being broadcasted.'
       })
 
-    const submittedAccountOpMeta = { ...accountOp.meta }
-
-    const submittedAccountOp: SubmittedAccountOp = {
-      ...accountOp,
-      eoaNonce: this.accountOp.eoaNonce,
-      status: AccountOpStatus.BroadcastedButNotConfirmed,
-      txnId: transactionRes.txnId,
-      nonce: getSubmittedAccountOpNonce(
-        getAccountOpNonce(accountOp),
-        transactionRes.nonce,
-        !!account.safeCreation
-      ),
-      identifiedBy: transactionRes.identifiedBy,
-      timestamp: new Date().getTime(),
-      isSingletonDeploy: !!accountOp.calls.find(
-        (call) => call.to && getAddress(call.to) === SINGLETON
-      )
-    }
-    if (Object.keys(submittedAccountOpMeta).length) submittedAccountOp.meta = submittedAccountOpMeta
-    else delete submittedAccountOp.meta
+    const submittedAccountOp = this.#buildSubmittedAccountOp(
+      accountOp,
+      account,
+      transactionRes,
+      this.accountOp.eoaNonce
+    )
 
     await this.#onBroadcastSuccess({
       submittedAccountOp,
@@ -4334,6 +4360,36 @@ export class SignAccountOpController
     this.broadcastStatus = 'INITIAL'
     await this.forceEmitUpdate()
     return Promise.resolve()
+  }
+
+  #buildSubmittedAccountOp(
+    accountOp: AccountOp,
+    account: Account,
+    transactionRes: { txnId?: string; nonce: number; identifiedBy: AccountOpIdentifiedBy },
+    eoaNonce: AccountOp['eoaNonce']
+  ): SubmittedAccountOp {
+    const submittedAccountOpMeta = { ...accountOp.meta }
+
+    const submittedAccountOp: SubmittedAccountOp = {
+      ...accountOp,
+      eoaNonce,
+      status: AccountOpStatus.BroadcastedButNotConfirmed,
+      txnId: transactionRes.txnId,
+      nonce: getSubmittedAccountOpNonce(
+        getAccountOpNonce(accountOp),
+        transactionRes.nonce,
+        !!account.safeCreation
+      ),
+      identifiedBy: transactionRes.identifiedBy,
+      timestamp: new Date().getTime(),
+      isSingletonDeploy: !!accountOp.calls.find(
+        (call) => call.to && getAddress(call.to) === SINGLETON
+      )
+    }
+    if (Object.keys(submittedAccountOpMeta).length) submittedAccountOp.meta = submittedAccountOpMeta
+    else delete submittedAccountOp.meta
+
+    return submittedAccountOp
   }
 
   async signAndBroadcast() {

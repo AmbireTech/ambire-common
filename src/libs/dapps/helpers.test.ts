@@ -75,6 +75,11 @@ describe('dapps helpers', () => {
       expect(getDappIdFromUrl('https://app.aave.com.')).toBe('app.aave.com')
     })
 
+    it('strips every leading www., not just the first one', () => {
+      expect(getDappIdFromUrl('https://www.www.aave.com')).toBe('aave.com')
+      expect(getDappIdFromUrl('https://www.www.www.aave.com')).toBe('aave.com')
+    })
+
     it('strips www. from a fully-qualified host as well', () => {
       expect(getDappIdFromUrl('https://www.example.web.app./')).toBe('example.web.app')
     })

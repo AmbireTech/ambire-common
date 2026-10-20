@@ -89,6 +89,7 @@ import {
   getIsIntentRoute,
   getIsTokenEligibleForSwapAndBridge,
   getRouteOutputValuesForSorting,
+  getSentPartOfSwap,
   getSwapAndBridgeCalls,
   getSwapSponsorship,
   isNoFeeToken,
@@ -476,6 +477,14 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
   #getVisibleUserRequests: () => UserRequest[]
 
   hasProceeded: boolean = false
+
+  /**
+   * Identifies the txns of a swap that went out before the rest of it failed, e.g. the
+   * approval was sent but the swap was rejected on the hardware wallet. Once they are
+   * confirmed, the quote is refreshed so the swap is built again from the onchain state
+   * (e.g. without the approval). The form isn't blocked meanwhile, as they can get stuck
+   */
+  #sentSwapPartIdentifier: string | null = null
 
   #relayerUrl: string
 
@@ -3235,6 +3244,8 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
   // update active route if needed on SubmittedAccountOp update
   handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(op: SubmittedAccountOp) {
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.#handleSentSwapPartResolved(op)
     this.#handleUpdateActiveRouteFromSwapTxnMeta(op)
 
     op.calls.forEach((call) => {
@@ -3244,6 +3255,37 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       this.#handleUpdateActiveRoutesUserTxData(call.id, op)
       this.#handleActiveRoutesCompleted(call.id, op.status)
     })
+  }
+
+  async #handleSentSwapPartResolved(op: SubmittedAccountOp) {
+    if (op.status === AccountOpStatus.BroadcastedButNotConfirmed) return
+    if (!this.#sentSwapPartIdentifier) return
+    if (this.#sentSwapPartIdentifier !== op.identifiedBy.identifier) return
+
+    this.#sentSwapPartIdentifier = null
+    // The new quote builds only the txns still needed,
+    // e.g. no approval if the sent one was confirmed
+    await this.#refreshQuoteAfterPartialSwap()
+  }
+
+  async #refreshQuoteAfterPartialSwap() {
+    try {
+      // A new quote would select the best route instead of the one the user picked,
+      // so only the txns are built again for it (reading the allowance from the chain)
+      if (this.quote?.selectedRoute?.isSelectedManually) {
+        if (this.#updateQuoteId) await this.initSignAccountOpIfNeeded(this.#updateQuoteId)
+        this.emitUpdate()
+        return
+      }
+
+      await this.updateQuote({ skipPreviousQuoteRemoval: true, skipQuoteUpdateOnSameValues: false })
+    } catch (error: any) {
+      this.emitError({
+        level: 'silent',
+        message: 'Failed to refresh the swap quote after a partly sent swap',
+        error
+      })
+    }
   }
 
   #handleUpdateActiveRouteFromSwapTxnMeta(submittedAccountOp: SubmittedAccountOp) {
@@ -3605,6 +3647,7 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
     }
 
     await this.#signAccountOpPreference.initialLoadPromise
+    let hasSentPartOfSwap = false
     this.#signAccountOpController = new SignAccountOpController({
       type: 'one-click-swap-and-bridge',
       callRelayer: this.#callRelayer,
@@ -3643,7 +3686,12 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
 
         await this.#onBroadcastSuccess(props)
       },
-      onBroadcastFailed: this.#onBroadcastFailed
+      onBroadcastFailed: this.#onBroadcastFailed,
+      onPartialBroadcast: async (sentAccountOp) => {
+        hasSentPartOfSwap = true
+        await this.#activity.addAccountOp(getSentPartOfSwap(sentAccountOp))
+        this.#sentSwapPartIdentifier = sentAccountOp.identifiedBy.identifier
+      }
     })
 
     this.emitUpdate()
@@ -3660,15 +3708,31 @@ export class SwapAndBridgeController extends EventEmitter implements ISwapAndBri
       }
     }, 'swap-and-bridge')
 
-    this.#signAccountOpController.onError(async (error) => {
-      // Need to clean the pending results for THIS signAccountOpController
-      // specifically. NOT the one from the getter (this.signAccountOpController)
-      // that is ALWAYS up-to-date with the current quote and the current form state.
-      // Due to the async nature, it might not exist - an issue caught by our crash reporting.
-      this.emitError({ ...error, level: 'silent' })
+    // Need to use THIS signAccountOpController specifically, the one that emitted the error.
+    // NOT the field (this.#signAccountOpController), which can be replaced or nulled before
+    // the error arrives, and NOT the getter (this.signAccountOpController) that is ALWAYS
+    // up-to-date with the current quote and the current form state.
+    const signAccountOpController = this.#signAccountOpController
+    signAccountOpController.onError(async (error) => {
+      // Forwarded as is, as SignAccountOp already keeps its background errors silent
+      // on the swap screen (e.g. failed gas price refreshes)
+      this.emitError(error)
 
-      if (this.#signAccountOpController)
-        await this.#portfolio.overrideSimulationResults(this.#signAccountOpController.accountOp)
+      // Need to clean the pending results for THIS signAccountOpController
+      await this.#portfolio.overrideSimulationResults(signAccountOpController.accountOp)
+
+      // Part of its txns went out, so it can't be signed again. That would send them twice,
+      // e.g. a second approval after the first one is confirmed. A new one is built right away
+      // from the onchain state. If the sent approval is still pending, the new one replaces it,
+      // as it's sent with the same nonce
+      // TODO: While the sent part is pending (it can get stuck), show a modal to speed it up or
+      // cancel it, so the user fixes it first. Until that UX exists, the user isn't blocked
+      if (hasSentPartOfSwap && this.#signAccountOpController === signAccountOpController) {
+        hasSentPartOfSwap = false
+        this.destroySignAccountOp()
+        this.emitUpdate()
+        await this.#refreshQuoteAfterPartialSwap()
+      }
     })
     // if the estimation emits an error, handle it
     this.#signAccountOpController.estimation.onUpdate(() => {
