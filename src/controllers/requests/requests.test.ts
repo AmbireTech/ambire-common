@@ -1145,6 +1145,113 @@ describe('RequestsController ', () => {
     expect(request.signAccountOp.accountOp.nonce).toBe(119n)
     request.signAccountOp.destroy()
   })
+  test('queues a new Safe request after the transactions that are sent but not confirmed', async () => {
+    const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+    // pending on this network - the new request must not reuse (and replace) these nonces
+    await activityCtrl.addAccountOp({
+      ...getActivityAccountOp(accountAddr, chainId, 119n),
+      status: AccountOpStatus.BroadcastedButNotConfirmed
+    })
+    await activityCtrl.addAccountOp({
+      ...getActivityAccountOp(accountAddr, chainId, 120n),
+      status: AccountOpStatus.BroadcastedButNotConfirmed
+    })
+    // confirmed ones and pending ones on other networks don't hold any nonce
+    await activityCtrl.addAccountOp({
+      ...getActivityAccountOp(accountAddr, chainId, 150n),
+      status: AccountOpStatus.Success
+    })
+    await activityCtrl.addAccountOp({
+      ...getActivityAccountOp(accountAddr, 10n, 300n),
+      status: AccountOpStatus.BroadcastedButNotConfirmed
+    })
+
+    await controller.build({
+      type: 'calls',
+      params: {
+        executionType: 'queue',
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, value: 1n, data: '0x' }],
+          meta: { accountAddr, chainId }
+        }
+      }
+    })
+
+    const request = controller.userRequests[0]
+    if (request?.kind !== 'calls') throw new Error('Expected calls request')
+    expect(request.signAccountOp.accountOp.nonce).toBe(121n)
+    request.signAccountOp.destroy()
+  })
+
+  test('keeps the pending transaction nonce for a Safe speed up and opens it separately', async () => {
+    const { controller, accountsCtrl, activityCtrl } = await prepareTest(false, true)
+    const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const chainId = 1n
+    accountsCtrl.accountStates[accountAddr]![chainId.toString()]!.nonce = 119n
+    const pendingAccountOp: SubmittedAccountOp = {
+      ...getActivityAccountOp(accountAddr, chainId, 119n),
+      status: AccountOpStatus.BroadcastedButNotConfirmed
+    }
+    await activityCtrl.addAccountOp(pendingAccountOp)
+
+    // an unrelated request, queued after the pending transaction
+    await controller.build({
+      type: 'calls',
+      params: {
+        executionType: 'queue',
+        userRequestParams: {
+          calls: [{ to: ZeroAddress, value: 1n, data: '0x' }],
+          meta: { accountAddr, chainId }
+        }
+      }
+    })
+
+    const speedUpCalls = [{ id: generateUuid(), to: ZeroAddress, value: 2n, data: '0x' }]
+    await controller.build({
+      type: 'calls',
+      params: {
+        executionType: 'queue',
+        userRequestParams: {
+          calls: speedUpCalls,
+          meta: { accountAddr, chainId },
+          accountOp: {
+            id: pendingAccountOp.id,
+            accountAddr,
+            chainId,
+            signingKeyAddr: null,
+            signingKeyType: null,
+            nonce: 119n,
+            eoaNonce: 5n,
+            calls: speedUpCalls,
+            gasLimit: null,
+            signature: null,
+            gasFeePayment: null,
+            meta: { speedUp: { enabled: true } }
+          }
+        }
+      }
+    })
+
+    expect(controller.userRequests).toHaveLength(2)
+    const callsRequests = controller.userRequests as CallsUserRequest[]
+    const speedUpRequest = callsRequests.find(
+      (request) => request.signAccountOp.accountOp.meta?.speedUp?.enabled
+    )
+    const queuedRequest = callsRequests.find((request) => request !== speedUpRequest)
+    // the speed up must not get merged into the request that is already open
+    expect(queuedRequest?.signAccountOp.accountOp.calls).toHaveLength(1)
+    expect(queuedRequest?.signAccountOp.accountOp.nonce).toBe(120n)
+    expect(speedUpRequest?.signAccountOp.accountOp.nonce).toBe(119n)
+    expect(speedUpRequest?.signAccountOp.accountOp.eoaNonce).toBe(5n)
+
+    controller.userRequests.forEach((request) => {
+      if (request.kind === 'calls') request.signAccountOp.destroy()
+    })
+  })
+
   test('keeps the nonce when adding calls to an existing Safe request', async () => {
     const { controller, accountsCtrl } = await prepareTest(false, true)
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'

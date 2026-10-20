@@ -1003,7 +1003,7 @@ describe('SignAccountOp Controller ', () => {
     return { controller, storageCtrl, accountsCtrl }
   }
 
-  const initSafeNonce = async (signed: string[] = []) => {
+  const initSafeNonce = async (signed: string[] = [], estimatedAccountNonce = 3) => {
     const feePaymentOptions = getDefaultFeeSelectionOptions().map((option) => ({
       ...option,
       paidBy: safeAccount.addr
@@ -1025,7 +1025,7 @@ describe('SignAccountOp Controller ', () => {
           deploymentGas: 0n,
           gasUsed: 25000n,
           feePaymentOptions,
-          ambireAccountNonce: 3,
+          ambireAccountNonce: estimatedAccountNonce,
           flags: {}
         },
         flags: {},
@@ -1141,9 +1141,41 @@ describe('SignAccountOp Controller ', () => {
     controller.update({ accountOpData: { nonce: accountState.nonce + 1n } })
 
     expect(controller.errors).toContainEqual({
-      title: 'You need to broadcast pending transactions before this one.',
+      title:
+        'Earlier transactions need to go through first. Send them, or wait for the ones already sent to be confirmed.',
       action: 'refetch-account-state'
     })
+    expect(controller.canBroadcast).toBe(false)
+  })
+
+  test('explains that a signed Safe transaction with an already used nonce can no longer go through', async () => {
+    const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
+    const accountState =
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!
+
+    accountState.nonce = 5n
+
+    controller.update({ accountOpData: { nonce: 4n } })
+
+    expect(controller.errors).toContainEqual({
+      title:
+        'Another transaction from this account was already confirmed in its place, so this one can no longer go through. You can reject it.'
+    })
+    expect(controller.canBroadcast).toBe(false)
+  })
+
+  test('checks the nonce of a signed Safe transaction even when it is 0', async () => {
+    const { controller, accountsCtrl } = await initSafeNonce([eoaSigner.keyPublicAddress])
+    const accountState =
+      accountsCtrl.accountStates[controller.accountOp.accountAddr]![
+        controller.accountOp.chainId.toString()
+      ]!
+    accountState.nonce = 1n
+
+    controller.update({ accountOpData: { nonce: 0n } })
+
     expect(controller.canBroadcast).toBe(false)
   })
 
@@ -1166,6 +1198,17 @@ describe('SignAccountOp Controller ', () => {
 
     controller.setSafeNonce(1n << 256n)
     expect(controller.accountOp.nonce).toBe(3n)
+  })
+
+  test('lets the estimation update the Safe nonce unless the user picked one', async () => {
+    const { controller } = await initSafeNonce([], 7)
+
+    controller.update({ hasNewEstimation: true })
+    expect(controller.accountOp.nonce).toBe(7n)
+
+    controller.setSafeNonce(42n)
+    controller.update({ hasNewEstimation: true })
+    expect(controller.accountOp.nonce).toBe(42n)
   })
 
   test('does not change a Safe nonce while signing is in progress', async () => {
