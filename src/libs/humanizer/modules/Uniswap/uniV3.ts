@@ -1,7 +1,7 @@
 import { type Hex, decodeFunctionData, parseAbi, toFunctionSelector, zeroAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerVisualization } from '../../interfaces'
+import { HumanizerVisualizationItem } from '../../interfaces'
 import {
   HexIrCall,
   getAction,
@@ -87,11 +87,13 @@ export const uniV3Mapping: HumanizerUniMatcher = {
     const { args } = decodeFunctionData({ abi: multicallDeadlineAbi, data: call.data })
     const [deadline, calls] = args
     const mappingResult = uniV3Mapping
-    const parsed: HumanizerVisualization[][] = calls.map((data: Hex): HumanizerVisualization[] => {
-      const sigHash = data.slice(0, 10)
-      const humanizer = mappingResult[sigHash]
-      return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Uniswap action')]
-    })
+    const parsed: HumanizerVisualizationItem[][] = calls.map(
+      (data: Hex): HumanizerVisualizationItem[] => {
+        const sigHash = data.slice(0, 10)
+        const humanizer = mappingResult[sigHash]
+        return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Uniswap action')]
+      }
+    )
     const res = uniReduce(parsed)
     return res.length
       ? [...res, getDeadline(deadline)]
@@ -101,11 +103,11 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(multicallBytesAbi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({ abi: multicallBytesAbi, data: call.data })
     const [calls] = args
     const mappingResult = uniV3Mapping
-    const parsed = calls.map((data: Hex): HumanizerVisualization[] => {
+    const parsed = calls.map((data: Hex): HumanizerVisualizationItem[] => {
       const sigHash = data.slice(0, 10)
       const humanizer = mappingResult[sigHash]
       return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Uniswap action')]
@@ -116,7 +118,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(multicallPrevBlockHashAbi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     if (!call.to) throw Error('Humanizer: should not be in uniswap humanizer when !call.to')
     const { args } = decodeFunctionData({
       abi: multicallPrevBlockHashAbi,
@@ -124,11 +126,13 @@ export const uniV3Mapping: HumanizerUniMatcher = {
     })
     const [, calls] = args
     const mappingResult = uniV3Mapping
-    const parsed: HumanizerVisualization[][] = calls.map((data: Hex): HumanizerVisualization[] => {
-      const sigHash = data.slice(0, 10)
-      const humanizer = mappingResult[sigHash]
-      return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Uniswap action')]
-    })
+    const parsed: HumanizerVisualizationItem[][] = calls.map(
+      (data: Hex): HumanizerVisualizationItem[] => {
+        const sigHash = data.slice(0, 10)
+        const humanizer = mappingResult[sigHash]
+        return humanizer ? humanizer(accountOp, { ...call, data }) : [getAction('Uniswap action')]
+      }
+    )
     return parsed.length
       ? uniReduce(parsed)
       : [getAction('Uniswap action'), getLabel('to'), getAddressVisualization(call.to)]
@@ -138,7 +142,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(exactInputSingleNoDeadlineAbi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({
       abi: exactInputSingleNoDeadlineAbi,
       data: call.data
@@ -157,7 +161,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(exactInputSingleWithDeadlineAbi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({
       abi: exactInputSingleWithDeadlineAbi,
       data: call.data
@@ -176,7 +180,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(exactInputV32Abi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({ abi: exactInputV32Abi, data: call.data })
     const [params] = args
     const path = parsePath(params.path)
@@ -193,7 +197,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(exactOutputSingleNoDeadlineAbi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({
       abi: exactOutputSingleNoDeadlineAbi,
       data: call.data
@@ -211,7 +215,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(exactOutputSingleWithDeadlineAbi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({
       abi: exactOutputSingleWithDeadlineAbi,
       data: call.data
@@ -231,14 +235,14 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(refundETHAbi[0])]: (
     _accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     return [getAction('Withdraw'), getToken(zeroAddress, call.value)]
   },
   // 0x09b81346
   [toFunctionSelector(exactOutputV32Abi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({ abi: exactOutputV32Abi, data: call.data })
     const [params] = args
     const path = parsePath(params.path)
@@ -255,7 +259,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(swapTokensForExactTokensV32Abi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({
       abi: swapTokensForExactTokensV32Abi,
       data: call.data
@@ -276,7 +280,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(swapExactTokensForTokensV32Abi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({
       abi: swapExactTokensForTokensV32Abi,
       data: call.data
@@ -294,14 +298,14 @@ export const uniV3Mapping: HumanizerUniMatcher = {
     ]
   },
   // 0x49616997
-  [toFunctionSelector(unwrapWETH9NoRecipientAbi[0])]: (): HumanizerVisualization[] => {
+  [toFunctionSelector(unwrapWETH9NoRecipientAbi[0])]: (): HumanizerVisualizationItem[] => {
     return [getAction('Unwrap'), getToken(zeroAddress, 0n)]
   },
   // 0x49404b7c
   [toFunctionSelector(unwrapWETH9WithRecipientAbi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({
       abi: unwrapWETH9WithRecipientAbi,
       data: call.data
@@ -317,7 +321,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(sweepTokenNoRecipientAbi[0])]: (
     _accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({
       abi: sweepTokenNoRecipientAbi,
       data: call.data
@@ -329,7 +333,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(sweepTokenWithRecipientAbi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({
       abi: sweepTokenWithRecipientAbi,
       data: call.data
@@ -345,7 +349,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(sweepTokenWithFeeNoRecipientAbi[0])]: (
     _accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({
       abi: sweepTokenWithFeeNoRecipientAbi,
       data: call.data
@@ -364,7 +368,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(sweepTokenWithFeeWithRecipientAbi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({
       abi: sweepTokenWithFeeWithRecipientAbi,
       data: call.data
@@ -384,7 +388,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(mintV32Abi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({ abi: mintV32Abi, data: call.data })
     const [params] = args
     return [
@@ -402,7 +406,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(exactInputV3Abi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({ abi: exactInputV3Abi, data: call.data })
     const [params] = args
     const path = parsePath(params.path)
@@ -420,7 +424,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(exactOutputV3Abi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({ abi: exactOutputV3Abi, data: call.data })
     const [params] = args
     const path = parsePath(params.path)
@@ -438,7 +442,7 @@ export const uniV3Mapping: HumanizerUniMatcher = {
   [toFunctionSelector(unwrapWETH9WithFeeAbi[0])]: (
     accountOp: AccountOp,
     call: HexIrCall
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     const { args } = decodeFunctionData({ abi: unwrapWETH9WithFeeAbi, data: call.data })
     const [, recipient, feeBips, feeRecipient] = args
     return [

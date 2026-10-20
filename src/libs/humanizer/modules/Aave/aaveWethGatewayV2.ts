@@ -1,7 +1,7 @@
 import { decodeFunctionData, parseAbi, toFunctionSelector, zeroAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerVisualization } from '../../interfaces'
+import { HumanizerVisualizationItem } from '../../interfaces'
 import {
   HexIrCall,
   getAction,
@@ -30,7 +30,7 @@ const repayETHSelector = toFunctionSelector(repayETHAbi[0])
 const borrowETHSelector = toFunctionSelector(borrowETHAbi[0])
 
 export const aaveWethGatewayV2 = (): {
-  [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualization[]
+  [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualizationItem[]
 } => {
   return {
     [depositETHSelector]: (accountOp: AccountOp, call: HexIrCall) => {

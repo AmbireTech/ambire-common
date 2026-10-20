@@ -122,7 +122,7 @@ import { humanizeAccountOp } from '../../libs/humanizer'
 import { Erc7730CallDescriptors } from '../../libs/humanizer/erc7730/types'
 import { HumanizerWarning, IrCall } from '../../libs/humanizer/interfaces'
 import {
-  flattenHumanizerVisualizations,
+  flattenHumanizerVisualization,
   hasErc7730Humanization,
   UNLIMITED_APPROVAL_WARNING_CODE
 } from '../../libs/humanizer/utils'
@@ -1149,7 +1149,7 @@ export class SignAccountOpController
         .updateAddressesBlacklistedStatus(
           this.#humanization
             .flatMap((call) =>
-              flattenHumanizerVisualizations(call.fullVisualization)
+              flattenHumanizerVisualization(call.fullVisualization)
                 .filter((v) => v.type === 'token' || v.type === 'address')
                 .map((v) => v.address)
             )
@@ -1160,7 +1160,7 @@ export class SignAccountOpController
             for (const call of this.#humanization) {
               if (!call.fullVisualization) continue
 
-              for (const vis of flattenHumanizerVisualizations(call.fullVisualization)) {
+              for (const vis of flattenHumanizerVisualization(call.fullVisualization)) {
                 if (
                   (vis.type === 'token' || vis.type === 'address') &&
                   vis.address &&
@@ -1320,7 +1320,7 @@ export class SignAccountOpController
       .map((call: any) =>
         !call.fullVisualization
           ? []
-          : flattenHumanizerVisualizations(call.fullVisualization).map((vis: any) =>
+          : flattenHumanizerVisualization(call.fullVisualization).map((vis: any) =>
               vis.address && isAddress(vis.address) ? getAddress(vis.address) : ''
             )
       )
@@ -4672,7 +4672,7 @@ export class SignAccountOpController
     const banners: SignAccountOpBanner[] = []
 
     const visualizations = this.humanization.flatMap((call) =>
-      flattenHumanizerVisualizations(call.fullVisualization)
+      flattenHumanizerVisualization(call.fullVisualization)
     )
 
     // Keep only token/address types AND ensure uniqueness by address

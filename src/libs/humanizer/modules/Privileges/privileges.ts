@@ -5,7 +5,7 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import {
   HumanizerCallModule,
   HumanizerMeta,
-  HumanizerVisualization,
+  HumanizerVisualizationItem,
   IrCall
 } from '../../interfaces'
 import {
@@ -14,7 +14,8 @@ import {
   getAddressVisualization,
   getKnownName,
   getLabel,
-  isHexCall
+  isHexCall,
+  getLegacyVisualization
 } from '../../utils'
 
 const setAddrPrivilegeAbi = parseAbi([
@@ -24,7 +25,7 @@ const setAddrPrivilegeAbi = parseAbi([
 const parsePrivilegeCall = (
   humanizerMeta: HumanizerMeta,
   call: HexIrCall
-): HumanizerVisualization[] => {
+): HumanizerVisualizationItem[] => {
   const { args } = decodeFunctionData({ abi: setAddrPrivilegeAbi, data: call.data })
   const [addr, priv] = args
   if (getKnownName(humanizerMeta, addr)?.includes('entry point') && priv === ENTRY_POINT_MARKER)
@@ -55,7 +56,7 @@ export const privilegeHumanizer: HumanizerCallModule = (
   if (isHexCall(call) && call.data.slice(0, 10) === setAddrPrivilegeSelector) {
     return {
       ...call,
-      fullVisualization: parsePrivilegeCall(humanizerMeta, call)
+      fullVisualization: getLegacyVisualization(parsePrivilegeCall(humanizerMeta, call))
     }
   }
   return call

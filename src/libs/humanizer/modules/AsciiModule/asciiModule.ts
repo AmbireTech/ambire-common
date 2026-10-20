@@ -2,7 +2,14 @@ import { getBytes, toUtf8String, ZeroAddress } from 'ethers'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, getAddressVisualization, getLabel, getText, getToken } from '../../utils'
+import {
+  getAction,
+  getAddressVisualization,
+  getLabel,
+  getText,
+  getToken,
+  getLegacyVisualization
+} from '../../utils'
 
 function tryGetMEssageAsText(msg: string) {
   const bytes = getBytes(msg)
@@ -30,13 +37,15 @@ export const asciiModule: HumanizerCallModule = (accountOp: AccountOp, call: IrC
 
   return {
     ...call,
-    fullVisualization: call.to
-      ? [
-          getAction('Send this message'),
-          getLabel('to'),
-          getAddressVisualization(call.to),
-          getText(messageAsText)
-        ]
-      : [getAction('Send this message'), getText(messageAsText)]
+    fullVisualization: getLegacyVisualization(
+      call.to
+        ? [
+            getAction('Send this message'),
+            getLabel('to'),
+            getAddressVisualization(call.to),
+            getText(messageAsText)
+          ]
+        : [getAction('Send this message'), getText(messageAsText)]
+    )
   }
 }

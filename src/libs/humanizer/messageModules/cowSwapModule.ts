@@ -1,7 +1,7 @@
 import { isAddress, isHex, zeroAddress } from 'viem'
 
 import { Message } from '../../../interfaces/userRequest'
-import { HumanizerTypedMessageModule, HumanizerVisualization } from '../interfaces'
+import { HumanizerTypedMessageModule, HumanizerVisualizationItem } from '../interfaces'
 import { getAction, getAddressVisualization, getDeadline, getLabel, getToken } from '../utils'
 
 const COW_SWAP_SETTLEMENT_ADDRESS = '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
@@ -9,7 +9,7 @@ const COW_SWAP_SETTLEMENT_ADDRESS = '0x9008d19f58aabd9ed0d60971565aa8510560ab41'
 const getOrderUidVisualization = (
   orderUid: string,
   accountAddr: string
-): HumanizerVisualization[] => {
+): HumanizerVisualizationItem[] => {
   if (!isHex(orderUid) || orderUid.length !== 114) {
     return [getLabel(`with order ID ${orderUid.slice(0, 8)}...${orderUid.slice(-6)}`)]
   }
@@ -85,7 +85,7 @@ export const cowSwapModule: HumanizerTypedMessageModule = (message: Message) => 
     return { fullVisualization: [] }
   }
 
-  const fullVisualization: HumanizerVisualization[] =
+  const fullVisualization: HumanizerVisualizationItem[] =
     kind === 'buy'
       ? [
           getAction('Place an order to Buy'),

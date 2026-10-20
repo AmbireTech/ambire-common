@@ -2,7 +2,7 @@ import { getAddress, isAddress } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { getAction, isHexCall } from '../../utils'
+import { getAction, isHexCall, getLegacyVisualization } from '../../utils'
 import { uniSwapProxy } from './uniSwapProxy'
 import { uniUniversalRouter } from './uniUniversalRouter'
 import { uniV2Mapping } from './uniV2'
@@ -127,16 +127,18 @@ export const uniswapHumanizer: HumanizerCallModule = (accountOp: AccountOp, call
   if (!isHexCall(call))
     return call.fullVisualization
       ? call
-      : { ...call, fullVisualization: [getAction('Uniswap action')] }
+      : { ...call, fullVisualization: getLegacyVisualization([getAction('Uniswap action')]) }
 
   const sigHash = call.data.substring(0, 10)
   if (fullUniswapHumanizerMapping[sigHash])
     return {
       ...call,
-      fullVisualization: fullUniswapHumanizerMapping[sigHash](accountOp, call)
+      fullVisualization: getLegacyVisualization(
+        fullUniswapHumanizerMapping[sigHash](accountOp, call)
+      )
     }
 
   return call.fullVisualization
     ? call
-    : { ...call, fullVisualization: [getAction('Uniswap action')] }
+    : { ...call, fullVisualization: getLegacyVisualization([getAction('Uniswap action')]) }
 }

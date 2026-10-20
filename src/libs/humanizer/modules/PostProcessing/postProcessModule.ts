@@ -4,13 +4,15 @@ import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
 
 export const postProcessing: HumanizerCallModule = (_: AccountOp, call: IrCall) => {
-  const fullVisualization = call.fullVisualization?.map((i) => {
+  if (!call.fullVisualization) return call
+
+  const intent = call.fullVisualization.intent.map((i) => {
     if (i.type === 'token' && i.address.toLowerCase() === '0x'.padEnd(42, 'e'))
       return { ...i, address: ZeroAddress }
     return i
   })
   return {
     ...call,
-    fullVisualization
+    fullVisualization: { ...call.fullVisualization, intent }
   }
 }

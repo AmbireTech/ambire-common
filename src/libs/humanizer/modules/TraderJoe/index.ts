@@ -9,7 +9,8 @@ import {
   getLabel,
   getRecipientText,
   getToken,
-  isHexCall
+  isHexCall,
+  getLegacyVisualization
 } from '../../utils'
 
 // @TODO limit order manager
@@ -163,7 +164,7 @@ const traderJoeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) =>
   if (!isHexCall(call)) return call
   const selector = call.data.slice(0, 10)
   if (call.fullVisualization || !matcher[selector]) return call
-  return { ...call, fullVisualization: matcher[selector](call) }
+  return { ...call, fullVisualization: getLegacyVisualization(matcher[selector](call)) }
 }
 
 export default traderJoeModule

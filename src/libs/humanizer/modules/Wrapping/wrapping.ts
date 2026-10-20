@@ -9,7 +9,7 @@ import {
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, HumanizerMeta, IrCall } from '../../interfaces'
-import { getUnwrapping, getWrapping, isHexCall } from '../../utils'
+import { getUnwrapping, getWrapping, isHexCall, getLegacyVisualization } from '../../utils'
 
 const depositAbi = parseAbi(['function deposit() payable'])
 const withdrawAbi = parseAbi(['function withdraw(uint256 wad)'])
@@ -36,7 +36,7 @@ export const wrappingModule: HumanizerCallModule = (
     if (isHexCall(call) && call.data.slice(0, 10) === depositSelector) {
       return {
         ...call,
-        fullVisualization: getWrapping(zeroAddress, call.value)
+        fullVisualization: getLegacyVisualization(getWrapping(zeroAddress, call.value))
       }
     }
     // 0x2e1a7d4d
@@ -45,7 +45,7 @@ export const wrappingModule: HumanizerCallModule = (
       const [amount] = args
       return {
         ...call,
-        fullVisualization: getUnwrapping(zeroAddress, amount)
+        fullVisualization: getLegacyVisualization(getUnwrapping(zeroAddress, amount))
       }
     }
   }

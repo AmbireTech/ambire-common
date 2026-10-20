@@ -1,7 +1,7 @@
 import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
 import { AccountOp } from '../../../accountOp/accountOp'
-import { HumanizerVisualization } from '../../interfaces'
+import { HumanizerVisualizationItem } from '../../interfaces'
 import {
   HexIrCall,
   getAction,
@@ -30,7 +30,7 @@ const repaySelector = toFunctionSelector(repayAbi[0])
 const borrowSelector = toFunctionSelector(borrowAbi[0])
 
 export const aaveLendingPoolV2 = (): {
-  [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualization[]
+  [key: string]: (a: AccountOp, c: HexIrCall) => HumanizerVisualizationItem[]
 } => {
   const matcher = {
     [depositSelector]: (accountOp: AccountOp, call: HexIrCall) => {

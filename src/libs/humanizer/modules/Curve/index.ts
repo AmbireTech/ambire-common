@@ -2,7 +2,14 @@ import { decodeFunctionData, parseAbi, toFunctionSelector, zeroAddress } from 'v
 
 import { AccountOp } from '../../../accountOp/accountOp'
 import { HumanizerCallModule, IrCall } from '../../interfaces'
-import { HexIrCall, getAction, getLabel, getToken, isHexCall } from '../../utils'
+import {
+  HexIrCall,
+  getAction,
+  getLabel,
+  getToken,
+  isHexCall,
+  getLegacyVisualization
+} from '../../utils'
 
 const exchangeAbi = parseAbi([
   'function exchange(address[11] _route, uint256[5][5] _swap_params, uint256 _amount, uint256 _expected, address[5] _pools)'
@@ -35,7 +42,7 @@ const curveModule: HumanizerCallModule = (_: AccountOp, call: IrCall) => {
 
   const match = matcher[call.data.slice(0, 10)]
   if (call.fullVisualization || !isHexCall(call) || !match) return call
-  return { ...call, fullVisualization: match(call) }
+  return { ...call, fullVisualization: getLegacyVisualization(match(call)) }
 }
 
 export default curveModule

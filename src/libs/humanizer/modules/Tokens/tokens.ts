@@ -3,7 +3,7 @@ import { parseAbi, decodeFunctionData, toFunctionSelector, zeroAddress } from 'v
 import { AccountOp } from '../../../accountOp/accountOp'
 import {
   HumanizerCallModule,
-  HumanizerVisualization,
+  HumanizerVisualizationItem,
   HumanizerWarning,
   IrCall
 } from '../../interfaces'
@@ -19,7 +19,8 @@ import {
   isUnlimitedAmount,
   mergeWarnings,
   padCallData,
-  UNLIMITED_APPROVAL_WARNING_CODE
+  UNLIMITED_APPROVAL_WARNING_CODE,
+  getLegacyVisualization
 } from '../../utils'
 
 // Narrowed ABIs — defined once at module level, used for typed decoding
@@ -60,7 +61,7 @@ const erc20DecreaseApprovalAbi = parseAbi([
  * be an approval with no limit. The warning is built while the call is decoded, so the amount and
  * the spender are read only once.
  */
-type DecodedCall = { visualizations: HumanizerVisualization[]; warning?: HumanizerWarning }
+type DecodedCall = { visualizations: HumanizerVisualizationItem[]; warning?: HumanizerWarning }
 
 const erc721ApproveSelector = toFunctionSelector(erc721ApproveAbi[0])
 const erc721SetApprovalForAllSelector = toFunctionSelector(erc721SetApprovalForAllAbi[0])
@@ -78,7 +79,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp
   const nftTransferVisualization = (
     call: HexIrCall,
     abi: typeof erc721SafeTransferFromAbi | typeof erc721TransferFromAbi
-  ): HumanizerVisualization[] => {
+  ): HumanizerVisualizationItem[] => {
     if (!call.to) throw Error('Humanizer: should not be in tokens module if !call.to')
     const { args } = decodeFunctionData({ abi, data: padCallData(call.data, 3) })
     const [from, to, tokenId] = args
@@ -170,7 +171,7 @@ export const genericErc721Humanizer: HumanizerCallModule = (accountOp: AccountOp
 
   return {
     ...call,
-    fullVisualization: visualizations,
+    fullVisualization: getLegacyVisualization(visualizations),
     warnings: mergeWarnings(call.warnings, warning ? [warning] : [])
   }
 }
@@ -331,7 +332,7 @@ export const genericErc20Humanizer = (
 
   return {
     ...call,
-    fullVisualization: visualizations,
+    fullVisualization: getLegacyVisualization(visualizations),
     warnings: mergeWarnings(call.warnings, warning ? [warning] : [])
   }
 }

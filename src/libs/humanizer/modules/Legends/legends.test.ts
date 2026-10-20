@@ -3,7 +3,7 @@ import { Interface, Wallet, ZeroAddress } from 'ethers'
 import { describe, it } from '@jest/globals'
 
 import { Legends } from '../../const/abis'
-import { HumanizerVisualization, IrCall } from '../../interfaces'
+import { HumanizerVisualizationItem, IrCall } from '../../interfaces'
 import { compareHumanizerVisualizations } from '../../testHelpers'
 import { getAction, getAddressVisualization, getImage, getLabel } from '../../utils'
 import legendsModule from './index'
@@ -33,7 +33,7 @@ describe('Legends', () => {
       { data: acceptSpecificInvite, to: ONCHAIN_TXNS_LEGENDS_ADDRESS, value: 0n },
       { data: acceptAnyInvitation, to: ONCHAIN_TXNS_LEGENDS_ADDRESS, value: 0n }
     ]
-    const expectedVisualizations: HumanizerVisualization[][] = [
+    const expectedVisualizations: HumanizerVisualizationItem[][] = [
       [
         getAction('Accept invitation'),
         getLabel('from'),

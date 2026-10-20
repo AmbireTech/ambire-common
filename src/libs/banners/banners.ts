@@ -7,7 +7,7 @@ import { Network } from '../../interfaces/network'
 import { SwapAndBridgeActiveRoute } from '../../interfaces/swapAndBridge'
 import { CallsUserRequest, UserRequest } from '../../interfaces/userRequest'
 import { PositionCountOnDisabledNetworks } from '../defiPositions/types'
-import { HumanizerVisualization } from '../humanizer/interfaces'
+import { HumanizerVisualizationItem } from '../humanizer/interfaces'
 import { getIsBridgeRoute, getIsIntentRoute } from '../swapAndBridge/swapAndBridge'
 
 export const getCurrentAccountBanners = (banners: Banner[], selectedAccount?: AccountId) =>
@@ -439,7 +439,7 @@ export const getDefiPositionsOnDisabledNetworksForTheSelectedAccount = ({
   return banners
 }
 
-export function getScamDetectedText(blacklistedItems: HumanizerVisualization[]) {
+export function getScamDetectedText(blacklistedItems: HumanizerVisualizationItem[]) {
   const blacklistedItemsCount = blacklistedItems.length
   const hasScamAddress = blacklistedItems.some((i) => i.type === 'address')
   const hasScamToken = blacklistedItems.some((i) => i.type === 'token')

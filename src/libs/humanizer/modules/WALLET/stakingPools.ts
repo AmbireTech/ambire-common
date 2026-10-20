@@ -1,6 +1,6 @@
 import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 
-import { HumanizerVisualization } from '../../interfaces'
+import { HumanizerVisualizationItem } from '../../interfaces'
 import { HexIrCall, getAction, getAddressVisualization, getLabel, getToken } from '../../utils'
 
 const STAKING_POOLS: { [key: string]: { [key: string]: string } } = {
@@ -32,7 +32,9 @@ const leaveSelector = toFunctionSelector(leaveAbi[0])
 const withdrawSelector = toFunctionSelector(withdrawAbi[0])
 const rageLeaveSelector = toFunctionSelector(rageLeaveAbi[0])
 
-export const StakingPools = (): { [key: string]: (c: HexIrCall) => HumanizerVisualization[] } => {
+export const StakingPools = (): {
+  [key: string]: (c: HexIrCall) => HumanizerVisualizationItem[]
+} => {
   return {
     [enterSelector]: (call: HexIrCall) => {
       if (!call.to) throw Error('Humanizer: should not be in staking humanizer when !call.to')

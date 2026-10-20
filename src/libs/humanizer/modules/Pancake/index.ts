@@ -3,7 +3,7 @@ import { decodeFunctionData, parseAbi, toFunctionSelector } from 'viem'
 import { AccountOp } from '../../../accountOp/accountOp'
 import {
   HumanizerCallModule,
-  HumanizerVisualization,
+  HumanizerVisualizationItem,
   HumanizerWarning,
   IrCall
 } from '../../interfaces'
@@ -18,7 +18,8 @@ import {
   isHexCall,
   isUnlimitedAmount,
   mergeWarnings,
-  padCallData
+  padCallData,
+  getLegacyVisualization
 } from '../../utils'
 
 // This is the Permit2 `approve`, which Pancake's permit contract shares. Permit2 keeps the
@@ -34,7 +35,10 @@ const approveSelector = toFunctionSelector(approveAbi[0])
 const PancakeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
   const matcher: Record<
     string,
-    (call: HexIrCall) => { visualizations: HumanizerVisualization[]; warning?: HumanizerWarning }
+    (call: HexIrCall) => {
+      visualizations: HumanizerVisualizationItem[]
+      warning?: HumanizerWarning
+    }
   > = {
     [approveSelector]: (call) => {
       const { args } = decodeFunctionData({ abi: approveAbi, data: padCallData(call.data, 4) })
@@ -70,7 +74,7 @@ const PancakeModule: HumanizerCallModule = (accOp: AccountOp, call: IrCall) => {
 
   return {
     ...call,
-    fullVisualization: visualizations,
+    fullVisualization: getLegacyVisualization(visualizations),
     warnings: mergeWarnings(call.warnings, warning ? [warning] : [])
   }
 }

@@ -4,7 +4,7 @@ import { PANCAKE_SWAP_PERMIT_2_ADDRESS, PERMIT_2_ADDRESS } from '../../../consts
 import { Message } from '../../../interfaces/userRequest'
 import {
   HumanizerTypedMessageModule,
-  HumanizerVisualization,
+  HumanizerVisualizationItem,
   HumanizerWarning
 } from '../interfaces'
 import {
@@ -191,7 +191,7 @@ export const permit2Module: HumanizerTypedMessageModule = (message: Message) => 
       fullVisualization: [
         getAction('Approve'),
         ...permitVisualizations,
-        getDeadline(tm.message.sigDeadline) as HumanizerVisualization
+        getDeadline(tm.message.sigDeadline) as HumanizerVisualizationItem
       ]
     }
   }
