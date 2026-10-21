@@ -10,6 +10,7 @@ import {
   IAccountsController,
   SafeAccountCreation
 } from '../../interfaces/account'
+import { ErrorRef } from '../../interfaces/eventEmitter'
 import { IFeatureFlagsController } from '../../interfaces/featureFlags'
 import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
@@ -431,9 +432,14 @@ describe('AccountsController updateAccountPreferences replies', () => {
     expect(sendUiMessage).not.toHaveBeenCalled()
   })
 
-  test('replies with the error instead of throwing it when saving fails', async () => {
+  const getLabel = (ctrl: { accounts: Account[] }) =>
+    ctrl.accounts.find((a) => a.addr === ADDR)?.preferences.label
+
+  test('replies with the error and emits it silently when saving fails', async () => {
     const sendUiMessage = jest.fn()
     const { accountsCtrl, storage } = await makeAccountsController({ sendUiMessage })
+    const emittedErrors: ErrorRef[] = []
+    accountsCtrl.onError((error) => emittedErrors.push(error))
     jest.spyOn(storage, 'set').mockRejectedValueOnce(new Error('Storage is full'))
 
     await expect(
@@ -446,26 +452,56 @@ describe('AccountsController updateAccountPreferences replies', () => {
       ok: false,
       error: 'Storage is full'
     })
+    // Silent, as the UI that asked tells the user itself
+    expect(emittedErrors).toHaveLength(1)
+    expect(emittedErrors[0]!.level).toBe('silent')
+    expect(emittedErrors[0]!.error.message).toBe('Storage is full')
   })
 
-  test('throws when saving fails and there is no request to reply to', async () => {
+  test('restores the previous preferences when saving fails', async () => {
+    const { accountsCtrl, storage } = await makeAccountsController({ sendUiMessage: jest.fn() })
+    const otherAddr = accounts[1]!.addr
+    jest.spyOn(storage, 'set').mockRejectedValueOnce(new Error('Storage is full'))
+
+    await accountsCtrl.updateAccountPreferences([{ addr: ADDR, preferences }], 'request-5')
+
+    expect(getLabel(accountsCtrl)).toBe(DEFAULT_ACCOUNT_LABEL)
+    // Accounts that weren't part of the update are left as they are
+    expect(accountsCtrl.accounts.find((a) => a.addr === otherAddr)?.preferences.label).toBe(
+      DEFAULT_ACCOUNT_LABEL
+    )
+  })
+
+  test('shows the error when saving fails and there is no request to reply to', async () => {
     const sendUiMessage = jest.fn()
     const { accountsCtrl, storage } = await makeAccountsController({ sendUiMessage })
+    const emittedErrors: ErrorRef[] = []
+    accountsCtrl.onError((error) => emittedErrors.push(error))
     jest.spyOn(storage, 'set').mockRejectedValueOnce(new Error('Storage is full'))
 
     await expect(
       accountsCtrl.updateAccountPreferences([{ addr: ADDR, preferences }])
-    ).rejects.toThrow('Storage is full')
+    ).resolves.toBeUndefined()
+
     expect(sendUiMessage).not.toHaveBeenCalled()
+    expect(getLabel(accountsCtrl)).toBe(DEFAULT_ACCOUNT_LABEL)
+    expect(emittedErrors).toHaveLength(1)
+    expect(emittedErrors[0]!.level).toBe('major')
   })
 
-  test('throws when saving fails and there is no way to reply', async () => {
+  test('shows the error when saving fails and there is no way to reply', async () => {
     const { accountsCtrl, storage } = await makeAccountsController()
+    const emittedErrors: ErrorRef[] = []
+    accountsCtrl.onError((error) => emittedErrors.push(error))
     jest.spyOn(storage, 'set').mockRejectedValueOnce(new Error('Storage is full'))
 
     await expect(
       accountsCtrl.updateAccountPreferences([{ addr: ADDR, preferences }], 'request-4')
-    ).rejects.toThrow('Storage is full')
+    ).resolves.toBeUndefined()
+
+    expect(getLabel(accountsCtrl)).toBe(DEFAULT_ACCOUNT_LABEL)
+    expect(emittedErrors).toHaveLength(1)
+    expect(emittedErrors[0]!.level).toBe('major')
   })
 
   test('saves without replying when no way to reply was given', async () => {

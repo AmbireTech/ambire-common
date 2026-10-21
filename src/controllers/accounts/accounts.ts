@@ -488,13 +488,19 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
   /**
    * Updates the preferences (label, pfp) of the given accounts and saves them.
-   * When called with a `requestId` (via `dispatchAndWait` in the UI), it replies
-   * once they are saved or failed to save, and leaves handling a failure to the UI.
+   * If saving fails, the previous preferences are restored and the error is emitted.
+   * When called with a `requestId` (via `dispatchAndWait` in the UI), it also replies
+   * once they are saved or failed to save, and the error is emitted silently, as the
+   * UI that asked tells the user instead.
    */
   async updateAccountPreferences(
     accounts: { addr: string; preferences: AccountPreferences }[],
     requestId?: string
   ) {
+    const previousPreferences = new Map(
+      this.accounts.map((acc) => [acc.addr, acc.preferences] as const)
+    )
+
     try {
       this.accounts = this.accounts.map((acc) => {
         const account = accounts.find((a) => a.addr === acc.addr)
@@ -510,15 +516,29 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
       if (requestId) this.#sendUiMessage?.({ requestId, ok: true })
     } catch (error: any) {
-      // Without a request to reply to, rethrown, so the caller handles (and reports) it as before
-      if (!requestId || !this.#sendUiMessage) throw error
-
-      // The UI that asked tells the user and reports it, so rethrowing would do both twice
-      this.#sendUiMessage({
-        requestId,
-        ok: false,
-        error: error?.message || 'updateAccountPreferences failed'
+      // Restores only the accounts this call changed, so the wallet doesn't show names
+      // that were never saved, without undoing other changes made in the meantime
+      this.accounts = this.accounts.map((acc) => {
+        const previous = previousPreferences.get(acc.addr)
+        const wasChanged = accounts.some((a) => a.addr === acc.addr)
+        return wasChanged && previous ? { ...acc, preferences: previous } : acc
       })
+      this.emitUpdate()
+
+      const canReply = !!requestId && !!this.#sendUiMessage
+      this.emitError({
+        level: canReply ? 'silent' : 'major',
+        message: "Couldn't save the account changes. Please try again.",
+        error: error instanceof Error ? error : new Error(String(error))
+      })
+
+      if (canReply) {
+        this.#sendUiMessage?.({
+          requestId,
+          ok: false,
+          error: error?.message || 'updateAccountPreferences failed'
+        })
+      }
     }
   }
 
