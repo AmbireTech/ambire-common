@@ -112,8 +112,8 @@ export type PrivacyPoolsRagequitDeposit = {
 }
 
 /**
- * What everyone's deposits in a pool add up to, as of the chain's last sync. Read from this
- * device's copy of the pool's history (see `readPrivacyPoolsPoolStats`), not asked of anyone.
+ * What everyone's deposits in a pool add up to, as of the chain's last sync. Mostly from this
+ * device's copy of the pool's history, the rest from the pool itself - see `getPrivacyPoolsPoolStats`.
  */
 export type PrivacyPoolsPoolStats = {
   /** What the pool holds: deposits less withdrawals and deposits taken back. */

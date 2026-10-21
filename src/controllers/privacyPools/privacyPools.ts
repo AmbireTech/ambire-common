@@ -2,7 +2,6 @@ import EmittableError from '../../classes/EmittableError'
 import {
   getPrivacyPoolsAsset,
   getPrivacyPoolsChainConfig,
-  getPrivacyPoolsStoreKey,
   isPrivacyPoolsNativeAsset,
   PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY,
   PRIVACY_POOLS_SUPPORTED_CHAIN_IDS
@@ -31,7 +30,6 @@ import { IStorageController } from '../../interfaces/storage'
 import { IUiController, View } from '../../interfaces/ui'
 import { Call } from '../../libs/accountOp/types'
 import { createKohakuStorage } from '../../libs/kohaku/host'
-import { readPrivacyPoolsPoolStats } from '../../libs/privacyPools/poolStats'
 import { fetchPrivacyPoolsPrices, getPrivacyPoolsPriceKey } from '../../libs/privacyPools/prices'
 import {
   createProverFactory,
@@ -39,9 +37,10 @@ import {
   withCancellableProving
 } from '../../libs/privacyPools/prover'
 import EventEmitter from '../eventEmitter/eventEmitter'
-import { getChainConfig, LockGeneration, PhraseScopedModule, PrivacyPoolsContext } from './context'
+import { LockGeneration, PhraseScopedModule, PrivacyPoolsContext } from './context'
 import { PrivacyPoolsDepositParams, PrivacyPoolsDeposits } from './deposits'
 import { privacyPoolsErrors } from './errors'
+import { PrivacyPoolsPoolStatsReader } from './poolStats'
 import { PrivacyPoolsProtocolRegistry } from './protocolRegistry'
 import { PrivacyPoolsRagequit } from './ragequit'
 import { PrivacyPoolsSendFormState } from './sendForm'
@@ -78,9 +77,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
 
   #fetch: Fetch
 
-  /** The SDK's persisted state, shared by all accounts: read for the pools' numbers. */
-  #kohakuStorage: PrivacyPoolsContext['kohakuStorage']
-
   /** Lets the selection move off a removed account. Also fired when a phrase is deleted. */
   #onAccountsRemoved: (seedIds: string[]) => Promise<void>
 
@@ -95,6 +91,8 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   #withdrawal: PrivacyPoolsWithdrawal
 
   #ragequit: PrivacyPoolsRagequit
+
+  #poolStats: PrivacyPoolsPoolStatsReader
 
   #sendForm: PrivacyPoolsSendFormState
 
@@ -188,7 +186,6 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
       emitUpdate: () => this.emitUpdate(),
       emitError: (error) => this.emitError(error)
     }
-    this.#kohakuStorage = ctx.kohakuStorage
     const cancellableProverFactory = withCancellableProving(
       proverFactory ?? createProverFactory(circuitsBaseUrl),
       // Read when a proof starts, by which time the withdrawal module exists. Only withdrawals
@@ -201,6 +198,7 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
     this.#deposits = new PrivacyPoolsDeposits(ctx, this.#registry, this.#sync)
     this.#withdrawal = new PrivacyPoolsWithdrawal(ctx, this.#registry, this.#sync)
     this.#ragequit = new PrivacyPoolsRagequit(ctx, this.#registry, this.#sync)
+    this.#poolStats = new PrivacyPoolsPoolStatsReader(ctx)
     this.#sendForm = new PrivacyPoolsSendFormState(ui)
     this.#phraseScopedModules = [this.#withdrawal, this.#deposits, this.#sync, this.#registry]
 
@@ -674,25 +672,12 @@ export class PrivacyPoolsController extends EventEmitter implements IPrivacyPool
   }
 
   /**
-   * What everyone's deposits in a token's pool add up to, as of the chain's last sync. Read from
-   * this device's copy of the pool's history, shared by all accounts, so it needs no unlocked
-   * phrase and asks nothing of the network. Null before the chain's first sync.
+   * What everyone's deposits in a token's pool add up to, as of the chain's last sync. The same
+   * for all accounts, so it needs no unlocked phrase. Asks the chain only about the pool, once per
+   * sync - see `PrivacyPoolsPoolStatsReader`. Null before the chain's first sync.
    */
   async getPoolStats(chainId: string, tokenAddress: string): Promise<PrivacyPoolsPoolStats | null> {
-    const config = getChainConfig(chainId)
-    const [poolAddress] =
-      Object.entries(config.pools).find(
-        ([, assetAddress]) => assetAddress.toLowerCase() === tokenAddress.toLowerCase()
-      ) || []
-    if (!poolAddress) throw new Error(`privacyPools: no pool for ${tokenAddress} on ${chainId}`)
-
-    const storedState = await this.#kohakuStorage.get(getPrivacyPoolsStoreKey(config))
-
-    return readPrivacyPoolsPoolStats({
-      storedState,
-      poolAddress,
-      blocksPerDay: config.blocksPerDay
-    })
+    return this.#poolStats.get(chainId, tokenAddress)
   }
 
   /** `getPoolStats` for `dispatchAndWait`, as only a token's details screen shows them. */

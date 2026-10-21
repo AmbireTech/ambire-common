@@ -18,6 +18,7 @@ import { IProvidersController } from '../../interfaces/provider'
 import { ISelectedAccountController } from '../../interfaces/selectedAccount'
 import { IUiController, View } from '../../interfaces/ui'
 import { IrCall } from '../../libs/humanizer/interfaces'
+import { getPrivacyPoolsPoolLabels } from '../../libs/privacyPools/poolStats'
 import { PrivacyPoolsProverFactory } from '../../libs/privacyPools/prover'
 import { POOL_RAGEQUIT_INTERFACE } from '../../libs/privacyPools/ragequit'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
@@ -2753,6 +2754,19 @@ describe('PrivacyPoolsController', () => {
 
   describe("a pool's numbers", () => {
     const USDC_POOL = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
+    const POOL_INTERFACE = new Interface([
+      'function SCOPE() view returns (uint256)',
+      'function nonce() view returns (uint256)'
+    ])
+    const BALANCE_INTERFACE = new Interface(['function balanceOf(address) view returns (uint256)'])
+    const SCOPE = 42n
+    // Three deposits made in the ETH pool, the third missing from the history as the SDK drops
+    // deposits that share a precommitment
+    const [LABEL_1, LABEL_2, LABEL_3] = getPrivacyPoolsPoolLabels(SCOPE, 1n, 3n) as [
+      bigint,
+      bigint,
+      bigint
+    ]
     const hex = (value: bigint) => `0x${value.toString(16)}`
     const toEvent = (pool: string, value: bigint, label?: bigint) => [
       hex(value),
@@ -2763,39 +2777,66 @@ describe('PrivacyPoolsController', () => {
         pool: hex(BigInt(pool))
       }
     ]
-
-    beforeEach(() => {
-      storedPoolState = JSON.stringify({
+    const toStoredPoolState = (lastSyncedBlock: bigint) =>
+      JSON.stringify({
         deposits: {
           depositsTuples: [
-            toEvent(ETHEREUM_ETH_POOL, 100n, 1n),
-            toEvent(ETHEREUM_ETH_POOL, 30n, 2n),
-            toEvent(USDC_POOL, 7n, 3n)
+            toEvent(ETHEREUM_ETH_POOL, 100n, LABEL_1),
+            toEvent(ETHEREUM_ETH_POOL, 30n, LABEL_2),
+            toEvent(USDC_POOL, 7n, 99n)
           ]
         },
         withdrawals: { withdrawalsTuples: [toEvent(ETHEREUM_ETH_POOL, 40n)] },
         ragequits: { ragequitsTuples: [] },
-        asp: { leaves: [hex(1n), hex(3n)] },
-        sync: { lastSyncedBlock: hex(1000n) }
+        asp: { leaves: [hex(LABEL_1), hex(LABEL_3), hex(99n)] },
+        sync: { lastSyncedBlock: hex(lastSyncedBlock) }
       })
+
+    /** Answers the pool's reads: its scope, its deposits so far, and what it holds. */
+    const fakePoolCalls = (provider: FakeProvider) => {
+      const call = jest.fn(async ({ to, data }: { to: string; data: string }) => {
+        if (data === POOL_INTERFACE.encodeFunctionData('SCOPE'))
+          // Each pool has its own, so their labels differ
+          return POOL_INTERFACE.encodeFunctionResult('SCOPE', [
+            to.toLowerCase() === ETHEREUM_ETH_POOL ? SCOPE : SCOPE + 1n
+          ])
+        if (data === POOL_INTERFACE.encodeFunctionData('nonce'))
+          return POOL_INTERFACE.encodeFunctionResult('nonce', [
+            to.toLowerCase() === ETHEREUM_ETH_POOL ? 3n : 1n
+          ])
+        if (to.toLowerCase() === USDC)
+          return BALANCE_INTERFACE.encodeFunctionResult('balanceOf', [7n])
+
+        throw new Error(`fakePoolCalls: unexpected call to ${to}`)
+      })
+      const getBalance = jest.fn(async () => 500n)
+      Object.assign(provider, { call, getBalance })
+
+      return { call, getBalance }
+    }
+
+    beforeEach(() => {
+      storedPoolState = toStoredPoolState(1000n)
     })
 
     const prepareSynced = async () => {
       const prepared = await prepareTest()
+      const poolCalls = fakePoolCalls(prepared.providers.providers['1'])
       prepared.selectedAccount.select('seed-a')
       const syncing = prepared.controller.syncChain('1')
       await releaseSync('seed-a')
       await syncing
 
-      return prepared
+      return { ...prepared, ...poolCalls }
     }
 
-    it("reads a token's pool from the synced history, asking the network nothing", async () => {
+    it('reads what the pool holds and its verified deposits from the chain, the rest from the history', async () => {
       const { controller, providers } = await prepareSynced()
 
       await expect(controller.getPoolStats('1', ZERO_ADDRESS)).resolves.toEqual({
-        totalAmount: 90n,
-        approvedDepositsCount: 1,
+        totalAmount: 500n,
+        // Also the third deposit, which the history misses
+        approvedDepositsCount: 2,
         pendingDepositsCount: 1,
         pendingAmount: 30n,
         depositsCount24h: 2,
@@ -2803,24 +2844,46 @@ describe('PrivacyPoolsController', () => {
       })
       await expect(controller.getPoolStats('1', USDC.toUpperCase())).resolves.toMatchObject({
         totalAmount: 7n,
-        approvedDepositsCount: 1
+        approvedDepositsCount: 0
       })
       expect(providers.providers['1'].send).not.toHaveBeenCalled()
     })
 
-    it('needs no selected account, as the history is the same for all', async () => {
+    it('reads the chain once per sync of the history', async () => {
+      const { controller, call, getBalance, selectedAccount } = await prepareSynced()
+
+      await controller.getPoolStats('1', ZERO_ADDRESS)
+      await controller.getPoolStats('1', ZERO_ADDRESS)
+      expect(call).toHaveBeenCalledTimes(2)
+      expect(getBalance).toHaveBeenCalledTimes(1)
+
+      storedPoolState = toStoredPoolState(1001n)
+      selectedAccount.select('seed-b')
+      const syncing = controller.syncChain('1')
+      await releaseSync('seed-b')
+      await syncing
+      await controller.getPoolStats('1', ZERO_ADDRESS)
+
+      expect(call).toHaveBeenCalledTimes(4)
+      expect(getBalance).toHaveBeenCalledTimes(2)
+    })
+
+    it('needs no selected account, as the numbers are the same for all', async () => {
       const { controller, selectedAccount } = await prepareSynced()
       selectedAccount.select(null)
 
       await expect(controller.getPoolStats('1', ZERO_ADDRESS)).resolves.toMatchObject({
-        totalAmount: 90n
+        totalAmount: 500n
       })
     })
 
-    it('has no numbers before the first sync', async () => {
-      const { controller } = await prepareTest()
+    it('has no numbers before the first sync, and asks the chain nothing then', async () => {
+      const { controller, providers } = await prepareTest()
+      const { call, getBalance } = fakePoolCalls(providers.providers['1'])
 
       await expect(controller.getPoolStats('1', ZERO_ADDRESS)).resolves.toBeNull()
+      expect(call).not.toHaveBeenCalled()
+      expect(getBalance).not.toHaveBeenCalled()
     })
 
     it('answers the token details screen, and tells it when it cannot', async () => {
@@ -2832,7 +2895,7 @@ describe('PrivacyPoolsController', () => {
       expect(ui.message.sendUiMessage).toHaveBeenNthCalledWith(1, {
         requestId: 'request-1',
         ok: true,
-        res: expect.objectContaining({ totalAmount: 90n })
+        res: expect.objectContaining({ totalAmount: 500n })
       })
       expect(ui.message.sendUiMessage).toHaveBeenNthCalledWith(2, {
         requestId: 'request-2',
@@ -2841,6 +2904,16 @@ describe('PrivacyPoolsController', () => {
       })
       // Shown in place of the numbers, not as a toast
       expect(controller.emittedErrors.at(-1)?.level).toBe('silent')
+    })
+
+    it('reads the chain again after a failed read', async () => {
+      const { controller, getBalance } = await prepareSynced()
+      getBalance.mockRejectedValueOnce(new Error('RPC down'))
+
+      await expect(controller.getPoolStats('1', ZERO_ADDRESS)).rejects.toThrow('RPC down')
+      await expect(controller.getPoolStats('1', ZERO_ADDRESS)).resolves.toMatchObject({
+        totalAmount: 500n
+      })
     })
 
     it('fails clearly when the stored history is not what it reads', async () => {

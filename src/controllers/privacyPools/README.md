@@ -13,6 +13,7 @@ The controller is the only `EventEmitter`. The work is done by plain classes tha
 | `deposits.ts` | Deposit requirements, the next deposit's precommitment, and prepared and broadcast deposits |
 | `withdrawal.ts` | The operation, the proved-but-unsent withdrawal, and the preparation queue and its cancellation |
 | `ragequit.ts` | Nothing of its own. Lists the deposits still being verified with the account each came from, and builds their public reclaim |
+| `poolStats.ts` | The pools' chain state per sync, and their deposits' labels. Computes a pool's numbers for a token's details |
 | `sendForm.ts` | The Send form, and which view changes leave it |
 | `errors.ts` | The errors the actions throw |
 
@@ -91,5 +92,6 @@ A deposit still being verified can only be taken back publicly, in full, by the 
 
 A token's details show its pool's numbers (what it holds, verified and pending deposits, the last day's deposits and withdrawals), from `getPoolStats` through `dispatchAndWait`.
 
-- **Read locally.** `readPrivacyPoolsPoolStats` computes them from the chain's persisted public state, as of its last synced block, so they are as fresh as the last sync. Never ask 0xBow's API for them: it would learn which pool the user looks at, and its numbers are off-chain.
+- **Mostly read locally.** `getPrivacyPoolsPoolStats` computes them from the chain's persisted public state, as of its last synced block, so they are as fresh as the last sync. Never ask 0xBow's API for them: it would learn which pool the user looks at, and its numbers are off-chain.
+- **What the pool holds and its verified deposits come from the pool.** The SDK keys persisted deposits by precommitment, which some deposits share (822 in the Ethereum ETH pool, from 2025), and keeps only the last of each. So the balance is read from the chain, and verified deposits are counted over every label the pool gave out, derived from its `SCOPE()` and `nonce()` (see `getPrivacyPoolsPoolLabels`). Read once per sync; the labels are kept and only new ones derived.
 - **Pending means unverified for at most 7 days.** On chain a declined deposit looks the same as one waiting, so older unverified deposits are left out, as 0xBow does.
