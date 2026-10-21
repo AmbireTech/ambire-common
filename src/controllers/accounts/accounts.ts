@@ -28,6 +28,7 @@ import { dedicatedToOneSAPriv, IKeystoreController } from '../../interfaces/keys
 import { INetworksController, Network } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { IStorageController } from '../../interfaces/storage'
+import { UiManager } from '../../interfaces/ui'
 import { getUniqueAccountsArray, isAmbireV2Account } from '../../libs/account/account'
 import { normalizeIdentityResponse } from '../../libs/accountPicker/accountPicker'
 import { getAccountState } from '../../libs/accountState/accountState'
@@ -90,6 +91,9 @@ export class AccountsController extends EventEmitter implements IAccountsControl
 
   #featureFlags?: IFeatureFlagsController
 
+  /** Replies to a UI request, so the UI can await the outcome of a method */
+  #sendUiMessage?: UiManager['message']['sendUiMessage']
+
   /**
    * Creating Ambire smart account identity is needed but not critical, user
    * is still able to interact and transfer funds with a smart account one.
@@ -141,7 +145,8 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     relayerUrl: string,
     fetch: Fetch,
     eventEmitterRegistry?: IEventEmitterRegistryController,
-    featureFlags?: IFeatureFlagsController
+    featureFlags?: IFeatureFlagsController,
+    sendUiMessage?: UiManager['message']['sendUiMessage']
   ) {
     super(eventEmitterRegistry)
     this.#storage = storage
@@ -153,6 +158,7 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.#onAccountStateUpdate = onAccountStateUpdate
     this.#callRelayer = relayerCall.bind({ url: relayerUrl, fetch })
     this.#featureFlags = featureFlags
+    this.#sendUiMessage = sendUiMessage
 
     this.#viewOnlyAccountGetIdentityInterval = new RecurringTimeout(
       this.setViewOnlyAccountIdentitiesIfNeeded.bind(this),
@@ -480,18 +486,40 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     this.emitUpdate()
   }
 
-  async updateAccountPreferences(accounts: { addr: string; preferences: AccountPreferences }[]) {
-    this.accounts = this.accounts.map((acc) => {
-      const account = accounts.find((a) => a.addr === acc.addr)
-      if (!account) return acc
-      if (isAddress(account.preferences.pfp)) {
-        account.preferences.pfp = getAddress(account.preferences.pfp)
-      }
-      return { ...acc, preferences: account.preferences }
-    })
+  /**
+   * Updates the preferences (label, pfp) of the given accounts and saves them.
+   * When called with a `requestId` (via `dispatchAndWait` in the UI), it replies
+   * once they are saved or failed to save, and leaves handling a failure to the UI.
+   */
+  async updateAccountPreferences(
+    accounts: { addr: string; preferences: AccountPreferences }[],
+    requestId?: string
+  ) {
+    try {
+      this.accounts = this.accounts.map((acc) => {
+        const account = accounts.find((a) => a.addr === acc.addr)
+        if (!account) return acc
+        if (isAddress(account.preferences.pfp)) {
+          account.preferences.pfp = getAddress(account.preferences.pfp)
+        }
+        return { ...acc, preferences: account.preferences }
+      })
 
-    this.emitUpdate()
-    await this.#storage.set('accounts', this.accounts)
+      this.emitUpdate()
+      await this.#storage.set('accounts', this.accounts)
+
+      if (requestId) this.#sendUiMessage?.({ requestId, ok: true })
+    } catch (error: any) {
+      // Without a request to reply to, rethrown, so the caller handles (and reports) it as before
+      if (!requestId || !this.#sendUiMessage) throw error
+
+      // The UI that asked tells the user and reports it, so rethrowing would do both twice
+      this.#sendUiMessage({
+        requestId,
+        ok: false,
+        error: error?.message || 'updateAccountPreferences failed'
+      })
+    }
   }
 
   /** Saves recovered Safe creation data on an imported account. */
