@@ -817,6 +817,51 @@ describe('RequestsController ', () => {
     expect(controller.userRequests[0]!.kind).toBe('calls')
   })
 
+  describe('build Privacy Pools ragequit request', () => {
+    const DEPOSITOR = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+    const RAGEQUIT_CALL = {
+      to: '0xF241d57C6DebAe225c0F2e6eA1529373C9A9C9fB',
+      value: 0n,
+      data: '0x1234'
+    }
+
+    test('adds the call for the selected account, which made the deposit', async () => {
+      const { controller } = await prepareTest()
+
+      await controller.build({
+        type: 'privacyPoolsRagequitRequest',
+        params: { accountAddr: DEPOSITOR, chainId: 1n, calls: [RAGEQUIT_CALL] }
+      })
+
+      const [request] = controller.userRequests
+      expect(request?.kind).toBe('calls')
+      if (request?.kind !== 'calls') return
+      expect(request.meta.accountAddr).toBe(DEPOSITOR)
+      expect(request.meta.chainId).toBe(1n)
+      expect(request.signAccountOp.accountOp.calls).toEqual([
+        expect.objectContaining(RAGEQUIT_CALL)
+      ])
+    })
+
+    test('adds nothing for an account that is not the selected one', async () => {
+      const { controller } = await prepareTest()
+      const onError = jest.fn()
+      controller.onError(onError)
+
+      await controller.build({
+        type: 'privacyPoolsRagequitRequest',
+        params: {
+          accountAddr: '0xa07D75aacEFd11b425AF7181958F0F85c312f143',
+          chainId: 1n,
+          calls: [RAGEQUIT_CALL]
+        }
+      })
+
+      expect(controller.userRequests).toHaveLength(0)
+      expect(onError).toHaveBeenCalled()
+    })
+  })
+
   test('emits the updated calls when adding another request to a queued batch', async () => {
     const { controller } = await prepareTest()
     const accountAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'

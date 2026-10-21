@@ -53,6 +53,18 @@ export type BuildRequest =
       }
     }
   | {
+      /**
+       * Taking back a Privacy Pools deposit, from the account that made it. That account must be
+       * selected first - see `MainController.privacyPoolsRagequit`.
+       */
+      type: 'privacyPoolsRagequitRequest'
+      params: {
+        accountAddr: string
+        chainId: bigint
+        calls: CallsUserRequest['signAccountOp']['accountOp']['calls']
+      }
+    }
+  | {
       type: 'swapAndBridgeRequest'
       params: {
         openActionWindow: boolean
