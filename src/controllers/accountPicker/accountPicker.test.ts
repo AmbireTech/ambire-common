@@ -4,6 +4,7 @@ import { describe, expect, jest, test } from '@jest/globals'
 
 import { suppressConsole, suppressConsoleBeforeEach } from '../../../test/helpers/console'
 import { makeMainController } from '../../../test/helpers/mainController'
+import * as uiHelpers from '../../../test/helpers/ui'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import {
   BIP44_STANDARD_DERIVATION_TEMPLATE,
@@ -58,6 +59,19 @@ const prepareTest = async () => {
   return {
     controller: mainCtrl.accountPicker
   }
+}
+
+// The picker keeps the `sendUiMessage` it was built with, so the spy goes in before that
+const prepareTestWithUiMessages = async () => {
+  const sendUiMessage = jest.fn()
+  const { mockUiManager } = uiHelpers
+  jest.spyOn(uiHelpers, 'mockUiManager').mockImplementationOnce(() => {
+    const mocked = mockUiManager()
+    mocked.uiManager.message.sendUiMessage = sendUiMessage
+    return mocked
+  })
+
+  return { ...(await prepareTest()), sendUiMessage }
 }
 
 describe('AccountPicker', () => {
@@ -397,6 +411,39 @@ describe('AccountPicker', () => {
       await controller.initIfNotStarted()
 
       expect(controller.readyToAddAccounts.map(({ addr }) => addr)).toEqual([basicAccount.addr])
+    })
+
+    test('should reply with the number of accounts it prepared', async () => {
+      const { controller, sendUiMessage } = await prepareTestWithUiMessages()
+      controller.setInitParams({
+        keyIterator: new KeyIterator(process.env.SEED),
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      await controller.initIfNotStarted('request-prepared')
+
+      expect(sendUiMessage).toHaveBeenCalledWith({
+        requestId: 'request-prepared',
+        ok: true,
+        res: 1
+      })
+    })
+
+    test('should reply with the number of accounts a flow prepared already', async () => {
+      const { controller, sendUiMessage } = await prepareTestWithUiMessages()
+      await controller.prepareAccounts({ accounts: [basicAccount] })
+
+      await controller.initIfNotStarted('request-kept')
+
+      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-kept', ok: true, res: 1 })
+    })
+
+    test('should reply that nothing is prepared without init params', async () => {
+      const { controller, sendUiMessage } = await prepareTestWithUiMessages()
+
+      await controller.initIfNotStarted('request-empty')
+
+      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-empty', ok: true, res: 0 })
     })
 
     test('should keep accounts a flow prepared already', async () => {

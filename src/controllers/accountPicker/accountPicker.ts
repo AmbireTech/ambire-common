@@ -446,11 +446,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    * recovery phrase, a private key), selecting and preparing its next account. A picker
    * started already (hardware wallets, back from the picker) or with prepared accounts keeps
    * what it has. Decided here, as the UI's copy of the state can lag behind the flow that set
-   * it up (mobile holds updates back while a screen transition runs). Replies to `requestId`.
+   * it up (mobile holds updates back while a screen transition runs). Replies to `requestId`
+   * with the number of prepared accounts.
    */
   async initIfNotStarted(requestId?: string) {
     if (!this.initParams || this.isInitialized || this.readyToAddAccounts.length) {
-      this.#replyToRequest(requestId)
+      this.#replyWithPreparedCount(requestId)
       return
     }
 
@@ -460,7 +461,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   /**
    * Starts the picker from `initParams`. With `shouldSelectNextAccountAutomatically` (the
    * flows that go straight to the personalize step) it also selects the next account and
-   * prepares it. Replies to `requestId` once done, so the flow moves on only then.
+   * prepares it. Replies to `requestId` with the number of prepared accounts once done, so
+   * the flow moves on only then.
    */
   async init(requestId?: string) {
     if (!this.initParams) {
@@ -500,7 +502,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     if (!shouldSelectNextAccountAutomatically) {
       await this.forceEmitUpdate()
-      this.#replyToRequest(requestId)
+      this.#replyWithPreparedCount(requestId)
       return
     }
 
@@ -519,7 +521,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     }
 
     this.prepareSelectedAccounts()
-    this.#replyToRequest(requestId)
+    this.#replyWithPreparedCount(requestId)
   }
 
   get type() {
@@ -1130,6 +1132,16 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     if (!requestId) return
 
     this.#sendUiMessage(error ? { requestId, ok: false, error } : { requestId, ok: true })
+  }
+
+  /**
+   * Replies to the UI request with the number of prepared accounts, which the UI waits to see
+   * in its state - the reply can arrive before the update that carries them.
+   */
+  #replyWithPreparedCount(requestId?: string) {
+    if (!requestId) return
+
+    this.#sendUiMessage({ requestId, ok: true, res: this.readyToAddAccounts.length })
   }
 
   #emitCaughtError(error: any, fallbackMessage: string) {
