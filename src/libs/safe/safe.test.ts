@@ -8,6 +8,7 @@ import {
   Interface,
   keccak256,
   solidityPacked,
+  Wallet,
   ZeroAddress,
   zeroPadValue
 } from 'ethers'
@@ -18,11 +19,15 @@ import { buildSafeMessageOrigin, parseSafeMessageOrigin } from './helpers'
 import {
   canHotOwnersMeetSafeThreshold,
   findDeployData,
+  getAlreadySignedOwners,
   getSafeAccountByOwner,
   getSafeDeploymentCall,
   hasCompleteSafeCreationData,
+  isSafeEthSignSignature,
   normalizeSafeGlobalMessage,
-  toCallsUserRequest
+  sortSigs,
+  toCallsUserRequest,
+  toSafeEthSignSignature
 } from './safe'
 
 import type { SafeCreationInfoResponse, SafeInfoResponse } from '@safe-global/api-kit'
@@ -751,5 +756,75 @@ describe('canHotOwnersMeetSafeThreshold', () => {
 
   test('is false when there are no imported owners', () => {
     expect(canHotOwnersMeetSafeThreshold([], 1)).toBe(false)
+  })
+})
+
+describe('Safe signatures over the hash signed as a regular message', () => {
+  const SAFE_TX_HASH = `0x${'5a'.repeat(32)}`
+  // Fixed keys, so the order of their addresses (which Safe requires) is known
+  const firstOwner = new Wallet(`0x${'11'.repeat(32)}`)
+  const secondOwner = new Wallet(`0x${'22'.repeat(32)}`)
+
+  test('marks the signature by raising v to 31/32 and keeps r and s', async () => {
+    const messageSignature = await firstOwner.signMessage(getBytes(SAFE_TX_HASH))
+    const safeSignature = toSafeEthSignSignature(messageSignature)
+    const v = getBytes(messageSignature)[64]!
+
+    expect(safeSignature.slice(0, 130)).toBe(messageSignature.slice(0, 130))
+    expect(getBytes(safeSignature)[64]).toBe(v + 4)
+    expect(isSafeEthSignSignature(safeSignature)).toBe(true)
+    expect(isSafeEthSignSignature(messageSignature)).toBe(false)
+  })
+
+  test('accepts message signatures with a recovery id (0/1) as v', async () => {
+    const messageSignature = await firstOwner.signMessage(getBytes(SAFE_TX_HASH))
+    const bytes = getBytes(messageSignature)
+    const withRecoveryId = concat([bytes.slice(0, 64), new Uint8Array([bytes[64]! - 27])])
+
+    expect(toSafeEthSignSignature(withRecoveryId)).toBe(toSafeEthSignSignature(messageSignature))
+  })
+
+  test('recovers the owner of a signature over the hash signed as a regular message', async () => {
+    const safeSignature = toSafeEthSignSignature(
+      await firstOwner.signMessage(getBytes(SAFE_TX_HASH))
+    )
+
+    expect(getAlreadySignedOwners(safeSignature, SAFE_TX_HASH)).toEqual([firstOwner.address])
+  })
+
+  test('orders mixed signature types by owner address', async () => {
+    const [lower, higher] =
+      BigInt(firstOwner.address) < BigInt(secondOwner.address)
+        ? [firstOwner, secondOwner]
+        : [secondOwner, firstOwner]
+    const hashSignature = lower.signingKey.sign(SAFE_TX_HASH).serialized as Hex
+    const messageSignature = toSafeEthSignSignature(
+      await higher.signMessage(getBytes(SAFE_TX_HASH))
+    )
+
+    const signature = sortSigs([messageSignature, hashSignature], SAFE_TX_HASH)
+
+    expect(signature).toBe(concat([hashSignature, messageSignature]))
+    expect(getAlreadySignedOwners(signature, SAFE_TX_HASH)).toEqual([lower.address, higher.address])
+  })
+
+  test('does not treat a different hash as signed by the owner', async () => {
+    const safeSignature = toSafeEthSignSignature(
+      await firstOwner.signMessage(getBytes(SAFE_TX_HASH))
+    )
+
+    expect(getAlreadySignedOwners(safeSignature, `0x${'6b'.repeat(32)}`)).not.toEqual([
+      firstOwner.address
+    ])
+  })
+
+  test('rejects signatures that are not plain 65-byte message signatures', async () => {
+    const messageSignature = await firstOwner.signMessage(getBytes(SAFE_TX_HASH))
+
+    // already marked, so marking it again would produce an invalid signature type
+    expect(() => toSafeEthSignSignature(toSafeEthSignSignature(messageSignature))).toThrow()
+    expect(() => toSafeEthSignSignature(messageSignature.slice(0, 130))).toThrow()
+    expect(isSafeEthSignSignature(`0x${'00'.repeat(65)}`)).toBe(false)
+    expect(isSafeEthSignSignature(`0x${'00'.repeat(64)}1f00`)).toBe(false)
   })
 })
