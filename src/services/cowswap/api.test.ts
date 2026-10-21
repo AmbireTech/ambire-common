@@ -301,6 +301,16 @@ describe('CowSwapAPI', () => {
     await expect(api.getToken({ address: customTokenAddress, chainId: 1 })).resolves.toBeNull()
   })
 
+  it('rejects a cross-chain quote instead of building an order on the source chain', async () => {
+    const fetch = makeQuoteFetch()
+    const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
+
+    await expect(api.quote({ ...makeQuoteParams(), toChainId: 8453 })).rejects.toThrow(
+      'CoW Swap supports only same-network swaps'
+    )
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('requests a PreSign quote, includes the Ambire fee and returns an intent route', async () => {
     const fetch = makeQuoteFetch()
     const api = new CowSwapAPI({ fetch: fetch as any, apiKey: cowSwapApiKey })
