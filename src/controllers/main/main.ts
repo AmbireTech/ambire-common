@@ -1370,10 +1370,13 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleAccountPickerInitLedger(
-    LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */
+    LedgerKeyIterator: any /* TODO: KeyIterator type mismatch */,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitLedger', async () =>
-      this.#handleAccountPickerInitLedger(LedgerKeyIterator)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitLedger',
+      () => this.#handleAccountPickerInitLedger(LedgerKeyIterator),
+      requestId
     )
   }
 
@@ -1404,10 +1407,13 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleAccountPickerInitTrezor(
-    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */
+    TrezorKeyIterator: any /* TODO: KeyIterator type mismatch */,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitTrezor', async () =>
-      this.#handleAccountPickerInitTrezor(TrezorKeyIterator)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitTrezor',
+      () => this.#handleAccountPickerInitTrezor(TrezorKeyIterator),
+      requestId
     )
   }
 
@@ -1437,10 +1443,13 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   async handleAccountPickerInitLattice(
-    LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
+    LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitLattice', async () =>
-      this.#handleAccountPickerInitLattice(LatticeKeyIterator)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitLattice',
+      () => this.#handleAccountPickerInitLattice(LatticeKeyIterator),
+      requestId
     )
   }
 
@@ -1493,10 +1502,13 @@ export class MainController extends EventEmitter implements IMainController {
 
   async handleAccountPickerInitQr(
     QrKeyIterator: any, // TODO: KeyIterator type mismatch
-    payload: string | Uint8Array
+    payload: string | Uint8Array,
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitQr', async () =>
-      this.#handleAccountPickerInitQr(QrKeyIterator, payload)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitQr',
+      () => this.#handleAccountPickerInitQr(QrKeyIterator, payload),
+      requestId
     )
   }
 
@@ -1536,10 +1548,35 @@ export class MainController extends EventEmitter implements IMainController {
 
   async handleAccountPickerInitNfc(
     NfcKeyIterator: any, // TODO: KeyIterator type mismatch
-    payload: { extendedPublicKey: string; hdPath: string }
+    payload: { extendedPublicKey: string; hdPath: string },
+    requestId?: string
   ) {
-    await this.withStatus('handleAccountPickerInitNfc', async () =>
-      this.#handleAccountPickerInitNfc(NfcKeyIterator, payload)
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitNfc',
+      () => this.#handleAccountPickerInitNfc(NfcKeyIterator, payload),
+      requestId
+    )
+  }
+
+  /**
+   * Sets the account picker up for a hardware wallet under the method's status, and replies
+   * to `requestId` once done, so the connect screen moves on only then - the status alone
+   * is transient and can be missed.
+   */
+  async #setUpPickerForHardwareWallet(
+    callName: keyof typeof STATUS_WRAPPED_METHODS,
+    setUp: () => Promise<void>,
+    requestId?: string
+  ) {
+    let isSetUp = false
+    await this.withStatus(callName, async () => {
+      await setUp()
+      isSetUp = true
+    })
+
+    this.#replyToRequest(
+      requestId,
+      isSetUp ? undefined : 'The hardware wallet could not be connected'
     )
   }
 

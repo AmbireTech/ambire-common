@@ -566,6 +566,43 @@ describe('Main Controller ', () => {
     })
   })
 
+  describe('hardware wallet account picker set up', () => {
+    // The key iterator is environment specific, the picker only keeps it
+    class FakeTrezorKeyIterator {
+      type = 'trezor'
+
+      subType = 'hw'
+    }
+
+    test('sets the picker up and replies to the UI request', async () => {
+      const { mainCtrl } = await makeMainController(undefined, {
+        overrides: { externalSignerControllers: { trezor: { walletSDK: {} } as any } }
+      })
+      await mainCtrl.initialLoadPromise
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+
+      await mainCtrl.handleAccountPickerInitTrezor(FakeTrezorKeyIterator, 'request-hw-1')
+
+      expect(mainCtrl.accountPicker.initParams?.keyIterator).toBeInstanceOf(FakeTrezorKeyIterator)
+      expect(sendUiMessage).toHaveBeenCalledWith({ requestId: 'request-hw-1', ok: true })
+    })
+
+    test('replies with an error when the wallet cannot be set up', async () => {
+      // No Trezor signer in this environment, so setting it up throws
+      const { mainCtrl } = await makeMainController()
+      await mainCtrl.initialLoadPromise
+      const sendUiMessage = jest.spyOn(mainCtrl.ui.message, 'sendUiMessage')
+
+      await mainCtrl.handleAccountPickerInitTrezor(FakeTrezorKeyIterator, 'request-hw-2')
+
+      expect(mainCtrl.accountPicker.initParams).toBeNull()
+      expect(sendUiMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: 'request-hw-2', ok: false })
+      )
+      expect(mainCtrl.statuses.handleAccountPickerInitTrezor).toBe('INITIAL')
+    })
+  })
+
   test('should add accounts and merge the associated keys of the already added accounts', async () => {
     const privilege: [string, string] = [
       '0x699380c785819B2f400cb646b12C4C60b4dc7fcA',
