@@ -464,6 +464,25 @@ describe('Main Controller ', () => {
       expect(prepared!.associatedKeys.some((addr) => keyAddrs.includes(addr))).toBe(true)
     })
 
+    test('adds the key of the prepared account on its own path, even while the picker is on another', async () => {
+      const { mainCtrl, picker, snapshot } = await prepareNewSeedFlow()
+      const before = snapshot()
+      await picker.init()
+      const [prepared] = picker.readyToAddAccounts
+
+      // Added while the picker still shows another derivation path (no going back first)
+      await picker.setHDPathTemplateAndPage({
+        hdPathTemplate: LEGACY_POPULAR_DERIVATION_TEMPLATE,
+        page: 2
+      })
+      await picker.addPreparedAccounts()
+
+      const keyAddrs = mainCtrl.keystore.keys.map((key) => key.addr)
+      expect(prepared!.associatedKeys.some((addr) => keyAddrs.includes(addr))).toBe(true)
+      const newSeed = mainCtrl.keystore.seeds.find(({ id }) => !before.seeds.includes(id))
+      expect(newSeed?.hdPathTemplate).toBe(BIP44_STANDARD_DERIVATION_TEMPLATE)
+    })
+
     test('a flow set up over an abandoned one prepares its own accounts', async () => {
       const { picker } = await prepareNewSeedFlow()
       await picker.init()

@@ -468,12 +468,8 @@ export class MainController extends EventEmitter implements IMainController {
       sendUiMessage: this.ui.message.sendUiMessage,
       /**
        * callback that gets triggered as a finalization step of adding new
-       * accounts via the AccountPickerController.
-       *
-       * VIEW-ONLY ACCOUNTS: In case of changes in this method, make sure these
-       * changes are reflected for view-only accounts as well. Because the
-       * view-only accounts import flow bypasses the AccountPicker, this method
-       * won't click for them.
+       * accounts via the AccountPickerController - for every flow, including the
+       * ones without a key iterator (view-only, Safe, account JSON).
        */
       onAddPreparedAccounts: this.#onAccountPickerSuccess.bind(this)
     })
@@ -996,17 +992,19 @@ export class MainController extends EventEmitter implements IMainController {
   }
 
   /** Writes what the account picker prepared, once the user proceeds from the personalize step. */
-  async #onAccountPickerSuccess({ accounts, keys, accountsToRemove }: PreparedAccounts) {
+  async #onAccountPickerSuccess({
+    accounts,
+    keys,
+    accountsToRemove,
+    hdPathTemplate
+  }: PreparedAccounts) {
     if (this.keystore.isKeyIteratorInitializedWithTempSeed(this.accountPicker.keyIterator))
       await this.keystore.persistTempSeed()
 
     let internalKeys = keys.internal
     const storedSeed = await this.keystore.getKeystoreSeed(this.accountPicker.keyIterator)
     if (storedSeed) {
-      await this.keystore.updateSeed({
-        id: storedSeed.id,
-        hdPathTemplate: this.accountPicker.hdPathTemplate
-      })
+      await this.keystore.updateSeed({ id: storedSeed.id, hdPathTemplate })
 
       internalKeys = internalKeys.map((key) => ({
         ...key,

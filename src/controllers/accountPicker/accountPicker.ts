@@ -61,6 +61,8 @@ export type PreparedAccounts = {
   accounts: Account[]
   keys: ReadyToAddKeys
   accountsToRemove: Account[]
+  /** The derivation path the keys were derived with - none for a flow without a key iterator */
+  hdPathTemplate?: HD_PATH_TEMPLATE_TYPE
 }
 
 /**
@@ -592,8 +594,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   /**
    * Drops the changes made to the selection since it was last prepared - all of it when
    * nothing is prepared - so leaving the picker for the personalize step keeps the
-   * selection in line with the accounts shown there. That includes the derivation path,
-   * which the prepared keys are derived with.
+   * selection in line with the accounts shown there. That includes the derivation path
+   * the selection was made on.
    */
   resetAccountsSelection() {
     this.selectedAccountsFromCurrentSession = [...this.#preparedSelection]
@@ -753,9 +755,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
    * keys of the currently selected accounts.
    */
   retrieveInternalKeysOfSelectedAccounts(
-    selectedAccounts: SelectedAccountForImport[] = this.selectedAccountsFromCurrentSession
+    selectedAccounts: SelectedAccountForImport[] = this.selectedAccountsFromCurrentSession,
+    hdPathTemplate: HD_PATH_TEMPLATE_TYPE | undefined = this.hdPathTemplate
   ) {
-    if (!this.hdPathTemplate) {
+    if (!hdPathTemplate) {
       this.#throwMissingHdPath()
       return []
     }
@@ -767,7 +770,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     return this.keyIterator?.retrieveInternalKeys(
       selectedAccounts,
-      this.hdPathTemplate,
+      hdPathTemplate,
       this.#keystore.keys
     )
   }
@@ -1060,20 +1063,27 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     await this.#onAddPreparedAccounts({
       accounts,
       keys: this.#readyToAddKeys || this.#getKeysOfPreparedSelection(),
-      accountsToRemove: this.#preparedAccountsToRemove
+      accountsToRemove: this.#preparedAccountsToRemove,
+      hdPathTemplate: this.#preparedHdPathTemplate
     })
 
     this.addAccountsStatus = 'SUCCESS'
     await this.forceEmitUpdate()
   }
 
-  /** The keys of the prepared accounts, derived only now as internal ones are private. */
+  /**
+   * The keys of the prepared accounts, derived only now as internal ones are private. On the
+   * path they were prepared on, whatever path the picker has been switched to since.
+   */
   #getKeysOfPreparedSelection(): ReadyToAddKeys {
     if (!this.keyIterator) return { internal: [], external: [] }
 
     if (this.type === 'internal') {
       return {
-        internal: this.retrieveInternalKeysOfSelectedAccounts(this.#preparedSelection),
+        internal: this.retrieveInternalKeysOfSelectedAccounts(
+          this.#preparedSelection,
+          this.#preparedHdPathTemplate
+        ),
         external: []
       }
     }
@@ -1086,7 +1096,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     const nfcWalletType = this.#externalSignerControllers.nfc?.nfcWalletType
 
-    const hdPathTemplate = this.hdPathTemplate as HD_PATH_TEMPLATE_TYPE
+    const hdPathTemplate = this.#preparedHdPathTemplate as HD_PATH_TEMPLATE_TYPE
 
     const external = this.#preparedSelection.flatMap(({ account, accountKeys }) =>
       accountKeys.map(({ addr, index }, i) => ({
@@ -1145,7 +1155,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   }
 
   #emitCaughtError(error: any, fallbackMessage: string) {
-    if (error && 'message' in error && 'level' in error && 'error' in error) {
+    if (error instanceof EmittableError) {
       this.emitError(error)
       return
     }
