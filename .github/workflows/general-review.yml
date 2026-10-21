@@ -67,6 +67,10 @@ jobs:
           getter deriving from ANOTHER controller's state must subscribe to it and call
           `this.propagateUpdate(...)`, or the UI silently goes stale.
         - Getters must be pure: no side effects, no `emitUpdate()`, no expensive compute.
+        - Large data (lists, registries, raw API responses) in public controller state or
+          in a getter listed in `toJSON`: it is re-serialized and sent to the UI on every
+          `emitUpdate()`. Keep it private and expose only the subset the UI needs, or
+          serve it through a method the UI calls with `dispatchAndWait`.
         - Timers/lifecycle: never use raw `setInterval` (use `RecurringTimeout`);
           long-running background loops belong in `ContinuousUpdatesController`; all
           subscriptions, listeners and timers must be cleaned up (leaks accumulate in

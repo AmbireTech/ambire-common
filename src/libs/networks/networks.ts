@@ -443,7 +443,7 @@ export function hasRelayerSupport(network: Network) {
 /**
  * Validates a single network object against some of the Network interface requirements.
  */
-function sanityCheckImportantNetworkProperties(network: Network) {
+export function sanityCheckImportantNetworkProperties(network: Network) {
   if (!network || typeof network !== 'object') return false
 
   if (typeof network.chainId !== 'bigint') return false
@@ -650,7 +650,8 @@ export const getSupportedNetworks = (
   additionalCheck?: {
     chainIds: bigint[]
     reason: string
-  }
+  },
+  allowUndeployedSafeOnChainId?: bigint
 ): SupportedNetworks[] => {
   if (!acc) return []
 
@@ -700,7 +701,10 @@ export const getSupportedNetworks = (
 
   return checkedNetworks.map((n) => {
     const networkAccState = accountStates[acc.addr]?.[n.chainId.toString()]
-    if (!networkAccState || networkAccState.isDeployed) return { ...n }
+    const isSafeSupportedOnNetwork =
+      !networkAccState || networkAccState.isDeployed || n.chainId === allowUndeployedSafeOnChainId
+
+    if (isSafeSupportedOnNetwork) return { ...n }
     return {
       ...n,
       isNotSupported: true,

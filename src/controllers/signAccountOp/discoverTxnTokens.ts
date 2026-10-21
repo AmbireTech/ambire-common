@@ -57,7 +57,7 @@ export async function discoverTxnTokens({
   if (!accountState) return null
 
   const stateOverride = getStateOverride(account, accountOp, accountState)
-  const shouldUseAccessList = getShouldUseAccessListCall(account, !!stateOverride)
+  const shouldUseAccessList = getShouldUseAccessListCall(account, accountState, !!stateOverride)
   const methodCalls: Record<DiscoveryMethod, () => Promise<DiscoveredAssets>> = {
     eth_createAccessList: async () => {
       const addresses = await createAccessListCall(baseAccount, accountOp, network, accountState)

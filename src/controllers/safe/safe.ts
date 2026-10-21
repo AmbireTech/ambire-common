@@ -1,6 +1,6 @@
-import { getAddress, toBeHex } from 'ethers'
+import { getAddress } from 'ethers'
 
-import { FETCH_SAFE_TXNS } from '../../consts/intervals'
+import { FETCH_OTHER_SAFES_PENDING, FETCH_SAFE_TXNS } from '../../consts/intervals'
 import {
   SAFE_API_BATCH_SIZE,
   SAFE_API_TIMEOUT_MS,
@@ -10,6 +10,7 @@ import {
 import { IAccountsController, SafeAccountCreation } from '../../interfaces/account'
 import { IEventEmitterRegistryController, Statuses } from '../../interfaces/eventEmitter'
 import { Hex } from '../../interfaces/hex'
+import { IKeystoreController } from '../../interfaces/keystore'
 import { INetworksController } from '../../interfaces/network'
 import { IProvidersController } from '../../interfaces/provider'
 import { ISafeController, SafeAccountByOwner } from '../../interfaces/safe'
@@ -18,19 +19,23 @@ import {
   ExtendedSafeMessage,
   fetchAllPending,
   fetchExecutedTransactions,
+  findDeployData,
   getApiKit,
   getMessage,
   getSafeAccountByOwner,
   SafeResults
 } from '../../libs/safe/safe'
+import wait from '../../utils/wait'
 import { withTimeout } from '../../utils/with-timeout'
 import EventEmitter from '../eventEmitter/eventEmitter'
 
-import type { SafeCreationInfoResponse, SafeInfoResponse, SafeMessage } from '@safe-global/api-kit'
+import type { SafeInfoResponse, SafeMessage } from '@safe-global/api-kit'
 import type { SafeMultisigConfirmationResponse } from '@safe-global/types-kit'
 
 const SAFE_OWNER_SEARCH_TTL = 5 * 60 * 1000
 const SAFE_OWNER_SEARCH_DEBOUNCE = 3 * 1000
+/** The pause between two requests for pending Safe txns, to stay under the Safe API's rate limit */
+const SAFE_PENDING_REQUEST_PAUSE = 600
 
 export const STATUS_WRAPPED_METHODS = {
   findSafe: 'INITIAL'
@@ -52,12 +57,16 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   #accounts: IAccountsController
 
+  #keystore: IKeystoreController
+
   #providers: IProvidersController
 
   /**
-   * The last time a request to fetch pending Safe txn was made
+   * The last time a request to fetch pending Safe txns was made, per Safe
    */
-  #updatedAt?: { time: number; addr: string }
+  #pendingFetchedAt: Record<string, number> = {}
+
+  #updateOtherSafesPendingCountsPromise?: Promise<void>
 
   #rejectedSafeTxns: string[] = []
 
@@ -72,7 +81,6 @@ export class SafeController extends EventEmitter implements ISafeController {
 
   safeInfo?: SafeAccountCreation & {
     deployedOn: bigint[]
-    version: string
     address: Hex
     owners: Hex[]
     // does the safe need special conditions to send/sign txns
@@ -82,24 +90,34 @@ export class SafeController extends EventEmitter implements ISafeController {
   ownerCurrentlyDisplayingFor?: Hex
   safeOwnerSearches: Record<Hex, SafeOwnerSearch> = {}
 
+  /**
+   * How many txns and messages wait for more owners' signatures, per Safe and chain id. Kept
+   * for all of the user's Safes, so the ones that are not selected have a pending count
+   * without a signing request being built for each of their txns.
+   */
+  pendingCountBySafe: Record<string, Record<string, number>> = {}
+
   constructor({
     eventEmitterRegistry,
     networks,
     providers,
     storage,
-    accounts
+    accounts,
+    keystore
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
     networks: INetworksController
     providers: IProvidersController
     storage: IStorageController
     accounts: IAccountsController
+    keystore: IKeystoreController
   }) {
     super(eventEmitterRegistry)
     this.#networks = networks
     this.#providers = providers
     this.#storage = storage
     this.#accounts = accounts
+    this.#keystore = keystore
     this.initialLoadPromise = this.#load().finally(() => {
       this.initialLoadPromise = undefined
     })
@@ -139,39 +157,38 @@ export class SafeController extends EventEmitter implements ISafeController {
     if (!deployedOn) {
       this.importError = {
         address: safeAddr,
-        message: `The Safe account is not deployed on any of your enabled networks that have Safe support: ${safeNetworks.map((n) => n.name).join(', ')}. Please deploy it from Safe Global on at least one network before continuing`
+        message: `The Safe account isn't active on any of your enabled networks that support Safe: ${safeNetworks.map((n) => n.name).join(', ')}. Please activate it in the Safe app on at least one of them before continuing.`
       }
       return
     }
 
     const apiKit = getApiKit(deployedOn.chainId)
-    const [safeInfo, safeCreationInfo]: [
-      SafeInfoResponse | Error,
-      SafeCreationInfoResponse | Error
-    ] = await Promise.all([
-      apiKit.getSafeInfo(safeAddr).catch((e) => e),
-      apiKit.getSafeCreationInfo(safeAddr).catch((e) => e)
-    ])
-    if (safeInfo instanceof Error || safeCreationInfo instanceof Error) {
+    const provider = this.#providers.providers[deployedOn.chainId.toString()]!
+    const [safeInfo, safeCreation]: [SafeInfoResponse | Error, SafeAccountCreation | Error] =
+      await Promise.all([
+        apiKit.getSafeInfo(safeAddr).catch((e) => e),
+        findDeployData(safeAddr, deployedOn.chainId, provider)
+      ])
+    if (safeInfo instanceof Error) {
       this.importError = {
         address: safeAddr,
         message: 'Failed to retrieve information about the Safe. Please try again'
       }
       return
     }
+    if (safeCreation instanceof Error) {
+      this.importError = {
+        address: safeAddr,
+        message: safeCreation.message
+      }
+      return
+    }
 
-    const setupData = safeCreationInfo.setupData as Hex
     this.safeInfo = {
-      version: safeInfo.version,
+      ...safeCreation,
       address: safeInfo.address as Hex,
       owners: safeInfo.owners as Hex[],
       deployedOn: codes.filter((c) => c.code !== '0x').map((c) => c.chainId),
-      factoryAddr: safeCreationInfo.factoryAddress as Hex,
-      singleton: safeCreationInfo.singleton as Hex,
-      saltNonce: safeCreationInfo.saltNonce
-        ? (toBeHex(BigInt(safeCreationInfo.saltNonce), 32) as Hex)
-        : (toBeHex(0, 32) as Hex),
-      setupData,
       requiresModules: safeInfo.owners.length === 1 && safeInfo.owners[0] === safeNullOwner
     }
   }
@@ -357,26 +374,113 @@ export class SafeController extends EventEmitter implements ISafeController {
     )
   }
 
-  shouldSkipFetchPending(safeAddr: string): boolean {
-    return (
-      !!this.#updatedAt &&
-      this.#updatedAt.addr === safeAddr &&
-      Date.now() - this.#updatedAt.time < FETCH_SAFE_TXNS
-    )
+  shouldSkipFetchPending(safeAddr: string, maxAge = FETCH_SAFE_TXNS): boolean {
+    const fetchedAt = this.#pendingFetchedAt[safeAddr]
+
+    return fetchedAt !== undefined && Date.now() - fetchedAt < maxAge
   }
 
   async fetchPending(
     safeAddr: Hex,
     networks: { chainId: bigint; threshold: number }[]
   ): Promise<SafeResults | null> {
-    this.#updatedAt = {
-      time: Date.now(),
-      addr: safeAddr
-    }
+    this.#pendingFetchedAt[safeAddr] = Date.now()
     const pending = await fetchAllPending(networks, safeAddr)
     if (!pending) return null
 
-    return this.#filterOutHidden(pending, safeAddr)
+    const visiblePending = this.#filterOutHidden(pending, safeAddr)
+    this.#setPendingCounts(safeAddr, visiblePending)
+    return visiblePending
+  }
+
+  #setPendingCounts(safeAddr: string, pending: SafeResults) {
+    const countByChainId = { ...this.pendingCountBySafe[safeAddr] }
+    Object.entries(pending).forEach(([chainId, { txns, messages }]) => {
+      countByChainId[chainId] = txns.length + messages.length
+    })
+
+    // A new object per Safe, so the UI can tell which Safe's counts changed
+    this.pendingCountBySafe = { ...this.pendingCountBySafe, [safeAddr]: countByChainId }
+    this.emitUpdate()
+  }
+
+  /**
+   * Refreshes the pending counts of the user's Safes other than the selected one, whose
+   * pending txns `MainController.fetchSafeTxns` turns into requests instead. A Safe is
+   * skipped while its counts are younger than `FETCH_OTHER_SAFES_PENDING`, and until at least
+   * one of its owners is imported, as without one the user cannot sign what is pending. The
+   * counts of a Safe whose owners were all removed are cleared.
+   */
+  async updateOtherSafesPendingCounts(selectedAccountAddr?: string) {
+    if (this.#updateOtherSafesPendingCountsPromise)
+      return this.#updateOtherSafesPendingCountsPromise
+
+    this.#updateOtherSafesPendingCountsPromise = this.#updateOtherSafesPendingCounts(
+      selectedAccountAddr
+    ).finally(() => {
+      this.#updateOtherSafesPendingCountsPromise = undefined
+    })
+
+    return this.#updateOtherSafesPendingCountsPromise
+  }
+
+  /**
+   * Drops the counts of the Safes that are not selected and no longer have an owner imported,
+   * as they are not refreshed anymore. Forgetting when they were fetched lets an owner that is
+   * imported again bring the count back right away.
+   */
+  #clearCountsOfSafesWithoutOwner(selectedAccountAddr?: string) {
+    const safesWithoutOwner = this.#accounts.accounts.filter(
+      (account) =>
+        !!account.safeCreation &&
+        account.addr !== selectedAccountAddr &&
+        !!this.pendingCountBySafe[account.addr] &&
+        !this.#keystore.getAccountKeys(account).length
+    )
+    if (!safesWithoutOwner.length) return
+
+    const pendingCountBySafe = { ...this.pendingCountBySafe }
+    safesWithoutOwner.forEach(({ addr }) => {
+      delete pendingCountBySafe[addr]
+      delete this.#pendingFetchedAt[addr]
+    })
+    this.pendingCountBySafe = pendingCountBySafe
+    this.emitUpdate()
+  }
+
+  async #updateOtherSafesPendingCounts(selectedAccountAddr?: string) {
+    this.#clearCountsOfSafesWithoutOwner(selectedAccountAddr)
+
+    const safesToUpdate = this.#accounts.accounts.filter(
+      (account) =>
+        !!account.safeCreation &&
+        account.addr !== selectedAccountAddr &&
+        !!this.#keystore.getAccountKeys(account).length &&
+        !this.shouldSkipFetchPending(account.addr, FETCH_OTHER_SAFES_PENDING)
+    )
+    let isFirstRequest = true
+
+    // One chain of one Safe at a time, to stay under the Safe API's rate limit
+    for (const safe of safesToUpdate) {
+      const accountState = await this.#accounts.getOrFetchAccountStates(safe.addr)
+      const deployedChains = this.#networks.networks.filter(
+        ({ chainId }) => accountState?.[chainId.toString()]?.isDeployed
+      )
+
+      for (const { chainId } of deployedChains) {
+        if (!isFirstRequest) await wait(SAFE_PENDING_REQUEST_PAUSE)
+        isFirstRequest = false
+
+        const threshold = accountState[chainId.toString()]?.threshold || 0
+        await this.fetchPending(safe.addr as Hex, [{ chainId, threshold }]).catch((error) => {
+          this.emitError({
+            level: 'silent',
+            message: 'Failed to fetch the pending transactions of a Safe account',
+            error
+          })
+        })
+      }
+    }
   }
 
   async fetchExecuted(

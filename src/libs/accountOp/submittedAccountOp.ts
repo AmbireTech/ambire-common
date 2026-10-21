@@ -67,6 +67,13 @@ export type BalanceChange = Pick<
   balanceChange: bigint
 }
 
+export type NftBalanceChange = {
+  address: string
+  chainId: bigint
+  tokenId: bigint
+  balanceChange: bigint
+}
+
 export interface SubmittedAccountOp extends AccountOp {
   txnId?: string
   nonce: bigint
@@ -78,6 +85,7 @@ export interface SubmittedAccountOp extends AccountOp {
   blockHash?: string
   gasUsed?: string
   balanceChanges?: BalanceChange[]
+  nftBalanceChanges?: NftBalanceChange[]
   balanceChangesFetchRetryCount?: number
 }
 
@@ -115,10 +123,37 @@ export interface SubmittedAccountOpLike
       | 'blockHash'
       | 'gasUsed'
       | 'balanceChanges'
+      | 'nftBalanceChanges'
       | 'balanceChangesFetchRetryCount'
     >,
     Partial<SubmittedAccountOpActionFields> {
   activitySource?: 'internal' | 'external'
+}
+
+/**
+ * Adds to each call of a batch broadcast as one txn per call (`MultipleTxns`) the hash
+ * of its txn. Calls without a txn were not sent (e.g. rejected on the hardware wallet
+ * midway through the batch), so they are marked as rejected.
+ */
+export function getCallsWithTxnIds(
+  submittedAccountOp: SubmittedAccountOp
+): SubmittedAccountOp['calls'] {
+  const txnIds = submittedAccountOp.identifiedBy.identifier.split('-')
+
+  return submittedAccountOp.calls.map((oneCall, i) => {
+    const localCall = { ...oneCall }
+
+    // if there's no tx id, we set it to Rejected and continue.
+    // it means broadcast has failed
+    if (!(i in txnIds)) {
+      localCall.status = AccountOpStatus.Rejected
+      return localCall
+    }
+
+    localCall.txnId = txnIds[i] as Hex
+    localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
+    return localCall
+  })
 }
 
 /**
