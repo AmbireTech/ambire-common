@@ -11,6 +11,7 @@ import { TxnRequest } from '../../interfaces/keystore'
 import { Network } from '../../interfaces/network'
 import { RPCProvider } from '../../interfaces/provider'
 import { getSafeBroadcastTxn } from '../../libs/safe/helpers'
+import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
 import wait from '../../utils/wait'
 import { AccountOp, GasFeePayment, getSignableCalls } from '../accountOp/accountOp'
 import { Call } from '../accountOp/types'
@@ -65,7 +66,7 @@ async function estimateGas(
   from: string,
   call: Call,
   nonce: number,
-  chainId: bigint,
+  network: Network,
   broadcastOption: string,
   op: AccountOp,
   error?: Error,
@@ -92,7 +93,9 @@ async function estimateGas(
       'pending'
     ])
     .catch((e) => e)
-  const callGetNonce = provider.getTransactionCount(from).catch(() => null)
+  const callGetNonce = provider
+    .getTransactionCount(from, getPendingBlockTagIfSupported(network))
+    .catch(() => null)
   const [gasLimit, foundNonce] = await Promise.all([callEstimateGas, callGetNonce])
 
   // imagine a batch with two swaps, 4 txns total. Both swaps have the same from token
@@ -122,13 +125,13 @@ async function estimateGas(
       if (!isGS013 && !isEoaBatch) throw gasLimit
     }
 
-    await waitBeforeRetry(chainId)
+    await waitBeforeRetry(network.chainId)
     return estimateGas(
       provider,
       from,
       call,
       nonce,
-      chainId,
+      network,
       broadcastOption,
       op,
       gasLimit,
@@ -145,6 +148,7 @@ export async function getTxnData(
   op: AccountOp,
   accountState: AccountOnchainState,
   provider: RPCProvider,
+  network: Network,
   broadcastOption: string,
   nonce: number,
   call?: Call
@@ -169,7 +173,7 @@ export async function getTxnData(
       gasFeePayment.paidBy,
       safeData,
       nonce,
-      op.chainId,
+      network,
       broadcastOption,
       op
     )
@@ -214,7 +218,7 @@ export async function getTxnData(
         account.addr,
         call,
         nonce,
-        op.chainId,
+        network,
         broadcastOption,
         op
       )
@@ -237,7 +241,7 @@ export async function getTxnData(
       (op.gasFeePayment as GasFeePayment).paidBy,
       otherEOACall,
       nonce,
-      op.chainId,
+      network,
       broadcastOption,
       op
     )
@@ -270,6 +274,7 @@ export async function buildRawTransaction(
     op,
     accountState,
     provider,
+    network,
     broadcastOption,
     nonce,
     call

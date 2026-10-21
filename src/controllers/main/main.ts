@@ -1774,10 +1774,11 @@ export class MainController extends EventEmitter implements IMainController {
           if (networks.length) {
             // The account state must be updated before the portfolio
             // as the portfolio has internal checks whether the nonce has changed
-            // to decide if to force refetch certain data
+            // to decide if to force refetch certain data.
+            // Pending, because on flashblocks networks the receipt arrives before the latest block has it
             await this.accounts.updateAccountState(
               accountAddr,
-              'latest',
+              'pending',
               networks.map((net) => net.chainId),
               true
             )

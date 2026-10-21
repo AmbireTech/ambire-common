@@ -63,9 +63,12 @@ export async function getAccountState(
     ]
   })
 
+  const resolvedBlockTag =
+    blockTag === 'pending' ? getPendingBlockTagIfSupported(network) : blockTag
+
   async function getEOAsNonce(eoaAccounts: any[]): Promise<{ [addr: string]: number }> {
     const nonces: any = await Promise.all(
-      eoaAccounts.map((addr: string) => provider.getTransactionCount(addr))
+      eoaAccounts.map((addr: string) => provider.getTransactionCount(addr, resolvedBlockTag))
     )
     return Object.assign(
       {},
@@ -97,9 +100,7 @@ export async function getAccountState(
 
   const eoas = accounts.filter((account) => !isSmartAccount(account)).map((account) => account.addr)
   const [accountStateResult, eoaNonces, eoaCodes] = await Promise.all([
-    deploylessAccountState.call('getAccountsState', [args], {
-      blockTag: blockTag === 'pending' ? getPendingBlockTagIfSupported(network) : blockTag
-    }),
+    deploylessAccountState.call('getAccountsState', [args], { blockTag: resolvedBlockTag }),
     getEOAsNonce(eoas).catch((e) => {
       throw new ProviderError({ originalError: e, providerUrl: provider._getConnection()?.url })
     }),

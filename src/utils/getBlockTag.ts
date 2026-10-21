@@ -1,3 +1,4 @@
+import { ETHEREUM_CHAIN_ID, FLASHBLOCKS_CHAIN_IDS } from '../consts/networks'
 import { Network } from '../interfaces/network'
 
 /**
@@ -9,10 +10,15 @@ import { Network } from '../interfaces/network'
  * - simulation not working
  * We decided to use the pending block only on Ethereum
  * and the latest for all other networks. Block time on all other
- * networks is faster than Ethereum so it shouldn't impact the features
+ * networks is faster than Ethereum so it shouldn't impact the features.
+ * The exception is the networks in `FLASHBLOCKS_CHAIN_IDS`, where a receipt
+ * arrives before its block is sealed, so only the pending state already
+ * includes the transaction.
  */
 export function getPendingBlockTagIfSupported(network: Network) {
   if (network.isColibriEnabled) return 'latest'
+  if (network.chainId === ETHEREUM_CHAIN_ID) return 'pending'
+  if (FLASHBLOCKS_CHAIN_IDS.includes(network.chainId)) return 'pending'
 
-  return network.chainId === 1n ? 'pending' : 'latest'
+  return 'latest'
 }

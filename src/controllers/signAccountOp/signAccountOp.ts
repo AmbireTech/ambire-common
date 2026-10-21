@@ -174,6 +174,7 @@ import { BundlerSwitcher } from '../../services/bundlers/bundlerSwitcher'
 import { GasSpeeds } from '../../services/bundlers/types'
 import { failedPaymasters } from '../../services/paymaster/FailedPaymasters'
 import { ZERO_ADDRESS } from '../../services/socket/constants'
+import { getPendingBlockTagIfSupported } from '../../utils/getBlockTag'
 import shortenAddress from '../../utils/shortenAddress'
 import { generateUuid } from '../../utils/uuid'
 import { withTimeout } from '../../utils/with-timeout'
@@ -4091,7 +4092,9 @@ export class SignAccountOpController
       const senderNonce =
         accountOp.eoaNonce !== null && typeof accountOp.eoaNonce !== 'undefined'
           ? Number(accountOp.eoaNonce)
-          : await this.provider.getTransactionCount(senderAddr).catch((e) => e)
+          : await this.provider
+              .getTransactionCount(senderAddr, getPendingBlockTagIfSupported(this.#network))
+              .catch((e) => e)
 
       // @precaution
       if (senderNonce instanceof Error) {

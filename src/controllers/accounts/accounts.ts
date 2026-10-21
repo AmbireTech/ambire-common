@@ -6,6 +6,7 @@ import {
   RecurringTimeout
 } from '../../classes/recurringTimeout/recurringTimeout'
 import { PROXY_AMBIRE_ACCOUNT } from '../../consts/deploy'
+import { FLASHBLOCKS_CHAIN_IDS } from '../../consts/networks'
 import {
   SMART_ACCOUNT_IDENTITY_RETRY_INTERVAL,
   VIEW_ONLY_ACCOUNT_IDENTITY_GET_INTERVAL
@@ -221,10 +222,11 @@ export class AccountsController extends EventEmitter implements IAccountsControl
    * Fetches the on-chain state of one account.
    * - Use `'pending'` when the result must count
    * transactions that are not mined yet, such as the nonce for a new op or a check that stops a
-   * second Safe deployment.
+   * second Safe deployment. Also use it right after a receipt, as on flashblocks networks the
+   * receipt arrives before the latest block has the transaction.
    * - Use `'latest'` for background refreshes and for facts that must already
-   * be mined. `'pending'` differs from `'latest'` only on Ethereum, see
-   * `getPendingBlockTagIfSupported`.
+   * be mined. `'pending'` differs from `'latest'` only on Ethereum and `FLASHBLOCKS_CHAIN_IDS`,
+   * see `getPendingBlockTagIfSupported`.
    * - Pass `force` when a transaction or a nonce error changed the
    * state, so a fetch that started before the call is not enough.
    */
@@ -412,10 +414,17 @@ export class AccountsController extends EventEmitter implements IAccountsControl
     // if the block tag is pending & we already have a state from a newer block,
     // we keep it. We do this because rogue RPCs sometimes mess up the pending state.
     // A pending result from the same block is saved, as the pending block can change
-    // without a new block number.
+    // without a new block number. On flashblocks networks the pending block number lags
+    // the state it reads, so it can't be compared, see FLASHBLOCKS_CHAIN_IDS.
     // Other results need no block check, as the queue saves them in call order
     const current = this.accountStates[addr][chainIdKey]
-    if (blockTag === 'pending' && current && current.currentBlock > accountState.currentBlock) {
+    const isPendingBlockComparable = !FLASHBLOCKS_CHAIN_IDS.includes(BigInt(chainIdKey))
+    if (
+      blockTag === 'pending' &&
+      isPendingBlockComparable &&
+      current &&
+      current.currentBlock > accountState.currentBlock
+    ) {
       return
     }
 

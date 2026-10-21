@@ -281,3 +281,16 @@ export const ARBITRUM_CHAIN_ID = 42161n
 export const SCROLL_CHAIN_ID = 534352n
 export const CITREA_CHAIN_ID = 4114n
 export const ETHEREUM_CHAIN_ID = 1n
+export const BASE_CHAIN_ID = 8453n
+export const WORLD_CHAIN_CHAIN_ID = 480n
+export const UNICHAIN_CHAIN_ID = 130n
+
+/**
+ * Networks whose RPCs serve flashblocks, so a receipt can arrive while the latest block still
+ * misses the transaction and only the pending state includes it. A call at the pending tag can
+ * run in the context of an older sealed block, so `block.number` and `block.timestamp` in it
+ * can lag the state it reads.
+ * Base replaces flashblocks with 200ms blocks in its Denim upgrade, so Base must leave this list
+ * when Denim activates on mainnet: https://docs.base.org/upgrades/denim/migrate-from-flashblocks
+ */
+export const FLASHBLOCKS_CHAIN_IDS = [BASE_CHAIN_ID, WORLD_CHAIN_CHAIN_ID, UNICHAIN_CHAIN_ID]
