@@ -6,6 +6,7 @@ import {
 import { AccountOp } from '../../../accountOp/accountOp'
 import { readPrivacyPoolsDeposit } from '../../../privacyPools/deposit'
 import { PrivacyPoolsPaymasterWithdrawal } from '../../../privacyPools/paymasterWithdrawal'
+import { readPrivacyPoolsRagequit } from '../../../privacyPools/ragequit'
 import {
   HumanizerCallModule,
   HumanizerErc7730Row,
@@ -23,10 +24,30 @@ import {
 /**
  * Shows a Privacy Pools deposit as a send to a Privacy Pools account. The call ties it to the
  * account only by a precommitment, so no account is named.
+ *
+ * Also shows a ragequit, the public reclaim of a deposit still being verified, as getting it back
+ * from Privacy Pools. Only for the pools we know, as the token comes from which pool it is.
  */
 export const privacyPoolsModule: HumanizerCallModule = (accountOp: AccountOp, call: IrCall) => {
   const config = accountOp.chainId ? getPrivacyPoolsChainConfig(accountOp.chainId) : undefined
-  if (!config || call.to?.toLowerCase() !== config.entrypointAddress.toLowerCase()) return call
+  if (!config || !call.to) return call
+
+  const poolAsset = config.pools[call.to.toLowerCase()]
+  if (poolAsset) {
+    const ragequit = readPrivacyPoolsRagequit(call.data)
+    if (!ragequit) return call
+
+    return {
+      ...call,
+      fullVisualization: [
+        getAction('Take back'),
+        getToken(poolAsset, ragequit.amount),
+        getLabel('from Privacy Pools to this account')
+      ]
+    }
+  }
+
+  if (call.to.toLowerCase() !== config.entrypointAddress.toLowerCase()) return call
 
   const deposit = readPrivacyPoolsDeposit({ data: call.data, value: call.value })
   if (!deposit) return call
