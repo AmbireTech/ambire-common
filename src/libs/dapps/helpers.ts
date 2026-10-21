@@ -27,6 +27,18 @@ const normalizeHostname = (hostname: string): string => {
 }
 
 /**
+ * Removes every leading "www." label ("www.www.example.com" -> "example.com"), since no legitimate
+ * domain starts with one and a stacked prefix would otherwise sidestep the dApp id and the
+ * phishing list lookups.
+ */
+const stripLeadingWww = (hostname: string): string => {
+  let start = 0
+  while (hostname.startsWith('www.', start)) start += 4
+
+  return hostname.slice(start)
+}
+
+/**
  * The dApp's canonical hostname, or `null` when the url is not parsable.
  *
  * Normalization deliberately starts from `new URL().hostname` - the parser already lowercases the
@@ -52,7 +64,7 @@ const getDappIdFromUrl = (url: string): string => {
   const hostname = getNormalizedHostnameFromUrl(url)
   if (hostname === null) return url
 
-  return hostname.startsWith('www.') ? hostname.slice(4) : hostname
+  return stripLeadingWww(hostname)
 }
 
 // Safe messages co-signed from another device carry only the dapp name and url
