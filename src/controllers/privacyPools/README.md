@@ -86,3 +86,10 @@ A deposit still being verified can only be taken back publicly, in full, by the 
 - **Depositors are read locally.** `readPrivacyPoolsDepositors` reads them from the chain's persisted public state, which holds every deposit in the pools as synced in bulk. Never use the SDK's `history()` or the pool's `depositors(label)`: both ask the network about single deposits, which tells it which ones are the user's.
 - **The SDK's call is checked** against the deposit (label, amount, and a pool in `PrivacyPoolsChainConfig.pools` holding its token), as the SDK picks the pool and drops a deposit it could not prove for with only a warning.
 - **The account is switched by `MainController.privacyPoolsRagequit`**, which selects the depositor (refusing one not in the wallet or view-only) and adds the call as a regular request.
+
+## Pool stats
+
+A token's details show its pool's numbers (what it holds, verified and pending deposits, the last day's deposits and withdrawals), from `getPoolStats` through `dispatchAndWait`.
+
+- **Read locally.** `readPrivacyPoolsPoolStats` computes them from the chain's persisted public state, as of its last synced block, so they are as fresh as the last sync. Never ask 0xBow's API for them: it would learn which pool the user looks at, and its numbers are off-chain.
+- **Pending means unverified for at most 7 days.** On chain a declined deposit looks the same as one waiting, so older unverified deposits are left out, as 0xBow does.

@@ -149,6 +149,14 @@ export const privacyPoolsErrors = {
       cause,
       'reading the depositors failed'
     ),
+  poolStatsReadFailed: (cause: unknown) =>
+    new EmittableError({
+      // Shown in place of the numbers, so not as a toast
+      message: 'Could not load the numbers of this pool.',
+      level: 'silent',
+      error:
+        cause instanceof Error ? cause : new Error('privacyPools: reading the pool stats failed')
+    }),
   ragequitPreparationFailed: (cause: unknown) =>
     majorError(
       'Could not prepare taking back this deposit. Please try again.',

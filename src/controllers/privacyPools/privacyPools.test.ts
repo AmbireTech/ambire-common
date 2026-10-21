@@ -256,6 +256,8 @@ let notesBySeed: {
  * chain's public state. Null to persist a placeholder instead, as most tests need nothing of it.
  */
 let storedDepositors: { label: bigint; depositor: string }[] | null = null
+/** The chain's public history a sync persists instead of the depositors, when set. */
+let storedPoolState: string | null = null
 /** What `ragequit` returns instead of a call for every note asked for, when set. */
 let ragequitTxns: { to: string; data: string; value: bigint }[] | null = null
 /** Holds `ragequit` until the test releases it, when set. */
@@ -312,7 +314,8 @@ class FakeProtocol {
     if (config)
       await this.host.storage.set(
         getPrivacyPoolsStoreKey(config),
-        storedDepositors ? toStoredState(storedDepositors) : `synced-${Date.now()}`
+        storedPoolState ??
+          (storedDepositors ? toStoredState(storedDepositors) : `synced-${Date.now()}`)
       )
   }
 
@@ -658,6 +661,7 @@ describe('PrivacyPoolsController', () => {
       'seed-b': [{ label: 2n, amount: 20n, approved: false }]
     }
     storedDepositors = null
+    storedPoolState = null
     ragequitTxns = null
     ragequitGate = null
   })
@@ -2744,6 +2748,107 @@ describe('PrivacyPoolsController', () => {
       await buildRagequit(controller, 3n)
 
       expect(prove).toHaveBeenLastCalledWith('commitment', { value: 1n }, { signal: undefined })
+    })
+  })
+
+  describe("a pool's numbers", () => {
+    const USDC_POOL = '0xb419c2867ab3cbc78921660cb95150d95a94ce86'
+    const hex = (value: bigint) => `0x${value.toString(16)}`
+    const toEvent = (pool: string, value: bigint, label?: bigint) => [
+      hex(value),
+      {
+        ...(label === undefined ? {} : { label: hex(label) }),
+        value: hex(value),
+        blockNumber: hex(1000n),
+        pool: hex(BigInt(pool))
+      }
+    ]
+
+    beforeEach(() => {
+      storedPoolState = JSON.stringify({
+        deposits: {
+          depositsTuples: [
+            toEvent(ETHEREUM_ETH_POOL, 100n, 1n),
+            toEvent(ETHEREUM_ETH_POOL, 30n, 2n),
+            toEvent(USDC_POOL, 7n, 3n)
+          ]
+        },
+        withdrawals: { withdrawalsTuples: [toEvent(ETHEREUM_ETH_POOL, 40n)] },
+        ragequits: { ragequitsTuples: [] },
+        asp: { leaves: [hex(1n), hex(3n)] },
+        sync: { lastSyncedBlock: hex(1000n) }
+      })
+    })
+
+    const prepareSynced = async () => {
+      const prepared = await prepareTest()
+      prepared.selectedAccount.select('seed-a')
+      const syncing = prepared.controller.syncChain('1')
+      await releaseSync('seed-a')
+      await syncing
+
+      return prepared
+    }
+
+    it("reads a token's pool from the synced history, asking the network nothing", async () => {
+      const { controller, providers } = await prepareSynced()
+
+      await expect(controller.getPoolStats('1', ZERO_ADDRESS)).resolves.toEqual({
+        totalAmount: 90n,
+        approvedDepositsCount: 1,
+        pendingDepositsCount: 1,
+        pendingAmount: 30n,
+        depositsCount24h: 2,
+        withdrawalsCount24h: 1
+      })
+      await expect(controller.getPoolStats('1', USDC.toUpperCase())).resolves.toMatchObject({
+        totalAmount: 7n,
+        approvedDepositsCount: 1
+      })
+      expect(providers.providers['1'].send).not.toHaveBeenCalled()
+    })
+
+    it('needs no selected account, as the history is the same for all', async () => {
+      const { controller, selectedAccount } = await prepareSynced()
+      selectedAccount.select(null)
+
+      await expect(controller.getPoolStats('1', ZERO_ADDRESS)).resolves.toMatchObject({
+        totalAmount: 90n
+      })
+    })
+
+    it('has no numbers before the first sync', async () => {
+      const { controller } = await prepareTest()
+
+      await expect(controller.getPoolStats('1', ZERO_ADDRESS)).resolves.toBeNull()
+    })
+
+    it('answers the token details screen, and tells it when it cannot', async () => {
+      const { controller, ui } = await prepareSynced()
+
+      await controller.getPoolStatsAndSendResToUi('1', ZERO_ADDRESS, 'request-1')
+      await controller.getPoolStatsAndSendResToUi('1', DEPOSITOR, 'request-2')
+
+      expect(ui.message.sendUiMessage).toHaveBeenNthCalledWith(1, {
+        requestId: 'request-1',
+        ok: true,
+        res: expect.objectContaining({ totalAmount: 90n })
+      })
+      expect(ui.message.sendUiMessage).toHaveBeenNthCalledWith(2, {
+        requestId: 'request-2',
+        ok: false,
+        error: 'Could not load the numbers of this pool.'
+      })
+      // Shown in place of the numbers, not as a toast
+      expect(controller.emittedErrors.at(-1)?.level).toBe('silent')
+    })
+
+    it('fails clearly when the stored history is not what it reads', async () => {
+      // Synced with a placeholder where the chain's public state goes
+      storedPoolState = null
+      const { controller } = await prepareSynced()
+
+      await expect(controller.getPoolStats('1', ZERO_ADDRESS)).rejects.toThrow()
     })
   })
 
