@@ -40,6 +40,11 @@ export type PrivacyPoolsChainConfig = {
   sagaSyncUrl?: string
   /** The ERC-4337 paymaster for withdrawals. Without it, withdrawals are unavailable. */
   paymaster?: PrivacyPoolsPaymasterConfig
+  /**
+   * Pool address (lowercase) to the wallet's address of the asset it holds. Only calls to these are
+   * shown as Privacy Pools calls, and only their deposits can be taken back from the wallet.
+   */
+  pools: { [poolAddress: string]: Hex }
   /** In the order the UI offers them. */
   assets: PrivacyPoolsAsset[]
 }
@@ -90,6 +95,18 @@ export type PrivacyPoolsNote = {
   tokenAddress: string
   amount: bigint
   approval: PrivacyPoolsApprovalStatus
+}
+
+/**
+ * A deposit still being verified. Only the account it was made from can take it back, publicly and
+ * in full (ragequit).
+ */
+export type PrivacyPoolsRagequitDeposit = {
+  label: bigint
+  /** What goes back: the whole deposit, as nothing of it can have been sent yet. */
+  amount: bigint
+  /** The address the deposit was made from, the only one it can go back to. */
+  depositorAddr: Hex
 }
 
 /** Notes summed per token. Only `approvedAmount` can be withdrawn. */

@@ -135,5 +135,34 @@ export const privacyPoolsErrors = {
       error: sdkError
     }),
   withdrawalNotReady: () =>
-    expectedError('There is no transfer ready to send.', 'no prepared withdrawal')
+    expectedError('There is no transfer ready to send.', 'no prepared withdrawal'),
+
+  // Rage quit
+  ragequitDepositNotFound: () =>
+    expectedError(
+      'This deposit can no longer be taken back. It may have been verified or taken back already.',
+      'no pending note with that label'
+    ),
+  ragequitDepositsReadFailed: (cause: unknown) =>
+    majorError(
+      'Could not load your deposits that are being verified. Please try again.',
+      cause,
+      'reading the depositors failed'
+    ),
+  ragequitPreparationFailed: (cause: unknown) =>
+    majorError(
+      'Could not prepare taking back this deposit. Please try again.',
+      cause,
+      'ragequit preparation failed'
+    ),
+  ragequitDepositorNotInWallet: () =>
+    expectedError(
+      'This deposit was made from an account that is not in your wallet. Add that account to take the deposit back.',
+      'the depositor is not a wallet account'
+    ),
+  ragequitDepositorViewOnly: () =>
+    expectedError(
+      'This deposit was made from an account you can only view. Import its key to take the deposit back.',
+      'the depositor is view-only'
+    )
 }

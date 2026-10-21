@@ -12,6 +12,7 @@ The controller is the only `EventEmitter`. The work is done by plain classes tha
 | `sync.ts` | The sync queue, the first read of each chain's shared state, account states (notes), and sync epochs |
 | `deposits.ts` | Deposit requirements, the next deposit's precommitment, and prepared and broadcast deposits |
 | `withdrawal.ts` | The operation, the proved-but-unsent withdrawal, and the preparation queue and its cancellation |
+| `ragequit.ts` | Nothing of its own. Lists the deposits still being verified with the account each came from, and builds their public reclaim |
 | `sendForm.ts` | The Send form, and which view changes leave it |
 | `errors.ts` | The errors the actions throw |
 
@@ -28,9 +29,10 @@ Modules never get the controller. They get a `PrivacyPoolsContext` (see `context
 ```
 registry ← sync ← deposits
                 ← withdrawal
+                ← ragequit
 ```
 
-They never see which account is selected: the controller resolves it and passes `seedId`. When two modules share state, the controller wires it. For example, the registry's prover reads the withdrawal's proving signal through a callback.
+They never see which account is selected: the controller resolves it and passes `seedId`. When two modules share state, the controller wires it. For example, the registry's prover reads the withdrawal's proving signal through a callback, for the 'withdraw' circuit only, so a ragequit's proof is never cancelled with a withdrawal.
 
 ## Lock and account removal
 
@@ -76,3 +78,11 @@ Updates are sent from one place, so the same rules hold for every module:
 - **The account list** is stored under `PRIVACY_POOLS_ACCOUNTS_STORAGE_KEY`.
 - **The plugins' state** (pool history and notes) is stored by the SDK under `privacyPoolsState`. All plugins share one storage adapter (`kohakuStorage`). Adapters per plugin would overwrite each other's progress.
 - **Deposits and withdrawals are not persisted**, as a local log would link a deposit to its withdrawal.
+
+## Ragequit
+
+A deposit still being verified can only be taken back publicly, in full, by the account that made it (the pool checks `msg.sender`). Verified deposits are sent from the Privacy Pools account instead, so they are never offered.
+
+- **Depositors are read locally.** `readPrivacyPoolsDepositors` reads them from the chain's persisted public state, which holds every deposit in the pools as synced in bulk. Never use the SDK's `history()` or the pool's `depositors(label)`: both ask the network about single deposits, which tells it which ones are the user's.
+- **The SDK's call is checked** against the deposit (label, amount, and a pool in `PrivacyPoolsChainConfig.pools` holding its token), as the SDK picks the pool and drops a deposit it could not prove for with only a warning.
+- **The account is switched by `MainController.privacyPoolsRagequit`**, which selects the depositor (refusing one not in the wallet or view-only) and adds the call as a regular request.
