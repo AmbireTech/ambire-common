@@ -13,11 +13,16 @@ import {
   SCHEDULED_PORTFOLIO_UPDATE_DELAY,
   SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL
 } from '../../consts/intervals'
-import { ETHEREUM_CHAIN_ID, INVICTUS_RPC_URL_IDENTIFIER } from '../../consts/networks'
+import {
+  ETHEREUM_CHAIN_ID,
+  FLASHBLOCKS_CHAIN_IDS,
+  INVICTUS_RPC_URL_IDENTIFIER
+} from '../../consts/networks'
 import {
   DEFAULT_STALE_RPC_BLOCK_THRESHOLD,
   ETHEREUM_STALE_RPC_BLOCK_THRESHOLD,
-  getDiscoveryTimeout
+  getDiscoveryTimeout,
+  NON_NATIVE_BLOCK_NUMBER_GAP
 } from '../../consts/portfolio'
 import {
   Account,
@@ -2492,6 +2497,10 @@ export class PortfolioController
       // However, we already handle this on the UI level (showing a warning + an option for a manual refresh),
       // so we are not interested in reporting it.
       if (hasCriticalError) continue
+
+      if (expectedMinBlock - portfolioBlock > NON_NATIVE_BLOCK_NUMBER_GAP) continue
+      // The portfolio block lags the state it reads there, see FLASHBLOCKS_CHAIN_IDS
+      if (FLASHBLOCKS_CHAIN_IDS.includes(BigInt(chainKey))) continue
 
       if (portfolioBlock < expectedMinBlock) {
         const message =

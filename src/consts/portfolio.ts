@@ -7,6 +7,13 @@ export const DEFAULT_STALE_RPC_BLOCK_THRESHOLD = 10
 export const ETHEREUM_STALE_RPC_BLOCK_THRESHOLD = 2
 
 /**
+ * A gap between the portfolio block and an Activity receipt block that no lagging RPC can explain.
+ * On Arbitrum and Orbit chains `block.number` in a call is the parent chain's block number, so
+ * the portfolio block can be millions of blocks below the receipt block.
+ */
+export const NON_NATIVE_BLOCK_NUMBER_GAP = 1_000_000
+
+/**
  * How long a request to our own APIs is given. Enough for the token prices, which come back in
  * a few hundred milliseconds - see `getDiscoveryTimeout` for the one request this is too tight
  * for.
