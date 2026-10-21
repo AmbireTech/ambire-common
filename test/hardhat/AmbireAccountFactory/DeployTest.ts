@@ -1,8 +1,8 @@
 import { ethers } from 'hardhat'
 
 import { keccak256, toUtf8Bytes } from 'ethers'
-import { getProxyDeployBytecode } from '../../src/libs/proxyDeploy/deploy'
-import { wrapEthSign, wrapTypedData } from '../ambireSign'
+import { getProxyDeployBytecode } from '../../../src/libs/proxyDeploy/deploy'
+import { wrapEthSign, wrapTypedData } from '../../ambireSign'
 import {
   addressFour,
   addressOne,
@@ -12,8 +12,8 @@ import {
   deployGasLimit,
   deploySalt,
   expect
-} from '../config'
-import { getAmbireAccountAddress } from '../implementations'
+} from '../../config'
+import { getAmbireAccountAddress } from '../../implementations'
 
 const abiCoder = new ethers.AbiCoder()
 

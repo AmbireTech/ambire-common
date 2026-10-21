@@ -15,6 +15,8 @@ export const BLACKLIST_UPDATE_INTERVAL = 8 * 60 * 60 * 1000 // 8 hrs
 export const PHISHING_INACTIVE_UPDATE_INTERVAL = 6 * 60 * 60 * 1000 // 6 hrs
 export const PHISHING_ACTIVE_UPDATE_INTERVAL = 15 * 60 * 1000 // 15 minutes
 export const PHISHING_FAILED_TO_GET_UPDATE_INTERVAL = 600000 // 10 minutes
+// Longer than the 60s timeout of the list download, so that a domain check waits for its outcome
+export const PHISHING_LIST_WAIT_TIMEOUT = 70 * 1000 // 70 seconds
 export const TRENDING_TOKENS_ACTIVE_UPDATE_INTERVAL = 10 * 60 * 1000 // 10 minutes
 export const TRENDING_TOKENS_INACTIVE_UPDATE_INTERVAL = 4 * 60 * 60 * 1000 // 4 hours
 export const TRENDING_TOKENS_FAILED_UPDATE_INTERVAL = 60 * 1000 // 1 minute

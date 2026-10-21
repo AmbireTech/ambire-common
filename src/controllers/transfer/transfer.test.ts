@@ -3,6 +3,7 @@ import { formatUnits, getAddress, Interface, ZeroAddress } from 'ethers'
 import { afterEach, beforeEach, expect, jest } from '@jest/globals'
 
 import { makeMainController } from '../../../test/helpers/mainController'
+import EmittableError from '../../classes/EmittableError'
 import { DEFAULT_ACCOUNT_LABEL } from '../../consts/account'
 import { FEE_COLLECTOR } from '../../consts/addresses'
 import { networks } from '../../consts/networks'
@@ -45,15 +46,29 @@ const getTokens = () => {
   return structuredClone(ETHEREUM_TOKENS.concat(POLYGON_TOKENS))
 }
 
-const prepareTest = async () => {
+// An account of the wallet that no key in the keystore can sign for (view-only), used as a recipient
+const VIEW_ONLY_RECIPIENT_ADDRESS = '0x5Be214147EA1AE3653f289E17fE7Dc17A73AD175'
+const viewOnlyRecipientAccount = {
+  addr: VIEW_ONLY_RECIPIENT_ADDRESS,
+  initialPrivileges: [],
+  associatedKeys: [VIEW_ONLY_RECIPIENT_ADDRESS],
+  creation: null,
+  preferences: {
+    label: 'View-only recipient',
+    pfp: VIEW_ONLY_RECIPIENT_ADDRESS
+  }
+}
+
+const prepareTest = async (extraAccounts: (typeof viewOnlyRecipientAccount)[] = []) => {
   const { mainCtrl } = await makeMainController(async (storageCtrl) => {
-    await storageCtrl.set('accounts', [account])
+    await storageCtrl.set('accounts', [account, ...extraAccounts])
     await storageCtrl.set('selectedAccount', account.addr)
   })
-  await mainCtrl.selectedAccount.setAccount(account)
+  await mainCtrl.selectedAccount.select({ account })
   mainCtrl.transfer.resetForm()
 
   return {
+    mainCtrl,
     transferController: mainCtrl.transfer,
     tokens: getTokens(),
     uiCtrl: mainCtrl.ui,
@@ -330,6 +345,90 @@ describe('Transfer Controller', () => {
       amount: transferController.maxAmount
     })
   })
+  test('should require hold-to-proceed and explain it when the recipient is a view-only account', async () => {
+    const { transferController } = await prepareTest([viewOnlyRecipientAccount])
+
+    await transferController.update({
+      addressState: {
+        fieldValue: VIEW_ONLY_RECIPIENT_ADDRESS,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    const { recipientAddress } = transferController.validationFormMsgs
+    expect(transferController.isRecipientAddressViewOnly).toBe(true)
+    // A hold without a message was the bug: the user saw a green text next to a hold button
+    expect(recipientAddress.shouldHold).toBe(true)
+    expect(recipientAddress.severity).toBe('warning')
+    expect(recipientAddress.message).toContain('view-only')
+    expect(transferController.toJSON().validationFormMsgs.recipientAddress.shouldHold).toBe(true)
+  })
+
+  test('should keep the hold for a view-only recipient after the user agrees to send to an unknown address', async () => {
+    const { transferController } = await prepareTest([viewOnlyRecipientAccount])
+
+    await transferController.update({
+      addressState: {
+        fieldValue: VIEW_ONLY_RECIPIENT_ADDRESS,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+    await transferController.update({ isRecipientAddressUnknownAgreed: true })
+
+    expect(transferController.validationFormMsgs.recipientAddress.shouldHold).toBe(true)
+  })
+
+  test('should release the hold for an unknown recipient after the user agrees, without changing the message', async () => {
+    const { transferController } = await prepareTest()
+
+    await transferController.update({
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    const beforeAgreeing = { ...transferController.validationFormMsgs.recipientAddress }
+    expect(transferController.isRecipientAddressViewOnly).toBe(false)
+    expect(beforeAgreeing.shouldHold).toBe(true)
+
+    await transferController.update({ isRecipientAddressUnknownAgreed: true })
+
+    const afterAgreeing = transferController.validationFormMsgs.recipientAddress
+    expect(afterAgreeing.shouldHold).toBeFalsy()
+    expect(afterAgreeing.message).toBe(beforeAgreeing.message)
+  })
+
+  test('should not require a hold or block when the recipient is a smart contract', async () => {
+    const { transferController } = await prepareTest()
+
+    await transferController.update({
+      addressState: {
+        fieldValue: XWALLET_ADDRESS,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    const { recipientAddress } = transferController.validationFormMsgs
+    // The error disables the buttons of the form, so there is nothing to hold
+    expect(recipientAddress.severity).toBe('error')
+    expect(recipientAddress.shouldHold).toBeFalsy()
+  })
+
+  test('should not require a hold when there is no recipient yet', async () => {
+    const { transferController } = await prepareTest()
+
+    expect(transferController.validationFormMsgs.recipientAddress.shouldHold).toBeFalsy()
+  })
+
   test('should allow proceeding with a Colibri-verified ENS recipient', async () => {
     const { transferController, tokens } = await prepareTest()
     const domain = '0xbobby.eth'
@@ -431,6 +530,152 @@ describe('Transfer Controller', () => {
     const { transferController } = await prepareTest()
 
     expect(transferController.toJSON()).toBeDefined()
+  })
+})
+
+describe('Transfer Controller - Privacy Pools recipient', () => {
+  const PRIVACY_POOLS_SEED_ID = 'privacy-pools-seed'
+  const ETH_DEPOSIT_LIMITS = { minimumDepositAmount: 10n ** 16n }
+
+  /** A transfer screen open on a portfolio with ETH on Ethereum and POL on Polygon. */
+  const prepareOpenTransfer = async () => {
+    const context = await prepareTest()
+    const { mainCtrl, uiCtrl, selectedAccountCtrl } = context
+
+    // The limits come from the chain, which the tests do not reach
+    let depositAssetConfigs = {}
+    jest
+      .spyOn(mainCtrl.privacyPools, 'depositAssetConfigs', 'get')
+      .mockImplementation(() => depositAssetConfigs)
+    jest.spyOn(mainCtrl.privacyPools, 'loadDepositAssetConfig').mockImplementation(async () => {
+      depositAssetConfigs = { [`1:${ZeroAddress}`]: ETH_DEPOSIT_LIMITS }
+      return ETH_DEPOSIT_LIMITS
+    })
+
+    selectedAccountCtrl.portfolio = {
+      ...selectedAccountCtrl.portfolio,
+      tokens: getTokens(),
+      isReadyToVisualize: true,
+      isAllReady: true
+    }
+    uiCtrl.addView({
+      id: 'popup',
+      type: 'popup',
+      currentRoute: 'dashboard',
+      isReady: false,
+      searchParams: {}
+    })
+    uiCtrl.updateView('popup', { currentRoute: 'transfer', isReady: true, searchParams: {} })
+
+    return context
+  }
+
+  test('offers only the tokens a Privacy Pools account accepts', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    expect(transferController.tokens.some(({ chainId }) => chainId === 137n)).toBe(true)
+
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+
+    expect(
+      transferController.tokens.map(({ chainId, address }) => `${chainId}:${address}`)
+    ).toEqual([`1:${ZeroAddress}`])
+    expect(transferController.selectedToken?.chainId).toBe(1n)
+    expect(transferController.selectedToken?.address).toBe(ZeroAddress)
+  })
+
+  test('drops the typed address and every check that is about one', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    // Already a token the account accepts, so picking the account does not change it
+    await transferController.update({
+      selectedToken: transferController.tokens.find(
+        ({ chainId, address }) => chainId === 1n && address === ZeroAddress
+      )
+    })
+    await transferController.update({
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+    const programmaticUpdateCounterBefore = transferController.programmaticUpdateCounter
+
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+
+    expect(transferController.addressState.fieldValue).toBe('')
+    // So the field drops what was typed, instead of disagreeing with the controller
+    expect(transferController.programmaticUpdateCounter).not.toBe(programmaticUpdateCounterBefore)
+    expect(transferController.isRecipientAddressUnknown).toBe(false)
+    expect(transferController.isRecipientAddressFirstTimeSend).toBe(false)
+    expect(transferController.validationFormMsgs.recipientAddress.severity).toBe('success')
+  })
+
+  test('typing an address goes back to sending to an address', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+
+    await transferController.update({
+      addressState: {
+        fieldValue: PLACEHOLDER_RECIPIENT,
+        resolvedAddress: '',
+        resolvedAddressType: null,
+        isDomainResolving: false
+      }
+    })
+
+    expect(transferController.privacyPoolsRecipient).toBeNull()
+    expect(transferController.tokens.some(({ chainId }) => chainId === 137n)).toBe(true)
+  })
+
+  test('refuses an amount below what a Privacy Pools account accepts', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+
+    await transferController.update({ amount: '0.005' })
+
+    expect(transferController.validationFormMsgs.amount.severity).toBe('error')
+    expect(transferController.validationFormMsgs.amount.message).toContain('at least 0.01 ETH')
+    expect(transferController.isFormValid).toBe(false)
+  })
+
+  test('shows why the transfer cannot be prepared next to the form', async () => {
+    const { mainCtrl, transferController } = await prepareOpenTransfer()
+    const buildDepositCalls = jest
+      .spyOn(mainCtrl.privacyPools, 'buildDepositCalls')
+      .mockRejectedValue(
+        new EmittableError({
+          message: 'Your previous transfer to this Privacy Pools account is still being confirmed.',
+          level: 'expected',
+          error: new Error('pending deposit')
+        })
+      )
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+
+    await transferController.update({ amount: '0.012' })
+
+    expect(buildDepositCalls).toHaveBeenCalledWith({
+      seedId: PRIVACY_POOLS_SEED_ID,
+      accountAddr: account.addr,
+      chainId: '1',
+      tokenAddress: ZeroAddress,
+      amount: 12n * 10n ** 15n
+    })
+    expect(transferController.privacyPoolsDepositError).toBe(
+      'Your previous transfer to this Privacy Pools account is still being confirmed.'
+    )
+    expect(transferController.isPreparingPrivacyPoolsDeposit).toBe(false)
+    expect(transferController.signAccountOpController).toBeNull()
+  })
+
+  test('resetting the form goes back to sending to an address', async () => {
+    const { transferController } = await prepareOpenTransfer()
+    await transferController.update({ privacyPoolsRecipient: PRIVACY_POOLS_SEED_ID })
+
+    transferController.resetForm()
+
+    expect(transferController.privacyPoolsRecipient).toBeNull()
+    expect(transferController.hasPersistedState).toBe(false)
   })
 })
 
@@ -1307,6 +1552,20 @@ describe('Transfer Controller NFT mode', () => {
     expect(transferController.selectedChainId).toBe(1n)
     expect(destroy).not.toHaveBeenCalled()
     expect(transferController.signAccountOpController).toBe(signAccountOpController)
+  })
+
+  test('should not allow sending an NFT to a Privacy Pools account', async () => {
+    const { transferController } = await enterTransfer()
+
+    await transferController.update({ privacyPoolsRecipient: 'privacy-pools-seed' })
+
+    expect(transferController.selectedNft).not.toBeNull()
+    expect(transferController.selectedToken).toBeNull()
+    expect(transferController.validationFormMsgs.recipientAddress).toEqual({
+      severity: 'error',
+      message: "NFTs can't be sent to a Privacy Pools account. Choose a different recipient."
+    })
+    expect(transferController.isFormValid).toBe(false)
   })
 
   test('should block sending the NFT to its own collection contract', async () => {

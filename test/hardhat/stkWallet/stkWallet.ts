@@ -4,7 +4,7 @@ import { expect } from 'chai'
 import { Contract, MaxUint256, solidityPackedKeccak256 } from 'ethers'
 import { ethers, network } from 'hardhat'
 
-import { ERC20 } from '../../src/libs/humanizer/const/abis'
+import { ERC20 } from '../../../src/libs/humanizer/const/abis'
 
 describe.skip('stkWallet', () => {
   let signer: any

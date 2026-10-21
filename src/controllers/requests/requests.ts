@@ -2741,7 +2741,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     recipientAddress,
     recipientDomain,
     selectedToken,
-    executionType = 'open-request-window'
+    executionType = 'open-request-window',
+    privacyPoolsSeedId
   }: {
     amount: string
     amountInFiat: bigint
@@ -2749,6 +2750,7 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     recipientDomain: string | undefined
     selectedToken: TokenResult
     executionType: RequestExecutionType
+    privacyPoolsSeedId?: string
   }) {
     await this.initialLoadPromise
     if (!this.#selectedAccount.account) return
@@ -2756,15 +2758,30 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     const baseAcc = await this.#getTransferBaseAccount(selectedToken.chainId)
     if (!baseAcc) return
 
-    const callsRequestParams = getTransferRequestParams({
-      selectedAccount: this.#selectedAccount.account.addr,
-      amount,
-      amountInFiat,
-      selectedToken,
-      recipientAddress,
-      paymasterService: getAmbirePaymasterService(baseAcc, this.#relayerUrl),
-      recipientDomain
-    })
+    const paymasterService = getAmbirePaymasterService(baseAcc, this.#relayerUrl)
+    // A transfer to a Privacy Pools account is a deposit
+    const callsRequestParams = privacyPoolsSeedId
+      ? {
+          calls: await this.#transfer.buildPrivacyPoolsDepositCalls({
+            seedId: privacyPoolsSeedId,
+            selectedToken,
+            amount
+          }),
+          meta: {
+            chainId: selectedToken.chainId,
+            accountAddr: this.#selectedAccount.account.addr,
+            paymasterService
+          }
+        }
+      : getTransferRequestParams({
+          selectedAccount: this.#selectedAccount.account.addr,
+          amount,
+          amountInFiat,
+          selectedToken,
+          recipientAddress,
+          paymasterService,
+          recipientDomain
+        })
 
     if (!callsRequestParams) {
       this.emitError({
