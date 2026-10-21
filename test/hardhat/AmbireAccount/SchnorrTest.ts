@@ -2,9 +2,9 @@ import { ethers } from 'hardhat'
 
 import Schnorrkel, { Key } from '@borislav.itskov/schnorrkel.js'
 
-import { getRawTypedDataFinalDigest, wrapSchnorr } from '../ambireSign'
-import { abiCoder, AmbireAccount, chainId, expect, pk1, pk2, validSig } from '../config'
-import { deployAmbireAccountHardhatNetwork } from '../implementations'
+import { getRawTypedDataFinalDigest, wrapSchnorr } from '../../ambireSign'
+import { abiCoder, AmbireAccount, chainId, expect, pk1, pk2, validSig } from '../../config'
+import { deployAmbireAccountHardhatNetwork } from '../../implementations'
 
 /**
  * Generate the multisig address that will have permissions to sign

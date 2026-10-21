@@ -148,7 +148,9 @@ describe('Hidden ambire operations', () => {
     const irCalls = [secondLayerTryCatch].map((c) =>
       embeddedAmbireOperationHumanizer(accountOp, c, {} as HumanizerMeta)
     )
-    compareHumanizerVisualizations(irCalls, [[getAction('Allow multiple actions from this account')]])
+    compareHumanizerVisualizations(irCalls, [
+      [getAction('Allow multiple actions from this account')]
+    ])
     expect(irCalls[0]!.warnings).toEqual([
       getWarning(
         'This lets the app perform several actions using your account, one after another, without asking you to confirm each one separately. Only proceed if you trust it',

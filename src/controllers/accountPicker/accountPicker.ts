@@ -66,6 +66,13 @@ export type PreparedAccounts = {
 }
 
 /**
+ * Whether the account on the page is a basic (non-linked, non-smart) account
+ * that is not imported yet with the same keys - the kind that gets added automatically.
+ */
+const isNewBasicAccount = ({ isLinked, account, importStatus }: AccountOnPage) =>
+  importStatus !== ImportStatus.ImportedWithTheSameKeys && !isLinked && !isSmartAccount(account)
+
+/**
  * Account Picker Controller
  * is responsible for listing accounts that can be selected for adding.
  * It uses a KeyIterator interface allow iterating all the keys in a specific
@@ -509,7 +516,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     }
 
     try {
-      await this.selectNextAccount()
+      // Every key the user entered gets added, when their number is limited (private keys)
+      if (this.keyIterator.keysCount === undefined) await this.selectNextAccount()
+      else await this.#selectAllNewAccounts(this.keyIterator.keysCount)
     } catch (error: any) {
       this.#replyToRequest(requestId, error?.message || 'Finding the next account failed')
       this.#emitCaughtError(error, 'Finding the next account failed. Please try again.')
@@ -916,12 +925,10 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
           (acc) => acc.account.usedOnNetworks?.length
         )
 
-        // If at least one account is used - preselect all accounts on the page
-        // (except the linked ones). Usually there are are two accounts
-        // (since the private key flow gas `pageSize` of 1)
-        if (usedAccounts.length) {
-          accountsOnPageWithoutTheLinked.forEach((acc) => this.selectAccount(acc.account))
-        }
+        // Preselect every used account on the page (except the linked ones). Each private key
+        // gets its own account, so an unused key is not selected just because another one on
+        // the same page (bulk import) is used.
+        usedAccounts.forEach((acc) => this.selectAccount(acc.account))
       }
     } catch (e: any) {
       if (this.#isSetPageRequestCancelled(requestId, page)) return
@@ -1196,24 +1203,24 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
         })
       }
 
-      nextAccount = this.accountsOnPage.find(
-        ({ isLinked, account, importStatus }) =>
-          importStatus !== ImportStatus.ImportedWithTheSameKeys &&
-          !isLinked &&
-          !isSmartAccount(account)
-      )?.account
+      nextAccount = this.accountsOnPage.find(isNewBasicAccount)?.account
 
       if (nextAccount) {
         this.selectAccount(nextAccount)
         break
       }
 
+      // A key iterator with a limited number of keys (e.g. a list of private keys) returns an
+      // empty page after its last key, so there is no next account to look for
+      if (!this.accountsOnPage.length) break
+
       // If no account found on the page, move to the next page
       currentPage++
     }
 
-    // Should never happen
-    if (!nextAccount && this.isInitialized) {
+    // Should never happen, unless every key of a key iterator with a limited number
+    // of keys (e.g. a list of private keys) is already imported
+    if (!nextAccount && this.isInitialized && this.keyIterator?.keysCount === undefined) {
       const message = 'accountPicker: selectNextAccount called, but no next account found.'
       this.emitError({ message, level: 'silent', error: new Error(message) })
     }
@@ -1223,6 +1230,30 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     this.selectNextAccountStatus = 'INITIAL'
     await this.forceEmitUpdate()
+  }
+
+  /**
+   * Selects every account that is not imported yet, out of a key iterator with
+   * a limited number of keys (e.g. a list of private keys), all loaded on one page.
+   */
+  async #selectAllNewAccounts(keysCount: number) {
+    await this.setPage({
+      page: DEFAULT_PAGE,
+      pageSize: keysCount,
+      shouldGetAccountsUsedOnNetworks: false,
+      shouldSearchForLinkedAccounts: false
+    })
+    if (this.pageError) {
+      throw new EmittableError({
+        message: this.pageError,
+        level: 'major',
+        error: new Error(this.pageError)
+      })
+    }
+
+    this.accountsOnPage
+      .filter(isNewBasicAccount)
+      .forEach(({ account }) => this.selectAccount(account))
   }
 
   removeNetworkData(chainId: bigint) {

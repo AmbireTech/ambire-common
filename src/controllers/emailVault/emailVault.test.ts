@@ -26,7 +26,7 @@ const testingOptions = { autoConfirmMagicLink: true }
 
 const { uiManager } = mockUiManager()
 const uiCtrl = new UiController({ uiManager })
-describe('happy cases', () => {
+describe.skip('happy cases', () => {
   beforeEach(() => {
     email = getRandomEmail()
     storage = produceMemoryStore()

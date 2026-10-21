@@ -163,7 +163,7 @@ describe('Activity Controller ', () => {
         )
       )
     }))
-    await mainCtrl.selectedAccount.setAccount(ACCOUNTS[1]!)
+    await mainCtrl.selectedAccount.select({ account: ACCOUNTS[1]! })
   })
 
   // Clear activity storage after each test
@@ -1213,7 +1213,7 @@ describe('Activity Controller ', () => {
     })
 
     // test('`Unknown but past nonce` status is set correctly', async () => {
-    //   await selectedAccountCtrl.setAccount(ACCOUNTS[0])
+    //   await selectedAccountCtrl.select({ account: ACCOUNTS[0] })
     //   await accountsCtrl.updateAccountState('0xa07D75aacEFd11b425AF7181958F0F85c312f143')
     //   const controller = new ActivityController(
     //     storageCtrl,

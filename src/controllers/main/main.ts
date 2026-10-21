@@ -36,6 +36,7 @@ import { KeystoreController } from '@/controllers/keystore/keystore'
 import { NetworksController } from '@/controllers/networks/networks'
 import { PhishingController } from '@/controllers/phishing/phishing'
 import { PortfolioController } from '@/controllers/portfolio/portfolio'
+import { PrivacyPoolsController } from '@/controllers/privacyPools/privacyPools'
 import { ProvidersController } from '@/controllers/providers/providers'
 import { RequestsController } from '@/controllers/requests/requests'
 import { SafeController } from '@/controllers/safe/safe'
@@ -82,8 +83,8 @@ import { IMainController, STATUS_WRAPPED_METHODS } from '@/interfaces/main'
 import { AddNetworkRequestParams, INetworksController, Network } from '@/interfaces/network'
 import { IPhishingController } from '@/interfaces/phishing'
 import { Platform } from '@/interfaces/platform'
-import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { IPortfolioController } from '@/interfaces/portfolio'
+import { IPrivacyPoolsController } from '@/interfaces/privacyPools'
 import { IProvidersController } from '@/interfaces/provider'
 import { IRequestsController } from '@/interfaces/requests'
 import { ISafeController } from '@/interfaces/safe'
@@ -103,14 +104,16 @@ import { IWalletTokenController } from '@/interfaces/walletToken'
 import { getDefaultSelectedAccount } from '@/libs/account/account'
 import { AccountOp } from '@/libs/accountOp/accountOp'
 import {
+  getCallsWithTxnIds,
   getDappIdentifier,
   isIdentifiedByUserOpHash,
   SubmittedAccountOp
 } from '@/libs/accountOp/submittedAccountOp'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { HumanizerMeta } from '@/libs/humanizer/interfaces'
-import { KeyIterator } from '@/libs/keyIterator/keyIterator'
+import { KeyIterator, MAX_BULK_PRIVATE_KEYS } from '@/libs/keyIterator/keyIterator'
 import { getAccountKeysCount } from '@/libs/keys/keys'
+import { PrivacyPoolsProverFactory } from '@/libs/privacyPools/prover'
 import { BindedRelayerCall, relayerCall } from '@/libs/relayerCall/relayerCall'
 import { SafeResults, toCallsUserRequest, toSigMessageUserRequests } from '@/libs/safe/safe'
 import { isNetworkReady } from '@/libs/selectedAccount/selectedAccount'
@@ -118,6 +121,7 @@ import { CowSwapAPI } from '@/services/cowswap/api'
 import { LiFiAPI } from '@/services/lifi/api'
 import { paymasterFactory } from '@/services/paymaster'
 import { SocketV3API } from '@/services/socketv3/api'
+import { AmbireIdbDatabase } from '@/services/storage/idbDatabase'
 import { SwapProviderParallelExecutor } from '@/services/swapIntegrators/swapProviderParallelExecutor'
 import { UniswapAPI } from '@/services/uniswap/api'
 import { getHdPathFromTemplate } from '@/utils/hdPath'
@@ -212,6 +216,8 @@ export class MainController extends EventEmitter implements IMainController {
 
   selectedAccount: ISelectedAccountController
 
+  privacyPools: IPrivacyPoolsController
+
   requests: IRequestsController
 
   banner: IBannerController
@@ -256,6 +262,8 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners,
     externalSignerControllers,
     uiManager,
+    privacyPoolsCircuitsBaseUrl,
+    privacyPoolsProverFactory,
     idb
   }: {
     eventEmitterRegistry?: IEventEmitterRegistryController
@@ -273,6 +281,10 @@ export class MainController extends EventEmitter implements IMainController {
     keystoreSigners: Partial<{ [key in Key['type']]: KeystoreSignerType }>
     externalSignerControllers: ExternalSignerControllers
     uiManager: UiManager
+    /** Base URL of the Privacy Pools circuit artifacts, a build asset only the platform knows. */
+    privacyPoolsCircuitsBaseUrl: string
+    /** Where to generate Privacy Pools proofs if not here - see `PrivacyPoolsController`. */
+    privacyPoolsProverFactory?: PrivacyPoolsProverFactory
     idb?: AmbireIdbDatabase
   }) {
     super(eventEmitterRegistry)
@@ -427,6 +439,21 @@ export class MainController extends EventEmitter implements IMainController {
       autoLogin: this.autoLogin,
       banner: this.banner,
       ui: this.ui
+    })
+
+    this.privacyPools = new PrivacyPoolsController({
+      eventEmitterRegistry,
+      keystore: this.keystore,
+      featureFlags: this.featureFlags,
+      networks: this.networks,
+      providers: this.providers,
+      selectedAccount: this.selectedAccount,
+      storage: this.storage,
+      ui: this.ui,
+      fetch: this.fetch,
+      circuitsBaseUrl: privacyPoolsCircuitsBaseUrl,
+      proverFactory: privacyPoolsProverFactory,
+      onAccountsRemoved: (seedIds) => this.#onPrivacyPoolsAccountsRemoved(seedIds)
     })
 
     this.portfolio = new PortfolioController(
@@ -658,6 +685,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.erc7730,
       this.contractInfo,
       platform,
+      this.privacyPools,
       eventEmitterRegistry
     )
     this.domains = new DomainsController({
@@ -909,6 +937,13 @@ export class MainController extends EventEmitter implements IMainController {
 
     await this.survey.initialLoadPromise
 
+    await this.privacyPools.initialLoadPromise
+    // The restored Privacy Pools account may be gone, removed with its recovery phrase mid-load
+    const { privacyPoolsAccountId } = this.selectedAccount
+    if (privacyPoolsAccountId && !this.#hasPrivacyPoolsAccount(privacyPoolsAccountId)) {
+      await this.#selectFallbackAccount()
+    }
+
     this.isReady = true
     this.emitUpdate()
   }
@@ -929,14 +964,7 @@ export class MainController extends EventEmitter implements IMainController {
     await this.withStatus('selectAccount', async () => this.#selectAccount(toAccountAddr), true)
   }
 
-  async #selectAccount(toAccountAddr: string | null) {
-    if (!toAccountAddr) {
-      await this.selectedAccount.setAccount(null)
-
-      this.emitUpdate()
-      return
-    }
-
+  async #selectAccount(toAccountAddr: string) {
     const accountToSelect = this.accounts.accounts.find((acc) => acc.addr === toAccountAddr)
     if (!accountToSelect) {
       console.error(`Account with address ${toAccountAddr} does not exist`)
@@ -944,20 +972,8 @@ export class MainController extends EventEmitter implements IMainController {
     }
 
     this.isOffline = false
-    // call closeRequestWindow while still on the currently selected account to allow proper
-    // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
-    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
-      // Switching accounts is the user acting on the wallet, not refusing the apps that
-      // happened to be waiting, so it must not count towards the spam detection.
-      await this.requests.closeRequestWindow({ isUserInitiated: false })
-    }
-    const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
-      ({ kind }) => kind === 'swapAndBridge'
-    )
-    if (swapAndBridgeSigningRequest) {
-      await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
-    }
-    await this.selectedAccount.setAccount(accountToSelect)
+    await this.#leaveSelectedAccount()
+    await this.selectedAccount.select({ account: accountToSelect })
     // Update reverse lookup data and ENS expiry
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
     this.domains.reverseLookup(toAccountAddr, true, {
@@ -980,15 +996,142 @@ export class MainController extends EventEmitter implements IMainController {
       maxDataAgeMsUnused: 60 * 60 * 1000
     })
 
+    await this.#forceEmitSelectedAccountUpdates(toAccountAddr)
+  }
+
+  /** Pushes the selected account's getters to the UI. `accountAddr` is null for a Privacy Pools one. */
+  async #forceEmitSelectedAccountUpdates(accountAddr: string | null) {
+    const accountScopedUpdates = accountAddr
+      ? [
+          this.activity.onSelectedAccountChange(accountAddr),
+          this.dapps.onSelectedAccountChange(accountAddr)
+        ]
+      : [this.activity.forceEmitUpdate()]
+
     // forceEmitUpdate to update the getters in the FE state of the ctrls
     await Promise.all([
-      this.activity.onSelectedAccountChange(toAccountAddr),
+      ...accountScopedUpdates,
       this.requests.forceEmitUpdate(),
       this.addressBook.forceEmitUpdate(),
       this.swapAndBridge.forceEmitUpdate(),
-      this.dapps.onSelectedAccountChange(toAccountAddr),
       this.forceEmitUpdate()
     ])
+  }
+
+  /** Cleans up after the selected account, before another one of either kind is selected. */
+  async #leaveSelectedAccount() {
+    // call closeRequestWindow while still on the currently selected account to allow proper
+    // state cleanup of the controllers like requestsCtrl, signAccountOpCtrl, signMessageCtrl...
+    if (this.requests.currentUserRequest?.kind !== 'switchAccount') {
+      // Switching accounts is the user acting on the wallet, not refusing the apps that
+      // happened to be waiting, so it must not count towards the spam detection.
+      await this.requests.closeRequestWindow({ isUserInitiated: false })
+    }
+    const swapAndBridgeSigningRequest = this.requests.visibleUserRequests.find(
+      ({ kind }) => kind === 'swapAndBridge'
+    )
+    if (swapAndBridgeSigningRequest) {
+      await this.requests.removeUserRequests([swapAndBridgeSigningRequest.id])
+    }
+  }
+
+  #hasPrivacyPoolsAccount(seedId: string) {
+    return this.privacyPools.accounts.some((account) => account.seedId === seedId)
+  }
+
+  /** Adds the Privacy Pools account of a stored recovery phrase and selects it. */
+  async addPrivacyPoolsAccount(seedId: string) {
+    await this.initialLoadPromise
+
+    // Wrapped as a whole, so a refused account is shown to the user
+    await this.withStatus(
+      'selectAccount',
+      async () => {
+        await this.privacyPools.addAccount(seedId)
+        await this.#selectPrivacyPoolsAccount(seedId)
+      },
+      true
+    )
+  }
+
+  /**
+   * Creates a recovery phrase with only a Privacy Pools account on it, and selects it. The phrase
+   * is stored as not backed up, so the UI asks for a backup: the only way to recover the funds.
+   */
+  async addPrivacyPoolsAccountFromNewSeed({ extraEntropy }: { extraEntropy?: string }) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'selectAccount',
+      async () => {
+        const seedId = await this.keystore.addGeneratedSeed({ extraEntropy })
+        await this.privacyPools.addAccount(seedId)
+        await this.#selectPrivacyPoolsAccount(seedId)
+      },
+      true
+    )
+  }
+
+  async selectPrivacyPoolsAccount(seedId: string) {
+    await this.initialLoadPromise
+
+    await this.withStatus(
+      'selectAccount',
+      async () => this.#selectPrivacyPoolsAccount(seedId),
+      true
+    )
+  }
+
+  /**
+   * Selects a Privacy Pools account, leaving no regular account selected. Apps are not told: what
+   * they should see then is undecided, so they keep their account.
+   */
+  async #selectPrivacyPoolsAccount(seedId: string) {
+    if (!this.#hasPrivacyPoolsAccount(seedId)) {
+      this.emitError({
+        level: 'major',
+        message: 'The account you selected could not be found. Please select another account.',
+        error: new Error('main: the Privacy Pools account to select does not exist')
+      })
+      return
+    }
+
+    await this.#leaveSelectedAccount()
+    await this.selectedAccount.select({ privacyPoolsSeedId: seedId })
+    this.swapAndBridge.reset()
+    this.transfer.reset({ destroyAccountOp: true })
+
+    await this.#forceEmitSelectedAccountUpdates(null)
+  }
+
+  /**
+   * Once the selected account is gone, selects the first regular account, else the first Privacy
+   * Pools account, else nothing (signed out).
+   */
+  async #selectFallbackAccount() {
+    const [firstAccount] = this.accounts.accounts
+    if (firstAccount) {
+      await this.#selectAccount(firstAccount.addr)
+      return
+    }
+
+    const [firstPrivacyPoolsAccount] = this.privacyPools.accounts
+    if (firstPrivacyPoolsAccount) {
+      await this.#selectPrivacyPoolsAccount(firstPrivacyPoolsAccount.seedId)
+      return
+    }
+
+    await this.selectedAccount.select(null)
+    this.emitUpdate()
+  }
+
+  async #onPrivacyPoolsAccountsRemoved(seedIds: string[]) {
+    const { privacyPoolsAccountId } = this.selectedAccount
+    if (!privacyPoolsAccountId || !seedIds.includes(privacyPoolsAccountId)) return
+    // Still loading: `#load` makes the same check once ready
+    if (!this.isReady) return
+
+    await this.#selectFallbackAccount()
   }
 
   /** Writes what the account picker prepared, once the user proceeds from the personalize step. */
@@ -1033,23 +1176,7 @@ export class MainController extends EventEmitter implements IMainController {
     const isBasicAccountBroadcastingMultiple =
       submittedAccountOp.identifiedBy.type === 'MultipleTxns'
     if (isBasicAccountBroadcastingMultiple) {
-      const txnIds = submittedAccountOp.identifiedBy.identifier.split('-')
-      const calls = submittedAccountOp.calls.map((oneCall, i) => {
-        const localCall = { ...oneCall }
-
-        // if there's no tx id, we set it to Rejected and continue.
-        // it means broadcast has failed
-        if (!(i in txnIds)) {
-          localCall.status = AccountOpStatus.Rejected
-          return localCall
-        }
-
-        localCall.txnId = txnIds[i] as Hex
-        localCall.status = AccountOpStatus.BroadcastedButNotConfirmed
-        return localCall
-      })
-
-      submittedAccountOp.calls = calls
+      submittedAccountOp.calls = getCallsWithTxnIds(submittedAccountOp)
     }
 
     if (accountOp.meta?.swapTxn) {
@@ -1081,6 +1208,8 @@ export class MainController extends EventEmitter implements IMainController {
 
     this.swapAndBridge.handleUpdateActiveRouteOnSubmittedAccountOpStatusUpdate(submittedAccountOp)
     await this.activity.addAccountOp(submittedAccountOp)
+    // Every deposit into a Privacy Pools account, however signed, is broadcast through here
+    this.privacyPools.onAccountOpBroadcast(submittedAccountOp)
     await this.ui.notification.create({
       title:
         // different count can happen only on isBasicAccountBroadcastingMultiple
@@ -1415,6 +1544,46 @@ export class MainController extends EventEmitter implements IMainController {
     )
   }
 
+  async #handleAccountPickerInitOneKey(
+    OneKeyKeyIterator: any, // TODO: KeyIterator type mismatch
+    preferredDeviceId?: string
+  ) {
+    try {
+      const oneKeyCtrl = this.#externalSignerControllers.onekey
+
+      if (!oneKeyCtrl?.connect) {
+        const message =
+          'Could not initialize connection with your OneKey device. Please try again later or contact Ambire support.'
+        throw new EmittableError({ message, level: 'major', error: new Error(message) })
+      }
+
+      await oneKeyCtrl.connect(preferredDeviceId)
+
+      const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
+      await this.accountPicker.setInitParams({
+        keyIterator: new OneKeyKeyIterator({ controller: oneKeyCtrl }),
+        hdPathTemplate,
+        pageSize: 5,
+        shouldSelectNextAccountAutomatically: false
+      })
+    } catch (error: any) {
+      const message = error?.message || 'Could not unlock the OneKey device. Please try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+  }
+
+  async handleAccountPickerInitOneKey(
+    OneKeyKeyIterator: any, // TODO: KeyIterator type mismatch
+    preferredDeviceId?: string,
+    requestId?: string
+  ) {
+    await this.#setUpPickerForHardwareWallet(
+      'handleAccountPickerInitOneKey',
+      () => this.#handleAccountPickerInitOneKey(OneKeyKeyIterator, preferredDeviceId),
+      requestId
+    )
+  }
+
   async #handleAccountPickerInitLattice(
     LatticeKeyIterator: any /* TODO: KeyIterator type mismatch */
   ) {
@@ -1742,7 +1911,7 @@ export class MainController extends EventEmitter implements IMainController {
       this.dapps.removeAccountData(address)
 
       if (this.selectedAccount.account?.addr === address) {
-        await this.#selectAccount(this.accounts.accounts[0]?.addr ?? null)
+        await this.#selectFallbackAccount()
       }
 
       this.emitUpdate()
@@ -2206,6 +2375,57 @@ export class MainController extends EventEmitter implements IMainController {
     const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase)
     await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
     this.#replyToRequest(requestId)
+  }
+
+  async #accountPickerSetInitParamsFromPrivateKeys(privateKeys: string[]) {
+    if (!privateKeys.length) {
+      const message = 'Please enter at least one private key.'
+      throw new EmittableError({ message, level: 'major', error: new Error(message) })
+    }
+
+    if (privateKeys.length > MAX_BULK_PRIVATE_KEYS) {
+      const message = `You can import up to ${MAX_BULK_PRIVATE_KEYS} private keys at once. Please remove some and try again.`
+      throw new EmittableError({ message, level: 'major', error: new Error(message) })
+    }
+
+    let keyIterator: KeyIterator
+    try {
+      // Trims the keys, strips the 0x prefix and drops duplicates before validating them
+      keyIterator = new KeyIterator(privateKeys)
+    } catch (error: any) {
+      // The original error never includes the keys, so it is safe to report it
+      const message =
+        'One or more of the private keys you entered is not valid. Please check them and try again.'
+      throw new EmittableError({ message, level: 'major', error })
+    }
+
+    await this.accountPicker.setInitParams({
+      keyIterator,
+      hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+    })
+  }
+
+  /**
+   * Prepares the account picker with a list of private keys (bulk import). The key at position N
+   * in the list is listed as the account at index N. Duplicates are dropped and the list is
+   * limited to `MAX_BULK_PRIVATE_KEYS` keys. Replies to `requestId` once set up - the
+   * personalize step selects and prepares every key's account.
+   */
+  async accountPickerSetInitParamsFromPrivateKeys(
+    { privateKeys }: { privateKeys: string[] },
+    requestId?: string
+  ) {
+    let isSetUp = false
+    await this.withStatus(
+      'accountPickerSetInitParamsFromPrivateKeys',
+      async () => {
+        await this.#accountPickerSetInitParamsFromPrivateKeys(privateKeys)
+        isSetUp = true
+      },
+      true
+    )
+
+    this.#replyToRequest(requestId, isSetUp ? undefined : 'Importing the private keys failed')
   }
 
   /**

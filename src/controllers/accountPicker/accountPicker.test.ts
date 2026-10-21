@@ -1,4 +1,4 @@
-import { Wallet } from 'ethers'
+import { toBeHex, Wallet } from 'ethers'
 
 import { describe, expect, jest, test } from '@jest/globals'
 
@@ -624,6 +624,140 @@ describe('AccountPicker', () => {
         index: SMART_ACCOUNT_SIGNER_KEY_DERIVATION_OFFSET,
         slot: 1
       })
+  })
+
+  describe('private keys', () => {
+    const PAGE_SIZE = 5
+    const bulkPrivateKeys = Array.from({ length: 7 }, (_, i) => toBeHex(i + 1, 32))
+    const bulkAddresses = bulkPrivateKeys.map((privateKey) => new Wallet(privateKey).address)
+
+    const toImportedBasicAccount = (addr: string): Account => ({
+      ...basicAccount,
+      addr,
+      associatedKeys: [addr],
+      initialPrivileges: [[addr, basicAccount.initialPrivileges[0]![1]]],
+      preferences: { label: DEFAULT_ACCOUNT_LABEL, pfp: addr }
+    })
+
+    /**
+     * Makes a main controller with an unlocked keystore, in which the given private keys
+     * (and their accounts) are already imported.
+     */
+    const prepareTestWithImportedPrivateKeys = async (importedPrivateKeys: string[]) => {
+      const importedAddresses = importedPrivateKeys.map((key) => new Wallet(key).address)
+      const { mainCtrl } = await makeMainController(async (storageCtrl) => {
+        await storageCtrl.set('accounts', importedAddresses.map(toImportedBasicAccount))
+      })
+      await mainCtrl.initialLoadPromise
+      await mainCtrl.keystore.addSecret('password', '12345678', '', true)
+      await mainCtrl.keystore.addKeys(
+        importedPrivateKeys.map((privateKey, i) => ({
+          addr: importedAddresses[i]!,
+          type: 'internal' as const,
+          label: `Key ${i + 1}`,
+          privateKey,
+          dedicatedToOneSA: false,
+          meta: { createdAt: Date.now() }
+        }))
+      )
+
+      return { mainCtrl, controller: mainCtrl.accountPicker }
+    }
+
+    const initWithPrivateKeys = async (
+      controller: Awaited<ReturnType<typeof prepareTest>>['controller'],
+      privateKeys: string | string[],
+      { pageSize, shouldSelectNextAccountAutomatically = false } = {} as {
+        pageSize?: number
+        shouldSelectNextAccountAutomatically?: boolean
+      }
+    ) => {
+      await controller.setInitParams({
+        keyIterator: new KeyIterator(privateKeys),
+        pageSize,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE,
+        shouldGetAccountsUsedOnNetworks: false,
+        shouldSearchForLinkedAccounts: false,
+        shouldSelectNextAccountAutomatically
+      })
+      await controller.init()
+    }
+
+    test('should list every private key in order, with paging', async () => {
+      const { controller } = await prepareTest()
+      await initWithPrivateKeys(controller, bulkPrivateKeys, { pageSize: PAGE_SIZE })
+
+      await controller.setPage({ page: 1 })
+      expect(controller.accountsOnPage.map((a) => a.account.addr)).toEqual(
+        bulkAddresses.slice(0, PAGE_SIZE)
+      )
+      expect(controller.accountsOnPage.map((a) => a.index)).toEqual([0, 1, 2, 3, 4])
+      expect(controller.accountsOnPage.some((a) => isSmartAccount(a.account))).toBe(false)
+
+      await controller.setPage({ page: 2 })
+      expect(controller.accountsOnPage.map((a) => a.account.addr)).toEqual(
+        bulkAddresses.slice(PAGE_SIZE)
+      )
+      expect(controller.accountsOnPage.map((a) => a.index)).toEqual([5, 6])
+
+      await controller.setPage({ page: 3 })
+      expect(controller.accountsOnPage).toEqual([])
+    })
+
+    test('should prepare every private key from the list, and add them all on proceeding', async () => {
+      const { mainCtrl, controller } = await prepareTestWithImportedPrivateKeys([])
+
+      await initWithPrivateKeys(controller, bulkPrivateKeys, {
+        shouldSelectNextAccountAutomatically: true
+      })
+      expect(controller.readyToAddAccounts.map((a) => a.addr)).toEqual(bulkAddresses)
+
+      await controller.addPreparedAccounts()
+
+      const importedAddresses = mainCtrl.accounts.accounts.map((a) => a.addr)
+      expect(importedAddresses).toEqual(expect.arrayContaining(bulkAddresses))
+      const keystoreAddresses = mainCtrl.keystore.keys.map((k) => k.addr)
+      expect(keystoreAddresses).toEqual(expect.arrayContaining(bulkAddresses))
+    })
+
+    test('should prepare only the private keys that are not imported yet', async () => {
+      const alreadyImportedPrivateKeys = bulkPrivateKeys.slice(0, 2)
+      const { controller } = await prepareTestWithImportedPrivateKeys(alreadyImportedPrivateKeys)
+
+      await initWithPrivateKeys(controller, bulkPrivateKeys.slice(0, 4), {
+        shouldSelectNextAccountAutomatically: true
+      })
+
+      expect(controller.readyToAddAccounts.map((a) => a.addr)).toEqual(bulkAddresses.slice(2, 4))
+    })
+
+    test('should prepare a single private key, as before', async () => {
+      const { controller } = await prepareTestWithImportedPrivateKeys([])
+
+      await initWithPrivateKeys(controller, bulkPrivateKeys[0]!, {
+        shouldSelectNextAccountAutomatically: true
+      })
+
+      expect(controller.readyToAddAccounts.map((a) => a.addr)).toEqual([bulkAddresses[0]])
+    })
+
+    test('should stop looking for the next account after the last private key when all are imported', async () => {
+      const privateKeys = bulkPrivateKeys.slice(0, 3)
+      const { controller } = await prepareTestWithImportedPrivateKeys(privateKeys)
+      await initWithPrivateKeys(controller, privateKeys, { pageSize: PAGE_SIZE })
+      const setPageSpy = jest.spyOn(controller, 'setPage')
+      const emittedErrors: string[] = []
+      const unsubscribe = controller.onError((e) => emittedErrors.push(e.error.message))
+
+      await controller.selectNextAccount()
+
+      unsubscribe()
+      // The first page holds all the keys, the second one is empty
+      expect(setPageSpy).toHaveBeenCalledTimes(2)
+      expect(controller.selectedAccounts).toEqual([])
+      expect(emittedErrors).toEqual([])
+      setPageSpy.mockRestore()
+    })
   })
 
   test.each(DERIVATION_OPTIONS)('should derive correctly $label', async ({ value }) => {
