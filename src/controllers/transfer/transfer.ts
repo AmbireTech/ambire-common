@@ -502,9 +502,13 @@ export class TransferController extends EventEmitter implements ITransferControl
         if (!selectedNft || getAssetCacheKey(selectedNft.address, selectedNft.chainId) !== key)
           return
 
-        // The form may have become valid, so the transaction can be prepared now
-        await this.syncSignAccountOp()
-        this.emitUpdate()
+        // The form may have become valid, so the transaction can be prepared now. The UI is
+        // updated either way, so the new state of the check shows even if that fails.
+        try {
+          await this.syncSignAccountOp()
+        } finally {
+          this.emitUpdate()
+        }
       })
       .catch((error: unknown) => {
         // Not expected - neither the check nor preparing the transfer should throw. If the check

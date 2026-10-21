@@ -1982,6 +1982,48 @@ describe('Portfolio Controller ', () => {
       expect(updateSpy).not.toHaveBeenCalled()
     })
 
+    test('joins AccountOps confirmed during the wait into one refresh, up to the highest block', async () => {
+      const { controller, updateSpy } = await setup()
+
+      const first = controller.refreshPortfolioBehindConfirmedAccountOps(account.addr, [
+        confirmedOp(101)
+      ])
+      // A second AccountOp confirms while the first refresh is waiting
+      const second = controller.refreshPortfolioBehindConfirmedAccountOps(account.addr, [
+        confirmedOp(103)
+      ])
+      await second
+      // Another update brings the portfolio past the first AccountOp, but not the second
+      controller.getAccountPortfolioState(account.addr)['1']!.result!.blockNumber = 102
+
+      rpcBlockNumber = 103
+      await jest.advanceTimersByTimeAsync(3000)
+      await first
+
+      expect(updateSpy).toHaveBeenCalledTimes(1)
+      expect(controller.getAccountPortfolioState(account.addr)['1']?.result?.blockNumber).toBe(103)
+    })
+
+    test('starts a new refresh for AccountOps confirmed after the previous one ran', async () => {
+      const { controller, updateSpy } = await setup()
+
+      const first = controller.refreshPortfolioBehindConfirmedAccountOps(account.addr, [
+        confirmedOp(101)
+      ])
+      rpcBlockNumber = 101
+      await jest.advanceTimersByTimeAsync(3000)
+      await first
+
+      const second = controller.refreshPortfolioBehindConfirmedAccountOps(account.addr, [
+        confirmedOp(102)
+      ])
+      rpcBlockNumber = 102
+      await jest.advanceTimersByTimeAsync(3000)
+      await second
+
+      expect(updateSpy).toHaveBeenCalledTimes(2)
+    })
+
     test('ignores AccountOps of other accounts and ones without a block', async () => {
       const { controller, updateSpy } = await setup()
 

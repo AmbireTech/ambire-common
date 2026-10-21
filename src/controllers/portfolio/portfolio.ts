@@ -283,6 +283,13 @@ export class PortfolioController
   #scheduledUpdates: ScheduledUpdates = {}
 
   /**
+   * The blocks a refresh after confirmed AccountOps waits to reach, per account and chain.
+   * An account has an entry only while its refresh is waiting, so AccountOps confirmed during
+   * the wait join that refresh instead of starting another one.
+   */
+  #pendingConfirmedBlockRefreshes: { [accountId: AccountId]: { [chainId: string]: number } } = {}
+
+  /**
    * Runs every SCHEDULED_PORTFOLIO_UPDATES_RUNNER_INTERVAL and checks if there are any scheduled updates to run.
    * If there are, it runs them and removes them from the schedule.
    */
@@ -2478,8 +2485,8 @@ export class PortfolioController
       updatedAccountsOps
     )
 
-    const getChainIdsBehind = () =>
-      Object.entries(expectedMinPortfolioBlockByChainId)
+    const getChainIdsBehind = (expectedBlocks: { [chainId: string]: number }) =>
+      Object.entries(expectedBlocks)
         .filter(([chainKey, expectedMinBlock]) => {
           const portfolioBlock = this.#state[accountId]?.[chainKey]?.result?.blockNumber
 
@@ -2488,12 +2495,27 @@ export class PortfolioController
         })
         .map(([chainKey]) => chainKey)
 
-    if (!getChainIdsBehind().length) return
+    if (!getChainIdsBehind(expectedMinPortfolioBlockByChainId).length) return
+
+    // A refresh is already waiting for this account - it will also cover these blocks, so the
+    // account isn't updated several times in parallel
+    const pendingRefresh = this.#pendingConfirmedBlockRefreshes[accountId]
+    if (pendingRefresh) {
+      Object.entries(expectedMinPortfolioBlockByChainId).forEach(([chainKey, block]) => {
+        pendingRefresh[chainKey] = Math.max(pendingRefresh[chainKey] ?? 0, block)
+      })
+      return
+    }
+
+    this.#pendingConfirmedBlockRefreshes[accountId] = { ...expectedMinPortfolioBlockByChainId }
 
     await wait(CONFIRMED_ACCOUNT_OP_PORTFOLIO_REFRESH_DELAY)
 
+    const expectedBlocks = this.#pendingConfirmedBlockRefreshes[accountId] || {}
+    delete this.#pendingConfirmedBlockRefreshes[accountId]
+
     // Another update may have caught up during the wait
-    const chainIdsBehind = getChainIdsBehind()
+    const chainIdsBehind = getChainIdsBehind(expectedBlocks)
     const networks = this.#networks.networks.filter((n) =>
       chainIdsBehind.includes(n.chainId.toString())
     )

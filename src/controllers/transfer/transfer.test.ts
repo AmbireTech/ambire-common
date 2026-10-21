@@ -1113,6 +1113,26 @@ describe('Transfer Controller NFT mode', () => {
       expect(transferController.validationFormMsgs.amount.severity).toBe('success')
     })
 
+    test('should still show the result of the check if preparing the transfer fails', async () => {
+      let answer: (support: portfolioHelpersModule.Erc721InterfaceSupport) => void = () => {}
+      collectionSupportSpy.mockReturnValue(
+        new Promise((resolve) => {
+          answer = resolve
+        })
+      )
+      const { transferController } = await enterTransfer()
+      jest
+        .spyOn(transferController, 'syncSignAccountOp')
+        .mockRejectedValueOnce(new Error('Failed to prepare'))
+      const emitUpdateSpy = jest.spyOn(transferController as any, 'emitUpdate')
+
+      answer('supported')
+      await flushPromises()
+
+      expect(emitUpdateSpy).toHaveBeenCalled()
+      expect(transferController.validationFormMsgs.amount.severity).toBe('success')
+    })
+
     test('should ignore an answer that comes after the user switched to a token', async () => {
       let answer: (support: portfolioHelpersModule.Erc721InterfaceSupport) => void = () => {}
       collectionSupportSpy.mockReturnValue(
