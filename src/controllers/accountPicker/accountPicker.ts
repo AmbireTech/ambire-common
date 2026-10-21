@@ -146,6 +146,9 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   /** The accounts to remove once the prepared ones are added, kept apart for the same reason. */
   #preparedAccountsToRemove: Account[] = []
 
+  /** The derivation path the prepared selection was made on, which its keys are derived with. */
+  #preparedHdPathTemplate?: HD_PATH_TEMPLATE_TYPE
+
   // The status of writing the prepared accounts (`addPreparedAccounts`)
   addAccountsStatus: 'LOADING' | 'SUCCESS' | 'INITIAL' = 'INITIAL'
 
@@ -418,7 +421,12 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     return nextSelectedAccount.filter((a) => !readyToRemoveAccountsAddr.includes(a.account.addr))
   }
 
-  setInitParams(params: {
+  /**
+   * Sets the picker up for a new flow. A flow left without a reset (the UI can miss it, e.g.
+   * when going back mid screen transition on mobile) is dropped first, so the new one never
+   * shows its accounts. The temp seed is kept - the new flow may have just set it.
+   */
+  async setInitParams(params: {
     keyIterator: KeyIterator | null
     hdPathTemplate: HD_PATH_TEMPLATE_TYPE
     page?: number
@@ -427,6 +435,8 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     shouldGetAccountsUsedOnNetworks?: boolean
     shouldSelectNextAccountAutomatically?: boolean
   }) {
+    if (this.isInitialized || this.readyToAddAccounts.length) await this.reset(false)
+
     this.initParams = params
     this.emitUpdate()
   }
@@ -561,6 +571,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
     this.#readyToAddKeys = null
     this.#preparedSelection = []
     this.#preparedAccountsToRemove = []
+    this.#preparedHdPathTemplate = undefined
     this.networksWithAccountStateError = []
     this.isInitialized = false
 
@@ -579,11 +590,18 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
   /**
    * Drops the changes made to the selection since it was last prepared - all of it when
    * nothing is prepared - so leaving the picker for the personalize step keeps the
-   * selection in line with the accounts shown there.
+   * selection in line with the accounts shown there. That includes the derivation path,
+   * which the prepared keys are derived with.
    */
   resetAccountsSelection() {
     this.selectedAccountsFromCurrentSession = [...this.#preparedSelection]
     this.readyToRemoveAccounts = [...this.#preparedAccountsToRemove]
+    if (this.#preparedHdPathTemplate && this.#preparedHdPathTemplate !== this.hdPathTemplate) {
+      this.hdPathTemplate = this.#preparedHdPathTemplate
+      // The page was derived on the other path, so the picker derives it again
+      this.#derivedAccounts = []
+      this.#linkedAccounts = []
+    }
 
     this.emitUpdate()
   }
@@ -956,6 +974,7 @@ export class AccountPickerController extends EventEmitter implements IAccountPic
 
     this.#preparedSelection = [...this.selectedAccountsFromCurrentSession]
     this.#preparedAccountsToRemove = [...this.readyToRemoveAccounts]
+    this.#preparedHdPathTemplate = this.hdPathTemplate
     this.readyToAddAccounts = this.#preparedSelection.map(({ account }, i) => {
       const alreadyImportedAcc = this.#alreadyImportedAccounts.find((a) => a.addr === account.addr)
 

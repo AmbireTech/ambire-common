@@ -1,5 +1,8 @@
 import { DEFAULT_ACCOUNT_LABEL } from '@/consts/account'
-import { BIP44_STANDARD_DERIVATION_TEMPLATE } from '@/consts/derivation'
+import {
+  LEGACY_POPULAR_DERIVATION_TEMPLATE,
+  BIP44_STANDARD_DERIVATION_TEMPLATE
+} from '@/consts/derivation'
 import { AccountOnchainState } from '@/interfaces/account'
 import { AccountOpStatus } from '@/libs/accountOp/types'
 import { isSmartAccount } from '@/libs/account/account'
@@ -442,6 +445,62 @@ describe('Main Controller ', () => {
       await picker.addPreparedAccounts()
       expect(snapshot().accounts).toContain(viewOnlyAccount.addr)
       expect(snapshot().keys).toEqual(before.keys)
+    })
+
+    test('adds the key of the prepared account after another derivation path was browsed', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      await picker.init()
+      const [prepared] = picker.readyToAddAccounts
+
+      // "Add more" - the picker switches the derivation path, then the user goes back
+      await picker.setHDPathTemplateAndPage({
+        hdPathTemplate: LEGACY_POPULAR_DERIVATION_TEMPLATE,
+        page: 2
+      })
+      picker.resetAccountsSelection()
+      await picker.addPreparedAccounts()
+
+      const keyAddrs = mainCtrl.keystore.keys.map((key) => key.addr)
+      expect(prepared!.associatedKeys.some((addr) => keyAddrs.includes(addr))).toBe(true)
+    })
+
+    test('a flow set up over an abandoned one prepares its own accounts', async () => {
+      const { picker } = await prepareNewSeedFlow()
+      await picker.init()
+      const [abandoned] = picker.readyToAddAccounts
+      // Going back was missed (no reset), then a recovery phrase is imported
+      const keyIterator = new KeyIterator(process.env.SEED)
+      await picker.setInitParams({
+        keyIterator,
+        hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+      })
+
+      await picker.initIfNotStarted()
+
+      expect(picker.keyIterator).toBe(keyIterator)
+      expect(picker.readyToAddAccounts.map(({ addr }) => addr)).not.toContain(abandoned!.addr)
+    })
+
+    test('keeps a re-entered recovery phrase when its abandoned flow was not reset', async () => {
+      const { mainCtrl, picker } = await prepareNewSeedFlow()
+      await picker.reset()
+      const enterPhrase = async () => {
+        await mainCtrl.keystore.addTempSeed({
+          seed: process.env.SEED!,
+          seedPassphrase: null,
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+        })
+        await picker.setInitParams({
+          keyIterator: new KeyIterator(process.env.SEED),
+          hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
+        })
+        await picker.initIfNotStarted()
+      }
+
+      await enterPhrase()
+      await enterPhrase()
+
+      expect(mainCtrl.keystore.hasKeystoreTempSeed).toBe(true)
     })
 
     test('never sends the private keys of the prepared accounts to the UI', async () => {

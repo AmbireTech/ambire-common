@@ -1357,7 +1357,7 @@ export class MainController extends EventEmitter implements IMainController {
       }
 
       const keyIterator = new LedgerKeyIterator({ controller: ledgerCtrl })
-      this.accountPicker.setInitParams({
+      await this.accountPicker.setInitParams({
         keyIterator,
         hdPathTemplate,
         pageSize: 5,
@@ -1477,7 +1477,7 @@ export class MainController extends EventEmitter implements IMainController {
       // In the rare case of migration (ledger -> qr -> has created a linked account),
       // The user should instead go to the web wallet and migrate his funds instead.
       // v1 accounts are generally deprecated and we don't encourage users to use them.
-      this.accountPicker.setInitParams({
+      await this.accountPicker.setInitParams({
         keyIterator,
         hdPathTemplate,
         pageSize: 5,
@@ -1521,7 +1521,7 @@ export class MainController extends EventEmitter implements IMainController {
 
       // v1 accounts have never supported NFC cards, so there is nothing to look
       // for on the relayer (same reasoning as the QR flow).
-      this.accountPicker.setInitParams({
+      await this.accountPicker.setInitParams({
         keyIterator,
         hdPathTemplate: keyIterator.hdPathTemplate,
         pageSize: 5,
@@ -2169,7 +2169,7 @@ export class MainController extends EventEmitter implements IMainController {
   ) {
     const hdPathTemplate = BIP44_STANDARD_DERIVATION_TEMPLATE
     const keyIterator = new KeyIterator(privKeyOrSeed, seedPassphrase)
-    this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
+    await this.accountPicker.setInitParams({ keyIterator, hdPathTemplate })
     this.#replyToRequest(requestId)
   }
 
@@ -2183,7 +2183,10 @@ export class MainController extends EventEmitter implements IMainController {
     if (!savedSeed) return this.#replyToRequest(requestId, 'The recovery phrase was not found')
 
     const keyIterator = new KeyIterator(savedSeed.seed, savedSeed.seedPassphrase)
-    this.accountPicker.setInitParams({ keyIterator, hdPathTemplate: savedSeed.hdPathTemplate })
+    await this.accountPicker.setInitParams({
+      keyIterator,
+      hdPathTemplate: savedSeed.hdPathTemplate
+    })
     this.#replyToRequest(requestId)
   }
 

@@ -382,14 +382,26 @@ describe('AccountPicker', () => {
       expect(controller.readyToAddAccounts).toHaveLength(0)
     })
 
-    test('should keep accounts a flow prepared already', async () => {
+    test('should drop the accounts of an abandoned flow when another one is set up', async () => {
       const { controller } = await prepareTest()
-      await controller.prepareAccounts({ accounts: [basicAccount] })
-      // Set up after preparing, so only the prepared accounts stop it from starting
-      controller.setInitParams({
+      const viewOnlyAddr = '0x77777777789A8BBEE6C64381e5E89E501fb0e4c8'
+      // A view-only flow left without a reset, then a recovery phrase is imported
+      await controller.prepareAccounts({
+        accounts: [{ ...basicAccount, addr: viewOnlyAddr, associatedKeys: [] }]
+      })
+      await controller.setInitParams({
         keyIterator: new KeyIterator(process.env.SEED),
         hdPathTemplate: BIP44_STANDARD_DERIVATION_TEMPLATE
       })
+
+      await controller.initIfNotStarted()
+
+      expect(controller.readyToAddAccounts.map(({ addr }) => addr)).toEqual([basicAccount.addr])
+    })
+
+    test('should keep accounts a flow prepared already', async () => {
+      const { controller } = await prepareTest()
+      await controller.prepareAccounts({ accounts: [basicAccount] })
       const initSpy = jest.spyOn(controller, 'init')
 
       await controller.initIfNotStarted()
