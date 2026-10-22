@@ -1856,6 +1856,158 @@ describe('Portfolio Controller ', () => {
     })
   })
 
+  describe('Read at the receipt block', () => {
+    suppressConsoleBeforeEach()
+
+    const RECEIPT_BLOCK = 1000
+    const makeResult = (blockNumber: number): any => ({
+      updateStarted: Date.now(),
+      discoveryTime: 0,
+      oracleCallTime: 0,
+      priceUpdateTime: 0,
+      tokenDataCache: new Map(),
+      tokens: [],
+      feeTokens: [],
+      toBeLearned: { erc20s: [], erc721s: {} },
+      fetchedTokenMetadata: [],
+      fetchedCollectionMetadata: [],
+      tokenErrors: [],
+      collectionErrors: [],
+      collections: [],
+      errors: [],
+      blockNumber,
+      beforeNonce: 0n,
+      afterNonce: 0n
+    })
+    const blockNotFound = () => new Error('header not found')
+
+    const setup = async () => {
+      const { controller } = await prepareTest()
+      const discoverySpy: any = jest
+        // @ts-expect-error test
+        .spyOn(controller, 'batchedPortfolioDiscovery')
+      discoverySpy.mockResolvedValue(null)
+      jest
+        .spyOn(defiPositionsLib, 'getCustomProviderPositions')
+        .mockResolvedValue({ positionsByProvider: [], error: null, providerErrors: [] } as any)
+      const getSpy = jest.spyOn(Portfolio.prototype, 'get')
+      const errors: string[] = []
+      controller.onError((error) => errors.push(error.message))
+      const updateAtReceipt = () =>
+        controller.updateSelectedAccount(account.addr, [ethereum], undefined, {
+          blockNumberByChainId: { '1': RECEIPT_BLOCK }
+        })
+      const getEthereumState = () => controller.getAccountPortfolioState(account.addr)['1']
+
+      return { controller, getSpy, errors, updateAtReceipt, getEthereumState }
+    }
+
+    afterEach(() => {
+      jest.useRealTimers()
+      jest.restoreAllMocks()
+    })
+
+    test('reads at the receipt block number', async () => {
+      const { getSpy, updateAtReceipt, getEthereumState } = await setup()
+      getSpy.mockResolvedValue(makeResult(RECEIPT_BLOCK))
+
+      await updateAtReceipt()
+
+      expect(getSpy).toHaveBeenCalledTimes(1)
+      expect(getSpy.mock.calls[0]![1]?.blockTag).toBe(RECEIPT_BLOCK)
+      expect(getEthereumState()?.result?.blockNumber).toBe(RECEIPT_BLOCK)
+    })
+
+    test('retries while the node does not have the block yet, then saves without an error', async () => {
+      const { getSpy, updateAtReceipt, getEthereumState } = await setup()
+      getSpy
+        .mockRejectedValueOnce(blockNotFound())
+        .mockRejectedValueOnce(blockNotFound())
+        .mockResolvedValue(makeResult(RECEIPT_BLOCK))
+
+      await updateAtReceipt()
+
+      expect(getSpy).toHaveBeenCalledTimes(3)
+      expect(getSpy.mock.calls.every((call) => call[1]?.blockTag === RECEIPT_BLOCK)).toBe(true)
+      expect(getEthereumState()?.criticalError).toBeUndefined()
+      expect(getEthereumState()?.result?.blockNumber).toBe(RECEIPT_BLOCK)
+    })
+
+    test('reads the latest block once the retry limit passes', async () => {
+      const { getSpy, updateAtReceipt, errors, getEthereumState } = await setup()
+      getSpy.mockImplementation(async (_addr, opts) => {
+        if (opts?.blockTag === RECEIPT_BLOCK) throw blockNotFound()
+        return makeResult(RECEIPT_BLOCK + 5)
+      })
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] })
+
+      const update = updateAtReceipt()
+      await jest.advanceTimersByTimeAsync(12 * 1000)
+      await update
+
+      expect(getSpy.mock.calls.at(-1)![1]?.blockTag).toBe('both')
+      expect(getSpy.mock.calls.length).toBeGreaterThan(2)
+      expect(
+        errors.some((message) => message.includes('could not be read at the receipt block'))
+      ).toBe(true)
+      expect(getEthereumState()?.result?.blockNumber).toBe(RECEIPT_BLOCK + 5)
+    })
+
+    test('saves a receipt-block result that is far older than the stored one', async () => {
+      const { controller, getSpy, updateAtReceipt, getEthereumState } = await setup()
+      getSpy.mockResolvedValue(makeResult(RECEIPT_BLOCK + 20))
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+      expect(getEthereumState()?.result?.blockNumber).toBe(RECEIPT_BLOCK + 20)
+
+      getSpy.mockResolvedValue(makeResult(RECEIPT_BLOCK))
+      await updateAtReceipt()
+
+      expect(getEthereumState()?.criticalError).toBeUndefined()
+      expect(getEthereumState()?.result?.blockNumber).toBe(RECEIPT_BLOCK)
+    })
+
+    test('still rejects an old result of a normal update', async () => {
+      const { controller, getSpy, getEthereumState } = await setup()
+      getSpy.mockResolvedValue(makeResult(RECEIPT_BLOCK + 20))
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      getSpy.mockResolvedValue(makeResult(RECEIPT_BLOCK))
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+
+      expect(getEthereumState()?.result?.blockNumber).toBe(RECEIPT_BLOCK + 20)
+    })
+
+    test('stops without a save when the account is removed while it retries', async () => {
+      const { controller, getSpy, updateAtReceipt } = await setup()
+      getSpy.mockRejectedValue(blockNotFound())
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] })
+
+      const update = updateAtReceipt()
+      await jest.advanceTimersByTimeAsync(0)
+      controller.removeAccountData(account.addr)
+      await jest.advanceTimersByTimeAsync(250)
+      await update
+
+      expect(getSpy).toHaveBeenCalledTimes(1)
+      expect(controller.getAccountPortfolioState(account.addr)['1']).toBeUndefined()
+    })
+
+    test('a confirmed op that is not in the stored simulation still refreshes the balances', async () => {
+      const { controller, getSpy, getEthereumState } = await setup()
+      getSpy.mockResolvedValue(makeResult(RECEIPT_BLOCK - 1))
+      await controller.updateSelectedAccount(account.addr, [ethereum])
+      expect(getEthereumState()?.accountOps).toBeUndefined()
+
+      getSpy.mockClear()
+      getSpy.mockResolvedValue(makeResult(RECEIPT_BLOCK))
+      const confirmedOp = { ...(await getAccountOp())['1']![0]!, id: 'not-simulated' }
+      await controller.discardSimulation([confirmedOp], { '1': RECEIPT_BLOCK })
+
+      expect(getSpy).toHaveBeenCalledTimes(1)
+      expect(getSpy.mock.calls[0]![1]?.blockTag).toBe(RECEIPT_BLOCK)
+    })
+  })
+
   describe('Pinned tokens', () => {
     test('Pinned tokens are set in an account with no tokens', async () => {
       const { controller } = await prepareTest()
