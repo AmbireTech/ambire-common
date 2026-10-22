@@ -147,6 +147,19 @@ const SAFE_DEPLOYMENT_STUCK_MESSAGE =
 const MESSAGE_ACCOUNT_NOT_IN_WALLET_ERROR =
   "This app asked to sign a message with an account that isn't in your wallet."
 
+/** Whether both lists make the same calls, ignoring the ids the wallet gives them */
+const haveSameCalls = (calls: Call[], otherCalls: Call[]): boolean =>
+  calls.length === otherCalls.length &&
+  calls.every((call, i) => {
+    const otherCall = otherCalls[i]!
+
+    return (
+      call.to?.toLowerCase() === otherCall.to?.toLowerCase() &&
+      BigInt(call.value) === BigInt(otherCall.value) &&
+      call.data.toLowerCase() === otherCall.data.toLowerCase()
+    )
+  })
+
 type SafeDeploymentRequestResult =
   | { success: false; error: SafeDeploymentRequestError }
   | { success: true; alreadyDeployed: boolean }
@@ -798,6 +811,36 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     if (!replacedIdentifier) return undefined
 
     return `${accountOp.chainId.toString()}:${replacedIdentifier}`
+  }
+
+  /**
+   * Whether a Safe transaction from the Safe API is already being sent: it's open as a speed up,
+   * or it was broadcast and is waiting to get onchain. The Safe API keeps it pending until then,
+   * so without this it would also show up in the queue as a transaction waiting to be signed.
+   * Matched by the Safe nonce and the calls, as the Safe transaction hash isn't kept after
+   * broadcasting. Another transaction on the same nonce (e.g. a rejection) still shows up
+   */
+  #isSafeTxnBeingSent(
+    calls: Call[],
+    { accountAddr, chainId }: CallsUserRequest['meta'],
+    safeNonce: bigint
+  ): boolean {
+    const isSameSafeTxn = (accountOp: AccountOp) =>
+      accountOp.chainId === chainId &&
+      getAccountOpNonce(accountOp) === safeNonce &&
+      haveSameCalls(accountOp.calls, calls)
+
+    const isOpenAsSpeedUp = this.userRequests.some(
+      (r) =>
+        r.kind === 'calls' &&
+        r.signAccountOp.isSpeedUpTransaction &&
+        r.meta.accountAddr === accountAddr &&
+        isSameSafeTxn(r.signAccountOp.accountOp)
+    )
+    if (isOpenAsSpeedUp) return true
+
+    const broadcastOps = this.#activity.broadcastedButNotConfirmed[accountAddr] ?? []
+    return broadcastOps.some(isSameSafeTxn)
   }
 
   #getSafeDeployRequest(accountAddr: string, chainId: bigint): CallsUserRequest | undefined {
@@ -3322,6 +3365,8 @@ export class RequestsController extends EventEmitter implements IRequestsControl
     // sent again as a new transaction instead of replacing the pending one. A speed up of the
     // same transaction that is already open is reopened instead of building another one
     const isSpeedUpRequest = !!providedAccountOp && SpeedUp.isSpeedUp(providedAccountOp)
+    if (meta.safeTxnProps && this.#isSafeTxnBeingSent(calls, meta, meta.safeTxnProps.nonce)) return
+
     const existingUserRequest =
       isSpeedUpRequest && providedAccountOp
         ? this.#findOpenSpeedUpRequest(providedAccountOp)
