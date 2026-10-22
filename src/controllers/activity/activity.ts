@@ -1736,6 +1736,19 @@ export class ActivityController extends EventEmitter implements IActivityControl
                     this.#accounts.accounts.map((a) => a.addr)
                   ).map((recipient) => recipient.address)
 
+                  // Another account of the wallet that paid the fee has a new balance too
+                  const paidBy = accountOp.gasFeePayment?.paidBy?.toLowerCase()
+                  const feePayer = this.#accounts.accounts.find(
+                    (a) =>
+                      a.addr.toLowerCase() === paidBy &&
+                      paidBy !== accountOp.accountAddr.toLowerCase()
+                  )
+                  if (
+                    feePayer &&
+                    !accountOpRecipients.some((addr) => addr.toLowerCase() === paidBy)
+                  )
+                    accountOpRecipients.push(feePayer.addr)
+
                   accountOpRecipients.forEach((accAddr) => {
                     if (!portfoliosToUpdate[accAddr]) portfoliosToUpdate[accAddr] = []
 

@@ -6,6 +6,9 @@ export const DEFAULT_STALE_RPC_BLOCK_THRESHOLD = 10
 // Ethereum blocks are ~12s apart, so every tolerated block is a long stretch of stale data
 export const ETHEREUM_STALE_RPC_BLOCK_THRESHOLD = 2
 
+/** How long the portfolio is read again at a receipt block before it reads the latest block. */
+export const RECEIPT_BLOCK_READ_RETRY_LIMIT_MS = 10 * 1000 // 10 seconds
+
 /**
  * How long a request to our own APIs is given. Enough for the token prices, which come back in
  * a few hundred milliseconds - see `getDiscoveryTimeout` for the one request this is too tight
