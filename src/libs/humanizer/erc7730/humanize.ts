@@ -1308,17 +1308,14 @@ const getModuleFallbackValue = (
   const value = getFlatCallValue(humanizedVisualization)
   if (!humanizedVisualization || !value) return null
 
-  const resetText = getSetAllowanceResetText(call as IrCall)
-  const valueWithReset =
-    resetText && value.some((item) => item.type === 'token')
-      ? [...value, getText(resetText, true)]
-      : value
-
   // The modules above already found everything worth warning about in this nested call, but only
   // its visualization becomes a row. Hand the warnings to the caller so they reach the top level.
   collectedWarnings?.push(...(humanizedCall?.warnings || []))
 
-  return { ...humanizedVisualization, intent: valueWithReset, dapp: humanizedCall.dapp }
+  const resetText = getSetAllowanceResetText(call as IrCall)
+  if (!resetText || !value.some((item) => item.type === 'token')) return humanizedVisualization
+
+  return { ...humanizedVisualization, intent: [...value, getText(resetText, true)] }
 }
 
 const getNativeValueWarnings = (
